@@ -1,23 +1,73 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import Chat from "@/sidepanel/components/Chat";
+import Settings from "@/sidepanel/components/Settings";
+import { getActiveProvider, getProviderConfig } from "@/lib/storage";
 
 type Tab = "chat" | "agent" | "tabs" | "settings";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>("chat");
+  const [providerLabel, setProviderLabel] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Check first run
+    chrome.storage.local.get("firstRun", (result) => {
+      if (result.firstRun) {
+        setActiveTab("settings");
+        chrome.storage.local.remove("firstRun");
+      }
+    });
+
+    loadProviderLabel();
+
+    // Refresh label when storage changes (e.g. after saving settings)
+    const listener = (changes: { [key: string]: chrome.storage.StorageChange }) => {
+      if (changes.active_provider || Object.keys(changes).some((k) => k.startsWith("provider_"))) {
+        loadProviderLabel();
+      }
+    };
+    chrome.storage.local.onChanged.addListener(listener);
+    return () => chrome.storage.local.onChanged.removeListener(listener);
+  }, []);
+
+  async function loadProviderLabel() {
+    const active = await getActiveProvider();
+    if (!active) {
+      setProviderLabel(null);
+      return;
+    }
+    try {
+      const config = await getProviderConfig(active);
+      if (config) {
+        setProviderLabel(`${active === "anthropic" ? "Claude" : "GPT"} · ${config.model}`);
+      } else {
+        setProviderLabel(null);
+      }
+    } catch {
+      setProviderLabel(null);
+    }
+  }
 
   return (
     <div className="flex h-screen flex-col bg-neutral-950 text-neutral-100">
       {/* Header */}
       <header className="flex items-center gap-2 border-b border-neutral-800 px-4 py-3">
         <span className="text-lg font-semibold">Chrome AI Agent</span>
+        {providerLabel && (
+          <span className="rounded bg-neutral-800 px-2 py-0.5 text-xs text-neutral-400">
+            {providerLabel}
+          </span>
+        )}
       </header>
 
       {/* Content */}
       <main className="flex-1 overflow-y-auto p-4">
-        {activeTab === "chat" && <ChatPlaceholder />}
+        {activeTab === "chat" && (
+          <Chat onGoToSettings={() => setActiveTab("settings")} />
+        )}
         {activeTab === "agent" && <Placeholder label="Agent" />}
         {activeTab === "tabs" && <Placeholder label="Tabs" />}
-        {activeTab === "settings" && <Placeholder label="Settings" />}
+        {activeTab === "settings" && <Settings />}
       </main>
 
       {/* Bottom Nav */}
@@ -36,14 +86,6 @@ export default function App() {
           </button>
         ))}
       </nav>
-    </div>
-  );
-}
-
-function ChatPlaceholder() {
-  return (
-    <div className="flex flex-col items-center justify-center gap-3 pt-20 text-neutral-500">
-      <p className="text-sm">Configure your API key in Settings to get started.</p>
     </div>
   );
 }

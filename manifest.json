@@ -4,7 +4,11 @@
   "version": "0.1.0",
   "description": "BYOK browser AI — bring your own API key for page understanding, agent automation, and smart tab management.",
   "permissions": ["activeTab", "sidePanel", "storage", "tabs", "scripting"],
-  "host_permissions": ["http://localhost/*"],
+  "host_permissions": [
+    "http://localhost/*",
+    "https://api.anthropic.com/*",
+    "https://api.openai.com/*"
+  ],
   "background": {
     "service_worker": "src/background/index.ts",
     "type": "module"
