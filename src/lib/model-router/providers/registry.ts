@@ -7,6 +7,7 @@ export interface ProviderMeta {
   defaultBaseUrl: string;
   placeholder: string;
   type: "anthropic" | "openai-compatible";
+  supportsTools: boolean;
 }
 
 export const PROVIDER_REGISTRY: ProviderMeta[] = [
@@ -17,6 +18,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     defaultBaseUrl: "https://api.anthropic.com",
     placeholder: "sk-ant-...",
     type: "anthropic",
+    supportsTools: true,
   },
   {
     id: "openai",
@@ -25,6 +27,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     defaultBaseUrl: "https://api.openai.com",
     placeholder: "sk-...",
     type: "openai-compatible",
+    supportsTools: true,
   },
   {
     id: "openrouter",
@@ -33,6 +36,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     defaultBaseUrl: "https://openrouter.ai/api",
     placeholder: "sk-or-...",
     type: "openai-compatible",
+    supportsTools: true,
   },
   {
     id: "minimax",
@@ -41,6 +45,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     defaultBaseUrl: "https://api.minimax.chat",
     placeholder: "eyJ...",
     type: "openai-compatible",
+    supportsTools: true,
   },
   {
     id: "zhipu",
@@ -49,6 +54,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     defaultBaseUrl: "https://open.bigmodel.cn/api/paas/v4",
     placeholder: "API key",
     type: "openai-compatible",
+    supportsTools: true,
   },
   {
     id: "bailian",
@@ -57,6 +63,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     defaultBaseUrl: "https://dashscope.aliyuncs.com/compatible-mode",
     placeholder: "sk-...",
     type: "openai-compatible",
+    supportsTools: true,
   },
 ];
 

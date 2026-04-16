@@ -4,7 +4,7 @@ import { streamChat as anthropicStreamChat } from "./providers/anthropic";
 import { streamChat as openaiStreamChat } from "./providers/openai";
 import { getProviderMeta } from "./providers/registry";
 
-export type { StreamEvent } from "./types";
+export type { StreamEvent, AgentMessage, ContentBlock, TextBlock, ToolUseBlock, ToolResultBlock, ToolDefinition } from "./types";
 export { PROVIDER_REGISTRY, getProviderMeta } from "./providers/registry";
 export type { ProviderMeta } from "./providers/registry";
 
@@ -26,6 +26,7 @@ export interface ModelConfig {
   maxTokens?: number;
 }
 
+// Panel↔SW wire protocol message — content stays string only, never modified
 export interface ChatMessage {
   role: "user" | "assistant" | "system";
   content: string;
@@ -36,10 +37,20 @@ export interface ChatResponse {
   usage?: { inputTokens: number; outputTokens: number };
 }
 
+// Adapter: convert ChatMessage[] (Panel wire) to AgentMessage[] (model-router IR).
+// String content passes through unchanged. Structural compat is preserved because
+// ChatMessage is a subtype of AgentMessage (string content satisfies string | ContentBlock[]).
+export function chatMessagesToAgent(
+  messages: ChatMessage[],
+): import("./types").AgentMessage[] {
+  return messages as import("./types").AgentMessage[];
+}
+
 export async function* streamChat(
   config: ModelConfig,
-  messages: ChatMessage[],
+  messages: import("./types").AgentMessage[],
   signal?: AbortSignal,
+  tools?: import("./types").ToolDefinition[],
 ): AsyncGenerator<import("./types").StreamEvent> {
   const meta = getProviderMeta(config.provider);
   if (!meta) {
@@ -58,10 +69,10 @@ export async function* streamChat(
 
   switch (meta.type) {
     case "anthropic":
-      yield* anthropicStreamChat(resolvedConfig, messages, signal);
+      yield* anthropicStreamChat(resolvedConfig, messages, signal, tools);
       break;
     case "openai-compatible":
-      yield* openaiStreamChat(resolvedConfig, messages, signal);
+      yield* openaiStreamChat(resolvedConfig, messages, signal, tools);
       break;
   }
 }
@@ -73,7 +84,7 @@ export async function chat(
   let content = "";
   let usage: ChatResponse["usage"];
 
-  for await (const event of streamChat(config, messages)) {
+  for await (const event of streamChat(config, chatMessagesToAgent(messages))) {
     if (event.type === "text-delta") {
       content += event.text;
     } else if (event.type === "done") {
