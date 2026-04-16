@@ -1,7 +1,7 @@
 ---
 title: "feat: Phase 1 — 基础对话能力（Model Router + 页面问答 + API Key 管理）"
 type: feat
-status: active
+status: completed
 date: 2026-04-15
 origin: docs/design.md
 ---
@@ -88,7 +88,7 @@ origin: docs/design.md
 
 ## Implementation Units
 
-- [ ] **Unit 1: 构建配置修复 + 消息类型基础设施**
+- [x] **Unit 1: 构建配置修复 + 消息类型基础设施**
 
   **Goal:** 修复已知的构建问题，建立 Service Worker ↔ Side Panel ↔ Content Script 之间的类型安全消息传递基础。
 
@@ -121,7 +121,7 @@ origin: docs/design.md
 
 ---
 
-- [ ] **Unit 2: API Key 加密存储模块**
+- [x] **Unit 2: API Key 加密存储模块**
 
   **Goal:** 实现 API key 的加密存储和读取，为 Settings UI 和 Model Router 提供安全的密钥管理。
 
@@ -157,7 +157,7 @@ origin: docs/design.md
 
 ---
 
-- [ ] **Unit 3: Model Router — Anthropic + OpenAI Provider 实现**
+- [x] **Unit 3: Model Router — Anthropic + OpenAI Provider 实现**
 
   **Goal:** 实现两个 LLM provider 的流式调用，通过统一接口暴露。
 
@@ -201,7 +201,7 @@ origin: docs/design.md
 
 ---
 
-- [ ] **Unit 4: Settings UI — API Key 配置界面**
+- [x] **Unit 4: Settings UI — API Key 配置界面**
 
   **Goal:** 用户能在侧边栏 Settings tab 中配置、验证、管理 API key。
 
@@ -239,7 +239,7 @@ origin: docs/design.md
 
 ---
 
-- [ ] **Unit 5: Content Script — 页面内容提取**
+- [x] **Unit 5: Content Script — 页面内容提取**
 
   **Goal:** 能提取当前页面的核心文本内容，为 Chat 提供页面上下文。
 
@@ -278,7 +278,7 @@ origin: docs/design.md
 
 ---
 
-- [ ] **Unit 6: Chat UI + 全链路串联**
+- [x] **Unit 6: Chat UI + 全链路串联**
 
   **Goal:** 实现 Chat tab 的完整对话界面，串联 Side Panel → Service Worker → Content Script → LLM → Side Panel 的全链路，完成 Phase 1 最小闭环。
 
@@ -327,7 +327,7 @@ origin: docs/design.md
 
 ---
 
-- [ ] **Unit 7: 打磨与边缘情况处理**
+- [x] **Unit 7: 打磨与边缘情况处理**
 
   **Goal:** 处理首次使用引导、状态提示等边缘情况，使 Phase 1 达到可发布状态。
 
