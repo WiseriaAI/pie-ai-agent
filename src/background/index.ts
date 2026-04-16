@@ -1,9 +1,14 @@
 // Service Worker — background script for Chrome AI Agent
 
-import type { PageContent, ExtractPageResponse, PortMessageToWorker } from "@/types";
-import type { ChatMessage } from "@/lib/model-router";
-import { streamChat } from "@/lib/model-router";
+import type {
+  PageContent,
+  ExtractPageResponse,
+  PortMessageToWorker,
+  AgentConfirmRequestMessage,
+} from "@/types";
+import type { ChatMessage, ModelConfig } from "@/lib/model-router";
 import { getActiveProvider, getProviderConfig } from "@/lib/storage";
+import { runAgentLoop } from "@/lib/agent/loop";
 
 // Open side panel when extension icon is clicked
 chrome.action.onClicked.addListener(async (tab) => {
@@ -145,34 +150,16 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 });
 
-// --- Chat Stream via Port ---
-
-function buildSystemPrompt(pageContent: PageContent | null): string {
-  if (!pageContent?.content) {
-    return "You are a helpful browser AI assistant.";
-  }
-  return `You are a helpful browser AI assistant. The user is currently viewing the following page:
-
-Title: ${pageContent.title}
-URL: ${pageContent.url}
-
-Page content:
-${pageContent.content}
-
-Answer the user's questions based on the page content when relevant. If the question is unrelated to the page, answer normally.`;
-}
+// --- Agent Loop via Port ---
 
 async function handleChatStream(
   port: chrome.runtime.Port,
   messages: ChatMessage[],
   signal: AbortSignal,
+  pendingConfirmations: Map<string, (approved: boolean) => void>,
 ) {
   try {
-    // 1. Extract page content
-    const pageResponse = await handleExtractPage();
-    const pageContent = pageResponse.data;
-
-    // 2. Get active provider config
+    // Get active provider config
     const activeProvider = await getActiveProvider();
     if (!activeProvider) {
       port.postMessage({
@@ -191,27 +178,37 @@ async function handleChatStream(
       return;
     }
 
-    // 3. Build system prompt with page content
-    const systemPrompt = buildSystemPrompt(pageContent);
-    const fullMessages: ChatMessage[] = [
-      { role: "system", content: systemPrompt },
-      ...messages,
-    ];
+    // Extract task from last user message
+    const task =
+      [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
 
-    // 4. Stream chat
-    for await (const event of streamChat(config, fullMessages, signal)) {
-      if (signal.aborted) return;
+    const modelConfig: ModelConfig = config;
 
-      if (event.type === "text-delta") {
-        port.postMessage({ type: "chat-chunk", text: event.text });
-      } else if (event.type === "done") {
-        port.postMessage({ type: "chat-done", usage: event.usage });
-        return;
-      } else if (event.type === "error") {
-        port.postMessage({ type: "chat-error", error: event.error });
-        return;
-      }
-    }
+    // sendConfirmRequest: posts agent-confirm-request to panel and returns a
+    // Promise that resolves when panel sends agent-confirm-response
+    const sendConfirmRequest = (
+      confirmationId: string,
+      payload: Omit<AgentConfirmRequestMessage, "type" | "confirmationId">,
+    ): Promise<boolean> => {
+      return new Promise((resolve) => {
+        pendingConfirmations.set(confirmationId, resolve);
+        port.postMessage({
+          type: "agent-confirm-request",
+          confirmationId,
+          ...payload,
+        } satisfies AgentConfirmRequestMessage);
+      });
+    };
+
+    await runAgentLoop({
+      port,
+      task,
+      modelConfig,
+      signal,
+      sendConfirmRequest,
+      // Unit 6 will inject enabled skill tools here
+      getEnabledSkillTools: undefined,
+    });
   } catch (e) {
     if (signal.aborted) return;
     port.postMessage({
@@ -226,6 +223,9 @@ chrome.runtime.onConnect.addListener((port) => {
 
   const abortController = new AbortController();
 
+  // Per-port pending confirmation map
+  const pendingConfirmations = new Map<string, (approved: boolean) => void>();
+
   // Keep-alive: reset Service Worker idle timer while streaming
   const keepAliveInterval = setInterval(() => {
     chrome.runtime.getPlatformInfo();
@@ -233,15 +233,31 @@ chrome.runtime.onConnect.addListener((port) => {
 
   port.onMessage.addListener((message: PortMessageToWorker) => {
     if (message.type === "chat-start") {
-      handleChatStream(port, message.messages, abortController.signal);
+      handleChatStream(
+        port,
+        message.messages,
+        abortController.signal,
+        pendingConfirmations,
+      );
     } else if (message.type === "chat-abort") {
       abortController.abort();
+    } else if (message.type === "agent-confirm-response") {
+      const resolver = pendingConfirmations.get(message.confirmationId);
+      if (resolver) {
+        resolver(message.approved);
+        pendingConfirmations.delete(message.confirmationId);
+      }
     }
   });
 
   port.onDisconnect.addListener(() => {
     abortController.abort();
     clearInterval(keepAliveInterval);
+    // Drain pending confirmations to prevent hanging promises
+    for (const [, resolve] of pendingConfirmations) {
+      resolve(false);
+    }
+    pendingConfirmations.clear();
   });
 });
 
