@@ -19,7 +19,8 @@ export async function* readSSELines(
       const lines = buffer.split("\n");
       buffer = lines.pop()!; // keep incomplete last line in buffer
 
-      for (const line of lines) {
+      for (let line of lines) {
+        line = line.replace(/\r$/, ""); // handle \r\n line endings
         if (line === "") {
           // empty line = event boundary
           if (currentData.length > 0) {
