@@ -9,6 +9,12 @@ type Tab = "chat" | "agent" | "tabs" | "settings";
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>("chat");
   const [providerLabel, setProviderLabel] = useState<string | null>(null);
+  const [chatPrefill, setChatPrefill] = useState<string | undefined>(undefined);
+
+  function handleRunSkill(skillId: string) {
+    setChatPrefill(`/skill ${skillId}`);
+    setActiveTab("chat");
+  }
 
   useEffect(() => {
     // Check first run
@@ -66,11 +72,17 @@ export default function App() {
       {/* Content */}
       <main className="flex-1 overflow-y-auto p-4">
         {activeTab === "chat" && (
-          <Chat onGoToSettings={() => setActiveTab("settings")} />
+          <Chat
+            onGoToSettings={() => setActiveTab("settings")}
+            prefillInput={chatPrefill}
+            onPrefillConsumed={() => setChatPrefill(undefined)}
+          />
         )}
         {activeTab === "agent" && <Placeholder label="Agent" />}
         {activeTab === "tabs" && <Placeholder label="Tabs" />}
-        {activeTab === "settings" && <Settings />}
+        {activeTab === "settings" && (
+          <Settings onRunSkill={handleRunSkill} />
+        )}
       </main>
 
       {/* Bottom Nav */}

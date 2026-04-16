@@ -9,6 +9,7 @@ import type {
 import type { ChatMessage, ModelConfig } from "@/lib/model-router";
 import { getActiveProvider, getProviderConfig } from "@/lib/storage";
 import { runAgentLoop } from "@/lib/agent/loop";
+import { getEnabledSkills, resolveSkillToTools } from "@/lib/skills";
 
 // Open side panel when extension icon is clicked
 chrome.action.onClicked.addListener(async (tab) => {
@@ -206,8 +207,10 @@ async function handleChatStream(
       modelConfig,
       signal,
       sendConfirmRequest,
-      // Unit 6 will inject enabled skill tools here
-      getEnabledSkillTools: undefined,
+      getEnabledSkillTools: async () => {
+        const skills = await getEnabledSkills();
+        return resolveSkillToTools(skills);
+      },
     });
   } catch (e) {
     if (signal.aborted) return;

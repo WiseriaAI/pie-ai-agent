@@ -8,6 +8,7 @@ import {
   getActiveProvider,
   setActiveProvider,
 } from "@/lib/storage";
+import SkillsList from "./SkillsList";
 
 interface ProviderFormState {
   apiKey: string;
@@ -38,7 +39,11 @@ function makeInitialForms(): Record<string, ProviderFormState> {
   return forms;
 }
 
-export default function Settings() {
+interface SettingsProps {
+  onRunSkill?: (skillId: string) => void;
+}
+
+export default function Settings({ onRunSkill }: SettingsProps) {
   const [forms, setForms] = useState(makeInitialForms);
   const [activeProvider, setActiveProviderState] = useState<Provider | null>(
     null,
@@ -206,9 +211,12 @@ export default function Settings() {
         </div>
       )}
 
+      <h2 className="text-sm font-semibold text-neutral-300">Providers</h2>
+
       {PROVIDER_REGISTRY.map((provider) => {
         const form = forms[provider.id];
         if (!form) return null;
+
         const result = testResult[provider.id];
         const isActive = activeProvider === provider.id;
         const isTesting = testing === provider.id;
@@ -353,6 +361,10 @@ export default function Settings() {
           </div>
         );
       })}
+
+      {/* Skills section */}
+      <h2 className="mt-2 text-sm font-semibold text-neutral-300">Skills</h2>
+      <SkillsList onRunSkill={onRunSkill ?? (() => {})} />
     </div>
   );
 }

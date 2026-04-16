@@ -36,9 +36,12 @@ type DisplayMessage =
 
 interface ChatProps {
   onGoToSettings: () => void;
+  /** When set, pre-fills the input field; cleared after consumption. */
+  prefillInput?: string;
+  onPrefillConsumed?: () => void;
 }
 
-export default function Chat({ onGoToSettings }: ChatProps) {
+export default function Chat({ onGoToSettings, prefillInput, onPrefillConsumed }: ChatProps) {
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
@@ -56,6 +59,15 @@ export default function Chat({ onGoToSettings }: ChatProps) {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streamingText]);
+
+  // Consume prefillInput: set it into the input field without clobbering user
+  // input during streaming (guard on truthy to skip undefined/empty updates).
+  useEffect(() => {
+    if (prefillInput) {
+      setInput(prefillInput);
+      onPrefillConsumed?.();
+    }
+  }, [prefillInput]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Detect URL changes on active tab
   useEffect(() => {
