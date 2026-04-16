@@ -7,7 +7,11 @@
   "host_permissions": [
     "http://localhost/*",
     "https://api.anthropic.com/*",
-    "https://api.openai.com/*"
+    "https://api.openai.com/*",
+    "https://openrouter.ai/*",
+    "https://api.minimax.chat/*",
+    "https://open.bigmodel.cn/*",
+    "https://dashscope.aliyuncs.com/*"
   ],
   "background": {
     "service_worker": "src/background/index.ts",

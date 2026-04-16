@@ -7,7 +7,7 @@ export async function* streamChat(
   messages: ChatMessage[],
   signal?: AbortSignal,
 ): AsyncGenerator<StreamEvent> {
-  const baseUrl = config.baseUrl?.replace(/\/$/, "") || "https://api.anthropic.com";
+  const baseUrl = config.baseUrl!.replace(/\/$/, "");
 
   // Anthropic requires system as a top-level field, not in messages array
   const systemMessages = messages.filter((m) => m.role === "system");

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import Chat from "@/sidepanel/components/Chat";
 import Settings from "@/sidepanel/components/Settings";
 import { getActiveProvider, getProviderConfig } from "@/lib/storage";
+import { getProviderMeta } from "@/lib/model-router";
 
 type Tab = "chat" | "agent" | "tabs" | "settings";
 
@@ -39,7 +40,9 @@ export default function App() {
     try {
       const config = await getProviderConfig(active);
       if (config) {
-        setProviderLabel(`${active === "anthropic" ? "Claude" : "GPT"} · ${config.model}`);
+        const meta = getProviderMeta(active);
+        const name = meta?.name ?? active;
+        setProviderLabel(`${name} · ${config.model}`);
       } else {
         setProviderLabel(null);
       }

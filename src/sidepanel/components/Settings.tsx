@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import type { Provider } from "@/lib/model-router";
-import { chat } from "@/lib/model-router";
+import { chat, PROVIDER_REGISTRY } from "@/lib/model-router";
 import {
   saveProviderConfig,
   getProviderConfig,
@@ -8,28 +8,6 @@ import {
   getActiveProvider,
   setActiveProvider,
 } from "@/lib/storage";
-
-interface ProviderInfo {
-  id: Provider;
-  name: string;
-  defaultModel: string;
-  placeholder: string;
-}
-
-const PROVIDERS: ProviderInfo[] = [
-  {
-    id: "anthropic",
-    name: "Anthropic",
-    defaultModel: "claude-sonnet-4-20250514",
-    placeholder: "sk-ant-...",
-  },
-  {
-    id: "openai",
-    name: "OpenAI",
-    defaultModel: "gpt-4o",
-    placeholder: "sk-...",
-  },
-];
 
 interface ProviderFormState {
   apiKey: string;
@@ -45,41 +23,23 @@ function maskKey(key: string): string {
   return `${key.slice(0, 4)}...${key.slice(-4)}`;
 }
 
+function makeInitialForms(): Record<string, ProviderFormState> {
+  const forms: Record<string, ProviderFormState> = {};
+  for (const p of PROVIDER_REGISTRY) {
+    forms[p.id] = {
+      apiKey: "",
+      model: p.defaultModel,
+      baseUrl: "",
+      configured: false,
+      maskedKey: "",
+      showKey: false,
+    };
+  }
+  return forms;
+}
+
 export default function Settings() {
-  const [forms, setForms] = useState<Record<Provider, ProviderFormState>>({
-    anthropic: {
-      apiKey: "",
-      model: PROVIDERS[0].defaultModel,
-      baseUrl: "",
-      configured: false,
-      maskedKey: "",
-      showKey: false,
-    },
-    openai: {
-      apiKey: "",
-      model: PROVIDERS[1].defaultModel,
-      baseUrl: "",
-      configured: false,
-      maskedKey: "",
-      showKey: false,
-    },
-    google: {
-      apiKey: "",
-      model: "",
-      baseUrl: "",
-      configured: false,
-      maskedKey: "",
-      showKey: false,
-    },
-    ollama: {
-      apiKey: "",
-      model: "",
-      baseUrl: "",
-      configured: false,
-      maskedKey: "",
-      showKey: false,
-    },
-  });
+  const [forms, setForms] = useState(makeInitialForms);
   const [activeProvider, setActiveProviderState] = useState<Provider | null>(
     null,
   );
@@ -98,7 +58,7 @@ export default function Settings() {
     const active = await getActiveProvider();
     setActiveProviderState(active);
 
-    for (const p of PROVIDERS) {
+    for (const p of PROVIDER_REGISTRY) {
       try {
         const config = await getProviderConfig(p.id);
         if (config) {
@@ -114,7 +74,6 @@ export default function Settings() {
           }));
         }
       } catch {
-        // Decryption failed — session key lost after browser restart
         setNeedsReconfig(true);
       }
     }
@@ -182,7 +141,6 @@ export default function Settings() {
         form.baseUrl || undefined,
       );
 
-      // If no active provider set, make this one active
       if (!activeProvider) {
         await setActiveProvider(provider);
         setActiveProviderState(provider);
@@ -210,10 +168,10 @@ export default function Settings() {
 
   async function handleDelete(provider: Provider) {
     await deleteProviderConfig(provider);
-    const info = PROVIDERS.find((p) => p.id === provider)!;
+    const meta = PROVIDER_REGISTRY.find((p) => p.id === provider)!;
     updateForm(provider, {
       apiKey: "",
-      model: info.defaultModel,
+      model: meta.defaultModel,
       baseUrl: "",
       configured: false,
       maskedKey: "",
@@ -222,9 +180,8 @@ export default function Settings() {
     setTestResult((prev) => ({ ...prev, [provider]: undefined! }));
 
     if (activeProvider === provider) {
-      // Switch to another configured provider, or clear
-      const other = PROVIDERS.find(
-        (p) => p.id !== provider && forms[p.id].configured,
+      const other = PROVIDER_REGISTRY.find(
+        (p) => p.id !== provider && forms[p.id]?.configured,
       );
       if (other) {
         await setActiveProvider(other.id);
@@ -249,8 +206,9 @@ export default function Settings() {
         </div>
       )}
 
-      {PROVIDERS.map((provider) => {
+      {PROVIDER_REGISTRY.map((provider) => {
         const form = forms[provider.id];
+        if (!form) return null;
         const result = testResult[provider.id];
         const isActive = activeProvider === provider.id;
         const isTesting = testing === provider.id;
@@ -337,7 +295,9 @@ export default function Settings() {
             <div className="mb-3">
               <label className="mb-1 block text-xs text-neutral-400">
                 Base URL{" "}
-                <span className="text-neutral-600">(optional)</span>
+                <span className="text-neutral-600">
+                  (default: {provider.defaultBaseUrl})
+                </span>
               </label>
               <input
                 type="text"
@@ -345,7 +305,7 @@ export default function Settings() {
                 onChange={(e) =>
                   updateForm(provider.id, { baseUrl: e.target.value })
                 }
-                placeholder="https://api.openrouter.ai"
+                placeholder={provider.defaultBaseUrl}
                 className="w-full rounded border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-100 placeholder-neutral-600 focus:border-blue-600 focus:outline-none"
               />
             </div>

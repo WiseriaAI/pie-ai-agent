@@ -2,17 +2,28 @@
 
 import { streamChat as anthropicStreamChat } from "./providers/anthropic";
 import { streamChat as openaiStreamChat } from "./providers/openai";
+import { getProviderMeta } from "./providers/registry";
 
 export type { StreamEvent } from "./types";
+export { PROVIDER_REGISTRY, getProviderMeta } from "./providers/registry";
+export type { ProviderMeta } from "./providers/registry";
 
-export type Provider = "anthropic" | "openai" | "google" | "ollama";
+export type Provider =
+  | "anthropic"
+  | "openai"
+  | "openrouter"
+  | "minimax"
+  | "zhipu"
+  | "bailian"
+  | "google"
+  | "ollama";
 
 export interface ModelConfig {
   provider: Provider;
   model: string;
   apiKey: string;
-  baseUrl?: string; // for Ollama or custom endpoints
-  maxTokens?: number; // override default max_tokens (e.g. 1 for connection test)
+  baseUrl?: string;
+  maxTokens?: number;
 }
 
 export interface ChatMessage {
@@ -30,24 +41,27 @@ export async function* streamChat(
   messages: ChatMessage[],
   signal?: AbortSignal,
 ): AsyncGenerator<import("./types").StreamEvent> {
-  switch (config.provider) {
+  const meta = getProviderMeta(config.provider);
+  if (!meta) {
+    yield {
+      type: "error",
+      error: `Unknown provider: ${config.provider}`,
+    };
+    return;
+  }
+
+  // Inject default base URL if not overridden
+  const resolvedConfig = {
+    ...config,
+    baseUrl: config.baseUrl || meta.defaultBaseUrl,
+  };
+
+  switch (meta.type) {
     case "anthropic":
-      yield* anthropicStreamChat(config, messages, signal);
+      yield* anthropicStreamChat(resolvedConfig, messages, signal);
       break;
-    case "openai":
-      yield* openaiStreamChat(config, messages, signal);
-      break;
-    case "google":
-      yield {
-        type: "error",
-        error: "Gemini provider will be supported in Phase 3",
-      };
-      break;
-    case "ollama":
-      yield {
-        type: "error",
-        error: "Ollama provider will be supported in Phase 3",
-      };
+    case "openai-compatible":
+      yield* openaiStreamChat(resolvedConfig, messages, signal);
       break;
   }
 }

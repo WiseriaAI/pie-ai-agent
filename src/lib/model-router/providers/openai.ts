@@ -7,11 +7,17 @@ export async function* streamChat(
   messages: ChatMessage[],
   signal?: AbortSignal,
 ): AsyncGenerator<StreamEvent> {
-  const baseUrl = config.baseUrl?.replace(/\/$/, "") || "https://api.openai.com";
+  const baseUrl = config.baseUrl!.replace(/\/$/, "");
+
+  // For providers whose baseUrl already includes a version path (e.g. /v4),
+  // append /chat/completions. For standard OpenAI-style, append /v1/chat/completions.
+  const endpoint = baseUrl.match(/\/v\d+$/)
+    ? `${baseUrl}/chat/completions`
+    : `${baseUrl}/v1/chat/completions`;
 
   let response: Response;
   try {
-    response = await fetch(`${baseUrl}/v1/chat/completions`, {
+    response = await fetch(endpoint, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -30,25 +36,26 @@ export async function* streamChat(
     if (signal?.aborted) return;
     yield {
       type: "error",
-      error: `Network error: ${e instanceof Error ? e.message : "Failed to connect to OpenAI API"}`,
+      error: `Network error: ${e instanceof Error ? e.message : `Failed to connect to ${config.provider} API`}`,
     };
     return;
   }
 
   if (!response.ok) {
     const text = await response.text().catch(() => "");
+    const name = config.provider;
     if (response.status === 401) {
-      yield { type: "error", error: "Invalid OpenAI API key" };
+      yield { type: "error", error: `Invalid ${name} API key` };
     } else if (response.status === 429) {
       const retryAfter = response.headers.get("retry-after");
       yield {
         type: "error",
-        error: `OpenAI rate limit exceeded${retryAfter ? `. Retry after ${retryAfter}s` : ""}`,
+        error: `${name} rate limit exceeded${retryAfter ? `. Retry after ${retryAfter}s` : ""}`,
       };
     } else {
       yield {
         type: "error",
-        error: `OpenAI API error (${response.status}): ${text}`,
+        error: `${name} API error (${response.status}): ${text}`,
       };
     }
     return;
