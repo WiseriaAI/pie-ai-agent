@@ -5,7 +5,7 @@
   "description": "BYOK browser AI — bring your own API key for page understanding, agent automation, and smart tab management.",
   "permissions": ["activeTab", "sidePanel", "storage", "tabs", "scripting"],
   "host_permissions": [
-    "http://localhost/*",
+    "<all_urls>",
     "https://api.anthropic.com/*",
     "https://api.openai.com/*",
     "https://openrouter.ai/*",
