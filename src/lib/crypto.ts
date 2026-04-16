@@ -7,7 +7,7 @@ export async function getOrCreateEncryptionKey(): Promise<CryptoKey> {
 
   keyPromise = (async () => {
     try {
-      const result = await chrome.storage.session.get(SESSION_KEY_NAME);
+      const result = await chrome.storage.local.get(SESSION_KEY_NAME);
       if (result[SESSION_KEY_NAME]) {
         const rawKey = new Uint8Array(result[SESSION_KEY_NAME]);
         return crypto.subtle.importKey("raw", rawKey, "AES-GCM", true, [
@@ -26,7 +26,7 @@ export async function getOrCreateEncryptionKey(): Promise<CryptoKey> {
       );
 
       const exported = await crypto.subtle.exportKey("raw", key);
-      await chrome.storage.session.set({
+      await chrome.storage.local.set({
         [SESSION_KEY_NAME]: Array.from(new Uint8Array(exported)),
       });
 

@@ -5,11 +5,6 @@ import type { ChatMessage } from "@/lib/model-router";
 import { streamChat } from "@/lib/model-router";
 import { getActiveProvider, getProviderConfig } from "@/lib/storage";
 
-// Allow Side Panel to access session storage (for encryption key)
-chrome.storage.session.setAccessLevel({
-  accessLevel: "TRUSTED_AND_UNTRUSTED_CONTEXTS",
-});
-
 // Open side panel when extension icon is clicked
 chrome.action.onClicked.addListener(async (tab) => {
   if (tab.id) {
