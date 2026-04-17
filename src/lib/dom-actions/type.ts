@@ -285,6 +285,20 @@ export async function typeByIndex(
       "";
   const retained = actualValue.includes(text);
 
+  // IME-buffer heuristic: rich-text editors like Feishu Docs, Google Docs use
+  // hidden <textarea>/<input> elements as keyboard capture buffers. We can
+  // successfully write to their `.value` (so `retained` is true), but the
+  // editor never consumes them into the visible document. Signal: element is
+  // inside a detected editor AND has trivially small bounding box or low opacity.
+  const rect = el.getBoundingClientRect();
+  const style = window.getComputedStyle(el);
+  const looksLikeIMEBuffer =
+    isInputOrTextarea &&
+    editorType !== null &&
+    (rect.width < 24 ||
+      rect.height < 24 ||
+      parseFloat(style.opacity) < 0.2);
+
   const diagnostic = {
     editor: editorType,
     strategies,
@@ -292,8 +306,18 @@ export async function typeByIndex(
     actualSample:
       actualValue.slice(0, 120) + (actualValue.length > 120 ? "..." : ""),
     retained,
+    looksLikeIMEBuffer,
+    elementSize: `${Math.round(rect.width)}x${Math.round(rect.height)}`,
+    opacity: style.opacity,
   };
   console.log("[Pie agent] type post-check:", diagnostic);
+
+  if (looksLikeIMEBuffer) {
+    return {
+      success: false,
+      error: `Element [${index}] appears to be a hidden IME / keyboard capture buffer inside ${editorType} (size: ${diagnostic.elementSize}, opacity: ${diagnostic.opacity}). Text was written to its value property but will not appear in the visible document — this editor uses canvas or custom rendering and only accepts real keyboard events. Suggestion: fail the task and explain that programmatic typing into this editor is not supported via DOM.`,
+    };
+  }
 
   if (!retained) {
     const editorHint = editorType ? ` (editor: ${editorType})` : "";

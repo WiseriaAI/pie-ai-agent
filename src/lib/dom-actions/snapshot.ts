@@ -47,6 +47,16 @@ export function snapshotInteractiveElements(): PageSnapshot {
     if (rect.width <= 0 || rect.height <= 0) return false;
     const style = window.getComputedStyle(el);
     if (style.display === "none" || style.visibility === "hidden") return false;
+    // Filter fully-transparent elements — rich-text editors like Feishu Docs
+    // and Google Docs use opacity:0 textareas as hidden IME buffers; they're
+    // technically in the DOM tree but not user-visible typing targets.
+    if (parseFloat(style.opacity) === 0) return false;
+    // Tiny inputs/textareas (< 8px on either dimension) are almost always
+    // hidden input capture buffers rather than real user inputs.
+    const tag = el.tagName.toLowerCase();
+    if ((tag === "input" || tag === "textarea") && (rect.width < 8 || rect.height < 8)) {
+      return false;
+    }
     // offsetParent is null for position:fixed elements too — skip the check for those
     if (style.position !== "fixed" && (el as HTMLElement).offsetParent === null) return false;
     return true;
