@@ -1,4 +1,4 @@
-import { MarkdownContent } from "./Chat";
+import MarkdownContent from "./Markdown";
 
 interface AgentSummaryProps {
   success: boolean;
