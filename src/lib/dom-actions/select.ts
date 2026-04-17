@@ -8,7 +8,7 @@ import type { ActionResult } from "./types";
  * @param value - The option value to select
  */
 export function selectByIndex(index: number, value: string): ActionResult {
-  const el = document.querySelector(`[data-ai-agent-idx="${index}"]`);
+  const el = document.querySelector(`[data-chrome-ai-agent-idx="${index}"]`);
 
   if (!el) {
     return {

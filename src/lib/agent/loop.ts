@@ -69,12 +69,31 @@ function sendAgentDone(
 }
 
 function isRestrictedUrl(url: string): boolean {
+  // Reject schemes whose origin collapses to the string "null" or that the agent
+  // has no sensible way to pin: file://, data:, javascript:, blob:. Without these
+  // checks, any subsequent navigation within one of these schemes would pass the
+  // per-round origin comparison (`"null" === "null"`), defeating the isolation.
   return (
     url.startsWith("chrome://") ||
     url.startsWith("chrome-extension://") ||
     url.startsWith("about:") ||
-    url.startsWith("edge://")
+    url.startsWith("edge://") ||
+    url.startsWith("file://") ||
+    url.startsWith("data:") ||
+    url.startsWith("javascript:") ||
+    url.startsWith("blob:")
   );
+}
+
+function safeParseOrigin(url: string): string | null {
+  try {
+    const origin = new URL(url).origin;
+    // Opaque origins parse to the literal string "null"; treat them as unresolvable.
+    if (!origin || origin === "null") return null;
+    return origin;
+  } catch {
+    return null;
+  }
 }
 
 // ── Main loop ─────────────────────────────────────────────────────────────────
@@ -97,8 +116,18 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       });
       return;
     }
+    const origin = safeParseOrigin(tab.url);
+    if (!origin) {
+      sendAgentDone(port, {
+        type: "agent-done-task",
+        success: false,
+        summary: "Cannot run agent on this page (unresolvable origin)",
+        stepCount: 0,
+      });
+      return;
+    }
     pinnedTabId = tab.id;
-    pinnedOrigin = new URL(tab.url).origin;
+    pinnedOrigin = origin;
   } catch {
     sendAgentDone(port, {
       type: "agent-done-task",
@@ -136,8 +165,8 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         });
         return;
       }
-      const currentOrigin = new URL(currentTab.url).origin;
-      if (currentOrigin !== pinnedOrigin) {
+      const currentOrigin = safeParseOrigin(currentTab.url);
+      if (!currentOrigin || currentOrigin !== pinnedOrigin) {
         sendAgentDone(port, {
           type: "agent-done-task",
           success: false,

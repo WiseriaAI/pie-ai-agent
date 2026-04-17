@@ -200,6 +200,17 @@ export async function* streamChat(
       if (signal?.aborted) return;
 
       if (sse.data === "[DONE]") {
+        // Some providers (e.g. ZhiPu, Bailian) send [DONE] without a preceding
+        // finish_reason: "tool_calls" chunk. Flush any pending tool calls so
+        // the consumer sees tool-call-end events and the correct stopReason.
+        if (pendingToolCalls.size > 0) {
+          for (const [index] of pendingToolCalls) {
+            yield { type: "tool-call-end", index };
+          }
+          pendingToolCalls.clear();
+          yield { type: "done", stopReason: "tool_calls", usage };
+          return;
+        }
         yield { type: "done", stopReason: "end", usage };
         return;
       }
@@ -232,11 +243,18 @@ export async function* streamChat(
             const existing = pendingToolCalls.get(index);
 
             if (!existing) {
-              // First chunk for this index — has id + function.name
+              // First chunk for this index — has id + function.name.
+              // Some providers (MiniMax, certain OpenRouter routes, zero-arg tools)
+              // also include function.arguments in the same first chunk. Read and
+              // accumulate it here so single-chunk tool calls don't lose their args.
               const id: string = toolCallDelta.id ?? "";
               const name: string = toolCallDelta.function?.name ?? "";
-              pendingToolCalls.set(index, { id, name, argsAccum: "" });
+              const initialArgs: string = toolCallDelta.function?.arguments ?? "";
+              pendingToolCalls.set(index, { id, name, argsAccum: initialArgs });
               yield { type: "tool-call-start", id, index, name };
+              if (initialArgs) {
+                yield { type: "tool-call-delta", index, argsDelta: initialArgs };
+              }
             } else {
               // Subsequent chunks — accumulate function.arguments
               const argFragment: string = toolCallDelta.function?.arguments ?? "";

@@ -92,7 +92,6 @@ export function resolveSkillToTools(skills: SkillDefinition[]): Tool[] {
     description: skill.description,
     parameters: skill.toolSchema.parameters,
     // low: handler produces only text, actual side-effecting tools are separate
-    riskHint: "low",
     handler: async (args): Promise<ActionResult> => {
       const safeArgs = (args && typeof args === "object") ? (args as Record<string, unknown>) : {};
       const observation = renderTemplate(skill.promptTemplate, safeArgs);

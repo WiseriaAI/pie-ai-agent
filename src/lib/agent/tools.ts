@@ -40,7 +40,6 @@ export const BUILT_IN_TOOLS: Tool[] = [
       required: ["elementIndex"],
       additionalProperties: false,
     },
-    riskHint: "context",
     handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
       const a = args as { elementIndex: number };
       return execInTab(ctx.tabId, clickByIndex, [a.elementIndex]);
@@ -70,7 +69,6 @@ export const BUILT_IN_TOOLS: Tool[] = [
       required: ["elementIndex", "text"],
       additionalProperties: false,
     },
-    riskHint: "context",
     handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
       const a = args as { elementIndex: number; text: string; clear?: boolean };
       return execInTab(ctx.tabId, typeByIndex, [a.elementIndex, a.text, a.clear ?? false]);
@@ -97,7 +95,6 @@ export const BUILT_IN_TOOLS: Tool[] = [
       required: ["direction"],
       additionalProperties: false,
     },
-    riskHint: "low",
     handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
       const a = args as { direction: "up" | "down"; amount?: number };
       return execInTab(ctx.tabId, scroll, [a.direction, a.amount]);
@@ -123,7 +120,6 @@ export const BUILT_IN_TOOLS: Tool[] = [
       required: ["elementIndex", "value"],
       additionalProperties: false,
     },
-    riskHint: "context",
     handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
       const a = args as { elementIndex: number; value: string };
       return execInTab(ctx.tabId, selectByIndex, [a.elementIndex, a.value]);
@@ -144,7 +140,6 @@ export const BUILT_IN_TOOLS: Tool[] = [
       required: ["seconds"],
       additionalProperties: false,
     },
-    riskHint: "low",
     handler: async (args: unknown, _ctx: ToolHandlerContext): Promise<ActionResult> => {
       const a = args as { seconds: number };
       return wait(a.seconds);
@@ -166,7 +161,6 @@ export const BUILT_IN_TOOLS: Tool[] = [
       required: ["result"],
       additionalProperties: false,
     },
-    riskHint: "low",
     handler: async (args: unknown, _ctx: ToolHandlerContext): Promise<ActionResult> => {
       const a = args as { result: string };
       return { success: true, observation: a.result };
@@ -188,7 +182,6 @@ export const BUILT_IN_TOOLS: Tool[] = [
       required: ["reason"],
       additionalProperties: false,
     },
-    riskHint: "low",
     handler: async (args: unknown, _ctx: ToolHandlerContext): Promise<ActionResult> => {
       const a = args as { reason: string };
       return { success: false, error: a.reason };

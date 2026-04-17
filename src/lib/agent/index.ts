@@ -3,9 +3,6 @@ export type {
   RiskAssessment,
   ToolHandlerContext,
   Tool,
-  ToolCallRecord,
-  AgentStepStatus,
-  AgentStep,
 } from "./types";
 
 export { isSensitiveInputTarget, classifyRisk } from "./risk";

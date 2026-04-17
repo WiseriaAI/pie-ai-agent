@@ -16,22 +16,5 @@ export interface Tool {
   name: string;
   description: string;
   parameters: Record<string, unknown>; // JSON Schema object
-  riskHint: "low" | "high" | "context";
   handler: (args: unknown, ctx: ToolHandlerContext) => Promise<ActionResult>;
-}
-
-export interface ToolCallRecord {
-  id: string;
-  name: string;
-  args: unknown;
-  result?: ActionResult;
-  riskAssessment: RiskAssessment;
-}
-
-export type AgentStepStatus = "pending" | "ok" | "error" | "rejected";
-
-export interface AgentStep {
-  stepIndex: number;
-  toolCall: ToolCallRecord;
-  status: AgentStepStatus;
 }

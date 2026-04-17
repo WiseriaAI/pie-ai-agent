@@ -85,7 +85,7 @@ export function typeByIndex(
   }
 
   // ── Locate element ──
-  const el = document.querySelector(`[data-ai-agent-idx="${index}"]`);
+  const el = document.querySelector(`[data-chrome-ai-agent-idx="${index}"]`);
   if (!el) {
     return {
       success: false,

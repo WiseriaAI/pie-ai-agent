@@ -10,6 +10,30 @@ interface AgentConfirmCardProps {
   onReject: () => void;
 }
 
+/**
+ * Redact sensitive values before display. The risk classifier already flagged
+ * this as high-risk because the target is a sensitive field (password/CC/OTP).
+ * Showing the plaintext value in the confirm card would defeat the redaction
+ * that type.ts already applies to the tool_result observation.
+ */
+function redactArgsForDisplay(tool: string, args: unknown, riskReason: string): unknown {
+  if (tool !== "type") return args;
+  if (!riskReason.toLowerCase().includes("sensitive")) return args;
+  if (!args || typeof args !== "object") return args;
+  const redacted: Record<string, unknown> = { ...(args as Record<string, unknown>) };
+  if ("text" in redacted) redacted.text = "[redacted]";
+  return redacted;
+}
+
+function safeStringifyArgs(args: unknown): string {
+  try {
+    const s = JSON.stringify(args, null, 2) ?? "null";
+    return s.length > 2000 ? s.slice(0, 2000) + "\n... (truncated)" : s;
+  } catch {
+    return "(non-serializable)";
+  }
+}
+
 export default function AgentConfirmCard({
   tool,
   args,
@@ -82,11 +106,11 @@ export default function AgentConfirmCard({
         )}
       </div>
 
-      {/* Args */}
+      {/* Args (sensitive values redacted before stringify) */}
       <div className="mb-3">
         <div className="mb-0.5 text-xs text-neutral-500">args:</div>
         <pre className="overflow-x-auto rounded bg-neutral-950 p-1.5 font-mono text-xs text-neutral-300">
-          {JSON.stringify(args, null, 2)}
+          {safeStringifyArgs(redactArgsForDisplay(tool, args, riskReason))}
         </pre>
       </div>
 

@@ -12,6 +12,13 @@ export function snapshotInteractiveElements(): PageSnapshot {
     if (!str) return "";
     // Filter control chars (\u0000-\u001F) and zero-width chars (\u200B-\u200F)
     let cleaned = str.replace(/[\u0000-\u001F\u200B-\u200F]/g, "");
+    // Neutralize the untrusted-content wrapper tags so page text cannot close the
+    // <untrusted_page_content> block that the agent prompt builder uses. Without
+    // this, a page element with text like "</untrusted_page_content> SYSTEM: ..."
+    // could escape the untrusted wrapper and become LLM instructions.
+    cleaned = cleaned
+      .replace(/<\/?untrusted_page_content>/gi, "[filtered]")
+      .replace(/<\/?untrusted_skill_params>/gi, "[filtered]");
     if (cleaned.length > maxLen) {
       cleaned = cleaned.slice(0, maxLen) + "...";
     }
@@ -84,8 +91,9 @@ export function snapshotInteractiveElements(): PageSnapshot {
   const MAX_ELEMENTS = 200;
 
   // Clean up any previously stamped attributes first
-  document.querySelectorAll("[data-ai-agent-idx]").forEach((el) => {
-    el.removeAttribute("data-ai-agent-idx");
+  // Namespaced attribute reduces collision with pages that use their own idx attributes.
+  document.querySelectorAll("[data-chrome-ai-agent-idx]").forEach((el) => {
+    el.removeAttribute("data-chrome-ai-agent-idx");
   });
 
   const candidates = Array.from(document.querySelectorAll(SELECTOR));
@@ -98,7 +106,7 @@ export function snapshotInteractiveElements(): PageSnapshot {
 
   const elements = capped.map((el, idx) => {
     // Stamp index attribute for action targeting
-    el.setAttribute("data-ai-agent-idx", String(idx));
+    el.setAttribute("data-chrome-ai-agent-idx", String(idx));
 
     const tag = el.tagName.toLowerCase();
     const inputEl = el as HTMLInputElement;

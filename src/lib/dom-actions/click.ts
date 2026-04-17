@@ -2,12 +2,12 @@ import type { ActionResult } from "./types";
 
 /**
  * Self-contained function injected via chrome.scripting.executeScript.
- * Locates an element by its data-ai-agent-idx attribute and clicks it.
+ * Locates an element by its data-chrome-ai-agent-idx attribute and clicks it.
  *
  * @param index - The index assigned by snapshotInteractiveElements
  */
 export function clickByIndex(index: number): ActionResult {
-  const el = document.querySelector(`[data-ai-agent-idx="${index}"]`);
+  const el = document.querySelector(`[data-chrome-ai-agent-idx="${index}"]`);
 
   if (!el) {
     return {
