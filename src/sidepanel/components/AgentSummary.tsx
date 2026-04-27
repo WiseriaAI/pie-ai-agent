@@ -1,3 +1,5 @@
+import MarkdownContent from "./Markdown";
+
 interface AgentSummaryProps {
   success: boolean;
   summary: string;
@@ -25,8 +27,10 @@ export default function AgentSummary({
         {success ? "Task completed" : "Task failed"}
       </div>
 
-      {/* Summary text */}
-      <div className="mb-2 text-neutral-200">{summary}</div>
+      {/* Summary — rendered as markdown (LLM may produce structured output) */}
+      <div className="mb-2 text-neutral-200">
+        <MarkdownContent content={summary} />
+      </div>
 
       {/* Step count footer */}
       <div className="text-xs text-neutral-500">

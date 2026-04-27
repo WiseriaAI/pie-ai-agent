@@ -8,6 +8,10 @@ import {
   getActiveProvider,
   setActiveProvider,
 } from "@/lib/storage";
+import {
+  isKeyboardSimulationEnabled,
+  setKeyboardSimulationEnabled,
+} from "@/lib/keyboard-simulation";
 import SkillsList from "./SkillsList";
 
 interface ProviderFormState {
@@ -54,10 +58,17 @@ export default function Settings({ onRunSkill }: SettingsProps) {
   >({});
   const [saving, setSaving] = useState<Provider | null>(null);
   const [needsReconfig, setNeedsReconfig] = useState(false);
+  const [keyboardSimEnabled, setKeyboardSimEnabled] = useState(false);
 
   useEffect(() => {
     loadConfigs();
+    isKeyboardSimulationEnabled().then(setKeyboardSimEnabled);
   }, []);
+
+  async function handleKeyboardSimToggle(next: boolean) {
+    setKeyboardSimEnabled(next);
+    await setKeyboardSimulationEnabled(next);
+  }
 
   async function loadConfigs() {
     const active = await getActiveProvider();
@@ -361,6 +372,60 @@ export default function Settings({ onRunSkill }: SettingsProps) {
           </div>
         );
       })}
+
+      {/* Keyboard simulation section (Phase 2.5) */}
+      <h2 className="mt-2 text-sm font-semibold text-neutral-300">
+        Keyboard simulation (experimental)
+      </h2>
+      <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
+        <div className="flex items-center justify-between">
+          <div className="pr-4">
+            <p className="text-sm text-neutral-200">
+              Enable CDP keyboard input
+            </p>
+            <p className="mt-1 text-xs text-neutral-500">
+              Lets the Agent type into canvas-rendered editors (Feishu Docs,
+              Google Docs, Notion) via Chrome DevTools Protocol. Required only
+              for those editors — regular sites work without this.
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={keyboardSimEnabled}
+            onClick={() => handleKeyboardSimToggle(!keyboardSimEnabled)}
+            className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors ${
+              keyboardSimEnabled ? "bg-blue-600" : "bg-neutral-700"
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                keyboardSimEnabled ? "translate-x-6" : "translate-x-1"
+              }`}
+            />
+          </button>
+        </div>
+        {keyboardSimEnabled && (
+          <div className="mt-3 rounded border border-amber-700 bg-amber-950/50 px-3 py-2 text-xs text-amber-300">
+            <p className="font-medium">Heads up — debugger access is active</p>
+            <ul className="mt-1 list-disc space-y-1 pl-4 text-amber-300/90">
+              <li>
+                Chrome shows a yellow debug bar on the target tab while the
+                Agent uses keyboard tools. Each call requires your approval.
+              </li>
+              <li>
+                If your Chrome window is minimized or the tab is on another
+                display, you may not see the bar — the extension is still
+                controlling that tab during the task.
+              </li>
+              <li>
+                Click the yellow bar's "Cancel" anytime to revoke debugger
+                access immediately.
+              </li>
+            </ul>
+          </div>
+        )}
+      </div>
 
       {/* Skills section */}
       <h2 className="mt-2 text-sm font-semibold text-neutral-300">Skills</h2>

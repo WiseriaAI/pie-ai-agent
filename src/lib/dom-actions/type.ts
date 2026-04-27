@@ -4,39 +4,44 @@ import type { ActionResult } from "./types";
  * Self-contained function injected via chrome.scripting.executeScript.
  * Types text into an input, textarea, or contenteditable element.
  *
- * Sensitivity check is fully inlined (cannot import from Unit 3 risk.ts
- * since this function must be self-contained).
+ * Multi-strategy approach:
+ *  - input/textarea: uses React-compatible native value setter so controlled
+ *    components actually update their state
+ *  - contenteditable: tries document.execCommand('insertText') first (most
+ *    compatible with rich-text editors like Slate/Quill/ProseMirror), then
+ *    falls back to an InputEvent with inputType: "insertText"
  *
- * NOTE: Plain el.value = text does not trigger React's synthetic change event
- * on React-controlled inputs. A TODO is left for future improvement.
+ * Async post-check (80ms) verifies the text was actually retained, catching
+ * rich-text editors that accept the event but reconcile their internal model
+ * back over our DOM write (canvas-based editors like new Feishu Docs / Google
+ * Docs fall in this category and will correctly fail the check).
+ *
+ * All helper functions are nested for executeScript self-containment.
+ * Diagnostic logs are emitted to the target page's console for debugging.
  *
  * @param index - The index assigned by snapshotInteractiveElements
  * @param text  - Text to type
  * @param clear - If true, clear existing content before typing
  */
-export function typeByIndex(
+export async function typeByIndex(
   index: number,
   text: string,
   clear: boolean,
-): ActionResult {
+): Promise<ActionResult> {
   // ── Inline sensitivity detection ──
   function isSensitive(el: Element): boolean {
     const inputEl = el as HTMLInputElement;
 
-    // type="password"
     if (inputEl.type === "password") return true;
 
-    // autocomplete matches cc-* patterns
     const autocomplete = inputEl.autocomplete || "";
     if (/cc-(number|cvc|exp|csc)/i.test(autocomplete)) return true;
 
-    // name or id matches sensitive patterns
     const sensitivePattern =
       /password|密码|cvv|cvc|otp|验证码|card.*number|card.*code/i;
     if (inputEl.name && sensitivePattern.test(inputEl.name)) return true;
     if (inputEl.id && sensitivePattern.test(inputEl.id)) return true;
 
-    // Check nearest <label> text
     let label: HTMLLabelElement | null = null;
     if (inputEl.id) {
       label = document.querySelector<HTMLLabelElement>(
@@ -44,7 +49,6 @@ export function typeByIndex(
       );
     }
     if (!label) {
-      // Walk up to find wrapping label
       let node: Element | null = el.parentElement;
       while (node) {
         if (node.tagName?.toLowerCase() === "label") {
@@ -61,12 +65,10 @@ export function typeByIndex(
     return false;
   }
 
-  // ── Derive field name for redacted observation ──
   function getFieldName(el: Element): string {
     const inputEl = el as HTMLInputElement;
     if (inputEl.name) return inputEl.name;
     if (inputEl.id) return inputEl.id;
-    // Check label
     if (inputEl.id) {
       const label = document.querySelector<HTMLLabelElement>(
         `label[for="${inputEl.id}"]`,
@@ -84,7 +86,52 @@ export function typeByIndex(
     return "field";
   }
 
-  // ── Locate element ──
+  // ── Editor fingerprint for diagnostic ──
+  function detectEditor(el: Element): string | null {
+    const markers: Array<[string, string]> = [
+      ['[data-slate-editor="true"]', "Slate"],
+      [".ProseMirror", "ProseMirror"],
+      [".ql-editor", "Quill"],
+      ['[data-lexical-editor="true"]', "Lexical"],
+      [".monaco-editor", "Monaco"],
+      [".cm-editor, .CodeMirror", "CodeMirror"],
+      [
+        '.suite-editor-container, .docx-root, [class*="lark-"], [class*="docx-"]',
+        "Feishu Docs",
+      ],
+      [".notion-page-content", "Notion"],
+      [".kix-documentview-content", "Google Docs"],
+    ];
+    for (const [selector, name] of markers) {
+      try {
+        if (el.closest(selector)) return name;
+      } catch {
+        // skip invalid selector
+      }
+    }
+    return null;
+  }
+
+  // ── Native value setter (React-compatible) ──
+  function setNativeValue(
+    element: HTMLInputElement | HTMLTextAreaElement,
+    value: string,
+  ): void {
+    const proto =
+      element.tagName.toLowerCase() === "textarea"
+        ? HTMLTextAreaElement.prototype
+        : HTMLInputElement.prototype;
+    const descriptor = Object.getOwnPropertyDescriptor(proto, "value");
+    const setter = descriptor?.set;
+    if (setter) {
+      setter.call(element, value);
+    } else {
+      // Fallback to direct assignment (may not fire React's onChange)
+      element.value = value;
+    }
+  }
+
+  // ── Locate target ──
   const el = document.querySelector(`[data-chrome-ai-agent-idx="${index}"]`);
   if (!el) {
     return {
@@ -108,7 +155,6 @@ export function typeByIndex(
 
   const inputEl = el as HTMLInputElement;
 
-  // Check disabled state
   if (inputEl.disabled) {
     return {
       success: false,
@@ -116,33 +162,185 @@ export function typeByIndex(
     };
   }
 
-  // Check sensitivity before typing (we don't need the value for the check)
   const sensitive = isSensitive(el);
+  const editorType = detectEditor(el);
+  const strategies: string[] = [];
 
-  if (isInputOrTextarea) {
-    if (clear) inputEl.value = "";
-    inputEl.value += text;
-    // TODO: React-controlled inputs won't pick up this assignment via the native setter.
-    // Future improvement: use Object.getOwnPropertyDescriptor on prototype to call React's setter.
-    el.dispatchEvent(new Event("input", { bubbles: true }));
-    el.dispatchEvent(new Event("change", { bubbles: true }));
-  } else {
-    // contenteditable
-    if (clear) (el as HTMLElement).textContent = "";
-    (el as HTMLElement).textContent += text;
-    el.dispatchEvent(new Event("input", { bubbles: true }));
+  console.log("[Pie agent] type start:", {
+    index,
+    tag,
+    isInputOrTextarea,
+    isContentEditable,
+    editor: editorType,
+    textLength: text.length,
+    clear,
+    sensitive,
+  });
+
+  // ── Focus the element (editors often gate on focus) ──
+  try {
+    (el as HTMLElement).focus();
+  } catch (e) {
+    console.warn("[Pie agent] focus threw:", e);
   }
 
-  if (sensitive) {
-    const fieldName = getFieldName(el);
+  // ── Execute typing strategy ──
+  if (isInputOrTextarea) {
+    strategies.push("native-value-setter");
+    const newValue = (clear ? "" : inputEl.value || "") + text;
+    setNativeValue(inputEl as HTMLInputElement | HTMLTextAreaElement, newValue);
+    inputEl.dispatchEvent(
+      new InputEvent("input", {
+        inputType: "insertText",
+        data: text,
+        bubbles: true,
+      }),
+    );
+    inputEl.dispatchEvent(new Event("change", { bubbles: true }));
+  } else {
+    // contenteditable — setup selection first
+    const selection = window.getSelection();
+
+    if (clear) {
+      try {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        selection?.removeAllRanges();
+        selection?.addRange(range);
+        strategies.push("execCommand-delete");
+        document.execCommand("delete", false);
+      } catch (e) {
+        console.warn("[Pie agent] clear via execCommand failed:", e);
+      }
+    } else {
+      // Move caret to end so insertions append
+      try {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        range.collapse(false);
+        selection?.removeAllRanges();
+        selection?.addRange(range);
+      } catch (e) {
+        console.warn("[Pie agent] collapse caret failed:", e);
+      }
+    }
+
+    // Strategy 1: execCommand('insertText') — best for most rich editors
+    let inserted = false;
+    try {
+      strategies.push("execCommand-insertText");
+      inserted = document.execCommand("insertText", false, text);
+      console.log(
+        "[Pie agent] execCommand insertText returned:",
+        inserted,
+      );
+    } catch (e) {
+      console.warn("[Pie agent] execCommand insertText threw:", e);
+    }
+
+    // Strategy 2: InputEvent + textContent fallback
+    if (!inserted) {
+      strategies.push("beforeinput-event");
+      try {
+        const beforeEvent = new InputEvent("beforeinput", {
+          inputType: "insertText",
+          data: text,
+          bubbles: true,
+          cancelable: true,
+        });
+        const defaultAllowed = el.dispatchEvent(beforeEvent);
+        console.log(
+          "[Pie agent] beforeinput defaultAllowed:",
+          defaultAllowed,
+        );
+
+        if (defaultAllowed) {
+          // Editor didn't preventDefault — we need to do the insertion ourselves
+          strategies.push("textContent-fallback");
+          if (clear) (el as HTMLElement).textContent = "";
+          (el as HTMLElement).textContent =
+            ((el as HTMLElement).textContent || "") + text;
+        }
+
+        el.dispatchEvent(
+          new InputEvent("input", {
+            inputType: "insertText",
+            data: text,
+            bubbles: true,
+          }),
+        );
+      } catch (e) {
+        console.warn("[Pie agent] InputEvent strategy threw:", e);
+      }
+    }
+  }
+
+  // ── Async post-check: let the editor reconcile, then verify ──
+  await new Promise((resolve) => setTimeout(resolve, 80));
+
+  const actualValue = isInputOrTextarea
+    ? inputEl.value || ""
+    : (el as HTMLElement).innerText ||
+      (el as HTMLElement).textContent ||
+      "";
+  const retained = actualValue.includes(text);
+
+  // IME-buffer heuristic: rich-text editors like Feishu Docs, Google Docs use
+  // hidden <textarea>/<input> elements as keyboard capture buffers. We can
+  // successfully write to their `.value` (so `retained` is true), but the
+  // editor never consumes them into the visible document. Signal: element is
+  // inside a detected editor AND has trivially small bounding box or low opacity.
+  const rect = el.getBoundingClientRect();
+  const style = window.getComputedStyle(el);
+  const looksLikeIMEBuffer =
+    isInputOrTextarea &&
+    editorType !== null &&
+    (rect.width < 24 ||
+      rect.height < 24 ||
+      parseFloat(style.opacity) < 0.2);
+
+  const diagnostic = {
+    editor: editorType,
+    strategies,
+    expected: text.slice(0, 60) + (text.length > 60 ? "..." : ""),
+    actualSample:
+      actualValue.slice(0, 120) + (actualValue.length > 120 ? "..." : ""),
+    retained,
+    looksLikeIMEBuffer,
+    elementSize: `${Math.round(rect.width)}x${Math.round(rect.height)}`,
+    opacity: style.opacity,
+  };
+  console.log("[Pie agent] type post-check:", diagnostic);
+
+  if (looksLikeIMEBuffer) {
     return {
-      success: true,
-      observation: `Typed into ${fieldName} (value redacted)`,
+      success: false,
+      error: `Element [${index}] appears to be a hidden IME / keyboard capture buffer inside ${editorType} (size: ${diagnostic.elementSize}, opacity: ${diagnostic.opacity}). Text was written to its value property but will not appear in the visible document — this editor uses canvas or custom rendering and only accepts real keyboard events. Suggestion: fail the task and explain that programmatic typing into this editor is not supported via DOM.`,
     };
   }
 
+  if (!retained) {
+    const editorHint = editorType ? ` (editor: ${editorType})` : "";
+    const canvasHint =
+      editorType === "Feishu Docs" || editorType === "Google Docs"
+        ? " This editor likely renders text on a canvas and cannot accept programmatic DOM input — only real keyboard events would work."
+        : " Rich-text editors often reject programmatic insertion; consider asking the user to type manually, or use a different approach.";
+    return {
+      success: false,
+      error: `Typed into element [${index}] but the text was not retained${editorHint}. Strategies tried: ${strategies.join(", ")}.${canvasHint}`,
+    };
+  }
+
+  if (sensitive) {
+    return {
+      success: true,
+      observation: `Typed into ${getFieldName(el)} (value redacted)`,
+    };
+  }
+
+  const editorSuffix = editorType ? ` (${editorType})` : "";
   return {
     success: true,
-    observation: `Typed "${text.slice(0, 80)}${text.length > 80 ? "..." : ""}" into element [${index}]`,
+    observation: `Typed "${text.slice(0, 80)}${text.length > 80 ? "..." : ""}" into element [${index}]${editorSuffix}`,
   };
 }

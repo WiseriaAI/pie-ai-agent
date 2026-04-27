@@ -63,4 +63,5 @@ All OpenAI-compatible providers share one streaming implementation via registry.
 - **Phase 1 (基础对话) — COMPLETED**: Chat with page context, streaming, API key management, 6 providers
 - **Phase 0 (元素定位验证) — COMPLETED**: DOM traversal validated, region filtering works, `<all_urls>` permission needed
 - **Phase 2 (Agent 能力) — COMPLETED**: ReAct Agent Loop with tool calling, DOM operations, risk-based confirmation, basic Skill framework
+- **Phase 2.5 (CDP 键盘模拟) — PLANNED**: 通过 `chrome.debugger` + `Input.insertText` 支持 canvas 编辑器（飞书 Docs / Google Docs / Notion）。见 `docs/brainstorms/2026-04-17-phase2.5-cdp-keyboard-simulation-requirements.md`
 - **Phase 3 (标签管理) — NOT STARTED**: Tab analysis, grouping, cleanup

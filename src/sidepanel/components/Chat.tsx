@@ -5,6 +5,7 @@ import { getActiveProvider, getProviderConfig } from "@/lib/storage";
 import AgentStepBubble from "./AgentStepBubble";
 import AgentConfirmCard from "./AgentConfirmCard";
 import AgentSummary from "./AgentSummary";
+import MarkdownContent from "./Markdown";
 
 type DisplayMessage =
   | { role: "user"; content: string }
@@ -132,17 +133,22 @@ export default function Chat({ onGoToSettings, prefillInput, onPrefillConsumed }
         setStreamingText(accumulated);
       } else if (message.type === "chat-done") {
         finished = true;
-        setMessages((prev) => [
-          ...prev,
-          { role: "assistant", content: accumulated },
-        ]);
+        // Only push assistant message if there's actual (non-whitespace) content.
+        // LLMs sometimes emit a stray "\n" or " " before a tool_call; without
+        // this guard, chat-done (or agent-step flush below) creates an empty bubble.
+        if (accumulated.trim()) {
+          setMessages((prev) => [
+            ...prev,
+            { role: "assistant", content: accumulated },
+          ]);
+        }
         setStreamingText("");
         setStreaming(false);
         portRef.current = null;
       } else if (message.type === "chat-error") {
         finished = true;
         setError(message.error);
-        if (accumulated) {
+        if (accumulated.trim()) {
           setMessages((prev) => [
             ...prev,
             { role: "assistant", content: accumulated },
@@ -152,15 +158,20 @@ export default function Chat({ onGoToSettings, prefillInput, onPrefillConsumed }
         setStreaming(false);
         portRef.current = null;
       } else if (message.type === "agent-step") {
-        // Flush any pending streaming text as an assistant message
-        if (accumulated) {
+        // Flush any pending streaming text as an assistant message.
+        // Require non-whitespace content — a lone "\n" emitted before a tool_call
+        // would otherwise render as an empty MarkdownContent bubble.
+        if (accumulated.trim()) {
           setMessages((prev) => [
             ...prev,
             { role: "assistant", content: accumulated },
           ]);
-          accumulated = "";
           setStreamingText("");
         }
+        // Always reset accumulated and streamingText — even if content was just
+        // whitespace we don't want it re-rendered as a partial streaming bubble.
+        accumulated = "";
+        setStreamingText("");
         const { stepIndex, tool, args, resolvedElement, status, observation } =
           message;
         setMessages((prev) => {
@@ -230,7 +241,7 @@ export default function Chat({ onGoToSettings, prefillInput, onPrefillConsumed }
 
     port.onDisconnect.addListener(() => {
       if (!finished) {
-        if (accumulated) {
+        if (accumulated.trim()) {
           setMessages((prev) => [
             ...prev,
             { role: "assistant", content: accumulated },
@@ -453,9 +464,9 @@ function MessageBubble({
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
       <div
-        className={`max-w-[85%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap ${
+        className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
           isUser
-            ? "bg-blue-600 text-white"
+            ? "whitespace-pre-wrap bg-blue-600 text-white"
             : "bg-neutral-800 text-neutral-100"
         }`}
       >
@@ -469,72 +480,6 @@ function MessageBubble({
   );
 }
 
-function MarkdownContent({ content }: { content: string }) {
-  // Basic markdown: code blocks, inline code, bold
-  const parts: React.ReactNode[] = [];
-  let remaining = content;
-  let key = 0;
-
-  while (remaining.length > 0) {
-    // Code blocks
-    const codeBlockMatch = remaining.match(/^```(\w*)\n([\s\S]*?)```/);
-    if (codeBlockMatch) {
-      parts.push(
-        <pre
-          key={key++}
-          className="my-2 overflow-x-auto rounded bg-neutral-900 p-2 text-xs"
-        >
-          <code>{codeBlockMatch[2]}</code>
-        </pre>,
-      );
-      remaining = remaining.slice(codeBlockMatch[0].length);
-      continue;
-    }
-
-    // Inline code
-    const inlineCodeMatch = remaining.match(/^`([^`]+)`/);
-    if (inlineCodeMatch) {
-      parts.push(
-        <code
-          key={key++}
-          className="rounded bg-neutral-900 px-1 py-0.5 text-xs"
-        >
-          {inlineCodeMatch[1]}
-        </code>,
-      );
-      remaining = remaining.slice(inlineCodeMatch[0].length);
-      continue;
-    }
-
-    // Bold
-    const boldMatch = remaining.match(/^\*\*(.+?)\*\*/);
-    if (boldMatch) {
-      parts.push(
-        <strong key={key++} className="font-semibold">
-          {boldMatch[1]}
-        </strong>,
-      );
-      remaining = remaining.slice(boldMatch[0].length);
-      continue;
-    }
-
-    // Regular text — take up to next special character
-    const nextSpecial = remaining.search(/[`*]/);
-    if (nextSpecial === -1) {
-      parts.push(<span key={key++}>{remaining}</span>);
-      break;
-    } else if (nextSpecial === 0) {
-      // Special char didn't match patterns above, consume it
-      parts.push(<span key={key++}>{remaining[0]}</span>);
-      remaining = remaining.slice(1);
-    } else {
-      parts.push(<span key={key++}>{remaining.slice(0, nextSpecial)}</span>);
-      remaining = remaining.slice(nextSpecial);
-    }
-  }
-
-  return <>{parts}</>;
-}
 
 function TypingIndicator() {
   return (
