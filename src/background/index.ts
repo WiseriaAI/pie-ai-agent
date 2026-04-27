@@ -10,6 +10,11 @@ import type { ChatMessage, ModelConfig } from "@/lib/model-router";
 import { getActiveProvider, getProviderConfig } from "@/lib/storage";
 import { runAgentLoop } from "@/lib/agent/loop";
 import { getEnabledSkills, resolveSkillToTools } from "@/lib/skills";
+import {
+  handleExternalDetach,
+  detachAllSessions,
+} from "./cdp-session";
+import { KEYBOARD_SIMULATION_STORAGE_KEY } from "@/lib/keyboard-simulation";
 
 // Open side panel when extension icon is clicked
 chrome.action.onClicked.addListener(async (tab) => {
@@ -25,6 +30,42 @@ chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 chrome.runtime.onInstalled.addListener((details) => {
   if (details.reason === "install") {
     chrome.storage.local.set({ firstRun: true });
+  }
+});
+
+// --- Phase 2.5 — CDP keyboard simulation lifecycle hooks ---
+// These listeners must be registered at the SW top level so they
+// re-register on every SW restart. Both routes converge on the same
+// teardown path inside cdp-session.ts (idempotent detach + caller
+// abort propagation).
+
+// User clicks "Cancel" on the yellow debug bar (or Chrome detaches
+// for any other reason — tab closed, target crashed, 5-min idle
+// timeout). Routes to handleExternalDetach which marks the session
+// dead and fires the owning agent task's abort callback.
+chrome.debugger.onDetach.addListener((source, reason) => {
+  if (typeof source.tabId !== "number") return;
+  // reason values per CDP docs: "target_closed" | "canceled_by_user"
+  // and a few others. We map all to user-cancelled-via-yellow-bar
+  // unless we can distinguish — the agent task's response is the same
+  // (abort with summary), only the summary text differs.
+  if (reason === "target_closed") {
+    handleExternalDetach(source.tabId, "tab-closed");
+  } else {
+    handleExternalDetach(source.tabId, "user-cancelled-via-yellow-bar");
+  }
+});
+
+// User toggles "Keyboard simulation" OFF in Settings while a task is
+// running. Tear down every live session immediately + propagate abort
+// to each owning task. Toggle ON is a no-op here (next acquire creates
+// the session lazily).
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== "local") return;
+  const change = changes[KEYBOARD_SIMULATION_STORAGE_KEY];
+  if (!change) return;
+  if (change.newValue === false || change.newValue === undefined) {
+    void detachAllSessions("kill-switch");
   }
 });
 
