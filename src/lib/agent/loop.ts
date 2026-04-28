@@ -85,7 +85,7 @@ function isRestrictedUrl(url: string): boolean {
   );
 }
 
-function safeParseOrigin(url: string): string | null {
+export function safeParseOrigin(url: string): string | null {
   try {
     const origin = new URL(url).origin;
     // Opaque origins parse to the literal string "null"; treat them as unresolvable.

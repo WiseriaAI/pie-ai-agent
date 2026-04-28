@@ -5,6 +5,24 @@ import { selectByIndex } from "../dom-actions/select";
 import { wait } from "../dom-actions/wait";
 import type { ActionResult } from "../dom-actions/types";
 import type { Tool, ToolHandlerContext } from "./types";
+import { buildKeyboardTools, type KeyboardToolDeps } from "./tools/keyboard";
+
+export {
+  KEYBOARD_TOOL_NAMES,
+  isKeyboardToolName,
+  type KeyboardToolName,
+  type KeyboardToolDeps,
+} from "./tools/keyboard";
+
+/**
+ * Phase 2.5 keyboard tools (dispatch_keyboard_input + press_key). Returned
+ * only when the user has enabled keyboard simulation in Settings; the loop
+ * concatenates these into the tool list per iteration via this factory so
+ * the deps closure (acquireSession, pinnedOrigin) is task-scoped.
+ */
+export function getKeyboardTools(deps: KeyboardToolDeps): Tool[] {
+  return buildKeyboardTools(deps);
+}
 
 // ── Helper: run a self-contained function in the target tab ──────────────────
 

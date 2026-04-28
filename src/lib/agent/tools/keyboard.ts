@@ -1,0 +1,361 @@
+// Phase 2.5 — keyboard tool handlers (dispatch_keyboard_input + press_key).
+//
+// These tools use chrome.debugger + CDP Input.* commands to send isTrusted
+// keyboard events that canvas-rendered editors (Feishu Docs, Google Docs,
+// Notion) accept where DOM-synthesized events fail.
+//
+// Critical security invariants — every CDP send is preceded by:
+//   1. Argument sanitization (length cap, character-class denylist)
+//   2. Per-call origin & active-tab re-check (tab may have navigated
+//      during the user's high-risk confirm latency)
+//
+// Args.text in observations and panel-side display is REDACTED (only
+// length surfaces); the confirm-request flow shows the raw text to the
+// user (so they can make an informed approval) but every OTHER channel
+// strips it. This split is intentional — see plan Key Technical
+// Decisions.
+//
+// Spec: docs/plans/2026-04-28-001-feat-phase2.5-cdp-keyboard-simulation-plan.md
+
+import type { ActionResult } from "../../dom-actions/types";
+import { clickByIndex } from "../../dom-actions/click";
+import { safeParseOrigin } from "../loop";
+import type { CdpSession } from "../../../background/cdp-session";
+import type { Tool, ToolHandlerContext } from "../types";
+
+// ── Configuration ────────────────────────────────────────────────────────────
+
+const MAX_TEXT_LENGTH = 5000;
+
+// Whitelist of supported control keys for press_key. Each entry maps the
+// LLM-facing key name to the CDP Input.dispatchKeyEvent parameters.
+// Limited intentionally — adding a key requires a deliberate decision.
+const KEY_MAP: Record<
+  string,
+  { code: string; windowsVirtualKeyCode: number }
+> = {
+  Enter: { code: "Enter", windowsVirtualKeyCode: 13 },
+  Tab: { code: "Tab", windowsVirtualKeyCode: 9 },
+  Escape: { code: "Escape", windowsVirtualKeyCode: 27 },
+  Backspace: { code: "Backspace", windowsVirtualKeyCode: 8 },
+  ArrowUp: { code: "ArrowUp", windowsVirtualKeyCode: 38 },
+  ArrowDown: { code: "ArrowDown", windowsVirtualKeyCode: 40 },
+  ArrowLeft: { code: "ArrowLeft", windowsVirtualKeyCode: 37 },
+  ArrowRight: { code: "ArrowRight", windowsVirtualKeyCode: 39 },
+  Home: { code: "Home", windowsVirtualKeyCode: 36 },
+  End: { code: "End", windowsVirtualKeyCode: 35 },
+};
+
+// Bidi formatting controls — banned to prevent phishing via right-to-left
+// override and isolate marks. Other Cf characters (e.g. U+200D ZWJ used
+// in legitimate emoji sequences) are allowed.
+const BIDI_CONTROL_CODEPOINTS = new Set<number>([
+  0x200e, 0x200f, // LTR/RTL marks
+  0x202a, 0x202b, 0x202c, 0x202d, 0x202e, // bidi embedding/override
+  0x2066, 0x2067, 0x2068, 0x2069, // isolate marks
+]);
+
+// ── Validation ───────────────────────────────────────────────────────────────
+
+function validateText(text: string): { ok: true } | { ok: false; reason: string } {
+  if (typeof text !== "string") {
+    return { ok: false, reason: "text must be a string" };
+  }
+  if (text.length === 0) {
+    return { ok: true };
+  }
+  if (text.length > MAX_TEXT_LENGTH) {
+    return {
+      ok: false,
+      reason: `text length ${text.length} exceeds ${MAX_TEXT_LENGTH} character cap`,
+    };
+  }
+  for (let i = 0; i < text.length; i++) {
+    const cp = text.codePointAt(i);
+    if (cp === undefined) continue;
+    // Skip the second half of surrogate pairs (already covered)
+    if (cp > 0xffff) i++;
+
+    if (BIDI_CONTROL_CODEPOINTS.has(cp)) {
+      return {
+        ok: false,
+        reason: `text contains forbidden bidi control U+${cp.toString(16).toUpperCase().padStart(4, "0")} (phishing risk)`,
+      };
+    }
+    // Cc class: ASCII control chars (0x00-0x1F + 0x7F) and C1 (0x80-0x9F).
+    // Allow newline (0x0A) and tab (0x09); reject everything else in those ranges.
+    if (cp !== 0x0a && cp !== 0x09 && (cp < 0x20 || (cp >= 0x7f && cp <= 0x9f))) {
+      return {
+        ok: false,
+        reason: `text contains forbidden control character U+${cp.toString(16).toUpperCase().padStart(4, "0")} (Cc class)`,
+      };
+    }
+  }
+  return { ok: true };
+}
+
+// ── Origin & active-tab re-check ─────────────────────────────────────────────
+
+async function reverifyOriginAndActive(
+  pinnedTabId: number,
+  pinnedOrigin: string,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  let tab: chrome.tabs.Tab;
+  try {
+    tab = await chrome.tabs.get(pinnedTabId);
+  } catch (e) {
+    return {
+      ok: false,
+      reason: `pinned tab ${pinnedTabId} no longer exists: ${e instanceof Error ? e.message : String(e)}`,
+    };
+  }
+  if (!tab.url) {
+    return { ok: false, reason: "pinned tab has no URL (likely closed mid-task)" };
+  }
+  const currentOrigin = safeParseOrigin(tab.url);
+  if (currentOrigin !== pinnedOrigin) {
+    return {
+      ok: false,
+      reason: `origin changed during task: pinned ${pinnedOrigin}, now ${currentOrigin ?? "(unparseable)"}`,
+    };
+  }
+  if (!tab.active) {
+    return {
+      ok: false,
+      reason: "pinned tab is no longer the active tab; user must keep the target tab focused during keyboard input",
+    };
+  }
+  return { ok: true };
+}
+
+// ── Tool factory ─────────────────────────────────────────────────────────────
+
+export interface KeyboardToolDeps {
+  /**
+   * Lazy attach (or reuse) a CdpSession bound to this task. Curried by
+   * runAgentLoop with the task's signal/ownerToken/onExternalDetach.
+   */
+  acquireSession: (tabId: number) => Promise<CdpSession>;
+  /**
+   * The origin pinned at task start. Per-CDP-call re-check rejects if
+   * the active tab's current origin differs.
+   */
+  pinnedOrigin: string;
+}
+
+export function buildKeyboardTools(deps: KeyboardToolDeps): Tool[] {
+  const { acquireSession, pinnedOrigin } = deps;
+
+  return [
+    {
+      name: "dispatch_keyboard_input",
+      description:
+        "Send text input via simulated real keyboard (Chrome DevTools Protocol). Use ONLY for canvas-rendered editors (Feishu Docs, Google Docs, Notion) where the regular `type` tool returns 'hidden IME / keyboard capture buffer'. Activates Chrome's debugger (yellow bar appears). Each call requires user approval.",
+      parameters: {
+        type: "object",
+        properties: {
+          text: {
+            type: "string",
+            description: `Text to insert. Max ${MAX_TEXT_LENGTH} characters. Must not contain control characters (other than newline / tab) or bidi formatting controls.`,
+          },
+          after_element_index: {
+            type: "number",
+            description:
+              "Optional: click this element index (from snapshot) before sending the input, to ensure the editor has focus.",
+          },
+        },
+        required: ["text"],
+        additionalProperties: false,
+      },
+      handler: async (
+        args: unknown,
+        ctx: ToolHandlerContext,
+      ): Promise<ActionResult> => {
+        const a = args as { text: string; after_element_index?: number };
+
+        const validation = validateText(a.text);
+        if (!validation.ok) {
+          return { success: false, error: `Rejected: ${validation.reason}` };
+        }
+
+        // Empty text → no-op success (don't even attach debugger).
+        if (a.text.length === 0) {
+          return {
+            success: true,
+            observation: "No-op: empty text, no keyboard event sent",
+          };
+        }
+
+        // Optional focus assurance via click. Failure here is a real
+        // tool failure (user asked for a focus step before input);
+        // skip the CDP attach.
+        if (typeof a.after_element_index === "number") {
+          const clickResult = await chrome.scripting
+            .executeScript({
+              target: { tabId: ctx.tabId },
+              func: clickByIndex,
+              args: [a.after_element_index],
+            })
+            .then(
+              (results) =>
+                (results[0]?.result as ActionResult | undefined) ?? null,
+            )
+            .catch((e: unknown) => {
+              return {
+                success: false,
+                error: e instanceof Error ? e.message : String(e),
+              } satisfies ActionResult;
+            });
+          if (!clickResult || !clickResult.success) {
+            return {
+              success: false,
+              error: `Failed to focus target before keyboard input: ${clickResult?.error ?? "unknown"}`,
+            };
+          }
+        }
+
+        // Per-call origin & active-tab re-check — happens AFTER the
+        // optional click (which is just a regular DOM op via
+        // executeScript and tolerates page state changes by failing
+        // gracefully) but BEFORE attaching the debugger.
+        const recheck = await reverifyOriginAndActive(ctx.tabId, pinnedOrigin);
+        if (!recheck.ok) {
+          return { success: false, error: recheck.reason };
+        }
+
+        let session: CdpSession;
+        try {
+          session = await acquireSession(ctx.tabId);
+        } catch (e) {
+          return {
+            success: false,
+            error:
+              e instanceof Error
+                ? `CDP attach failed: ${e.message}`
+                : "CDP attach failed",
+          };
+        }
+
+        try {
+          await session.send("Input.insertText", { text: a.text });
+        } catch (e) {
+          return {
+            success: false,
+            error:
+              e instanceof Error
+                ? `Input.insertText failed: ${e.message}`
+                : "Input.insertText failed",
+          };
+        }
+
+        // Observation NEVER includes the actual text content. Length
+        // is surfaced for LLM context (it knows what it sent).
+        return {
+          success: true,
+          observation: `Typed ${a.text.length} character${a.text.length === 1 ? "" : "s"} via keyboard simulation (value redacted)`,
+        };
+      },
+    },
+    {
+      name: "press_key",
+      description: `Press a single control key via simulated real keyboard (CDP). Use for navigation in canvas-rendered editors. Activates Chrome's debugger; each call requires approval. Allowed keys: ${Object.keys(KEY_MAP).join(", ")}.`,
+      parameters: {
+        type: "object",
+        properties: {
+          key: {
+            type: "string",
+            enum: Object.keys(KEY_MAP),
+            description: "The control key to press.",
+          },
+        },
+        required: ["key"],
+        additionalProperties: false,
+      },
+      handler: async (
+        args: unknown,
+        ctx: ToolHandlerContext,
+      ): Promise<ActionResult> => {
+        const a = args as { key: string };
+        const mapping = KEY_MAP[a.key];
+        if (!mapping) {
+          return {
+            success: false,
+            error: `Unsupported key '${a.key}'. Allowed: ${Object.keys(KEY_MAP).join(", ")}`,
+          };
+        }
+
+        const recheck = await reverifyOriginAndActive(ctx.tabId, pinnedOrigin);
+        if (!recheck.ok) {
+          return { success: false, error: recheck.reason };
+        }
+
+        let session: CdpSession;
+        try {
+          session = await acquireSession(ctx.tabId);
+        } catch (e) {
+          return {
+            success: false,
+            error:
+              e instanceof Error
+                ? `CDP attach failed: ${e.message}`
+                : "CDP attach failed",
+          };
+        }
+
+        const baseParams = {
+          key: a.key,
+          code: mapping.code,
+          windowsVirtualKeyCode: mapping.windowsVirtualKeyCode,
+          nativeVirtualKeyCode: mapping.windowsVirtualKeyCode,
+        };
+
+        try {
+          // keyDown + keyUp share a single origin re-check (the two
+          // events fire <1ms apart; origin can't realistically change
+          // between them, and re-checking would double the chrome.tabs.get
+          // round-trip per press).
+          await session.send("Input.dispatchKeyEvent", {
+            type: "keyDown",
+            ...baseParams,
+          });
+          await session.send("Input.dispatchKeyEvent", {
+            type: "keyUp",
+            ...baseParams,
+          });
+        } catch (e) {
+          return {
+            success: false,
+            error:
+              e instanceof Error
+                ? `Input.dispatchKeyEvent failed: ${e.message}`
+                : "Input.dispatchKeyEvent failed",
+          };
+        }
+
+        return {
+          success: true,
+          observation: `Pressed ${a.key} via keyboard simulation`,
+        };
+      },
+    },
+  ];
+}
+
+/**
+ * Names of the keyboard tools — used by:
+ *   - risk classifier (always-high)
+ *   - args redaction logic in sendAgentStep
+ *   - confirm-card raw-text disclosure logic
+ *
+ * Keep in sync with the tool definitions above.
+ */
+export const KEYBOARD_TOOL_NAMES = [
+  "dispatch_keyboard_input",
+  "press_key",
+] as const;
+
+export type KeyboardToolName = (typeof KEYBOARD_TOOL_NAMES)[number];
+
+export function isKeyboardToolName(name: string): name is KeyboardToolName {
+  return (KEYBOARD_TOOL_NAMES as readonly string[]).includes(name);
+}
