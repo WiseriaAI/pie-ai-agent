@@ -25,7 +25,7 @@ const KEYBOARD_SIM_GUIDANCE = `
 
 Keyboard simulation tools (dispatch_keyboard_input, press_key) are also available. These send isTrusted keyboard events via Chrome DevTools Protocol and work in canvas-rendered editors (Feishu Docs, Google Docs, Notion) where the regular \`type\` tool fails. Use them ONLY when \`type\` returns an observation containing "hidden IME / keyboard capture buffer" — for normal forms, prefer \`type\`. Each call activates Chrome's debugger and requires user approval.
 
-When using \`dispatch_keyboard_input\`, pass the FULL multi-paragraph content in a single call — embed \\n where you need new paragraphs / line breaks (the tool converts each \\n into an Enter key press automatically). DO NOT split a long answer into many small calls and DO NOT call \`press_key("Enter")\` between segments — every extra call asks the user to approve again. Reserve \`press_key\` for navigation (Escape to close a menu, Tab to move focus, etc.), not for paragraph breaks inside text you're authoring.`;
+When using \`dispatch_keyboard_input\`, pass the FULL multi-paragraph content in ONE call. Use real newline characters (the actual line break character inside the JSON string, not a literal backslash sequence) wherever you want a paragraph break — the tool converts each newline into an Enter key press in the editor. DO NOT split long output across many calls and DO NOT call \`press_key("Enter")\` between paragraphs — every extra tool call requires the user to approve again. Reserve \`press_key\` for navigation (Escape to close a menu, Tab to move focus, etc.), not for paragraph breaks inside text you're authoring.`;
 
 /**
  * Builds the full agent system prompt for a specific task.

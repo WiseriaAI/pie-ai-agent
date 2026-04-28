@@ -176,13 +176,13 @@ export function buildKeyboardTools(deps: KeyboardToolDeps): Tool[] {
     {
       name: "dispatch_keyboard_input",
       description:
-        "Send text input via simulated real keyboard (Chrome DevTools Protocol). Pass the FULL multi-line content in one call — newlines (\\n) in `text` are automatically converted to Enter key presses, so paragraphs/lists/code blocks are inserted correctly. Avoid breaking content into many small calls; each call requires the user to approve. Use ONLY for canvas-rendered editors (Feishu Docs, Google Docs, Notion) where the regular `type` tool returns 'hidden IME / keyboard capture buffer'. Activates Chrome's debugger (yellow bar appears).",
+        "Send text input via simulated real keyboard (Chrome DevTools Protocol). Pass the FULL multi-paragraph content in one call — every newline character inside `text` is converted to an Enter key press, so paragraphs/lists/code blocks are inserted correctly. Avoid breaking content into many small calls; each call requires the user to approve. Use ONLY for canvas-rendered editors (Feishu Docs, Google Docs, Notion) where the regular `type` tool returns 'hidden IME / keyboard capture buffer'. Activates Chrome's debugger (yellow bar appears).",
       parameters: {
         type: "object",
         properties: {
           text: {
             type: "string",
-            description: `Text to insert. Max ${MAX_TEXT_LENGTH} characters. Newlines (\\n) become Enter key presses. Must not contain other control characters or bidi formatting controls.`,
+            description: `Text to insert. Max ${MAX_TEXT_LENGTH} characters. Use real newline characters in the string for paragraph breaks (each newline becomes an Enter press). Must not contain other control characters or bidi formatting controls.`,
           },
           after_element_index: {
             type: "number",
@@ -262,19 +262,28 @@ export function buildKeyboardTools(deps: KeyboardToolDeps): Tool[] {
           };
         }
 
-        // Split on \n: each segment becomes an Input.insertText, with
-        // sendKeyPress(Enter) between segments. This lets one tool call
-        // submit multi-line content end-to-end without needing the LLM
-        // to interleave press_key("Enter") calls (each of which would
-        // otherwise need its own user approval).
+        // Split on newlines: each segment becomes an Input.insertText,
+        // with sendKeyPress(Enter) between segments. This lets one
+        // tool call submit multi-line content end-to-end without
+        // needing the LLM to interleave press_key("Enter") calls
+        // (each of which would otherwise need its own user approval).
+        //
+        // Tolerate two forms of "newline" coming from the LLM:
+        //   (a) actual U+000A character — what JSON parsing of "...\n..." yields
+        //   (b) literal two-char backslash + n — what some LLMs emit when they
+        //       over-escape JSON ("...\\n..." in the wire body, parsing to "\n"
+        //       as two chars rather than one newline)
+        // Both should produce a paragraph break in the editor. Replace
+        // the literal-form first, then split on the real char.
         //
         // Edge cases:
         //   "a\nb"     → ["a", "b"]              insert a, Enter, insert b
         //   "a\n"      → ["a", ""]               insert a, Enter
         //   "\nb"      → ["", "b"]               Enter, insert b
         //   "\n\n"     → ["", "", ""]            Enter, Enter
-        //   no \n      → [text]                  insert text
-        const segments = a.text.split("\n");
+        //   no newline → [text]                  insert text
+        const normalized = a.text.replace(/\\n/g, "\n");
+        const segments = normalized.split("\n");
         const enterCount = segments.length - 1;
         try {
           for (let i = 0; i < segments.length; i++) {
@@ -297,10 +306,14 @@ export function buildKeyboardTools(deps: KeyboardToolDeps): Tool[] {
 
         // Observation NEVER includes the actual text content. Surface
         // length + Enter count so the LLM knows what shape it sent.
-        const lengthDesc = `${a.text.length} character${a.text.length === 1 ? "" : "s"}`;
+        // Length uses the normalized text so it reflects what was
+        // actually delivered to the editor (literal-\n collapsed to
+        // single newline char before splitting).
+        const charCount = normalized.length - enterCount; // exclude newlines from char count
+        const lengthDesc = `${charCount} character${charCount === 1 ? "" : "s"}`;
         const enterDesc =
           enterCount > 0
-            ? ` (${enterCount} Enter break${enterCount === 1 ? "" : "s"})`
+            ? ` (${enterCount} paragraph break${enterCount === 1 ? "" : "s"})`
             : "";
         return {
           success: true,
