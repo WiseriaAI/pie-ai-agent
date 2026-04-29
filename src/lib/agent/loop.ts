@@ -402,6 +402,13 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         }
       }
 
+      // If abort fired during streaming, providers silently return from
+      // the generator (no throw). Detect that here BEFORE treating an
+      // empty completedToolCalls as a normal pure-text reply — otherwise
+      // an aborted stream looks like "LLM ended cleanly" and finally
+      // skips its done emit (because normalTextReply gates it).
+      if (signal.aborted) return; // → finally with reason-based summary
+
       // Pure text response (no tool calls) — finish as normal chat
       if (completedToolCalls.length === 0) {
         port.postMessage({ type: "chat-done" });
