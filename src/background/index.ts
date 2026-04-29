@@ -270,6 +270,24 @@ chrome.runtime.onConnect.addListener((port) => {
   // Per-port pending confirmation map
   const pendingConfirmations = new Map<string, (approved: boolean) => void>();
 
+  // Drain any pending high-risk confirm prompts when the task is aborted
+  // (Stop button, kill-switch, or programmatic abort from inside the
+  // loop). Without this, sendConfirmRequest's promise never resolves and
+  // the whole runAgentLoop hangs — finally never runs, no
+  // agent-done-task is emitted, the Panel just sees streaming stop with
+  // no AgentSummary. port.onDisconnect already drains too, but Stop
+  // does NOT disconnect the port; this listener covers that path.
+  abortController.signal.addEventListener(
+    "abort",
+    () => {
+      for (const [, resolve] of pendingConfirmations) {
+        resolve(false);
+      }
+      pendingConfirmations.clear();
+    },
+    { once: true },
+  );
+
   // Keep-alive: reset Service Worker idle timer while streaming
   const keepAliveInterval = setInterval(() => {
     chrome.runtime.getPlatformInfo();
