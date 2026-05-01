@@ -12,6 +12,7 @@ import { classifyRisk } from "./risk";
 import { buildAgentSystemPrompt, buildObservationMessage } from "./prompt";
 import { applySlidingWindow } from "./window";
 import { isKeyboardSimulationEnabled } from "../keyboard-simulation";
+import { getSkill } from "../skills";
 import {
   acquireCdpSession,
   type CdpSession,
@@ -24,6 +25,26 @@ import type {
 } from "../../types/messages";
 
 const MAX_STEPS = 30;
+
+/**
+ * Phase 2.6 — Skill scope.
+ *
+ * Active scope when the agent has invoked a skill-resolved tool. While active:
+ *   - R3 anti-nest: any further skill-resolved tool_call is rejected.
+ *   - R2 enforce: when allowedTools is non-null, any tool_call whose name is
+ *     not in the whitelist is rejected with an observation describing the
+ *     allowed set. allowedTools=null (legacy skills) keeps scope active for
+ *     R3 enforcement but does not gate other tool calls.
+ *
+ * Lifecycle: in-memory only, task-scoped. Discarded when runAgentLoop returns
+ * (done / fail / abort / max-steps). Replaced — not stacked — when a new
+ * skill tool_call succeeds; in practice unreachable because R3 already
+ * rejects nesting attempts.
+ */
+interface SkillScope {
+  skillId: string;
+  allowedTools: string[] | null;
+}
 
 export interface AgentLoopContext {
   port: chrome.runtime.Port;
@@ -152,6 +173,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
   let doneEmitted = false;
   let lastStepIndex = 0;
   let normalTextReply = false; // pure-text reply uses chat-done, not agent-done-task
+  let currentSkillScope: SkillScope | null = null; // Phase 2.6 — see SkillScope JSDoc above
 
   // Idempotent done emit — every runAgentLoop exit path (success, abort,
   // error, finally) calls this; first one wins, the rest are no-ops.
@@ -346,6 +368,10 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           })
         : [];
       const allTools = [...BUILT_IN_TOOLS, ...skillTools, ...keyboardTools];
+      // Phase 2.6 — skill-resolved tool name set, used by R3 anti-nest and
+      // by scope-transition recognition. Rebuilt each iteration because
+      // enabled skills can change mid-task (CRUD via meta tools).
+      const skillResolvedNames = new Set(skillTools.map((t) => t.name));
       const toolDefinitions = toolsToDefinitions(allTools);
 
       // Stream from LLM
@@ -459,6 +485,42 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           continue;
         }
 
+        // ── Phase 2.6 — Skill scope enforcement (R2 + R3 anti-nest) ────────
+        // Inserted between tool-lookup and risk-classify so rejected calls
+        // skip risk classification, confirm card, and handler entirely.
+        if (currentSkillScope) {
+          let scopeRejection: string | null = null;
+          if (skillResolvedNames.has(tc.name)) {
+            // R3: skills cannot call other skills (would compose into deep
+            // chains the user never reviewed; also opens recursion footguns).
+            scopeRejection = `Skills cannot call other skills (currently in '${currentSkillScope.skillId}' scope; '${tc.name}' is a skill).`;
+          } else if (
+            currentSkillScope.allowedTools !== null &&
+            !currentSkillScope.allowedTools.includes(tc.name)
+          ) {
+            // R2: allowedTools whitelist is loop-enforced, not a prompt hint.
+            const allowedList = currentSkillScope.allowedTools.join(", ");
+            scopeRejection = `tool '${tc.name}' not allowed in skill '${currentSkillScope.skillId}' scope. Allowed: [${allowedList}]. Call done or fail to exit.`;
+          }
+          if (scopeRejection !== null) {
+            toolResultBlocks.push({
+              type: "tool_result",
+              toolUseId: tc.id,
+              content: scopeRejection,
+              isError: true,
+            });
+            sendAgentStep(port, {
+              type: "agent-step",
+              stepIndex,
+              tool: tc.name,
+              args: redactArgsForPanel(tc.name, tc.args),
+              status: "error",
+              observation: scopeRejection,
+            });
+            continue;
+          }
+        }
+
         // Resolve element for confirmation / display
         const resolvedElement = resolveElement(snapshot, args.elementIndex);
 
@@ -566,6 +628,20 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           status: result.success ? "ok" : "error",
           observation,
         });
+
+        // Phase 2.6 — Skill scope transition.
+        // Enter scope after a successful skill-resolved tool_call. Failed
+        // skill handlers do NOT enter scope (avoid half-state). The scope
+        // replaces any prior scope (R3 already rejected nested skill_calls,
+        // so reaching this branch with an existing scope is unreachable in
+        // practice; the assignment is still correct as overwrite).
+        if (skillResolvedNames.has(tc.name) && result.success) {
+          const skillDef = await getSkill(tc.name);
+          currentSkillScope = {
+            skillId: tc.name,
+            allowedTools: skillDef?.allowedTools ?? null,
+          };
+        }
 
         // Check for terminal tools
         if (tc.name === "done" && result.success) {
