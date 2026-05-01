@@ -12,7 +12,7 @@ import { classifyRisk } from "./risk";
 import { buildAgentSystemPrompt, buildObservationMessage } from "./prompt";
 import { applySlidingWindow } from "./window";
 import { isKeyboardSimulationEnabled } from "../keyboard-simulation";
-import { getSkill, markSkillFirstRun } from "../skills";
+import { getEnabledSkills, markSkillFirstRun, type SkillDefinition } from "../skills";
 import {
   acquireCdpSession,
   type CdpSession,
@@ -256,7 +256,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
   const history: AgentMessage[] = [
     {
       role: "system",
-      content: buildAgentSystemPrompt(task, keyboardSimEnabledAtStart),
+      content: buildAgentSystemPrompt(task, keyboardSimEnabledAtStart, /* hasMetaTools */ true),
     },
     { role: "user", content: task },
   ];
@@ -372,6 +372,15 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // by scope-transition recognition. Rebuilt each iteration because
       // enabled skills can change mid-task (CRUD via meta tools).
       const skillResolvedNames = new Set(skillTools.map((t) => t.name));
+      // Phase 2.6 — fetch SkillDefinition metadata for the same iteration so
+      // we can sync-lookup author / allowedTools / firstRunConfirmedAt during
+      // dispatch (R10 first-run gate, scope transition, agent-step skillAuthor).
+      // Mutable: in-step updates (e.g. firstRunConfirmedAt after gate approval)
+      // patch this map so a re-call within the same step doesn't re-gate.
+      const enabledSkillDefs = await getEnabledSkills();
+      const skillDefByName = new Map<string, SkillDefinition>(
+        enabledSkillDefs.map((s) => [s.id, s]),
+      );
       const toolDefinitions = toolsToDefinitions(allTools);
 
       // Stream from LLM
@@ -485,6 +494,17 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           continue;
         }
 
+        // Phase 2.6 — derive skillAuthor metadata for this step's agent-step
+        // events. Sync lookup against the per-iteration skill-def cache.
+        // undefined for non-skill tools (BUILT_IN_TOOLS, keyboard, meta tools).
+        const skillDefForStep = skillDefByName.get(tc.name);
+        const skillAuthorForStep: "user" | "agent" | "builtIn" | undefined =
+          skillDefForStep
+            ? skillDefForStep.builtIn
+              ? "builtIn"
+              : skillDefForStep.author ?? "user"
+            : undefined;
+
         // ── Phase 2.6 — Skill scope enforcement (R2 + R3 anti-nest) ────────
         // Inserted between tool-lookup and risk-classify so rejected calls
         // skip risk classification, confirm card, and handler entirely.
@@ -516,6 +536,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
               args: redactArgsForPanel(tc.name, tc.args),
               status: "error",
               observation: scopeRejection,
+              skillAuthor: skillAuthorForStep,
             });
             continue;
           }
@@ -532,6 +553,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           args: redactArgsForPanel(tc.name, tc.args),
           resolvedElement,
           status: "pending",
+          skillAuthor: skillAuthorForStep,
         });
 
         // Risk classification
@@ -580,6 +602,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
               resolvedElement,
               status: "error",
               observation: rejectionMsg,
+              skillAuthor: skillAuthorForStep,
             });
             continue;
           }
@@ -593,7 +616,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         // After approval we persist the timestamp; if persistence fails we
         // fail-open (proceed with handler; next run will gate again).
         if (skillResolvedNames.has(tc.name)) {
-          const skillDef = await getSkill(tc.name);
+          const skillDef = skillDefByName.get(tc.name);
           if (
             skillDef &&
             skillDef.author === "agent" &&
@@ -626,11 +649,16 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
                 resolvedElement,
                 status: "error",
                 observation: rejectionMsg,
+                skillAuthor: skillAuthorForStep,
               });
               continue;
             }
+            const firstRunTs = Date.now();
             try {
-              await markSkillFirstRun(tc.name, Date.now());
+              await markSkillFirstRun(tc.name, firstRunTs);
+              // Update in-memory cache so a re-call within the same step
+              // does not re-trigger the gate.
+              skillDefByName.set(tc.name, { ...skillDef, firstRunConfirmedAt: firstRunTs });
             } catch (e) {
               // fail-open: proceed with handler; next call will gate again.
               console.warn(
@@ -683,6 +711,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           resolvedElement,
           status: result.success ? "ok" : "error",
           observation,
+          skillAuthor: skillAuthorForStep,
         });
 
         // Phase 2.6 — Skill scope transition.
@@ -692,10 +721,9 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         // so reaching this branch with an existing scope is unreachable in
         // practice; the assignment is still correct as overwrite).
         if (skillResolvedNames.has(tc.name) && result.success) {
-          const skillDef = await getSkill(tc.name);
           currentSkillScope = {
             skillId: tc.name,
-            allowedTools: skillDef?.allowedTools ?? null,
+            allowedTools: skillDefForStep?.allowedTools ?? null,
           };
         }
 

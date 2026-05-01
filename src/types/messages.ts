@@ -69,6 +69,11 @@ export interface AgentStepMessage {
   resolvedElement?: ResolvedElement;
   status: "pending" | "ok" | "error";
   observation?: string;
+  /** Set when `tool` resolves to a skill (built-in or user-stored). Allows
+   *  Chat UI to badge agent-authored skill calls and audit logs to filter
+   *  by origin. Absent for non-skill tools (built-in BUILT_IN_TOOLS, keyboard,
+   *  meta tools). Phase 2.6 — see plan R17. */
+  skillAuthor?: "user" | "agent" | "builtIn";
 }
 
 export interface AgentConfirmRequestMessage {

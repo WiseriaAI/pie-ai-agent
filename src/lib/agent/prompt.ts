@@ -27,6 +27,17 @@ Keyboard simulation tools (dispatch_keyboard_input, press_key) are also availabl
 
 When using \`dispatch_keyboard_input\`, pass the FULL multi-paragraph content in ONE call. Use real newline characters (the actual line break character inside the JSON string, not a literal backslash sequence) wherever you want a paragraph break — the tool converts each newline into an Enter key press in the editor. DO NOT split long output across many calls and DO NOT call \`press_key("Enter")\` between paragraphs — every extra tool call requires the user to approve again. Reserve \`press_key\` for navigation (Escape to close a menu, Tab to move focus, etc.), not for paragraph breaks inside text you're authoring.`;
 
+const META_TOOL_GUIDANCE = `
+
+Skill meta tools (list_skills, create_skill, update_skill, delete_skill) let you grow the user's skill library. A Skill is a reusable workflow with a name, description, parameters schema, prompt template, and an allowedTools whitelist that restricts which tools can be called inside that skill's scope.
+
+When to use:
+- If the user repeatedly asks for a similar workflow (e.g. "extract these fields from this page" applied to many pages, or a multi-step form-fill they keep retrying), call list_skills first to see if a similar skill exists. If not, propose create_skill.
+- Each call to create_skill / update_skill requires user confirmation, and the skill's first execution requires another confirmation. Be sparing — do not propose a skill on a one-off task.
+- allowedTools must be a non-empty array of currently registered tool names. Use [] to constrain a skill to done/fail-only. Skills cannot reference other skills.
+- When designing a promptTemplate, keep it under ~8 KB and use {{key}} placeholders matching parameters keys. The template is appended to LLM context as the skill's observation when it runs.
+- Use update_skill carefully: any modification re-marks the skill as agent-authored and the user will be asked to re-confirm on next execution.`;
+
 /**
  * Builds the full agent system prompt for a specific task.
  * Injects the user task under a clearly labeled tag so the LLM
@@ -35,13 +46,19 @@ When using \`dispatch_keyboard_input\`, pass the FULL multi-paragraph content in
  * @param hasKeyboardTools When true, appends guidance about CDP keyboard
  *   tools. Read at task start from chrome.storage; the prompt does not
  *   re-evaluate this mid-task even if the user toggles the setting.
+ * @param hasMetaTools When true, appends guidance about Skill meta tools
+ *   (list/create/update/delete_skill). Phase 2.6+. These tools are always
+ *   in BUILT_IN_TOOLS so the flag is currently always true; the param
+ *   exists for symmetry with hasKeyboardTools and for future toggle.
  */
 export function buildAgentSystemPrompt(
   task: string,
   hasKeyboardTools = false,
+  hasMetaTools = false,
 ): string {
   const keyboardGuidance = hasKeyboardTools ? KEYBOARD_SIM_GUIDANCE : "";
-  return `${STATIC_AGENT_SYSTEM_PROMPT}${keyboardGuidance}\n\n<user_task>${task}</user_task>`;
+  const metaGuidance = hasMetaTools ? META_TOOL_GUIDANCE : "";
+  return `${STATIC_AGENT_SYSTEM_PROMPT}${keyboardGuidance}${metaGuidance}\n\n<user_task>${task}</user_task>`;
 }
 
 /**
