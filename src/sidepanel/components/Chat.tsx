@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import type { ChatMessage } from "@/lib/model-router";
 import type { PortMessageToPanel, ResolvedElement } from "@/types";
+import type { SkillDefinition } from "@/lib/skills";
 import { getActiveProvider, getProviderConfig } from "@/lib/storage";
 import AgentStepBubble from "./AgentStepBubble";
 import AgentConfirmCard from "./AgentConfirmCard";
@@ -27,6 +28,13 @@ type DisplayMessage =
       resolvedElement: ResolvedElement;
       riskReason: string;
       resolved?: "approved" | "rejected";
+      // Phase 2.6 — for create_skill / update_skill confirms, the SW sends
+      // the effective merged skill so AgentConfirmCard can render full
+      // content (P0-D / adv-1).
+      metaSkillPreview?: {
+        existing: SkillDefinition | null;
+        effective: SkillDefinition;
+      };
     }
   | {
       role: "agent-summary";
@@ -212,7 +220,7 @@ export default function Chat({ onGoToSettings, prefillInput, onPrefillConsumed }
           ];
         });
       } else if (message.type === "agent-confirm-request") {
-        const { confirmationId, tool, args, resolvedElement, riskReason } =
+        const { confirmationId, tool, args, resolvedElement, riskReason, metaSkillPreview } =
           message;
         setMessages((prev) => [
           ...prev,
@@ -223,6 +231,7 @@ export default function Chat({ onGoToSettings, prefillInput, onPrefillConsumed }
             args,
             resolvedElement,
             riskReason,
+            metaSkillPreview,
             resolved: undefined,
           },
         ]);
@@ -348,6 +357,7 @@ export default function Chat({ onGoToSettings, prefillInput, onPrefillConsumed }
                 resolvedElement={msg.resolvedElement}
                 riskReason={msg.riskReason}
                 resolved={msg.resolved}
+                metaSkillPreview={msg.metaSkillPreview}
                 onApprove={() => {
                   const port = portRef.current;
                   if (!port) return;

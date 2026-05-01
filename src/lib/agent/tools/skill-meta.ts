@@ -321,6 +321,70 @@ const listSkillsTool: Tool = {
   },
 };
 
+// ── Confirm-card preview helper ──────────────────────────────────────────────
+//
+// Used by the loop dispatcher to pre-compute the effective skill that
+// create_skill / update_skill will persist if the user approves. AgentConfirmCard
+// renders this so update_skill confirms display the FULL merged skill, not just
+// the patch (P0-D + adversarial review adv-1). Best-effort: if args fail
+// validation here, the handler will reject after confirm, which is fine —
+// the preview is for review only, not authority.
+
+export async function previewMetaSkillCall(
+  toolName: string,
+  args: unknown,
+): Promise<{ existing: SkillDefinition | null; effective: SkillDefinition } | null> {
+  if (toolName === "create_skill") {
+    const a = (args && typeof args === "object" ? { ...(args as Record<string, unknown>) } : {}) as Record<string, unknown>;
+    delete a.id;
+    if (typeof a.name !== "string" || typeof a.description !== "string" || typeof a.promptTemplate !== "string") return null;
+    if (!Array.isArray(a.allowedTools)) return null;
+    if (typeof a.parameters !== "object" || a.parameters === null || Array.isArray(a.parameters)) return null;
+    const effective: SkillDefinition = {
+      // Real id is generated on save; render placeholder to make this explicit.
+      id: "(auto-generated on save)",
+      name: a.name,
+      description: a.description,
+      toolSchema: { parameters: a.parameters as Record<string, unknown> },
+      promptTemplate: a.promptTemplate,
+      enabled: true,
+      builtIn: false,
+      author: "agent",
+      createdAt: Date.now(),
+      allowedTools: a.allowedTools as string[],
+    };
+    return { existing: null, effective };
+  }
+  if (toolName === "update_skill") {
+    const a = (args && typeof args === "object" ? args : {}) as { id?: unknown; patch?: unknown };
+    if (typeof a.id !== "string") return null;
+    const existing = await getSkill(a.id);
+    if (!existing) return null;
+    const patch = (a.patch && typeof a.patch === "object" && !Array.isArray(a.patch)
+      ? (a.patch as Record<string, unknown>)
+      : {});
+    const merged: SkillDefinition = { ...existing };
+    if (typeof patch.description === "string") merged.description = patch.description;
+    if (typeof patch.promptTemplate === "string") merged.promptTemplate = patch.promptTemplate;
+    if (
+      typeof patch.parameters === "object" &&
+      patch.parameters !== null &&
+      !Array.isArray(patch.parameters)
+    ) {
+      merged.toolSchema = { parameters: patch.parameters as Record<string, unknown> };
+    }
+    if (Array.isArray(patch.allowedTools)) {
+      merged.allowedTools = patch.allowedTools as string[];
+    }
+    // Mirror the taint applied by the actual handler so the user sees what
+    // will REALLY be persisted (author=agent, firstRunConfirmedAt cleared).
+    merged.author = "agent";
+    merged.firstRunConfirmedAt = undefined;
+    return { existing, effective: merged };
+  }
+  return null;
+}
+
 // ── Public exports ───────────────────────────────────────────────────────────
 
 export const SKILL_META_TOOLS: Tool[] = [

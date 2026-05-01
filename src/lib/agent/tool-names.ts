@@ -6,8 +6,8 @@
 //   - KNOWN_BUILT_IN_TOOL_NAMES ↔ BUILT_IN_TOOLS (src/lib/agent/tools.ts)
 //   - KNOWN_KEYBOARD_TOOL_NAMES ↔ KEYBOARD_TOOL_NAMES (src/lib/agent/tools/keyboard.ts)
 
-export const KNOWN_BUILT_IN_TOOL_NAMES = [
-  // Phase 2 originals
+// Phase 2 DOM action tools (always present in BUILT_IN_TOOLS).
+const PHASE_2_TOOL_NAMES = [
   "click",
   "type",
   "scroll",
@@ -15,11 +15,19 @@ export const KNOWN_BUILT_IN_TOOL_NAMES = [
   "wait",
   "done",
   "fail",
-  // Phase 2.6 skill meta tools
+] as const;
+
+// Phase 2.6 skill CRUD meta tools (always present in BUILT_IN_TOOLS).
+const SKILL_META_TOOL_NAMES_FOR_REGISTRY = [
   "create_skill",
   "update_skill",
   "delete_skill",
   "list_skills",
+] as const;
+
+export const KNOWN_BUILT_IN_TOOL_NAMES = [
+  ...PHASE_2_TOOL_NAMES,
+  ...SKILL_META_TOOL_NAMES_FOR_REGISTRY,
 ] as const;
 
 export const KNOWN_KEYBOARD_TOOL_NAMES = [
@@ -28,12 +36,22 @@ export const KNOWN_KEYBOARD_TOOL_NAMES = [
 ] as const;
 
 /**
- * Set of every tool name that is allowed to appear in a skill's
- * `allowedTools` whitelist (P1-G validation). Excludes skill-resolved
- * tool names (R3 forbids skills calling other skills); those are checked
- * separately at write time.
+ * Tool names that are legal entries in a skill's `allowedTools` whitelist
+ * (P1-G validation).
+ *
+ * **Intentionally excludes skill meta tool names (create_skill / update_skill /
+ * delete_skill / list_skills).** A skill that could orchestrate further skill
+ * CRUD inside its scope creates a confirm-fatigue privilege chain: the user
+ * approves "skill X" once, X then proposes create_skill from inside its run,
+ * and after a few approvals an arbitrary skill graph exists. classifyRisk
+ * still gates each individual meta call as high-risk, but locking meta tools
+ * out of allowedTools cuts this surface entirely. (Adversarial review,
+ * residual risk #1.)
+ *
+ * Skill-resolved tool names (user / built-in skills) are also intentionally
+ * absent — R3 forbids skills calling other skills.
  */
 export const ALL_KNOWN_NON_SKILL_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
-  ...KNOWN_BUILT_IN_TOOL_NAMES,
+  ...PHASE_2_TOOL_NAMES,
   ...KNOWN_KEYBOARD_TOOL_NAMES,
 ]);

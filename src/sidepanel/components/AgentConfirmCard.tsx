@@ -1,4 +1,5 @@
 import type { ResolvedElement } from "@/types";
+import type { SkillDefinition } from "@/lib/skills";
 
 interface AgentConfirmCardProps {
   tool: string;
@@ -8,6 +9,14 @@ interface AgentConfirmCardProps {
   resolved?: "approved" | "rejected";
   onApprove: () => void;
   onReject: () => void;
+  /** Phase 2.6 — for create_skill / update_skill confirms, the SW pre-computes
+   *  the effective skill so the card can render full merged content. Without
+   *  this, update_skill confirms would only show the patch fields and hide
+   *  the persistent allowedTools / parameters / etc. (P0-D / adv-1). */
+  metaSkillPreview?: {
+    existing: SkillDefinition | null;
+    effective: SkillDefinition;
+  };
 }
 
 /**
@@ -51,87 +60,113 @@ function safeStringifyForPanel(value: unknown): string {
 }
 
 /**
- * Render the full skill content under review for a create_skill / update_skill
- * confirm card. NO 2000-char cap — the user must see everything they're
- * approving (P0-D). Each field gets a dedicated scrollable panel with
- * max-h to keep the card from blowing up the side panel.
+ * Render the EFFECTIVE skill content under review for a create_skill /
+ * update_skill confirm card — the merged result that will actually persist
+ * if the user approves. NO 2000-char cap (P0-D). Each field is a dedicated
+ * scrollable panel with max-h so the card stays manageable.
+ *
+ * For update_skill, fields whose value is unchanged from the existing skill
+ * are tagged "(unchanged)" so the user can quickly see what is being
+ * modified without losing sight of what is being re-approved (this closes
+ * adv-1, where rendering only the patch hid persistent broad capabilities
+ * the user implicitly retained).
  */
-function SkillContentDetails({ tool, args }: { tool: string; args: unknown }) {
-  const a = (args && typeof args === "object" ? (args as Record<string, unknown>) : {}) as Record<string, unknown>;
+function SkillContentDetails({
+  tool,
+  metaSkillPreview,
+}: {
+  tool: string;
+  metaSkillPreview: {
+    existing: SkillDefinition | null;
+    effective: SkillDefinition;
+  };
+}) {
   const isUpdate = tool === "update_skill";
-  const source = isUpdate
-    ? ((a.patch && typeof a.patch === "object" ? (a.patch as Record<string, unknown>) : {}) as Record<string, unknown>)
-    : a;
+  const eff = metaSkillPreview.effective;
+  const existing = metaSkillPreview.existing;
 
-  const id = isUpdate && typeof a.id === "string" ? a.id : undefined;
-  const name = typeof source.name === "string" ? source.name : undefined;
-  const description = typeof source.description === "string" ? source.description : undefined;
-  const promptTemplate = typeof source.promptTemplate === "string" ? source.promptTemplate : undefined;
-  const parameters = source.parameters;
-  const allowedTools = Array.isArray(source.allowedTools)
-    ? (source.allowedTools as unknown[]).map((t) => String(t))
-    : undefined;
+  // Helper: is this field unchanged from existing? Only meaningful for update_skill.
+  const unchanged = (key: "name" | "description" | "promptTemplate") =>
+    isUpdate && existing !== null && existing[key] === eff[key];
+  const parametersUnchanged =
+    isUpdate &&
+    existing !== null &&
+    safeStringifyForPanel(existing.toolSchema.parameters) === safeStringifyForPanel(eff.toolSchema.parameters);
+  const allowedToolsUnchanged =
+    isUpdate &&
+    existing !== null &&
+    JSON.stringify(existing.allowedTools ?? null) === JSON.stringify(eff.allowedTools ?? null);
+
+  const allowedTools = eff.allowedTools;
 
   return (
     <div className="space-y-2.5">
-      {isUpdate && (
-        <div className="rounded bg-amber-950/40 border border-amber-700/60 px-2 py-1 text-xs text-amber-300">
-          Updating an existing skill. After approval the skill is re-marked as agent-authored, and the user will be asked to re-confirm on its next execution.
-        </div>
-      )}
-      {id !== undefined && (
+      <div className="rounded bg-amber-950/40 border border-amber-700/60 px-2 py-1 text-xs text-amber-300">
+        {isUpdate ? (
+          <>
+            Updating <code className="font-mono">{existing?.id ?? eff.id}</code>. After approval the skill is re-marked as agent-authored and the user will be asked to re-confirm on its next execution. Fields tagged "(unchanged)" stay as they were.
+          </>
+        ) : (
+          <>Creating a new agent-authored skill. The user will be asked to re-confirm on its first execution.</>
+        )}
+      </div>
+      {isUpdate && existing !== null && (
         <div>
           <div className="text-xs text-neutral-500">id:</div>
-          <code className="font-mono text-xs text-neutral-300 break-all">{id}</code>
+          <code className="font-mono text-xs text-neutral-300 break-all">{existing.id}</code>
         </div>
       )}
-      {name !== undefined && (
-        <div>
-          <div className="text-xs text-neutral-500">name:</div>
-          <div className="text-neutral-200">{name}</div>
+      <div>
+        <div className="text-xs text-neutral-500">
+          name: {unchanged("name") && <span className="text-neutral-600">(unchanged)</span>}
         </div>
-      )}
-      {description !== undefined && (
-        <div>
-          <div className="text-xs text-neutral-500">description:</div>
-          <div className="text-neutral-300 whitespace-pre-wrap break-words">{description}</div>
+        <div className="text-neutral-200">{eff.name}</div>
+      </div>
+      <div>
+        <div className="text-xs text-neutral-500">
+          description: {unchanged("description") && <span className="text-neutral-600">(unchanged)</span>}
         </div>
-      )}
-      {promptTemplate !== undefined && (
-        <div>
-          <div className="text-xs text-neutral-500">promptTemplate ({promptTemplate.length} chars):</div>
-          <pre className="max-h-64 overflow-auto rounded bg-neutral-950 p-2 font-mono text-xs text-neutral-300 whitespace-pre-wrap break-words">
-            {promptTemplate}
-          </pre>
+        <div className="text-neutral-300 whitespace-pre-wrap break-words">{eff.description}</div>
+      </div>
+      <div>
+        <div className="text-xs text-neutral-500">
+          promptTemplate ({eff.promptTemplate.length} chars){" "}
+          {unchanged("promptTemplate") && <span className="text-neutral-600">(unchanged)</span>}
         </div>
-      )}
-      {parameters !== undefined && (
-        <div>
-          <div className="text-xs text-neutral-500">parameters (JSON Schema):</div>
-          <pre className="max-h-48 overflow-auto rounded bg-neutral-950 p-2 font-mono text-xs text-neutral-300">
-            {safeStringifyForPanel(parameters)}
-          </pre>
+        <pre className="max-h-64 overflow-auto rounded bg-neutral-950 p-2 font-mono text-xs text-neutral-300 whitespace-pre-wrap break-words">
+          {eff.promptTemplate}
+        </pre>
+      </div>
+      <div>
+        <div className="text-xs text-neutral-500">
+          parameters (JSON Schema):{" "}
+          {parametersUnchanged && <span className="text-neutral-600">(unchanged)</span>}
         </div>
-      )}
-      {allowedTools !== undefined && (
-        <div>
-          <div className="text-xs text-neutral-500">allowedTools:</div>
-          {allowedTools.length === 0 ? (
-            <div className="text-xs italic text-neutral-500">(empty — only done / fail callable inside this skill's scope)</div>
-          ) : (
-            <div className="mt-1 flex flex-wrap gap-1">
-              {allowedTools.map((t, i) => (
-                <code
-                  key={i}
-                  className="rounded bg-neutral-800 px-1.5 py-0.5 font-mono text-xs text-neutral-300"
-                >
-                  {t}
-                </code>
-              ))}
-            </div>
-          )}
+        <pre className="max-h-48 overflow-auto rounded bg-neutral-950 p-2 font-mono text-xs text-neutral-300">
+          {safeStringifyForPanel(eff.toolSchema.parameters)}
+        </pre>
+      </div>
+      <div>
+        <div className="text-xs text-neutral-500">
+          allowedTools: {allowedToolsUnchanged && <span className="text-neutral-600">(unchanged)</span>}
         </div>
-      )}
+        {allowedTools === null || allowedTools === undefined ? (
+          <div className="text-xs italic text-neutral-500">(legacy: no scope restriction)</div>
+        ) : allowedTools.length === 0 ? (
+          <div className="text-xs italic text-neutral-500">(empty — only done / fail callable inside this skill's scope)</div>
+        ) : (
+          <div className="mt-1 flex flex-wrap gap-1">
+            {allowedTools.map((t, i) => (
+              <code
+                key={i}
+                className="rounded bg-neutral-800 px-1.5 py-0.5 font-mono text-xs text-neutral-300"
+              >
+                {t}
+              </code>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -144,6 +179,7 @@ export default function AgentConfirmCard({
   resolved,
   onApprove,
   onReject,
+  metaSkillPreview,
 }: AgentConfirmCardProps) {
   function handleKeyDown(e: React.KeyboardEvent) {
     // Prevent Enter from accidentally triggering Approve
@@ -213,11 +249,14 @@ export default function AgentConfirmCard({
         </div>
       )}
 
-      {/* Args — meta tools render full skill content per-field (P0-D no cap);
-          everything else uses the generic 2000-char-capped JSON pretty-print. */}
+      {/* Args — meta tools render the EFFECTIVE merged skill (P0-D no cap,
+          adv-1 closure: update_skill must show retained fields, not just
+          the patch). Falls back to the generic args dump only when the
+          metaSkillPreview is missing (defensive: shouldn't happen for
+          meta tools because loop.ts always provides it). */}
       <div className="mb-3">
-        {isMeta ? (
-          <SkillContentDetails tool={tool} args={args} />
+        {isMeta && metaSkillPreview ? (
+          <SkillContentDetails tool={tool} metaSkillPreview={metaSkillPreview} />
         ) : (
           <>
             <div className="mb-0.5 text-xs text-neutral-500">args:</div>

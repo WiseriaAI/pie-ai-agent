@@ -6,7 +6,9 @@ import {
   BUILT_IN_TOOLS,
   getKeyboardTools,
   isKeyboardToolName,
+  isSkillMetaToolName,
 } from "./tools";
+import { previewMetaSkillCall } from "./tools/skill-meta";
 import type { Tool } from "./types";
 import { classifyRisk } from "./risk";
 import { buildAgentSystemPrompt, buildObservationMessage } from "./prompt";
@@ -576,6 +578,14 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             firstKeyboardConfirmShown = true;
           }
 
+          // Phase 2.6 — for create_skill / update_skill, pre-compute the
+          // effective merged skill so AgentConfirmCard can render full
+          // content instead of just the patch (P0-D / adv-1 closure).
+          let metaSkillPreview: { existing: SkillDefinition | null; effective: SkillDefinition } | undefined;
+          if (tc.name === "create_skill" || tc.name === "update_skill") {
+            metaSkillPreview = (await previewMetaSkillCall(tc.name, tc.args)) ?? undefined;
+          }
+
           // confirm-request keeps RAW args.text — user must see the
           // actual content to make an informed approval. agent-step
           // (above + below) uses redactArgsForPanel.
@@ -584,6 +594,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             args: tc.args,
             resolvedElement: resolvedElement ?? { text: "", tag: "" },
             riskReason,
+            metaSkillPreview,
           });
 
           if (!approved) {
@@ -725,6 +736,30 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             skillId: tc.name,
             allowedTools: skillDefForStep?.allowedTools ?? null,
           };
+        }
+
+        // Phase 2.6 — Skill cache invalidation after a successful meta-tool
+        // mutation, so a within-step sequence like [update_skill X, X] sees
+        // the post-update skill state on the second tc (R10 first-run gate
+        // and the resolveSkillToTools observation both depend on a fresh
+        // skillDefByName / skillResolvedNames). Without this, a stale cache
+        // would silently bypass R10 even though chrome.storage holds the new
+        // state — adversarial review adv-2.
+        if (isSkillMetaToolName(tc.name) && result.success) {
+          const refreshedSkills = await getEnabledSkills();
+          skillDefByName.clear();
+          for (const s of refreshedSkills) skillDefByName.set(s.id, s);
+          // skillResolvedNames is `const`-bound to this iteration's skillTools
+          // and `allTools` is also fixed for the iteration; we cannot resolve
+          // a brand-new skill into a callable Tool mid-iteration without
+          // re-running getEnabledSkillTools. That's deliberate — the agent
+          // will see the new skill in the NEXT iteration's tool list, after
+          // observation is digested. The cache invalidation here only
+          // ensures R10 / scope transition see fresh metadata for skills
+          // that already existed (i.e. the update_skill / delete_skill
+          // paths); brand-new create_skill outputs become callable next
+          // turn, which is the correct UX (one round-trip lets the user
+          // see the result).
         }
 
         // Check for terminal tools
