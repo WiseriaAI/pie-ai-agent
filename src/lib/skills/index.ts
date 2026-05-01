@@ -13,6 +13,13 @@ export {
   markSkillFirstRun,
 } from "./storage";
 export { BUILT_IN_SKILLS } from "./builtin";
+export {
+  normalizeSkillSlashKey,
+  findSkillBySlashKey,
+  resolveSlashCommand,
+  expandSlashCommand,
+  type SlashCommandMatch,
+} from "./slash";
 
 import type { SkillDefinition } from "./types";
 import type { Tool } from "@/lib/agent/types";

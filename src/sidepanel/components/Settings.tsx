@@ -44,7 +44,7 @@ function makeInitialForms(): Record<string, ProviderFormState> {
 }
 
 interface SettingsProps {
-  onRunSkill?: (skillId: string) => void;
+  onRunSkill?: (skillId: string, skillName: string) => void;
 }
 
 export default function Settings({ onRunSkill }: SettingsProps) {

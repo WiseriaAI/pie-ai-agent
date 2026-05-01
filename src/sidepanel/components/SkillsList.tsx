@@ -12,7 +12,11 @@ import {
 import { ALL_KNOWN_NON_SKILL_TOOL_NAMES } from "@/lib/agent/tool-names";
 
 interface SkillsListProps {
-  onRunSkill: (skillId: string) => void;
+  /** Called when the user clicks Run on a skill card. Receives both the
+   *  immutable id and the human name so the parent can prefer the
+   *  human-readable form for the chat input prefill (Phase 2.6+ slash
+   *  shorthand). */
+  onRunSkill: (skillId: string, skillName: string) => void;
 }
 
 // Same caps as the meta tool handlers (kept in sync with skill-meta.ts).
@@ -448,7 +452,7 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
               {/* Actions */}
               <div className="flex flex-wrap gap-2">
                 <button
-                  onClick={() => onRunSkill(skill.id)}
+                  onClick={() => onRunSkill(skill.id, skill.name)}
                   disabled={!enabled}
                   className="rounded bg-blue-600 px-3 py-1.5 text-xs text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >

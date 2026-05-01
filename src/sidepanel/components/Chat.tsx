@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import type { ChatMessage } from "@/lib/model-router";
 import type { PortMessageToPanel, ResolvedElement } from "@/types";
 import type { SkillDefinition } from "@/lib/skills";
+import { getEnabledSkills, resolveSlashCommand, expandSlashCommand } from "@/lib/skills";
 import { getActiveProvider, getProviderConfig } from "@/lib/storage";
 import AgentStepBubble from "./AgentStepBubble";
 import AgentConfirmCard from "./AgentConfirmCard";
@@ -9,7 +10,14 @@ import AgentSummary from "./AgentSummary";
 import MarkdownContent from "./Markdown";
 
 type DisplayMessage =
-  | { role: "user"; content: string }
+  | {
+      role: "user";
+      content: string;
+      /** Phase 2.6+: when set, this is the LLM-facing rewrite of a slash
+       *  command; `content` remains the raw `/foo` for chat-history display.
+       *  Send `expandedForLLM` to the model instead of `content`. */
+      expandedForLLM?: string;
+    }
   | { role: "assistant"; content: string }
   | {
       role: "agent-step";
@@ -107,26 +115,48 @@ export default function Chat({ onGoToSettings, prefillInput, onPrefillConsumed }
     }
   }
 
-  function sendMessage(text?: string) {
+  async function sendMessage(text?: string) {
     const content = (text ?? input).trim();
     if (!content || streaming) return;
 
     setInput("");
     setError(null);
 
-    const userMessage: DisplayMessage = { role: "user", content };
+    // Phase 2.6+ slash-command resolution: detect /<key> matching an enabled
+    // skill (by id or normalized name) and rewrite for the LLM. The raw
+    // slash text stays in chat history for display; only the LLM-facing
+    // copy is expanded. Unknown /commands fall through unchanged.
+    let expandedForLLM: string | undefined = undefined;
+    if (content.startsWith("/")) {
+      try {
+        const enabledSkills = await getEnabledSkills();
+        const match = resolveSlashCommand(content, enabledSkills);
+        if (match) {
+          expandedForLLM = expandSlashCommand(match);
+        }
+      } catch {
+        // resolver failure is non-fatal; pass raw content through
+      }
+    }
+
+    const userMessage: DisplayMessage = { role: "user", content, expandedForLLM };
     const updatedMessages = [...messages, userMessage];
     setMessages(updatedMessages);
     setStreaming(true);
     setStreamingText("");
 
-    // Build chat messages for the API — only user/assistant text, skip agent-* display messages
+    // Build chat messages for the API — only user/assistant text, skip agent-* display messages.
+    // For user messages with a slash-command expansion, send the expanded text.
     const chatMessages: ChatMessage[] = updatedMessages
       .filter(
-        (m): m is { role: "user" | "assistant"; content: string } =>
+        (m): m is { role: "user"; content: string; expandedForLLM?: string } | { role: "assistant"; content: string } =>
           m.role === "user" || m.role === "assistant",
       )
-      .map((m) => ({ role: m.role, content: m.content }));
+      .map((m) =>
+        m.role === "user" && m.expandedForLLM
+          ? { role: "user" as const, content: m.expandedForLLM }
+          : { role: m.role, content: m.content },
+      );
 
     // Establish port connection
     const port = chrome.runtime.connect({ name: "chat-stream" });

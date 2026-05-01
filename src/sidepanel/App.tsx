@@ -3,6 +3,7 @@ import Chat from "@/sidepanel/components/Chat";
 import Settings from "@/sidepanel/components/Settings";
 import { getActiveProvider, getProviderConfig } from "@/lib/storage";
 import { getProviderMeta } from "@/lib/model-router";
+import { normalizeSkillSlashKey } from "@/lib/skills";
 
 type Tab = "chat" | "agent" | "tabs" | "settings";
 
@@ -11,8 +12,13 @@ export default function App() {
   const [providerLabel, setProviderLabel] = useState<string | null>(null);
   const [chatPrefill, setChatPrefill] = useState<string | undefined>(undefined);
 
-  function handleRunSkill(skillId: string) {
-    setChatPrefill(`/skill ${skillId}`);
+  // Phase 2.6+ slash-command prefill. Prefer the slugified human name
+  // (e.g. `/extract-tables`) — falls back to the raw id when the name
+  // slugifies to empty (rare; e.g. all-punctuation names).
+  function handleRunSkill(skillId: string, skillName: string) {
+    const slug = normalizeSkillSlashKey(skillName);
+    const key = slug.length > 0 ? slug : skillId;
+    setChatPrefill(`/${key}`);
     setActiveTab("chat");
   }
 
