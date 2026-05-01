@@ -25,9 +25,31 @@ const SKILL_META_TOOL_NAMES_FOR_REGISTRY = [
   "list_skills",
 ] as const;
 
+// Phase 3 cross-tab tools (always present in BUILT_IN_TOOLS).
+//
+// G-1 acceptance gate: every name listed here MUST also appear in
+// ALWAYS_HIGH_TAB_TOOLS in src/lib/agent/risk.ts (the build-time exhaustive
+// check enforces this). If a future PR introduces a low-risk cross-tab tool,
+// it MUST first upgrade SkillDefinition.allowedTools schema from string[] to
+// (name, scope) tuple — see plan G-1 / K-3.
+//
+// list_tabs is the only entry where risk depends on args (currentWindow vs
+// allWindows); risk.ts handles the args introspection, but the tool name
+// itself still belongs in this set so allowedTools validation accepts it.
+export const TAB_TOOL_NAMES = [
+  "list_tabs",
+  "get_tab_content",
+  "close_tabs",
+  "activate_tab",
+  "group_tabs",
+  "ungroup_tabs",
+  "move_tabs",
+] as const;
+
 export const KNOWN_BUILT_IN_TOOL_NAMES = [
   ...PHASE_2_TOOL_NAMES,
   ...SKILL_META_TOOL_NAMES_FOR_REGISTRY,
+  ...TAB_TOOL_NAMES,
 ] as const;
 
 export const KNOWN_KEYBOARD_TOOL_NAMES = [
@@ -54,4 +76,5 @@ export const KNOWN_KEYBOARD_TOOL_NAMES = [
 export const ALL_KNOWN_NON_SKILL_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
   ...PHASE_2_TOOL_NAMES,
   ...KNOWN_KEYBOARD_TOOL_NAMES,
+  ...TAB_TOOL_NAMES,
 ]);

@@ -54,10 +54,23 @@ function getElement(
 /**
  * Pure function. Classifies the risk of a tool call based on static rules.
  * Default is low; structural signals elevate to high.
+ *
+ * The args parameter accepts optional fields for every tool that introspects
+ * its args during classification (DOM tools use elementIndex/value; Phase 3
+ * tab tools use tabIds/tabId/scope). The cast site in loop.ts widens the
+ * incoming `unknown` args to this shape; new tools that introspect args must
+ * extend this type union (or change to Record<string, unknown> + narrowing).
  */
 export function classifyRisk(
   toolName: string,
-  args: { elementIndex?: number; value?: string },
+  args: {
+    elementIndex?: number;
+    value?: string;
+    // Phase 3 cross-tab tools
+    tabIds?: number[];
+    tabId?: number;
+    scope?: string;
+  },
   snapshot: PageSnapshot,
 ): RiskAssessment {
   // Phase 2.5 keyboard simulation tools — ALWAYS high risk. CDP keyboard
@@ -104,6 +117,22 @@ export function classifyRisk(
     toolName === "scroll" ||
     toolName === "wait"
   ) {
+    return { level: "low" };
+  }
+
+  // Phase 3 — list_tabs is the single tab tool with args-dependent risk.
+  // currentWindow (default) is low; allWindows triggers high because it
+  // exposes tab metadata across windows the user has not chosen as the
+  // agent conversation context (P3-T / SEC-3).
+  if (toolName === "list_tabs") {
+    const scope = typeof args.scope === "string" ? args.scope : "currentWindow";
+    if (scope === "allWindows") {
+      return {
+        level: "high",
+        reason:
+          "Cross-window tab metadata exposure to BYOK provider — confirm scope.",
+      };
+    }
     return { level: "low" };
   }
 

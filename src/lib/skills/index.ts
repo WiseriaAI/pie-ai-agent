@@ -24,6 +24,7 @@ export {
 import type { SkillDefinition } from "./types";
 import type { Tool } from "@/lib/agent/types";
 import type { ActionResult } from "@/lib/dom-actions/types";
+import { escapeUntrustedWrappers } from "@/lib/agent/untrusted-wrappers";
 import { BUILT_IN_SKILLS } from "./builtin";
 import { listUserSkills, getEnabledSkillIds } from "./storage";
 
@@ -76,7 +77,10 @@ export async function getEnabledSkills(): Promise<SkillDefinition[]> {
 }
 
 /** Render a promptTemplate by replacing {{key}} placeholders.
- *  Each value is JSON-stringified and capped at MAX_TEMPLATE_VALUE_LEN chars.
+ *  Each value is JSON-stringified, capped at MAX_TEMPLATE_VALUE_LEN chars,
+ *  and run through escapeUntrustedWrappers so agent-supplied args cannot
+ *  inject literal `</untrusted_skill_params>` and escape the wrapper
+ *  (closes adversarial review ADV-1 / Phase 3 invariant P3-O).
  *  Missing keys render as empty string.
  *  The entire rendered result is wrapped in <untrusted_skill_params> tags.
  */
@@ -84,9 +88,10 @@ function renderTemplate(template: string, args: Record<string, unknown>): string
   const rendered = template.replace(/\{\{(\w+)\}\}/g, (_match, key: string) => {
     if (!(key in args)) return "";
     const raw = JSON.stringify(args[key]) ?? "";
-    return raw.length > MAX_TEMPLATE_VALUE_LEN
+    const capped = raw.length > MAX_TEMPLATE_VALUE_LEN
       ? raw.slice(0, MAX_TEMPLATE_VALUE_LEN)
       : raw;
+    return escapeUntrustedWrappers(capped);
   });
   return `<untrusted_skill_params>${rendered}</untrusted_skill_params>`;
 }

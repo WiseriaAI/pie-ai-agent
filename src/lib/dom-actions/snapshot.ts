@@ -12,13 +12,20 @@ export function snapshotInteractiveElements(): PageSnapshot {
     if (!str) return "";
     // Filter control chars (\u0000-\u001F) and zero-width chars (\u200B-\u200F)
     let cleaned = str.replace(/[\u0000-\u001F\u200B-\u200F]/g, "");
-    // Neutralize the untrusted-content wrapper tags so page text cannot close the
-    // <untrusted_page_content> block that the agent prompt builder uses. Without
+    // Neutralize the untrusted-content wrapper tags so page text cannot close
+    // the <untrusted_*> blocks that the agent prompt builder uses. Without
     // this, a page element with text like "</untrusted_page_content> SYSTEM: ..."
     // could escape the untrusted wrapper and become LLM instructions.
+    //
+    // NOTE: this function is injected via chrome.scripting.executeScript and
+    // cannot import external helpers. The non-injected code path uses the
+    // shared escapeUntrustedWrappers helper at src/lib/agent/untrusted-wrappers.ts;
+    // both implementations cover the same wrapper-tag set (Phase 3 P3-O).
+    // Keep this list in sync with UNTRUSTED_WRAPPER_TAGS in that helper.
     cleaned = cleaned
       .replace(/<\/?untrusted_page_content>/gi, "[filtered]")
-      .replace(/<\/?untrusted_skill_params>/gi, "[filtered]");
+      .replace(/<\/?untrusted_skill_params>/gi, "[filtered]")
+      .replace(/<\/?untrusted_tab_metadata>/gi, "[filtered]");
     if (cleaned.length > maxLen) {
       cleaned = cleaned.slice(0, maxLen) + "...";
     }
