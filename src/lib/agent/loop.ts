@@ -9,10 +9,14 @@ import {
   isSkillMetaToolName,
 } from "./tools";
 import { previewMetaSkillCall } from "./tools/skill-meta";
-import type { Tool } from "./types";
+import type { Tool, PreFetchedTabContent } from "./types";
 import { classifyRisk, type RiskClassifyContext } from "./risk";
 import { TAB_TOOL_NAMES } from "./tool-names";
 import { escapeUntrustedWrappers } from "./untrusted-wrappers";
+import {
+  extractPageContentHardened,
+  GET_TAB_CONTENT_PREVIEW_BYTES,
+} from "./tools/tabs";
 import { buildAgentSystemPrompt, buildObservationMessage } from "./prompt";
 import { applySlidingWindow } from "./window";
 import { isKeyboardSimulationEnabled } from "../keyboard-simulation";
@@ -27,6 +31,7 @@ import type {
   AgentDoneTaskMessage,
   ResolvedElement,
   TabTarget,
+  TabContentPreview,
 } from "../../types/messages";
 
 const MAX_STEPS = 30;
@@ -279,6 +284,77 @@ function tabTargetsToOriginCache(
     m.set(t.id, { origin: t.origin });
   }
   return m;
+}
+
+/**
+ * Phase 3 P3-U / SEC-2 — pre-fetch get_tab_content before the confirm card,
+ * with timeout-guard for frozen tabs (W3C WebExtensions #527).
+ *
+ * Returns:
+ *   - { ok: true, fullText, totalBytes } when extract succeeded
+ *   - { ok: false, reason } for restricted URL / discarded tab / timeout /
+ *     extract failure
+ *
+ * The full text goes into ctx.preFetchedContent so the handler doesn't
+ * re-run executeScript after approval (avoids race with page navigation).
+ * Only the first GET_TAB_CONTENT_PREVIEW_BYTES are shown in the confirm
+ * card — the user sees enough to spot credentials before approving.
+ */
+async function preFetchTabContent(
+  tabId: number,
+): Promise<
+  | { ok: true; fullText: string; totalBytes: number; origin: string }
+  | { ok: false; reason: string }
+> {
+  let tab: chrome.tabs.Tab;
+  try {
+    tab = await chrome.tabs.get(tabId);
+  } catch {
+    return { ok: false, reason: "missing" };
+  }
+  if (!tab.url || isRestrictedUrl(tab.url)) {
+    return { ok: false, reason: "restrictedUrl" };
+  }
+  if (tab.discarded) {
+    return { ok: false, reason: "discardedTabRequiresActivation" };
+  }
+  const origin = safeParseOrigin(tab.url);
+  if (!origin) {
+    return { ok: false, reason: "unresolvableOrigin" };
+  }
+
+  const FROZEN_TIMEOUT_MS = 5000;
+  try {
+    const fetchPromise = chrome.scripting.executeScript({
+      target: { tabId },
+      func: extractPageContentHardened,
+    });
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("extractTimeout")), FROZEN_TIMEOUT_MS),
+    );
+    const results = (await Promise.race([
+      fetchPromise,
+      timeoutPromise,
+    ])) as chrome.scripting.InjectionResult<{
+      text: string;
+      totalBytes: number;
+    }>[];
+    const r = results[0]?.result;
+    if (!r) {
+      return { ok: false, reason: "extractFailed" };
+    }
+    return {
+      ok: true,
+      fullText: r.text,
+      totalBytes: r.totalBytes,
+      origin,
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      reason: e instanceof Error ? e.message : "extractFailed",
+    };
+  }
 }
 
 // ── Phase 2.5 helpers ────────────────────────────────────────────────────────
@@ -734,6 +810,39 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           tabTargets = await buildTabTargets(tc.name, args, pinnedOrigin);
         }
 
+        // Phase 3 P3-U / SEC-2 — pre-fetch get_tab_content BEFORE the confirm
+        // card so the user can see the actual content they're about to send
+        // to the LLM. The full text is cached on ctx so the handler reuses
+        // it after approval (no race with post-approval navigation).
+        let contentPreview: TabContentPreview | undefined;
+        let preFetchedContent: Map<number, PreFetchedTabContent> | undefined;
+        if (tc.name === "get_tab_content") {
+          const tabIdArg = typeof args.tabId === "number" ? args.tabId : undefined;
+          if (typeof tabIdArg === "number") {
+            const pre = await preFetchTabContent(tabIdArg);
+            if (pre.ok) {
+              const previewText = escapeUntrustedWrappers(
+                pre.fullText.slice(0, GET_TAB_CONTENT_PREVIEW_BYTES),
+              );
+              contentPreview = {
+                tabId: tabIdArg,
+                origin: pre.origin,
+                previewText,
+                truncatedAtBytes: GET_TAB_CONTENT_PREVIEW_BYTES,
+                totalBytes: pre.totalBytes,
+              };
+              preFetchedContent = new Map();
+              preFetchedContent.set(tabIdArg, {
+                fullText: pre.fullText,
+                totalBytes: pre.totalBytes,
+              });
+            }
+            // Pre-fetch failure is non-fatal — the handler will report the
+            // same error after approval. We still build a minimal preview
+            // so the confirm card explains why no preview is available.
+          }
+        }
+
         const riskCtx: RiskClassifyContext = {
           pinnedOrigin,
           allTabsCache: tabTargetsToOriginCache(tabTargets),
@@ -788,6 +897,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             riskReason,
             metaSkillPreview,
             tabTargets,
+            contentPreview,
           });
 
           if (!approved) {
@@ -928,6 +1038,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             tabId: pinnedTabId,
             snapshot,
             confirmedTabTargets,
+            preFetchedContent,
           });
         } catch (e) {
           result = {
