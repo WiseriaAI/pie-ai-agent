@@ -82,6 +82,12 @@ async function verifyConfirmedOrigin(
 const LIST_TABS_MAX = 50;
 const TITLE_MAX_LEN = 100;
 const DOMAIN_MAX_LEN = 50;
+// Keep in sync with isRestrictedUrl in src/lib/agent/loop.ts (which gates
+// task pinning at start + per-iteration origin re-check). Asymmetry between
+// the two lists is a real exploit vector — a scheme rejected by loop.ts
+// (e.g. file://) but accepted here would let get_tab_content / group_tabs
+// operate on local-file pages or blob: pages that the agent should never
+// touch (correctness review finding).
 const RESTRICTED_URL_PREFIXES = [
   "chrome://",
   "chrome-extension://",
@@ -91,6 +97,8 @@ const RESTRICTED_URL_PREFIXES = [
   "data:",
   "javascript:",
   "view-source:",
+  "file://",
+  "blob:",
 ];
 
 // Strip control chars except tab (\x09) and the line breaks we replace
@@ -235,7 +243,7 @@ const listTabsTool: Tool = {
     },
     additionalProperties: false,
   },
-  handler: async (args: unknown): Promise<ActionResult> => {
+  handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
     const a = (args ?? {}) as ListTabsArgs;
     const scope = a.scope === "allWindows" ? "allWindows" : "currentWindow";
     const requestedLimit =
@@ -249,12 +257,27 @@ const listTabsTool: Tool = {
 
     // Filter tabs without an id or windowId (chrome occasionally surfaces
     // partial tabs during navigation transitions) — we can't safely act on
-    // them. URL may legitimately be undefined for chrome:// pages without
-    // tabs permission elevation, but we have the permission, so this is rare.
-    const usable = allTabs.filter(
+    // them.
+    let usable = allTabs.filter(
       (t): t is chrome.tabs.Tab & { id: number; windowId: number } =>
         typeof t.id === "number" && typeof t.windowId === "number",
     );
+
+    // CRITICAL P3-T enforcement (adversarial review): scope=allWindows runs
+    // through the high-risk confirm card with tabTargets snapshotted at
+    // confirm-time. The user approves a SPECIFIC set of tabs. If new tabs
+    // open between approval and dispatch (bank notification, password
+    // manager auto-open, etc.), they MUST NOT slip into the LLM's view.
+    // Filter the live query down to exactly the ids the user approved.
+    //
+    // For scope=currentWindow there is no confirm card (low-risk path) and
+    // ctx.confirmedTabTargets is undefined — that path is unchanged because
+    // same-window tabs are within the trust boundary the user implicitly
+    // granted by chatting in this window.
+    if (scope === "allWindows" && ctx.confirmedTabTargets) {
+      const approvedIds = ctx.confirmedTabTargets;
+      usable = usable.filter((t) => approvedIds.has(t.id));
+    }
 
     const totalCount = usable.length;
     const truncated = totalCount > requestedLimit;

@@ -21,14 +21,20 @@
  *  1. Plain ASCII closing: `</untrusted_page_content>`
  *  2. Unicode confusables: `‹/untrusted_skill_params›` (U+2039 / U+203A)
  *  3. Full-width brackets: `＜/untrusted_tab_metadata＞` (U+FF1C / U+FF1E)
- *  4. Mathematical angle:  `〈/untrusted_*〉` (U+2329 / U+232A or U+3008 / U+3009)
- *  5. Zero-width injection: `<​/untrusted_*>` (U+200B-200F, U+2060, U+FEFF)
+ *  4. Mathematical angle:  `〈/untrusted_*〉` (U+2329 / U+232A)
+ *  5. CJK angle bracket:   `〈/untrusted_*〉` (U+3008 / U+3009)
+ *  6. Zero-width injection: `<​/untrusted_*>` (U+200B-200F, U+2060, U+FEFF)
+ *  7. Closing tag with attribute: `</untrusted_X attr=val>` — HTML and most
+ *     LLM tokenizers tolerate attributes on closing tags
+ *  8. Multi-slash close: `<//untrusted_X>`, `</⁄untrusted_X>` (U+2044
+ *     fraction slash, U+2215 division slash)
  *
  * Strategy: strip zero-width chars first (cannot hide inside a tag name),
- * then match any "less-than-like" char + optional `/` + known wrapper tag +
- * "greater-than-like" char, and rewrite to ASCII HTML entities. HTML entities
- * are chosen over Unicode lookalikes because attackers can pre-poison content
- * with lookalikes; entities are unambiguously not-a-tag in any markup grammar
+ * then match any "less-than-like" char + 0..3 slash variants + known wrapper
+ * tag + arbitrary non-bracket payload up to 200 chars + "greater-than-like"
+ * char, and rewrite to ASCII HTML entities. HTML entities are chosen over
+ * Unicode lookalikes because attackers can pre-poison content with
+ * lookalikes; entities are unambiguously not-a-tag in any markup grammar
  * the LLM might apply.
  */
 
@@ -44,16 +50,32 @@ export const UNTRUSTED_WRAPPER_TAGS = [
 // U+FEFF: zero-width no-break space (BOM)
 const ZERO_WIDTH_RE = /[​-‏⁠﻿]/g;
 
-// All bracket-like chars we accept as "less-than" or "greater-than" in attack input.
-const LT_CLASS = "[<‹〈〈＜]";
-const GT_CLASS = "[>›〉〉＞]";
+// All bracket-like chars we accept as "less-than" or "greater-than" in
+// attack input. Covered (in order):
+//   U+003C  <  ASCII less-than
+//   U+2039  ‹  Single Left-Pointing Angle Quotation Mark
+//   U+2329  〈  Left-Pointing Angle Bracket (mathematical)
+//   U+3008  〈  Left Angle Bracket (CJK)
+//   U+FF1C  ＜  Fullwidth Less-Than Sign
+const LT_CLASS = "[\\u003c\\u2039\\u2329\\u3008\\uff1c]";
+const GT_CLASS = "[\\u003e\\u203a\\u232a\\u3009\\uff1e]";
+
+// Char class for "anything that is NOT a closing bracket variant" — used
+// inside the wrapper match to consume attribute-style payloads up to 200
+// chars without breaking out of the regex via a valid `>`.
+const NOT_GT_CLASS = "[^\\u003e\\u203a\\u232a\\u3009\\uff1e]";
+
+// Slash variants accepted before the tag name. ASCII /, U+2044 fraction
+// slash, U+2215 division slash. 0..3 occurrences tolerates `<tag>` (open),
+// `</tag>` (close), `<//tag>` (malformed close some parsers accept).
+const SLASH_CLASS = "[\\u002f\\u2044\\u2215]";
 
 const TAG_ALT = UNTRUSTED_WRAPPER_TAGS.join("|");
 
-// Single regex matching <...untrusted_X...> or </...untrusted_X...> with any
-// bracket variant + optional whitespace tolerance.
+// Single regex matching <...untrusted_X[...]> or </...untrusted_X[...]>
+// with any bracket variant + slash variant + arbitrary attribute payload.
 const WRAPPER_RE = new RegExp(
-  `${LT_CLASS}\\s*/?\\s*(?:${TAG_ALT})\\s*${GT_CLASS}`,
+  `${LT_CLASS}\\s*${SLASH_CLASS}{0,3}\\s*(?:${TAG_ALT})${NOT_GT_CLASS}{0,200}${GT_CLASS}`,
   "gi",
 );
 
@@ -62,9 +84,9 @@ export function escapeUntrustedWrappers(text: string): string {
   // Strip zero-width chars first so they cannot hide inside a tag name.
   const noZeroWidth = text.replace(ZERO_WIDTH_RE, "");
   // Replace each matched wrapper-tag literal: rewrite the bracketing chars
-  // to ASCII HTML entities and preserve the inner tag name + slash so the
-  // LLM still sees the intent (data echoing the tag) but can't parse it as
-  // a wrapper boundary.
+  // to ASCII HTML entities and preserve the inner tag name + slash + any
+  // attribute payload so the LLM still sees the intent (data echoing the
+  // tag) but can't parse it as a wrapper boundary.
   return noZeroWidth.replace(WRAPPER_RE, (match) => {
     const inner = match.slice(1, -1);
     return `&lt;${inner}&gt;`;

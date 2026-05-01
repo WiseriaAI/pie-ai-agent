@@ -814,6 +814,13 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         // card so the user can see the actual content they're about to send
         // to the LLM. The full text is cached on ctx so the handler reuses
         // it after approval (no race with post-approval navigation).
+        //
+        // CRITICAL: pre-fetch failure (frozen tab, restricted URL, transient
+        // executeScript timeout, etc.) MUST still emit a contentPreview —
+        // otherwise the confirm card silently hides the preview block and
+        // the user approves blind, defeating the SEC-2 invariant. We emit a
+        // sentinel preview that explicitly says "preview unavailable" with
+        // the failure reason so the user can choose to reject.
         let contentPreview: TabContentPreview | undefined;
         let preFetchedContent: Map<number, PreFetchedTabContent> | undefined;
         if (tc.name === "get_tab_content") {
@@ -836,10 +843,22 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
                 fullText: pre.fullText,
                 totalBytes: pre.totalBytes,
               });
+            } else {
+              // Sentinel preview — confirm card MUST show the failure
+              // explicitly. Approving blind is still possible (the user
+              // may legitimately want the agent to retry), but they see
+              // exactly what's missing.
+              contentPreview = {
+                tabId: tabIdArg,
+                origin: "",
+                previewText: `(preview unavailable: ${pre.reason}) — approving will let the agent fetch content fresh; fetch may still fail or expose content the preview could not show.`,
+                truncatedAtBytes: 0,
+                totalBytes: 0,
+              };
+              // preFetchedContent intentionally remains undefined so the
+              // handler runs a fresh fetch (which will likely fail the
+              // same way and surface the failure in the observation).
             }
-            // Pre-fetch failure is non-fatal — the handler will report the
-            // same error after approval. We still build a minimal preview
-            // so the confirm card explains why no preview is available.
           }
         }
 

@@ -78,11 +78,15 @@ export async function getEnabledSkills(): Promise<SkillDefinition[]> {
 
 /** Render a promptTemplate by replacing {{key}} placeholders.
  *  Each value is JSON-stringified, capped at MAX_TEMPLATE_VALUE_LEN chars,
- *  and run through escapeUntrustedWrappers so agent-supplied args cannot
- *  inject literal `</untrusted_skill_params>` and escape the wrapper
- *  (closes adversarial review ADV-1 / Phase 3 invariant P3-O).
- *  Missing keys render as empty string.
- *  The entire rendered result is wrapped in <untrusted_skill_params> tags.
+ *  and run through escapeUntrustedWrappers (closes ADV-1).
+ *
+ *  After substitution, the FULL rendered string (template body + every
+ *  substituted value) is run through escapeUntrustedWrappers a second time
+ *  so an agent-authored promptTemplate cannot embed a literal
+ *  `</untrusted_skill_params>` in the template body itself (adversarial
+ *  re-review finding — wrapper escape was only applied to substitutions,
+ *  not the template body). escapeUntrustedWrappers is idempotent: HTML
+ *  entities produced by the first pass are not re-escaped by the second.
  */
 function renderTemplate(template: string, args: Record<string, unknown>): string {
   const rendered = template.replace(/\{\{(\w+)\}\}/g, (_match, key: string) => {
@@ -93,7 +97,8 @@ function renderTemplate(template: string, args: Record<string, unknown>): string
       : raw;
     return escapeUntrustedWrappers(capped);
   });
-  return `<untrusted_skill_params>${rendered}</untrusted_skill_params>`;
+  const safeRendered = escapeUntrustedWrappers(rendered);
+  return `<untrusted_skill_params>${safeRendered}</untrusted_skill_params>`;
 }
 
 /** Convert a list of SkillDefinitions into Tool objects.
