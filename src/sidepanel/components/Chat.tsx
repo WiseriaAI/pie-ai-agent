@@ -89,7 +89,6 @@ export default function Chat({
 
   useEffect(() => {
     checkConfig();
-    loadActiveOrigin();
   }, []);
 
   useEffect(() => {
@@ -127,7 +126,36 @@ export default function Chat({
   }, [prefillInput]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    const listener = (
+    // PINNED reflects the tab the agent will (or did) bind to:
+    //   - !streaming → preview = current active tab. Updated on every
+    //     active-tab switch, window-focus change, and url change so the
+    //     header always matches what the SW would pin if the user sent
+    //     a task right now.
+    //   - streaming → locked to the tab pinned at task start. The SW
+    //     captures pinnedTabId at chat-start; updating the panel
+    //     header mid-task would lie about where the agent is operating.
+    //   - streaming → false transition → refresh runs again (effect re-init
+    //     because `streaming` is in deps), so PINNED snaps back to the
+    //     active-tab preview the moment the task ends.
+    async function refreshActiveOrigin() {
+      if (streaming) return;
+      try {
+        const [tab] = await chrome.tabs.query({
+          active: true,
+          currentWindow: true,
+        });
+        setPinnedOrigin(tab?.url ? extractOrigin(tab.url) : null);
+      } catch {
+        // non-fatal — keep prior value
+      }
+    }
+
+    void refreshActiveOrigin();
+
+    const onActivated = () => {
+      void refreshActiveOrigin();
+    };
+    const onUpdated = (
       _tabId: number,
       changeInfo: chrome.tabs.TabChangeInfo,
       tab: chrome.tabs.Tab,
@@ -136,12 +164,25 @@ export default function Chat({
         setPageChanged(true);
       }
       if (changeInfo.url && tab.active) {
-        setPinnedOrigin(extractOrigin(changeInfo.url));
+        void refreshActiveOrigin();
       }
     };
-    chrome.tabs.onUpdated.addListener(listener);
-    return () => chrome.tabs.onUpdated.removeListener(listener);
-  }, [messages.length]);
+    const onFocusChanged = (winId: number) => {
+      // chrome.windows.WINDOW_ID_NONE === -1 fires when chrome loses focus
+      // entirely; ignore to avoid clearing pin on app-switch.
+      if (winId === chrome.windows.WINDOW_ID_NONE) return;
+      void refreshActiveOrigin();
+    };
+
+    chrome.tabs.onActivated.addListener(onActivated);
+    chrome.tabs.onUpdated.addListener(onUpdated);
+    chrome.windows.onFocusChanged.addListener(onFocusChanged);
+    return () => {
+      chrome.tabs.onActivated.removeListener(onActivated);
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      chrome.windows.onFocusChanged.removeListener(onFocusChanged);
+    };
+  }, [messages.length, streaming]);
 
   async function checkConfig() {
     const active = await getActiveProvider();
@@ -154,15 +195,6 @@ export default function Chat({
       setHasConfig(!!config);
     } catch {
       setHasConfig(false);
-    }
-  }
-
-  async function loadActiveOrigin() {
-    try {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (tab?.url) setPinnedOrigin(extractOrigin(tab.url));
-    } catch {
-      // non-fatal
     }
   }
 
