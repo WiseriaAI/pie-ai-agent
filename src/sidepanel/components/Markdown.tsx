@@ -5,7 +5,33 @@ interface MarkdownContentProps {
   content: string;
 }
 
+/**
+ * CommonMark spec: any line that starts with 4+ spaces (or a tab) becomes an
+ * "indented code block" — rendered through the <pre> code path with mono font
+ * + overflow-x-auto. LLM reasoning output occasionally lands such whitespace
+ * (extra padding around bullets, copy-pasted text from the page snapshot,
+ * stream chunk concatenation artifacts), turning a plain Chinese sentence
+ * into a horizontally-scrolling code box. Strip those leading spaces in
+ * regions OUTSIDE fenced ``` blocks so the indented-code rule no longer
+ * fires unintentionally; real code (in ```...```) is preserved verbatim.
+ */
+function stripIncidentalIndentedCode(content: string): string {
+  const lines = content.split("\n");
+  let inFenced = false;
+  for (let i = 0; i < lines.length; i++) {
+    if (/^\s*```/.test(lines[i])) {
+      inFenced = !inFenced;
+      continue;
+    }
+    if (!inFenced) {
+      lines[i] = lines[i].replace(/^(?: {4,}|\t+)/, "");
+    }
+  }
+  return lines.join("\n");
+}
+
 export default function MarkdownContent({ content }: MarkdownContentProps) {
+  const normalized = stripIncidentalIndentedCode(content);
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
@@ -98,7 +124,7 @@ export default function MarkdownContent({ content }: MarkdownContentProps) {
         ),
       }}
     >
-      {content}
+      {normalized}
     </ReactMarkdown>
   );
 }
