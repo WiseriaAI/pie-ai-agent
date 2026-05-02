@@ -27,6 +27,7 @@ import {
   getSessionMeta,
   setSessionMeta,
   markFailedAndScrub,
+  updateLastAccessed,
 } from "@/lib/sessions/storage";
 import { escapeUntrustedWrappers } from "@/lib/agent/untrusted-wrappers";
 import { detectAndMarkPaused } from "./session-recovery";
@@ -525,9 +526,8 @@ async function handleResumeRequest(
       return resolveSkillToTools(skills);
     },
     sessionId,
-    onStepSnapshot: async (snapshot) => {
-      await setSessionAgent(sessionId, snapshot);
-    },
+    // M2-U1: shared handler that also throttles lastAccessedAt bumps.
+    onStepSnapshot: makeStepSnapshotHandler(sessionId),
     resumedAgentMessages: agent.agentMessages,
     resumedFromStep: agent.stepIndex,
   });
@@ -609,6 +609,39 @@ async function handleDiscardRequest(
 
 // --- Agent Loop via Port ---
 
+/**
+ * M2-U1 — shared onStepSnapshot handler factory.
+ *
+ * Wraps the per-step agent-state write (`setSessionAgent`) and
+ * throttles `lastAccessedAt` bumps to once every 5 steps to avoid
+ * meta write churn on long-running tasks.
+ *
+ * Throttle logic uses `snapshot.stepIndex % 5 === 0`:
+ *   - stepIndex 5, 10, 15, … → bump (live-task progress markers)
+ *   - stepIndex 0 (tombstone) → `0 % 5 === 0` also bumps, ensuring
+ *     the most-recently-completed task always rises to LRU top.
+ *
+ * Note: `setTimeout` is deliberately NOT used — MV3 Service Workers
+ * can be suspended at any point, making time-based throttles
+ * unreliable. The step-counter approach is always stable.
+ *
+ * Both `handleChatStream` and `handleResumeRequest` use this factory
+ * to keep the two call sites in sync.
+ */
+function makeStepSnapshotHandler(sessionId: string) {
+  return async (snapshot: import("@/lib/sessions/types").SessionAgentState) => {
+    await setSessionAgent(sessionId, snapshot);
+    if (snapshot.stepIndex % 5 === 0) {
+      updateLastAccessed(sessionId).catch((e) => {
+        console.warn(
+          `[agent] lastAccessedAt bump failed for session=${sessionId} stepIndex=${snapshot.stepIndex}:`,
+          e,
+        );
+      });
+    }
+  };
+}
+
 async function handleChatStream(
   port: chrome.runtime.Port,
   messages: ChatMessage[],
@@ -635,6 +668,15 @@ async function handleChatStream(
       });
       return;
     }
+
+    // M2-U1 trigger (b) — bump lastAccessedAt when the SW receives a new
+    // chat-start for this session. Fire-and-forget; failure is non-fatal.
+    updateLastAccessed(sessionId).catch((e) => {
+      console.warn(
+        `[agent] lastAccessedAt bump on chat-start failed for session=${sessionId}:`,
+        e,
+      );
+    });
 
     // Extract task from last user message
     const task =
@@ -708,13 +750,11 @@ async function handleChatStream(
         return resolveSkillToTools(skills);
       },
       sessionId,
-      // M1-U3 — persist agent state at every step boundary so SW
-      // restart can transition the task to `paused` (M1-U5) instead of
-      // silently dropping it. Errors here are caught + logged inside
-      // runAgentLoop; this wrapper only does the storage call.
-      onStepSnapshot: async (snapshot) => {
-        await setSessionAgent(sessionId, snapshot);
-      },
+      // M1-U3 — persist agent state at every step boundary. M2-U1
+      // upgrade: also bumps lastAccessedAt every 5 steps + on tombstone
+      // (see makeStepSnapshotHandler). Errors caught + logged inside
+      // runAgentLoop; this wrapper only does the storage calls.
+      onStepSnapshot: makeStepSnapshotHandler(sessionId),
     });
   } catch (e) {
     if (signal.aborted) return;
