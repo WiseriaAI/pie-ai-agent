@@ -82,6 +82,7 @@ describe("useSession — sendMessage / streaming", () => {
     expect(port.postMessage).toHaveBeenCalledWith({
       type: "chat-start",
       messages: [{ role: "user", content: "hello" }],
+      sessionId: result.current.sessionId,
     });
     expect(result.current.streaming).toBe(true);
     expect(result.current.messages).toEqual([

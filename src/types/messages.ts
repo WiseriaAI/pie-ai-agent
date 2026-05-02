@@ -15,6 +15,18 @@ export interface PageContent {
 export interface ChatStartMessage {
   type: "chat-start";
   messages: ChatMessage[];
+  /**
+   * M1-U3 — session this stream is bound to. The SW writes step-boundary
+   * snapshots to `session_${sessionId}_agent` (D2). Required: a chat-start
+   * without a sessionId is rejected; this prevents a misconfigured panel
+   * from silently writing nothing instead of writing to the wrong session.
+   *
+   * Trust face: the panel and SW are within the same BYOK extension
+   * boundary; sessionId here carries the same trust as `messages` —
+   * Chrome's port API does not let a content script forge port name +
+   * payload.
+   */
+  sessionId: string;
 }
 
 export interface ChatAbortMessage {

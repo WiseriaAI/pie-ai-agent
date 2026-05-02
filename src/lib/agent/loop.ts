@@ -33,6 +33,7 @@ import type {
   TabTarget,
   TabContentPreview,
 } from "../../types/messages";
+import type { SessionAgentState } from "../sessions/types";
 
 const MAX_STEPS = 30;
 
@@ -66,6 +67,32 @@ export interface AgentLoopContext {
     payload: Omit<AgentConfirmRequestMessage, "type" | "confirmationId">,
   ) => Promise<boolean>;
   getEnabledSkillTools?: () => Promise<Tool[]>;
+  /**
+   * M1-U3 — session this task is bound to. Required so step-boundary
+   * snapshots can write to `session_${id}_agent`. Decoupled from
+   * `onStepSnapshot` (sessionId remains required even if a caller
+   * doesn't wire a snapshot handler) so a missing snapshot wire does
+   * not silently degrade — bug shows up at `setSessionAgent(undefined)`
+   * rather than as a no-op.
+   */
+  sessionId: string;
+  /**
+   * M1-U3 — fired after each completed agent step (assistant + user
+   * tool_result both pushed). The loop calls it fire-and-forget
+   * (no await), so storage IO does not stall the next LLM round; the
+   * passed snapshot is `structuredClone`d so subsequent in-place
+   * mutations on `history` (the next round's observation merge at
+   * line ~587) do not contaminate the persisted copy. R28 v2: the
+   * snapshot's `agentMessages` are RAW (no redaction); panel-display
+   * redaction happens via `redactArgsForPanel` on the
+   * `sendAgentStep` / `sendConfirmRequest` paths only.
+   *
+   * Errors thrown by the handler are logged with sessionId + stepIndex
+   * and otherwise swallowed — a quota / IO failure must not abort an
+   * in-flight task. M2-U4 will introduce LRU archive on quota
+   * pressure; for now we just keep going.
+   */
+  onStepSnapshot?: (snapshot: SessionAgentState) => Promise<void>;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -358,6 +385,41 @@ async function preFetchTabContent(
 }
 
 // ── Phase 2.5 helpers ────────────────────────────────────────────────────────
+
+/**
+ * M1-U3 — build a SessionAgentState snapshot for one step boundary.
+ *
+ * Pure function (no IO, no globals). Extracted from the agent-loop body
+ * so it can be unit tested without the full loop's Chrome / model
+ * harness. Two invariants live here:
+ *
+ *   1. `structuredClone(history)` — the next loop iteration mutates
+ *      `history` in place (observation merge into the trailing user
+ *      message). Without the clone, the persisted reference would be
+ *      mutated post-write and the snapshot we hand to storage would
+ *      diverge from the step it claims to represent (D4).
+ *
+ *   2. `agentMessages` is RAW. No call to `redactArgsForPanel` here.
+ *      R28 v2 storage trust face: panel-display redaction is for shoulder-
+ *      surf protection on the visible step bubble; the LLM resume path
+ *      (M1-U5) needs the raw tool_use args to plan the next step. Two
+ *      different consumers, two different shapes.
+ *
+ * `skillExecutionScopeStack` is empty in M1 — the in-memory
+ * `currentSkillScope` carries Phase 2.6 R3 anti-nest enforcement. M2-U1
+ * will wire the stack so a paused-and-resumed task can re-enter the
+ * scope it was in.
+ */
+export function buildSessionAgentSnapshot(
+  history: AgentMessage[],
+  stepIndex: number,
+): SessionAgentState {
+  return {
+    agentMessages: structuredClone(history),
+    stepIndex,
+    skillExecutionScopeStack: [],
+  };
+}
 
 /**
  * Redact `text` from keyboard tool args before emitting via agent-step
@@ -1152,6 +1214,28 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // at the start of the next iteration (avoids adjacent user messages).
       history.push({ role: "assistant", content: assistantBlocks });
       history.push({ role: "user", content: toolResultBlocks });
+
+      // M1-U3 — step-boundary snapshot. Both assistant + user(tool_result)
+      // are pushed at this point, so the persisted state is a complete
+      // round-trip (LLM resume after SW restart can re-feed the
+      // tool_result back to the model without confusion). `history` is
+      // structuredClone'd so the next iteration's in-place observation
+      // merge (loop body around line ~587) does not contaminate the
+      // already-persisted copy (D4 deep clone invariant).
+      //
+      // Fire-and-forget: a slow / failing storage write must not stall
+      // the next LLM call. R28 v2: agentMessages are persisted RAW; the
+      // panel-display redaction happens via redactArgsForPanel on the
+      // sendAgentStep path, which is a separate code path.
+      if (ctx.onStepSnapshot) {
+        const snapshot = buildSessionAgentSnapshot(history, stepIndex);
+        ctx.onStepSnapshot(snapshot).catch((e) => {
+          console.warn(
+            `[agent] snapshot failed for session=${ctx.sessionId} step=${stepIndex}:`,
+            e,
+          );
+        });
+      }
 
       // Terminal tool check
       if (shouldTerminate && terminationResult) {

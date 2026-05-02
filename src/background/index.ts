@@ -10,6 +10,7 @@ import type { ChatMessage, ModelConfig } from "@/lib/model-router";
 import { getActiveProvider, getProviderConfig } from "@/lib/storage";
 import { runAgentLoop } from "@/lib/agent/loop";
 import { getEnabledSkills, resolveSkillToTools } from "@/lib/skills";
+import { setSessionAgent } from "@/lib/sessions/storage";
 import {
   handleExternalDetach,
   detachAllSessions,
@@ -197,6 +198,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 async function handleChatStream(
   port: chrome.runtime.Port,
   messages: ChatMessage[],
+  sessionId: string,
   signal: AbortSignal,
   pendingConfirmations: Map<string, (approved: boolean) => void>,
 ) {
@@ -252,6 +254,14 @@ async function handleChatStream(
         const skills = await getEnabledSkills();
         return resolveSkillToTools(skills);
       },
+      sessionId,
+      // M1-U3 — persist agent state at every step boundary so SW
+      // restart can transition the task to `paused` (M1-U5) instead of
+      // silently dropping it. Errors here are caught + logged inside
+      // runAgentLoop; this wrapper only does the storage call.
+      onStepSnapshot: async (snapshot) => {
+        await setSessionAgent(sessionId, snapshot);
+      },
     });
   } catch (e) {
     if (signal.aborted) return;
@@ -298,6 +308,7 @@ chrome.runtime.onConnect.addListener((port) => {
       handleChatStream(
         port,
         message.messages,
+        message.sessionId,
         abortController.signal,
         pendingConfirmations,
       );

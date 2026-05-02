@@ -150,6 +150,11 @@ export function useSession(): UseSession {
   const sendMessage = useCallback(
     (input: SendMessageInput) => {
       if (streaming) return;
+      const id = sessionIdRef.current;
+      // Bootstrap not finished yet — caller should be gating on `ready`,
+      // but defend against the race regardless. Without an id, the SW
+      // can't snapshot to the right key.
+      if (!id) return;
       const userMessage: DisplayMessage = {
         role: "user",
         content: input.content,
@@ -324,7 +329,11 @@ export function useSession(): UseSession {
         void persistMessages(next);
       });
 
-      port.postMessage({ type: "chat-start", messages: chatMessages });
+      port.postMessage({
+        type: "chat-start",
+        messages: chatMessages,
+        sessionId: id,
+      });
     },
     [streaming, persistMessages],
   );
