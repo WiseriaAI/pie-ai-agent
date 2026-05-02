@@ -49,6 +49,27 @@ import type { SessionStatus } from "@/lib/sessions/types";
  *                       the storage write happens on the SW side)
  */
 
+/**
+ * Bug-fix-C — fallback title derivation. M2-U3 will replace this with an
+ * LLM-generated short title; until then we mirror the JSDoc on
+ * SessionMeta.title and use the first user message's prefix.
+ *
+ * Returns undefined when no user message has landed yet (so the SessionMeta
+ * title patch is skipped — the existing default "New Session" stays).
+ */
+function deriveTitleFromMessages(
+  msgs: DisplayMessage[],
+): string | undefined {
+  for (const m of msgs) {
+    if (m.role !== "user") continue;
+    const collapsed = m.content.trim().replace(/\s+/g, " ");
+    if (collapsed.length === 0) continue;
+    if (collapsed.length <= 40) return collapsed;
+    return collapsed.slice(0, 40).trimEnd() + "…";
+  }
+  return undefined;
+}
+
 interface SendMessageInput {
   /** What the user typed — rendered in the chat. */
   content: string;
@@ -126,9 +147,16 @@ export function useSession(): UseSession {
   // closure).
   const sessionIdRef = useRef<string | null>(null);
   const messagesRef = useRef<DisplayMessage[]>([]);
-  // P1-6 — mirror of streaming state for use in the storage onChanged
-  // listener (which closes over this ref and therefore can't depend on the
-  // streaming state closure).
+  // Bug-fix-A — mirror of streaming state. MUST be written SYNCHRONOUSLY
+  // (alongside every setStreaming call) rather than via a useEffect
+  // committed-state hook, because the storage onChanged listener can fire
+  // **before the next React commit** when the SW writes meta in response
+  // to chat-start (handleChatStream's fire-and-forget updateLastAccessed
+  // round-trips a stale meta with the prior persisted messages — if the
+  // listener observes streamingRef=false in this window, it would adopt
+  // newMeta.messages and overwrite the just-pushed user message).
+  // The useEffect below is kept as a backstop only; the source of truth
+  // for streamingRef is the manual sync in every setStreaming caller.
   const streamingRef = useRef<boolean>(false);
   // Per-stream scratch — reset by sendMessage, mutated by the
   // persistent listener.
@@ -142,6 +170,8 @@ export function useSession(): UseSession {
     messagesRef.current = messages;
   }, [messages]);
   useEffect(() => {
+    // Backstop only — production callers sync streamingRef synchronously
+    // before each setStreaming call (see Bug-fix-A above).
     streamingRef.current = streaming;
   }, [streaming]);
 
@@ -149,16 +179,29 @@ export function useSession(): UseSession {
   // Writes the in-memory messages array to session_${id}_meta. Only
   // called at done boundaries (chat-done / chat-error / agent-done-task)
   // to avoid storage churn during streaming.
+  //
+  // Bug-fix-C — also fills SessionMeta.title with the first user message's
+  // prefix when no title exists yet. This is the documented fallback path
+  // for SessionMeta.title (see types.ts JSDoc). The full M2-U3 LLM-generated
+  // title will overwrite this once implemented; until then this gives the
+  // top bar + drawer something better than "New Session" / "Untitled".
+  // setSessionMeta atomically updates the index when title changes (D9),
+  // so App.tsx's listSessionIndex() observer fires on the same write.
   const persistMessages = useCallback(
     async (next: DisplayMessage[]) => {
       const id = sessionIdRef.current;
       if (!id) return;
       const current = await getSessionMeta(id);
       if (!current) return;
+      const titlePatch =
+        current.title === undefined || current.title === ""
+          ? deriveTitleFromMessages(next)
+          : undefined;
       await setSessionMeta({
         ...current,
         messages: next,
         lastAccessedAt: Date.now(),
+        ...(titlePatch !== undefined ? { title: titlePatch } : {}),
       });
     },
     [],
@@ -191,9 +234,11 @@ export function useSession(): UseSession {
             { role: "assistant", content: accumulatedRef.current },
           ];
           setMessages(next);
+          messagesRef.current = next;
         }
         accumulatedRef.current = "";
         setStreamingText("");
+        streamingRef.current = false;
         setStreaming(false);
         void persistMessages(next);
       } else if (message.type === "chat-error") {
@@ -206,17 +251,28 @@ export function useSession(): UseSession {
             { role: "assistant", content: accumulatedRef.current },
           ];
           setMessages(next);
+          messagesRef.current = next;
         }
         accumulatedRef.current = "";
         setStreamingText("");
+        streamingRef.current = false;
         setStreaming(false);
         void persistMessages(next);
       } else if (message.type === "agent-step") {
         if (accumulatedRef.current.trim()) {
-          setMessages((prev) => [
-            ...prev,
-            { role: "assistant", content: accumulatedRef.current },
-          ]);
+          const flushed = accumulatedRef.current;
+          setMessages((prev) => {
+            const next = [
+              ...prev,
+              { role: "assistant" as const, content: flushed },
+            ];
+            // Bug-fix-A — keep messagesRef in lock-step with the React
+            // commit so the second setMessages updater below + any concurrent
+            // metaKey listener invocation both see the flushed assistant
+            // text instead of a stale (pre-flush) snapshot.
+            messagesRef.current = next;
+            return next;
+          });
           accumulatedRef.current = "";
           setStreamingText("");
         }
@@ -310,8 +366,10 @@ export function useSession(): UseSession {
           { role: "agent-summary", success, summary, stepCount },
         ];
         setMessages(next);
+        messagesRef.current = next;
         accumulatedRef.current = "";
         setStreamingText("");
+        streamingRef.current = false;
         setStreaming(false);
         void persistMessages(next);
       } else if (message.type === "session-confirm-request") {
@@ -360,9 +418,11 @@ export function useSession(): UseSession {
         { role: "assistant", content: accumulatedRef.current },
       ];
       setMessages(next);
+      messagesRef.current = next;
     }
     accumulatedRef.current = "";
     setStreamingText("");
+    streamingRef.current = false;
     setStreaming(false);
     streamFinishedRef.current = true;
     portRef.current = null;
@@ -446,26 +506,44 @@ export function useSession(): UseSession {
       // a task paused while the panel thinks it's still running).
       if (newMeta?.status !== undefined) setStatus(newMeta.status);
       if (newMeta?.messages !== undefined) {
-        // P1-6 — prevent self-write echo. chrome.storage.local deserializes
-        // through structured-clone so reference equality always fails; we need
-        // a content comparison to skip our own writes.
+        // P1-6 + Bug-fix-A — prevent self-write echo AND stale SW write-back
+        // overwriting authoritative panel state.
         //
-        // During streaming: NEVER adopt the SW's messages. makeStepSnapshotHandler
-        // bumps updateLastAccessed every 5 steps which writes meta with the last
-        // persisted (stale) messages → onChanged fires → without this guard the
-        // panel's in-flight chunks get clobbered and the user's sent message
-        // disappears from chat mid-stream.
+        // 1. During streaming: NEVER adopt the SW's messages. makeStepSnapshotHandler
+        //    bumps updateLastAccessed every 5 steps which writes meta with the last
+        //    persisted messages → onChanged fires. handleChatStream also
+        //    fire-and-forgets updateLastAccessed at chat-start, which writes
+        //    meta back with the messages snapshot taken BEFORE the panel had
+        //    a chance to persist the user's just-sent message — that one would
+        //    silently overwrite the user message if we adopted it.
         //
-        // Not streaming: lightweight content equality check to skip our own
-        // persistMessages writes echoing back.
+        // 2. Not streaming: skip self-echo (content equality) AND stale-prefix
+        //    write-back (remote.length < local.length AND remote is a strict
+        //    prefix of local). Both are signs the SW round-tripped a stale meta
+        //    after the panel's authoritative state moved forward.
         if (streamingRef.current) {
-          // Mid-stream: silently discard SW messages write-back.
           return;
         }
-        if (JSON.stringify(newMeta.messages) === JSON.stringify(messagesRef.current)) {
-          return; // self-write echo — no-op
+        const local = messagesRef.current;
+        const remote = newMeta.messages;
+        if (remote.length === local.length) {
+          if (JSON.stringify(remote) === JSON.stringify(local)) {
+            return; // self-write echo — no-op
+          }
+        } else if (remote.length < local.length) {
+          // Strict-prefix check: SW wrote a stale-shorter messages array.
+          // Compare element-by-element; if every remote[i] equals local[i],
+          // the SW write is a stale snapshot → ignore.
+          let isPrefix = true;
+          for (let i = 0; i < remote.length; i++) {
+            if (JSON.stringify(remote[i]) !== JSON.stringify(local[i])) {
+              isPrefix = false;
+              break;
+            }
+          }
+          if (isPrefix) return;
         }
-        setMessages(newMeta.messages);
+        setMessages(remote);
       }
     };
     chrome.storage.local.onChanged.addListener(listener);
@@ -493,6 +571,16 @@ export function useSession(): UseSession {
           : {}),
       };
       const updated = [...messagesRef.current, userMessage];
+      // Bug-fix-A — sync messagesRef + streamingRef BEFORE port.postMessage
+      // so the SW's chat-start-triggered updateLastAccessed (which writes
+      // a stale meta back to storage and re-fires the metaKey listener)
+      // observes streamingRef=true and bails out via the streaming guard
+      // instead of overwriting the just-pushed user message. The messagesRef
+      // update also makes the prefix-equality echo guard (in the metaKey
+      // listener below) recognise the SW write as a strict prefix of the
+      // panel's authoritative state.
+      messagesRef.current = updated;
+      streamingRef.current = true;
       setMessages(updated);
       setStreaming(true);
       setStreamingText("");
@@ -500,6 +588,16 @@ export function useSession(): UseSession {
       // Reset per-stream scratch.
       accumulatedRef.current = "";
       streamFinishedRef.current = false;
+
+      // Bug-fix-C — persist immediately so the session_index entry picks up
+      // the first-user-message title fallback (via persistMessages →
+      // deriveTitleFromMessages → setSessionMeta atomic index update). Without
+      // this, the top bar + drawer would keep saying "New Session" until the
+      // model's reply lands at chat-done. Persisting also defends against
+      // Bug 1: it makes the panel's authoritative messages the on-disk version
+      // before any SW updateLastAccessed round-trip can write back a stale
+      // shorter snapshot. Fire-and-forget; failures are non-fatal.
+      void persistMessages(updated);
 
       // Build the LLM-facing chat history (text-only, slash-expanded).
       const chatMessages: ChatMessage[] = updated
@@ -523,7 +621,7 @@ export function useSession(): UseSession {
         sessionId: id,
       });
     },
-    [streaming],
+    [streaming, persistMessages],
   );
 
   const abort = useCallback(() => {
@@ -573,6 +671,9 @@ export function useSession(): UseSession {
     // blocks any concurrent session switch while the resumed loop is running.
     // The existing chat-done / chat-error / agent-done-task done-boundary
     // paths will correctly flip streaming back to false when the loop ends.
+    // Bug-fix-A — sync streamingRef synchronously (same reasoning as
+    // sendMessage above).
+    streamingRef.current = true;
     setStreaming(true);
     accumulatedRef.current = "";
     streamFinishedRef.current = false;
@@ -581,6 +682,7 @@ export function useSession(): UseSession {
     } catch {
       // port may be in the process of closing — non-fatal
       // If post fails, revert streaming flag so the UI doesn't get stuck
+      streamingRef.current = false;
       setStreaming(false);
       streamFinishedRef.current = true;
     }
