@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "Chrome AI Agent",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "BYOK browser AI — bring your own API key for page understanding, agent automation, and smart tab management.",
-  "permissions": ["activeTab", "sidePanel", "storage", "tabs", "scripting", "debugger"],
+  "permissions": ["activeTab", "sidePanel", "storage", "tabs", "tabGroups", "scripting", "debugger"],
   "host_permissions": [
     "<all_urls>",
     "https://api.anthropic.com/*",

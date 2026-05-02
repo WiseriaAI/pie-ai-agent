@@ -1,0 +1,1007 @@
+import type { ActionResult } from "../../dom-actions/types";
+import type { ConfirmedTabTarget, Tool, ToolHandlerContext } from "../types";
+import { escapeUntrustedWrappers } from "../untrusted-wrappers";
+
+/**
+ * Phase 3 — parse a chrome.tabs.Tab.url into an origin string. Returns ""
+ * for unparseable / restricted URLs so the caller can compare against the
+ * confirm-time origin without false positives. Inline (not imported from
+ * loop.ts) because tabs.ts handlers are agent-runtime code; loop.ts is the
+ * SW dispatch surface — keeping origin parsing local avoids a cycle.
+ */
+function parseTabOrigin(url: string | undefined): string {
+  if (!url) return "";
+  try {
+    const o = new URL(url).origin;
+    if (!o || o === "null") return "";
+    return o;
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Phase 3 K-8 — confirm-time origin re-verify. Compares the LIVE tab origin
+ * (chrome.tabs.get inside the handler) against the map carried via ctx
+ * (what the user saw on the confirm card). Returns:
+ *   - { ok: true, tab } when the tab still exists AND its origin matches
+ *     what the user approved
+ *   - { ok: false, reason: "missing" | "navigated" | "no-confirm-record" }
+ *     otherwise
+ *
+ * Handlers use this BEFORE calling chrome.tabs.{remove, group, ungroup,
+ * move, update} on a target id — skip the id and report it in the
+ * partial-completion observation when ok=false.
+ */
+async function verifyConfirmedOrigin(
+  tabId: number,
+  confirmed: Map<number, ConfirmedTabTarget> | undefined,
+): Promise<
+  | { ok: true; tab: chrome.tabs.Tab; origin: string }
+  | { ok: false; reason: "missing" | "navigated" | "no-confirm-record" }
+> {
+  if (!confirmed) {
+    return { ok: false, reason: "no-confirm-record" };
+  }
+  const expected = confirmed.get(tabId);
+  if (!expected) {
+    return { ok: false, reason: "no-confirm-record" };
+  }
+  let tab: chrome.tabs.Tab;
+  try {
+    tab = await chrome.tabs.get(tabId);
+  } catch {
+    return { ok: false, reason: "missing" };
+  }
+  const live = parseTabOrigin(tab.url);
+  if (!live || live !== expected.origin) {
+    return { ok: false, reason: "navigated" };
+  }
+  return { ok: true, tab, origin: live };
+}
+
+/**
+ * Phase 3 cross-tab tools. Implementation lands incrementally:
+ *  - Unit 1 (this file's first version): list_tabs only
+ *  - Unit 3 will add close_tabs, activate_tab
+ *  - Unit 4 will add group_tabs, ungroup_tabs, move_tabs
+ *  - Unit 5 will add get_tab_content
+ *
+ * All tools share the per-call cross-origin args introspection in risk.ts
+ * (Phase 3 invariant P3-A) — each handler is responsible for its own stale
+ * tab detection and partial-completion semantics (P3-H), but the loop's
+ * confirm wire shape (Unit 2) carries the multi-tab informed-approval
+ * payload uniformly.
+ *
+ * G-1 acceptance gate: any new entry here MUST also be added to TAB_TOOL_NAMES
+ * in tool-names.ts AND have a matching always-high (or args-introspection)
+ * branch in risk.ts. If a future PR adds a low-risk cross-tab tool, it must
+ * first upgrade SkillDefinition.allowedTools schema (see plan K-3 / G-1).
+ */
+
+const LIST_TABS_MAX = 50;
+const TITLE_MAX_LEN = 100;
+const DOMAIN_MAX_LEN = 50;
+// Keep in sync with isRestrictedUrl in src/lib/agent/loop.ts (which gates
+// task pinning at start + per-iteration origin re-check). Asymmetry between
+// the two lists is a real exploit vector — a scheme rejected by loop.ts
+// (e.g. file://) but accepted here would let get_tab_content / group_tabs
+// operate on local-file pages or blob: pages that the agent should never
+// touch (correctness review finding).
+const RESTRICTED_URL_PREFIXES = [
+  "chrome://",
+  "chrome-extension://",
+  "chrome-search://",
+  "edge://",
+  "about:",
+  "data:",
+  "javascript:",
+  "view-source:",
+  "file://",
+  "blob:",
+];
+
+// Strip control chars except tab (\x09) and the line breaks we replace
+// before this — \n \r \v \f are handled separately because we replace
+// them with spaces (preserves word boundaries) instead of stripping.
+// \x7f is DEL.
+const CONTROL_CHARS_RE = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g;
+const LINE_BREAK_RE = /[\n\r\v\f]/g;
+
+interface ListTabsArgs {
+  scope?: "currentWindow" | "allWindows";
+  limit?: number;
+}
+
+interface TabMetadataEntry {
+  id: number;
+  title: string;
+  domain: string;
+  active: boolean;
+  pinned: boolean;
+  groupId: number; // -1 = no group
+  lastAccessed?: number;
+  windowId: number;
+}
+
+function sanitizeTabTitle(rawTitle: string | undefined): string {
+  if (!rawTitle) return "(untitled)";
+  // 1. Replace line breaks with spaces — wrapper output is line-oriented
+  //    "[id] \"title\" | domain" and embedded newlines would let an attacker
+  //    break the format.
+  let cleaned = rawTitle.replace(LINE_BREAK_RE, " ");
+  // 2. Strip remaining control chars.
+  cleaned = cleaned.replace(CONTROL_CHARS_RE, "");
+  // 3. Truncate.
+  if (cleaned.length > TITLE_MAX_LEN) {
+    cleaned = cleaned.slice(0, TITLE_MAX_LEN) + "…";
+  }
+  // 4. Escape wrapper-tag literals (P3-O).
+  return escapeUntrustedWrappers(cleaned);
+}
+
+function computeDomain(rawUrl: string | undefined): string {
+  if (!rawUrl) return "(no-url)";
+  // Restricted URLs have no real hostname — surface them as "(restricted)" so
+  // the LLM sees they exist as data but won't try to navigate / extract them.
+  if (RESTRICTED_URL_PREFIXES.some((p) => rawUrl.startsWith(p))) {
+    return "(restricted)";
+  }
+  let hostname = "";
+  try {
+    hostname = new URL(rawUrl).hostname;
+  } catch {
+    return "(invalid-url)";
+  }
+  // Take the last two labels: docs.rs → docs.rs, www.foo.com → foo.com.
+  // Public-suffix list parsing isn't worth the dependency for confirm-card
+  // display; the agent gets full URL context elsewhere.
+  const parts = hostname.split(".");
+  const tail = parts.length >= 2 ? parts.slice(-2).join(".") : hostname;
+  let cleaned = tail;
+  if (cleaned.length > DOMAIN_MAX_LEN) {
+    cleaned = cleaned.slice(0, DOMAIN_MAX_LEN) + "…";
+  }
+  return escapeUntrustedWrappers(cleaned);
+}
+
+/**
+ * Wrap an array of tab metadata entries in <untrusted_tab_metadata> for the
+ * LLM observation. Format (one tab per line):
+ *
+ *   <untrusted_tab_metadata>
+ *   scope=currentWindow, total=12
+ *   [12] "GitHub - foo/bar" | github.com (active, group:3, idle:5min)
+ *   [13] "tokio docs"        | tokio.rs
+ *   ...
+ *   </untrusted_tab_metadata>
+ *
+ * Per Phase 3 invariant P3-C, every value inside this wrapper is third-party
+ * data (page-controlled tab title, page-controlled URL); the LLM must treat
+ * everything in this block as data, never instructions. The system prompt's
+ * tab-tools section calls this out explicitly.
+ */
+export function wrapTabMetadata(
+  tabs: TabMetadataEntry[],
+  totals: { totalCount: number; truncated: boolean; scope: "currentWindow" | "allWindows" },
+): string {
+  const header = `scope=${totals.scope}, total=${totals.totalCount}${totals.truncated ? ", truncated=true" : ""}`;
+  if (tabs.length === 0) {
+    return `<untrusted_tab_metadata>\n${header}\n(no tabs visible to the agent)\n</untrusted_tab_metadata>`;
+  }
+  const now = Date.now();
+  const lines = tabs.map((t) => {
+    const tags: string[] = [];
+    if (t.active) tags.push("active");
+    if (t.pinned) tags.push("pinned");
+    if (t.groupId !== -1) tags.push(`group:${t.groupId}`);
+    if (t.lastAccessed) {
+      const idleMs = now - t.lastAccessed;
+      const mins = Math.floor(idleMs / 60_000);
+      if (mins >= 1) tags.push(`idle:${mins}min`);
+    }
+    const tagSuffix = tags.length > 0 ? ` (${tags.join(", ")})` : "";
+    return `[${t.id}] "${t.title}" | ${t.domain}${tagSuffix}`;
+  });
+  return `<untrusted_tab_metadata>\n${header}\n${lines.join("\n")}\n</untrusted_tab_metadata>`;
+}
+
+/**
+ * list_tabs — return tab metadata for the agent to reason about.
+ *
+ * Risk classification (in risk.ts):
+ *   - scope = "currentWindow" (default) → low (no confirm)
+ *   - scope = "allWindows"              → high + reason "crossWindowTabExposure" (Phase 3 P3-T)
+ *
+ * Limits:
+ *   - default 50, max 50 (P3-I)
+ *   - if more tabs exist, returns first 50 + total_count + truncated:true
+ *
+ * Privacy invariant P3-K: incognito-window tabs are NOT visible because the
+ * extension manifest deliberately omits "incognito": "spanning". Tested in
+ * Unit 1 verification.
+ */
+const listTabsTool: Tool = {
+  name: "list_tabs",
+  description:
+    "List open browser tabs with metadata (id, title, domain, active state, group). " +
+    "Default scope is currentWindow (low risk). scope='allWindows' exposes tabs across " +
+    "all windows and triggers a high-risk user confirmation. Max 50 tabs returned per call.",
+  parameters: {
+    type: "object",
+    properties: {
+      scope: {
+        type: "string",
+        enum: ["currentWindow", "allWindows"],
+        description:
+          "currentWindow (default): tabs in the agent's window only. allWindows: tabs across every browser window — requires user confirmation.",
+      },
+      limit: {
+        type: "number",
+        description: `Max tabs to return (default ${LIST_TABS_MAX}, hard cap ${LIST_TABS_MAX}).`,
+      },
+    },
+    additionalProperties: false,
+  },
+  handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
+    const a = (args ?? {}) as ListTabsArgs;
+    const scope = a.scope === "allWindows" ? "allWindows" : "currentWindow";
+    const requestedLimit =
+      typeof a.limit === "number" && Number.isFinite(a.limit) && a.limit > 0
+        ? Math.min(Math.floor(a.limit), LIST_TABS_MAX)
+        : LIST_TABS_MAX;
+
+    const queryInfo: chrome.tabs.QueryInfo =
+      scope === "currentWindow" ? { currentWindow: true } : {};
+    const allTabs = await chrome.tabs.query(queryInfo);
+
+    // Filter tabs without an id or windowId (chrome occasionally surfaces
+    // partial tabs during navigation transitions) — we can't safely act on
+    // them.
+    let usable = allTabs.filter(
+      (t): t is chrome.tabs.Tab & { id: number; windowId: number } =>
+        typeof t.id === "number" && typeof t.windowId === "number",
+    );
+
+    // CRITICAL P3-T enforcement (adversarial review): scope=allWindows runs
+    // through the high-risk confirm card with tabTargets snapshotted at
+    // confirm-time. The user approves a SPECIFIC set of tabs. If new tabs
+    // open between approval and dispatch (bank notification, password
+    // manager auto-open, etc.), they MUST NOT slip into the LLM's view.
+    // Filter the live query down to exactly the ids the user approved.
+    //
+    // For scope=currentWindow there is no confirm card (low-risk path) and
+    // ctx.confirmedTabTargets is undefined — that path is unchanged because
+    // same-window tabs are within the trust boundary the user implicitly
+    // granted by chatting in this window.
+    if (scope === "allWindows" && ctx.confirmedTabTargets) {
+      const approvedIds = ctx.confirmedTabTargets;
+      usable = usable.filter((t) => approvedIds.has(t.id));
+    }
+
+    const totalCount = usable.length;
+    const truncated = totalCount > requestedLimit;
+    const sliced = usable.slice(0, requestedLimit);
+
+    const entries: TabMetadataEntry[] = sliced.map((t) => ({
+      id: t.id,
+      title: sanitizeTabTitle(t.title),
+      domain: computeDomain(t.url),
+      active: t.active,
+      pinned: t.pinned,
+      groupId: typeof t.groupId === "number" ? t.groupId : -1,
+      lastAccessed: t.lastAccessed,
+      windowId: t.windowId,
+    }));
+
+    const observation = wrapTabMetadata(entries, {
+      totalCount,
+      truncated,
+      scope,
+    });
+
+    return {
+      success: true,
+      observation,
+    };
+  },
+};
+
+// ── Unit 3 — close_tabs / activate_tab ──────────────────────────────────────
+
+const CLOSE_TABS_MAX = 50;
+
+interface CloseTabsArgs {
+  tabIds: number[];
+}
+
+interface ActivateTabArgs {
+  tabId: number;
+}
+
+interface PartialCompletionResult {
+  ok: number[];
+  skipped: Array<{ id: number; reason: string }>;
+  errors: Array<{ id: number; message: string }>;
+}
+
+function summarizePartial(
+  toolName: string,
+  result: PartialCompletionResult,
+): string {
+  const lines: string[] = [];
+  lines.push(`${toolName}: ${result.ok.length} succeeded`);
+  if (result.skipped.length > 0) {
+    lines.push(
+      `skipped (${result.skipped.length}): ${result.skipped
+        .map((s) => `[${s.id}: ${s.reason}]`)
+        .join(", ")}`,
+    );
+  }
+  if (result.errors.length > 0) {
+    lines.push(
+      `errors (${result.errors.length}): ${result.errors
+        .map((e) => `[${e.id}: ${e.message}]`)
+        .join(", ")}`,
+    );
+  }
+  return lines.join("\n");
+}
+
+const closeTabsTool: Tool = {
+  name: "close_tabs",
+  description:
+    "Close one or more tabs by id. Cannot close the agent's pinned/active tab " +
+    "(K-9) — ask the user to close the current tab manually instead. Each tab " +
+    "is re-verified against the origin shown on the confirm card; tabs that " +
+    "have navigated to a different origin since approval are skipped.",
+  parameters: {
+    type: "object",
+    properties: {
+      tabIds: {
+        type: "array",
+        items: { type: "integer" },
+        description: `Tab ids to close (max ${CLOSE_TABS_MAX} per call).`,
+      },
+    },
+    required: ["tabIds"],
+    additionalProperties: false,
+  },
+  handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
+    const a = (args ?? {}) as CloseTabsArgs;
+    if (!Array.isArray(a.tabIds) || a.tabIds.length === 0) {
+      return { success: false, error: "close_tabs requires a non-empty tabIds array" };
+    }
+    if (a.tabIds.length > CLOSE_TABS_MAX) {
+      return {
+        success: false,
+        error: `close_tabs accepts at most ${CLOSE_TABS_MAX} tab ids per call (received ${a.tabIds.length}).`,
+      };
+    }
+
+    // K-9: never close the pinned tab. The handler refuses up front so the
+    // failure is visible in the observation rather than relying on the
+    // per-round origin re-check to recover from a closed pinnedTabId.
+    if (a.tabIds.includes(ctx.tabId)) {
+      return {
+        success: false,
+        error:
+          "close_tabs cannot close the agent's pinned tab. Ask the user to close it manually.",
+      };
+    }
+
+    const result: PartialCompletionResult = { ok: [], skipped: [], errors: [] };
+    const survivors: number[] = [];
+
+    // K-8: confirm-time origin re-verify per id. Skip stale; collect
+    // survivors for a single chrome.tabs.remove batch call.
+    for (const id of a.tabIds) {
+      const verify = await verifyConfirmedOrigin(id, ctx.confirmedTabTargets);
+      if (!verify.ok) {
+        result.skipped.push({ id, reason: verify.reason });
+        continue;
+      }
+      survivors.push(id);
+    }
+
+    if (survivors.length === 0) {
+      return {
+        success: false,
+        observation: `close_tabs: no valid targets (all tabs were stale or unconfirmed).\n${summarizePartial("close_tabs", result)}`,
+        error: "noValidTargets",
+      };
+    }
+
+    try {
+      await chrome.tabs.remove(survivors);
+      result.ok.push(...survivors);
+    } catch (e) {
+      // Batch failed — record on every id so the agent sees what didn't go.
+      const message = e instanceof Error ? e.message : String(e);
+      for (const id of survivors) {
+        result.errors.push({ id, message });
+      }
+    }
+
+    return {
+      success: result.ok.length > 0,
+      observation: summarizePartial("close_tabs", result),
+    };
+  },
+};
+
+const activateTabTool: Tool = {
+  name: "activate_tab",
+  description:
+    "Switch the user's view to a specific tab. The agent's pinned tab does " +
+    "NOT change — subsequent click/type tools still target the original tab. " +
+    "Use this only to bring a tab into the user's view; do not assume the " +
+    "agent will operate on the activated tab next.",
+  parameters: {
+    type: "object",
+    properties: {
+      tabId: {
+        type: "integer",
+        description: "Tab id to make active.",
+      },
+    },
+    required: ["tabId"],
+    additionalProperties: false,
+  },
+  handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
+    const a = (args ?? {}) as ActivateTabArgs;
+    if (typeof a.tabId !== "number") {
+      return { success: false, error: "activate_tab requires a numeric tabId" };
+    }
+
+    // For same-origin activate_tab the call is low-risk (no confirm fired),
+    // so confirmedTabTargets is undefined — skip K-8 re-verify in that path.
+    // For cross-origin activate_tab the loop pre-built confirmedTabTargets;
+    // re-verify against it.
+    if (ctx.confirmedTabTargets) {
+      const verify = await verifyConfirmedOrigin(a.tabId, ctx.confirmedTabTargets);
+      if (!verify.ok) {
+        return {
+          success: false,
+          error: `activate_tab skipped: ${verify.reason}`,
+        };
+      }
+    } else {
+      // Same-origin path — still need to confirm tab exists before update.
+      try {
+        await chrome.tabs.get(a.tabId);
+      } catch {
+        return { success: false, error: `activate_tab: tab ${a.tabId} not found` };
+      }
+    }
+
+    try {
+      await chrome.tabs.update(a.tabId, { active: true });
+      return {
+        success: true,
+        observation: `Activated tab ${a.tabId}. Note: the agent's pinned tab is unchanged; subsequent click/type tools still target the original tab.`,
+      };
+    } catch (e) {
+      return {
+        success: false,
+        error: e instanceof Error ? e.message : "activate_tab failed",
+      };
+    }
+  },
+};
+
+// ── Unit 4 — group_tabs / ungroup_tabs / move_tabs ──────────────────────────
+
+const GROUP_TABS_MAX = 50;
+const GROUP_NAME_CAP = 64;
+
+const TAB_GROUP_COLORS = [
+  "grey",
+  "blue",
+  "red",
+  "yellow",
+  "green",
+  "pink",
+  "purple",
+  "cyan",
+  "orange",
+] as const;
+type TabGroupColor = (typeof TAB_GROUP_COLORS)[number];
+
+interface GroupTabsArgs {
+  tabIds: number[];
+  groupName?: string;
+  color?: string;
+}
+
+interface UngroupTabsArgs {
+  tabIds: number[];
+}
+
+interface MoveTabsArgs {
+  tabIds: number[];
+  index: number;
+}
+
+/**
+ * SEC-1 — sanitize an LLM-supplied groupName before it flows into
+ * chrome.tabGroups.update({title}). Without this, an LLM influenced by
+ * prompt-injected tab titles could pick a groupName containing wrapper
+ * literals or control chars; that name would render in Chrome's tab strip
+ * AND echo back into the next list_tabs <untrusted_tab_metadata> block,
+ * potentially escaping the wrapper.
+ */
+function sanitizeGroupName(raw: string | undefined): string {
+  if (!raw) return "";
+  let cleaned = raw.replace(LINE_BREAK_RE, " ").replace(CONTROL_CHARS_RE, "");
+  if (cleaned.length > GROUP_NAME_CAP) {
+    cleaned = cleaned.slice(0, GROUP_NAME_CAP);
+  }
+  return escapeUntrustedWrappers(cleaned);
+}
+
+/** Filter tabIds whose tab.url is a restricted scheme — chrome:// tabs
+ *  can't be grouped (chrome.tabs.group rejects). The K-8 verify step
+ *  has already confirmed origin equality with what the user saw, so the
+ *  origin is real; we only need to reject the special schemes here. */
+function isRestrictedSchemeForGrouping(url: string): boolean {
+  return RESTRICTED_URL_PREFIXES.some((p) => url.startsWith(p));
+}
+
+const groupTabsTool: Tool = {
+  name: "group_tabs",
+  description:
+    "Move one or more tabs into a tab group. Creates a new group when no " +
+    "groupId is supplied. Optional groupName + color let you label the group. " +
+    "Tabs that have navigated since the confirm card are skipped. " +
+    "Restricted-URL tabs (chrome://, file://, etc.) are also skipped.",
+  parameters: {
+    type: "object",
+    properties: {
+      tabIds: {
+        type: "array",
+        items: { type: "integer" },
+        description: `Tab ids to move into the group (max ${GROUP_TABS_MAX} per call).`,
+      },
+      groupName: {
+        type: "string",
+        description:
+          `Optional human-readable group label (max ${GROUP_NAME_CAP} chars). ` +
+          "Sanitized: line breaks become spaces, control chars stripped, " +
+          "wrapper-tag literals escaped.",
+      },
+      color: {
+        type: "string",
+        enum: [...TAB_GROUP_COLORS],
+        description: "Optional group accent color.",
+      },
+    },
+    required: ["tabIds"],
+    additionalProperties: false,
+  },
+  handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
+    const a = (args ?? {}) as GroupTabsArgs;
+    if (!Array.isArray(a.tabIds) || a.tabIds.length === 0) {
+      return { success: false, error: "group_tabs requires a non-empty tabIds array" };
+    }
+    if (a.tabIds.length > GROUP_TABS_MAX) {
+      return {
+        success: false,
+        error: `group_tabs accepts at most ${GROUP_TABS_MAX} tab ids per call.`,
+      };
+    }
+
+    if (a.color !== undefined && !TAB_GROUP_COLORS.includes(a.color as TabGroupColor)) {
+      return {
+        success: false,
+        error: `Invalid color "${a.color}". Must be one of: ${TAB_GROUP_COLORS.join(", ")}.`,
+      };
+    }
+
+    const safeName = a.groupName ? sanitizeGroupName(a.groupName) : "";
+    const result: PartialCompletionResult = { ok: [], skipped: [], errors: [] };
+    const survivors: number[] = [];
+
+    for (const id of a.tabIds) {
+      const verify = await verifyConfirmedOrigin(id, ctx.confirmedTabTargets);
+      if (!verify.ok) {
+        result.skipped.push({ id, reason: verify.reason });
+        continue;
+      }
+      // Reject restricted-scheme tabs — chrome.tabs.group would error on
+      // them and abort the whole batch.
+      if (verify.tab.url && isRestrictedSchemeForGrouping(verify.tab.url)) {
+        result.skipped.push({ id, reason: "restricted-url" });
+        continue;
+      }
+      survivors.push(id);
+    }
+
+    if (survivors.length === 0) {
+      return {
+        success: false,
+        observation: `group_tabs: no valid targets.\n${summarizePartial("group_tabs", result)}`,
+        error: "noValidTargets",
+      };
+    }
+
+    let newGroupId: number;
+    try {
+      newGroupId = await chrome.tabs.group({ tabIds: survivors });
+      result.ok.push(...survivors);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      for (const id of survivors) {
+        result.errors.push({ id, message });
+      }
+      return {
+        success: false,
+        observation: summarizePartial("group_tabs", result),
+        error: message,
+      };
+    }
+
+    // Apply name + color via chrome.tabGroups.update if either was supplied.
+    if (safeName || a.color) {
+      try {
+        await chrome.tabGroups.update(newGroupId, {
+          title: safeName || undefined,
+          color: (a.color as TabGroupColor | undefined) ?? undefined,
+        });
+      } catch (e) {
+        // Group itself created OK — name/color failure is a warning, not a
+        // fatal failure. Surface it in observation but keep success=true.
+        const msg = e instanceof Error ? e.message : String(e);
+        return {
+          success: true,
+          observation: `${summarizePartial("group_tabs", result)}\nGroup ${newGroupId} created but title/color update failed: ${msg}`,
+        };
+      }
+    }
+
+    return {
+      success: true,
+      observation: `${summarizePartial("group_tabs", result)}\nGroup id: ${newGroupId}${safeName ? ` (name: ${safeName})` : ""}${a.color ? ` (color: ${a.color})` : ""}`,
+    };
+  },
+};
+
+const ungroupTabsTool: Tool = {
+  name: "ungroup_tabs",
+  description:
+    "Remove one or more tabs from their current tab group. The group is " +
+    "automatically deleted when the last tab leaves it. Tabs that have " +
+    "navigated since the confirm card are skipped.",
+  parameters: {
+    type: "object",
+    properties: {
+      tabIds: {
+        type: "array",
+        items: { type: "integer" },
+        description: `Tab ids to remove from their groups (max ${GROUP_TABS_MAX} per call).`,
+      },
+    },
+    required: ["tabIds"],
+    additionalProperties: false,
+  },
+  handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
+    const a = (args ?? {}) as UngroupTabsArgs;
+    if (!Array.isArray(a.tabIds) || a.tabIds.length === 0) {
+      return { success: false, error: "ungroup_tabs requires a non-empty tabIds array" };
+    }
+    if (a.tabIds.length > GROUP_TABS_MAX) {
+      return {
+        success: false,
+        error: `ungroup_tabs accepts at most ${GROUP_TABS_MAX} tab ids per call.`,
+      };
+    }
+
+    const result: PartialCompletionResult = { ok: [], skipped: [], errors: [] };
+    const survivors: number[] = [];
+
+    for (const id of a.tabIds) {
+      const verify = await verifyConfirmedOrigin(id, ctx.confirmedTabTargets);
+      if (!verify.ok) {
+        result.skipped.push({ id, reason: verify.reason });
+        continue;
+      }
+      survivors.push(id);
+    }
+
+    if (survivors.length === 0) {
+      return {
+        success: false,
+        observation: `ungroup_tabs: no valid targets.\n${summarizePartial("ungroup_tabs", result)}`,
+        error: "noValidTargets",
+      };
+    }
+
+    try {
+      await chrome.tabs.ungroup(survivors);
+      result.ok.push(...survivors);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      for (const id of survivors) {
+        result.errors.push({ id, message });
+      }
+    }
+
+    return {
+      success: result.ok.length > 0,
+      observation: summarizePartial("ungroup_tabs", result),
+    };
+  },
+};
+
+const moveTabsTool: Tool = {
+  name: "move_tabs",
+  description:
+    "Reorder one or more tabs to a target index within their current window. " +
+    "Cross-window moves are not supported in v1 — all tabIds must share a " +
+    "single windowId. Tabs that have navigated since the confirm card are " +
+    "skipped.",
+  parameters: {
+    type: "object",
+    properties: {
+      tabIds: {
+        type: "array",
+        items: { type: "integer" },
+        description: `Tab ids to move (max ${GROUP_TABS_MAX} per call).`,
+      },
+      index: {
+        type: "integer",
+        description: "Target index within the window (0-based; -1 to append).",
+      },
+    },
+    required: ["tabIds", "index"],
+    additionalProperties: false,
+  },
+  handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
+    const a = (args ?? {}) as MoveTabsArgs;
+    if (!Array.isArray(a.tabIds) || a.tabIds.length === 0) {
+      return { success: false, error: "move_tabs requires a non-empty tabIds array" };
+    }
+    if (typeof a.index !== "number" || !Number.isInteger(a.index)) {
+      return { success: false, error: "move_tabs requires an integer index" };
+    }
+    if (a.tabIds.length > GROUP_TABS_MAX) {
+      return {
+        success: false,
+        error: `move_tabs accepts at most ${GROUP_TABS_MAX} tab ids per call.`,
+      };
+    }
+
+    const result: PartialCompletionResult = { ok: [], skipped: [], errors: [] };
+    const survivors: number[] = [];
+    let sharedWindowId: number | undefined;
+
+    for (const id of a.tabIds) {
+      const verify = await verifyConfirmedOrigin(id, ctx.confirmedTabTargets);
+      if (!verify.ok) {
+        result.skipped.push({ id, reason: verify.reason });
+        continue;
+      }
+      const wid = verify.tab.windowId;
+      if (sharedWindowId === undefined) {
+        sharedWindowId = wid;
+      } else if (sharedWindowId !== wid) {
+        // v1: cross-window move is acceptance-gated (G-2). Reject the id.
+        result.skipped.push({ id, reason: "cross-window-not-supported" });
+        continue;
+      }
+      survivors.push(id);
+    }
+
+    if (survivors.length === 0) {
+      return {
+        success: false,
+        observation: `move_tabs: no valid targets.\n${summarizePartial("move_tabs", result)}`,
+        error: "noValidTargets",
+      };
+    }
+
+    try {
+      await chrome.tabs.move(survivors, { index: a.index });
+      result.ok.push(...survivors);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      for (const id of survivors) {
+        result.errors.push({ id, message });
+      }
+    }
+
+    return {
+      success: result.ok.length > 0,
+      observation: summarizePartial("move_tabs", result),
+    };
+  },
+};
+
+// ── Unit 5 — get_tab_content + light strip + pre-fetch / cache ──────────────
+
+const GET_TAB_CONTENT_MAX_BYTES = 100_000; // ~100 KB cap before LLM context
+const GET_TAB_CONTENT_PREVIEW_BYTES = 400; // SW pre-fetch ships this many for confirm
+
+interface GetTabContentArgs {
+  tabId: number;
+}
+
+/**
+ * Phase 3 P3-U / SEC-2 — self-contained executeScript function. Runs in
+ * the page world via chrome.scripting.executeScript; CANNOT reference any
+ * outer scope (no imports, no closures). Exported so Unit 5 / loop.ts can
+ * reference the same function for both pre-fetch and fallback paths.
+ *
+ * Light strip (Q10 / SEC-2):
+ *  1. Remove input[type="password"] / input[autocomplete*="otp"] entirely
+ *  2. Remove elements whose aria-label / name matches credential keywords
+ *  3. Remove script / style nodes
+ *  4. Trim repeated whitespace
+ *
+ * Known trade-off: canvas-editor [contenteditable] (Feishu Docs / Google
+ * Docs / Notion) text is NOT stripped — keystrokes typed via CDP into a
+ * canvas editor that mirrors them into a hidden DOM are still readable.
+ * Defense-in-depth: get_tab_content is always-high (P3-S) AND the confirm
+ * card shows a preview of the very text about to be sent (P3-U). The user
+ * sees the credentials before approving and can reject.
+ */
+export function extractPageContentHardened(): {
+  text: string;
+  totalBytes: number;
+} {
+  const SELECTOR_CRED =
+    'input[type="password"], input[autocomplete*="otp"], input[autocomplete*="one-time-code"]';
+  const KEYWORD_RE = /password|otp|cvv|cvc|token|secret|verification.code|验证码|密码/i;
+
+  const root = document.body?.cloneNode(true) as HTMLElement | null;
+  if (!root) return { text: "", totalBytes: 0 };
+
+  // 1. Remove direct credential inputs.
+  root.querySelectorAll(SELECTOR_CRED).forEach((el) => el.remove());
+
+  // 2. Remove elements whose aria-label or name matches credential keywords
+  //    (catches "Verification code" / "OTP" labeled inputs that don't carry
+  //    autocomplete).
+  root.querySelectorAll("[aria-label],[name]").forEach((el) => {
+    const aria = el.getAttribute("aria-label") ?? "";
+    const name = el.getAttribute("name") ?? "";
+    if (KEYWORD_RE.test(aria) || KEYWORD_RE.test(name)) {
+      el.remove();
+    }
+  });
+
+  // 3. Remove non-content scaffolding.
+  root.querySelectorAll("script, style, noscript, template").forEach((el) =>
+    el.remove(),
+  );
+
+  const raw = root.textContent ?? "";
+  const collapsed = raw.replace(/\s+/g, " ").trim();
+  return { text: collapsed, totalBytes: collapsed.length };
+}
+
+const getTabContentTool: Tool = {
+  name: "get_tab_content",
+  description:
+    "Read the visible text content of a tab. Always high-risk (the user " +
+    "sees a content preview before approving). Restricted URLs (chrome://, " +
+    "file://, etc.), discarded tabs, and frozen tabs are rejected. Light " +
+    "strip removes credential-typed inputs (password / OTP / CVV) before " +
+    "the content reaches the LLM, but canvas-editor mirror DOM text is not " +
+    "stripped — the confirm preview is the user's last line of defense.",
+  parameters: {
+    type: "object",
+    properties: {
+      tabId: {
+        type: "integer",
+        description: "Tab id to read content from.",
+      },
+    },
+    required: ["tabId"],
+    additionalProperties: false,
+  },
+  handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
+    const a = (args ?? {}) as GetTabContentArgs;
+    if (typeof a.tabId !== "number") {
+      return { success: false, error: "get_tab_content requires a numeric tabId" };
+    }
+
+    // K-8 confirm-time origin re-verify.
+    const verify = await verifyConfirmedOrigin(a.tabId, ctx.confirmedTabTargets);
+    if (!verify.ok) {
+      return {
+        success: false,
+        error: `get_tab_content skipped: ${verify.reason}`,
+      };
+    }
+
+    if (!verify.tab.url || isRestrictedSchemeForGrouping(verify.tab.url)) {
+      return { success: false, error: "restrictedUrl" };
+    }
+    if (verify.tab.discarded) {
+      return {
+        success: false,
+        error: "discardedTabRequiresActivation",
+      };
+    }
+
+    // P3-U: prefer the SW pre-fetched content (already shown to user in
+    // confirm preview). The cache key is tabId. If the loop fed pre-fetched
+    // content for this id we trust THAT — re-running executeScript here
+    // would race against post-approval navigation.
+    const cached = ctx.preFetchedContent?.get(a.tabId);
+
+    let text: string;
+    let totalBytes: number;
+    if (cached) {
+      text = cached.fullText;
+      totalBytes = cached.totalBytes;
+    } else {
+      // Fallback: fetch now with timeout-guard (W3C #527 frozen-tab issue —
+      // executeScript can hang indefinitely on a frozen tab).
+      const FROZEN_TIMEOUT_MS = 5000;
+      try {
+        const fetchPromise = chrome.scripting.executeScript({
+          target: { tabId: a.tabId },
+          func: extractPageContentHardened,
+        });
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error("extractTimeout")),
+            FROZEN_TIMEOUT_MS,
+          ),
+        );
+        const results = (await Promise.race([
+          fetchPromise,
+          timeoutPromise,
+        ])) as chrome.scripting.InjectionResult<{
+          text: string;
+          totalBytes: number;
+        }>[];
+        const r = results[0]?.result;
+        if (!r) {
+          return { success: false, error: "extract failed" };
+        }
+        text = r.text;
+        totalBytes = r.totalBytes;
+      } catch (e) {
+        return {
+          success: false,
+          error: e instanceof Error ? e.message : "extract failed",
+        };
+      }
+    }
+
+    // Cap content at GET_TAB_CONTENT_MAX_BYTES before going to the LLM
+    // (matches PageSnapshot sliding-window budget; oversized payloads
+    // would evict user_task earlier in history).
+    const capped =
+      totalBytes > GET_TAB_CONTENT_MAX_BYTES
+        ? text.slice(0, GET_TAB_CONTENT_MAX_BYTES)
+        : text;
+    const trailer =
+      totalBytes > GET_TAB_CONTENT_MAX_BYTES
+        ? `\n[truncated: ${totalBytes - GET_TAB_CONTENT_MAX_BYTES} bytes omitted]`
+        : "";
+
+    const escaped = escapeUntrustedWrappers(capped);
+    const wrapped = `<untrusted_page_content origin="${verify.origin}">\n${escaped}${trailer}\n</untrusted_page_content>`;
+
+    return {
+      success: true,
+      observation: wrapped,
+    };
+  },
+};
+
+export { GET_TAB_CONTENT_PREVIEW_BYTES };
+
+export const TAB_TOOLS: Tool[] = [
+  listTabsTool,
+  closeTabsTool,
+  activateTabTool,
+  groupTabsTool,
+  ungroupTabsTool,
+  moveTabsTool,
+  getTabContentTool,
+];

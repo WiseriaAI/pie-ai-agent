@@ -9,8 +9,14 @@ import {
   isSkillMetaToolName,
 } from "./tools";
 import { previewMetaSkillCall } from "./tools/skill-meta";
-import type { Tool } from "./types";
-import { classifyRisk } from "./risk";
+import type { Tool, PreFetchedTabContent } from "./types";
+import { classifyRisk, type RiskClassifyContext } from "./risk";
+import { TAB_TOOL_NAMES } from "./tool-names";
+import { escapeUntrustedWrappers } from "./untrusted-wrappers";
+import {
+  extractPageContentHardened,
+  GET_TAB_CONTENT_PREVIEW_BYTES,
+} from "./tools/tabs";
 import { buildAgentSystemPrompt, buildObservationMessage } from "./prompt";
 import { applySlidingWindow } from "./window";
 import { isKeyboardSimulationEnabled } from "../keyboard-simulation";
@@ -24,6 +30,8 @@ import type {
   AgentConfirmRequestMessage,
   AgentDoneTaskMessage,
   ResolvedElement,
+  TabTarget,
+  TabContentPreview,
 } from "../../types/messages";
 
 const MAX_STEPS = 30;
@@ -125,6 +133,227 @@ export function safeParseOrigin(url: string): string | null {
     return origin;
   } catch {
     return null;
+  }
+}
+
+// ── Phase 3 — Tab target pre-compute for confirm cards ─────────────────────
+
+/** Sanitize a chrome.tabs.Tab title for confirm-card display. Same pipeline
+ *  as wrapTabMetadata: strip line breaks → strip control chars → cap length
+ *  → escape wrapper-tag literals (P3-G / P3-O). Kept inline (not exported
+ *  from tabs.ts) because the panel is the consumer and we want a single
+ *  caller-controlled cap for confirm UX. */
+const TAB_TITLE_CAP = 100;
+const TAB_URL_CAP = 200;
+const CONTROL_CHARS_RE = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g;
+const LINE_BREAK_RE = /[\n\r\v\f]/g;
+
+function sanitizeTitleForConfirm(title: string | undefined): string {
+  if (!title) return "(untitled)";
+  let cleaned = title.replace(LINE_BREAK_RE, " ").replace(CONTROL_CHARS_RE, "");
+  if (cleaned.length > TAB_TITLE_CAP) {
+    cleaned = cleaned.slice(0, TAB_TITLE_CAP) + "…";
+  }
+  return escapeUntrustedWrappers(cleaned);
+}
+
+function sanitizeUrlForConfirm(url: string | undefined): string {
+  if (!url) return "";
+  // URLs are not free-form text — control chars are protocol-violating, but
+  // we still cap length and escape any wrapper-tag literal that could appear
+  // in a query string.
+  const cleaned = url.replace(CONTROL_CHARS_RE, "").slice(0, TAB_URL_CAP);
+  return escapeUntrustedWrappers(cleaned);
+}
+
+/** Phase 3 SEC-5 — only accept https:// or data:image/ favicon URLs.
+ *  Other protocols (javascript:, http:, chrome://favicon proxy, etc.) are
+ *  page-controlled vectors that AgentConfirmCard would render via <img src>.
+ *  When stripped, the panel falls back to a default icon. */
+function safeFavIconUrl(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  if (raw.startsWith("https://") || raw.startsWith("data:image/")) {
+    return raw;
+  }
+  return undefined;
+}
+
+/** Build a TabTarget array for a tool call. Returns undefined when the args
+ *  don't reference any specific tabs (or any tabs at all — no pre-fetch is
+ *  meaningful). The handler still receives the cached origins via ctx so the
+ *  risk classifier can do cross-origin introspection (P3-A).
+ *
+ *  Inputs:
+ *   - tabIds: number[]   — close_tabs / group_tabs / ungroup_tabs / move_tabs
+ *   - tabId: number      — activate_tab / get_tab_content
+ *   - scope: "allWindows" — list_tabs allWindows (we pre-fetch all tabs as
+ *                            informed-approval payload)
+ *
+ *  All three branches share the same chrome.tabs.get / query → TabTarget[]
+ *  pipeline. Stale tabs (chrome.tabs.get rejects) are still emitted with
+ *  stale: true so the user sees them in the card and the handler can skip
+ *  them at dispatch time (K-8 confirm-time origin re-verify).
+ */
+async function buildTabTargets(
+  toolName: string,
+  args: Record<string, unknown>,
+  pinnedOrigin: string,
+): Promise<TabTarget[] | undefined> {
+  let candidates: chrome.tabs.Tab[] = [];
+  if (toolName === "list_tabs" && args.scope === "allWindows") {
+    // SEC-3: surface all tabs across windows in the confirm card so the user
+    // can see exactly what is being exposed to the BYOK provider.
+    try {
+      const all = await chrome.tabs.query({});
+      // Cap at 50 — wrapTabMetadata will report total + truncated to the LLM
+      // post-approval; the confirm card just needs the informed-approval set.
+      candidates = all.slice(0, 50);
+    } catch {
+      return undefined;
+    }
+  } else {
+    const ids: number[] = [];
+    if (Array.isArray(args.tabIds)) {
+      for (const v of args.tabIds) {
+        if (typeof v === "number") ids.push(v);
+      }
+    }
+    if (typeof args.tabId === "number") {
+      ids.push(args.tabId);
+    }
+    if (ids.length === 0) return undefined;
+    // Parallel chrome.tabs.get; reject → stale TabTarget placeholder.
+    const settled = await Promise.allSettled(ids.map((id) => chrome.tabs.get(id)));
+    settled.forEach((r, i) => {
+      const id = ids[i];
+      if (r.status === "fulfilled") {
+        candidates.push(r.value);
+      } else {
+        // Push a synthetic stale tab entry so the card row exists with
+        // (closed) marker.
+        candidates.push({
+          id,
+          url: "",
+          title: "(closed or inaccessible)",
+          active: false,
+          pinned: false,
+          highlighted: false,
+          incognito: false,
+          windowId: -1,
+          discarded: false,
+          autoDiscardable: true,
+          groupId: -1,
+          index: -1,
+          favIconUrl: undefined,
+          // We use _stale as a marker on the chrome.tabs.Tab shape and pick it
+          // up below; chrome's type doesn't include it, so cast.
+        } as unknown as chrome.tabs.Tab);
+      }
+    });
+  }
+
+  return candidates.map((t): TabTarget => {
+    const id = typeof t.id === "number" ? t.id : -1;
+    const url = t.url ?? "";
+    const origin = safeParseOrigin(url) ?? "";
+    const stale = !url || id === -1 || t.title === "(closed or inaccessible)";
+    return {
+      id,
+      title: sanitizeTitleForConfirm(t.title),
+      url: sanitizeUrlForConfirm(url),
+      origin,
+      favIconUrl: safeFavIconUrl(t.favIconUrl),
+      crossOrigin: !stale && origin !== pinnedOrigin,
+      stale: stale || undefined,
+    };
+  });
+}
+
+/** Build a Map<tabId, {origin}> from a TabTarget array for risk classifier
+ *  ctx. Stale entries are intentionally absent so hasCrossOriginTab treats
+ *  them as conservative-fail-high (which is the right call — if we don't
+ *  know the origin we shouldn't assume same-origin). */
+function tabTargetsToOriginCache(
+  targets: TabTarget[] | undefined,
+): Map<number, { origin: string }> | undefined {
+  if (!targets || targets.length === 0) return undefined;
+  const m = new Map<number, { origin: string }>();
+  for (const t of targets) {
+    if (t.stale) continue;
+    if (!t.origin) continue;
+    m.set(t.id, { origin: t.origin });
+  }
+  return m;
+}
+
+/**
+ * Phase 3 P3-U / SEC-2 — pre-fetch get_tab_content before the confirm card,
+ * with timeout-guard for frozen tabs (W3C WebExtensions #527).
+ *
+ * Returns:
+ *   - { ok: true, fullText, totalBytes } when extract succeeded
+ *   - { ok: false, reason } for restricted URL / discarded tab / timeout /
+ *     extract failure
+ *
+ * The full text goes into ctx.preFetchedContent so the handler doesn't
+ * re-run executeScript after approval (avoids race with page navigation).
+ * Only the first GET_TAB_CONTENT_PREVIEW_BYTES are shown in the confirm
+ * card — the user sees enough to spot credentials before approving.
+ */
+async function preFetchTabContent(
+  tabId: number,
+): Promise<
+  | { ok: true; fullText: string; totalBytes: number; origin: string }
+  | { ok: false; reason: string }
+> {
+  let tab: chrome.tabs.Tab;
+  try {
+    tab = await chrome.tabs.get(tabId);
+  } catch {
+    return { ok: false, reason: "missing" };
+  }
+  if (!tab.url || isRestrictedUrl(tab.url)) {
+    return { ok: false, reason: "restrictedUrl" };
+  }
+  if (tab.discarded) {
+    return { ok: false, reason: "discardedTabRequiresActivation" };
+  }
+  const origin = safeParseOrigin(tab.url);
+  if (!origin) {
+    return { ok: false, reason: "unresolvableOrigin" };
+  }
+
+  const FROZEN_TIMEOUT_MS = 5000;
+  try {
+    const fetchPromise = chrome.scripting.executeScript({
+      target: { tabId },
+      func: extractPageContentHardened,
+    });
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("extractTimeout")), FROZEN_TIMEOUT_MS),
+    );
+    const results = (await Promise.race([
+      fetchPromise,
+      timeoutPromise,
+    ])) as chrome.scripting.InjectionResult<{
+      text: string;
+      totalBytes: number;
+    }>[];
+    const r = results[0]?.result;
+    if (!r) {
+      return { ok: false, reason: "extractFailed" };
+    }
+    return {
+      ok: true,
+      fullText: r.text,
+      totalBytes: r.totalBytes,
+      origin,
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      reason: e instanceof Error ? e.message : "extractFailed",
+    };
   }
 }
 
@@ -267,6 +496,19 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
   // has been shown. After that, subsequent confirms in the same task
   // skip the debugger-activation preamble (yellow bar already visible).
   let firstKeyboardConfirmShown = false;
+
+  // Phase 3 K-10 (reject-side) — per-task confirm-fatigue short-circuit.
+  // Key is tool name (close_tabs, group_tabs, etc.); value is consecutive
+  // reject count for that tool name in this task. When a tool reaches
+  // CONFIRM_REJECT_THRESHOLD rejects, the loop emits agent-done with a
+  // failure summary so the LLM can't keep re-issuing the same call and
+  // training the user to mash approve. Counter is task-scoped (cleared
+  // when runAgentLoop returns); approve does NOT reset the counter (a
+  // user oscillating reject/approve/reject is still trending toward
+  // fatigue). Cross-origin approve-side reflection was scoped out (see
+  // plan K-10 update during document review).
+  const confirmRejections = new Map<string, number>();
+  const CONFIRM_REJECT_THRESHOLD = 3;
 
   try {
     for (let stepIndex = 1; stepIndex <= MAX_STEPS; stepIndex++) {
@@ -558,8 +800,86 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           skillAuthor: skillAuthorForStep,
         });
 
+        // Phase 3 — pre-compute TabTarget[] for tab tools so the confirm card
+        // can render an informed-approval payload (P3-E) AND the risk
+        // classifier can do cross-origin args introspection (P3-A) using the
+        // already-fetched origins (no second chrome.tabs.get round-trip).
+        let tabTargets: TabTarget[] | undefined;
+        const isTabTool = (TAB_TOOL_NAMES as readonly string[]).includes(tc.name);
+        if (isTabTool) {
+          tabTargets = await buildTabTargets(tc.name, args, pinnedOrigin);
+        }
+
+        // Phase 3 P3-U / SEC-2 — pre-fetch get_tab_content BEFORE the confirm
+        // card so the user can see the actual content they're about to send
+        // to the LLM. The full text is cached on ctx so the handler reuses
+        // it after approval (no race with post-approval navigation).
+        //
+        // CRITICAL: pre-fetch failure (frozen tab, restricted URL, transient
+        // executeScript timeout, etc.) MUST still emit a contentPreview —
+        // otherwise the confirm card silently hides the preview block and
+        // the user approves blind, defeating the SEC-2 invariant. We emit a
+        // sentinel preview that explicitly says "preview unavailable" with
+        // the failure reason so the user can choose to reject.
+        let contentPreview: TabContentPreview | undefined;
+        let preFetchedContent: Map<number, PreFetchedTabContent> | undefined;
+        if (tc.name === "get_tab_content") {
+          const tabIdArg = typeof args.tabId === "number" ? args.tabId : undefined;
+          if (typeof tabIdArg === "number") {
+            const pre = await preFetchTabContent(tabIdArg);
+            if (pre.ok) {
+              const previewText = escapeUntrustedWrappers(
+                pre.fullText.slice(0, GET_TAB_CONTENT_PREVIEW_BYTES),
+              );
+              contentPreview = {
+                tabId: tabIdArg,
+                origin: pre.origin,
+                previewText,
+                truncatedAtBytes: GET_TAB_CONTENT_PREVIEW_BYTES,
+                totalBytes: pre.totalBytes,
+              };
+              preFetchedContent = new Map();
+              preFetchedContent.set(tabIdArg, {
+                fullText: pre.fullText,
+                totalBytes: pre.totalBytes,
+              });
+            } else {
+              // Sentinel preview — confirm card MUST show the failure
+              // explicitly. Approving blind is still possible (the user
+              // may legitimately want the agent to retry), but they see
+              // exactly what's missing.
+              contentPreview = {
+                tabId: tabIdArg,
+                origin: "",
+                previewText: `(preview unavailable: ${pre.reason}) — approving will let the agent fetch content fresh; fetch may still fail or expose content the preview could not show.`,
+                truncatedAtBytes: 0,
+                totalBytes: 0,
+              };
+              // preFetchedContent intentionally remains undefined so the
+              // handler runs a fresh fetch (which will likely fail the
+              // same way and surface the failure in the observation).
+            }
+          }
+        }
+
+        const riskCtx: RiskClassifyContext = {
+          pinnedOrigin,
+          allTabsCache: tabTargetsToOriginCache(tabTargets),
+        };
+
         // Risk classification
-        const risk = classifyRisk(tc.name, args as { elementIndex?: number; value?: string }, snapshot);
+        const risk = classifyRisk(
+          tc.name,
+          args as {
+            elementIndex?: number;
+            value?: string;
+            tabIds?: number[];
+            tabId?: number;
+            scope?: string;
+          },
+          snapshot,
+          riskCtx,
+        );
 
         if (risk.level === "high") {
           const confirmationId = crypto.randomUUID();
@@ -595,9 +915,44 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             resolvedElement: resolvedElement ?? { text: "", tag: "" },
             riskReason,
             metaSkillPreview,
+            tabTargets,
+            contentPreview,
           });
 
           if (!approved) {
+            const prevRejects = confirmRejections.get(tc.name) ?? 0;
+            const nextRejects = prevRejects + 1;
+            confirmRejections.set(tc.name, nextRejects);
+
+            // K-10 reject-side: terminate task after threshold consecutive
+            // rejects for the same tool name to break a fatigue cycle.
+            if (nextRejects >= CONFIRM_REJECT_THRESHOLD) {
+              const fatigueMsg = `User repeatedly rejected ${tc.name} (${nextRejects} times). Stopping task.`;
+              toolResultBlocks.push({
+                type: "tool_result",
+                toolUseId: tc.id,
+                content: fatigueMsg,
+                isError: true,
+              });
+              sendAgentStep(port, {
+                type: "agent-step",
+                stepIndex,
+                tool: tc.name,
+                args: redactArgsForPanel(tc.name, tc.args),
+                resolvedElement,
+                status: "error",
+                observation: fatigueMsg,
+                skillAuthor: skillAuthorForStep,
+              });
+              emitDone({
+                type: "agent-done-task",
+                success: false,
+                summary: fatigueMsg,
+                stepCount: stepIndex,
+              });
+              return;
+            }
+
             const rejectionMsg = "User rejected";
             toolResultBlocks.push({
               type: "tool_result",
@@ -680,10 +1035,30 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           }
         }
 
+        // Phase 3 — confirm-time TabTarget snapshot for cross-tab handlers.
+        // K-8: handlers compare live tab origin against this map's origin
+        // (what the user saw on the confirm card), NOT pinnedOrigin. If a
+        // tab navigated between approval and dispatch, the handler skips it.
+        let confirmedTabTargets:
+          | Map<number, { origin: string; title: string }>
+          | undefined;
+        if (tabTargets && tabTargets.length > 0) {
+          confirmedTabTargets = new Map();
+          for (const t of tabTargets) {
+            if (t.stale) continue;
+            confirmedTabTargets.set(t.id, { origin: t.origin, title: t.title });
+          }
+        }
+
         // Execute tool
         let result;
         try {
-          result = await tool.handler(tc.args, { tabId: pinnedTabId, snapshot });
+          result = await tool.handler(tc.args, {
+            tabId: pinnedTabId,
+            snapshot,
+            confirmedTabTargets,
+            preFetchedContent,
+          });
         } catch (e) {
           result = {
             success: false,

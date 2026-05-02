@@ -24,6 +24,7 @@ export {
 import type { SkillDefinition } from "./types";
 import type { Tool } from "@/lib/agent/types";
 import type { ActionResult } from "@/lib/dom-actions/types";
+import { escapeUntrustedWrappers } from "@/lib/agent/untrusted-wrappers";
 import { BUILT_IN_SKILLS } from "./builtin";
 import { listUserSkills, getEnabledSkillIds } from "./storage";
 
@@ -76,19 +77,28 @@ export async function getEnabledSkills(): Promise<SkillDefinition[]> {
 }
 
 /** Render a promptTemplate by replacing {{key}} placeholders.
- *  Each value is JSON-stringified and capped at MAX_TEMPLATE_VALUE_LEN chars.
- *  Missing keys render as empty string.
- *  The entire rendered result is wrapped in <untrusted_skill_params> tags.
+ *  Each value is JSON-stringified, capped at MAX_TEMPLATE_VALUE_LEN chars,
+ *  and run through escapeUntrustedWrappers (closes ADV-1).
+ *
+ *  After substitution, the FULL rendered string (template body + every
+ *  substituted value) is run through escapeUntrustedWrappers a second time
+ *  so an agent-authored promptTemplate cannot embed a literal
+ *  `</untrusted_skill_params>` in the template body itself (adversarial
+ *  re-review finding — wrapper escape was only applied to substitutions,
+ *  not the template body). escapeUntrustedWrappers is idempotent: HTML
+ *  entities produced by the first pass are not re-escaped by the second.
  */
 function renderTemplate(template: string, args: Record<string, unknown>): string {
   const rendered = template.replace(/\{\{(\w+)\}\}/g, (_match, key: string) => {
     if (!(key in args)) return "";
     const raw = JSON.stringify(args[key]) ?? "";
-    return raw.length > MAX_TEMPLATE_VALUE_LEN
+    const capped = raw.length > MAX_TEMPLATE_VALUE_LEN
       ? raw.slice(0, MAX_TEMPLATE_VALUE_LEN)
       : raw;
+    return escapeUntrustedWrappers(capped);
   });
-  return `<untrusted_skill_params>${rendered}</untrusted_skill_params>`;
+  const safeRendered = escapeUntrustedWrappers(rendered);
+  return `<untrusted_skill_params>${safeRendered}</untrusted_skill_params>`;
 }
 
 /** Convert a list of SkillDefinitions into Tool objects.

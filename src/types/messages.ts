@@ -60,6 +60,56 @@ export interface ResolvedElement {
   href?: string;
 }
 
+/**
+ * Phase 3 — multi-tab target descriptor used in confirm cards for
+ * close_tabs / group_tabs / activate_tab / etc. SW pre-computes these
+ * (chrome.tabs.get + URL parsing + sanitize) before sending the confirm
+ * request so the panel renders read-only and consistent informed-approval
+ * payload (Phase 3 invariant P3-E).
+ *
+ * favIconUrl is filtered to https:// or data:image/ only (SEC-5); other
+ * protocols are stripped to undefined and the UI falls back to a default
+ * icon — never trust a page-controlled favicon URL with anything else.
+ *
+ * title is sanitized via the same line-break / control-char / wrapper-escape
+ * pipeline as wrapTabMetadata so panel rendering can't be subverted by a
+ * page-controlled title (P3-G).
+ */
+export interface TabTarget {
+  id: number;
+  title: string;
+  url: string;
+  origin: string;
+  favIconUrl?: string;
+  /** True when this tab.origin differs from the agent's pinned origin —
+   *  drives the cross-origin tag in the confirm card row. */
+  crossOrigin: boolean;
+  /** True when the tab no longer exists (chrome.tabs.get rejected) at the
+   *  time tabTargets was built. The card renders this row as "(closed)" but
+   *  the handler will skip it during dispatch. */
+  stale?: boolean;
+}
+
+/**
+ * Phase 3 — get_tab_content content preview (P3-U / R12 / SEC-2).
+ * SW pre-fetches the tab content via executeScript before the confirm
+ * request, applies escapeUntrustedWrappers + light strip, and ships the
+ * first ~200 chars to the panel so the user can see what they're approving
+ * before clicking through. Mirrors Phase 2.5 keyboard "confirm shows raw,
+ * agent-step redacts" informed-approval invariant.
+ */
+export interface TabContentPreview {
+  tabId: number;
+  origin: string;
+  /** First ~200 chars of the extracted content (after light strip). The
+   *  full content goes to the LLM only after the user approves. */
+  previewText: string;
+  /** Total bytes the handler will return on approval (preview-truncated
+   *  view of). Lets the UI label "showing X of Y bytes". */
+  totalBytes: number;
+  truncatedAtBytes: number;
+}
+
 // --- Agent: Service Worker → Side Panel ---
 
 export interface AgentStepMessage {
@@ -98,6 +148,17 @@ export interface AgentConfirmRequestMessage {
     existing: SkillDefinition | null;
     effective: SkillDefinition;
   };
+  /** Phase 3 — for cross-tab tools (close_tabs / group_tabs / activate_tab /
+   *  list_tabs allWindows / etc.) the SW pre-computes a TabTarget per tabId
+   *  in args. The card renders an `<TabTargetsList>` instead of the legacy
+   *  ResolvedElement single-element block. Origin summary is computed in
+   *  the panel from this array. (P3-E.) */
+  tabTargets?: TabTarget[];
+  /** Phase 3 — for `get_tab_content` confirm cards (P3-U). The SW pre-fetches
+   *  the tab content (executeScript), applies escapeUntrustedWrappers +
+   *  credential light-strip, and ships the first chunk to the panel for
+   *  informed approval. Handler reuses this cache on dispatch. */
+  contentPreview?: TabContentPreview;
 }
 
 export interface AgentDoneTaskMessage {

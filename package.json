@@ -1,6 +1,6 @@
 {
   "name": "chrome-ai-agent",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "BYOK browser AI — bring your own API key for page understanding, agent automation, and smart tab management.",
   "type": "module",
