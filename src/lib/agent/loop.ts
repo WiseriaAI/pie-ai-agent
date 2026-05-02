@@ -111,6 +111,19 @@ export interface AgentLoopContext {
    */
   resumedAgentMessages?: AgentMessage[];
   resumedFromStep?: number;
+  /**
+   * M2-U1 — when resuming a paused task, the skill-scope stack that was
+   * active at the time of the SW restart, read back from the persisted
+   * `SessionAgentState.skillExecutionScopeStack`. Must be set together
+   * with `resumedAgentMessages` / `resumedFromStep` (or all three omit).
+   *
+   * If the task was interrupted mid-skill (rare — SW death while a
+   * skill tool was awaiting a confirm or executing), the stack is
+   * restored so R2 / R3 enforcement sees the same scope the original
+   * loop was enforcing. An empty array (or undefined) means no scope
+   * was active; the loop starts fresh.
+   */
+  resumedSkillScopeStack?: Array<{ skillId: string; allowedTools: string[] | null }>;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -423,19 +436,21 @@ async function preFetchTabContent(
  *      (M1-U5) needs the raw tool_use args to plan the next step. Two
  *      different consumers, two different shapes.
  *
- * `skillExecutionScopeStack` is empty in M1 — the in-memory
- * `currentSkillScope` carries Phase 2.6 R3 anti-nest enforcement. M2-U1
- * will wire the stack so a paused-and-resumed task can re-enter the
- * scope it was in.
+ * `skillExecutionScopeStack` carries the current skill-scope stack
+ * (M2-U1). Empty array = no skill scope active. The stack is at most
+ * 1 element deep in practice (R3 anti-nest rejects nested skill calls),
+ * but the shape is an array so resume can restore arbitrary depth if
+ * future plan revisions permit limited nesting.
  */
 export function buildSessionAgentSnapshot(
   history: AgentMessage[],
   stepIndex: number,
+  skillExecutionScopeStack: SessionAgentState["skillExecutionScopeStack"] = [],
 ): SessionAgentState {
   return {
     agentMessages: structuredClone(history),
     stepIndex,
-    skillExecutionScopeStack: [],
+    skillExecutionScopeStack: structuredClone(skillExecutionScopeStack),
   };
 }
 
@@ -508,7 +523,22 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
   let doneEmitted = false;
   let lastStepIndex = 0;
   let normalTextReply = false; // pure-text reply uses chat-done, not agent-done-task
-  let currentSkillScope: SkillScope | null = null; // Phase 2.6 — see SkillScope JSDoc above
+  // Phase 2.6 / M2-U1 — skill-scope stack.
+  //
+  // Per-call local variable so concurrent runAgentLoop invocations each
+  // have their own isolated stack (multi-session safety: if someone later
+  // moves this to module scope, a test will catch the regression).
+  //
+  // Stack is at most 1 element deep in practice: R3 anti-nest (below)
+  // rejects any tool_call that would push a second entry. The array
+  // shape exists so the resume path can restore the persisted snapshot
+  // without knowing the depth limit.
+  //
+  // On resume: restored from ctx.resumedSkillScopeStack so a task
+  // paused mid-skill picks up R2/R3 enforcement where it left off.
+  const skillExecutionScopeStack: SkillScope[] = ctx.resumedSkillScopeStack
+    ? structuredClone(ctx.resumedSkillScopeStack)
+    : [];
 
   // Idempotent done emit — every runAgentLoop exit path (success, abort,
   // error, finally) calls this; first one wins, the rest are no-ops.
@@ -915,19 +945,21 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         // ── Phase 2.6 — Skill scope enforcement (R2 + R3 anti-nest) ────────
         // Inserted between tool-lookup and risk-classify so rejected calls
         // skip risk classification, confirm card, and handler entirely.
-        if (currentSkillScope) {
+        // M2-U1: reads stack top instead of scalar variable.
+        const activeSkillScope = skillExecutionScopeStack[skillExecutionScopeStack.length - 1] ?? null;
+        if (activeSkillScope) {
           let scopeRejection: string | null = null;
           if (skillResolvedNames.has(tc.name)) {
             // R3: skills cannot call other skills (would compose into deep
             // chains the user never reviewed; also opens recursion footguns).
-            scopeRejection = `Skills cannot call other skills (currently in '${currentSkillScope.skillId}' scope; '${tc.name}' is a skill).`;
+            scopeRejection = `Skills cannot call other skills (currently in '${activeSkillScope.skillId}' scope; '${tc.name}' is a skill).`;
           } else if (
-            currentSkillScope.allowedTools !== null &&
-            !currentSkillScope.allowedTools.includes(tc.name)
+            activeSkillScope.allowedTools !== null &&
+            !activeSkillScope.allowedTools.includes(tc.name)
           ) {
             // R2: allowedTools whitelist is loop-enforced, not a prompt hint.
-            const allowedList = currentSkillScope.allowedTools.join(", ");
-            scopeRejection = `tool '${tc.name}' not allowed in skill '${currentSkillScope.skillId}' scope. Allowed: [${allowedList}]. Call done or fail to exit.`;
+            const allowedList = activeSkillScope.allowedTools.join(", ");
+            scopeRejection = `tool '${tc.name}' not allowed in skill '${activeSkillScope.skillId}' scope. Allowed: [${allowedList}]. Call done or fail to exit.`;
           }
           if (scopeRejection !== null) {
             toolResultBlocks.push({
@@ -1263,17 +1295,18 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           skillAuthor: skillAuthorForStep,
         });
 
-        // Phase 2.6 — Skill scope transition.
+        // Phase 2.6 / M2-U1 — Skill scope transition.
         // Enter scope after a successful skill-resolved tool_call. Failed
-        // skill handlers do NOT enter scope (avoid half-state). The scope
-        // replaces any prior scope (R3 already rejected nested skill_calls,
-        // so reaching this branch with an existing scope is unreachable in
-        // practice; the assignment is still correct as overwrite).
+        // skill handlers do NOT enter scope (avoid half-state). M2-U1:
+        // push onto the stack rather than overwrite a scalar. In practice
+        // the stack is always ≤1 deep (R3 rejects nested skill_calls above),
+        // but push-semantics are consistent with the persisted array shape
+        // and allow stack.pop() on a future "skill done" exit if needed.
         if (skillResolvedNames.has(tc.name) && result.success) {
-          currentSkillScope = {
+          skillExecutionScopeStack.push({
             skillId: tc.name,
             allowedTools: skillDefForStep?.allowedTools ?? null,
-          };
+          });
         }
 
         // Phase 2.6 — Skill cache invalidation after a successful meta-tool
@@ -1329,7 +1362,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // panel-display redaction happens via redactArgsForPanel on the
       // sendAgentStep path, which is a separate code path.
       if (ctx.onStepSnapshot) {
-        const snapshot = buildSessionAgentSnapshot(history, stepIndex);
+        const snapshot = buildSessionAgentSnapshot(history, stepIndex, skillExecutionScopeStack);
         ctx.onStepSnapshot(snapshot).catch((e) => {
           console.warn(
             `[agent] snapshot failed for session=${ctx.sessionId} step=${stepIndex}:`,

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentMessage, ContentBlock } from "@/lib/model-router";
+import type { SessionAgentState } from "@/lib/sessions/types";
 import {
   buildSessionAgentSnapshot,
   buildSessionAgentTombstone,
@@ -192,5 +193,108 @@ describe("buildSessionAgentSnapshot", () => {
     const snap = buildSessionAgentSnapshot(history, 1);
     expect(snap.pendingConfirm).toBeUndefined();
     expect("pendingConfirm" in snap).toBe(false);
+  });
+
+  // M2-U1 — skillExecutionScopeStack passed through to snapshot
+  it("M2-U1 — skillExecutionScopeStack is passed through to snapshot", () => {
+    const history: AgentMessage[] = [{ role: "user", content: "task" }];
+    const stack: SessionAgentState["skillExecutionScopeStack"] = [
+      { skillId: "my_skill", allowedTools: ["click", "type"] },
+    ];
+    const snap = buildSessionAgentSnapshot(history, 3, stack);
+    expect(snap.skillExecutionScopeStack).toEqual(stack);
+    expect(snap.stepIndex).toBe(3);
+  });
+
+  it("M2-U1 — skillExecutionScopeStack defaults to [] when not passed (existing callers unaffected)", () => {
+    const history: AgentMessage[] = [{ role: "user", content: "task" }];
+    // Called with only 2 args — must still work (backward compat for
+    // the 9 existing tests above that call buildSessionAgentSnapshot with 2 args).
+    const snap = buildSessionAgentSnapshot(history, 1);
+    expect(snap.skillExecutionScopeStack).toEqual([]);
+  });
+
+  it("M2-U1 — skillExecutionScopeStack is deep-cloned (mutation of input does not leak)", () => {
+    const history: AgentMessage[] = [{ role: "user", content: "task" }];
+    const stack: SessionAgentState["skillExecutionScopeStack"] = [
+      { skillId: "skill_a", allowedTools: ["click"] },
+    ];
+    const snap = buildSessionAgentSnapshot(history, 1, stack);
+
+    // Mutate the original stack and its inner allowedTools array.
+    stack[0]!.skillId = "tampered";
+    (stack[0]!.allowedTools as string[]).push("type");
+    stack.push({ skillId: "extra", allowedTools: null });
+
+    // Snapshot must be unaffected.
+    expect(snap.skillExecutionScopeStack).toHaveLength(1);
+    expect(snap.skillExecutionScopeStack[0]!.skillId).toBe("skill_a");
+    expect(snap.skillExecutionScopeStack[0]!.allowedTools).toEqual(["click"]);
+  });
+
+  it("M2-U1 — tombstone still emits empty skillExecutionScopeStack", () => {
+    const tombstone = buildSessionAgentTombstone();
+    expect(tombstone.skillExecutionScopeStack).toEqual([]);
+  });
+});
+
+// ── M2-U1: multi-session stack isolation smoke test ──────────────────────────
+//
+// The goal is to ensure that two concurrent runAgentLoop invocations
+// each use their own independent skill-scope stack. Since runAgentLoop
+// is too tightly coupled to Chrome APIs to mock in unit tests, we
+// validate the isolation property at the only publicly-testable level:
+// by verifying that buildSessionAgentSnapshot carries the stack that
+// was passed to it, not some module-level shared state.
+//
+// This test acts as a regression guard: if someone moves
+// skillExecutionScopeStack to module scope, this test will still pass
+// (because buildSessionAgentSnapshot takes it as an argument), but the
+// pattern it guards against can be caught by E2E / session recovery
+// tests. The framing is intentional — see advisor note.
+
+describe("M2-U1 — concurrent snapshot calls are stack-isolated", () => {
+  it("two concurrent buildSessionAgentSnapshot calls carry independent stacks", () => {
+    const historyA: AgentMessage[] = [{ role: "user", content: "task A" }];
+    const historyB: AgentMessage[] = [{ role: "user", content: "task B" }];
+
+    const stackA: SessionAgentState["skillExecutionScopeStack"] = [
+      { skillId: "skill_x", allowedTools: ["click"] },
+    ];
+    const stackB: SessionAgentState["skillExecutionScopeStack"] = [];
+
+    const snapA = buildSessionAgentSnapshot(historyA, 5, stackA);
+    const snapB = buildSessionAgentSnapshot(historyB, 2, stackB);
+
+    // A has a scope entry; B is empty. They must not share state.
+    expect(snapA.skillExecutionScopeStack).toHaveLength(1);
+    expect(snapA.skillExecutionScopeStack[0]!.skillId).toBe("skill_x");
+    expect(snapB.skillExecutionScopeStack).toHaveLength(0);
+
+    // Mutating B's (empty) stack must not affect A.
+    snapB.skillExecutionScopeStack.push({ skillId: "injected", allowedTools: null });
+    expect(snapA.skillExecutionScopeStack).toHaveLength(1);
+  });
+
+  it("resume path — stack from snapshot can be fed back via ctx.resumedSkillScopeStack contract", () => {
+    // Simulate what handleResumeRequest does: read snapshot, pass its
+    // skillExecutionScopeStack as resumedSkillScopeStack to runAgentLoop.
+    // We can't call runAgentLoop here, but we verify the round-trip data
+    // shape is preserved end-to-end.
+    const originalStack: SessionAgentState["skillExecutionScopeStack"] = [
+      { skillId: "my_skill", allowedTools: ["click", "type"] },
+    ];
+    const snapshot = buildSessionAgentSnapshot(
+      [{ role: "user", content: "task" }],
+      7,
+      originalStack,
+    );
+
+    // Simulate the resume call: snapshot.skillExecutionScopeStack is what
+    // handleResumeRequest passes as ctx.resumedSkillScopeStack. It should
+    // carry the full stack.
+    const resumedStack = snapshot.skillExecutionScopeStack;
+    expect(resumedStack).toEqual(originalStack);
+    expect(resumedStack[0]!.allowedTools).toEqual(["click", "type"]);
   });
 });
