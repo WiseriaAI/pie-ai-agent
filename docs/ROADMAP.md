@@ -62,6 +62,22 @@
 | approve-side sanity reflection（≥5 cross-origin approve 顶部反思条） | Phase 3 plan L150 | 被评 paternalistic 撤回；等真实滥用模式再补 |
 | 两阶段 LLM 分类（>50 tab 时上 TnT-LLM 风格） | Phase 3 plan L103 | v1 单阶段够用 |
 
+## 5. 多轮对话上下文（pre-existing gap, 用户 2026-05-02 报告）
+
+**Status**: 非 M1 / M2 / M3 范围。Phase 2 起 SW 端 `background/index.ts:226-227` 只取最后一个 user message 作为 `task` 字符串丢给 `runAgentLoop`，**LLM 每轮都从零开始**——panel 累积的 user/assistant DisplayMessage 在 wire 层被 SW 直接丢弃。从 ChatGPT 风格"多轮对话"视角看是缺陷；从"每个 sendMessage 是独立 task"语义看是 by-design。当前实现倾向后者，但用户体感倾向前者。
+
+**Two halves（必须一起设计，单独修半 A 只是把症状从 100% 降到 50%）**:
+
+- **半 A：纯 chat 多轮**——`handleChatStream` 把整个 `messages` 数组传给 `runAgentLoop`，起手 `history = [system, ...messages]`。`useSession` 已经把 user/assistant DisplayMessage filter 留出来发上来了，纯改 SW 侧 ~10 行
+- **半 B：agent 任务多轮（设计决策）**——`useSession.sendMessage` 的 filter 把 agent-step / agent-confirm / agent-summary 全丢掉，导致 agent task 后接着对话时 LLM 看到连续两个 user message（多家 provider 直接 400）。需要决定前一轮 agent task 以什么形态作为 assistant turn 喂给 LLM：
+  - 选项 1：用 `agent-summary.summary` 作为 assistant turn
+  - 选项 2：完整 agent IR（tool_use + tool_result）翻译——但 M1-U3 tombstone 已清掉
+  - 选项 3：合成"上一轮做了 X / 看到了 Y"摘要
+
+**前置依赖**：M1 完成（不阻塞但简化 trade-off 视野）；与 `applySlidingWindow` token 预算策略联动。
+
+**建议路径**：M1 完整 ship 后单独 `/ce:brainstorm` + `/ce:plan`，不塞进 session-persistent-layer plan。
+
 ---
 
 ## 推荐推进顺序
