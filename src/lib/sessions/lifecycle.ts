@@ -57,11 +57,16 @@ const MAX_LRU_ARCHIVE_PER_CALL = 5;
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
 // ── Archive stored shape ──────────────────────────────────────────────────────
+//
+// `archivedAt` lives on `meta.archivedAt` (SessionMeta field). Storing it
+// again at the top level was a 16-byte-per-archive redundancy that, for
+// small sessions, made archived bundles grow larger than the meta+agent
+// keys they replaced (testing-2 finding: net bytes +12 for empty session).
+// hardDeleteExpired reads from `payload.meta.archivedAt`.
 
 interface ArchivedSession {
   meta: SessionMeta;
   agent: SessionAgentState | null;
-  archivedAt: number;
 }
 
 // ── archiveSession ────────────────────────────────────────────────────────────
@@ -98,7 +103,6 @@ export async function archiveSession(
   const payload: ArchivedSession = {
     meta: archivedMeta,
     agent: agent,
-    archivedAt,
   };
 
   // Read the index and update entry atomically.
@@ -224,7 +228,12 @@ export async function hardDeleteExpired(
     const payload = allArchived[archivedKey(entry.id)] as
       | ArchivedSession
       | undefined;
-    const archivedAt = payload?.archivedAt ?? 0;
+    // Malformed archive payloads (missing archivedAt on the embedded meta)
+    // must NOT be treated as "very old" — that would silently hard-delete
+    // corrupt entries on the next mount, bypassing the user-visible 30-day
+    // grace window. Use MAX_SAFE_INTEGER so corrupt entries survive sweeps
+    // and remain visible in 'Show Archived' for manual triage / Delete Forever.
+    const archivedAt = payload?.meta?.archivedAt ?? Number.MAX_SAFE_INTEGER;
     if (archivedAt < cutoff) {
       toDelete.push(entry.id);
     }

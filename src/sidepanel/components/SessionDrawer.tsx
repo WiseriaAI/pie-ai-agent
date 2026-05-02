@@ -501,7 +501,6 @@ export default function SessionDrawer({
           onClick={() => setShowArchived((v) => !v)}
           style={{
             padding: "14px 16px 6px 16px",
-            borderTop: "1px solid #22272F",
             display: "flex",
             alignItems: "center",
             gap: 6,

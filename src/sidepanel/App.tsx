@@ -64,7 +64,9 @@ export default function App() {
   useEffect(() => {
     // M2-U4: opportunistic 30-day hard-delete sweep on sidepanel mount.
     // Fire-and-forget — does not block mount or session loading.
-    void hardDeleteExpired();
+    hardDeleteExpired().catch((e) => {
+      console.warn("[panel] hardDeleteExpired sweep failed:", e);
+    });
 
     // Initial load
     void refreshSessionIndex();

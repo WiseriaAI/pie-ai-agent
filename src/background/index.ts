@@ -42,7 +42,6 @@ import {
 import { KEYBOARD_SIMULATION_STORAGE_KEY } from "@/lib/keyboard-simulation";
 import { runSessionMigrations } from "@/lib/sessions/migration";
 import { chat } from "@/lib/model-router";
-import { deriveTitleFromMessages } from "@/lib/sessions/title";
 import { generateTitle, maybeUpgradeFallbackTitle } from "@/lib/sessions/title-generator";
 
 // Open side panel when extension icon is clicked
@@ -731,16 +730,18 @@ async function handleChatStream(
 
     // M2-U3 — LLM async title generation (R29).
     // Trigger only on the first user message (messages.length === 1 and role=user).
-    // At that point the panel has already written the fallback title
-    // (deriveTitleFromMessages) to meta. We fire-and-forget an LLM call to
-    // generate a better short title; if the user changes the title manually
-    // before the LLM returns, maybeUpgradeFallbackTitle race-guard skips the write.
+    // The race-guard sentinel is whatever title the panel wrote at chat-start
+    // (panel's persistMessages fires before postMessage('chat-start'), so by the
+    // time SW awaits getSessionMeta the fallback string is on disk). Reading
+    // from storage avoids recomputing the fallback in SW with a different
+    // `messages` payload — slash skills, for example, ship the EXPANDED prompt
+    // to SW, so a SW-side deriveTitleFromMessages would produce a different
+    // string than the panel's, breaking the equality race-guard forever.
     if (messages.length === 1 && messages[0]?.role === "user") {
       const firstUserContent = messages[0].content;
-      // Compute the expected fallback sentinel from the exact same messages array
-      // the panel used (same function, same input → identical string).
-      const expectedFallback = deriveTitleFromMessages(messages);
-      if (expectedFallback !== undefined) {
+      const sentinelMeta = await getSessionMeta(sessionId);
+      const expectedFallback = sentinelMeta?.title;
+      if (expectedFallback !== undefined && expectedFallback !== "") {
         const callChat = (
           msgs: Array<{ role: "system" | "user" | "assistant"; content: string }>,
         ) => chat(config, msgs as ChatMessage[]).then((r) => r.content);

@@ -37,30 +37,6 @@ function ActiveIcon() {
   );
 }
 
-function RunningIcon() {
-  return (
-    <svg
-      width="18"
-      height="18"
-      viewBox="0 0 18 18"
-      fill="none"
-      aria-hidden="true"
-      style={{ animation: "spin 1s linear infinite" }}
-    >
-      <circle
-        cx="9"
-        cy="9"
-        r="5.5"
-        stroke="#B8C8D6"
-        strokeWidth="1"
-        strokeDasharray="22 12"
-        strokeLinecap="round"
-      />
-      <style>{`@keyframes spin { from { transform: rotate(0deg); transform-origin: 9px 9px; } to { transform: rotate(360deg); transform-origin: 9px 9px; } }`}</style>
-    </svg>
-  );
-}
-
 function PausedIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
@@ -75,15 +51,6 @@ function FailedIcon() {
       <circle cx="9" cy="9" r="6" fill="#8A929E" />
       <line x1="6.5" y1="6.5" x2="11.5" y2="11.5" stroke="#0E1216" strokeWidth="1.5" strokeLinecap="round" />
       <line x1="11.5" y1="6.5" x2="6.5" y2="11.5" stroke="#0E1216" strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function PendingConfirmIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-      <circle cx="9" cy="9" r="5.5" stroke="#C260BE" strokeWidth="1" />
-      <circle cx="9" cy="9" r="2" fill="#C260BE" />
     </svg>
   );
 }
@@ -252,5 +219,3 @@ export default function SessionRow({
   );
 }
 
-// Export the icon components for potential reuse
-export { RunningIcon, PendingConfirmIcon };

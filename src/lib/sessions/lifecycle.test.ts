@@ -65,7 +65,7 @@ describe("Scenario 1: LRU archive triggered when storage at quota", () => {
 
     expect(olderMeta).toBeNull();
     expect(olderAgent).toBeNull();
-    expect(archivedRaw[`session_${older.id}_archived`]).not.toBeNull();
+    expect(archivedRaw[`session_${older.id}_archived`]).toBeDefined();
 
     // Index should reflect archived status for older session.
     const index = await listSessionIndex();
@@ -92,7 +92,7 @@ describe("Scenario 2: hardDeleteExpired sweeps 30d+ archived sessions", () => {
 
     // Verify it was archived.
     const archivedRaw = await chrome.storage.local.get(`session_${session.id}_archived`);
-    expect(archivedRaw[`session_${session.id}_archived`]).not.toBeNull();
+    expect(archivedRaw[`session_${session.id}_archived`]).toBeDefined();
 
     // Run hardDeleteExpired.
     const result = await hardDeleteExpired(now);
@@ -120,7 +120,7 @@ describe("Scenario 2: hardDeleteExpired sweeps 30d+ archived sessions", () => {
 
     // Still present.
     const afterRaw = await chrome.storage.local.get(`session_${session.id}_archived`);
-    expect(afterRaw[`session_${session.id}_archived`]).not.toBeNull();
+    expect(afterRaw[`session_${session.id}_archived`]).toBeDefined();
   });
 });
 
@@ -185,10 +185,13 @@ describe("Scenario 4: archive releases meta + agent storage bytes", () => {
     expect(metaExists[`session_${session.id}_meta`]).toBeUndefined();
     expect(agentExists[`session_${session.id}_agent`]).toBeUndefined();
 
-    // The archived key bundles both — bytes freed from separate meta+agent keys
-    // (minus overhead of merged structure). In our mock the net should be
-    // measurably different from before.
-    expect(bytesAfter).toBeLessThan(bytesBefore + 1000); // sanity: not unbounded growth
+    // The archived key bundles both meta + agent into one record. After
+    // archive, the two separate keys are removed; the archived key carries
+    // the union but with less per-key overhead. Net bytes MUST decrease —
+    // anything else means archive duplicated data without releasing the
+    // originals (the exact "flag-only archive" anti-pattern the plan called
+    // out for explicit verification: M2-U4 plan line 691).
+    expect(bytesAfter).toBeLessThan(bytesBefore);
   });
 });
 
@@ -240,7 +243,7 @@ describe("Scenario 6: hardDeleteSession immediately removes archived key + index
 
     // Verify it's archived.
     const archivedBefore = await chrome.storage.local.get(`session_${session.id}_archived`);
-    expect(archivedBefore[`session_${session.id}_archived`]).not.toBeNull();
+    expect(archivedBefore[`session_${session.id}_archived`]).toBeDefined();
 
     // Now "Delete forever".
     await hardDeleteSession(session.id);
@@ -304,7 +307,7 @@ describe("Scenario 7 (integration): session_index tracks archived / active statu
 
     // The archived key should exist.
     const archivedRaw = await chrome.storage.local.get(`session_${session.id}_archived`);
-    expect(archivedRaw[`session_${session.id}_archived`]).not.toBeNull();
+    expect(archivedRaw[`session_${session.id}_archived`]).toBeDefined();
   });
 });
 

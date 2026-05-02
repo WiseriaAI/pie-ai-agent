@@ -177,6 +177,13 @@ export function useSession(): UseSession {
       if (!id) return;
       const current = await getSessionMeta(id);
       if (!current) return;
+      // Defense-in-depth: if the session was archived between the panel's
+      // last in-memory snapshot and now (LRU eviction during a streaming
+      // task), do NOT resurrect the meta key — it would leave the session
+      // in BOTH the active meta bucket and the archived bucket, confusing
+      // every downstream reader (SessionDrawer, listSessionIndex, the next
+      // archive call's idempotency check).
+      if (current.status === "archived") return;
       const titlePatch =
         current.title === undefined || current.title === ""
           ? deriveTitleFromMessages(next)
