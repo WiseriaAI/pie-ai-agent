@@ -48,6 +48,7 @@ const FOCUSABLE_SELECTORS = [
   "input:not([disabled])",
   "select:not([disabled])",
   "[tabindex]:not([tabindex='-1'])",
+  "[role='listitem']",
 ].join(", ");
 
 function getFocusableElements(container: HTMLElement): HTMLElement[] {
@@ -350,14 +351,24 @@ export default function SessionDrawer({
           </ul>
         </div>
 
-        {/* SHOW ARCHIVED toggle (M2-U4 stub) */}
-        <div
+        {/* SHOW ARCHIVED toggle (M2-U4 stub) — wrapped as button so keyboard
+            users can Tab to it; aria-disabled signals it's not yet functional. */}
+        <button
+          type="button"
+          aria-disabled="true"
+          title="Coming in M2-U4"
           style={{
             padding: "14px 16px 6px 16px",
             borderTop: "1px solid #22272F",
             display: "flex",
             alignItems: "center",
             gap: 6,
+            background: "none",
+            border: "none",
+            borderTop: "1px solid #22272F",
+            cursor: "default",
+            width: "100%",
+            textAlign: "left",
           }}
         >
           <span
@@ -389,7 +400,7 @@ export default function SessionDrawer({
               strokeLinejoin="round"
             />
           </svg>
-        </div>
+        </button>
 
         {/* Storage indicator */}
         <StorageIndicator />

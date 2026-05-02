@@ -175,9 +175,16 @@ export default function SessionRow({
   return (
     <li
       role="listitem"
+      tabIndex={0}
       aria-label={ariaLabel}
       style={rowStyle}
       onClick={handleRowClick}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          handleRowClick(e as unknown as React.MouseEvent);
+        }
+      }}
     >
       {/* Status icon */}
       <span style={{ width: 18, height: 18, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
