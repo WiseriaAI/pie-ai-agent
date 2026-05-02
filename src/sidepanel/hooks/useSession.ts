@@ -596,6 +596,11 @@ export function useSession(): UseSession {
     // Bump lastAccessedAt in storage (M2-U1 three-trigger wiring)
     await updateLastAccessed(id);
 
+    // Update ref immediately so callers that synchronously follow setActive
+    // (e.g. resumeTask in handleResumeSession) see the new id without
+    // waiting for the React state re-render cycle.
+    sessionIdRef.current = id;
+
     // Load the session's messages into React state
     setSessionId(id);
     setStatus(meta.status);
@@ -623,6 +628,8 @@ export function useSession(): UseSession {
    */
   const createAndActivate = useCallback(async (): Promise<string> => {
     const meta = await createSession();
+    // Update ref immediately (same reasoning as setActive)
+    sessionIdRef.current = meta.id;
     setSessionId(meta.id);
     setStatus(meta.status);
     setMessages([]);
