@@ -28,6 +28,7 @@ import {
   setSessionMeta,
   markFailedAndScrub,
   updateLastAccessed,
+  isPendingConfirmFloodLimited,
 } from "@/lib/sessions/storage";
 import { escapeUntrustedWrappers } from "@/lib/agent/untrusted-wrappers";
 import { detectAndMarkPaused } from "./session-recovery";
@@ -469,6 +470,17 @@ async function handleResumeRequest(
     confirmationId: string,
     payload: Omit<AgentConfirmRequestMessage, "type" | "confirmationId">,
   ): Promise<boolean> => {
+    // SEC-PLAN-009 — flood-limit guard (same as chat-stream path)
+    const flooded = await isPendingConfirmFloodLimited();
+    if (flooded) {
+      port.postMessage({
+        type: "session-toast",
+        level: "warn",
+        text: "Too many concurrent confirms. Please resolve pending sessions first.",
+      });
+      return false;
+    }
+
     await setPendingConfirm(sessionId, {
       confirmationId,
       kind: "agent-tool",
@@ -705,6 +717,21 @@ async function handleChatStream(
       confirmationId: string,
       payload: Omit<AgentConfirmRequestMessage, "type" | "confirmationId">,
     ): Promise<boolean> => {
+      // SEC-PLAN-009 — flood-limit guard: if > 5 sessions have a live
+      // pendingConfirm, auto-reject this request and emit a toast warning
+      // to the panel so the user knows to resolve existing confirms first.
+      // This protects K-1 (informed-approval) + D6 (storage pressure) from
+      // a runaway agent loop stacking unlimited blocking confirms.
+      const flooded = await isPendingConfirmFloodLimited();
+      if (flooded) {
+        port.postMessage({
+          type: "session-toast",
+          level: "warn",
+          text: "Too many concurrent confirms. Please resolve pending sessions first.",
+        });
+        return false;
+      }
+
       await setPendingConfirm(sessionId, {
         confirmationId,
         kind: "agent-tool",

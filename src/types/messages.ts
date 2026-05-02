@@ -357,6 +357,18 @@ export interface SessionConfirmRequestMessage {
   payload: unknown;
 }
 
+/**
+ * SEC-PLAN-009 — emitted by the SW when a new confirm request is rejected
+ * because the pending-confirm flood limit (>5 concurrent) is exceeded. The
+ * panel renders this as a transient warning banner. Unlike `chat-error`, this
+ * does NOT terminate the stream — it is advisory only.
+ */
+export interface SessionToastMessage {
+  type: "session-toast";
+  level: "warn" | "error" | "info";
+  text: string;
+}
+
 // --- Discriminated Unions ---
 
 export type PortMessageToWorker =
@@ -374,4 +386,5 @@ export type PortMessageToPanel =
   | AgentStepMessage
   | AgentConfirmRequestMessage
   | AgentDoneTaskMessage
-  | SessionConfirmRequestMessage;
+  | SessionConfirmRequestMessage
+  | SessionToastMessage;
