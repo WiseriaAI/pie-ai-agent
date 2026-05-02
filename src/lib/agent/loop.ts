@@ -560,7 +560,13 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
   }
   const signal = internalController.signal;
 
-  const ownerToken = crypto.randomUUID();
+  // M3-U3 — ownerToken is now structured `{sessionId, tabId}` so
+  // multi-Side-Panel collateral checks can name the offending session
+  // in error messages. tabId here is the post-anchor pinnedTabId
+  // (anchored just below). The token is constructed AFTER the anchor
+  // step so the tabId is real; declared as `let` to avoid a TDZ on
+  // the shape-construction line.
+  let ownerToken: import("../../background/cdp-session").CdpOwnerToken;
   let cdpSession: CdpSession | null = null;
   let doneEmitted = false;
   let lastStepIndex = 0;
@@ -666,6 +672,11 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       return;
     }
   }
+
+  // M3-U3 — bind ownerToken now that pinnedTabId is final. acquireSessionForTask
+  // (defined below) closes over this; first invocation happens inside the
+  // for-loop after this assignment, so the timing is safe.
+  ownerToken = { sessionId, tabId: pinnedTabId };
 
   // Curried CdpSession factory — passed to keyboard tools via closure.
   // INVARIANT: defined ONCE here, BEFORE the for-loop, so all per-iteration
