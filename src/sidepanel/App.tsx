@@ -132,6 +132,11 @@ export default function App() {
   }
 
   // ── Drawer handlers ───────────────────────────────────────────────────────
+  // P1-5 — stable identity so SessionDrawer focus-trap effect doesn't re-fire
+  // on every parent render (storage onChanged events drive App re-render
+  // frequently while drawer is open; inline arrow would thrash preFocusRef).
+  const handleCloseDrawer = useCallback(() => setDrawerOpen(false), []);
+
   const handleSelectSession = useCallback(async (id: string) => {
     const ok = await session.setActive(id);
     // P1-3: if setActive returned null (refused because streaming=true),
@@ -267,7 +272,7 @@ export default function App() {
       {/* ── Session drawer (overlay) ──────────────────────────────────────── */}
       <SessionDrawer
         isOpen={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
+        onClose={handleCloseDrawer}
         sessions={sessions}
         activeSessionId={session.sessionId}
         onSelectSession={handleSelectSession}
