@@ -132,22 +132,29 @@ export default function App() {
   }
 
   // ── Drawer handlers ───────────────────────────────────────────────────────
-  function handleSelectSession(id: string) {
-    void session.setActive(id);
-    setDrawerOpen(false);
-  }
+  const handleSelectSession = useCallback(async (id: string) => {
+    const ok = await session.setActive(id);
+    // P1-3: if setActive returned null (refused because streaming=true),
+    // keep the drawer open — the streaming guard in setActive already emits
+    // nothing; we let the P0-1 createAndActivate guard's toast guide the user.
+    // Only close the drawer when the switch actually succeeded.
+    if (ok != null) setDrawerOpen(false);
+  }, [session]);
 
-  function handleResumeSession(id: string) {
-    // Navigate to the session and trigger resume via the existing resumeTask path.
-    // Guard: setActive returns null when streaming=true; skip resumeTask in that case.
-    void session.setActive(id).then((result) => {
-      if (result) {
-        // Send resume-task message; useSession.resumeTask uses sessionIdRef so
-        // after setActive the ref is updated.
-        session.resumeTask();
-      }
-    });
-  }
+  // P1-8 — capture `id` in closure. Without this, a race where createAndActivate
+  // runs between setActive resolution and the .then microtask could cause
+  // resumeTask to fire on the wrong session (sessionIdRef already updated to
+  // the new session). Guard: verify result === id AND session.sessionId === id
+  // before calling resumeTask.
+  const handleResumeSession = useCallback(async (id: string) => {
+    const result = await session.setActive(id);
+    if (result === id && session.sessionId === id) {
+      // setActive updated sessionIdRef synchronously; resumeTask reads it.
+      session.resumeTask();
+    }
+    // Close drawer only if we actually switched to the session.
+    if (result === id) setDrawerOpen(false);
+  }, [session]);
 
   // ── New session ───────────────────────────────────────────────────────────
   const handleNewSession = useCallback(async () => {
