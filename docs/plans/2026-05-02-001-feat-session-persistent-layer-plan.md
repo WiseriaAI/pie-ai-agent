@@ -3,13 +3,13 @@ title: "feat: Session as First-Class Persistent Layer (Checkpoint & Resume)"
 type: feat
 status: m1-shipped
 date: 2026-05-02
-last_updated: 2026-05-02
+last_updated: 2026-05-03
 origin: docs/brainstorms/2026-05-02-checkpoint-resume-requirements.md
 m1_pr: https://github.com/WiseriaAI/Pie/pull/8
 m1_learnings: docs/solutions/2026-05-02-session-as-first-class-persistent-layer-m1.md
 ---
 
-> **Status note (2026-05-02)**: M1 (units U1-U5) shipped via PR #8 — single-session persistent layer + SW restart recovery + R11 drift card. **M2-U1 shipped via PR #9** — multi-session schema + state machine + skillExecutionScopeStack (76 → 106 tests). **M2-U2 shipped via PR #10** — multi-session sidepanel UI: 4 new components (TopBarListButton ≡ + corner pending dot / TopBarNewSessionButton + / SessionDrawer 296px overlay / SessionRow 5 status SVGs) + SEC-PLAN-009 flood guard + R23 archived auto-create + ce:review pass-2 fix sweep (2 P0 cross-session contamination + 9 P1) (106 → 135 tests). M2-U3/U4 与 M3 全部 NOT YET STARTED. See `m1_learnings` link for shipped invariants future work must preserve.
+> **Status note (2026-05-03)**: M1 (units U1-U5) shipped via PR #8 — single-session persistent layer + SW restart recovery + R11 drift card. **M2-U1 shipped via PR #9** — multi-session schema + state machine + skillExecutionScopeStack (76 → 106 tests). **M2-U2 shipped via PR #10** — multi-session sidepanel UI: 4 new components (TopBarListButton ≡ + corner pending dot / TopBarNewSessionButton + / SessionDrawer 296px overlay / SessionRow 5 status SVGs) + SEC-PLAN-009 flood guard + R23 archived auto-create + ce:review pass-2 fix sweep (2 P0 cross-session contamination + 9 P1) + **manual-acceptance fix sweep** (Bug-A user-msg disappear / Bug-B agent-text wipe / Bug-C title fallback / Bug-D K-10 abort-drain pollution / Bug-E panel-close mid-task no-resume / Bug-PINNED active-tab not following) (106 → 143 tests). M2-U3/U4 与 M3 全部 NOT YET STARTED. See `m1_learnings` link for shipped invariants future work must preserve.
 
 # feat: Session as First-Class Persistent Layer
 
@@ -541,6 +541,15 @@ stateDiagram-v2
 - `SessionDrawer` focus trap: onClose 在 App.tsx useCallback 包装 + FOCUSABLE_SELECTORS 含 `[role='listitem']` + SessionRow tabIndex+Enter/Space + Show Archived as `<button aria-disabled>`
 - "Show Archived" 仍为 stub (M2-U4 才真正 toggle), 现以 disabled button 语义渲染
 - 测试: 106 → 135 (+29: drawer 17 / SEC-PLAN-009 boundary 8 / loop flood vs reject 4)
+
+**Post-acceptance fixes (manual sidepanel-load verification, commits `96bfdff` + `9d8d728` + `6527ce8`):**
+- **Bug-fix-A** (`96bfdff`): 用户消息发出后立刻消失 — 根因 `streamingRef` 通过 useEffect 异步同步，SW `handleChatStream` 在 `chat-start` 时 fire-and-forget `updateLastAccessed` 把磁盘上 panel 之前持久化的 stale `messages` round-trip 写回 storage → metaKey listener 在 `streamingRef === false` 的 micro-tick 窗口里 adopt newMeta.messages → 用户消息被覆盖。修复：所有 `setStreaming` 调用点同步覆写 `streamingRef.current`，不依赖 useEffect。
+- **Bug-fix-B** (`96bfdff`): 模型回复在工具调用卡片出现后被抹掉 — 同 Bug-A race，agent-step handler 内 `messagesRef` 没和 setMessages 同步。修复：agent-step / chat-done / chat-error / agent-done-task / disconnect 5 个 handler 都把 messagesRef 与 setMessages 同步赋值；metaKey listener 加 strict-prefix 防御 (`remote.length < local.length` 且 `remote` 是 `local` 的 element-wise prefix → 视为 stale write-back 丢弃)。
+- **Bug-fix-C** (`96bfdff`): session 标题永远显示 "New Session" — M2-U3 LLM async title 还没做。短期 fallback：panel 端 `deriveTitleFromMessages` 取 first user message 前 40 字符 (whitespace-collapsed + ellipsis)，在 persistMessages 路径写入 `meta.title`；setSessionMeta 原子更新 `session_index` (D9) → App 顶栏 + drawer 立刻 refresh。M2-U3 实现 LLM 标题后会在首次返回前 overwrite 这个 fallback (race 防御已在 M2-U3 spec 中)。
+- **Bug-fix-PINNED** (`9d8d728`): 在 tab A 打开 sidepanel 后切到 tab B (不动 url) 发送任务，UI 顶部 PINNED 还显示 tab A 的 origin，但 SW 实际 pin 到 tab B → UI 与实际不符。根因 `Chat.tsx` 只监听 `chrome.tabs.onUpdated` (url 变化 fire)，没监听 `onActivated` / `windows.onFocusChanged`。修复：unified `refreshActiveOrigin()` + 三个事件 listener (onActivated / onUpdated url-change / onFocusChanged with WINDOW_ID_NONE filter)；streaming-aware：streaming=true 时 early-return（pin 锁住 task 启动时刻的 origin），streaming → false 时 effect 重跑回到 active-tab preview 模式。
+- **Bug-fix-E** (`6527ce8`): session 任务进行中关 sidepanel 后再打开，任务死了但 status 仍为 'active'，没有 PAUSED 横条 + RESUME TASK 按钮 — 用户无法感知/恢复任务。根因 `port.onDisconnect` 只 abort + drain pendingConfirmations，没把 in-flight session 的 status 转 paused (emitDone 在 abort 路径不跑，所以 agent state 仍 stepIndex>0 无 tombstone)。`detectAndMarkPaused` 只在 SW cold-start 跑，panel 关闭时 SW 还活着。修复：每 port 维护 `inFlightSessionIds: Set<string>` (chat-start + resume-task add)，`onDisconnect` 调新 helper `transitionPortInFlightSessionsToPaused` 走 detectAndMarkPaused 同款 step-1/step-2 (pendingConfirm → markFailed+scrub；stepIndex>0 → markPaused) 但**仅扫此 port 的 session ids** (多 sidepanel 隔离不变量 — 镜像 Phase 2.5 CDP owner-token 模式)。
+- **Bug-fix-D** (`6527ce8`, advisor 在 fix-E review 时 surface): K-10 confirmRejections 计数被 abort-drain 污染 — 之前 abort drain 调 `resolve(false)`，sendConfirmRequest wrap 成 `{approved:false, reason:'user-reject'}`，loop 把"关 panel 中断 confirm"算作"用户拒绝"，3 次后下次 resume 触发 "User repeatedly rejected X" 自动终止 (factually wrong)。修复：升级 pendingConfirmations resolver 为结构化 `(result: {approved, reason?: 'user-reject' | 'aborted'}) => void`，abort drain (signal listener + onDisconnect) 用 `reason='aborted'`，user response 保持 `'user-reject'`，loop K-10 判断从 `!== 'flood-limit'` blacklist 改为 `=== 'user-reject'` whitelist (任何未来新 reason 默认不计入)。
+- 测试: 135 → 143 (+8: panel-disconnect transition helper 7 / K-10 whitelist 5-case rewrite — 旧 4 测试整理为 5 cases 含 'aborted' + missing-reason whitelist 默认行为)
 
 **Goal:** 加 ChatGPT-like 多 session UI，守住 K3 跨 sub-view confirm 可见性。
 
