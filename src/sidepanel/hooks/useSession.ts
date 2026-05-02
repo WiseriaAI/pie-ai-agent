@@ -163,6 +163,14 @@ export function useSession(): UseSession {
   // many sendMessage calls.
   const handlePortMessage = useCallback(
     (message: PortMessageToPanel) => {
+      // M2-U2 P1-11 — session routing filter. Every SW→panel message now
+      // carries sessionId. Drop messages that belong to a session the user
+      // has navigated away from (e.g. user opened a new session mid-stream).
+      // This guard must appear BEFORE any state mutation so a wrong-session
+      // agent-confirm-request can never render into the current session's UI.
+      if (message.sessionId !== sessionIdRef.current) {
+        return;
+      }
       if (message.type === "chat-chunk") {
         accumulatedRef.current += message.text;
         setStreamingText(accumulatedRef.current);
@@ -506,11 +514,16 @@ export function useSession(): UseSession {
     (confirmationId: string, approved: boolean) => {
       const port = portRef.current;
       if (!port) return;
+      // P1-4 — carry sessionId so SW can verify the response belongs to
+      // the same session that owns the confirmationId.
+      const id = sessionIdRef.current;
+      if (!id) return;
       try {
         port.postMessage({
           type: "agent-confirm-response",
           confirmationId,
           approved,
+          sessionId: id,
         });
       } catch {
         // port may already be closing — non-fatal

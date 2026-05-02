@@ -308,6 +308,7 @@ async function handlePanelMounted(
       type: "agent-confirm-request",
       confirmationId,
       ...p,
+      sessionId,
     } satisfies AgentConfirmRequestMessage);
   } else if (kind === "pinned-tab-drift" || kind === "paused-resume") {
     // M1-U5 — re-emit the SessionConfirmRequestMessage shape. The
@@ -318,6 +319,7 @@ async function handlePanelMounted(
       confirmationId,
       kind,
       payload,
+      sessionId,
     } satisfies SessionConfirmRequestMessage);
   }
 }
@@ -424,6 +426,7 @@ async function handleResumeRequest(
       confirmationId,
       kind: "pinned-tab-drift",
       payload: drift,
+      sessionId,
     };
     // Persist + register resolver so a panel re-mount can recover the
     // card via the existing M1-U4 R4 path. The resolver here is a
@@ -451,6 +454,7 @@ async function handleResumeRequest(
     port.postMessage({
       type: "chat-error",
       error: "No active provider configured.",
+      sessionId,
     });
     return;
   }
@@ -459,6 +463,7 @@ async function handleResumeRequest(
     port.postMessage({
       type: "chat-error",
       error: `No API key configured for ${activeProvider}.`,
+      sessionId,
     });
     return;
   }
@@ -469,7 +474,7 @@ async function handleResumeRequest(
   const sendConfirmRequest = async (
     confirmationId: string,
     payload: Omit<AgentConfirmRequestMessage, "type" | "confirmationId">,
-  ): Promise<boolean> => {
+  ): Promise<{ approved: boolean; reason?: "flood-limit" | "user-reject" }> => {
     // SEC-PLAN-009 — flood-limit guard (same as chat-stream path)
     const flooded = await isPendingConfirmFloodLimited();
     if (flooded) {
@@ -477,8 +482,9 @@ async function handleResumeRequest(
         type: "session-toast",
         level: "warn",
         text: "Too many concurrent confirms. Please resolve pending sessions first.",
+        sessionId,
       });
-      return false;
+      return { approved: false, reason: "flood-limit" };
     }
 
     await setPendingConfirm(sessionId, {
@@ -499,12 +505,15 @@ async function handleResumeRequest(
       },
     });
     try {
-      return await new Promise<boolean>((resolve) => {
-        pendingConfirmations.set(confirmationId, resolve);
+      return await new Promise<{ approved: boolean; reason?: "user-reject" }>((resolve) => {
+        pendingConfirmations.set(confirmationId, (approved) => {
+          resolve(approved ? { approved: true } : { approved: false, reason: "user-reject" });
+        });
         port.postMessage({
           type: "agent-confirm-request",
           confirmationId,
           ...payload,
+          sessionId,
         } satisfies AgentConfirmRequestMessage);
       });
     } finally {
@@ -619,6 +628,7 @@ async function handleDiscardRequest(
     success: false,
     summary: recapText,
     stepCount: lastStepIndex,
+    sessionId,
   } satisfies AgentDoneTaskMessage);
 }
 
@@ -671,6 +681,7 @@ async function handleChatStream(
       port.postMessage({
         type: "chat-error",
         error: "No active provider configured. Please set up an API key in Settings.",
+        sessionId,
       });
       return;
     }
@@ -680,6 +691,7 @@ async function handleChatStream(
       port.postMessage({
         type: "chat-error",
         error: `No API key configured for ${activeProvider}. Please check Settings.`,
+        sessionId,
       });
       return;
     }
@@ -728,8 +740,9 @@ async function handleChatStream(
           type: "session-toast",
           level: "warn",
           text: "Too many concurrent confirms. Please resolve pending sessions first.",
+          sessionId,
         });
-        return false;
+        return { approved: false, reason: "flood-limit" as const };
       }
 
       await setPendingConfirm(sessionId, {
@@ -751,12 +764,15 @@ async function handleChatStream(
       });
 
       try {
-        return await new Promise<boolean>((resolve) => {
-          pendingConfirmations.set(confirmationId, resolve);
+        return await new Promise<{ approved: boolean; reason?: "user-reject" }>((resolve) => {
+          pendingConfirmations.set(confirmationId, (approved) => {
+            resolve(approved ? { approved: true } : { approved: false, reason: "user-reject" });
+          });
           port.postMessage({
             type: "agent-confirm-request",
             confirmationId,
             ...payload,
+            sessionId,
           } satisfies AgentConfirmRequestMessage);
         });
       } finally {
@@ -791,6 +807,7 @@ async function handleChatStream(
     port.postMessage({
       type: "chat-error",
       error: e instanceof Error ? e.message : "An unexpected error occurred",
+      sessionId,
     });
   }
 }
@@ -871,6 +888,7 @@ chrome.runtime.onConnect.addListener((port) => {
             e instanceof Error
               ? `Resume failed: ${e.message}`
               : "Resume failed",
+          sessionId: message.sessionId,
         });
       });
     } else if (message.type === "discard-task") {

@@ -65,7 +65,7 @@ export interface AgentLoopContext {
   sendConfirmRequest: (
     confirmationId: string,
     payload: Omit<AgentConfirmRequestMessage, "type" | "confirmationId">,
-  ) => Promise<boolean>;
+  ) => Promise<{ approved: boolean; reason?: "flood-limit" | "user-reject" }>;
   getEnabledSkillTools?: () => Promise<Tool[]>;
   /**
    * M1-U3 — session this task is bound to. Required so step-boundary
@@ -164,6 +164,13 @@ function sendAgentDone(
   msg: AgentDoneTaskMessage,
 ): void {
   port.postMessage(msg);
+}
+
+/** M2-U2 P1-11 — inject sessionId onto any PortMessageToPanel variant
+ *  that doesn't carry it yet. Used internally when emitting messages
+ *  from inside runAgentLoop (where `ctx.sessionId` is available). */
+function withSession<T extends object>(msg: T, sessionId: string): T & { sessionId: string } {
+  return { ...msg, sessionId };
 }
 
 function isRestrictedUrl(url: string): boolean {
@@ -499,6 +506,7 @@ function redactArgsForPanel(toolName: string, args: unknown): unknown {
 
 export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
   const { port, task, modelConfig, sendConfirmRequest, getEnabledSkillTools } = ctx;
+  const sessionId = ctx.sessionId;
 
   // Phase 2.5 lifecycle plumbing.
   //
@@ -549,10 +557,12 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
   // a long-completed task's stepIndex would linger in storage and
   // M1-U5 would falsely flag the session as paused. Fire-and-forget,
   // matching the per-step snapshot pattern.
-  const emitDone = (msg: AgentDoneTaskMessage): void => {
+  // M2-U2 P1-11 — emitDone auto-injects sessionId so every exit path
+  // carries the routing field without requiring each call site to repeat it.
+  const emitDone = (msg: Omit<AgentDoneTaskMessage, "sessionId">): void => {
     if (doneEmitted) return;
     doneEmitted = true;
-    sendAgentDone(port, msg);
+    sendAgentDone(port, { ...msg, sessionId });
     if (ctx.onStepSnapshot) {
       ctx.onStepSnapshot(buildSessionAgentTombstone()).catch((e) => {
         console.warn(
@@ -561,6 +571,10 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         );
       });
     }
+  };
+  // M2-U2 P1-11 — session-bound sendAgentStep that auto-injects sessionId.
+  const emitStep = (msg: Omit<AgentStepMessage, "sessionId">): void => {
+    sendAgentStep(port, { ...msg, sessionId });
   };
 
   // 1. Anchor tab + origin at task start
@@ -821,7 +835,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         if (event.type === "text-delta") {
           accumulatedText += event.text;
           // Stream text to panel as it arrives (Phase 1 compatible)
-          port.postMessage({ type: "chat-chunk", text: event.text });
+          port.postMessage(withSession({ type: "chat-chunk", text: event.text }, sessionId));
         } else if (event.type === "tool-call-start") {
           openToolCalls.set(event.index, {
             id: event.id,
@@ -850,7 +864,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             openToolCalls.delete(event.index);
           }
         } else if (event.type === "error") {
-          port.postMessage({ type: "chat-error", error: event.error });
+          port.postMessage(withSession({ type: "chat-error", error: event.error }, sessionId));
           emitDone({
             type: "agent-done-task",
             success: false,
@@ -870,7 +884,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
 
       // Pure text response (no tool calls) — finish as normal chat
       if (completedToolCalls.length === 0) {
-        port.postMessage({ type: "chat-done" });
+        port.postMessage(withSession({ type: "chat-done" }, sessionId));
         normalTextReply = true;
         // M1-U3 v2 — pure-text replies don't push history, so no
         // per-step snapshot has fired this turn. But a prior task's
@@ -920,7 +934,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             content: errorMsg,
             isError: true,
           });
-          sendAgentStep(port, {
+          emitStep({
             type: "agent-step",
             stepIndex,
             tool: tc.name,
@@ -968,7 +982,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
               content: scopeRejection,
               isError: true,
             });
-            sendAgentStep(port, {
+            emitStep({
               type: "agent-step",
               stepIndex,
               tool: tc.name,
@@ -985,7 +999,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         const resolvedElement = resolveElement(snapshot, args.elementIndex);
 
         // Send pending step
-        sendAgentStep(port, {
+        emitStep({
           type: "agent-step",
           stepIndex,
           tool: tc.name,
@@ -1104,7 +1118,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           // confirm-request keeps RAW args.text — user must see the
           // actual content to make an informed approval. agent-step
           // (above + below) uses redactArgsForPanel.
-          const approved = await sendConfirmRequest(confirmationId, {
+          const confirmResult = await sendConfirmRequest(confirmationId, {
             tool: tc.name,
             args: tc.args,
             resolvedElement: resolvedElement ?? { text: "", tag: "" },
@@ -1114,48 +1128,59 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             contentPreview,
           });
 
-          if (!approved) {
-            const prevRejects = confirmRejections.get(tc.name) ?? 0;
-            const nextRejects = prevRejects + 1;
-            confirmRejections.set(tc.name, nextRejects);
+          if (!confirmResult.approved) {
+            // P1-9 — only count user-initiated rejects toward K-10 fatigue
+            // counter. flood-limit auto-rejects are a SW-side policy
+            // (SEC-PLAN-009) not a user decision, so they must NOT
+            // poison confirmRejections (which would self-terminate the task
+            // after 3 flood-limit rejections with a factually incorrect
+            // "User repeatedly rejected X" message).
+            // P1-9: only user-reject increments the fatigue counter
+            if (confirmResult.reason !== "flood-limit") {
+              const prevRejects = confirmRejections.get(tc.name) ?? 0;
+              const nextRejects = prevRejects + 1;
+              confirmRejections.set(tc.name, nextRejects);
 
-            // K-10 reject-side: terminate task after threshold consecutive
-            // rejects for the same tool name to break a fatigue cycle.
-            if (nextRejects >= CONFIRM_REJECT_THRESHOLD) {
-              const fatigueMsg = `User repeatedly rejected ${tc.name} (${nextRejects} times). Stopping task.`;
-              toolResultBlocks.push({
-                type: "tool_result",
-                toolUseId: tc.id,
-                content: fatigueMsg,
-                isError: true,
-              });
-              sendAgentStep(port, {
-                type: "agent-step",
-                stepIndex,
-                tool: tc.name,
-                args: redactArgsForPanel(tc.name, tc.args),
-                resolvedElement,
-                status: "error",
-                observation: fatigueMsg,
-                skillAuthor: skillAuthorForStep,
-              });
-              emitDone({
-                type: "agent-done-task",
-                success: false,
-                summary: fatigueMsg,
-                stepCount: stepIndex,
-              });
-              return;
+              // K-10 reject-side: terminate task after threshold consecutive
+              // user-rejects for the same tool name to break a fatigue cycle.
+              if (nextRejects >= CONFIRM_REJECT_THRESHOLD) {
+                const fatigueMsg = `User repeatedly rejected ${tc.name} (${nextRejects} times). Stopping task.`;
+                toolResultBlocks.push({
+                  type: "tool_result",
+                  toolUseId: tc.id,
+                  content: fatigueMsg,
+                  isError: true,
+                });
+                emitStep({
+                  type: "agent-step",
+                  stepIndex,
+                  tool: tc.name,
+                  args: redactArgsForPanel(tc.name, tc.args),
+                  resolvedElement,
+                  status: "error",
+                  observation: fatigueMsg,
+                  skillAuthor: skillAuthorForStep,
+                });
+                emitDone({
+                  type: "agent-done-task",
+                  success: false,
+                  summary: fatigueMsg,
+                  stepCount: stepIndex,
+                });
+                return;
+              }
             }
 
-            const rejectionMsg = "User rejected";
+            const rejectionMsg = confirmResult.reason === "flood-limit"
+              ? "Confirm queue full — please resolve other sessions first."
+              : "User rejected";
             toolResultBlocks.push({
               type: "tool_result",
               toolUseId: tc.id,
               content: rejectionMsg,
               isError: true,
             });
-            sendAgentStep(port, {
+            emitStep({
               type: "agent-step",
               stepIndex,
               tool: tc.name,
@@ -1188,13 +1213,13 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
               ? new Date(skillDef.createdAt).toLocaleString()
               : "an earlier session";
             const firstRunReason = `This skill was authored or last modified by the agent on ${dateStr}. This is its first execution since modification — review the skill in Settings if needed, then confirm to allow it to run.`;
-            const approvedFirstRun = await sendConfirmRequest(firstRunConfirmId, {
+            const firstRunResult = await sendConfirmRequest(firstRunConfirmId, {
               tool: tc.name,
               args: tc.args,
               resolvedElement: resolvedElement ?? { text: skillDef.name, tag: "skill" },
               riskReason: firstRunReason,
             });
-            if (!approvedFirstRun) {
+            if (!firstRunResult.approved) {
               const rejectionMsg = "Skill first-run not approved";
               toolResultBlocks.push({
                 type: "tool_result",
@@ -1202,7 +1227,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
                 content: rejectionMsg,
                 isError: true,
               });
-              sendAgentStep(port, {
+              emitStep({
                 type: "agent-step",
                 stepIndex,
                 tool: tc.name,
@@ -1284,7 +1309,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           isError: !result.success,
         });
 
-        sendAgentStep(port, {
+        emitStep({
           type: "agent-step",
           stepIndex,
           tool: tc.name,

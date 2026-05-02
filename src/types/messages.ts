@@ -38,16 +38,25 @@ export interface ChatAbortMessage {
 export interface ChatChunkMessage {
   type: "chat-chunk";
   text: string;
+  /** M2-U2 — session routing: every SW→panel message carries the sessionId
+   *  so the panel can drop messages destined for a session that is no longer
+   *  active (e.g. user opened a new session mid-stream). P1-11 / root fix
+   *  for P0-1 cross-session contamination. */
+  sessionId: string;
 }
 
 export interface ChatDoneMessage {
   type: "chat-done";
   usage?: { inputTokens: number; outputTokens: number };
+  /** M2-U2 — session routing. See ChatChunkMessage.sessionId. */
+  sessionId: string;
 }
 
 export interface ChatErrorMessage {
   type: "chat-error";
   error: string;
+  /** M2-U2 — session routing. See ChatChunkMessage.sessionId. */
+  sessionId: string;
 }
 
 // --- Side Panel → Service Worker (via sendMessage) ---
@@ -201,6 +210,8 @@ export interface AgentStepMessage {
    *  by origin. Absent for non-skill tools (built-in BUILT_IN_TOOLS, keyboard,
    *  meta tools). Phase 2.6 — see plan R17. */
   skillAuthor?: "user" | "agent" | "builtIn";
+  /** M2-U2 — session routing. See ChatChunkMessage.sessionId. */
+  sessionId: string;
 }
 
 export interface AgentConfirmRequestMessage {
@@ -235,6 +246,8 @@ export interface AgentConfirmRequestMessage {
    *  credential light-strip, and ships the first chunk to the panel for
    *  informed approval. Handler reuses this cache on dispatch. */
   contentPreview?: TabContentPreview;
+  /** M2-U2 — session routing. See ChatChunkMessage.sessionId. */
+  sessionId: string;
 }
 
 export interface AgentDoneTaskMessage {
@@ -242,6 +255,8 @@ export interface AgentDoneTaskMessage {
   success: boolean;
   summary: string;
   stepCount: number;
+  /** M2-U2 — session routing. See ChatChunkMessage.sessionId. */
+  sessionId: string;
 }
 
 // --- Agent: Side Panel → Service Worker ---
@@ -250,6 +265,11 @@ export interface AgentConfirmResponseMessage {
   type: "agent-confirm-response";
   confirmationId: string;
   approved: boolean;
+  /** M2-U2 P1-4 — sessionId of the session whose confirm card the user
+   *  clicked. SW verifies this matches the session that owns the
+   *  confirmationId to prevent a wrong-session approval from executing
+   *  a high-risk action against the wrong tab/origin. */
+  sessionId: string;
 }
 
 /**
@@ -355,6 +375,8 @@ export interface SessionConfirmRequestMessage {
   confirmationId: string;
   kind: "pinned-tab-drift" | "paused-resume";
   payload: unknown;
+  /** M2-U2 — session routing. See ChatChunkMessage.sessionId. */
+  sessionId: string;
 }
 
 /**
@@ -367,6 +389,8 @@ export interface SessionToastMessage {
   type: "session-toast";
   level: "warn" | "error" | "info";
   text: string;
+  /** M2-U2 — session routing. See ChatChunkMessage.sessionId. */
+  sessionId: string;
 }
 
 // --- Discriminated Unions ---
