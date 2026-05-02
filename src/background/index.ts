@@ -27,6 +27,7 @@ import {
   getSessionMeta,
   setSessionMeta,
   markFailedAndScrub,
+  updateLastAccessed,
 } from "@/lib/sessions/storage";
 import { escapeUntrustedWrappers } from "@/lib/agent/untrusted-wrappers";
 import { detectAndMarkPaused } from "./session-recovery";
@@ -35,6 +36,7 @@ import {
   detachAllSessions,
 } from "./cdp-session";
 import { KEYBOARD_SIMULATION_STORAGE_KEY } from "@/lib/keyboard-simulation";
+import { runSessionMigrations } from "@/lib/sessions/migration";
 
 // Open side panel when extension icon is clicked
 chrome.action.onClicked.addListener(async (tab) => {
@@ -46,34 +48,47 @@ chrome.action.onClicked.addListener(async (tab) => {
 // Set side panel behavior: open on action click
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 
+// M2-U1 — migration + recovery pipeline.
+//
+// `recoveryReady` is a module-level promise that sequentially:
+//   1. Runs idempotent storage migrations (rename/drop any 'default' id
+//      residue from early M1 development) — must finish before step 2
+//      so `detectAndMarkPaused` sees only UUID-keyed sessions.
+//   2. Runs M1-U5 paused-session cold-start detection.
+//
+// The promise is reused across the three SW startup entry points
+// (top-level, onStartup, onInstalled) so all three go through the same
+// ordered pipeline rather than each calling detectAndMarkPaused
+// independently. The 30s `recoveryGuard` inside detectAndMarkPaused
+// deduplicates repeated calls.
+const recoveryReady: Promise<void> = runSessionMigrations()
+  .catch((e) => {
+    console.warn("[sw] session migrations failed:", e);
+  })
+  .then(() => detectAndMarkPaused())
+  .catch((e) => {
+    console.warn("[sw] recovery on top-level failed:", e);
+  }) as Promise<void>;
+
 // First install handler
 chrome.runtime.onInstalled.addListener((details) => {
   if (details.reason === "install") {
     chrome.storage.local.set({ firstRun: true });
   }
-  // M1-U5 — also try recovery (belt-and-suspenders; main path is the
-  // top-level call below + panel-mounted handler). Fire-and-forget.
-  detectAndMarkPaused().catch((e) => {
+  // Belt-and-suspenders: also chain recovery for install events.
+  // recoveryReady deduplicates via 30s guard.
+  recoveryReady.catch((e) => {
     console.warn("[sw] recovery on onInstalled failed:", e);
   });
 });
 
 // M1-U5 — Chrome process startup recovery. NOTE: in MV3 this fires
 // only on Chrome launch, NOT on SW wake-up after 30s idle. The
-// top-level call below covers wake-ups. Fire-and-forget.
+// top-level recoveryReady covers wake-ups. Fire-and-forget.
 chrome.runtime.onStartup.addListener(() => {
-  detectAndMarkPaused().catch((e) => {
+  recoveryReady.catch((e) => {
     console.warn("[sw] recovery on onStartup failed:", e);
   });
-});
-
-// M1-U5 — top-level recovery call. Fires every time the SW file is
-// imported, which includes every wake-up from idle. The 30s
-// `recoveryGuard` window deduplicates against the onStartup /
-// onInstalled / panel-mounted triggers. Fire-and-forget so SW
-// initialization is not delayed by storage IO.
-detectAndMarkPaused().catch((e) => {
-  console.warn("[sw] recovery on top-level failed:", e);
 });
 
 // --- Phase 2.5 — CDP keyboard simulation lifecycle hooks ---
@@ -259,10 +274,12 @@ async function handlePanelMounted(
 ): Promise<void> {
   // M1-U5 — panel mounting is a strong signal that the SW has just
   // woken up (panel open ⇒ SW kept alive ⇒ guaranteed wake-up event).
-  // Run recovery before the R4 re-emit so the storage state is correct
-  // when we read it below. Guard window dedupes against the top-level
-  // call.
-  await detectAndMarkPaused().catch((e) => {
+  // Await the module-level recoveryReady (migration → detectAndMarkPaused
+  // pipeline) so storage is clean before we read pendingConfirm below.
+  // Guard window dedupes repeated calls. M2-U1: recoveryReady includes
+  // migrations so a 'default' id residue is cleaned before the panel
+  // can observe stale state.
+  await recoveryReady.catch((e) => {
     console.warn(
       `[sw] recovery during panel-mounted failed for session=${sessionId}:`,
       e,
@@ -509,11 +526,13 @@ async function handleResumeRequest(
       return resolveSkillToTools(skills);
     },
     sessionId,
-    onStepSnapshot: async (snapshot) => {
-      await setSessionAgent(sessionId, snapshot);
-    },
+    // M2-U1: shared handler that also throttles lastAccessedAt bumps.
+    onStepSnapshot: makeStepSnapshotHandler(sessionId),
     resumedAgentMessages: agent.agentMessages,
     resumedFromStep: agent.stepIndex,
+    // M2-U1: restore the skill-scope stack so R2/R3 enforcement picks
+    // up where it left off if the task was paused mid-skill.
+    resumedSkillScopeStack: agent.skillExecutionScopeStack,
   });
 }
 
@@ -593,6 +612,39 @@ async function handleDiscardRequest(
 
 // --- Agent Loop via Port ---
 
+/**
+ * M2-U1 — shared onStepSnapshot handler factory.
+ *
+ * Wraps the per-step agent-state write (`setSessionAgent`) and
+ * throttles `lastAccessedAt` bumps to once every 5 steps to avoid
+ * meta write churn on long-running tasks.
+ *
+ * Throttle logic uses `snapshot.stepIndex % 5 === 0`:
+ *   - stepIndex 5, 10, 15, … → bump (live-task progress markers)
+ *   - stepIndex 0 (tombstone) → `0 % 5 === 0` also bumps, ensuring
+ *     the most-recently-completed task always rises to LRU top.
+ *
+ * Note: `setTimeout` is deliberately NOT used — MV3 Service Workers
+ * can be suspended at any point, making time-based throttles
+ * unreliable. The step-counter approach is always stable.
+ *
+ * Both `handleChatStream` and `handleResumeRequest` use this factory
+ * to keep the two call sites in sync.
+ */
+function makeStepSnapshotHandler(sessionId: string) {
+  return async (snapshot: import("@/lib/sessions/types").SessionAgentState) => {
+    await setSessionAgent(sessionId, snapshot);
+    if (snapshot.stepIndex % 5 === 0) {
+      updateLastAccessed(sessionId).catch((e) => {
+        console.warn(
+          `[agent] lastAccessedAt bump failed for session=${sessionId} stepIndex=${snapshot.stepIndex}:`,
+          e,
+        );
+      });
+    }
+  };
+}
+
 async function handleChatStream(
   port: chrome.runtime.Port,
   messages: ChatMessage[],
@@ -619,6 +671,15 @@ async function handleChatStream(
       });
       return;
     }
+
+    // M2-U1 trigger (b) — bump lastAccessedAt when the SW receives a new
+    // chat-start for this session. Fire-and-forget; failure is non-fatal.
+    updateLastAccessed(sessionId).catch((e) => {
+      console.warn(
+        `[agent] lastAccessedAt bump on chat-start failed for session=${sessionId}:`,
+        e,
+      );
+    });
 
     // Extract task from last user message
     const task =
@@ -692,13 +753,11 @@ async function handleChatStream(
         return resolveSkillToTools(skills);
       },
       sessionId,
-      // M1-U3 — persist agent state at every step boundary so SW
-      // restart can transition the task to `paused` (M1-U5) instead of
-      // silently dropping it. Errors here are caught + logged inside
-      // runAgentLoop; this wrapper only does the storage call.
-      onStepSnapshot: async (snapshot) => {
-        await setSessionAgent(sessionId, snapshot);
-      },
+      // M1-U3 — persist agent state at every step boundary. M2-U1
+      // upgrade: also bumps lastAccessedAt every 5 steps + on tombstone
+      // (see makeStepSnapshotHandler). Errors caught + logged inside
+      // runAgentLoop; this wrapper only does the storage calls.
+      onStepSnapshot: makeStepSnapshotHandler(sessionId),
     });
   } catch (e) {
     if (signal.aborted) return;
