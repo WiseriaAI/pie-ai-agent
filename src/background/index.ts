@@ -875,8 +875,24 @@ async function handleChatStream(
   }
 }
 
+// M3-U1 — port name encodes sessionId: `chat-stream-${sessionId}`. Each
+// connect creates an independent abortController + pendingConfirmations
+// closure (per-port sandbox). The SW supports multiple concurrent ports
+// (e.g. two sidepanels in two Chrome windows, each pinned to its own
+// session); single-panel concurrent task switch remains gated by the
+// M2-U2 streaming guard for now (deferred to a future M3-U6+).
+const CHAT_STREAM_PREFIX = "chat-stream-";
+
 chrome.runtime.onConnect.addListener((port) => {
-  if (port.name !== "chat-stream") return;
+  if (!port.name.startsWith(CHAT_STREAM_PREFIX)) return;
+  const portSessionId = port.name.slice(CHAT_STREAM_PREFIX.length);
+  if (!portSessionId) {
+    // Reject malformed port name — defense against an extension peer
+    // (or a bug in the panel) opening a port with an empty session id.
+    console.warn(`[sw] rejecting port with empty sessionId: name="${port.name}"`);
+    port.disconnect();
+    return;
+  }
 
   const abortController = new AbortController();
 
@@ -935,8 +951,25 @@ chrome.runtime.onConnect.addListener((port) => {
     chrome.runtime.getPlatformInfo();
   }, 25_000);
 
+  // M3-U1 — every panel→SW message carrying a `sessionId` must match the
+  // sessionId encoded in the port name. Mismatch indicates a wire bug
+  // (panel constructed a wrong-id message on a port that's bound to a
+  // different session) or a tampering attempt. We post a session-toast back
+  // so the panel can surface it, then drop the message rather than
+  // silently routing it to a foreign session's resolver.
+  const verifyPortSession = (msgSessionId: string, kind: string): boolean => {
+    if (msgSessionId !== portSessionId) {
+      console.warn(
+        `[sw] port-session mismatch on ${kind}: portSession=${portSessionId} msgSession=${msgSessionId} — dropping`,
+      );
+      return false;
+    }
+    return true;
+  };
+
   port.onMessage.addListener((message: PortMessageToWorker) => {
     if (message.type === "chat-start") {
+      if (!verifyPortSession(message.sessionId, "chat-start")) return;
       inFlightSessionIds.add(message.sessionId);
       handleChatStream(
         port,
@@ -949,6 +982,7 @@ chrome.runtime.onConnect.addListener((port) => {
     } else if (message.type === "chat-abort") {
       abortController.abort();
     } else if (message.type === "agent-confirm-response") {
+      if (!verifyPortSession(message.sessionId, "agent-confirm-response")) return;
       // P1-4 — verify the response belongs to the session that owns
       // the confirmationId. Prevents wrong-session approval (defense-
       // in-depth behind the P0-1/P0-2 streaming guards).
@@ -975,6 +1009,7 @@ chrome.runtime.onConnect.addListener((port) => {
         pendingConfirmations.delete(message.confirmationId);
       }
     } else if (message.type === "panel-mounted") {
+      if (!verifyPortSession(message.sessionId, "panel-mounted")) return;
       // M1-U4 — R4: re-emit a live confirm to a re-mounted panel.
       // Async — fire-and-forget; failures are logged but not fatal.
       handlePanelMounted(port, message.sessionId, pendingConfirmations).catch(
@@ -986,6 +1021,7 @@ chrome.runtime.onConnect.addListener((port) => {
         },
       );
     } else if (message.type === "resume-task") {
+      if (!verifyPortSession(message.sessionId, "resume-task")) return;
       inFlightSessionIds.add(message.sessionId);
       handleResumeRequest(
         port,
@@ -1008,6 +1044,7 @@ chrome.runtime.onConnect.addListener((port) => {
         });
       });
     } else if (message.type === "discard-task") {
+      if (!verifyPortSession(message.sessionId, "discard-task")) return;
       handleDiscardRequest(
         port,
         message.sessionId,

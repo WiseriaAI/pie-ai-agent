@@ -420,7 +420,26 @@ export function useSession(): UseSession {
     void persistMessages(next);
   }, [persistMessages]);
 
-  // ── Mount: bootstrap active session + open persistent port ─────────
+  // ── Mount: bootstrap active session + open per-session port ─────────
+  // M3-U1 — port name is `chat-stream-${sessionId}`. The SW parses the
+  // sessionId out of the name to anchor per-port state (abortController,
+  // pendingConfirmations, inFlightSessionIds). Switching active sessions
+  // disconnects the old port and connects a fresh one for the new id;
+  // single-panel concurrent task switch remains gated by the streaming
+  // guard (deferred to a future M3 unit). Cross-panel concurrency (two
+  // sidepanels in two windows) IS supported by the SW because each panel
+  // gets its own port pinned to its own sessionId.
+  const connectPortFor = useCallback(
+    (id: string) => {
+      const port = chrome.runtime.connect({ name: `chat-stream-${id}` });
+      port.onMessage.addListener(handlePortMessage);
+      port.onDisconnect.addListener(handlePortDisconnect);
+      port.postMessage({ type: "panel-mounted", sessionId: id });
+      return port;
+    },
+    [handlePortMessage, handlePortDisconnect],
+  );
+
   useEffect(() => {
     let cancelled = false;
 
@@ -448,16 +467,7 @@ export function useSession(): UseSession {
         setSessionId(id);
         setStatus(initialStatus);
         setMessages(initialMessages);
-
-        // M1-U4 — open the port and announce ourselves so the SW can
-        // re-emit any live agent-confirm-request for this session
-        // (R4). The same port handles all subsequent streams; the
-        // listener stays attached for the hook's lifetime.
-        const port = chrome.runtime.connect({ name: "chat-stream" });
-        portRef.current = port;
-        port.onMessage.addListener(handlePortMessage);
-        port.onDisconnect.addListener(handlePortDisconnect);
-        port.postMessage({ type: "panel-mounted", sessionId: id });
+        portRef.current = connectPortFor(id);
       } finally {
         if (!cancelled) setReady(true);
       }
@@ -470,7 +480,7 @@ export function useSession(): UseSession {
       portRef.current?.disconnect();
       portRef.current = null;
     };
-  }, [handlePortMessage, handlePortDisconnect]);
+  }, [connectPortFor]);
 
   // M1-U5 — track status changes from SW writes (cold-start
   // detectAndMarkPaused, post-resume markActive). Without this, the
@@ -729,14 +739,27 @@ export function useSession(): UseSession {
    *      any live pendingConfirm for the new session (R4 re-emit path).
    */
   const setActive = useCallback(async (id: string): Promise<string | null> => {
-    // Guard: don't switch mid-stream (M3-U1 will allow this with per-session ports)
+    // Guard: don't switch mid-stream. M3-U1 ships per-session port wire
+    // identity but keeps the panel-level streaming guard — concurrent
+    // same-panel tasks need streaming-state-per-session plumbing across
+    // accumulatedRef / messagesRef and is deferred to a future M3 unit.
     if (streaming) return null;
 
     const meta = await getSessionMeta(id);
     if (!meta) return null;
 
+    // No-op if already on this session.
+    if (sessionIdRef.current === id) return id;
+
     // Bump lastAccessedAt in storage (M2-U1 three-trigger wiring)
     await updateLastAccessed(id);
+
+    // M3-U1 — swap to the new session's port. Disconnect old (its
+    // SW-side abortController fires; in-flight task on that session is
+    // killed cleanly because we already streaming-guarded above) and
+    // connect a fresh port whose name carries the new sessionId.
+    portRef.current?.disconnect();
+    portRef.current = null;
 
     // Update ref immediately so callers that synchronously follow setActive
     // (e.g. resumeTask in handleResumeSession) see the new id without
@@ -750,18 +773,11 @@ export function useSession(): UseSession {
     setError(null);
     setToast(null);
 
-    // Announce to the SW so it can re-emit any live confirm-request (R4)
-    const port = portRef.current;
-    if (port) {
-      try {
-        port.postMessage({ type: "panel-mounted", sessionId: id });
-      } catch {
-        // port may be closing — non-fatal, the listener will handle reconnect
-      }
-    }
+    // Open the new session's port (sends panel-mounted as part of connect).
+    portRef.current = connectPortFor(id);
 
     return id;
-  }, [streaming]);
+  }, [streaming, connectPortFor]);
 
   /**
    * M2-U2 — create a new session and make it active. Returns the new
@@ -786,6 +802,12 @@ export function useSession(): UseSession {
     streamFinishedRef.current = true;
 
     const meta = await createSession();
+    // M3-U1 — swap to the new session's port (the new session's id is
+    // freshly minted, so the prior port belongs to a different session
+    // and must be disconnected to release its SW-side resources).
+    portRef.current?.disconnect();
+    portRef.current = null;
+
     // Update ref immediately (same reasoning as setActive)
     sessionIdRef.current = meta.id;
     setSessionId(meta.id);
@@ -794,17 +816,10 @@ export function useSession(): UseSession {
     setError(null);
     setToast(null);
 
-    const port = portRef.current;
-    if (port) {
-      try {
-        port.postMessage({ type: "panel-mounted", sessionId: meta.id });
-      } catch {
-        // non-fatal
-      }
-    }
+    portRef.current = connectPortFor(meta.id);
 
     return meta.id;
-  }, []);
+  }, [connectPortFor]);
 
   return {
     sessionId,

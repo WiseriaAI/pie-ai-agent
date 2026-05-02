@@ -39,13 +39,14 @@ describe("useSession — bootstrap", () => {
     expect(meta!.messages).toEqual([]);
   });
 
-  it("M1-U4 — opens the port and sends panel-mounted on bootstrap", async () => {
+  it("M1-U4 / M3-U1 — opens a per-session port and sends panel-mounted on bootstrap", async () => {
     const { result } = renderHook(() => useSession());
     await waitFor(() => expect(result.current.ready).toBe(true));
 
-    // Connect happens at mount, before any sendMessage.
+    // Connect happens at mount, before any sendMessage. M3-U1 — port name
+    // encodes the active sessionId so the SW can per-port-sandbox state.
     expect(chromeMock.runtime.connect).toHaveBeenCalledWith({
-      name: "chat-stream",
+      name: `chat-stream-${result.current.sessionId}`,
     });
     expect(chromeMock.runtime.__ports).toHaveLength(1);
 
@@ -102,8 +103,9 @@ describe("useSession — sendMessage / streaming", () => {
       result.current.sendMessage({ content: "hello" });
     });
 
+    // M3-U1 — port name carries the sessionId.
     expect(chromeMock.runtime.connect).toHaveBeenCalledWith({
-      name: "chat-stream",
+      name: `chat-stream-${result.current.sessionId}`,
     });
     const port = chromeMock.runtime.__ports[0]!;
     expect(port.postMessage).toHaveBeenCalledWith({
@@ -460,6 +462,54 @@ describe("useSession — resolveConfirm", () => {
       role: "agent-confirm",
       confirmationId: "c1",
       resolved: "approved",
+    });
+  });
+});
+
+describe("useSession — M3-U1 per-session port routing", () => {
+  it("swaps the port to a per-session name when setActive switches sessions", async () => {
+    const sessionA = await createSession({ now: 1000 });
+    const sessionB = await createSession({ now: 2000 });
+    void sessionA;
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    // Bootstrap selected the most-recent session (sessionB at now=2000).
+    expect(result.current.sessionId).toBe(sessionB.id);
+    expect(chromeMock.runtime.connect).toHaveBeenLastCalledWith({
+      name: `chat-stream-${sessionB.id}`,
+    });
+    const portB = chromeMock.runtime.__ports.at(-1)!;
+
+    // Switch to sessionA.
+    let switched: string | null = null;
+    await act(async () => {
+      switched = await result.current.setActive(sessionA.id);
+    });
+    expect(switched).toBe(sessionA.id);
+
+    // Old port disconnected (release SW-side abortController), new port
+    // opened with sessionA in the name.
+    expect(portB.disconnect).toHaveBeenCalledTimes(1);
+    expect(chromeMock.runtime.connect).toHaveBeenLastCalledWith({
+      name: `chat-stream-${sessionA.id}`,
+    });
+  });
+
+  it("createAndActivate also swaps to a fresh per-session port", async () => {
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    const oldPort = chromeMock.runtime.__ports.at(-1)!;
+    const oldId = result.current.sessionId!;
+
+    let newId: string | null = null;
+    await act(async () => {
+      newId = await result.current.createAndActivate();
+    });
+    expect(newId).not.toBe(oldId);
+    expect(oldPort.disconnect).toHaveBeenCalledTimes(1);
+    expect(chromeMock.runtime.connect).toHaveBeenLastCalledWith({
+      name: `chat-stream-${newId}`,
     });
   });
 });
