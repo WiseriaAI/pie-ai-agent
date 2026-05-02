@@ -10,7 +10,12 @@ import type { ChatMessage, ModelConfig } from "@/lib/model-router";
 import { getActiveProvider, getProviderConfig } from "@/lib/storage";
 import { runAgentLoop } from "@/lib/agent/loop";
 import { getEnabledSkills, resolveSkillToTools } from "@/lib/skills";
-import { setSessionAgent } from "@/lib/sessions/storage";
+import {
+  setSessionAgent,
+  setPendingConfirm,
+  scrubPendingConfirm,
+  getSessionAgent,
+} from "@/lib/sessions/storage";
 import {
   handleExternalDetach,
   detachAllSessions,
@@ -193,6 +198,57 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 });
 
+// --- M1-U4: panel-mounted handler ---
+
+/**
+ * Re-emit any live confirm-request to a freshly-mounted panel (R4).
+ *
+ * Two-source invariant: only re-push when BOTH storage has a
+ * `pendingConfirm` record AND the SW still holds the corresponding
+ * resolver in `pendingConfirmations`. Mismatch means the SW has
+ * restarted (resolver gone) — in that case, M1-U5's cold-start
+ * cleanup will mark the session failed; here we just stay silent
+ * rather than render a card the user can't act on.
+ *
+ * Idempotent on the panel side: useSession's onMessage handler
+ * de-dupes by confirmationId, so multiple panel-mounted in quick
+ * succession (e.g. React strict-mode double-mount in dev) won't
+ * stack duplicate cards.
+ */
+async function handlePanelMounted(
+  port: chrome.runtime.Port,
+  sessionId: string,
+  pendingConfirmations: Map<string, (approved: boolean) => void>,
+): Promise<void> {
+  const agent = await getSessionAgent(sessionId);
+  if (!agent?.pendingConfirm) return;
+  const { confirmationId, kind, payload } = agent.pendingConfirm;
+
+  // Only re-push if the SW resolver is still alive — otherwise the user
+  // would see a card they can't act on (clicking approve/reject would
+  // post to a Map that's been cleared by SW restart).
+  if (!pendingConfirmations.has(confirmationId)) return;
+
+  if (kind === "agent-tool") {
+    // Re-emit the original AgentConfirmRequestMessage shape. The
+    // payload was persisted with explicit field listing in
+    // sendConfirmRequest, so it carries the right shape verbatim.
+    const p = payload as Omit<
+      AgentConfirmRequestMessage,
+      "type" | "confirmationId"
+    >;
+    port.postMessage({
+      type: "agent-confirm-request",
+      confirmationId,
+      ...p,
+    } satisfies AgentConfirmRequestMessage);
+  }
+  // M1-U5 will add re-emit paths for kind='pinned-tab-drift' /
+  // 'paused-resume' via SessionConfirmRequestMessage. M1-U4 ships the
+  // protocol slot only — no emitter sets those kinds yet, so this
+  // path is unreachable until M1-U5.
+}
+
 // --- Agent Loop via Port ---
 
 async function handleChatStream(
@@ -229,19 +285,58 @@ async function handleChatStream(
     const modelConfig: ModelConfig = config;
 
     // sendConfirmRequest: posts agent-confirm-request to panel and returns a
-    // Promise that resolves when panel sends agent-confirm-response
-    const sendConfirmRequest = (
+    // Promise that resolves when panel sends agent-confirm-response.
+    //
+    // M1-U4 — persist the pending payload to session_${id}_agent.pendingConfirm
+    // BEFORE the panel push so a panel re-mount during the confirm window
+    // can recover. Scrub on resolve / reject / signal-abort via the
+    // finally block — fire-and-forget catch with M1-U5 startup cleanup as
+    // backstop.
+    //
+    // Field listing in the persisted payload is EXPLICIT (not spread) —
+    // adding new AgentConfirmRequestMessage fields requires a conscious
+    // decision whether they belong in storage. Plan note: preFetchedContent
+    // (P3-U full content) must NEVER land here; only contentPreview (≤200
+    // chars sanitized) is safe.
+    const sendConfirmRequest = async (
       confirmationId: string,
       payload: Omit<AgentConfirmRequestMessage, "type" | "confirmationId">,
     ): Promise<boolean> => {
-      return new Promise((resolve) => {
-        pendingConfirmations.set(confirmationId, resolve);
-        port.postMessage({
-          type: "agent-confirm-request",
-          confirmationId,
-          ...payload,
-        } satisfies AgentConfirmRequestMessage);
+      await setPendingConfirm(sessionId, {
+        confirmationId,
+        kind: "agent-tool",
+        payload: {
+          tool: payload.tool,
+          args: payload.args,
+          resolvedElement: payload.resolvedElement,
+          riskReason: payload.riskReason,
+          ...(payload.metaSkillPreview
+            ? { metaSkillPreview: payload.metaSkillPreview }
+            : {}),
+          ...(payload.tabTargets ? { tabTargets: payload.tabTargets } : {}),
+          ...(payload.contentPreview
+            ? { contentPreview: payload.contentPreview }
+            : {}),
+        },
       });
+
+      try {
+        return await new Promise<boolean>((resolve) => {
+          pendingConfirmations.set(confirmationId, resolve);
+          port.postMessage({
+            type: "agent-confirm-request",
+            confirmationId,
+            ...payload,
+          } satisfies AgentConfirmRequestMessage);
+        });
+      } finally {
+        scrubPendingConfirm(sessionId).catch((e) => {
+          console.warn(
+            `[agent] scrub pendingConfirm failed for session=${sessionId} confirmId=${confirmationId}:`,
+            e,
+          );
+        });
+      }
     };
 
     await runAgentLoop({
@@ -320,6 +415,17 @@ chrome.runtime.onConnect.addListener((port) => {
         resolver(message.approved);
         pendingConfirmations.delete(message.confirmationId);
       }
+    } else if (message.type === "panel-mounted") {
+      // M1-U4 — R4: re-emit a live confirm to a re-mounted panel.
+      // Async — fire-and-forget; failures are logged but not fatal.
+      handlePanelMounted(port, message.sessionId, pendingConfirmations).catch(
+        (e) => {
+          console.warn(
+            `[sw] panel-mounted handler failed for session=${message.sessionId}:`,
+            e,
+          );
+        },
+      );
     }
   });
 

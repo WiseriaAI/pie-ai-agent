@@ -3,6 +3,7 @@ import type {
   SessionAgentState,
   SessionIndexEntry,
   SessionStatus,
+  PendingConfirmRecord,
 } from "./types";
 
 // ── Key shape ────────────────────────────────────────────────────────────────
@@ -236,6 +237,51 @@ export async function removeSession(id: string): Promise<void> {
     [agentKey(id)]: undefined,
     [INDEX_KEY]: updatedIndex,
   });
+}
+
+/**
+ * M1-U4 — set the pendingConfirm slot on a session's agent state.
+ * Called by the SW BEFORE pushing a confirm request to the panel so a
+ * panel re-mount that lands during the confirm window can recover. The
+ * payload is RAW (raw `args.text` for keyboard tools, raw `args` in
+ * general) — Phase 2.5 binary channel: confirm cards need raw to give
+ * the user an informed approval. Storage trust face is identical to
+ * Phase 1 chat content (K9), and the record is short-lived.
+ *
+ * Idempotent: if the session does not exist, this is a no-op
+ * (rather than creating an orphan agent record). Caller is expected
+ * to have already created the session via the chat flow.
+ *
+ * Atomicity: writes only the agent key; meta + index untouched (D2).
+ */
+export async function setPendingConfirm(
+  sessionId: string,
+  record: PendingConfirmRecord,
+): Promise<void> {
+  const current = await getSessionAgent(sessionId);
+  if (!current) return;
+  await setSessionAgent(sessionId, { ...current, pendingConfirm: record });
+}
+
+/**
+ * M1-U4 — scrub the pendingConfirm slot. Called from the SW's
+ * `sendConfirmRequest` finally block so approve / reject / abort all
+ * converge on the same cleanup. Idempotent: re-scrubbing an already-
+ * empty slot is fine.
+ *
+ * Failure here is non-fatal — M1-U5's `R10(session-resume)` cold-start
+ * cleanup unconditionally clears any pendingConfirm field on SW
+ * startup, so a missed scrub does not leak across SW lifetimes.
+ */
+export async function scrubPendingConfirm(sessionId: string): Promise<void> {
+  const current = await getSessionAgent(sessionId);
+  if (!current || current.pendingConfirm == null) return;
+  // Build a copy without the field — explicit removal so the storage
+  // value doesn't keep `pendingConfirm: undefined` (which serializes
+  // identically but is awkward to assert against in tests).
+  const { pendingConfirm: _drop, ...rest } = current;
+  void _drop;
+  await setSessionAgent(sessionId, rest);
 }
 
 /**

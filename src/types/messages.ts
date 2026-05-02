@@ -239,12 +239,64 @@ export interface AgentConfirmResponseMessage {
   approved: boolean;
 }
 
+/**
+ * M1-U4 — fired by the panel right after `chrome.runtime.connect` so
+ * the SW knows which session this new port belongs to AND whether
+ * there's any state to recover (e.g. a pending agent-confirm card the
+ * user hasn't responded to yet).
+ *
+ * Two roles:
+ *   1. Identity: tells the SW the sessionId for this port (M3-U1 will
+ *      replace this by encoding sessionId into port.name; until then
+ *      this message is the wire-level identity carrier).
+ *   2. R4 trigger: signals "panel re-mounted, please re-emit any
+ *      live confirm-request for this session". The SW checks
+ *      `pendingConfirmations.has(confirmationId)` against the
+ *      `SessionAgentState.pendingConfirm` record in storage; if both
+ *      sides agree the confirm is still live, the SW re-pushes the
+ *      `agent-confirm-request` (or `session-confirm-request`) to the
+ *      newly-mounted panel.
+ */
+export interface PanelMountedMessage {
+  type: "panel-mounted";
+  sessionId: string;
+}
+
+/**
+ * M1-U4 — non-tool confirm request. Distinct variant from
+ * `AgentConfirmRequestMessage` to keep the existing tool-call confirm
+ * channel uncluttered. `kind` discriminates between scenarios:
+ *
+ *   - `"pinned-tab-drift"` — fired by M1-U5's resume flow when the
+ *      user clicks 'Resume task' but the pinned tab is gone or the
+ *      origin has changed. Single 'Discard task' button (R11).
+ *   - `"paused-resume"` — currently unused; reserved for the case
+ *      where M1-U5 wants to surface a paused task with a non-trivial
+ *      drift summary. Default-deferred for now.
+ *
+ * `payload` is intentionally `unknown` here — each kind defines its
+ * own concrete shape, validated at the consumer (SessionConfirmCard).
+ * Keeping the wire type discriminated rather than typed-by-kind lets
+ * future kinds land without re-shaping every consumer.
+ *
+ * NOTE: M1-U4 ships the protocol slot ONLY — no SW emitter writes
+ * this message yet. M1-U5 introduces the `pinned-tab-drift` emitter.
+ * See plan D5.
+ */
+export interface SessionConfirmRequestMessage {
+  type: "session-confirm-request";
+  confirmationId: string;
+  kind: "pinned-tab-drift" | "paused-resume";
+  payload: unknown;
+}
+
 // --- Discriminated Unions ---
 
 export type PortMessageToWorker =
   | ChatStartMessage
   | ChatAbortMessage
-  | AgentConfirmResponseMessage;
+  | AgentConfirmResponseMessage
+  | PanelMountedMessage;
 
 export type PortMessageToPanel =
   | ChatChunkMessage
@@ -252,4 +304,5 @@ export type PortMessageToPanel =
   | ChatErrorMessage
   | AgentStepMessage
   | AgentConfirmRequestMessage
-  | AgentDoneTaskMessage;
+  | AgentDoneTaskMessage
+  | SessionConfirmRequestMessage;

@@ -7,11 +7,17 @@ import {
   getTotalBytes,
   listSessionIndex,
   removeSession,
+  scrubPendingConfirm,
+  setPendingConfirm,
   setSessionAgent,
   setSessionMeta,
   updateLastAccessed,
 } from "./storage";
-import type { SessionAgentState, SessionMeta } from "./types";
+import type {
+  PendingConfirmRecord,
+  SessionAgentState,
+  SessionMeta,
+} from "./types";
 
 // `chrome.storage.local` is mocked in src/test/setup.ts. The mock auto-resets
 // between tests via the `beforeEach` defined there; tests that need to seed
@@ -295,6 +301,102 @@ describe("updateLastAccessed", () => {
 
   it("returns false for unknown ids", async () => {
     expect(await updateLastAccessed("not-a-real-id")).toBe(false);
+  });
+});
+
+describe("setPendingConfirm / scrubPendingConfirm — M1-U4", () => {
+  const sampleRecord: PendingConfirmRecord = {
+    confirmationId: "c1",
+    kind: "agent-tool",
+    payload: {
+      tool: "click",
+      args: { elementIndex: 7 },
+      resolvedElement: { text: "Submit", tag: "button" },
+      riskReason: "submit button",
+    },
+  };
+
+  it("setPendingConfirm writes the record to the agent state", async () => {
+    const meta = await createSession();
+    await setPendingConfirm(meta.id, sampleRecord);
+    const agent = await getSessionAgent(meta.id);
+    expect(agent!.pendingConfirm).toEqual(sampleRecord);
+  });
+
+  it("setPendingConfirm preserves other agent-state fields (D2 dual-key safe)", async () => {
+    const meta = await createSession();
+    await setSessionAgent(meta.id, {
+      agentMessages: [{ role: "user", content: "hi" }],
+      stepIndex: 3,
+      skillExecutionScopeStack: [],
+    });
+    await setPendingConfirm(meta.id, sampleRecord);
+    const agent = await getSessionAgent(meta.id);
+    expect(agent!.agentMessages).toEqual([{ role: "user", content: "hi" }]);
+    expect(agent!.stepIndex).toBe(3);
+    expect(agent!.pendingConfirm).toEqual(sampleRecord);
+  });
+
+  it("setPendingConfirm is a no-op for unknown sessionId (does not create orphan)", async () => {
+    await setPendingConfirm("not-a-real-id", sampleRecord);
+    const agent = await getSessionAgent("not-a-real-id");
+    expect(agent).toBeNull();
+  });
+
+  it("scrubPendingConfirm removes only the pendingConfirm field", async () => {
+    const meta = await createSession();
+    await setSessionAgent(meta.id, {
+      agentMessages: [{ role: "user", content: "hi" }],
+      stepIndex: 3,
+      skillExecutionScopeStack: [],
+    });
+    await setPendingConfirm(meta.id, sampleRecord);
+    await scrubPendingConfirm(meta.id);
+    const agent = await getSessionAgent(meta.id);
+    expect(agent!.pendingConfirm).toBeUndefined();
+    expect("pendingConfirm" in agent!).toBe(false);
+    // Other fields intact.
+    expect(agent!.agentMessages).toEqual([{ role: "user", content: "hi" }]);
+    expect(agent!.stepIndex).toBe(3);
+  });
+
+  it("scrubPendingConfirm is idempotent on already-cleared state", async () => {
+    const meta = await createSession();
+    // No pendingConfirm to begin with.
+    await scrubPendingConfirm(meta.id);
+    await scrubPendingConfirm(meta.id);
+    const agent = await getSessionAgent(meta.id);
+    expect(agent!.pendingConfirm).toBeUndefined();
+  });
+
+  it("scrubPendingConfirm is a no-op for unknown sessionId", async () => {
+    await scrubPendingConfirm("not-a-real-id");
+    // Should not throw, should not create.
+    expect(await getSessionAgent("not-a-real-id")).toBeNull();
+  });
+
+  it("setPendingConfirm with raw keyboard args.text — Phase 2.5 binary-channel preserves raw at-rest", async () => {
+    const meta = await createSession();
+    const keyboardRecord: PendingConfirmRecord = {
+      confirmationId: "c2",
+      kind: "agent-tool",
+      payload: {
+        tool: "dispatch_keyboard_input",
+        args: { text: "password123" },
+        resolvedElement: { text: "input", tag: "input" },
+        riskReason: "high-risk keyboard input",
+      },
+    };
+    await setPendingConfirm(meta.id, keyboardRecord);
+    const agent = await getSessionAgent(meta.id);
+    const stored = agent!.pendingConfirm!.payload as {
+      args: { text: string };
+    };
+    // R28 v2: storage holds raw, panel-display redaction is a separate
+    // path. Confirm cards need raw to give informed approval.
+    expect(stored.args.text).toBe("password123");
+    expect(stored.args.text).not.toContain("redacted");
+    expect(stored.args.text).not.toContain("•");
   });
 });
 

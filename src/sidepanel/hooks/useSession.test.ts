@@ -30,6 +30,24 @@ describe("useSession — bootstrap", () => {
     expect(meta!.messages).toEqual([]);
   });
 
+  it("M1-U4 — opens the port and sends panel-mounted on bootstrap", async () => {
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    // Connect happens at mount, before any sendMessage.
+    expect(chromeMock.runtime.connect).toHaveBeenCalledWith({
+      name: "chat-stream",
+    });
+    expect(chromeMock.runtime.__ports).toHaveLength(1);
+
+    // First message on the port is panel-mounted carrying sessionId.
+    const port = chromeMock.runtime.__ports[0]!;
+    expect(port.postMessage).toHaveBeenCalledWith({
+      type: "panel-mounted",
+      sessionId: result.current.sessionId,
+    });
+  });
+
   it("loads the most recently accessed session from a non-empty index", async () => {
     const older = await createSession({ now: 1000 });
     const newer = await createSession({ now: 2000 });
@@ -102,7 +120,13 @@ describe("useSession — sendMessage / streaming", () => {
     });
 
     const port = chromeMock.runtime.__ports[0]!;
-    const wirePayload = port.postMessage.mock.calls[0]![0] as {
+    // Mount-immediate connection (M1-U4) means the first postMessage is
+    // `panel-mounted`, so we have to find the chat-start call by type.
+    const chatStartCall = port.postMessage.mock.calls.find(
+      (c) => (c[0] as { type: string }).type === "chat-start",
+    );
+    expect(chatStartCall).toBeDefined();
+    const wirePayload = chatStartCall![0] as {
       messages: Array<{ role: string; content: string }>;
     };
     expect(wirePayload.messages).toEqual([
@@ -117,6 +141,30 @@ describe("useSession — sendMessage / streaming", () => {
       content: "/extract",
       expandedForLLM: "Please extract structured data from this page",
     });
+  });
+
+  it("M1-U4 — reuses the mount-time port, does NOT open a new one per sendMessage", async () => {
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    expect(chromeMock.runtime.__ports).toHaveLength(1);
+    const port = chromeMock.runtime.__ports[0]!;
+
+    // First sendMessage → finish → second sendMessage on same port.
+    act(() => result.current.sendMessage({ content: "first" }));
+    act(() => port.__emit({ type: "chat-chunk", text: "ok" }));
+    act(() => port.__emit({ type: "chat-done" }));
+    await waitFor(() => expect(result.current.streaming).toBe(false));
+
+    act(() => result.current.sendMessage({ content: "second" }));
+
+    // Still only one port.
+    expect(chromeMock.runtime.__ports).toHaveLength(1);
+    // Two chat-start posts on the same port.
+    const chatStartCalls = port.postMessage.mock.calls.filter(
+      (c) => (c[0] as { type: string }).type === "chat-start",
+    );
+    expect(chatStartCalls).toHaveLength(2);
   });
 
   it("ignores sendMessage while already streaming", async () => {
@@ -294,6 +342,64 @@ describe("useSession — clearMessages", () => {
     expect(result.current.error).toBeNull();
     const reread = await getSessionMeta(result.current.sessionId!);
     expect(reread!.messages).toEqual([]);
+  });
+});
+
+describe("useSession — R4 confirm card recovery (M1-U4)", () => {
+  it("renders an agent-confirm message when SW pushes agent-confirm-request", async () => {
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    const port = chromeMock.runtime.__ports[0]!;
+
+    // Simulate SW re-pushing a confirm-request after panel-mounted.
+    // The hook handles this without needing an in-flight sendMessage —
+    // R4 use-case is "user reopened the side panel and immediately
+    // sees the pending card".
+    act(() =>
+      port.__emit({
+        type: "agent-confirm-request",
+        confirmationId: "c1",
+        tool: "click",
+        args: { elementIndex: 7 },
+        resolvedElement: { text: "Submit", tag: "button" },
+        riskReason: "submit button",
+      }),
+    );
+
+    expect(result.current.messages).toEqual([
+      expect.objectContaining({
+        role: "agent-confirm",
+        confirmationId: "c1",
+        tool: "click",
+        resolved: undefined,
+      }),
+    ]);
+  });
+
+  it("de-dupes a re-emitted agent-confirm-request by confirmationId", async () => {
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    const port = chromeMock.runtime.__ports[0]!;
+    const payload = {
+      type: "agent-confirm-request" as const,
+      confirmationId: "c1",
+      tool: "click",
+      args: {},
+      resolvedElement: { text: "Submit", tag: "button" },
+      riskReason: "submit button",
+    };
+
+    // First emit — message added.
+    act(() => port.__emit(payload));
+    expect(result.current.messages).toHaveLength(1);
+
+    // Second emit with same confirmationId (e.g. SW re-emits on
+    // panel-mounted while panel is already showing the card) — no
+    // duplicate row.
+    act(() => port.__emit(payload));
+    expect(result.current.messages).toHaveLength(1);
   });
 });
 
