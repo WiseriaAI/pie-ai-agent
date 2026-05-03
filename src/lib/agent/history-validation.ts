@@ -51,7 +51,7 @@ export interface RepairResult {
  * The wrapper tag signals to the LLM that this is synthetic context.
  */
 const SENTINEL_CONTENT =
-  "<untrusted_prior_task_summary>[continuing previous conversation]</untrusted_prior_task_summary>";
+  "<untrusted_continuity_marker>[continuing previous conversation]</untrusted_continuity_marker>";
 
 function sentinelFor(role: "user" | "assistant"): AgentMessage {
   // Insert the OPPOSITE role between two messages of the same role.

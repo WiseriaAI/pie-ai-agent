@@ -41,7 +41,9 @@ import type {
 } from "../../types/messages";
 import type { SessionAgentState } from "../sessions/types";
 import { synthesizeAgentTurnText, type TerminationReason } from "./synthesize-agent-turn";
-import { setLastTaskSynth } from "../sessions/storage";
+// setLastTaskSynth removed from emitDone — lastTaskSynth is now folded into
+// the tombstone write by buildSessionAgentTombstone(synth) to prevent the
+// two-write race on the agent key (AD1 fix). No import needed.
 
 const MAX_STEPS = 30;
 
@@ -601,16 +603,27 @@ export function buildSessionAgentSnapshot(
  * session to `paused`, presenting the user with a misleading
  * "Resume task" button.
  *
- * The tombstone is just `(agentMessages=[], stepIndex=0,
+ * The tombstone is `(agentMessages=[], stepIndex=0,
  * skillExecutionScopeStack=[])`. Idempotent — re-writing on top of
  * an existing tombstone is a no-op for any consumer.
+ *
+ * AD1 fix: accepts an optional `lastTaskSynth` parameter so `emitDone`
+ * can fold the synthesized assistant turn into the same single atomic
+ * write rather than issuing two separate read-modify-write calls to the
+ * agent key. When `lastTaskSynth` is present it is included in the
+ * returned state; when absent / undefined the field is omitted entirely
+ * (no `undefined` property in the persisted object).
  */
-export function buildSessionAgentTombstone(): SessionAgentState {
-  return {
+export function buildSessionAgentTombstone(lastTaskSynth?: string | null): SessionAgentState {
+  const base: SessionAgentState = {
     agentMessages: [],
     stepIndex: 0,
     skillExecutionScopeStack: [],
   };
+  if (lastTaskSynth != null) {
+    base.lastTaskSynth = lastTaskSynth;
+  }
+  return base;
 }
 
 /**
@@ -766,24 +779,24 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
     doneEmitted = true;
     sendAgentDone(port, { ...msg, sessionId });
 
-    // U3 — synthesize assistant turn + write to session meta (fire-and-forget)
+    // U3 / AD1 fix — synthesize assistant turn and fold it into the tombstone
+    // write so both changes land in ONE atomic write to session_${id}_agent.
+    // Previously setLastTaskSynth and onStepSnapshot(tombstone) were two
+    // independent fire-and-forget RMW calls on the same key, creating a
+    // write-race window where stepIndex could be resurrected (M1-U5 would
+    // falsely flag the session as paused on next SW restart).
     const synth = synthesizeAgentTurnText({
       terminationReason,
       summary: msg.summary,
       stepCount: msg.stepCount,
       history,
     });
-    if (synth !== null) {
-      setLastTaskSynth(sessionId, synth).catch((e) => {
-        console.warn(
-          `[agent] setLastTaskSynth failed for session=${ctx.sessionId}:`,
-          e,
-        );
-      });
-    }
 
     if (ctx.onStepSnapshot) {
-      ctx.onStepSnapshot(buildSessionAgentTombstone()).catch((e) => {
+      // Pass the synth (may be null) into the tombstone builder.
+      // buildSessionAgentTombstone omits the field when null, ensuring the
+      // next chat-start's "is lastTaskSynth present?" check is unambiguous.
+      ctx.onStepSnapshot(buildSessionAgentTombstone(synth)).catch((e) => {
         console.warn(
           `[agent] tombstone snapshot failed for session=${ctx.sessionId}:`,
           e,

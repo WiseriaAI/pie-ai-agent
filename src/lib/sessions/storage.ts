@@ -386,44 +386,88 @@ export async function scrubPendingConfirm(sessionId: string): Promise<void> {
 
 // ── U3 — lastTaskSynth helpers ────────────────────────────────────────────────
 //
-// lastTaskSynth is a single string field on SessionMeta, written by
-// emitDone in loop.ts and consumed (read + cleared) by handleChatStream.
-// It does NOT touch the session_index — the field is invisible to the
-// drawer and does not affect LRU / messageCount / title / status.
-// We write only `session_${id}_meta` via writeAtomic (single-key, D9
-// atomicity; no index diff needed, mirrors lifecycle.ts pattern).
+// AD1 fix: lastTaskSynth was previously stored on SessionMeta, which caused a
+// lost-update race — both `emitDone` (via setLastTaskSynth) and the panel's
+// `persistMessages` perform read-modify-write on `session_${id}_meta`, and
+// the concurrent writes at the chat-done boundary could silently clobber each
+// other's changes.
+//
+// The field is now stored on SessionAgentState (`session_${id}_agent`), which
+// is SW-only — no panel writer ever touches this key except for reading on
+// resume. `emitDone` folds lastTaskSynth directly into the tombstone write
+// (single atomic write, no race). `handleChatStream` reads from agent state
+// and clears it via `clearLastTaskSynth` at chat-start.
+//
+// NOTE: `setLastTaskSynth` is kept as a standalone helper for testing and
+// for any future caller that needs to set lastTaskSynth independently from
+// the tombstone write. `emitDone` in loop.ts no longer calls this directly —
+// it folds the synth into `buildSessionAgentTombstone(synth)` instead.
 
 /**
- * Write the synthesized assistant turn text into session meta's
- * `lastTaskSynth` field. The value must already be wrapped in
- * `<untrusted_prior_task_summary>…</untrusted_prior_task_summary>`
- * (the caller, `emitDone`, handles the wrap).
+ * Write the synthesized assistant turn text into the session's **agent
+ * state** `lastTaskSynth` field. The value must already be wrapped in
+ * `<untrusted_prior_task_summary>…</untrusted_prior_task_summary>`.
  *
- * No-op if the session does not exist (defensive; caller has sessionId
- * from ctx and the session was created before the task started).
+ * AD1 fix: was previously a read-modify-write on the meta key (races with
+ * panel's persistMessages). Now writes agent key only — SW-only, no panel
+ * writer, no race.
+ *
+ * No-op if the session does not exist.
  */
 export async function setLastTaskSynth(
   sessionId: string,
   synth: string,
 ): Promise<void> {
-  const meta = await getSessionMeta(sessionId);
-  if (!meta) return;
-  await writeAtomic({ [metaKey(sessionId)]: { ...meta, lastTaskSynth: synth } });
+  const agent = await getSessionAgent(sessionId);
+  if (!agent) return;
+  await setSessionAgent(sessionId, { ...agent, lastTaskSynth: synth });
 }
 
 /**
- * Clear the `lastTaskSynth` field on a session meta (one-shot consume).
- * Called by `handleChatStream` immediately after reading the value so it
- * is never injected into a second chat's history.
+ * Clear the `lastTaskSynth` field on a session's **agent state** (one-shot
+ * consume). Called by `handleChatStream` immediately after reading the value
+ * so it is never injected into a second chat's history.
  *
  * No-op if the session does not exist or `lastTaskSynth` is already absent.
  */
 export async function clearLastTaskSynth(sessionId: string): Promise<void> {
-  const meta = await getSessionMeta(sessionId);
-  if (!meta || meta.lastTaskSynth == null) return;
-  const { lastTaskSynth: _drop, ...rest } = meta;
+  const agent = await getSessionAgent(sessionId);
+  if (!agent || agent.lastTaskSynth == null) return;
+  const { lastTaskSynth: _drop, ...rest } = agent;
   void _drop;
-  await writeAtomic({ [metaKey(sessionId)]: rest });
+  await setSessionAgent(sessionId, rest);
+}
+
+/**
+ * AD1 migration — idempotent one-shot: if the session meta still carries a
+ * stale `lastTaskSynth` field from before the AD1 fix, move it to the agent
+ * state and strip it from meta. Safe to call multiple times.
+ *
+ * Called by `handleChatStream` at chat-start (awaited, not fire-and-forget),
+ * so the migrated value is available for the synth-injection read that
+ * immediately follows.
+ *
+ * Returns `true` if a migration was performed, `false` otherwise.
+ */
+export async function migrateLastTaskSynthFromMeta(
+  sessionId: string,
+): Promise<boolean> {
+  const meta = await getSessionMeta(sessionId);
+  // Cast to access the pre-AD1 field that no longer exists in the type.
+  const staleSynth = (meta as Record<string, unknown> | null)?.["lastTaskSynth"] as string | undefined;
+  if (!staleSynth) return false;
+
+  const agent = await getSessionAgent(sessionId);
+  if (!agent) return false;
+
+  // Move synth to agent state, strip from meta — single atomic batch (D9).
+  const { lastTaskSynth: _drop, ...metaRest } = meta as typeof meta & { lastTaskSynth?: string };
+  void _drop;
+  await writeAtomic({
+    [metaKey(sessionId)]: metaRest,
+    [agentKey(sessionId)]: { ...agent, lastTaskSynth: staleSynth },
+  });
+  return true;
 }
 
 /**
