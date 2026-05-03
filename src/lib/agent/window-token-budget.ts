@@ -19,6 +19,7 @@
 import type { AgentMessage, ContentBlock } from "../model-router/types";
 import { getProviderMeta } from "../model-router/providers/registry";
 import type { Provider } from "../model-router";
+import { findReactStartIdx } from "./window";
 
 /** Fallback context window when provider metadata is missing. */
 const FALLBACK_MAX_CONTEXT_TOKENS = 32_000;
@@ -96,9 +97,7 @@ export function applyTokenBudget(
   if (estimateTokens(messages) <= threshold) return messages;
 
   // Find the react segment start (first assistant ContentBlock[] turn).
-  const reactStartIdx = messages.findIndex(
-    (m) => m.role === "assistant" && Array.isArray(m.content),
-  );
+  const reactStartIdx = findReactStartIdx(messages);
 
   // head is everything before the react segment (or all messages if no react).
   const headEnd = reactStartIdx === -1 ? messages.length : reactStartIdx;
@@ -108,9 +107,7 @@ export function applyTokenBudget(
 
   // Drop loop: remove oldest droppable (user, assistant) pair from head.
   while (estimateTokens(result) > threshold) {
-    const currentHeadEnd = reactStartIdx === -1 ? result.length : result.findIndex(
-      (m) => m.role === "assistant" && Array.isArray(m.content),
-    );
+    const currentHeadEnd = reactStartIdx === -1 ? result.length : findReactStartIdx(result);
 
     // Find the first droppable pair inside the head.
     // Constraints:

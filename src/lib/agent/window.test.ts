@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentMessage, ContentBlock } from "@/lib/model-router";
-import { applySlidingWindow } from "./window";
+import { applySlidingWindow, findReactStartIdx } from "./window";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -388,5 +388,44 @@ describe("applySlidingWindow — integration: large multi-turn + react", () => {
     expect(Array.isArray(result[14].content)).toBe(true);
 
     assertNoAdjacentSameRole(result);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// findReactStartIdx unit tests (Fix 3 — dedup react-segment detection)
+// ---------------------------------------------------------------------------
+
+describe("findReactStartIdx", () => {
+  it("returns -1 when no assistant ContentBlock[] message exists", () => {
+    const messages: AgentMessage[] = [
+      { role: "system", content: "system" },
+      { role: "user", content: "task" },
+      { role: "assistant", content: "plain text reply" },
+    ];
+    expect(findReactStartIdx(messages)).toBe(-1);
+  });
+
+  it("returns 0 when the first message is an assistant ContentBlock[] turn", () => {
+    const blocks: ContentBlock[] = [
+      { type: "tool_use", id: "tu1", name: "click", input: {} },
+    ];
+    const messages: AgentMessage[] = [
+      { role: "assistant", content: blocks },
+      { role: "user", content: "result" },
+    ];
+    expect(findReactStartIdx(messages)).toBe(0);
+  });
+
+  it("returns the correct mid-array index", () => {
+    const blocks: ContentBlock[] = [
+      { type: "tool_use", id: "tu2", name: "scroll", input: {} },
+    ];
+    const messages: AgentMessage[] = [
+      { role: "system", content: "system" },
+      { role: "user", content: "task" },
+      { role: "assistant", content: blocks }, // index 2
+      { role: "user", content: "obs" },
+    ];
+    expect(findReactStartIdx(messages)).toBe(2);
   });
 });

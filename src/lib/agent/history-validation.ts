@@ -35,7 +35,7 @@ export interface RoleViolation {
    *  into the INPUT array before any repair insertion). */
   idx: number;
   /** The shared role value ("user" or "assistant"). */
-  role: string;
+  role: "user" | "assistant";
 }
 
 export interface RepairResult {

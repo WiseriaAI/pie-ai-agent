@@ -720,6 +720,11 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
   let doneEmitted = false;
   let lastStepIndex = 0;
   let normalTextReply = false; // pure-text reply uses chat-done, not agent-done-task
+  // Pre-initialized to [] so emitDone closures that fire before history is
+  // seeded (legacy fallback paths at lines ~819/829/840 — before the
+  // `history = ctx.resumedAgentMessages…` assignment) read an empty array
+  // instead of hitting a TDZ ReferenceError (Fix 1 / C1).
+  let history: AgentMessage[] = [];
   // Phase 2.6 / M2-U1 — skill-scope stack.
   //
   // Per-call local variable so concurrent runAgentLoop invocations each
@@ -913,7 +918,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
     ),
   };
 
-  const history: AgentMessage[] = ctx.resumedAgentMessages
+  history = ctx.resumedAgentMessages
     ? structuredClone(ctx.resumedAgentMessages)
     : ctx.messages && ctx.messages.length > 0
       ? [systemMsg, ...ctx.messages.map(chatMessageToAgentMessage)]

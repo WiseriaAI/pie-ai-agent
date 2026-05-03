@@ -44,15 +44,26 @@ function isUserToolResultTurn(msg: AgentMessage): boolean {
  *   - output messages have no adjacent user-user or assistant-assistant
  *     (system runs are allowed)
  */
+/**
+ * Returns the index of the first assistant message whose content is a
+ * ContentBlock[] array — i.e. the ReAct loop start. Returns -1 if none.
+ *
+ * Extracted so window-token-budget.ts and applySlidingWindow share a
+ * single predicate; future IR shape changes only require one edit site.
+ */
+export function findReactStartIdx(messages: AgentMessage[]): number {
+  return messages.findIndex(
+    (m) => m.role === "assistant" && Array.isArray(m.content),
+  );
+}
+
 export function applySlidingWindow(
   messages: AgentMessage[],
   maxSteps: number = 12,
 ): AgentMessage[] {
   // Find the first assistant message whose content is a ContentBlock[] array —
   // this is the ReAct loop start index.
-  const reactStartIdx = messages.findIndex(
-    (m) => m.role === "assistant" && Array.isArray(m.content),
-  );
+  const reactStartIdx = findReactStartIdx(messages);
 
   // No ReAct segment — the whole history is chat prefix; return as-is.
   if (reactStartIdx === -1) return messages;

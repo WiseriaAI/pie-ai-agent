@@ -178,20 +178,21 @@ describe("synthesizeAgentTurnText", () => {
     expect(result!).not.toContain("promptTemplate");
   });
 
-  it("meta-tool blacklist — update_skill args are redacted", () => {
+  it("meta-tool blacklist — update_skill args are redacted in fail path", () => {
     const history: AgentMessage[] = [
       { role: "system", content: "system" },
       { role: "user", content: "update a skill" },
       ...makePair("update_skill", { id: "skill_agent_123", promptTemplate: "NEW TEMPLATE" }),
     ];
     const result = synthesizeAgentTurnText({
-      terminationReason: "success",
-      summary: "done",
+      terminationReason: "fail",
+      summary: "failed",
       stepCount: 1,
       history,
     });
-    // success path doesn't include step list, but test meta-tool in fail path
     expect(result).not.toBeNull();
+    expect(result!).toContain("update_skill(<redacted-skill-args>)");
+    expect(result!).not.toContain("NEW TEMPLATE");
   });
 
   it("meta-tool blacklist — delete_skill args are redacted in fail path", () => {
