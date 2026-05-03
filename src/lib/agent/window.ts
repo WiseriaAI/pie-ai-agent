@@ -23,30 +23,52 @@ function isUserToolResultTurn(msg: AgentMessage): boolean {
 /**
  * Applies a sliding window to the agent message history.
  *
- * Always preserved:
- *   messages[0] — system prompt
- *   messages[1] — initial user task
+ * The history is split into two segments:
  *
- * The rest is scanned for (assistant tool_use + user tool_result) pairs.
- * Only the most recent `maxSteps` pairs are kept, plus any trailing messages
- * after the last complete pair (e.g. a pending page observation).
+ *   head  — everything before the first assistant message with ContentBlock[]
+ *           content (i.e. the ReAct loop start). In multi-turn conversations
+ *           this includes the system prompt, prior chat turns, and the current
+ *           user task. The head is always preserved in full.
+ *
+ *   react — from the first assistant tool_use turn onward. Only the most
+ *           recent `maxSteps` (assistant tool_use + user tool_result) pairs
+ *           are kept, plus any trailing messages after the last complete pair.
+ *
+ * When no assistant ContentBlock[] turn exists (e.g. pure-chat history with
+ * no in-flight ReAct pairs) the entire messages array is the head and is
+ * returned unchanged.
+ *
+ * Invariants:
+ *   - head末尾永远是 user role (panel sendMessage puts user last on wire;
+ *     ReAct start must be assistant tool_use so the join is always alternating)
+ *   - output messages have no adjacent user-user or assistant-assistant
+ *     (system runs are allowed)
  */
 export function applySlidingWindow(
   messages: AgentMessage[],
   maxSteps: number = 12,
 ): AgentMessage[] {
-  // Not enough to window yet
-  if (messages.length <= 2) return messages;
+  // Find the first assistant message whose content is a ContentBlock[] array —
+  // this is the ReAct loop start index.
+  const reactStartIdx = messages.findIndex(
+    (m) => m.role === "assistant" && Array.isArray(m.content),
+  );
 
-  const preserved = messages.slice(0, 2); // [system, initial-user-task]
-  const rest = messages.slice(2);
+  // No ReAct segment — the whole history is chat prefix; return as-is.
+  if (reactStartIdx === -1) return messages;
 
-  // Identify (assistant tool_use + user tool_result) pair start indices in `rest`
+  const head = messages.slice(0, reactStartIdx);
+  const react = messages.slice(reactStartIdx);
+
+  // Not enough react messages to need windowing
+  if (react.length === 0) return messages;
+
+  // Identify (assistant tool_use + user tool_result) pair start indices in `react`
   const pairStarts: number[] = [];
 
   let i = 0;
-  while (i < rest.length - 1) {
-    if (isAssistantToolUseTurn(rest[i]) && isUserToolResultTurn(rest[i + 1])) {
+  while (i < react.length - 1) {
+    if (isAssistantToolUseTurn(react[i]) && isUserToolResultTurn(react[i + 1])) {
       pairStarts.push(i);
       i += 2;
     } else {
@@ -63,6 +85,6 @@ export function applySlidingWindow(
   const keptPairStarts = pairStarts.slice(-maxSteps);
   const earliestIdx = keptPairStarts[0];
 
-  // rest.slice(earliestIdx) includes the kept pairs AND any trailing messages
-  return [...preserved, ...rest.slice(earliestIdx)];
+  // react.slice(earliestIdx) includes the kept pairs AND any trailing messages
+  return [...head, ...react.slice(earliestIdx)];
 }
