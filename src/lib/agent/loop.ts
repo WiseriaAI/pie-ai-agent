@@ -20,6 +20,10 @@ import {
 } from "./tools/tabs";
 import { buildAgentSystemPrompt, buildObservationMessage } from "./prompt";
 import { applySlidingWindow } from "./window";
+import {
+  validateAndRepairAdjacentRoles,
+  type RoleViolation,
+} from "./history-validation";
 import { isKeyboardSimulationEnabled } from "../keyboard-simulation";
 import { getEnabledSkills, markSkillFirstRun, type SkillDefinition } from "../skills";
 import {
@@ -190,6 +194,20 @@ export interface AgentLoopContext {
    * field entirely.
    */
   messages?: ChatMessage[];
+  /**
+   * U4 — called when `validateAndRepairAdjacentRoles` detects and repairs
+   * one or more adjacent same-role messages in the windowed history before
+   * the LLM call. Fired once per LLM iteration that has violations.
+   *
+   * Receives both the violations list (for routing / counting) and the
+   * pre-repair `windowedHistoryRaw` array (so the handler can compute
+   * content hashes without the loop needing an async crypto call).
+   *
+   * Optional (absent in test harness / legacy callers). Intended for SW
+   * telemetry (console.warn) without importing browser-specific APIs into
+   * the pure loop module.
+   */
+  onHistoryRepaired?: (violations: RoleViolation[], messages: AgentMessage[]) => void;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -1029,7 +1047,19 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       }
 
       // Apply sliding window
-      const windowedHistory = applySlidingWindow(history);
+      const windowedHistoryRaw = applySlidingWindow(history);
+
+      // U4 — Defense-in-depth: validate role alternation and auto-repair
+      // adjacent same-role messages. Normal paths (D2 SW-side synth + U2
+      // wrapping) already ensure alternation; this is the last resort for
+      // wire-format bugs or future refactor gaps. system-system pairs are
+      // not counted (anthropic.ts joins them). Violations are repaired
+      // silently — no error surfaced to the user.
+      const { repaired: windowedHistory, violations: historyViolations } =
+        validateAndRepairAdjacentRoles(windowedHistoryRaw);
+      if (historyViolations.length > 0 && ctx.onHistoryRepaired) {
+        ctx.onHistoryRepaired(historyViolations, windowedHistoryRaw);
+      }
 
       // Resolve tools — re-read keyboard sim flag every iteration so
       // mid-task ON adds tools next round (mid-task OFF is handled by

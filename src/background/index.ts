@@ -18,6 +18,7 @@ import type {
 } from "@/lib/model-router";
 import { getActiveProvider, getProviderConfig } from "@/lib/storage";
 import { runAgentLoop, safeParseOrigin } from "@/lib/agent/loop";
+import type { RoleViolation } from "@/lib/agent/history-validation";
 import { getEnabledSkills, resolveSkillToTools } from "@/lib/skills";
 import {
   setSessionAgent,
@@ -45,6 +46,50 @@ import { runSessionMigrations } from "@/lib/sessions/migration";
 import { getCrossSessionPinnedTabIds } from "@/lib/sessions/pinned-tab-registry";
 import { chat } from "@/lib/model-router";
 import { generateTitle, maybeUpgradeFallbackTitle } from "@/lib/sessions/title-generator";
+
+// ── U4 — History-repair telemetry ────────────────────────────────────────────
+
+/**
+ * U4 — Emit a console.warn when validateAndRepairAdjacentRoles auto-repairs
+ * adjacent same-role messages in the windowed LLM history. Content is NOT
+ * logged (privacy); only content-length + a SHA-256 hex prefix are included
+ * so violations can be correlated in DevTools without leaking user data.
+ *
+ * Uses the Web Crypto API available in Service Worker context.
+ */
+async function logHistoryRepaired(violations: RoleViolation[], messages: AgentMessage[]): Promise<void> {
+  try {
+    const payloads = await Promise.all(
+      violations.map(async ({ idx, role }) => {
+        const msg = messages[idx];
+        const raw = msg
+          ? typeof msg.content === "string"
+            ? msg.content
+            : JSON.stringify(msg.content)
+          : "";
+        const contentLength = raw.length;
+        let contentSha256First8 = "n/a";
+        try {
+          const buf = await crypto.subtle.digest(
+            "SHA-256",
+            new TextEncoder().encode(raw),
+          );
+          const hex = Array.from(new Uint8Array(buf))
+            .map((b) => b.toString(16).padStart(2, "0"))
+            .join("");
+          contentSha256First8 = hex.slice(0, 8);
+        } catch {
+          // Web Crypto unavailable (test context) — keep "n/a".
+        }
+        return { idx, role, contentLength, contentSha256First8 };
+      }),
+    );
+    console.warn("[agent] multi-turn-history-repaired", { violations: payloads });
+  } catch (e) {
+    // Telemetry must never crash the caller.
+    console.warn("[agent] multi-turn-history-repaired (telemetry error)", e);
+  }
+}
 
 // Open side panel when extension icon is clicked
 chrome.action.onClicked.addListener(async (tab) => {
@@ -604,6 +649,12 @@ async function handleResumeRequest(
     pinned,
     // M3-U4 (TOCTOU fix) — refresh per dispatch; see chat-start twin.
     refreshCrossSessionPinnedTabIds: () => getCrossSessionPinnedTabIds(sessionId),
+    // U4 — same telemetry hook as chat-start path.
+    onHistoryRepaired: (violations, rawMessages) => {
+      logHistoryRepaired(violations, rawMessages).catch((e) => {
+        console.warn("[agent] logHistoryRepaired error:", e);
+      });
+    },
   });
 }
 
@@ -960,6 +1011,13 @@ async function handleChatStream(
       // runAgentLoop can seed a proper multi-turn history instead of the
       // bare [system, user(task)] two-entry seed.
       messages: effectiveMessages,
+      // U4 — telemetry: fire-and-forget; crypto.subtle may be async but
+      // must not stall the LLM call.
+      onHistoryRepaired: (violations, rawMessages) => {
+        logHistoryRepaired(violations, rawMessages).catch((e) => {
+          console.warn("[agent] logHistoryRepaired error:", e);
+        });
+      },
     });
   } catch (e) {
     if (signal.aborted) return;
