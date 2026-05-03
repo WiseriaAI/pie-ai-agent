@@ -127,6 +127,14 @@ export interface UseSession {
    *  'Resume task' affordance. Updated via storage onChanged so a SW
    *  cold-start mark transitions the UI without panel reload. */
   status: SessionStatus | null;
+  /** M3-U2 (post-acceptance) — persisted pinned-tab origin from the
+   *  active session's meta, or null when the session has no pin yet
+   *  (brand-new empty session). Chat reads this to decide whether to
+   *  display a frozen pin (messages.length > 0 → locked) or a live
+   *  preview of the user's currently-active tab (empty session → free).
+   *  Updated on bootstrap, setActive, and chrome.storage onChanged for
+   *  the active session's meta key. */
+  pinnedOrigin: string | null;
   messages: DisplayMessage[];
   streaming: boolean;
   streamingText: string;
@@ -172,6 +180,7 @@ export interface UseSession {
 export function useSession(): UseSession {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [status, setStatus] = useState<SessionStatus | null>(null);
+  const [pinnedOrigin, setPinnedOriginState] = useState<string | null>(null);
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [streamingText, setStreamingText] = useState("");
@@ -506,12 +515,13 @@ export function useSession(): UseSession {
         let id: string;
         let initialMessages: DisplayMessage[] = [];
         let initialStatus: SessionStatus = "active";
+        let initialPinnedOrigin: string | null = null;
         if (list.length === 0) {
-          // M3-U2 — anchor a freshly-created bootstrap session to the
-          // user's current active tab. Failure to capture is non-fatal
-          // (loop falls back to active-tab anchoring at first chat-start).
-          const pinned = await captureActivePinned();
-          const meta = await createSession(pinned ?? undefined);
+          // M3-U2 (post-acceptance) — bootstrap creates the session
+          // empty and unpinned. The user's first sendMessage will
+          // capture and lock the pin. Until then PINNED follows the
+          // active tab via Chat's live preview.
+          const meta = await createSession();
           if (cancelled) return;
           id = meta.id;
           initialStatus = meta.status;
@@ -522,10 +532,18 @@ export function useSession(): UseSession {
           id = top.id;
           initialMessages = meta?.messages ?? [];
           initialStatus = meta?.status ?? "active";
-          // M3-U2 — legacy-session pin migration on bootstrap. Same as
-          // setActive's backfill: capture + persist once for any session
-          // missing a pin, so resume / chat-start can anchor cleanly.
-          if (meta && (meta.pinnedTabId === undefined || !meta.pinnedOrigin)) {
+          initialPinnedOrigin = meta?.pinnedOrigin ?? null;
+          // M3-U2 (post-acceptance) — legacy-session pin migration on
+          // bootstrap. Only fires when the session ALREADY has content
+          // (legacy M1/M2 sessions whose meta predates pin support).
+          // Empty sessions skip this so the pin is captured at first
+          // sendMessage instead, matching the lock-on-send rule.
+          const sessionHasContent = (meta?.messages?.length ?? 0) > 0;
+          if (
+            meta &&
+            sessionHasContent &&
+            (meta.pinnedTabId === undefined || !meta.pinnedOrigin)
+          ) {
             const pinned = await captureActivePinned();
             // Re-check `cancelled` after the captureActivePinned await —
             // if the panel unmounted during the chrome.tabs.query
@@ -539,11 +557,13 @@ export function useSession(): UseSession {
                 pinnedOrigin: pinned.pinnedOrigin,
                 lastAccessedAt: Date.now(),
               });
+              initialPinnedOrigin = pinned.pinnedOrigin;
             }
           }
         }
         setSessionId(id);
         setStatus(initialStatus);
+        setPinnedOriginState(initialPinnedOrigin);
         setMessages(initialMessages);
         portRef.current = connectPortFor(id);
       } finally {
@@ -578,12 +598,19 @@ export function useSession(): UseSession {
         | {
             messages?: DisplayMessage[];
             status?: SessionStatus;
+            pinnedOrigin?: string;
           }
         | undefined;
       // Status update is always adopted — the SW transitions (paused→active,
       // active→failed) must land even mid-stream (e.g. SW cold-start marking
       // a task paused while the panel thinks it's still running).
       if (newMeta?.status !== undefined) setStatus(newMeta.status);
+      // Pin update is always adopted — the SW or a sibling panel may have
+      // landed a fresh pin between this panel's reads, and the Chat view's
+      // PINNED indicator should reflect the persisted truth.
+      if (newMeta?.pinnedOrigin !== undefined) {
+        setPinnedOriginState(newMeta.pinnedOrigin || null);
+      }
       if (newMeta?.messages !== undefined) {
         // P1-6 + Bug-fix-A — prevent self-write echo AND stale SW write-back
         // overwriting authoritative panel state.
@@ -650,6 +677,12 @@ export function useSession(): UseSession {
           : {}),
       };
       const updated = [...messagesRef.current, userMessage];
+      // M3-U2 (post-acceptance) — empty→non-empty is the moment we lock
+      // the pin. Capture HERE rather than at session create / activation
+      // so the user's actual at-send tab wins over their at-create tab.
+      // Empty session: panel UI shows live-current-tab preview;
+      // first sendMessage: capture + persist; from then on locked.
+      const isFirstMessage = messagesRef.current.length === 0;
       // Bug-fix-A — sync messagesRef + streamingRef BEFORE port.postMessage
       // so the SW's chat-start-triggered updateLastAccessed (which writes
       // a stale meta back to storage and re-fires the metaKey listener)
@@ -668,16 +701,6 @@ export function useSession(): UseSession {
       accumulatedRef.current = "";
       streamFinishedRef.current = false;
 
-      // Bug-fix-C — persist immediately so the session_index entry picks up
-      // the first-user-message title fallback (via persistMessages →
-      // deriveTitleFromMessages → setSessionMeta atomic index update). Without
-      // this, the top bar + drawer would keep saying "New Session" until the
-      // model's reply lands at chat-done. Persisting also defends against
-      // Bug 1: it makes the panel's authoritative messages the on-disk version
-      // before any SW updateLastAccessed round-trip can write back a stale
-      // shorter snapshot. Fire-and-forget; failures are non-fatal.
-      void persistMessages(updated);
-
       // Build the LLM-facing chat history (text-only, slash-expanded).
       const chatMessages: ChatMessage[] = updated
         .filter(
@@ -694,11 +717,63 @@ export function useSession(): UseSession {
             : { role: m.role, content: m.content },
         );
 
+      // Bug-fix-C — persist immediately so the session_index entry picks
+      // up the first-user-message title fallback (via persistMessages →
+      // deriveTitleFromMessages → setSessionMeta atomic index update).
+      // Without this, the top bar + drawer would keep saying "New
+      // Session" until the model's reply lands at chat-done. Persisting
+      // also defends against Bug 1: it makes the panel's authoritative
+      // messages the on-disk version before any SW updateLastAccessed
+      // round-trip can write back a stale shorter snapshot.
+      // Fire-and-forget; failures are non-fatal.
+      void persistMessages(updated);
+
       port.postMessage({
         type: "chat-start",
         messages: chatMessages,
         sessionId: id,
       });
+
+      // M3-U2 (post-acceptance) — pin capture is a separate
+      // fire-and-forget that ONLY patches pinnedTabId / pinnedOrigin
+      // (never `messages`). Critical: the chat-done handler also calls
+      // persistMessages(next-with-assistant). If the pin patch wrote
+      // `messages: updated` (the [user]-only snapshot) it could
+      // overwrite chat-done's [user, assistant] write under microtask
+      // ordering. Patching pin separately keeps the message persistence
+      // path untouched.
+      //
+      // First-task ordering note: SW's handleChatStream may read meta
+      // BEFORE the pin patch lands → ctx.pinned is undefined → the
+      // loop falls back to chrome.tabs.query active-tab. That fallback
+      // returns the same tab the user just sent from (no tab switch in
+      // the microsecond gap), so the first task pins to the right tab
+      // via fallback. Subsequent chat-starts read the patched pin via
+      // ctx directly.
+      if (isFirstMessage) {
+        void (async () => {
+          try {
+            const meta = await getSessionMeta(id);
+            if (!meta || meta.status === "archived") return;
+            if (meta.pinnedTabId !== undefined && meta.pinnedOrigin) return;
+            const pin = await captureActivePinned();
+            if (!pin) return;
+            // Re-read in case something else patched in the meantime.
+            const fresh = await getSessionMeta(id);
+            if (!fresh || fresh.status === "archived") return;
+            if (fresh.pinnedTabId !== undefined && fresh.pinnedOrigin) return;
+            await setSessionMeta({
+              ...fresh,
+              pinnedTabId: pin.pinnedTabId,
+              pinnedOrigin: pin.pinnedOrigin,
+              lastAccessedAt: Date.now(),
+            });
+            setPinnedOriginState(pin.pinnedOrigin);
+          } catch (e) {
+            console.warn("[useSession] pin patch on first send failed:", e);
+          }
+        })();
+      }
     },
     [streaming, persistMessages],
   );
@@ -829,17 +904,22 @@ export function useSession(): UseSession {
     // No-op if already on this session.
     if (sessionIdRef.current === id) return id;
 
-    // M3-U2 — legacy-session pin migration. Sessions created before
-    // M3-U2 (M1 / M2) have `pinnedTabId === undefined`; capture the
-    // user's current active tab and persist before activation so the
-    // SW agent loop can anchor to it. Done at activation (not at first
-    // chat-start) so the Chat view's PINNED indicator and the persisted
-    // pin agree from the moment the session becomes visible.
-    // Captured once per session — re-activation never overwrites an
-    // existing pin (the user's choice survives later tab switches).
+    // M3-U2 (post-acceptance) — legacy-session pin migration only fires
+    // for sessions that ALREADY have content (messages.length > 0). For
+    // empty sessions the pin will be captured at the first sendMessage
+    // (lock-on-send rule); pre-capturing here would steal that decision
+    // from the user's actual at-send tab focus.
+    //
+    // Legacy = M1/M2 sessions whose meta was written before pin support
+    // existed but which already accumulated messages. Backfilling at
+    // activation lets resume / next-send anchor cleanly.
     let metaForActivate = meta;
     let didMigrate = false;
-    if (meta.pinnedTabId === undefined || !meta.pinnedOrigin) {
+    const sessionHasContent = (meta.messages?.length ?? 0) > 0;
+    if (
+      sessionHasContent &&
+      (meta.pinnedTabId === undefined || !meta.pinnedOrigin)
+    ) {
       const pinned = await captureActivePinned();
       if (pinned) {
         const patched = {
@@ -877,6 +957,7 @@ export function useSession(): UseSession {
     // Load the session's messages into React state
     setSessionId(id);
     setStatus(metaForActivate.status);
+    setPinnedOriginState(metaForActivate.pinnedOrigin ?? null);
     setMessages(metaForActivate.messages ?? []);
     setError(null);
     setToast(null);
@@ -909,12 +990,12 @@ export function useSession(): UseSession {
     accumulatedRef.current = "";
     streamFinishedRef.current = true;
 
-    // M3-U2 — capture the user's current active tab + origin so the new
-    // session pins to "what the user was looking at when they hit New".
-    // Failing to capture is non-fatal: the loop falls back to active-tab
-    // anchoring on first chat-start (legacy path).
-    const pinned = await captureActivePinned();
-    const meta = await createSession(pinned ?? undefined);
+    // M3-U2 (post-acceptance) — new session starts WITHOUT a pin. The
+    // user can still tab-switch freely while the session is empty;
+    // PINNED is locked at the moment of first sendMessage instead. This
+    // matches the user-facing rule "empty session can change pin, non-
+    // empty session is locked".
+    const meta = await createSession();
     // M3-U1 — swap to the new session's port (the new session's id is
     // freshly minted, so the prior port belongs to a different session
     // and must be disconnected to release its SW-side resources).
@@ -925,6 +1006,7 @@ export function useSession(): UseSession {
     sessionIdRef.current = meta.id;
     setSessionId(meta.id);
     setStatus(meta.status);
+    setPinnedOriginState(null); // brand new session — no pin yet
     setMessages([]);
     setError(null);
     setToast(null);
@@ -938,6 +1020,7 @@ export function useSession(): UseSession {
     sessionId,
     ready,
     status,
+    pinnedOrigin,
     messages,
     streaming,
     streamingText,

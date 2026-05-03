@@ -466,8 +466,12 @@ describe("useSession — resolveConfirm", () => {
   });
 });
 
-describe("useSession — M3-U2 pinned tab capture", () => {
-  it("createAndActivate captures the current active tab + origin into the new session meta", async () => {
+describe("useSession — M3-U2 lock-on-send pin (post-acceptance rule)", () => {
+  it("createAndActivate does NOT pre-capture — new session starts with no pin", async () => {
+    // Post-acceptance rule: empty sessions can freely tab-switch; the pin
+    // is captured at the moment of first sendMessage. createAndActivate
+    // must NOT pre-capture, otherwise the user's at-create tab wins over
+    // their actual at-send tab.
     chromeMock.tabs.__activeTab = {
       id: 42,
       url: "https://docs.example.com/foo/bar?q=1",
@@ -486,18 +490,19 @@ describe("useSession — M3-U2 pinned tab capture", () => {
     expect(newId).not.toBeNull();
     const meta = await getSessionMeta(newId!);
     expect(meta).not.toBeNull();
-    expect(meta!.pinnedTabId).toBe(42);
-    expect(meta!.pinnedOrigin).toBe("https://docs.example.com");
+    expect(meta!.pinnedTabId).toBeUndefined();
+    expect(meta!.pinnedOrigin).toBeUndefined();
+    // Hook also exposes pinnedOrigin: null for the new empty session.
+    expect(result.current.pinnedOrigin).toBeNull();
   });
 
-  it("backfills missing pin when activating a legacy session", async () => {
-    // Seed a legacy session with no pinnedTabId / pinnedOrigin.
+  it("bootstrap does NOT backfill an empty legacy session — the pin is captured at first send instead", async () => {
+    // Empty legacy session (no messages, no pin) — under the lock-on-send
+    // rule, bootstrap leaves it alone. The user can tab-switch freely
+    // (PINNED follows live), and the next sendMessage captures.
     const legacy = await createSession({ now: 1000 });
     expect(legacy.pinnedTabId).toBeUndefined();
-    expect(legacy.pinnedOrigin).toBeUndefined();
 
-    // Bootstrap mounts on this session; set up the active tab so the
-    // bootstrap-time backfill will fire.
     chromeMock.tabs.__activeTab = {
       id: 99,
       url: "https://app.example.com/",
@@ -508,10 +513,131 @@ describe("useSession — M3-U2 pinned tab capture", () => {
     const { result } = renderHook(() => useSession());
     await waitFor(() => expect(result.current.ready).toBe(true));
 
-    // After bootstrap, the legacy session should have been migrated.
+    const after = await getSessionMeta(legacy.id);
+    expect(after?.pinnedTabId).toBeUndefined();
+    expect(after?.pinnedOrigin).toBeUndefined();
+  });
+
+  it("bootstrap DOES backfill a legacy session that already has content (M1/M2 migration)", async () => {
+    // Legacy = M1/M2 session whose meta predates pin support BUT which
+    // already accumulated messages. We backfill so resume / next-send
+    // can anchor cleanly without surprising the user with a tab capture
+    // that doesn't match the visible content.
+    const legacy = await createSession({ now: 1000 });
+    await setSessionMeta({
+      ...(await getSessionMeta(legacy.id))!,
+      messages: [{ role: "user", content: "previously typed" }],
+    });
+
+    chromeMock.tabs.__activeTab = {
+      id: 99,
+      url: "https://app.example.com/",
+      active: true,
+      windowId: 1,
+    };
+
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
     const after = await getSessionMeta(legacy.id);
     expect(after?.pinnedTabId).toBe(99);
     expect(after?.pinnedOrigin).toBe("https://app.example.com");
+  });
+
+  it("first sendMessage on an empty session captures + persists the pin", async () => {
+    chromeMock.tabs.__activeTab = {
+      id: 55,
+      url: "https://send-time.example.com/",
+      active: true,
+      windowId: 1,
+    };
+
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    const id = result.current.sessionId!;
+
+    // Pre-send: no pin
+    let meta = await getSessionMeta(id);
+    expect(meta?.pinnedTabId).toBeUndefined();
+
+    act(() => {
+      result.current.sendMessage({ content: "hello" });
+    });
+
+    // sendMessage's pin capture is async (await captureActivePinned +
+    // await persistMessages before chat-start). Wait for the pin to land.
+    await waitFor(async () => {
+      meta = await getSessionMeta(id);
+      expect(meta?.pinnedTabId).toBe(55);
+    });
+    expect(meta?.pinnedOrigin).toBe("https://send-time.example.com");
+  });
+
+  it("second sendMessage does NOT re-capture or overwrite the pin", async () => {
+    chromeMock.tabs.__activeTab = {
+      id: 55,
+      url: "https://first.example.com/",
+      active: true,
+      windowId: 1,
+    };
+
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    const id = result.current.sessionId!;
+
+    act(() => {
+      result.current.sendMessage({ content: "first" });
+    });
+    await waitFor(async () => {
+      const m = await getSessionMeta(id);
+      expect(m?.pinnedTabId).toBe(55);
+    });
+
+    // Simulate the SW completing the stream so the panel can send again.
+    const port = chromeMock.runtime.__ports.at(-1)!;
+    act(() => {
+      emitWithSession(port, { type: "chat-done" }, id);
+    });
+    await waitFor(() => expect(result.current.streaming).toBe(false));
+
+    // User switched tabs between turns.
+    chromeMock.tabs.__activeTab = {
+      id: 88,
+      url: "https://second.example.com/",
+      active: true,
+      windowId: 1,
+    };
+
+    act(() => {
+      result.current.sendMessage({ content: "second" });
+    });
+    // Wait for second send to settle.
+    await waitFor(() => expect(result.current.streaming).toBe(true));
+
+    // Pin still locked to the first-send capture (55 / first.example.com).
+    const meta = await getSessionMeta(id);
+    expect(meta?.pinnedTabId).toBe(55);
+    expect(meta?.pinnedOrigin).toBe("https://first.example.com");
+  });
+
+  it("does NOT overwrite an existing pin on subsequent activations", async () => {
+    const session = await createSession({
+      pinnedTabId: 7,
+      pinnedOrigin: "https://original.example.com",
+      now: 1000,
+    });
+    chromeMock.tabs.__activeTab = {
+      id: 88,
+      url: "https://other.example.com/",
+      active: true,
+      windowId: 1,
+    };
+
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    const after = await getSessionMeta(session.id);
+    expect(after?.pinnedTabId).toBe(7);
+    expect(after?.pinnedOrigin).toBe("https://original.example.com");
   });
 
   it("does NOT overwrite an existing pin on subsequent activations", async () => {
@@ -598,18 +724,21 @@ describe("useSession — M3-U2 pinned tab capture", () => {
     expect(meta?.pinnedOrigin).toBeUndefined();
   });
 
-  it("setActive backfills missing pin on activation (review fix testing-gap)", async () => {
-    // The earlier test 'backfills missing pin when activating a legacy
-    // session' actually only exercised bootstrap. This one exercises
-    // setActive's migration branch by bootstrapping onto session A
-    // (with pin), then switching to session B (no pin) while the
-    // active tab differs.
+  it("setActive backfills missing pin ONLY for legacy sessions that already have content", async () => {
+    // Lock-on-send rule: empty session B should NOT be backfilled by
+    // setActive — pin will be captured at first sendMessage instead.
+    // Legacy session B WITH content SHOULD be backfilled (M1/M2 migration).
     const sessionA = await createSession({
       pinnedTabId: 1,
       pinnedOrigin: "https://a.example.com",
-      now: 2000,
+      now: 3000,
     });
-    const sessionB = await createSession({ now: 1000 }); // no pin
+    const sessionB_empty = await createSession({ now: 2000 });
+    const sessionB_legacy = await createSession({ now: 1000 });
+    await setSessionMeta({
+      ...(await getSessionMeta(sessionB_legacy.id))!,
+      messages: [{ role: "user", content: "old conversation" }],
+    });
 
     chromeMock.tabs.__activeTab = {
       id: 77,
@@ -622,13 +751,21 @@ describe("useSession — M3-U2 pinned tab capture", () => {
     await waitFor(() => expect(result.current.ready).toBe(true));
     expect(result.current.sessionId).toBe(sessionA.id); // most-recent
 
+    // Switch to empty session B → no backfill.
     await act(async () => {
-      await result.current.setActive(sessionB.id);
+      await result.current.setActive(sessionB_empty.id);
     });
+    const afterEmpty = await getSessionMeta(sessionB_empty.id);
+    expect(afterEmpty?.pinnedTabId).toBeUndefined();
+    expect(afterEmpty?.pinnedOrigin).toBeUndefined();
 
-    const after = await getSessionMeta(sessionB.id);
-    expect(after?.pinnedTabId).toBe(77);
-    expect(after?.pinnedOrigin).toBe("https://b.example.com");
+    // Switch to legacy-with-content session → backfill fires.
+    await act(async () => {
+      await result.current.setActive(sessionB_legacy.id);
+    });
+    const afterLegacy = await getSessionMeta(sessionB_legacy.id);
+    expect(afterLegacy?.pinnedTabId).toBe(77);
+    expect(afterLegacy?.pinnedOrigin).toBe("https://b.example.com");
   });
 
   it("setActive does NOT overwrite an existing pin on activation", async () => {
