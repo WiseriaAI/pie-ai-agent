@@ -38,7 +38,7 @@ function assistant(content = "assistant message"): AgentMessage {
 
 /** The sentinel value the function inserts — this is the EXACT literal. */
 const SENTINEL =
-  "<untrusted_prior_task_summary>[continuing previous conversation]</untrusted_prior_task_summary>";
+  "<untrusted_continuity_marker>[continuing previous conversation]</untrusted_continuity_marker>";
 
 // ── Scenario 1 — Happy path ───────────────────────────────────────────────────
 describe("Scenario 1: happy path — no violations", () => {
@@ -162,8 +162,18 @@ describe("Scenario 7: sentinel content contains untrusted wrapper tag literal", 
     // Must be the exact literal — NOT double-escaped through escapeUntrustedWrappers.
     expect(sentinel.content).toBe(SENTINEL);
     // Verify the wrapper tags are present as raw (not html-entity form).
-    expect(sentinel.content).toContain("<untrusted_prior_task_summary>");
-    expect(sentinel.content).toContain("</untrusted_prior_task_summary>");
+    expect(sentinel.content).toContain("<untrusted_continuity_marker>");
+    expect(sentinel.content).toContain("</untrusted_continuity_marker>");
+  });
+
+  it("sentinel uses untrusted_continuity_marker tag, NOT untrusted_prior_task_summary", () => {
+    const input: AgentMessage[] = [sys(), user("a"), user("b")];
+    const { repaired } = validateAndRepairAdjacentRoles(input);
+    const sentinel = repaired[2] as { role: string; content: string };
+    // A1 fix: sentinel stub must use a DISTINCT tag from real prior-task synth,
+    // so LLM can tell them apart semantically.
+    expect(sentinel.content).toContain("untrusted_continuity_marker");
+    expect(sentinel.content).not.toContain("untrusted_prior_task_summary");
   });
 });
 
