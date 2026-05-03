@@ -10,6 +10,50 @@ import { getActiveProvider, getProviderConfig } from "@/lib/storage";
 import type { UseSession } from "@/sidepanel/hooks/useSession";
 import AgentStepGroup, { type AgentStepData } from "./AgentStepGroup";
 import AgentConfirmCard from "./AgentConfirmCard";
+import type { DisplayMessage } from "@/types";
+
+// Display segment for the chat scrollback. Consecutive agent-step messages
+// collapse into a single "steps" segment so the panel renders one
+// AgentStepGroup instead of N stacked cards.
+type RenderSegment =
+  | { kind: "msg"; firstIndex: number; msg: DisplayMessage }
+  | {
+      kind: "steps";
+      firstIndex: number;
+      doneSteps: AgentStepData[];
+      currentStep: AgentStepData;
+    };
+
+function buildSegments(messages: readonly DisplayMessage[]): RenderSegment[] {
+  const out: RenderSegment[] = [];
+  let i = 0;
+  while (i < messages.length) {
+    const m = messages[i]!;
+    if (m.role !== "agent-step") {
+      out.push({ kind: "msg", firstIndex: i, msg: m });
+      i++;
+      continue;
+    }
+    const start = i;
+    const steps: AgentStepData[] = [];
+    while (i < messages.length && messages[i]!.role === "agent-step") {
+      const s = messages[i]! as Extract<DisplayMessage, { role: "agent-step" }>;
+      steps.push({
+        stepIndex: s.stepIndex,
+        tool: s.tool,
+        args: s.args,
+        resolvedElement: s.resolvedElement,
+        status: s.status,
+        observation: s.observation,
+      });
+      i++;
+    }
+    const currentStep = steps[steps.length - 1]!;
+    const doneSteps = steps.slice(0, -1);
+    out.push({ kind: "steps", firstIndex: start, doneSteps, currentStep });
+  }
+  return out;
+}
 import AgentSummary from "./AgentSummary";
 import SessionConfirmCard from "./SessionConfirmCard";
 import MarkdownContent from "./Markdown";
@@ -248,6 +292,11 @@ export default function Chat({
     return { query, results: filterAndSortSkillsForSlash(query, enabledSkills) };
   }, [input, enabledSkills]);
 
+  // Group consecutive agent-step messages into one AgentStepGroup. Declared
+  // here, ABOVE all early returns, so hooks order stays stable across renders
+  // (React error #310 happened when this was below `if (hasConfig === null)`).
+  const segments = useMemo(() => buildSegments(messages), [messages]);
+
   const popoverOpen = slashState !== null && input !== dismissedInput;
 
   useEffect(() => {
@@ -366,43 +415,6 @@ export default function Chat({
   }
 
   const stepCount = messages.filter((m) => m.role === "agent-step").length;
-
-  // Group consecutive agent-step messages into a single AgentStepGroup so the
-  // user sees an in-place "正在调用 X..." line + a foldable history of done
-  // steps, rather than one large card per step. Other roles render as before.
-  type RenderSegment =
-    | { kind: "msg"; firstIndex: number; msg: typeof messages[number] }
-    | { kind: "steps"; firstIndex: number; doneSteps: AgentStepData[]; currentStep: AgentStepData };
-  const segments = useMemo<RenderSegment[]>(() => {
-    const out: RenderSegment[] = [];
-    let i = 0;
-    while (i < messages.length) {
-      const m = messages[i]!;
-      if (m.role !== "agent-step") {
-        out.push({ kind: "msg", firstIndex: i, msg: m });
-        i++;
-        continue;
-      }
-      const start = i;
-      const steps: AgentStepData[] = [];
-      while (i < messages.length && messages[i]!.role === "agent-step") {
-        const s = messages[i]! as Extract<typeof messages[number], { role: "agent-step" }>;
-        steps.push({
-          stepIndex: s.stepIndex,
-          tool: s.tool,
-          args: s.args,
-          resolvedElement: s.resolvedElement,
-          status: s.status,
-          observation: s.observation,
-        });
-        i++;
-      }
-      const currentStep = steps[steps.length - 1]!;
-      const doneSteps = steps.slice(0, -1);
-      out.push({ kind: "steps", firstIndex: start, doneSteps, currentStep });
-    }
-    return out;
-  }, [messages]);
 
   return (
     <div className="flex h-full flex-col">
