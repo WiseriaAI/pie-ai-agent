@@ -4,8 +4,8 @@
  * soft-delete per active row, and real storage usage from getBytesInUse(null).
  *
  * Design spec:
- * - 296px wide, full height, left-anchored, bg #0E1216, border-right hairline
- * - Backdrop (rgba(8,13,16,0.72)) covers the remaining area; click closes drawer
+ * - 296px wide, full height, left-anchored, bg var(--c-surface-deep), border-right hairline
+ * - Backdrop (var(--c-overlay-strong)) covers the remaining area; click closes drawer
  * - ESC keydown closes drawer
  * - Focus trap: Tab/Shift+Tab cycle within the drawer
  * - role=dialog aria-modal=true aria-label="Sessions"
@@ -47,6 +47,27 @@ interface SessionDrawerProps {
 // Highlight the storage bar when above 7.5 MB.
 const STORAGE_BUDGET_BYTES = 8 * 1024 * 1024;
 const STORAGE_WARN_BYTES = 7.5 * 1024 * 1024;
+
+// ── Delayed-unmount helper ────────────────────────────────────────────────────
+// Keeps the drawer DOM present long enough for the closing transition to run,
+// then removes it. Mirrors what AnimatePresence does in motion libraries, but
+// without pulling in 20kB. Delay must match the longest transition below
+// (240ms panel slide).
+function useDelayedUnmount(isOpen: boolean, delay: number) {
+  const [render, setRender] = useState(isOpen);
+  useEffect(() => {
+    if (isOpen) {
+      setRender(true);
+      return;
+    }
+    const t = setTimeout(() => setRender(false), delay);
+    return () => clearTimeout(t);
+  }, [isOpen, delay]);
+  return render;
+}
+
+const DRAWER_TRANSITION_MS = 240;
+const DRAWER_EASING = "cubic-bezier(0.32, 0.72, 0, 1)";
 
 // ── Focus trap helper ─────────────────────────────────────────────────────────
 
@@ -98,7 +119,7 @@ function StorageIndicator() {
       style={{
         marginTop: "auto",
         padding: "14px 16px",
-        borderTop: "1px solid #22272F",
+        borderTop: "1px solid var(--c-line)",
       }}
     >
       <div style={{ display: "flex", alignItems: "center", marginBottom: 6 }}>
@@ -109,7 +130,7 @@ function StorageIndicator() {
             fontFamily: "'JetBrains Mono', monospace",
             fontSize: 10,
             fontWeight: 500,
-            color: isWarning ? "#C25F5F" : "#525965",
+            color: isWarning ? "var(--c-warning)" : "var(--c-fg-3)",
             letterSpacing: "0.12em",
             textTransform: "uppercase",
           }}
@@ -121,7 +142,7 @@ function StorageIndicator() {
             fontFamily: "'JetBrains Mono', monospace",
             fontSize: 10,
             fontWeight: 500,
-            color: isWarning ? "#C25F5F" : "#8A929E",
+            color: isWarning ? "var(--c-warning)" : "var(--c-fg-2)",
           }}
         >
           {usedMB.toFixed(1)} / {budgetMB.toFixed(1)} MB
@@ -135,7 +156,7 @@ function StorageIndicator() {
         aria-label={`${Math.round(percent)}% storage used`}
         style={{
           height: 2,
-          background: "#22272F",
+          background: "var(--c-line)",
           borderRadius: 1,
           overflow: "hidden",
         }}
@@ -144,7 +165,7 @@ function StorageIndicator() {
           style={{
             height: "100%",
             width: `${percent}%`,
-            background: isWarning ? "#C25F5F" : "#B8C8D6",
+            background: isWarning ? "var(--c-warning)" : "var(--c-accent)",
             borderRadius: 1,
             transition: "width 0.3s ease",
           }}
@@ -194,7 +215,7 @@ function ArchivedRow({ session, onUnarchive, onDeleteForever }: ArchivedRowProps
         }}
       >
         <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-          <circle cx="9" cy="9" r="5.5" stroke="#525965" strokeWidth="1" strokeDasharray="3 2" />
+          <circle cx="9" cy="9" r="5.5" stroke="var(--c-fg-3)" strokeWidth="1" strokeDasharray="3 2" />
         </svg>
       </span>
 
@@ -205,7 +226,7 @@ function ArchivedRow({ session, onUnarchive, onDeleteForever }: ArchivedRowProps
             fontFamily: "Inter, sans-serif",
             fontSize: 13,
             fontWeight: 500,
-            color: "#525965",
+            color: "var(--c-fg-3)",
             whiteSpace: "nowrap",
             overflow: "hidden",
             textOverflow: "ellipsis",
@@ -219,7 +240,7 @@ function ArchivedRow({ session, onUnarchive, onDeleteForever }: ArchivedRowProps
             fontSize: 10,
             fontWeight: 400,
             letterSpacing: "0.08em",
-            color: "#3A4049",
+            color: "var(--c-fg-4)",
             whiteSpace: "nowrap",
           }}
         >
@@ -237,9 +258,9 @@ function ArchivedRow({ session, onUnarchive, onDeleteForever }: ArchivedRowProps
             fontFamily: "Inter, sans-serif",
             fontSize: 10,
             fontWeight: 500,
-            color: "#8A929E",
+            color: "var(--c-fg-2)",
             background: "none",
-            border: "1px solid #22272F",
+            border: "1px solid var(--c-line)",
             borderRadius: 4,
             cursor: "pointer",
             padding: "2px 6px",
@@ -255,9 +276,9 @@ function ArchivedRow({ session, onUnarchive, onDeleteForever }: ArchivedRowProps
             fontFamily: "Inter, sans-serif",
             fontSize: 10,
             fontWeight: 500,
-            color: "#8A3A3A",
+            color: "var(--c-danger-fg)",
             background: "none",
-            border: "1px solid #3A2222",
+            border: "1px solid var(--c-danger-line)",
             borderRadius: 4,
             cursor: "pointer",
             padding: "2px 6px",
@@ -344,7 +365,11 @@ export default function SessionDrawer({
     };
   }, [isOpen, onClose]);
 
-  if (!isOpen) return null;
+  // M5: stay mounted long enough for the close transition to finish before
+  // removing the DOM. focus-trap effect above already guards on isOpen so
+  // listeners aren't attached while the drawer is animating out.
+  const shouldRender = useDelayedUnmount(isOpen, DRAWER_TRANSITION_MS);
+  if (!shouldRender) return null;
 
   // Sessions split by status — archived goes to the "show archived" section
   const activeSessions = sessions.filter((s) => s.status !== "archived");
@@ -371,36 +396,44 @@ export default function SessionDrawer({
 
   return (
     <>
-      {/* Backdrop */}
+      {/* Backdrop — fades in/out; pointer-events disabled while closing so
+           clicks fall through immediately even if the panel hasn't unmounted. */}
       <div
         data-testid="drawer-backdrop"
+        data-state={isOpen ? "open" : "closed"}
         onClick={onClose}
         style={{
           position: "fixed",
           inset: 0,
-          background: "rgba(8,13,16,0.72)",
+          background: "var(--c-overlay-strong)",
           zIndex: 40,
+          opacity: isOpen ? 1 : 0,
+          pointerEvents: isOpen ? "auto" : "none",
+          transition: `opacity 200ms ${DRAWER_EASING}`,
         }}
       />
 
-      {/* Drawer panel */}
+      {/* Drawer panel — slides in from the left edge */}
       <div
         ref={drawerRef}
         role="dialog"
         aria-modal="true"
         aria-label="Sessions"
+        data-state={isOpen ? "open" : "closed"}
         style={{
           position: "fixed",
           top: 0,
           left: 0,
           width: 296,
           height: "100%",
-          background: "#0E1216",
-          borderRight: "1px solid #22272F",
+          background: "var(--c-surface-deep)",
+          borderRight: "1px solid var(--c-line)",
           zIndex: 50,
           display: "flex",
           flexDirection: "column",
           overflow: "hidden",
+          transform: isOpen ? "translateX(0)" : "translateX(-100%)",
+          transition: `transform ${DRAWER_TRANSITION_MS}ms ${DRAWER_EASING}`,
         }}
       >
         {/* Header */}
@@ -425,10 +458,10 @@ export default function SessionDrawer({
               cx="9"
               cy="9"
               r="8.5"
-              stroke="#B8C8D6"
+              stroke="var(--c-accent)"
               strokeWidth="1"
             />
-            <circle cx="9" cy="9" r="2" fill="#B8C8D6" />
+            <circle cx="9" cy="9" r="2" fill="var(--c-accent)" />
           </svg>
 
           {/* Title */}
@@ -438,7 +471,7 @@ export default function SessionDrawer({
               fontFamily: "Inter, sans-serif",
               fontSize: 14,
               fontWeight: 600,
-              color: "#E5E8EC",
+              color: "var(--c-fg-1)",
             }}
           >
             Sessions
@@ -451,7 +484,7 @@ export default function SessionDrawer({
               fontFamily: "'JetBrains Mono', monospace",
               fontSize: 10,
               fontWeight: 500,
-              color: "#525965",
+              color: "var(--c-fg-3)",
               letterSpacing: "0.16em",
             }}
           >
@@ -466,7 +499,7 @@ export default function SessionDrawer({
             fontFamily: "'JetBrains Mono', monospace",
             fontSize: 10,
             fontWeight: 500,
-            color: "#525965",
+            color: "var(--c-fg-3)",
             letterSpacing: "0.16em",
             textTransform: "uppercase",
           }}
@@ -506,7 +539,7 @@ export default function SessionDrawer({
             gap: 6,
             background: "none",
             border: "none",
-            borderTop: "1px solid #22272F",
+            borderTop: "1px solid var(--c-line)",
             cursor: "pointer",
             width: "100%",
             textAlign: "left",
@@ -518,7 +551,7 @@ export default function SessionDrawer({
               fontFamily: "'JetBrains Mono', monospace",
               fontSize: 10,
               fontWeight: 500,
-              color: archivedCount > 0 ? "#8A929E" : "#525965",
+              color: archivedCount > 0 ? "var(--c-fg-2)" : "var(--c-fg-3)",
               letterSpacing: "0.16em",
               textTransform: "uppercase",
             }}
@@ -539,7 +572,7 @@ export default function SessionDrawer({
           >
             <path
               d="M1.5 3 L4.5 6 L7.5 3"
-              stroke="#525965"
+              stroke="var(--c-fg-3)"
               strokeWidth="1.2"
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -551,7 +584,7 @@ export default function SessionDrawer({
         {showArchived && (
           <div
             id="archived-session-list"
-            style={{ maxHeight: 200, overflowY: "auto", borderBottom: "1px solid #22272F" }}
+            style={{ maxHeight: 200, overflowY: "auto", borderBottom: "1px solid var(--c-line)" }}
           >
             <ul
               role="list"
@@ -564,7 +597,7 @@ export default function SessionDrawer({
                     padding: "12px 16px",
                     fontFamily: "Inter, sans-serif",
                     fontSize: 12,
-                    color: "#3A4049",
+                    color: "var(--c-fg-4)",
                   }}
                 >
                   No archived sessions
@@ -641,9 +674,9 @@ function SessionRowWithDelete({
             fontFamily: "Inter, sans-serif",
             fontSize: 10,
             fontWeight: 500,
-            color: "#525965",
-            background: "#0E1216",
-            border: "1px solid #22272F",
+            color: "var(--c-fg-3)",
+            background: "var(--c-surface-deep)",
+            border: "1px solid var(--c-line)",
             borderRadius: 4,
             cursor: "pointer",
             padding: "2px 6px",

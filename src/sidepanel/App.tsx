@@ -4,6 +4,8 @@ import Settings from "@/sidepanel/components/Settings";
 import SessionDrawer from "@/sidepanel/components/SessionDrawer";
 import TopBarListButton from "@/sidepanel/components/TopBarListButton";
 import TopBarNewSessionButton from "@/sidepanel/components/TopBarNewSessionButton";
+import TopBarSettingsButton from "@/sidepanel/components/TopBarSettingsButton";
+import TopBarThemeButton, { type ThemeMode } from "@/sidepanel/components/TopBarThemeButton";
 import { getActiveProvider, getProviderConfig } from "@/lib/storage";
 import { getProviderMeta } from "@/lib/model-router";
 import { normalizeSkillSlashKey } from "@/lib/skills";
@@ -34,6 +36,26 @@ export default function App() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [sessions, setSessions] = useState<SessionIndexEntry[]>([]);
   const [pendingCount, setPendingCount] = useState(0);
+  // M1: theme mode owned at App level so the button reflects state and we
+  // can persist to localStorage. M2 will wire data-theme to actually switch.
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
+    const stored = localStorage.getItem("theme-mode");
+    return stored === "light" || stored === "dark" || stored === "system" ? stored : "system";
+  });
+
+  // M2: Apply theme-mode to document root, persist, and mirror to
+  // chrome.storage.local for cross-window sync.
+  // - 'light' / 'dark' → set dataset.theme so the [data-theme] CSS overrides win
+  // - 'system' → delete dataset.theme, falling back to prefers-color-scheme
+  useEffect(() => {
+    if (themeMode === "light" || themeMode === "dark") {
+      document.documentElement.dataset.theme = themeMode;
+    } else {
+      delete document.documentElement.dataset.theme;
+    }
+    localStorage.setItem("theme-mode", themeMode);
+    void chrome.storage.local.set({ "theme-mode": themeMode });
+  }, [themeMode]);
 
   const session = useSession();
 
@@ -94,6 +116,15 @@ export default function App() {
       if (hasSessionChange) {
         void refreshSessionIndex();
         void refreshPendingCount();
+      }
+      // M2: cross-window theme sync. Guard against feedback loop by only
+      // updating state when the new value differs from current (the writer
+      // window's setState already handled its own update).
+      if (changes["theme-mode"]) {
+        const next = changes["theme-mode"].newValue;
+        if (next === "light" || next === "dark" || next === "system") {
+          setThemeMode((prev) => (prev === next ? prev : next));
+        }
       }
     };
     chrome.storage.local.onChanged.addListener(listener);
@@ -191,9 +222,9 @@ export default function App() {
           alignItems: "center",
           gap: 6,
           padding: "8px 10px",
-          borderBottom: "1px solid #22272F",
+          borderBottom: "1px solid var(--c-line)",
           flexShrink: 0,
-          background: "#080D10",
+          background: "var(--c-canvas)",
           zIndex: 10,
         }}
       >
@@ -213,9 +244,9 @@ export default function App() {
             fontFamily: "Inter, sans-serif",
             fontSize: 13,
             fontWeight: 500,
-            color: "#E5E8EC",
+            color: "var(--c-fg-1)",
             flex: 1,
-            maxWidth: 200,
+            minWidth: 0,
             whiteSpace: "nowrap",
             overflow: "hidden",
             textOverflow: "ellipsis",
@@ -226,40 +257,24 @@ export default function App() {
           {sessionTitle}
         </span>
 
-        {/* Settings / theme toggle */}
-        <button
-          type="button"
+        {/* Theme toggle (light / dark / system cycle) */}
+        <TopBarThemeButton mode={themeMode} onModeChange={setThemeMode} />
+
+        {/* Settings */}
+        <TopBarSettingsButton
+          isActive={view === "settings"}
           onClick={() => setView(view === "settings" ? "agent" : "settings")}
-          aria-label={view === "settings" ? "Close settings" : "Open settings"}
-          style={{
-            width: 24,
-            height: 24,
-            borderRadius: 6,
-            border: `1px solid ${view === "settings" ? "#B8C8D6" : "#22272F"}`,
-            background: "#14171C",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            cursor: "pointer",
-            padding: 0,
-            flexShrink: 0,
-          }}
-        >
-          {/* Settings gear icon */}
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-            <circle cx="6" cy="6" r="2" stroke="#B8C8D6" strokeWidth="1.2" />
-            <path
-              d="M6 1v1M6 10v1M1 6h1M10 6h1M2.2 2.2l.7.7M9.1 9.1l.7.7M9.8 2.2l-.7.7M2.9 9.1l-.7.7"
-              stroke="#B8C8D6"
-              strokeWidth="1.2"
-              strokeLinecap="round"
-            />
-          </svg>
-        </button>
+        />
       </div>
 
       {/* ── Main content area ─────────────────────────────────────────────── */}
-      <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+      {/* key={view} forces remount on switch so .view-enter keyframe replays.
+          The wrapper inherits flex layout from the outer container. */}
+      <div
+        key={view}
+        className="view-enter"
+        style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}
+      >
         {view === "agent" ? (
           <Chat
             providerLabel={providerLabel}

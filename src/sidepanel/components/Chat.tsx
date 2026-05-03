@@ -429,60 +429,71 @@ export default function Chat({
             )}
 
             {messages.map((msg, i) => {
+              // M5 motion: bubble-in for content rows, scale-in for confirm
+              // cards (focus-pull on actionable surfaces). Wrappers carry the
+              // animation class so message components stay layout-agnostic.
               if (msg.role === "user" || msg.role === "assistant") {
-                return <MessageBubble key={i} message={msg} />;
+                return (
+                  <div key={i} className="bubble-in">
+                    <MessageBubble message={msg} />
+                  </div>
+                );
               }
               if (msg.role === "agent-step") {
                 return (
-                  <AgentStepBubble
-                    key={i}
-                    stepIndex={msg.stepIndex}
-                    tool={msg.tool}
-                    args={msg.args}
-                    resolvedElement={msg.resolvedElement}
-                    status={msg.status}
-                    observation={msg.observation}
-                  />
+                  <div key={i} className="bubble-in">
+                    <AgentStepBubble
+                      stepIndex={msg.stepIndex}
+                      tool={msg.tool}
+                      args={msg.args}
+                      resolvedElement={msg.resolvedElement}
+                      status={msg.status}
+                      observation={msg.observation}
+                    />
+                  </div>
                 );
               }
               if (msg.role === "agent-confirm") {
                 return (
-                  <AgentConfirmCard
-                    key={i}
-                    tool={msg.tool}
-                    args={msg.args}
-                    resolvedElement={msg.resolvedElement}
-                    riskReason={msg.riskReason}
-                    resolved={msg.resolved}
-                    metaSkillPreview={msg.metaSkillPreview}
-                    onApprove={() =>
-                      resolveConfirm(msg.confirmationId, true)
-                    }
-                    onReject={() =>
-                      resolveConfirm(msg.confirmationId, false)
-                    }
-                  />
+                  <div key={i} className="scale-in">
+                    <AgentConfirmCard
+                      tool={msg.tool}
+                      args={msg.args}
+                      resolvedElement={msg.resolvedElement}
+                      riskReason={msg.riskReason}
+                      resolved={msg.resolved}
+                      metaSkillPreview={msg.metaSkillPreview}
+                      onApprove={() =>
+                        resolveConfirm(msg.confirmationId, true)
+                      }
+                      onReject={() =>
+                        resolveConfirm(msg.confirmationId, false)
+                      }
+                    />
+                  </div>
                 );
               }
               if (msg.role === "agent-summary") {
                 return (
-                  <AgentSummary
-                    key={i}
-                    success={msg.success}
-                    summary={msg.summary}
-                    stepCount={msg.stepCount}
-                  />
+                  <div key={i} className="bubble-in">
+                    <AgentSummary
+                      success={msg.success}
+                      summary={msg.summary}
+                      stepCount={msg.stepCount}
+                    />
+                  </div>
                 );
               }
               if (msg.role === "session-confirm") {
                 return (
-                  <SessionConfirmCard
-                    key={i}
-                    kind={msg.kind}
-                    payload={msg.payload}
-                    resolved={msg.resolved}
-                    onDiscard={() => session.discardTask(msg.confirmationId)}
-                  />
+                  <div key={i} className="scale-in">
+                    <SessionConfirmCard
+                      kind={msg.kind}
+                      payload={msg.payload}
+                      resolved={msg.resolved}
+                      onDiscard={() => session.discardTask(msg.confirmationId)}
+                    />
+                  </div>
                 );
               }
               return null;

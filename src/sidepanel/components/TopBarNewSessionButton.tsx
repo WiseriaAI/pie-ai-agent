@@ -20,17 +20,18 @@ export default function TopBarNewSessionButton({
         width: 24,
         height: 24,
         borderRadius: 6,
-        border: "1px solid #22272F",
-        background: "#14171C",
+        border: "1px solid var(--c-line)",
+        background: "var(--c-surface)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         flexShrink: 0,
         cursor: "pointer",
         padding: 0,
+        transition: "border-color 150ms ease-out, background 150ms ease-out",
       }}
     >
-      {/* + icon — 10×10 ice silver cross */}
+      {/* + icon — 10×10 accent cross */}
       <svg
         width="10"
         height="10"
@@ -38,8 +39,8 @@ export default function TopBarNewSessionButton({
         fill="none"
         aria-hidden="true"
       >
-        <rect x="4.25" y="0" width="1.5" height="10" rx="0.75" fill="#B8C8D6" />
-        <rect x="0" y="4.25" width="10" height="1.5" rx="0.75" fill="#B8C8D6" />
+        <rect x="4.25" y="0" width="1.5" height="10" rx="0.75" fill="var(--c-accent)" />
+        <rect x="0" y="4.25" width="10" height="1.5" rx="0.75" fill="var(--c-accent)" />
       </svg>
     </button>
   );
