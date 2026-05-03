@@ -33,17 +33,18 @@ export default function TopBarListButton({
         width: 24,
         height: 24,
         borderRadius: 6,
-        border: `1px solid ${isOpen ? "#B8C8D6" : "#22272F"}`,
-        background: "#14171C",
+        border: `1px solid ${isOpen ? "var(--c-accent)" : "var(--c-line)"}`,
+        background: "var(--c-surface)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         flexShrink: 0,
         cursor: "pointer",
         padding: 0,
+        transition: "border-color 150ms ease-out, background 150ms ease-out",
       }}
     >
-      {/* ≡ icon — three horizontal lines, 11×9 ice silver */}
+      {/* ≡ icon — three horizontal lines, 11×9, accent color */}
       <svg
         width="11"
         height="9"
@@ -51,12 +52,14 @@ export default function TopBarListButton({
         fill="none"
         aria-hidden="true"
       >
-        <rect x="0" y="0" width="11" height="1.5" rx="0.75" fill="#B8C8D6" />
-        <rect x="0" y="3.75" width="11" height="1.5" rx="0.75" fill="#B8C8D6" />
-        <rect x="0" y="7.5" width="11" height="1.5" rx="0.75" fill="#B8C8D6" />
+        <rect x="0" y="0" width="11" height="1.5" rx="0.75" fill="var(--c-accent)" />
+        <rect x="0" y="3.75" width="11" height="1.5" rx="0.75" fill="var(--c-accent)" />
+        <rect x="0" y="7.5" width="11" height="1.5" rx="0.75" fill="var(--c-accent)" />
       </svg>
 
-      {/* Warning dot — only rendered when pendingCount > 0 */}
+      {/* Warning dot — only rendered when pendingCount > 0.
+          Island border matches the top-bar background so the dot reads as
+          floating above it (carved-out ring effect). */}
       {pendingCount > 0 && (
         <span
           aria-hidden="true"
@@ -67,8 +70,8 @@ export default function TopBarListButton({
             width: 7,
             height: 7,
             borderRadius: "50%",
-            background: "#C260BE",
-            border: "1.5px solid #080D10",
+            background: "var(--c-pending)",
+            border: "1.5px solid var(--c-canvas)",
             display: "block",
           }}
         />

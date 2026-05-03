@@ -8,8 +8,52 @@ import {
 } from "@/lib/skills";
 import { getActiveProvider, getProviderConfig } from "@/lib/storage";
 import type { UseSession } from "@/sidepanel/hooks/useSession";
-import AgentStepBubble from "./AgentStepBubble";
+import AgentStepGroup, { type AgentStepData } from "./AgentStepGroup";
 import AgentConfirmCard from "./AgentConfirmCard";
+import type { DisplayMessage } from "@/types";
+
+// Display segment for the chat scrollback. Consecutive agent-step messages
+// collapse into a single "steps" segment so the panel renders one
+// AgentStepGroup instead of N stacked cards.
+type RenderSegment =
+  | { kind: "msg"; firstIndex: number; msg: DisplayMessage }
+  | {
+      kind: "steps";
+      firstIndex: number;
+      doneSteps: AgentStepData[];
+      currentStep: AgentStepData;
+    };
+
+function buildSegments(messages: readonly DisplayMessage[]): RenderSegment[] {
+  const out: RenderSegment[] = [];
+  let i = 0;
+  while (i < messages.length) {
+    const m = messages[i]!;
+    if (m.role !== "agent-step") {
+      out.push({ kind: "msg", firstIndex: i, msg: m });
+      i++;
+      continue;
+    }
+    const start = i;
+    const steps: AgentStepData[] = [];
+    while (i < messages.length && messages[i]!.role === "agent-step") {
+      const s = messages[i]! as Extract<DisplayMessage, { role: "agent-step" }>;
+      steps.push({
+        stepIndex: s.stepIndex,
+        tool: s.tool,
+        args: s.args,
+        resolvedElement: s.resolvedElement,
+        status: s.status,
+        observation: s.observation,
+      });
+      i++;
+    }
+    const currentStep = steps[steps.length - 1]!;
+    const doneSteps = steps.slice(0, -1);
+    out.push({ kind: "steps", firstIndex: start, doneSteps, currentStep });
+  }
+  return out;
+}
 import AgentSummary from "./AgentSummary";
 import SessionConfirmCard from "./SessionConfirmCard";
 import MarkdownContent from "./Markdown";
@@ -248,6 +292,11 @@ export default function Chat({
     return { query, results: filterAndSortSkillsForSlash(query, enabledSkills) };
   }, [input, enabledSkills]);
 
+  // Group consecutive agent-step messages into one AgentStepGroup. Declared
+  // here, ABOVE all early returns, so hooks order stays stable across renders
+  // (React error #310 happened when this was below `if (hasConfig === null)`).
+  const segments = useMemo(() => buildSegments(messages), [messages]);
+
   const popoverOpen = slashState !== null && input !== dismissedInput;
 
   useEffect(() => {
@@ -428,61 +477,72 @@ export default function Chat({
               <PageChangedBanner onNewTask={handleNewTask} />
             )}
 
-            {messages.map((msg, i) => {
-              if (msg.role === "user" || msg.role === "assistant") {
-                return <MessageBubble key={i} message={msg} />;
-              }
-              if (msg.role === "agent-step") {
+            {segments.map((seg) => {
+              // M5 motion: bubble-in for content rows, scale-in for confirm
+              // cards (focus-pull on actionable surfaces). Wrappers carry the
+              // animation class so message components stay layout-agnostic.
+              // For agent-step groups, the wrapper plays bubble-in once on
+              // group mount; subsequent in-place updates of the active step
+              // don't replay because React reuses the same DOM nodes.
+              if (seg.kind === "steps") {
                 return (
-                  <AgentStepBubble
-                    key={i}
-                    stepIndex={msg.stepIndex}
-                    tool={msg.tool}
-                    args={msg.args}
-                    resolvedElement={msg.resolvedElement}
-                    status={msg.status}
-                    observation={msg.observation}
-                  />
+                  <div key={`steps-${seg.firstIndex}`} className="bubble-in">
+                    <AgentStepGroup
+                      doneSteps={seg.doneSteps}
+                      currentStep={seg.currentStep}
+                    />
+                  </div>
+                );
+              }
+              const { msg, firstIndex } = seg;
+              if (msg.role === "user" || msg.role === "assistant") {
+                return (
+                  <div key={firstIndex} className="bubble-in">
+                    <MessageBubble message={msg} />
+                  </div>
                 );
               }
               if (msg.role === "agent-confirm") {
                 return (
-                  <AgentConfirmCard
-                    key={i}
-                    tool={msg.tool}
-                    args={msg.args}
-                    resolvedElement={msg.resolvedElement}
-                    riskReason={msg.riskReason}
-                    resolved={msg.resolved}
-                    metaSkillPreview={msg.metaSkillPreview}
-                    onApprove={() =>
-                      resolveConfirm(msg.confirmationId, true)
-                    }
-                    onReject={() =>
-                      resolveConfirm(msg.confirmationId, false)
-                    }
-                  />
+                  <div key={firstIndex} className="scale-in">
+                    <AgentConfirmCard
+                      tool={msg.tool}
+                      args={msg.args}
+                      resolvedElement={msg.resolvedElement}
+                      riskReason={msg.riskReason}
+                      resolved={msg.resolved}
+                      metaSkillPreview={msg.metaSkillPreview}
+                      onApprove={() =>
+                        resolveConfirm(msg.confirmationId, true)
+                      }
+                      onReject={() =>
+                        resolveConfirm(msg.confirmationId, false)
+                      }
+                    />
+                  </div>
                 );
               }
               if (msg.role === "agent-summary") {
                 return (
-                  <AgentSummary
-                    key={i}
-                    success={msg.success}
-                    summary={msg.summary}
-                    stepCount={msg.stepCount}
-                  />
+                  <div key={firstIndex} className="bubble-in">
+                    <AgentSummary
+                      success={msg.success}
+                      summary={msg.summary}
+                      stepCount={msg.stepCount}
+                    />
+                  </div>
                 );
               }
               if (msg.role === "session-confirm") {
                 return (
-                  <SessionConfirmCard
-                    key={i}
-                    kind={msg.kind}
-                    payload={msg.payload}
-                    resolved={msg.resolved}
-                    onDiscard={() => session.discardTask(msg.confirmationId)}
-                  />
+                  <div key={firstIndex} className="scale-in">
+                    <SessionConfirmCard
+                      kind={msg.kind}
+                      payload={msg.payload}
+                      resolved={msg.resolved}
+                      onDiscard={() => session.discardTask(msg.confirmationId)}
+                    />
+                  </div>
                 );
               }
               return null;
@@ -494,9 +554,13 @@ export default function Chat({
               />
             )}
 
-            {streaming && !streamingText && messages.at(-1)?.role !== "agent-step" && (
-              <TypingIndicator />
-            )}
+            {/* Working indicator — visible while the agent loop is alive
+                and there's no partial assistant text already streaming.
+                Sits at the tail of the chat so the user has a single place
+                to look to confirm "still working" — covers the gaps between
+                tool calls (last step ok, next LLM round not yet started)
+                where active step spinners alone could feel like a hang. */}
+            {streaming && !streamingText && <WorkingIndicator />}
 
             {error && (
               <div className="rounded-lg border border-warning-line bg-warning-tint px-3 py-2 text-[12px] text-warning">
@@ -657,12 +721,19 @@ function MessageBubble({
   );
 }
 
-function TypingIndicator() {
+function WorkingIndicator() {
   return (
-    <div className="flex items-center gap-1.5 px-1">
-      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-fg-3 [animation-delay:0ms]" />
-      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-fg-3 [animation-delay:200ms]" />
-      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-fg-3 [animation-delay:400ms]" />
+    <div
+      role="status"
+      aria-live="polite"
+      aria-label="Agent is working"
+      className="flex items-center gap-2 px-1 py-0.5"
+    >
+      <span className="relative flex h-2 w-2 items-center justify-center">
+        <span className="absolute inset-0 animate-ping rounded-full bg-accent opacity-50" />
+        <span className="relative h-1.5 w-1.5 rounded-full bg-accent" />
+      </span>
+      <span className="caps text-fg-3">WORKING</span>
     </div>
   );
 }

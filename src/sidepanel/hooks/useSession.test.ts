@@ -58,24 +58,27 @@ describe("useSession — bootstrap", () => {
     });
   });
 
-  it("loads the most recently accessed session from a non-empty index", async () => {
-    const older = await createSession({ now: 1000 });
-    const newer = await createSession({ now: 2000 });
-    // Seed messages on the newer session so we can assert they reload.
+  it("always creates a fresh empty session, ignoring any existing index entries", async () => {
+    // User-requested rule: every panel mount starts in a fresh, empty
+    // session. Previous behavior reloaded list[0] which made every panel
+    // open feel like resuming the prior task; users prefer a clean slate
+    // and to reach prior work via the SessionDrawer.
+    const existing = await createSession({ now: 2000 });
     await setSessionMeta({
-      ...(await getSessionMeta(newer.id))!,
+      ...(await getSessionMeta(existing.id))!,
       messages: [{ role: "user", content: "previously typed" }],
     });
 
     const { result } = renderHook(() => useSession());
     await waitFor(() => expect(result.current.ready).toBe(true));
 
-    expect(result.current.sessionId).toBe(newer.id);
-    expect(result.current.messages).toEqual([
+    expect(result.current.sessionId).not.toBe(existing.id);
+    expect(result.current.messages).toEqual([]);
+    // The pre-existing session is still in storage (drawer can find it).
+    const stillThere = await getSessionMeta(existing.id);
+    expect(stillThere?.messages).toEqual([
       { role: "user", content: "previously typed" },
     ]);
-    // Older session not selected.
-    expect(result.current.sessionId).not.toBe(older.id);
   });
 
   it("disconnects the port on unmount", async () => {
@@ -518,11 +521,12 @@ describe("useSession — M3-U2 lock-on-send pin (post-acceptance rule)", () => {
     expect(after?.pinnedOrigin).toBeUndefined();
   });
 
-  it("bootstrap DOES backfill a legacy session that already has content (M1/M2 migration)", async () => {
+  it("setActive backfills a legacy session that already has content (M1/M2 migration)", async () => {
     // Legacy = M1/M2 session whose meta predates pin support BUT which
-    // already accumulated messages. We backfill so resume / next-send
-    // can anchor cleanly without surprising the user with a tab capture
-    // that doesn't match the visible content.
+    // already accumulated messages. We backfill so resume / next-send can
+    // anchor cleanly. Pre-fresh-bootstrap rule the migration fired during
+    // bootstrap; under the always-fresh-empty rule it fires the moment the
+    // user reaches the legacy session via setActive (drawer click).
     const legacy = await createSession({ now: 1000 });
     await setSessionMeta({
       ...(await getSessionMeta(legacy.id))!,
@@ -538,6 +542,12 @@ describe("useSession — M3-U2 lock-on-send pin (post-acceptance rule)", () => {
 
     const { result } = renderHook(() => useSession());
     await waitFor(() => expect(result.current.ready).toBe(true));
+    // Bootstrap created a fresh session — legacy is untouched at this point.
+    expect((await getSessionMeta(legacy.id))?.pinnedTabId).toBeUndefined();
+
+    await act(async () => {
+      await result.current.setActive(legacy.id);
+    });
 
     const after = await getSessionMeta(legacy.id);
     expect(after?.pinnedTabId).toBe(99);
@@ -620,12 +630,23 @@ describe("useSession — M3-U2 lock-on-send pin (post-acceptance rule)", () => {
     expect(meta?.pinnedOrigin).toBe("https://first.example.com");
   });
 
-  it("does NOT overwrite an existing pin on subsequent activations", async () => {
+  it("setActive does NOT overwrite an existing pin on subsequent activations", async () => {
+    // Pretend the user has since switched to a different tab —
+    // captureActivePinned would return id=88, but since the session
+    // already has a pin, setActive must leave it alone.
     const session = await createSession({
       pinnedTabId: 7,
       pinnedOrigin: "https://original.example.com",
       now: 1000,
     });
+    // Seed messages so the migration "session has content" guard is
+    // satisfied — without messages, setActive's backfill branch is skipped
+    // entirely (lock-on-send rule), and the test would pass trivially.
+    await setSessionMeta({
+      ...(await getSessionMeta(session.id))!,
+      messages: [{ role: "user", content: "first" }],
+    });
+
     chromeMock.tabs.__activeTab = {
       id: 88,
       url: "https://other.example.com/",
@@ -635,31 +656,9 @@ describe("useSession — M3-U2 lock-on-send pin (post-acceptance rule)", () => {
 
     const { result } = renderHook(() => useSession());
     await waitFor(() => expect(result.current.ready).toBe(true));
-    const after = await getSessionMeta(session.id);
-    expect(after?.pinnedTabId).toBe(7);
-    expect(after?.pinnedOrigin).toBe("https://original.example.com");
-  });
-
-  it("does NOT overwrite an existing pin on subsequent activations", async () => {
-    const session = await createSession({
-      pinnedTabId: 7,
-      pinnedOrigin: "https://original.example.com",
-      now: 1000,
+    await act(async () => {
+      await result.current.setActive(session.id);
     });
-    // Pretend the user has since switched to a different tab — captureActivePinned
-    // would return id=88, but since the session already has a pin, we expect
-    // setActive to leave it alone.
-    chromeMock.tabs.__activeTab = {
-      id: 88,
-      url: "https://other.example.com/",
-      active: true,
-      windowId: 1,
-    };
-
-    const { result } = renderHook(() => useSession());
-    await waitFor(() => expect(result.current.ready).toBe(true));
-    // Bootstrap selected sessionA (most-recent — also only). Test that
-    // the existing pin is preserved.
     const after = await getSessionMeta(session.id);
     expect(after?.pinnedTabId).toBe(7);
     expect(after?.pinnedOrigin).toBe("https://original.example.com");
@@ -749,7 +748,8 @@ describe("useSession — M3-U2 lock-on-send pin (post-acceptance rule)", () => {
 
     const { result } = renderHook(() => useSession());
     await waitFor(() => expect(result.current.ready).toBe(true));
-    expect(result.current.sessionId).toBe(sessionA.id); // most-recent
+    // Bootstrap created a fresh empty session — sessionA is reachable only
+    // via setActive now. (Old behavior: bootstrap selected most-recent.)
 
     // Switch to empty session B → no backfill.
     await act(async () => {
@@ -758,6 +758,7 @@ describe("useSession — M3-U2 lock-on-send pin (post-acceptance rule)", () => {
     const afterEmpty = await getSessionMeta(sessionB_empty.id);
     expect(afterEmpty?.pinnedTabId).toBeUndefined();
     expect(afterEmpty?.pinnedOrigin).toBeUndefined();
+    void sessionA; // referenced for setup parity; not asserted
 
     // Switch to legacy-with-content session → backfill fires.
     await act(async () => {
@@ -790,7 +791,7 @@ describe("useSession — M3-U2 lock-on-send pin (post-acceptance rule)", () => {
 
     const { result } = renderHook(() => useSession());
     await waitFor(() => expect(result.current.ready).toBe(true));
-    expect(result.current.sessionId).toBe(sessionA.id);
+    void sessionA; // bootstrap creates a fresh session, sessionA unused here
 
     await act(async () => {
       await result.current.setActive(sessionB.id);
@@ -807,17 +808,19 @@ describe("useSession — M3-U1 per-session port routing", () => {
     const sessionA = await createSession({ now: 1000 });
     const sessionB = await createSession({ now: 2000 });
     void sessionA;
+    void sessionB;
     const { result } = renderHook(() => useSession());
     await waitFor(() => expect(result.current.ready).toBe(true));
 
-    // Bootstrap selected the most-recent session (sessionB at now=2000).
-    expect(result.current.sessionId).toBe(sessionB.id);
+    // Bootstrap created a fresh session — its port is the most-recent connect.
+    const freshId = result.current.sessionId!;
     expect(chromeMock.runtime.connect).toHaveBeenLastCalledWith({
-      name: `chat-stream-${sessionB.id}`,
+      name: `chat-stream-${freshId}`,
     });
-    const portB = chromeMock.runtime.__ports.at(-1)!;
+    const freshPort = chromeMock.runtime.__ports.at(-1)!;
 
-    // Switch to sessionA.
+    // Switch to sessionA — the swap behavior we want to verify is identical
+    // regardless of where bootstrap landed.
     let switched: string | null = null;
     await act(async () => {
       switched = await result.current.setActive(sessionA.id);
@@ -826,7 +829,7 @@ describe("useSession — M3-U1 per-session port routing", () => {
 
     // Old port disconnected (release SW-side abortController), new port
     // opened with sessionA in the name.
-    expect(portB.disconnect).toHaveBeenCalledTimes(1);
+    expect(freshPort.disconnect).toHaveBeenCalledTimes(1);
     expect(chromeMock.runtime.connect).toHaveBeenLastCalledWith({
       name: `chat-stream-${sessionA.id}`,
     });

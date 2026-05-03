@@ -270,6 +270,32 @@ function SkillContentDetails({
   );
 }
 
+/**
+ * Build a one-line action summary that fits to the right of "⚠ X — high risk".
+ * Different tools have different "what's at stake" — surface that on the
+ * default-visible row so the user knows what they're approving without
+ * having to expand details. (Informed-spending invariant.)
+ */
+function describeAction(
+  tool: string,
+  resolvedElement: ResolvedElement | undefined,
+  tabTargets: TabTarget[] | undefined,
+): string {
+  if (tabTargets && tabTargets.length > 0) {
+    const live = tabTargets.filter((t) => !t.stale);
+    return `${live.length} tab${live.length === 1 ? "" : "s"}`;
+  }
+  if (tool === "create_skill") return "create new skill";
+  if (tool === "update_skill") return "update existing skill";
+  if (resolvedElement) {
+    const t = resolvedElement.text ?? resolvedElement.ariaLabel ?? "";
+    const trimmed = t.length > 28 ? t.slice(0, 25) + "..." : t;
+    if (trimmed) return `<${resolvedElement.tag}> "${trimmed}"`;
+    return `<${resolvedElement.tag}>`;
+  }
+  return "";
+}
+
 export default function AgentConfirmCard({
   tool,
   args,
@@ -291,108 +317,129 @@ export default function AgentConfirmCard({
   const isMeta = isSkillMetaTool(tool);
   const hasTabTargets = !!tabTargets && tabTargets.length > 0;
   const headingId = `agent-confirm-heading-${tool}`;
+  const actionSummary = describeAction(tool, resolvedElement, tabTargets);
 
   return (
     <div
       role="dialog"
       aria-modal="false"
       aria-labelledby={headingId}
-      className="flex flex-col gap-3 rounded-[10px] border border-warning-line bg-surface p-3.5"
+      className="flex flex-col gap-2 rounded-lg border border-warning-line bg-surface p-3"
       onKeyDown={handleKeyDown}
     >
-      <div className="flex items-center gap-2">
-        <div className="h-1.5 w-1.5 rounded-full bg-warning" />
-        <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-warning">
-          HIGH RISK · APPROVAL REQUIRED
+      {/* Compact title row: ⚠ tool — high risk · action summary */}
+      <div id={headingId} className="flex items-baseline gap-1.5 text-[13px] leading-[18px]">
+        <span aria-hidden="true" className="text-warning">
+          ⚠
         </span>
-        <code className="ml-auto font-mono text-[12px] text-fg-1">{tool}</code>
+        <code className="font-mono text-fg-1">{tool}</code>
+        {actionSummary && (
+          <>
+            <span className="text-fg-3">·</span>
+            <span className="truncate text-fg-2" title={actionSummary}>
+              {actionSummary}
+            </span>
+          </>
+        )}
+        <span className="ml-auto font-mono text-[10px] uppercase tracking-[0.12em] text-warning">
+          HIGH RISK
+        </span>
       </div>
 
-      <div id={headingId} className="flex flex-col gap-1">
-        <div className="text-[15px] font-semibold leading-[22px] tracking-[-0.005em] text-fg-1">
-          Confirm action
-        </div>
-        <div className="text-[12px] leading-[18px] text-fg-2">{riskReason}</div>
-      </div>
+      {/* Risk reason — one short paragraph, never truncated. */}
+      <div className="text-[12px] leading-[18px] text-fg-2">{riskReason}</div>
 
-      {hasTabTargets ? <OriginSummaryRow tabs={tabTargets!} /> : null}
+      {/* Foldable details. All previously always-visible blocks (resolvedElement
+          attributes, args JSON, skill diff, tab list, content preview) live
+          here so the default card stays small. The user can still see
+          everything before approving — informed-spending preserved. */}
+      <details className="group">
+        <summary className="flex cursor-pointer select-none items-center gap-1 self-start font-mono text-[10px] uppercase tracking-[0.08em] text-fg-3 hover:text-fg-2">
+          <span className="transition-transform group-open:rotate-90">›</span>
+          <span>Details</span>
+        </summary>
 
-      {!isMeta && !hasTabTargets && (
-        <div className="flex flex-col gap-1 rounded border border-line bg-field px-2.5 py-2 text-[12px]">
-          <div>
-            <span className="text-fg-3">tag </span>
-            <code className="font-mono text-fg-1">
-              &lt;{resolvedElement.tag}&gt;
-            </code>
-          </div>
-          {resolvedElement.text && (
-            <div>
-              <span className="text-fg-3">text </span>
-              <span className="text-fg-1">{resolvedElement.text}</span>
-            </div>
-          )}
-          {resolvedElement.ariaLabel && (
-            <div>
-              <span className="text-fg-3">aria-label </span>
-              <span className="text-fg-1">{resolvedElement.ariaLabel}</span>
-            </div>
-          )}
-          {resolvedElement.type && (
-            <div>
-              <span className="text-fg-3">type </span>
-              <span className="text-fg-1">{resolvedElement.type}</span>
-            </div>
-          )}
-          {resolvedElement.href && (
-            <div>
-              <span className="text-fg-3">href </span>
-              <span className="break-all text-fg-1">{resolvedElement.href}</span>
-            </div>
-          )}
-        </div>
-      )}
+        <div className="mt-2 flex flex-col gap-2.5">
+          {hasTabTargets ? <OriginSummaryRow tabs={tabTargets!} /> : null}
 
-      {hasTabTargets ? <TabTargetsList tabs={tabTargets!} /> : null}
-
-      {contentPreview ? <TabContentPreviewDetails preview={contentPreview} /> : null}
-
-      {!hasTabTargets ? (
-        <>
-          {isMeta && metaSkillPreview ? (
-            <SkillContentDetails tool={tool} metaSkillPreview={metaSkillPreview} />
-          ) : (
-            <div className="flex flex-col gap-1">
-              <div className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-3">
-                ARGS
+          {!isMeta && !hasTabTargets && (
+            <div className="flex flex-col gap-1 rounded border border-line bg-field px-2.5 py-2 text-[12px]">
+              <div>
+                <span className="text-fg-3">tag </span>
+                <code className="font-mono text-fg-1">
+                  &lt;{resolvedElement.tag}&gt;
+                </code>
               </div>
-              <pre className="overflow-x-auto rounded border border-line bg-field p-2 font-mono text-[11px] leading-4 text-fg-2">
-                {safeStringifyArgs(redactArgsForDisplay(tool, args, riskReason))}
-              </pre>
+              {resolvedElement.text && (
+                <div>
+                  <span className="text-fg-3">text </span>
+                  <span className="text-fg-1">{resolvedElement.text}</span>
+                </div>
+              )}
+              {resolvedElement.ariaLabel && (
+                <div>
+                  <span className="text-fg-3">aria-label </span>
+                  <span className="text-fg-1">{resolvedElement.ariaLabel}</span>
+                </div>
+              )}
+              {resolvedElement.type && (
+                <div>
+                  <span className="text-fg-3">type </span>
+                  <span className="text-fg-1">{resolvedElement.type}</span>
+                </div>
+              )}
+              {resolvedElement.href && (
+                <div>
+                  <span className="text-fg-3">href </span>
+                  <span className="break-all text-fg-1">{resolvedElement.href}</span>
+                </div>
+              )}
             </div>
           )}
-        </>
-      ) : null}
+
+          {hasTabTargets ? <TabTargetsList tabs={tabTargets!} /> : null}
+
+          {contentPreview ? <TabContentPreviewDetails preview={contentPreview} /> : null}
+
+          {!hasTabTargets ? (
+            <>
+              {isMeta && metaSkillPreview ? (
+                <SkillContentDetails tool={tool} metaSkillPreview={metaSkillPreview} />
+              ) : (
+                <div className="flex flex-col gap-1">
+                  <div className="font-mono text-[10px] uppercase tracking-[0.08em] text-fg-3">
+                    args
+                  </div>
+                  <pre className="overflow-x-auto rounded border border-line bg-field p-2 font-mono text-[11px] leading-4 text-fg-2">
+                    {safeStringifyArgs(redactArgsForDisplay(tool, args, riskReason))}
+                  </pre>
+                </div>
+              )}
+            </>
+          ) : null}
+        </div>
+      </details>
 
       {resolved ? (
         <div
-          className={`font-mono text-[10px] uppercase tracking-[0.16em] ${
+          className={`font-mono text-[10px] uppercase tracking-[0.12em] ${
             resolved === "approved" ? "text-fg-2" : "text-fg-3"
           }`}
         >
           {resolved === "approved" ? "✓ APPROVED" : "✕ REJECTED"}
         </div>
       ) : (
-        <div className="flex gap-2 pt-1">
+        <div className="flex gap-2 pt-0.5">
           <button
             onClick={onReject}
             autoFocus
-            className="flex-1 rounded-md border border-line bg-transparent px-3.5 py-2.5 text-[13px] text-fg-2 hover:border-fg-3 hover:text-fg-1 focus:outline focus:outline-2 focus:outline-fg-3"
+            className="flex-1 rounded-md border border-line bg-transparent px-3 py-1.5 text-[12px] text-fg-2 hover:border-fg-3 hover:text-fg-1 focus:outline focus:outline-2 focus:outline-fg-3"
           >
             Reject
           </button>
           <button
             onClick={onApprove}
-            className="flex-1 rounded-md border border-warning-line bg-transparent px-3.5 py-2.5 text-[13px] font-medium text-warning hover:bg-warning-tint focus:outline focus:outline-2 focus:outline-warning"
+            className="flex-1 rounded-md border border-warning-line bg-transparent px-3 py-1.5 text-[12px] font-medium text-warning hover:bg-warning-tint focus:outline focus:outline-2 focus:outline-warning"
           >
             Approve
           </button>

@@ -8,6 +8,7 @@ import {
   setSessionMeta,
   updateLastAccessed,
 } from "@/lib/sessions/storage";
+import { hardDeleteSession } from "@/lib/sessions/lifecycle";
 import type { SessionStatus } from "@/lib/sessions/types";
 import { deriveTitleFromMessages } from "@/lib/sessions/title";
 
@@ -509,63 +510,46 @@ export function useSession(): UseSession {
 
     (async () => {
       try {
+        // Sweep stale empty active sessions left over from previous panel
+        // mounts. We always create a fresh empty session below; the previous
+        // mount's empty session would otherwise pile up forever in storage.
+        // Heuristic guards:
+        //   - status === "active" (paused/failed/archived must be preserved
+        //     so the user can find their work in the drawer)
+        //   - messageCount === 0 (per the M2 lock-on-send rule, only sessions
+        //     with no DisplayMessages are candidates for cleanup)
+        //   - lastAccessedAt < now - 60s (protect sibling-window panels that
+        //     just created a fresh empty session and haven't sent a message
+        //     yet — their entry is < 60s old, leave it alone)
+        //   - lastAccessedAt > REAL_CLOCK_MIN (defends against tests that
+        //     use fake clocks like `now: 1000` to set up scenarios — those
+        //     timestamps fall outside any plausible real-clock range and
+        //     should not be GC targets)
+        const STALE_EMPTY_MS = 60_000;
+        const REAL_CLOCK_MIN_MS = 1_000_000_000_000; // 2001-09-09
+        const now = Date.now();
         const list = await listSessionIndex();
         if (cancelled) return;
-
-        let id: string;
-        let initialMessages: DisplayMessage[] = [];
-        let initialStatus: SessionStatus = "active";
-        let initialPinnedOrigin: string | null = null;
-        if (list.length === 0) {
-          // M3-U2 (post-acceptance) — bootstrap creates the session
-          // empty and unpinned. The user's first sendMessage will
-          // capture and lock the pin. Until then PINNED follows the
-          // active tab via Chat's live preview.
-          const meta = await createSession();
+        for (const entry of list) {
+          if (entry.status !== "active") continue;
+          if ((entry.messageCount ?? 1) > 0) continue;
+          if (entry.lastAccessedAt < REAL_CLOCK_MIN_MS) continue;
+          if (now - entry.lastAccessedAt < STALE_EMPTY_MS) continue;
+          await hardDeleteSession(entry.id);
           if (cancelled) return;
-          id = meta.id;
-          initialStatus = meta.status;
-        } else {
-          const top = list[0]!;
-          const meta = await getSessionMeta(top.id);
-          if (cancelled) return;
-          id = top.id;
-          initialMessages = meta?.messages ?? [];
-          initialStatus = meta?.status ?? "active";
-          initialPinnedOrigin = meta?.pinnedOrigin ?? null;
-          // M3-U2 (post-acceptance) — legacy-session pin migration on
-          // bootstrap. Only fires when the session ALREADY has content
-          // (legacy M1/M2 sessions whose meta predates pin support).
-          // Empty sessions skip this so the pin is captured at first
-          // sendMessage instead, matching the lock-on-send rule.
-          const sessionHasContent = (meta?.messages?.length ?? 0) > 0;
-          if (
-            meta &&
-            sessionHasContent &&
-            (meta.pinnedTabId === undefined || !meta.pinnedOrigin)
-          ) {
-            const pinned = await captureActivePinned();
-            // Re-check `cancelled` after the captureActivePinned await —
-            // if the panel unmounted during the chrome.tabs.query
-            // roundtrip, drop the migration write rather than persisting
-            // a pin onto a session the user is no longer viewing.
-            if (cancelled) return;
-            if (pinned) {
-              await setSessionMeta({
-                ...meta,
-                pinnedTabId: pinned.pinnedTabId,
-                pinnedOrigin: pinned.pinnedOrigin,
-                lastAccessedAt: Date.now(),
-              });
-              initialPinnedOrigin = pinned.pinnedOrigin;
-            }
-          }
         }
-        setSessionId(id);
-        setStatus(initialStatus);
-        setPinnedOriginState(initialPinnedOrigin);
-        setMessages(initialMessages);
-        portRef.current = connectPortFor(id);
+
+        // Always start a fresh, empty, unpinned session. The user's first
+        // sendMessage captures the pin and bumps messageCount, which makes
+        // the session visible in the drawer. Previous behavior reloaded
+        // list[0]; the user requested every panel open start clean.
+        const meta = await createSession();
+        if (cancelled) return;
+        setSessionId(meta.id);
+        setStatus(meta.status);
+        setPinnedOriginState(null);
+        setMessages([]);
+        portRef.current = connectPortFor(meta.id);
       } finally {
         if (!cancelled) setReady(true);
       }

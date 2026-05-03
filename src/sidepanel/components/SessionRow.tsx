@@ -24,7 +24,7 @@ interface SessionRowProps {
 function ActiveSelectedIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-      <circle cx="9" cy="9" r="4" fill="#B8C8D6" />
+      <circle cx="9" cy="9" r="4" fill="var(--c-accent)" />
     </svg>
   );
 }
@@ -32,7 +32,7 @@ function ActiveSelectedIcon() {
 function ActiveIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-      <circle cx="9" cy="9" r="4" fill="#B8C8D6" opacity="0.4" />
+      <circle cx="9" cy="9" r="4" fill="var(--c-accent)" opacity="0.4" />
     </svg>
   );
 }
@@ -40,7 +40,7 @@ function ActiveIcon() {
 function PausedIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-      <circle cx="9" cy="9" r="5.5" stroke="#8A929E" strokeWidth="1" />
+      <circle cx="9" cy="9" r="5.5" stroke="var(--c-fg-2)" strokeWidth="1" />
     </svg>
   );
 }
@@ -48,9 +48,9 @@ function PausedIcon() {
 function FailedIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-      <circle cx="9" cy="9" r="6" fill="#8A929E" />
-      <line x1="6.5" y1="6.5" x2="11.5" y2="11.5" stroke="#0E1216" strokeWidth="1.5" strokeLinecap="round" />
-      <line x1="11.5" y1="6.5" x2="6.5" y2="11.5" stroke="#0E1216" strokeWidth="1.5" strokeLinecap="round" />
+      <circle cx="9" cy="9" r="6" fill="var(--c-fg-2)" />
+      <line x1="6.5" y1="6.5" x2="11.5" y2="11.5" stroke="var(--c-surface-deep)" strokeWidth="1.5" strokeLinecap="round" />
+      <line x1="11.5" y1="6.5" x2="6.5" y2="11.5" stroke="var(--c-surface-deep)" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   );
 }
@@ -100,8 +100,8 @@ export default function SessionRow({
     alignItems: "center",
     gap: 10,
     cursor: "pointer",
-    background: isActive ? "#14171C" : "transparent",
-    borderLeft: isActive ? "2px solid #B8C8D6" : "2px solid transparent",
+    background: isActive ? "var(--c-surface)" : "transparent",
+    borderLeft: isActive ? "2px solid var(--c-accent)" : "2px solid transparent",
     transition: "background 0.1s",
     userSelect: "none",
   };
@@ -129,7 +129,7 @@ export default function SessionRow({
 
   // Meta caption text + color
   let metaText = timeStr;
-  let metaColor = "#525965";
+  const metaColor = "var(--c-fg-3)";
   if (status === "paused") {
     metaText = `${timeStr} · PAUSED`;
   } else if (status === "failed") {
@@ -137,7 +137,7 @@ export default function SessionRow({
   }
 
   // Title color
-  const titleColor = status === "failed" ? "#8A929E" : "#E5E8EC";
+  const titleColor = status === "failed" ? "var(--c-fg-2)" : "var(--c-fg-1)";
 
   return (
     <li
@@ -204,7 +204,7 @@ export default function SessionRow({
             fontFamily: "Inter, sans-serif",
             fontSize: 11,
             fontWeight: 500,
-            color: "#B8C8D6",
+            color: "var(--c-accent)",
             background: "none",
             border: "none",
             cursor: "pointer",

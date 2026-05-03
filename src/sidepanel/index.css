@@ -19,6 +19,12 @@
     --c-warning-tint: rgba(184, 90, 77, 0.08);
     --c-warning-line: rgba(184, 90, 77, 0.4);
     --c-overlay: rgba(20, 24, 29, 0.04);
+    --c-pending: #B040AC;
+    --c-danger-fg: #A02020;
+    --c-danger-line: #E8C0C0;
+    --c-overlay-strong: rgba(20, 24, 29, 0.5);
+    --c-surface-deep: #F0F2F4;
+    --c-fg-4: #B8BFC8;
   }
 
   @media (prefers-color-scheme: dark) {
@@ -38,7 +44,65 @@
       --c-warning-tint: rgba(194, 107, 94, 0.08);
       --c-warning-line: rgba(194, 107, 94, 0.45);
       --c-overlay: rgba(232, 236, 242, 0.04);
+      --c-pending: #C260BE;
+      --c-danger-fg: #8A3A3A;
+      --c-danger-line: #3A2222;
+      --c-overlay-strong: rgba(8, 13, 16, 0.72);
+      --c-surface-deep: #0E1216;
+      --c-fg-4: #3A4049;
     }
+  }
+
+  /* Explicit theme overrides — applied via document.documentElement.dataset.theme.
+     Higher specificity than @media (prefers-color-scheme), so they win when set.
+     When data-theme is absent, the :root defaults + @media fallback take over
+     (i.e. the "system" mode). */
+  [data-theme="light"] {
+    --c-canvas: #FAFBFC;
+    --c-surface: #FFFFFF;
+    --c-field: #F4F6F8;
+    --c-line: #E4E8EC;
+    --c-fg-1: #14181D;
+    --c-fg-2: #5A6470;
+    --c-fg-3: #98A1AC;
+    --c-accent: #4A5C6E;
+    --c-warning: #B85A4D;
+    --c-dot-grid: rgba(20, 24, 29, 0.04);
+    --c-accent-tint: rgba(74, 92, 110, 0.08);
+    --c-accent-line: rgba(74, 92, 110, 0.3);
+    --c-warning-tint: rgba(184, 90, 77, 0.08);
+    --c-warning-line: rgba(184, 90, 77, 0.4);
+    --c-overlay: rgba(20, 24, 29, 0.04);
+    --c-pending: #B040AC;
+    --c-danger-fg: #A02020;
+    --c-danger-line: #E8C0C0;
+    --c-overlay-strong: rgba(20, 24, 29, 0.5);
+    --c-surface-deep: #F0F2F4;
+    --c-fg-4: #B8BFC8;
+  }
+
+  [data-theme="dark"] {
+    --c-canvas: #0B0D10;
+    --c-surface: #14171C;
+    --c-field: #1A1E25;
+    --c-line: #22272F;
+    --c-fg-1: #E5E8EC;
+    --c-fg-2: #8A929E;
+    --c-fg-3: #525965;
+    --c-accent: #B8C8D6;
+    --c-warning: #C26B5E;
+    --c-dot-grid: rgba(232, 236, 242, 0.05);
+    --c-accent-tint: rgba(184, 200, 214, 0.08);
+    --c-accent-line: rgba(184, 200, 214, 0.3);
+    --c-warning-tint: rgba(194, 107, 94, 0.08);
+    --c-warning-line: rgba(194, 107, 94, 0.45);
+    --c-overlay: rgba(232, 236, 242, 0.04);
+    --c-pending: #C260BE;
+    --c-danger-fg: #8A3A3A;
+    --c-danger-line: #3A2222;
+    --c-overlay-strong: rgba(8, 13, 16, 0.72);
+    --c-surface-deep: #0E1216;
+    --c-fg-4: #3A4049;
   }
 }
 
@@ -119,4 +183,37 @@ button {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--c-fg-3);
+}
+
+/* Motion ───────────────────────────────────────────────────────────────────
+   Linear/Raycast-style geometric easing. cubic-bezier(0.32,0.72,0,1) gives a
+   crisp ease-out without spring overshoot. All durations 150–250ms; consumers
+   pick the keyframe that fits their semantic (view = subtle, bubble = soft
+   reveal, scale-in = focus pull). */
+@keyframes view-enter {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
+@keyframes bubble-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: scale(1);    }
+}
+.view-enter { animation: view-enter 200ms cubic-bezier(0.32, 0.72, 0, 1) both; }
+.bubble-in  { animation: bubble-in  200ms cubic-bezier(0.32, 0.72, 0, 1) both; }
+.scale-in   { animation: scale-in   240ms cubic-bezier(0.32, 0.72, 0, 1) both; }
+
+/* Respect OS-level motion reduction. Collapse all animation/transition to
+   sub-frame so behavior stays correct (final state) without movement. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

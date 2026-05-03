@@ -90,6 +90,7 @@ function indexEntryFromMeta(meta: SessionMeta): SessionIndexEntry {
     id: meta.id,
     lastAccessedAt: meta.lastAccessedAt,
     status: meta.status,
+    messageCount: meta.messages.length,
   };
   if (meta.title !== undefined) entry.title = meta.title;
   if (meta.pinnedTabId !== undefined) entry.pinnedTabId = meta.pinnedTabId;
@@ -182,7 +183,8 @@ export async function setSessionMeta(meta: SessionMeta): Promise<void> {
     existingEntry.lastAccessedAt !== nextEntry.lastAccessedAt ||
     existingEntry.status !== nextEntry.status ||
     existingEntry.title !== nextEntry.title ||
-    existingEntry.pinnedTabId !== nextEntry.pinnedTabId;
+    existingEntry.pinnedTabId !== nextEntry.pinnedTabId ||
+    existingEntry.messageCount !== nextEntry.messageCount;
 
   const batch: WriteBatch = { [metaKey(meta.id)]: meta };
   if (indexChanged) {

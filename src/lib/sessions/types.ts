@@ -162,4 +162,14 @@ export interface SessionIndexEntry {
   status: SessionStatus;
   title?: string;
   pinnedTabId?: number;
+  /**
+   * Number of DisplayMessages persisted to the session. Used by the
+   * sidepanel to hide empty active sessions from the SessionDrawer
+   * (a freshly-created session that the user hasn't sent a message to
+   * shouldn't clutter the list). Optional for backwards compatibility
+   * with index entries written before this field existed — readers
+   * should treat `undefined` as "unknown, assume non-empty for safety"
+   * so we never accidentally hide a real session.
+   */
+  messageCount?: number;
 }
