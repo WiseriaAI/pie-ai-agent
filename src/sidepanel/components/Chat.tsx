@@ -554,9 +554,13 @@ export default function Chat({
               />
             )}
 
-            {streaming && !streamingText && messages.at(-1)?.role !== "agent-step" && (
-              <TypingIndicator />
-            )}
+            {/* Working indicator — visible while the agent loop is alive
+                and there's no partial assistant text already streaming.
+                Sits at the tail of the chat so the user has a single place
+                to look to confirm "still working" — covers the gaps between
+                tool calls (last step ok, next LLM round not yet started)
+                where active step spinners alone could feel like a hang. */}
+            {streaming && !streamingText && <WorkingIndicator />}
 
             {error && (
               <div className="rounded-lg border border-warning-line bg-warning-tint px-3 py-2 text-[12px] text-warning">
@@ -717,12 +721,19 @@ function MessageBubble({
   );
 }
 
-function TypingIndicator() {
+function WorkingIndicator() {
   return (
-    <div className="flex items-center gap-1.5 px-1">
-      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-fg-3 [animation-delay:0ms]" />
-      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-fg-3 [animation-delay:200ms]" />
-      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-fg-3 [animation-delay:400ms]" />
+    <div
+      role="status"
+      aria-live="polite"
+      aria-label="Agent is working"
+      className="flex items-center gap-2 px-1 py-0.5"
+    >
+      <span className="relative flex h-2 w-2 items-center justify-center">
+        <span className="absolute inset-0 animate-ping rounded-full bg-accent opacity-50" />
+        <span className="relative h-1.5 w-1.5 rounded-full bg-accent" />
+      </span>
+      <span className="caps text-fg-3">WORKING</span>
     </div>
   );
 }
