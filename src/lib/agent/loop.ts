@@ -11,7 +11,7 @@ import {
 import { previewMetaSkillCall } from "./tools/skill-meta";
 import type { Tool, PreFetchedTabContent } from "./types";
 import { classifyRisk, type RiskClassifyContext } from "./risk";
-import { TAB_TOOL_NAMES } from "./tool-names";
+import { TAB_TOOL_NAMES, getToolClass } from "./tool-names";
 import { escapeUntrustedWrappers } from "./untrusted-wrappers";
 import {
   extractPageContentHardened,
@@ -127,6 +127,48 @@ export interface AgentLoopContext {
    * was active; the loop starts fresh.
    */
   resumedSkillScopeStack?: Array<{ skillId: string; allowedTools: string[] | null }>;
+  /**
+   * M3-U2 — pre-anchored pinned tab + origin. Captured by the panel at
+   * session creation / activation and stored on the session meta; the
+   * SW dispatcher (`handleChatStream` / `handleResumeRequest`) reads
+   * the meta fields and constructs this object. When present the loop
+   * SKIPS the legacy `chrome.tabs.query({active:true,currentWindow:true})`
+   * anchor step — sessions are pinned to "what the user was looking at
+   * when they created the session", not to "whatever happens to be
+   * active the moment chat-start arrives" (which would race the user's
+   * tab switches and produce surprising cross-origin pins).
+   *
+   * Single object so the both-or-neither contract is enforced at the
+   * type level (the previous design used two independent optionals,
+   * relying on JSDoc + runtime truthiness for what the type system
+   * could express directly).
+   *
+   * Undefined (legacy M1 / M2 sessions whose meta was written before
+   * this field existed): the loop falls back to the active-tab anchor —
+   * backward compatible. The panel's setActive / bootstrap migration
+   * backfills missing pins on the first activation under M3 so the
+   * legacy path is rarely hit.
+   */
+  pinned?: { tabId: number; origin: string };
+  /**
+   * M3-U4 — fetch the current set of tab ids pinned by OTHER active
+   * sessions in the cross-session pinned-tab registry (`session_index`
+   * derived). Called per iteration (NOT per task) so a session created
+   * mid-loop is observed by the R7 lock on the very next dispatch — the
+   * frozen-snapshot design (capture once at chat-start) had a TOCTOU
+   * window where a sibling session that opened mid-task was invisible
+   * to the lock.
+   *
+   * Returns an empty set when no other session is pinned (common
+   * single-window case). The set excludes the caller's own pinnedTabId.
+   * Implementation reads session_index — one storage round-trip,
+   * negligible cost vs the LLM round-trip the loop is doing anyway.
+   *
+   * undefined means "no registry plumbed" (test harness, legacy code
+   * paths) — equivalent to a permanently-empty set; the lock simply
+   * doesn't fire.
+   */
+  refreshCrossSessionPinnedTabIds?: () => Promise<Set<number>>;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -283,14 +325,29 @@ async function buildTabTargets(
     const ids: number[] = [];
     if (Array.isArray(args.tabIds)) {
       for (const v of args.tabIds) {
-        if (typeof v === "number") ids.push(v);
+        // chrome.tabs.get's API binding throws SYNCHRONOUSLY on negative
+        // ids ("Value must be at least 0"), which would crash the whole
+        // ids.map below before Promise.allSettled could observe it. Filter
+        // here AND require integer + finite so a hallucinated `args.tabIds:
+        // [-1]` from the LLM degrades to a stale-target observation
+        // instead of an unhandled throw that exits the agent loop.
+        if (typeof v === "number" && Number.isInteger(v) && v >= 0) {
+          ids.push(v);
+        }
       }
     }
-    if (typeof args.tabId === "number") {
+    if (
+      typeof args.tabId === "number" &&
+      Number.isInteger(args.tabId) &&
+      args.tabId >= 0
+    ) {
       ids.push(args.tabId);
     }
     if (ids.length === 0) return undefined;
     // Parallel chrome.tabs.get; reject → stale TabTarget placeholder.
+    // The synchronous-throw guard above means every id here is safe to
+    // pass directly; runtime rejects (tab closed since the LLM saw it)
+    // still flow through the .allSettled rejection branch.
     const settled = await Promise.allSettled(ids.map((id) => chrome.tabs.get(id)));
     settled.forEach((r, i) => {
       const id = ids[i];
@@ -489,6 +546,61 @@ export function buildSessionAgentTombstone(): SessionAgentState {
 }
 
 /**
+ * M3-U4 — pure helper: collect tab ids that this tool call would write
+ * to AND that are pinned by another active session. Returns an empty
+ * array when the tool is read-class, has no explicit cross-session
+ * targets, or no other session is pinned.
+ *
+ * Called from the loop dispatch path between tool resolution and
+ * tool.handler invocation. Pure so it can be unit-tested without
+ * spinning up the whole loop.
+ *
+ * Scope: ONLY explicit args.tabIds / args.tabId targets are checked.
+ * The earlier design folded `pinnedTabId` (= ctx.tabId at handler time,
+ * the calling session's own pin) into the conflict check whenever the
+ * tool wasn't a tab tool — so two sessions that happened to share a
+ * pinned tab would deadlock symmetrically: every click / type / select
+ * / keyboard / skill-meta call from EITHER session would be R7-rejected
+ * because the OTHER session's pin matched their own. That collapsed
+ * the entire M3 multi-session feature into "no operations possible
+ * when sessions share a pin" — a regression with no offsetting safety
+ * benefit, since the per-iteration origin re-check (loop body ~line 705)
+ * already catches the case where the calling session's pin diverges
+ * from the user's intent. Non-tab tools (Phase 2 DOM, keyboard, skill
+ * meta) implicitly target the calling session's own pin, which is
+ * never in the cross-session registry by construction; the fold added
+ * no new safety, only false positives.
+ *
+ * Tab tools (close_tabs / group_tabs / etc.) still check args.tabIds /
+ * args.tabId against the registry — that's the legitimate cross-session
+ * intent the LLM expresses by naming a specific target.
+ */
+export function collectCrossSessionConflicts(
+  toolName: string,
+  args: Record<string, unknown>,
+  _pinnedTabId: number,
+  crossSessionPinnedTabIds: ReadonlySet<number> | undefined,
+): number[] {
+  if (!crossSessionPinnedTabIds || crossSessionPinnedTabIds.size === 0) {
+    return [];
+  }
+  if (getToolClass(toolName) !== "write") return [];
+
+  const conflicts: number[] = [];
+  if (Array.isArray(args.tabIds)) {
+    for (const v of args.tabIds) {
+      if (typeof v === "number" && crossSessionPinnedTabIds.has(v)) {
+        conflicts.push(v);
+      }
+    }
+  }
+  if (typeof args.tabId === "number" && crossSessionPinnedTabIds.has(args.tabId)) {
+    conflicts.push(args.tabId);
+  }
+  return Array.from(new Set(conflicts));
+}
+
+/**
  * Redact `text` from keyboard tool args before emitting via agent-step
  * (event-card path). Confirm-request keeps the raw text — see plan
  * Key Technical Decisions on the redaction split.
@@ -529,7 +641,13 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
   }
   const signal = internalController.signal;
 
-  const ownerToken = crypto.randomUUID();
+  // M3-U3 — ownerToken is now structured `{sessionId, tabId}` so
+  // multi-Side-Panel collateral checks can name the offending session
+  // in error messages. tabId here is the post-anchor pinnedTabId
+  // (anchored just below). The token is constructed AFTER the anchor
+  // step so the tabId is real; declared as `let` to avoid a TDZ on
+  // the shape-construction line.
+  let ownerToken: import("../../background/cdp-session").CdpOwnerToken;
   let cdpSession: CdpSession | null = null;
   let doneEmitted = false;
   let lastStepIndex = 0;
@@ -580,42 +698,66 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
     sendAgentStep(port, { ...msg, sessionId });
   };
 
-  // 1. Anchor tab + origin at task start
+  // 1. Anchor tab + origin at task start.
+  //
+  // M3-U2 — preferred path: ctx carries the panel-captured pin (set at
+  // session creation / activation). Trust it without re-querying active
+  // tab; the per-iteration origin re-check (loop body, ~line 705) handles
+  // any drift between session creation and chat-start. Re-querying here
+  // would race the user's tab focus and produce surprising "the agent
+  // pinned to the wrong tab" outcomes (e.g. user typed a task in session
+  // A while focused on an unrelated tab).
+  //
+  // Legacy fallback: M1 / M2 sessions whose meta was written before
+  // M3-U2 won't carry a pin. Fall through to the historical active-tab
+  // anchor; the panel's backfill migration covers most of these on
+  // first M3 activation, but the fallback ensures correctness if a
+  // session somehow reaches runAgentLoop without one.
   let pinnedTabId: number;
   let pinnedOrigin: string;
 
-  try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab?.id || !tab.url || isRestrictedUrl(tab.url)) {
+  if (ctx.pinned) {
+    pinnedTabId = ctx.pinned.tabId;
+    pinnedOrigin = ctx.pinned.origin;
+  } else {
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!tab?.id || !tab.url || isRestrictedUrl(tab.url)) {
+        emitDone({
+          type: "agent-done-task",
+          success: false,
+          summary: "Cannot run agent on this page type",
+          stepCount: 0,
+        });
+        return;
+      }
+      const origin = safeParseOrigin(tab.url);
+      if (!origin) {
+        emitDone({
+          type: "agent-done-task",
+          success: false,
+          summary: "Cannot run agent on this page (unresolvable origin)",
+          stepCount: 0,
+        });
+        return;
+      }
+      pinnedTabId = tab.id;
+      pinnedOrigin = origin;
+    } catch {
       emitDone({
         type: "agent-done-task",
         success: false,
-        summary: "Cannot run agent on this page type",
+        summary: "Failed to get active tab",
         stepCount: 0,
       });
       return;
     }
-    const origin = safeParseOrigin(tab.url);
-    if (!origin) {
-      emitDone({
-        type: "agent-done-task",
-        success: false,
-        summary: "Cannot run agent on this page (unresolvable origin)",
-        stepCount: 0,
-      });
-      return;
-    }
-    pinnedTabId = tab.id;
-    pinnedOrigin = origin;
-  } catch {
-    emitDone({
-      type: "agent-done-task",
-      success: false,
-      summary: "Failed to get active tab",
-      stepCount: 0,
-    });
-    return;
   }
+
+  // M3-U3 — bind ownerToken now that pinnedTabId is final. acquireSessionForTask
+  // (defined below) closes over this; first invocation happens inside the
+  // for-loop after this assignment, so the timing is safe.
+  ownerToken = { sessionId, tabId: pinnedTabId };
 
   // Curried CdpSession factory — passed to keyboard tools via closure.
   // INVARIANT: defined ONCE here, BEFORE the for-loop, so all per-iteration
@@ -661,7 +803,17 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
     : [
         {
           role: "system",
-          content: buildAgentSystemPrompt(task, keyboardSimEnabledAtStart, /* hasMetaTools */ true),
+          content: buildAgentSystemPrompt(
+            task,
+            keyboardSimEnabledAtStart,
+            /* hasMetaTools */ true,
+            // M3-U2 — pass the authoritative pinned tab id + origin so
+            // the LLM can call get_tab_content({tabId}) directly for
+            // "summarize / read this page" tasks instead of burning a
+            // list_tabs round-trip + a confirm card just to discover
+            // its own tab id.
+            { tabId: pinnedTabId, origin: pinnedOrigin },
+          ),
         },
         { role: "user", content: task },
       ];
@@ -996,6 +1148,76 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             });
             continue;
           }
+        }
+
+        // M3-U4 — R7 lock: cross-session pinned-tab conflict guard.
+        //
+        // For write-class tools we collect the tab ids the call would
+        // affect (args.tabIds / args.tabId for tab tools; ctx.tabId
+        // (= pinnedTabId) for Phase 2 DOM + keyboard tools — those
+        // operate on the calling session's pin) and reject if any of
+        // them is in `crossSessionPinnedTabIds` (= tabs pinned by
+        // OTHER active sessions, computed at chat-start by the SW
+        // dispatcher via getCrossSessionPinnedTabIds — which excludes
+        // the calling session's own pin).
+        //
+        // Read-class tools are not gated: the user has already
+        // informed-approved cross-tab read exposure at the confirm
+        // card (P3-S / P3-T), and read concurrency does not corrupt
+        // page state (K2 read/write split).
+        //
+        // Rejection emits an observation (so the LLM sees it and can
+        // re-plan), an agent-step (so the user sees what was blocked),
+        // and continues to the next tool call — does NOT terminate
+        // the task. This matches the partial-completion semantic the
+        // tab tools already use for stale targets.
+        // M3-U4 (TOCTOU fix) — re-read the cross-session registry per
+        // tool dispatch so a sibling session created mid-loop is visible.
+        // One chrome.storage.local.get round-trip, fully amortized by the
+        // surrounding LLM call. Errors degrade to "no conflicts known" so
+        // a transient storage hiccup never falsely blocks a write.
+        let crossSessionPinnedTabIds: Set<number> | undefined;
+        if (ctx.refreshCrossSessionPinnedTabIds) {
+          try {
+            crossSessionPinnedTabIds = await ctx.refreshCrossSessionPinnedTabIds();
+          } catch (e) {
+            console.warn(
+              `[agent] refreshCrossSessionPinnedTabIds failed for session=${ctx.sessionId}; treating as empty:`,
+              e,
+            );
+          }
+        }
+        const r7Conflicts = collectCrossSessionConflicts(
+          tc.name,
+          args,
+          pinnedTabId,
+          crossSessionPinnedTabIds,
+        );
+        if (r7Conflicts.length > 0) {
+          // Drop the "or wait for it to finish" suggestion — even with the
+          // per-iteration registry refresh (M3-U4 TOCTOU fix), the LLM has
+          // no autonomous way to know when the other session frees the tab,
+          // and the previous "wait" framing trained agents to retry the
+          // same call against the same tab in a fixed-point loop. Now the
+          // observation has a single deterministic recovery: target a
+          // different tab or stop and explain.
+          const lockMsg = `Tab(s) ${r7Conflicts.join(", ")} are reserved by another active session; this write is refused. Pick a different tab or stop and explain to the user.`;
+          toolResultBlocks.push({
+            type: "tool_result",
+            toolUseId: tc.id,
+            content: lockMsg,
+            isError: true,
+          });
+          emitStep({
+            type: "agent-step",
+            stepIndex,
+            tool: tc.name,
+            args: redactArgsForPanel(tc.name, tc.args),
+            status: "error",
+            observation: lockMsg,
+            skillAuthor: skillAuthorForStep,
+          });
+          continue;
         }
 
         // Resolve element for confirmation / display

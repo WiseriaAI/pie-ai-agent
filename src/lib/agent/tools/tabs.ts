@@ -255,12 +255,24 @@ const listTabsTool: Tool = {
       scope === "currentWindow" ? { currentWindow: true } : {};
     const allTabs = await chrome.tabs.query(queryInfo);
 
-    // Filter tabs without an id or windowId (chrome occasionally surfaces
-    // partial tabs during navigation transitions) — we can't safely act on
-    // them.
+    // Filter tabs without an addressable id or windowId. Chrome occasionally
+    // surfaces partial tabs during navigation transitions, AND assigns
+    // `chrome.tabs.TAB_ID_NONE` (= -1) to apps / DevTools windows / session-
+    // restore tabs / detached tabs that aren't actually addressable via
+    // chrome.tabs.{get,remove,update,...}. If we leak a -1 id into the
+    // wrapTabMetadata observation, the LLM learns it as a valid tabId and
+    // a follow-up tool call (get_tab_content / close_tabs / etc.) will hit
+    // chrome.tabs.get(-1) which throws synchronously with "Value must be at
+    // least 0", crashing the loop with a raw API error and no recovery
+    // observation. Filter both axes (id + windowId) at the source so phantom
+    // tabs never enter the LLM's view.
     let usable = allTabs.filter(
       (t): t is chrome.tabs.Tab & { id: number; windowId: number } =>
-        typeof t.id === "number" && typeof t.windowId === "number",
+        typeof t.id === "number" &&
+        Number.isInteger(t.id) &&
+        t.id >= 0 &&
+        typeof t.windowId === "number" &&
+        t.windowId >= 0,
     );
 
     // CRITICAL P3-T enforcement (adversarial review): scope=allWindows runs

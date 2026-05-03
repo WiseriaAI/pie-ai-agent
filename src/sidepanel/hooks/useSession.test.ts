@@ -39,13 +39,14 @@ describe("useSession — bootstrap", () => {
     expect(meta!.messages).toEqual([]);
   });
 
-  it("M1-U4 — opens the port and sends panel-mounted on bootstrap", async () => {
+  it("M1-U4 / M3-U1 — opens a per-session port and sends panel-mounted on bootstrap", async () => {
     const { result } = renderHook(() => useSession());
     await waitFor(() => expect(result.current.ready).toBe(true));
 
-    // Connect happens at mount, before any sendMessage.
+    // Connect happens at mount, before any sendMessage. M3-U1 — port name
+    // encodes the active sessionId so the SW can per-port-sandbox state.
     expect(chromeMock.runtime.connect).toHaveBeenCalledWith({
-      name: "chat-stream",
+      name: `chat-stream-${result.current.sessionId}`,
     });
     expect(chromeMock.runtime.__ports).toHaveLength(1);
 
@@ -102,8 +103,9 @@ describe("useSession — sendMessage / streaming", () => {
       result.current.sendMessage({ content: "hello" });
     });
 
+    // M3-U1 — port name carries the sessionId.
     expect(chromeMock.runtime.connect).toHaveBeenCalledWith({
-      name: "chat-stream",
+      name: `chat-stream-${result.current.sessionId}`,
     });
     const port = chromeMock.runtime.__ports[0]!;
     expect(port.postMessage).toHaveBeenCalledWith({
@@ -460,6 +462,390 @@ describe("useSession — resolveConfirm", () => {
       role: "agent-confirm",
       confirmationId: "c1",
       resolved: "approved",
+    });
+  });
+});
+
+describe("useSession — M3-U2 lock-on-send pin (post-acceptance rule)", () => {
+  it("createAndActivate does NOT pre-capture — new session starts with no pin", async () => {
+    // Post-acceptance rule: empty sessions can freely tab-switch; the pin
+    // is captured at the moment of first sendMessage. createAndActivate
+    // must NOT pre-capture, otherwise the user's at-create tab wins over
+    // their actual at-send tab.
+    chromeMock.tabs.__activeTab = {
+      id: 42,
+      url: "https://docs.example.com/foo/bar?q=1",
+      title: "Docs",
+      active: true,
+      windowId: 1,
+    };
+
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    let newId: string | null = null;
+    await act(async () => {
+      newId = await result.current.createAndActivate();
+    });
+    expect(newId).not.toBeNull();
+    const meta = await getSessionMeta(newId!);
+    expect(meta).not.toBeNull();
+    expect(meta!.pinnedTabId).toBeUndefined();
+    expect(meta!.pinnedOrigin).toBeUndefined();
+    // Hook also exposes pinnedOrigin: null for the new empty session.
+    expect(result.current.pinnedOrigin).toBeNull();
+  });
+
+  it("bootstrap does NOT backfill an empty legacy session — the pin is captured at first send instead", async () => {
+    // Empty legacy session (no messages, no pin) — under the lock-on-send
+    // rule, bootstrap leaves it alone. The user can tab-switch freely
+    // (PINNED follows live), and the next sendMessage captures.
+    const legacy = await createSession({ now: 1000 });
+    expect(legacy.pinnedTabId).toBeUndefined();
+
+    chromeMock.tabs.__activeTab = {
+      id: 99,
+      url: "https://app.example.com/",
+      active: true,
+      windowId: 1,
+    };
+
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    const after = await getSessionMeta(legacy.id);
+    expect(after?.pinnedTabId).toBeUndefined();
+    expect(after?.pinnedOrigin).toBeUndefined();
+  });
+
+  it("bootstrap DOES backfill a legacy session that already has content (M1/M2 migration)", async () => {
+    // Legacy = M1/M2 session whose meta predates pin support BUT which
+    // already accumulated messages. We backfill so resume / next-send
+    // can anchor cleanly without surprising the user with a tab capture
+    // that doesn't match the visible content.
+    const legacy = await createSession({ now: 1000 });
+    await setSessionMeta({
+      ...(await getSessionMeta(legacy.id))!,
+      messages: [{ role: "user", content: "previously typed" }],
+    });
+
+    chromeMock.tabs.__activeTab = {
+      id: 99,
+      url: "https://app.example.com/",
+      active: true,
+      windowId: 1,
+    };
+
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    const after = await getSessionMeta(legacy.id);
+    expect(after?.pinnedTabId).toBe(99);
+    expect(after?.pinnedOrigin).toBe("https://app.example.com");
+  });
+
+  it("first sendMessage on an empty session captures + persists the pin", async () => {
+    chromeMock.tabs.__activeTab = {
+      id: 55,
+      url: "https://send-time.example.com/",
+      active: true,
+      windowId: 1,
+    };
+
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    const id = result.current.sessionId!;
+
+    // Pre-send: no pin
+    let meta = await getSessionMeta(id);
+    expect(meta?.pinnedTabId).toBeUndefined();
+
+    act(() => {
+      result.current.sendMessage({ content: "hello" });
+    });
+
+    // sendMessage's pin capture is async (await captureActivePinned +
+    // await persistMessages before chat-start). Wait for the pin to land.
+    await waitFor(async () => {
+      meta = await getSessionMeta(id);
+      expect(meta?.pinnedTabId).toBe(55);
+    });
+    expect(meta?.pinnedOrigin).toBe("https://send-time.example.com");
+  });
+
+  it("second sendMessage does NOT re-capture or overwrite the pin", async () => {
+    chromeMock.tabs.__activeTab = {
+      id: 55,
+      url: "https://first.example.com/",
+      active: true,
+      windowId: 1,
+    };
+
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    const id = result.current.sessionId!;
+
+    act(() => {
+      result.current.sendMessage({ content: "first" });
+    });
+    await waitFor(async () => {
+      const m = await getSessionMeta(id);
+      expect(m?.pinnedTabId).toBe(55);
+    });
+
+    // Simulate the SW completing the stream so the panel can send again.
+    const port = chromeMock.runtime.__ports.at(-1)!;
+    act(() => {
+      emitWithSession(port, { type: "chat-done" }, id);
+    });
+    await waitFor(() => expect(result.current.streaming).toBe(false));
+
+    // User switched tabs between turns.
+    chromeMock.tabs.__activeTab = {
+      id: 88,
+      url: "https://second.example.com/",
+      active: true,
+      windowId: 1,
+    };
+
+    act(() => {
+      result.current.sendMessage({ content: "second" });
+    });
+    // Wait for second send to settle.
+    await waitFor(() => expect(result.current.streaming).toBe(true));
+
+    // Pin still locked to the first-send capture (55 / first.example.com).
+    const meta = await getSessionMeta(id);
+    expect(meta?.pinnedTabId).toBe(55);
+    expect(meta?.pinnedOrigin).toBe("https://first.example.com");
+  });
+
+  it("does NOT overwrite an existing pin on subsequent activations", async () => {
+    const session = await createSession({
+      pinnedTabId: 7,
+      pinnedOrigin: "https://original.example.com",
+      now: 1000,
+    });
+    chromeMock.tabs.__activeTab = {
+      id: 88,
+      url: "https://other.example.com/",
+      active: true,
+      windowId: 1,
+    };
+
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    const after = await getSessionMeta(session.id);
+    expect(after?.pinnedTabId).toBe(7);
+    expect(after?.pinnedOrigin).toBe("https://original.example.com");
+  });
+
+  it("does NOT overwrite an existing pin on subsequent activations", async () => {
+    const session = await createSession({
+      pinnedTabId: 7,
+      pinnedOrigin: "https://original.example.com",
+      now: 1000,
+    });
+    // Pretend the user has since switched to a different tab — captureActivePinned
+    // would return id=88, but since the session already has a pin, we expect
+    // setActive to leave it alone.
+    chromeMock.tabs.__activeTab = {
+      id: 88,
+      url: "https://other.example.com/",
+      active: true,
+      windowId: 1,
+    };
+
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    // Bootstrap selected sessionA (most-recent — also only). Test that
+    // the existing pin is preserved.
+    const after = await getSessionMeta(session.id);
+    expect(after?.pinnedTabId).toBe(7);
+    expect(after?.pinnedOrigin).toBe("https://original.example.com");
+  });
+
+  it("captureActivePinned returns null for restricted URLs (loop falls back to legacy anchor)", async () => {
+    chromeMock.tabs.__activeTab = {
+      id: 5,
+      url: "chrome://newtab/",
+      active: true,
+      windowId: 1,
+    };
+
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    // Bootstrap created a fresh session because the index was empty.
+    const meta = await getSessionMeta(result.current.sessionId!);
+    expect(meta?.pinnedTabId).toBeUndefined();
+    expect(meta?.pinnedOrigin).toBeUndefined();
+  });
+
+  it("captureActivePinned returns null when tab.id is -1 (session-restore / detached tab)", async () => {
+    // Chrome can return tab.id === -1 for session-restore tabs. The
+    // earlier `if (!tab?.id || !tab.url)` check let -1 through (truthy).
+    // Persisting it would cause a downstream chrome.tabs.get(-1) to
+    // synchronously throw 'Value must be at least 0' and crash the agent
+    // loop with a raw API error in chat-error.
+    chromeMock.tabs.__activeTab = {
+      id: -1,
+      url: "https://example.com/",
+      active: true,
+      windowId: 1,
+    };
+
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    const meta = await getSessionMeta(result.current.sessionId!);
+    expect(meta?.pinnedTabId).toBeUndefined();
+    expect(meta?.pinnedOrigin).toBeUndefined();
+  });
+
+  it("captureActivePinned returns null for blob: URLs (review fix REL-2)", async () => {
+    // blob:https://example.com/abc parses to a non-"null" origin so the
+    // earlier captureActivePinned would have persisted a pin. The loop's
+    // isRestrictedUrl rejects blob: hard, so every chat-start would emit
+    // 'restricted URL' before the first iteration. Fix: filter at the
+    // panel via the prefix list so the panel and loop agree.
+    chromeMock.tabs.__activeTab = {
+      id: 6,
+      url: "blob:https://example.com/abc-123",
+      active: true,
+      windowId: 1,
+    };
+
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    const meta = await getSessionMeta(result.current.sessionId!);
+    expect(meta?.pinnedTabId).toBeUndefined();
+    expect(meta?.pinnedOrigin).toBeUndefined();
+  });
+
+  it("setActive backfills missing pin ONLY for legacy sessions that already have content", async () => {
+    // Lock-on-send rule: empty session B should NOT be backfilled by
+    // setActive — pin will be captured at first sendMessage instead.
+    // Legacy session B WITH content SHOULD be backfilled (M1/M2 migration).
+    const sessionA = await createSession({
+      pinnedTabId: 1,
+      pinnedOrigin: "https://a.example.com",
+      now: 3000,
+    });
+    const sessionB_empty = await createSession({ now: 2000 });
+    const sessionB_legacy = await createSession({ now: 1000 });
+    await setSessionMeta({
+      ...(await getSessionMeta(sessionB_legacy.id))!,
+      messages: [{ role: "user", content: "old conversation" }],
+    });
+
+    chromeMock.tabs.__activeTab = {
+      id: 77,
+      url: "https://b.example.com/",
+      active: true,
+      windowId: 1,
+    };
+
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    expect(result.current.sessionId).toBe(sessionA.id); // most-recent
+
+    // Switch to empty session B → no backfill.
+    await act(async () => {
+      await result.current.setActive(sessionB_empty.id);
+    });
+    const afterEmpty = await getSessionMeta(sessionB_empty.id);
+    expect(afterEmpty?.pinnedTabId).toBeUndefined();
+    expect(afterEmpty?.pinnedOrigin).toBeUndefined();
+
+    // Switch to legacy-with-content session → backfill fires.
+    await act(async () => {
+      await result.current.setActive(sessionB_legacy.id);
+    });
+    const afterLegacy = await getSessionMeta(sessionB_legacy.id);
+    expect(afterLegacy?.pinnedTabId).toBe(77);
+    expect(afterLegacy?.pinnedOrigin).toBe("https://b.example.com");
+  });
+
+  it("setActive does NOT overwrite an existing pin on activation", async () => {
+    const sessionA = await createSession({
+      pinnedTabId: 1,
+      pinnedOrigin: "https://a.example.com",
+      now: 2000,
+    });
+    const sessionB = await createSession({
+      pinnedTabId: 99,
+      pinnedOrigin: "https://original.example.com",
+      now: 1000,
+    });
+    // User has since switched to a different tab — but B already has a
+    // pin, so setActive must NOT overwrite it.
+    chromeMock.tabs.__activeTab = {
+      id: 88,
+      url: "https://other.example.com/",
+      active: true,
+      windowId: 1,
+    };
+
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    expect(result.current.sessionId).toBe(sessionA.id);
+
+    await act(async () => {
+      await result.current.setActive(sessionB.id);
+    });
+
+    const after = await getSessionMeta(sessionB.id);
+    expect(after?.pinnedTabId).toBe(99);
+    expect(after?.pinnedOrigin).toBe("https://original.example.com");
+  });
+});
+
+describe("useSession — M3-U1 per-session port routing", () => {
+  it("swaps the port to a per-session name when setActive switches sessions", async () => {
+    const sessionA = await createSession({ now: 1000 });
+    const sessionB = await createSession({ now: 2000 });
+    void sessionA;
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    // Bootstrap selected the most-recent session (sessionB at now=2000).
+    expect(result.current.sessionId).toBe(sessionB.id);
+    expect(chromeMock.runtime.connect).toHaveBeenLastCalledWith({
+      name: `chat-stream-${sessionB.id}`,
+    });
+    const portB = chromeMock.runtime.__ports.at(-1)!;
+
+    // Switch to sessionA.
+    let switched: string | null = null;
+    await act(async () => {
+      switched = await result.current.setActive(sessionA.id);
+    });
+    expect(switched).toBe(sessionA.id);
+
+    // Old port disconnected (release SW-side abortController), new port
+    // opened with sessionA in the name.
+    expect(portB.disconnect).toHaveBeenCalledTimes(1);
+    expect(chromeMock.runtime.connect).toHaveBeenLastCalledWith({
+      name: `chat-stream-${sessionA.id}`,
+    });
+  });
+
+  it("createAndActivate also swaps to a fresh per-session port", async () => {
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    const oldPort = chromeMock.runtime.__ports.at(-1)!;
+    const oldId = result.current.sessionId!;
+
+    let newId: string | null = null;
+    await act(async () => {
+      newId = await result.current.createAndActivate();
+    });
+    expect(newId).not.toBe(oldId);
+    expect(oldPort.disconnect).toHaveBeenCalledTimes(1);
+    expect(chromeMock.runtime.connect).toHaveBeenLastCalledWith({
+      name: `chat-stream-${newId}`,
     });
   });
 });

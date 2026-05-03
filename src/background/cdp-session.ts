@@ -40,9 +40,33 @@ export class CdpAttachError extends Error {
   }
 }
 
+/**
+ * M3-U3 — owner token shape upgrade.
+ *
+ * Pre-M3 owner-token was an opaque crypto.randomUUID() string per
+ * runAgentLoop call; it gated multi-Side-Panel collateral detach but
+ * couldn't say *which session* owned the attach. M3-U3 makes it a
+ * structured `{sessionId, tabId}` so:
+ *
+ *   - Cross-session conflict messages can name the offending session.
+ *   - The 5-path detach (explicit / abort / onDetach / kill-switch /
+ *     finally) carries the sessionId through every call site, which
+ *     makes per-session debugging tractable and lets future kill-switch
+ *     dispatches scope to a single session if needed.
+ *
+ * `tabId` here is redundant with the sessionMap key, but keeping it
+ * inside the tuple means a future per-session-multiple-tabs design
+ * doesn't need a schema change. For now the invariant holds: tabId in
+ * ownerToken === tabId in sessionMap key === ctx.pinnedTabId.
+ */
+export interface CdpOwnerToken {
+  sessionId: string;
+  tabId: number;
+}
+
 export interface CdpSession {
   readonly tabId: number;
-  readonly ownerToken: string;
+  readonly ownerToken: CdpOwnerToken;
   readonly generationId: number;
   readonly isAlive: boolean;
   readonly detachedReason: DetachReason | null;
@@ -66,6 +90,49 @@ interface InternalSession extends CdpSession {
 
 const sessionMap = new Map<number, InternalSession>();
 let nextGenerationId = 1;
+
+/**
+ * M3-U3 — per-tabId attach/detach lock.
+ *
+ * Prevents the "session A finally-detach interleaved with session B
+ * acquire on the same tab" race (advisor ADV-9): without this, B's
+ * `sessionMap.get(tabId)` returns undefined (A's detachInternal
+ * deleted the entry) but A's `chromeDetach` hasn't completed at the
+ * Chrome layer yet, so B's `chromeAttach` throws "Another debugger".
+ *
+ * Implementation: each tabId has a chained promise. acquire / detach
+ * append themselves to the chain. The chain doesn't break on rejection
+ * (tail uses `.then(() => {}, () => {})` to absorb errors), so a failed
+ * attach by one caller does not deadlock subsequent callers.
+ *
+ * Map entry is cleaned up only when this specific operation is the
+ * tail; intermediate entries naturally roll forward. No explicit GC
+ * needed — chains for closed tabs go cold and become garbage when no
+ * one else references them.
+ */
+const tabOpQueue = new Map<number, Promise<unknown>>();
+
+async function queueTabOp<T>(
+  tabId: number,
+  op: () => Promise<T>,
+): Promise<T> {
+  const prev = tabOpQueue.get(tabId) ?? Promise.resolve();
+  // Run `op` after `prev` settles, ignoring prev's outcome — a failed
+  // attach must not block subsequent acquire / detach calls.
+  const result: Promise<T> = prev.then(op, op);
+  // Tail of the chain absorbs success / failure so the next `prev` we
+  // chain onto resolves cleanly regardless.
+  const tail = result.then(
+    () => {},
+    () => {},
+  );
+  tabOpQueue.set(tabId, tail);
+  // Cleanup once tail settles AND we're still the current chain head.
+  void tail.then(() => {
+    if (tabOpQueue.get(tabId) === tail) tabOpQueue.delete(tabId);
+  });
+  return result;
+}
 
 export function getSessionByTabId(tabId: number): CdpSession | undefined {
   return sessionMap.get(tabId);
@@ -132,8 +199,13 @@ export interface AcquireOptions {
   /**
    * Identifier for the owning agent task. Same owner can reuse an
    * existing session; different owner attempting same tabId fails fast.
+   *
+   * M3-U3 — structured `{sessionId, tabId}` so the conflict path can
+   * emit a session-named error and so the SW can later fan out a per-
+   * session kill-switch (e.g. "tear down sessionA's CDP only") without
+   * touching siblings.
    */
-  ownerToken: string;
+  ownerToken: CdpOwnerToken;
   /**
    * Called when the session is torn down by an EXTERNAL event (yellow
    * bar cancel, storage kill switch). Caller should respond by aborting
@@ -154,77 +226,87 @@ export async function acquireCdpSession(
     throw new CdpAttachError("Aborted before attach", "race");
   }
 
-  const existing = sessionMap.get(tabId);
-  if (existing) {
-    if (existing.ownerToken !== ownerToken) {
-      throw new CdpAttachError(
-        "Another agent task already controls this tab via debugger; close the other Side Panel first",
-        "conflict",
-      );
-    }
-    if (!existing.alive) {
-      throw new CdpAttachError(
-        `Existing session for tab ${tabId} is no longer alive (${existing.reason ?? "unknown"})`,
-        "other",
-      );
-    }
-    return existing;
-  }
-
-  // Fresh attach.
-  await chromeAttach(tabId);
-
-  // Race guard — if abort fired during the attach roundtrip, the
-  // would-be listener doesn't exist yet, so detach immediately and
-  // reject without ever exposing the session.
-  if (signal.aborted) {
-    await chromeDetach(tabId);
-    throw new CdpAttachError(
-      "Abort signal fired during attach; detached before exposure",
-      "race",
-    );
-  }
-
-  const generationId = nextGenerationId++;
-  const session: InternalSession = {
-    tabId,
-    ownerToken,
-    generationId,
-    alive: true,
-    reason: null,
-    signalListener: null,
-    onExternalDetach,
-    get isAlive() {
-      return this.alive;
-    },
-    get detachedReason() {
-      return this.reason;
-    },
-    async send(method: string, params: Record<string, unknown> = {}) {
-      if (!this.alive) {
-        throw new Error(
-          `CdpSession[tab=${this.tabId}, gen=${this.generationId}] is not alive (${this.reason ?? "unknown"})`,
+  // M3-U3 — serialize attach/detach on this tabId so a sibling session's
+  // finally-detach completes (at the Chrome layer) before our chromeAttach
+  // call goes out. Without this lock, sessionMap state would be consistent
+  // but Chrome would still reject our attach with "Another debugger" until
+  // the detach roundtrip lands. ADV-9.
+  return queueTabOp(tabId, async () => {
+    const existing = sessionMap.get(tabId);
+    if (existing) {
+      // M3-U3 — sessionId-based conflict check. tabId is already the map
+      // key (so they always match by construction); compare sessionId to
+      // tell sibling-Side-Panel sessions apart.
+      if (existing.ownerToken.sessionId !== ownerToken.sessionId) {
+        throw new CdpAttachError(
+          `Another agent task (session ${existing.ownerToken.sessionId}) already controls tab ${tabId} via debugger; close the other Side Panel first`,
+          "conflict",
         );
       }
-      return chromeSendCommand(this.tabId, method, params);
-    },
-    async detach(reason: DetachReason = "explicit-detach") {
-      await detachInternal(this, reason, /* external */ false);
-    },
-  };
+      if (!existing.alive) {
+        throw new CdpAttachError(
+          `Existing session for tab ${tabId} is no longer alive (${existing.reason ?? "unknown"})`,
+          "other",
+        );
+      }
+      return existing;
+    }
 
-  // Register abort listener to auto-detach when caller's signal fires
-  // (chat-abort, port disconnect, or any externally-triggered abort).
-  // This is the "session is going away because caller aborted" path —
-  // we don't fire onExternalDetach because the caller already knows.
-  const listener = () => {
-    void detachInternal(session, "abort-signal", /* external */ false);
-  };
-  session.signalListener = listener;
-  signal.addEventListener("abort", listener, { once: true });
+    // Fresh attach.
+    await chromeAttach(tabId);
 
-  sessionMap.set(tabId, session);
-  return session;
+    // Race guard — if abort fired during the attach roundtrip, the
+    // would-be listener doesn't exist yet, so detach immediately and
+    // reject without ever exposing the session.
+    if (signal.aborted) {
+      await chromeDetach(tabId);
+      throw new CdpAttachError(
+        "Abort signal fired during attach; detached before exposure",
+        "race",
+      );
+    }
+
+    const generationId = nextGenerationId++;
+    const session: InternalSession = {
+      tabId,
+      ownerToken,
+      generationId,
+      alive: true,
+      reason: null,
+      signalListener: null,
+      onExternalDetach,
+      get isAlive() {
+        return this.alive;
+      },
+      get detachedReason() {
+        return this.reason;
+      },
+      async send(method: string, params: Record<string, unknown> = {}) {
+        if (!this.alive) {
+          throw new Error(
+            `CdpSession[tab=${this.tabId}, gen=${this.generationId}, session=${this.ownerToken.sessionId}] is not alive (${this.reason ?? "unknown"})`,
+          );
+        }
+        return chromeSendCommand(this.tabId, method, params);
+      },
+      async detach(reason: DetachReason = "explicit-detach") {
+        await detachInternal(this, reason, /* external */ false);
+      },
+    };
+
+    // Register abort listener to auto-detach when caller's signal fires
+    // (chat-abort, port disconnect, or any externally-triggered abort).
+    // This is the "session is going away because caller aborted" path —
+    // we don't fire onExternalDetach because the caller already knows.
+    const listener = () => {
+      void detachInternal(session, "abort-signal", /* external */ false);
+    };
+    session.signalListener = listener;
+    signal.addEventListener("abort", listener, { once: true });
+
+    sessionMap.set(tabId, session);
+    return session;
+  });
 }
 
 async function detachInternal(
@@ -259,8 +341,11 @@ async function detachInternal(
     }
   }
 
-  // Best-effort detach the actual Chrome debugger.
-  await chromeDetach(session.tabId);
+  // M3-U3 — serialize the chromeDetach roundtrip on this tabId so a
+  // racing acquire() running in queueTabOp doesn't see a still-attached
+  // Chrome state (sessionMap entry already removed but chrome.debugger
+  // hasn't yet replied to our detach).
+  await queueTabOp(session.tabId, () => chromeDetach(session.tabId));
 }
 
 /**

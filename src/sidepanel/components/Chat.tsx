@@ -71,6 +71,7 @@ export default function Chat({
     streamingText,
     error,
     toast,
+    pinnedOrigin: sessionPinnedOrigin,
     sendMessage: sessionSendMessage,
     abort,
     resolveConfirm,
@@ -84,7 +85,12 @@ export default function Chat({
   const [enabledSkills, setEnabledSkills] = useState<SkillDefinition[]>([]);
   const [popoverSelected, setPopoverSelected] = useState(0);
   const [dismissedInput, setDismissedInput] = useState<string | null>(null);
-  const [pinnedOrigin, setPinnedOrigin] = useState<string | null>(null);
+  // Live preview of the user's currently-active tab origin. Only used
+  // when the session is empty (no messages, not streaming) — that's when
+  // the user can still freely tab-switch and the panel reflects "the tab
+  // your next first-message will lock to". Once messages exist, the
+  // display flips to the persisted `sessionPinnedOrigin` (frozen).
+  const [livePinnedOrigin, setLivePinnedOrigin] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -125,53 +131,62 @@ export default function Chat({
     }
   }, [prefillInput]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // PINNED display contract (M3-U2 post-acceptance, per user feedback):
+  //   - empty session AND not streaming  → live preview of current active
+  //     tab. User can freely tab-switch; PINNED follows. The session is
+  //     not locked yet — first sendMessage will capture and persist.
+  //   - non-empty session OR streaming   → frozen to the persisted pin
+  //     (sessionPinnedOrigin from session meta). Tab-switching in this
+  //     state is irrelevant: the agent will operate on the locked tab.
+  //
+  // Why messages.length > 0 (not just streaming): between tasks (after
+  // chat-done / agent-done-task / paused) `streaming` is false but the
+  // session still has content. The earlier "lock only during streaming"
+  // rule let PINNED drift between tasks, which surprised users who
+  // expected the pin to stay put for the whole conversation. The new
+  // rule mirrors the underlying persistence: pin is captured once at
+  // first send and stays until the session is cleared.
+  const isLocked = streaming || messages.length > 0;
+
   useEffect(() => {
-    // PINNED reflects the tab the agent will (or did) bind to:
-    //   - !streaming → preview = current active tab. Updated on every
-    //     active-tab switch, window-focus change, and url change so the
-    //     header always matches what the SW would pin if the user sent
-    //     a task right now.
-    //   - streaming → locked to the tab pinned at task start. The SW
-    //     captures pinnedTabId at chat-start; updating the panel
-    //     header mid-task would lie about where the agent is operating.
-    //   - streaming → false transition → refresh runs again (effect re-init
-    //     because `streaming` is in deps), so PINNED snaps back to the
-    //     active-tab preview the moment the task ends.
-    async function refreshActiveOrigin() {
-      if (streaming) return;
+    if (isLocked) {
+      // No live tracking when locked — the displayed pin comes from
+      // sessionPinnedOrigin (session meta) and storage onChanged keeps
+      // it fresh. Skip the chrome.tabs listeners entirely so they don't
+      // burn cycles in the locked state.
+      return;
+    }
+    async function refreshLiveOrigin() {
       try {
         const [tab] = await chrome.tabs.query({
           active: true,
           currentWindow: true,
         });
-        setPinnedOrigin(tab?.url ? extractOrigin(tab.url) : null);
+        setLivePinnedOrigin(tab?.url ? extractOrigin(tab.url) : null);
       } catch {
         // non-fatal — keep prior value
       }
     }
 
-    void refreshActiveOrigin();
+    void refreshLiveOrigin();
 
     const onActivated = () => {
-      void refreshActiveOrigin();
+      void refreshLiveOrigin();
     };
     const onUpdated = (
       _tabId: number,
       changeInfo: chrome.tabs.TabChangeInfo,
       tab: chrome.tabs.Tab,
     ) => {
-      if (changeInfo.url && tab.active && messages.length > 0) {
-        setPageChanged(true);
-      }
       if (changeInfo.url && tab.active) {
-        void refreshActiveOrigin();
+        void refreshLiveOrigin();
       }
     };
     const onFocusChanged = (winId: number) => {
       // chrome.windows.WINDOW_ID_NONE === -1 fires when chrome loses focus
       // entirely; ignore to avoid clearing pin on app-switch.
       if (winId === chrome.windows.WINDOW_ID_NONE) return;
-      void refreshActiveOrigin();
+      void refreshLiveOrigin();
     };
 
     chrome.tabs.onActivated.addListener(onActivated);
@@ -182,7 +197,34 @@ export default function Chat({
       chrome.tabs.onUpdated.removeListener(onUpdated);
       chrome.windows.onFocusChanged.removeListener(onFocusChanged);
     };
-  }, [messages.length, streaming]);
+  }, [isLocked]);
+
+  // Separate effect: pageChanged banner only cares about live URL
+  // changes on the pinned tab while the session is non-empty. Kept in
+  // its own listener so the locked-state main effect can early-return.
+  useEffect(() => {
+    if (messages.length === 0) return;
+    const onUpdated = (
+      _tabId: number,
+      changeInfo: chrome.tabs.TabChangeInfo,
+      tab: chrome.tabs.Tab,
+    ) => {
+      if (changeInfo.url && tab.active) {
+        setPageChanged(true);
+      }
+    };
+    chrome.tabs.onUpdated.addListener(onUpdated);
+    return () => chrome.tabs.onUpdated.removeListener(onUpdated);
+  }, [messages.length]);
+
+  // Display source: locked → persisted session pin; free → live preview.
+  // Both paths normalize to host-only via extractHost so the visual
+  // format is consistent across states.
+  const displayPinnedOrigin = isLocked
+    ? sessionPinnedOrigin
+      ? extractHost(sessionPinnedOrigin) ?? sessionPinnedOrigin
+      : null
+    : livePinnedOrigin;
 
   async function checkConfig() {
     const active = await getActiveProvider();
@@ -328,17 +370,17 @@ export default function Chat({
   return (
     <div className="flex h-full flex-col">
       {/* Pinned origin + provider label info bar */}
-      {(pinnedOrigin || providerLabel) && (
+      {(displayPinnedOrigin || providerLabel) && (
         <div className="flex flex-shrink-0 items-center gap-2 border-b border-line bg-canvas px-4 py-1.5">
-          {pinnedOrigin && (
+          {displayPinnedOrigin && (
             <>
-              <span className="caps text-fg-3">PINNED</span>
+              <span className="caps text-fg-3">{isLocked ? "PINNED" : "PIN"}</span>
               <span className="flex-1 truncate font-mono text-[11px] text-fg-2">
-                {pinnedOrigin}
+                {displayPinnedOrigin}
               </span>
             </>
           )}
-          {!pinnedOrigin && <div className="flex-1" />}
+          {!displayPinnedOrigin && <div className="flex-1" />}
           {streaming && stepCount > 0 && (
             <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-accent tabular">
               step {String(stepCount).padStart(2, "0")}
@@ -708,6 +750,23 @@ function extractOrigin(url: string): string | null {
     if (!u.host) return null;
     const path = u.pathname.length > 1 ? u.pathname : "";
     return `${u.host}${path}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Strip the scheme from a URL.origin string (e.g. "https://docs.google.com")
+ * to host-only, matching the format extractOrigin returns for the live
+ * preview. Used by the locked-state PINNED display so locked vs free pins
+ * render with consistent visual format. Returns null when the input does
+ * not parse cleanly; the caller falls back to the raw string.
+ */
+function extractHost(originUrl: string): string | null {
+  try {
+    const u = new URL(originUrl);
+    if (!u.host) return null;
+    return u.host;
   } catch {
     return null;
   }

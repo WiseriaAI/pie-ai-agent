@@ -41,6 +41,7 @@ import {
 } from "./cdp-session";
 import { KEYBOARD_SIMULATION_STORAGE_KEY } from "@/lib/keyboard-simulation";
 import { runSessionMigrations } from "@/lib/sessions/migration";
+import { getCrossSessionPinnedTabIds } from "@/lib/sessions/pinned-tab-registry";
 import { chat } from "@/lib/model-router";
 import { generateTitle, maybeUpgradeFallbackTitle } from "@/lib/sessions/title-generator";
 
@@ -409,9 +410,21 @@ async function handleResumeRequest(
 ): Promise<void> {
   const meta = await getSessionMeta(sessionId);
   if (!meta || meta.status !== "paused") {
+    // Multi-sidepanel scenario: a sibling sidepanel may have already resumed
+    // this session (status=active or finished), so this resume-task is racy.
+    // Emit chat-error so the panel can reset streaming=true (set synchronously
+    // by useSession.resumeTask before posting). Without this the panel is
+    // stuck spinning forever AND M3 setActive/createAndActivate refuse to
+    // switch sessions while streaming=true — locking the user out of the
+    // multi-session UI until manual close/reopen.
     console.warn(
       `[sw] resume-task ignored — session=${sessionId} not in paused state`,
     );
+    port.postMessage({
+      type: "chat-error",
+      error: "Resume rejected — session is no longer paused (it may have been resumed in another sidepanel).",
+      sessionId,
+    });
     return;
   }
   const agent = await getSessionAgent(sessionId);
@@ -419,6 +432,11 @@ async function handleResumeRequest(
     console.warn(
       `[sw] resume-task ignored — session=${sessionId} has no in-flight agent state`,
     );
+    port.postMessage({
+      type: "chat-error",
+      error: "Resume rejected — no in-flight agent state to resume.",
+      sessionId,
+    });
     return;
   }
 
@@ -556,6 +574,14 @@ async function handleResumeRequest(
     taskForPrompt = typeof c === "string" ? c : "(resumed task)";
   }
 
+  // M3-U2 — same pin injection as chat-start path. checkPinnedDrift
+  // already validated the pin against current tab state above; the loop
+  // itself will re-check on every iteration.
+  const pinned =
+    meta.pinnedTabId !== undefined && meta.pinnedOrigin
+      ? { tabId: meta.pinnedTabId, origin: meta.pinnedOrigin }
+      : undefined;
+
   await runAgentLoop({
     port,
     task: taskForPrompt,
@@ -574,6 +600,9 @@ async function handleResumeRequest(
     // M2-U1: restore the skill-scope stack so R2/R3 enforcement picks
     // up where it left off if the task was paused mid-skill.
     resumedSkillScopeStack: agent.skillExecutionScopeStack,
+    pinned,
+    // M3-U4 (TOCTOU fix) — refresh per dispatch; see chat-start twin.
+    refreshCrossSessionPinnedTabIds: () => getCrossSessionPinnedTabIds(sessionId),
   });
 }
 
@@ -848,6 +877,17 @@ async function handleChatStream(
       }
     };
 
+    // M3-U2 — read the panel-captured pinned tab/origin from meta and
+    // inject into the loop context. Legacy sessions without a pin fall
+    // through to the loop's active-tab fallback (already handled there).
+    const sessionMeta = await getSessionMeta(sessionId);
+    // M3-U2 — both-or-neither: only construct the pin object when both
+    // fields are present (defends against partially-corrupted meta).
+    const pinned =
+      sessionMeta?.pinnedTabId !== undefined && sessionMeta.pinnedOrigin
+        ? { tabId: sessionMeta.pinnedTabId, origin: sessionMeta.pinnedOrigin }
+        : undefined;
+
     await runAgentLoop({
       port,
       task,
@@ -864,6 +904,11 @@ async function handleChatStream(
       // (see makeStepSnapshotHandler). Errors caught + logged inside
       // runAgentLoop; this wrapper only does the storage calls.
       onStepSnapshot: makeStepSnapshotHandler(sessionId),
+      pinned,
+      // M3-U4 (TOCTOU fix) — refresh the cross-session pinned-tab
+      // registry per tool dispatch. The frozen snapshot here would miss
+      // sessions created mid-loop.
+      refreshCrossSessionPinnedTabIds: () => getCrossSessionPinnedTabIds(sessionId),
     });
   } catch (e) {
     if (signal.aborted) return;
@@ -875,8 +920,24 @@ async function handleChatStream(
   }
 }
 
+// M3-U1 — port name encodes sessionId: `chat-stream-${sessionId}`. Each
+// connect creates an independent abortController + pendingConfirmations
+// closure (per-port sandbox). The SW supports multiple concurrent ports
+// (e.g. two sidepanels in two Chrome windows, each pinned to its own
+// session); single-panel concurrent task switch remains gated by the
+// M2-U2 streaming guard for now (deferred to a future M3-U6+).
+const CHAT_STREAM_PREFIX = "chat-stream-";
+
 chrome.runtime.onConnect.addListener((port) => {
-  if (port.name !== "chat-stream") return;
+  if (!port.name.startsWith(CHAT_STREAM_PREFIX)) return;
+  const portSessionId = port.name.slice(CHAT_STREAM_PREFIX.length);
+  if (!portSessionId) {
+    // Reject malformed port name — defense against an extension peer
+    // (or a bug in the panel) opening a port with an empty session id.
+    console.warn(`[sw] rejecting port with empty sessionId: name="${port.name}"`);
+    port.disconnect();
+    return;
+  }
 
   const abortController = new AbortController();
 
@@ -935,8 +996,25 @@ chrome.runtime.onConnect.addListener((port) => {
     chrome.runtime.getPlatformInfo();
   }, 25_000);
 
+  // M3-U1 — every panel→SW message carrying a `sessionId` must match the
+  // sessionId encoded in the port name. Mismatch indicates a wire bug
+  // (panel constructed a wrong-id message on a port that's bound to a
+  // different session) or a tampering attempt. We post a session-toast back
+  // so the panel can surface it, then drop the message rather than
+  // silently routing it to a foreign session's resolver.
+  const verifyPortSession = (msgSessionId: string, kind: string): boolean => {
+    if (msgSessionId !== portSessionId) {
+      console.warn(
+        `[sw] port-session mismatch on ${kind}: portSession=${portSessionId} msgSession=${msgSessionId} — dropping`,
+      );
+      return false;
+    }
+    return true;
+  };
+
   port.onMessage.addListener((message: PortMessageToWorker) => {
     if (message.type === "chat-start") {
+      if (!verifyPortSession(message.sessionId, "chat-start")) return;
       inFlightSessionIds.add(message.sessionId);
       handleChatStream(
         port,
@@ -949,6 +1027,7 @@ chrome.runtime.onConnect.addListener((port) => {
     } else if (message.type === "chat-abort") {
       abortController.abort();
     } else if (message.type === "agent-confirm-response") {
+      if (!verifyPortSession(message.sessionId, "agent-confirm-response")) return;
       // P1-4 — verify the response belongs to the session that owns
       // the confirmationId. Prevents wrong-session approval (defense-
       // in-depth behind the P0-1/P0-2 streaming guards).
@@ -975,6 +1054,7 @@ chrome.runtime.onConnect.addListener((port) => {
         pendingConfirmations.delete(message.confirmationId);
       }
     } else if (message.type === "panel-mounted") {
+      if (!verifyPortSession(message.sessionId, "panel-mounted")) return;
       // M1-U4 — R4: re-emit a live confirm to a re-mounted panel.
       // Async — fire-and-forget; failures are logged but not fatal.
       handlePanelMounted(port, message.sessionId, pendingConfirmations).catch(
@@ -986,6 +1066,7 @@ chrome.runtime.onConnect.addListener((port) => {
         },
       );
     } else if (message.type === "resume-task") {
+      if (!verifyPortSession(message.sessionId, "resume-task")) return;
       inFlightSessionIds.add(message.sessionId);
       handleResumeRequest(
         port,
@@ -1008,6 +1089,7 @@ chrome.runtime.onConnect.addListener((port) => {
         });
       });
     } else if (message.type === "discard-task") {
+      if (!verifyPortSession(message.sessionId, "discard-task")) return;
       handleDiscardRequest(
         port,
         message.sessionId,

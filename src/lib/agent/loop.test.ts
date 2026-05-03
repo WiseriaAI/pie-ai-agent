@@ -4,6 +4,7 @@ import type { SessionAgentState } from "@/lib/sessions/types";
 import {
   buildSessionAgentSnapshot,
   buildSessionAgentTombstone,
+  collectCrossSessionConflicts,
 } from "./loop";
 
 // M1-U3 invariant tests — focused on the snapshot helper, not the full
@@ -346,5 +347,229 @@ describe("M2-U1 — concurrent snapshot calls are stack-isolated", () => {
     const resumedStack = snapshot.skillExecutionScopeStack;
     expect(resumedStack).toEqual(originalStack);
     expect(resumedStack[0]!.allowedTools).toEqual(["click", "type"]);
+  });
+});
+
+describe("M3-U4 — collectCrossSessionConflicts", () => {
+  it("returns empty when crossSessionPinnedTabIds is undefined", () => {
+    const result = collectCrossSessionConflicts(
+      "click",
+      { elementIndex: 0 },
+      99,
+      undefined,
+    );
+    expect(result).toEqual([]);
+  });
+
+  it("returns empty when the set is empty", () => {
+    const result = collectCrossSessionConflicts(
+      "click",
+      { elementIndex: 0 },
+      99,
+      new Set(),
+    );
+    expect(result).toEqual([]);
+  });
+
+  it("returns empty for read-class tools regardless of conflicts", () => {
+    // get_tab_content is read; even if tabId is in cross-session set,
+    // read concurrency is allowed (K2 read/write split).
+    const result = collectCrossSessionConflicts(
+      "get_tab_content",
+      { tabId: 42 },
+      99,
+      new Set([42]),
+    );
+    expect(result).toEqual([]);
+  });
+
+  it("returns empty for low-class tools (scroll, wait, done)", () => {
+    expect(
+      collectCrossSessionConflicts(
+        "scroll",
+        { direction: "down" },
+        99,
+        new Set([99]),
+      ),
+    ).toEqual([]);
+    expect(
+      collectCrossSessionConflicts(
+        "wait",
+        { seconds: 1 },
+        99,
+        new Set([99]),
+      ),
+    ).toEqual([]);
+    expect(
+      collectCrossSessionConflicts(
+        "done",
+        { result: "ok" },
+        99,
+        new Set([99]),
+      ),
+    ).toEqual([]);
+  });
+
+  it("flags args.tabIds entries pinned by other sessions (write tab tool)", () => {
+    const result = collectCrossSessionConflicts(
+      "close_tabs",
+      { tabIds: [10, 20, 30] },
+      99,
+      new Set([20, 30, 40]),
+    );
+    expect(result.sort()).toEqual([20, 30]);
+  });
+
+  it("flags args.tabId on a write tab tool", () => {
+    // No write tab tool currently uses args.tabId (close_tabs uses tabIds).
+    // Use a synthetic args shape on group_tabs (tabIds + a stray tabId).
+    const result = collectCrossSessionConflicts(
+      "group_tabs",
+      { tabIds: [10], tabId: 50 },
+      99,
+      new Set([50]),
+    );
+    expect(result).toEqual([50]);
+  });
+
+  it("does NOT fold pinnedTabId for non-tab write tools — shared-pin sessions can still operate", () => {
+    // Adversarial-review fix (shared-pin deadlock): the earlier behavior
+    // folded pinnedTabId into the conflict check for non-tab tools, which
+    // deadlocked two sessions sharing the same pin (every click/type/select
+    // call from EITHER session would be R7-rejected by the OTHER session's
+    // pin appearing in the registry). The fold added no offsetting safety —
+    // the loop's per-iteration origin re-check already protects the calling
+    // session's intent — only false positives. This test locks in the
+    // post-fix behavior: when only the calling session's own pin is in the
+    // cross-session set (because another session pins the same tab),
+    // non-tab write tools are NOT blocked.
+    const result = collectCrossSessionConflicts(
+      "click",
+      { elementIndex: 0 },
+      7,
+      new Set([7]),
+    );
+    expect(result).toEqual([]);
+  });
+
+  it("does NOT fold pinnedTabId for tab-tool calls (tab tools target args)", () => {
+    // close_tabs is a tab tool; it MUST target args.tabIds, not the pin.
+    // If pinnedTabId happens to be in the cross-session set but the LLM
+    // didn't pass it as a target, no conflict (the call doesn't touch
+    // that tab via this path).
+    const result = collectCrossSessionConflicts(
+      "close_tabs",
+      { tabIds: [99] }, // 99 is NOT in the conflict set
+      7, // pin is in the set, but irrelevant for tab tools
+      new Set([7]),
+    );
+    expect(result).toEqual([]);
+  });
+
+  it("dedupes when args.tabId == args.tabIds[i]", () => {
+    const result = collectCrossSessionConflicts(
+      "group_tabs",
+      { tabIds: [10, 10], tabId: 10 },
+      99,
+      new Set([10]),
+    );
+    expect(result).toEqual([10]);
+  });
+
+  it("write skill meta tools (create/update/delete) are not tab-bound — never blocked by R7", () => {
+    // create_skill / update_skill / delete_skill are write-class but
+    // operate on storage, not tabs. The fix-3 cleanup means non-tab
+    // write tools are no longer over-gated when two sessions share a
+    // pin: skill mutations proceed regardless of which sessions own
+    // which tabs.
+    const result = collectCrossSessionConflicts(
+      "create_skill",
+      { id: "x", name: "x", description: "x", promptTemplate: "x" },
+      7,
+      new Set([7]),
+    );
+    expect(result).toEqual([]);
+  });
+});
+
+describe("M3-U5 — multi-session invariant regression", () => {
+  it("buildSessionAgentSnapshot — concurrent calls with different histories never share state", () => {
+    // The advisor (M3-U5 verification) flagged: every per-call helper
+    // MUST stay function-local. This test runs two snapshots in
+    // simulated concurrent fashion and asserts independence — if a
+    // future refactor hoists state into module scope, this fails.
+    const historyA: AgentMessage[] = [
+      { role: "user", content: "task-A" },
+    ];
+    const historyB: AgentMessage[] = [
+      { role: "user", content: "task-B" },
+    ];
+
+    const stackA: SessionAgentState["skillExecutionScopeStack"] = [
+      { skillId: "skill-A", allowedTools: ["click"] },
+    ];
+    const stackB: SessionAgentState["skillExecutionScopeStack"] = [
+      { skillId: "skill-B", allowedTools: ["type"] },
+    ];
+
+    const snapA = buildSessionAgentSnapshot(historyA, 1, stackA);
+    const snapB = buildSessionAgentSnapshot(historyB, 2, stackB);
+
+    // Independent contents.
+    expect(snapA.agentMessages[0]).toEqual({
+      role: "user",
+      content: "task-A",
+    });
+    expect(snapB.agentMessages[0]).toEqual({
+      role: "user",
+      content: "task-B",
+    });
+    // Independent stacks.
+    expect(snapA.skillExecutionScopeStack[0]!.skillId).toBe("skill-A");
+    expect(snapB.skillExecutionScopeStack[0]!.skillId).toBe("skill-B");
+    // Independent step indices.
+    expect(snapA.stepIndex).toBe(1);
+    expect(snapB.stepIndex).toBe(2);
+    // Independent object identities (no shared references).
+    expect(snapA.skillExecutionScopeStack).not.toBe(snapB.skillExecutionScopeStack);
+  });
+
+  it("collectCrossSessionConflicts — two simulated sessions with overlapping pin BOTH proceed (deadlock fix)", () => {
+    // Adversarial-review scenario: Session A pinned tab 7, Session B
+    // pinned tab 7 too. On A's dispatch crossSessionPinnedTabIds={7}
+    // (excludes A, contains B); on B's dispatch the same set
+    // (excludes B, contains A). Pre-fix: both sides' click was rejected
+    // → symmetric deadlock. Post-fix: non-tab tools no longer fold
+    // pinnedTabId into the conflict check, so both sessions can run
+    // their own click/type/select against tab 7 without blocking each
+    // other. The per-iteration origin re-check still protects each
+    // session's pinned-origin intent.
+    const fromA = collectCrossSessionConflicts(
+      "click",
+      { elementIndex: 0 },
+      7,
+      new Set([7]),
+    );
+    const fromB = collectCrossSessionConflicts(
+      "click",
+      { elementIndex: 0 },
+      7,
+      new Set([7]),
+    );
+    expect(fromA).toEqual([]);
+    expect(fromB).toEqual([]);
+  });
+
+  it("collectCrossSessionConflicts — same-session calls (excluded from registry) do not conflict", () => {
+    // The registry construction (getCrossSessionPinnedTabIds) excludes
+    // the calling session's own pin. So the typical single-session
+    // scenario hands an empty set to the helper.
+    const result = collectCrossSessionConflicts(
+      "click",
+      { elementIndex: 0 },
+      7,
+      new Set(), // single-session = no cross-session pins
+    );
+    expect(result).toEqual([]);
   });
 });

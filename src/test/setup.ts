@@ -141,9 +141,37 @@ const runtime = {
   onConnect: { addListener: vi.fn() },
 };
 
+// chrome.tabs mock — minimum surface for M3-U2 pin capture / pinned-tab
+// registry tests. Tests can override `__activeTab` to control what
+// `chrome.tabs.query({active:true,currentWindow:true})` returns.
+interface FakeTab {
+  id: number;
+  url: string;
+  title?: string;
+  active?: boolean;
+  windowId?: number;
+}
+
+const tabs = {
+  __activeTab: null as FakeTab | null,
+  __tabsById: new Map<number, FakeTab>(),
+  query: vi.fn(async (info: chrome.tabs.QueryInfo): Promise<FakeTab[]> => {
+    if (info.active && info.currentWindow) {
+      return tabs.__activeTab ? [tabs.__activeTab] : [];
+    }
+    return Array.from(tabs.__tabsById.values());
+  }),
+  get: vi.fn(async (id: number): Promise<FakeTab> => {
+    const t = tabs.__tabsById.get(id);
+    if (!t) throw new Error(`No tab with id ${id}`);
+    return t;
+  }),
+};
+
 const chromeMock = {
   storage: { local },
   runtime,
+  tabs,
 };
 
 // Install on globalThis so `chrome.storage.local.get(...)` works in src code.
@@ -154,6 +182,10 @@ beforeEach(() => {
   local.__store = {};
   runtime.__ports = [];
   runtime.connect.mockClear();
+  tabs.__activeTab = null;
+  tabs.__tabsById.clear();
+  tabs.query.mockClear();
+  tabs.get.mockClear();
 });
 
 export { chromeMock };
