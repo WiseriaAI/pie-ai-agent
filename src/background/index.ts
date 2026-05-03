@@ -29,6 +29,7 @@ import {
   markFailedAndScrub,
   updateLastAccessed,
   isPendingConfirmFloodLimited,
+  clearLastTaskSynth,
 } from "@/lib/sessions/storage";
 import { escapeUntrustedWrappers } from "@/lib/agent/untrusted-wrappers";
 import {
@@ -789,9 +790,53 @@ async function handleChatStream(
       }
     }
 
-    // Extract task from last user message
-    const task =
-      [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
+    // U2 — validate messages array is non-empty (panel always sends at
+    // least the current user message; empty array is a wire bug).
+    if (messages.length === 0) {
+      port.postMessage({
+        type: "chat-error",
+        error: "对话历史为空，请重新发送",
+        sessionId,
+      });
+      return;
+    }
+
+    // U2 — task is always the last message (panel sendMessage puts the
+    // current user prompt last; this replaces the old reverse-find).
+    const task = messages[messages.length - 1]!.content;
+
+    // U2 — lastTaskSynth injection (Half B SW-side synth).
+    // Read session meta for any synthesized assistant turn written by
+    // emitDone after the previous agent task finished. If present,
+    // insert it as an assistant turn immediately before the final user
+    // message, then clear it (one-shot consume) so it is never injected
+    // into a second chat-start.
+    //
+    // Note: title generation (above) uses messages.length === 1 which
+    // is evaluated BEFORE this injection, so the injected synth never
+    // accidentally counts as a second message for title-gen purposes.
+    // sessionMeta is re-read below for the pinned tab fields; we
+    // perform a single early read here and share it.
+    const synthMeta = await getSessionMeta(sessionId);
+    const lastTaskSynth = synthMeta?.lastTaskSynth ?? null;
+
+    let effectiveMessages = messages;
+    if (lastTaskSynth) {
+      // Insert the synth assistant turn before the last user message.
+      // Build a new array — never mutate the input.
+      effectiveMessages = [
+        ...messages.slice(0, -1),
+        { role: "assistant" as const, content: lastTaskSynth },
+        messages[messages.length - 1]!,
+      ];
+      // One-shot consume: clear so the next chat-start starts fresh.
+      clearLastTaskSynth(sessionId).catch((e) => {
+        console.warn(
+          `[sw] clearLastTaskSynth failed for session=${sessionId}:`,
+          e,
+        );
+      });
+    }
 
     const modelConfig: ModelConfig = config;
 
@@ -880,7 +925,9 @@ async function handleChatStream(
     // M3-U2 — read the panel-captured pinned tab/origin from meta and
     // inject into the loop context. Legacy sessions without a pin fall
     // through to the loop's active-tab fallback (already handled there).
-    const sessionMeta = await getSessionMeta(sessionId);
+    // U2 — reuse synthMeta already fetched above for lastTaskSynth
+    // (same storage call, avoiding a second round-trip).
+    const sessionMeta = synthMeta;
     // M3-U2 — both-or-neither: only construct the pin object when both
     // fields are present (defends against partially-corrupted meta).
     const pinned =
@@ -909,6 +956,10 @@ async function handleChatStream(
       // registry per tool dispatch. The frozen snapshot here would miss
       // sessions created mid-loop.
       refreshCrossSessionPinnedTabIds: () => getCrossSessionPinnedTabIds(sessionId),
+      // U2 — pass the full (possibly synth-injected) messages array so
+      // runAgentLoop can seed a proper multi-turn history instead of the
+      // bare [system, user(task)] two-entry seed.
+      messages: effectiveMessages,
     });
   } catch (e) {
     if (signal.aborted) return;

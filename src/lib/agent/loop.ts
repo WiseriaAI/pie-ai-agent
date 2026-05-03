@@ -1,4 +1,5 @@
 import type { ModelConfig, AgentMessage, ContentBlock, ToolDefinition } from "../model-router/types";
+import type { ChatMessage } from "../model-router";
 import { streamChat } from "../model-router";
 import { snapshotInteractiveElements } from "../dom-actions/snapshot";
 import type { PageSnapshot } from "../dom-actions/types";
@@ -171,9 +172,55 @@ export interface AgentLoopContext {
    * doesn't fire.
    */
   refreshCrossSessionPinnedTabIds?: () => Promise<Set<number>>;
+  /**
+   * U2 — full multi-turn chat history from the panel wire. When present
+   * (new-task path, not resume), the loop seeds its `history` array from
+   * this array instead of the bare `[system, user(task)]` two-entry seed.
+   *
+   * Each user message is individually wrapped in
+   * `<untrusted_user_message>…</untrusted_user_message>` with
+   * `escapeUntrustedWrappers` applied first (D7 idempotent wrap).
+   * Assistant messages (including the `lastTaskSynth`-injected turn,
+   * already wrapped by U3 in `<untrusted_prior_task_summary>`) pass
+   * through verbatim — no double-wrap.
+   *
+   * Optional for backward compatibility: when absent the loop falls back
+   * to the `[system, user(task)]` two-entry seed (test harness + legacy
+   * callers). The resume path (`resumedAgentMessages`) ignores this
+   * field entirely.
+   */
+  messages?: ChatMessage[];
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * U2 — convert a `ChatMessage` from the panel wire to an `AgentMessage`
+ * suitable for the LLM history.
+ *
+ * - `user` messages are wrapped in
+ *   `<untrusted_user_message>…</untrusted_user_message>` with
+ *   `escapeUntrustedWrappers` applied first (D7 idempotent).
+ * - `assistant` messages pass through verbatim (lastTaskSynth-injected
+ *   turns are already wrapped by U3 in
+ *   `<untrusted_prior_task_summary>`; real chat replies are trusted
+ *   LLM output and do not need additional wrapping).
+ * - `system` messages pass through verbatim (edge case; system role
+ *   appears only as the first entry in the history, built by
+ *   `buildAgentSystemPrompt`).
+ *
+ * Exported for unit testing (D7 wrap invariant).
+ */
+export function chatMessageToAgentMessage(m: ChatMessage): AgentMessage {
+  if (m.role === "user") {
+    const escaped = escapeUntrustedWrappers(m.content);
+    return {
+      role: "user",
+      content: `<untrusted_user_message>${escaped}</untrusted_user_message>`,
+    };
+  }
+  return { role: m.role, content: m.content };
+}
 
 function toolsToDefinitions(tools: Tool[]): ToolDefinition[] {
   return tools.map((t) => ({
@@ -825,25 +872,33 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
   // against subsequent in-place mutations of the input (the caller
   // owns it but we want to be defensive). See `isResumedFirstIteration`
   // below for the related observation-merge skip.
+  //
+  // U2 — multi-turn path: when `ctx.messages` is provided (new task,
+  // not resume), seed history from the full chat prefix. Each user
+  // message is wrapped in <untrusted_user_message>…</untrusted_user_message>
+  // with escapeUntrustedWrappers applied first (D7 idempotent).
+  // Assistant messages pass through verbatim (lastTaskSynth-injected
+  // turns are already wrapped by U3 in <untrusted_prior_task_summary>).
+  const systemMsg: AgentMessage = {
+    role: "system",
+    content: buildAgentSystemPrompt(
+      task,
+      keyboardSimEnabledAtStart,
+      /* hasMetaTools */ true,
+      // M3-U2 — pass the authoritative pinned tab id + origin so
+      // the LLM can call get_tab_content({tabId}) directly for
+      // "summarize / read this page" tasks instead of burning a
+      // list_tabs round-trip + a confirm card just to discover
+      // its own tab id.
+      { tabId: pinnedTabId, origin: pinnedOrigin },
+    ),
+  };
+
   const history: AgentMessage[] = ctx.resumedAgentMessages
     ? structuredClone(ctx.resumedAgentMessages)
-    : [
-        {
-          role: "system",
-          content: buildAgentSystemPrompt(
-            task,
-            keyboardSimEnabledAtStart,
-            /* hasMetaTools */ true,
-            // M3-U2 — pass the authoritative pinned tab id + origin so
-            // the LLM can call get_tab_content({tabId}) directly for
-            // "summarize / read this page" tasks instead of burning a
-            // list_tabs round-trip + a confirm card just to discover
-            // its own tab id.
-            { tabId: pinnedTabId, origin: pinnedOrigin },
-          ),
-        },
-        { role: "user", content: task },
-      ];
+    : ctx.messages && ctx.messages.length > 0
+      ? [systemMsg, ...ctx.messages.map(chatMessageToAgentMessage)]
+      : [systemMsg, { role: "user", content: task }];
 
   // M1-U5 — flag that the first iteration of the loop should skip the
   // observation merge. The prior step's snapshot already contains an
