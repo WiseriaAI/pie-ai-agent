@@ -1,15 +1,17 @@
 ---
 title: "feat: Session as First-Class Persistent Layer (Checkpoint & Resume)"
 type: feat
-status: m2-shipped
+status: completed
 date: 2026-05-02
-last_updated: 2026-05-03
+last_updated: 2026-05-04
 origin: docs/brainstorms/2026-05-02-checkpoint-resume-requirements.md
 m1_pr: https://github.com/WiseriaAI/Pie/pull/8
+m3_pr: https://github.com/WiseriaAI/Pie/pull/13
 m1_learnings: docs/solutions/2026-05-02-session-as-first-class-persistent-layer-m1.md
+m3_learnings: docs/solutions/2026-05-03-multi-session-invariant-trace.md
 ---
 
-> **Status note (2026-05-03)**: M1 (units U1-U5) shipped via PR #8 — single-session persistent layer + SW restart recovery + R11 drift card. **M2-U1 shipped via PR #9** — multi-session schema + state machine + skillExecutionScopeStack (76 → 106 tests). **M2-U2 shipped via PR #10** — multi-session sidepanel UI: 4 new components (TopBarListButton ≡ + corner pending dot / TopBarNewSessionButton + / SessionDrawer 296px overlay / SessionRow 5 status SVGs) + SEC-PLAN-009 flood guard + R23 archived auto-create + ce:review pass-2 fix sweep (2 P0 cross-session contamination + 9 P1) + **manual-acceptance fix sweep** (Bug-A user-msg disappear / Bug-B agent-text wipe / Bug-C title fallback / Bug-D K-10 abort-drain pollution / Bug-E panel-close mid-task no-resume / Bug-PINNED active-tab not following) (106 → 143 tests). **M2-U3 + M2-U4 完成** (待提交 PR) — M2-U3 LLM async 标题 + `untrusted_user_message` wrapper (双 list lock-step 自动断言) + race-guard via panel-written sentinel (slash-skill 修正); M2-U4 LRU archive + 30-day hard delete + soft delete + storage usage indicator (with 7.5MB 警告高亮) + Show Archived 折叠 + Restore/Delete forever buttons; ce:review 9 reviewer pass 后 8 个 P0/P1 修复 (slash-skill race-guard 真 bug / archived-bucket resurrect / vacuous test assertions 暴露 archive-bytes-grow 真 bug → schema 去冗余 / malformed archive 立即被硬删 / hardDeleteExpired 无 .catch / 死代码 / 重复 inline style key) (143 → 172 tests). M3 NOT YET STARTED. See `m1_learnings` link for shipped invariants future work must preserve.
+> **Status note (2026-05-04)**: All three milestones shipped. M1 (units U1-U5) via PR #8 — single-session persistent layer + SW restart recovery + R11 drift card. **M2-U1 via PR #9** — multi-session schema + state machine + skillExecutionScopeStack (76 → 106 tests). **M2-U2 via PR #10** — multi-session sidepanel UI + ce:review pass-2 fix sweep + manual-acceptance fix sweep (106 → 143 tests). **M2-U3 + M2-U4 完成** — LLM async 标题 + `untrusted_user_message` wrapper + LRU archive + 30-day hard delete + storage indicator (143 → 172 tests). **M3 (U1-U5) shipped via PR #13** — per-session port routing + per-session pinned tab/origin + CDP ownerToken `{sessionId, tabId}` + R7 cross-session lock + invariant trace doc; ce:review autofix sweep closed shared-pin deadlock (adversarial) + TOCTOU registry refresh + handleResumeRequest silent-hang + pinned pair contract (TS) + ADV-9 race test realistic chrome.debugger mock (172 → 215+ tests; main now at 228). See `m3_learnings` for the R24/R25/R26 acceptance gate trace.
 
 # feat: Session as First-Class Persistent Layer
 
@@ -700,7 +702,7 @@ stateDiagram-v2
 
 ### M3 — 真多 thread sandbox（M1+M2 ship + 验证后才开始）
 
-- [ ] **Unit M3-U1: Per-session port routing (one port per active session)**
+- [x] **Unit M3-U1: Per-session port routing (one port per active session)** ✅ shipped via PR #13
 
 **Goal:** SW 端从单 port (chat-stream) 升级到多 port (chat-stream-${sessionId})，建立 multi-session sandbox 基础。
 
@@ -734,7 +736,7 @@ stateDiagram-v2
 
 ---
 
-- [ ] **Unit M3-U2: Per-session pinned tab/origin (anchor at session creation, 不每次重查)**
+- [x] **Unit M3-U2: Per-session pinned tab/origin (anchor at session creation, 不每次重查)** ✅ shipped via PR #13 (collapsed to single `pinned: {tabId, origin}` ctx field after TS review)
 
 **Goal:** 解 feasibility F13 — pinned tab 应在 session 创建时 capture 用户当时 active tab，不要每次 runAgentLoop 重查 chrome.tabs.query。
 
@@ -766,7 +768,7 @@ stateDiagram-v2
 
 ---
 
-- [ ] **Unit M3-U3: CDP owner-token (sessionId, tabId) 升级 + 5-path detach 多 session 适配**
+- [x] **Unit M3-U3: CDP owner-token (sessionId, tabId) 升级 + 5-path detach 多 session 适配** ✅ shipped via PR #13 (per-tabId `queueTabOp` mutex closes ADV-9 attach handover race; mock now simulates Chrome's "Another debugger" failure during detach overlap)
 
 **Goal:** Phase 2.5 owner-token 从 string 升级为 (sessionId, tabId) tuple；5-path detach 在 multi-session 下不静默 steal/cross-detach。
 
@@ -800,7 +802,7 @@ stateDiagram-v2
 
 ---
 
-- [ ] **Unit M3-U4: Read/write tool 分类 (BUILT_IN_TOOLS metadata, G-1 gate respect) + R7 conflict checker + cross-session pinned tab registry**
+- [x] **Unit M3-U4: Read/write tool 分类 (BUILT_IN_TOOLS metadata, G-1 gate respect) + R7 conflict checker + cross-session pinned tab registry** ✅ shipped via PR #13 (TOCTOU fix: registry refreshed per dispatch via `ctx.refreshCrossSessionPinnedTabIds`; shared-pin deadlock fix: dropped pinnedTabId fold for non-tab write tools after adversarial review)
 
 **Goal:** 实现 R7 读写分流；落地 K2；为 close_tabs 等 write 类工具加 cross-session pinned tab 检查。
 
@@ -839,7 +841,7 @@ stateDiagram-v2
 
 ---
 
-- [ ] **Unit M3-U5: Verify per-session locality (mostly already correct) + Cross-phase invariant trace 表 (R24-R26 acceptance gates)**
+- [x] **Unit M3-U5: Verify per-session locality (mostly already correct) + Cross-phase invariant trace 表 (R24-R26 acceptance gates)** ✅ shipped via PR #13 — trace doc at `docs/solutions/2026-05-03-multi-session-invariant-trace.md`
 
 **Goal:** 主交付 = trace 表 sign-off + 1 day 写完。次交付 = 验证 (而非重构) 几条已经正确实现的 per-session locality 不变量。**Feasibility F1 验证**：`loop.ts:625` skillDefByName 已是 per-iteration `const Map` (非 module singleton)；`loop.ts:1042-1051` confirmedTabTargets 已是 per-iteration local + 通过 ctx 传 handler；`tools/tabs.ts:36` verifyConfirmedOrigin 是 stateless helper 接 confirmedTabTargets 参数。本 unit 改为：(a) 跑 multi-session race regression test 确认上述 3 处仍 per-session-safe，(b) 编 trace 表。
 
