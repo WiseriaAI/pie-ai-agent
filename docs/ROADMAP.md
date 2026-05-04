@@ -94,18 +94,50 @@
 
 ---
 
+## 7. Provider + Model 能力中心化管理（用户 2026-05-04 报告，Phase 5 验收暴露）
+
+**Status**: 非 Phase 5 范围。Phase 5 multimodal image input 落地后用户反馈：当前 registry 的 `supportsVision: boolean` 是 **per-provider** 粒度，但 vision 能力实际是 **per-model**——同一 provider 不同 model 可能能力差异巨大（智谱 `glm-4-plus` 不支持但 `glm-4v-plus` 支持；百炼 `qwen-max` 不支持但 `qwen-vl-max` 支持；MiniMax `MiniMax-Text-01` 不支持但 `MiniMax-VL` 支持）。
+
+**用户提的两个核心改造诉求**：
+
+1. **Model list 中心化管理 + UI 下拉选择**：Settings 页用户从 dropdown 选 model，不再手填 `defaultModel` 字段；每个 provider 的 model list + per-model 能力（vision / tools / max-context / audio）一起管理。
+2. **官方推荐 BaseURL 内置，去掉用户填写**：`defaultBaseUrl` 字段升级为唯一 source of truth，Settings UI 删除 BaseURL 输入；用户配置只剩 **Provider + Model + API Key**。
+
+**核心难点 — Model list 数据源**：
+
+- **海外 provider** 多有官方 `/v1/models` 端点（OpenAI / Anthropic / OpenRouter / xAI / Mistral）；其中 **OpenRouter 最强**——单 endpoint 返回数百 model + per-model `architecture.input_modalities`（含 `image` / `audio` / `video`）+ context_length + pricing，可作为通用元数据源
+- **中国大陆 provider** 各家协议不同：智谱 / 百炼 / MiniMax / Moonshot / Doubao / Hunyuan / Stepfun / DeepSeek 大多 **没有标准化 models API**，得维护静态 JSON 或爬 doc
+- **三选一策略**：(a) 静态 JSON（手维护，季度更新，最低运行成本）/ (b) 启动时拉取 + chrome.storage 缓存 24h（动态准确但首次慢且依赖网络）/ (c) 混合（静态 JSON 兜底 + OpenAI/Anthropic/OpenRouter 启动时 refresh）
+
+**前置依赖**：
+- 当前 `ProviderMeta.supportsTools` / `supportsVision` 都是 per-provider boolean，需要降到 per-model 维度——schema 升级 `ProviderMeta` 拆 `models: ModelMeta[]` + 每个 ModelMeta 自带 capability flags
+- Settings UI（`Settings.tsx`）当前直接读 `getProviderConfig(provider).baseUrl` 做手填——需改 dropdown + 撤掉 BaseURL field
+- 用户配置数据 migration：现有用户的 `provider_*` config 包含手填 baseUrl + 任意 model 字符串，迁移路径 = 启动检测 → 把手填 baseUrl 与 registry 比对 → 不匹配则提醒用户 confirm 切换到官方 BaseURL（不静默改）
+
+**v1 不动 registry 的原因（继续保留 minimax/zhipu/bailian 默认 model 文本）**：Phase 5 brainstorm 明确把 vision provider 扩展推到 v1.1+；当前 boolean flag 是 default-model 级别保守标记，不是 provider 否定，本身没错。
+
+**建议路径**：单独 `/ce:brainstorm` 收窄三件事——
+- (1) Model list 数据源策略（静态 JSON / 动态拉取 / 混合）的 BYOK trust + 启动延迟权衡；
+- (2) `ProviderMeta` → `ProviderMeta + ModelMeta[]` 的 schema 升级路径；
+- (3) 老用户配置的 BaseURL 手填迁移 UX（强制切换 vs 提醒 confirm vs 保留 advanced override）。
+
+设计落定后单独 `/ce:plan`——预计 scope = registry schema 重写 + Settings UI dropdown + migration handler + 至少 2 家中国 provider 的 model list 静态 JSON 起手集合。
+
+---
+
 ## 推荐推进顺序
 
 按"用户痛感 × 解锁后续能力"性价比（已纳入 §5 4-way 评估结果）：
 
 1. **多轮对话上下文（§6）** — Half A 半小时 + Half B 决策 1 个；用户已报告，用户痛感最直接
-2. **多模态输入图片（§5 #1）** — `/ce:plan` 已就绪，model-router IR 升级 + screenshot tool 一次性投入，长期回报大
-3. **Chrome narrow（§5 #3）** — `tabs.create` + `open_url`，1-2 天，与 Phase 3 同套机制
-4. **Gemini provider** — 最小补丁；与多模态输入图片解耦但同期做有协同（registry 加 entry + manifest + Gemini SSE / vision 协议）
-5. **Ollama 本地模型** — 与 BYOK 定位契合；manifest + streaming 协议适配
-6. **快捷键支持** — 打磨项，零结构性风险
-7. **行为录制 → Skill seed（§5 #4）** — 收窄后单独 plan；产品差异化大但工程量高
-8. **Skill 脚本化（§5 #2）** — 收窄 (a)/(b)/(c)/(d) 后再决定
-9. **page-match 自动触发** — 需要先解决 prompt-injection-by-page 防御
+2. **多模态输入图片（§5 #1）** — ✅ **PR #20 SHIPPED 2026-05-04**：15 task / 339→448 tests / R1-R15 全闭环；用户验收阶段
+3. **Provider + Model 能力中心化管理（§7）** — 用户 2026-05-04 反馈；Settings 改 dropdown + 删手填 BaseURL；解锁中国 provider vision 完整接入路径
+4. **Chrome narrow（§5 #3）** — `tabs.create` + `open_url`，1-2 天，与 Phase 3 同套机制
+5. **Gemini provider** — 最小补丁；与 §7 协同（自家 inline_data + host_permission 同期评估），独立 SSE 协议另行 brainstorm
+6. **Ollama 本地模型** — 与 BYOK 定位契合；manifest + streaming 协议适配
+7. **快捷键支持** — 打磨项，零结构性风险
+8. **行为录制 → Skill seed（§5 #4）** — 收窄后单独 plan；产品差异化大但工程量高
+9. **Skill 脚本化（§5 #2）** — 收窄 (a)/(b)/(c)/(d) 后再决定
+10. **page-match 自动触发** — 需要先解决 prompt-injection-by-page 防御
 
 Checkpoint & Resume 的 M1 已 ship；M2/M3 PR #10 / #13 已 ship。定时工作流仍依赖 SW 5 min 限制突破。
