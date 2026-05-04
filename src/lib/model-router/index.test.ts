@@ -47,6 +47,6 @@ describe("chatMessagesToAgent — attachments", () => {
     const agent = chatMessagesToAgent(msgs);
     const blocks = agent[0].content as Array<{ type: string; text?: string }>;
     expect(blocks[0].type).toBe("text");
-    expect(blocks[0].text).toMatch(/image released/i);
+    expect(blocks[0].text).toBe("[image released — no longer available]");
   });
 });

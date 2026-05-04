@@ -20,7 +20,7 @@ export interface ImageAttachment {
 export interface ImagePlaceholder {
   kind: "image_placeholder";
   id: string;
-  mediaType: string;
+  mediaType: "image/jpeg" | "image/png" | "image/webp" | "image/gif";
   width: number;
   height: number;
 }

@@ -855,7 +855,7 @@ describe("U2 — chatMessageToAgentMessage (D7 wrap invariants)", () => {
     const blocks = a.content as ContentBlock[];
     expect(blocks).toHaveLength(2);
     expect(blocks[0].type).toBe("text");
-    expect((blocks[0] as { type: "text"; text: string }).text).toMatch(/image released/i);
+    expect((blocks[0] as { type: "text"; text: string }).text).toBe("[image released — no longer available]");
     expect((blocks[1] as { type: "text"; text: string }).text)
       .toMatch(/<untrusted_user_message>follow up<\/untrusted_user_message>/);
   });

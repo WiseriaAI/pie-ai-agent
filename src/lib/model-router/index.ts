@@ -28,9 +28,13 @@ export interface ModelConfig {
 }
 
 // Panel↔SW wire protocol message — content stays string (Phase 1 wire invariant);
-// `attachments` is the Phase 5 additive field for image input. Storage
-// always carries `attachments` items as `kind: 'image_placeholder'` (R10);
-// SW hydrates `data` field from per-session image cache when available.
+// `attachments` is the Phase 5 additive field for image input.
+//
+// R10 storage policy (will be enforced in Task 12, NOT today): chrome.storage
+// MUST never carry attachment.data bytes — setSessionMeta will replace any
+// `kind: "image"` with `kind: "image_placeholder"` before write. Task 1 only
+// adds the optional field to the type; until Task 12 wires the scrubber,
+// callers should not write image attachments to storage.
 export interface ChatMessage {
   role: "user" | "assistant" | "system";
   content: string;

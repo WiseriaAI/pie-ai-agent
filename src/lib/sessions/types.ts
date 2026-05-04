@@ -143,12 +143,18 @@ export interface SessionAgentState {
    * bytes not in storage; resume would feed an LLM context with cache-miss
    * text markers, breaking the "look at the image" task semantics).
    *
-   * Set in three places:
-   *   - loop.ts: when ChatStartMessage attachments arrive (Task 11)
-   *   - loop.ts: when screenshot tool result is appended (Task 11)
-   *   - storage.ts buildSessionAgentSnapshot: preserved across writes
+   * Lifecycle (Phase 5):
+   *   - Task 1 (this PR): field exists, defaults to false everywhere
+   *   - Task 11 (later): loop.ts sets to true when (a) ChatStartMessage carries
+   *     image attachments OR (b) a screenshot tool result is appended; Task 11
+   *     also threads the prior flag through buildSessionAgentSnapshot
+   *     (loop.ts:601) so the value survives step-boundary writes
+   *   - R14: detectAndMarkPaused reads this flag at SW startup; in-flight
+   *     sessions with hasImageContent=true transition to `failed` (not
+   *     `paused`), because storage carries no image bytes and resume would
+   *     feed an LLM context with cache-miss text markers
    *
-   * Idempotent — once true, stays true for the lifetime of the session.
+   * Idempotent — once true within a session's lifetime, stays true.
    */
   hasImageContent: boolean;
   /** Set while a confirm is awaiting user response. Cleared synchronously
