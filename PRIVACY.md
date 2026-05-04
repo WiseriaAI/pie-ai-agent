@@ -1,6 +1,8 @@
 # Pie — Privacy Policy
 
 Last updated: 2026-05-04
+Extension version: 0.5.0
+Contact: xiewkevo66@gmail.com
 
 Pie is a BYOK (Bring Your Own Key) Chrome Extension. The Pie project does
 not operate any backend service, does not collect telemetry, and has no
@@ -39,7 +41,17 @@ or Bailian). Specifically:
 
 These transmissions go directly from your browser to the provider's API
 endpoint — Pie has no proxy in between. The data is then subject to that
-provider's privacy policy.
+provider's privacy policy:
+
+- **Anthropic** — <https://www.anthropic.com/legal/privacy>
+- **OpenAI** — <https://openai.com/policies/privacy-policy>
+- **OpenRouter** — <https://openrouter.ai/privacy>
+- **MiniMax** — <https://www.minimaxi.com/privacy-policy>
+- **ZhiPu (智谱)** — <https://open.bigmodel.cn/proagreement>
+- **Bailian (阿里云百炼)** — <https://help.aliyun.com/document_detail/2587688.html>
+
+You are responsible for reviewing the privacy policy of the provider you
+choose to use with your own API key.
 
 ## Permissions, and why each one is needed
 
@@ -62,6 +74,39 @@ Uninstalling Pie from `chrome://extensions` removes all
 `chrome.storage.local` state, including encrypted API keys. There is
 nothing to delete server-side because there is no server.
 
+## Data retention
+
+Sessions, skills, and preferences persist locally until you delete them
+or uninstall Pie. Pie auto-archives least-recently-used sessions when
+local storage approaches its quota, and sessions older than 30 days
+become eligible for hard deletion. None of this data ever leaves your
+device except as part of an LLM request you explicitly trigger.
+
+## Children's privacy
+
+Pie is not directed to children under 13. Because Pie does not collect
+any user data on developer-operated servers, no data about any user —
+adult or child — reaches the developer.
+
+## Your rights (GDPR / CCPA)
+
+Pie does not collect, transmit, or store any personal data on
+developer-operated servers, so the developer holds no data to access,
+port, correct, or delete on your behalf. All your data is on your own
+device, under your direct control, and is erased by uninstalling the
+extension. For data sent to third-party LLM providers using your own
+API key, please contact those providers directly to exercise
+data-subject rights against them.
+
+## Changes to this policy
+
+If this policy changes, the `Last updated` date at the top of this
+document will be updated and the extension version bumped. The current
+version is always available at:
+
+<https://github.com/WiseriaAI/Pie/blob/main/PRIVACY.md>
+
 ## Contact
 
-Issues and questions: <https://github.com/WiseriaAI/Pie/issues>
+- Email: <xiewkevo66@gmail.com>
+- Issues: <https://github.com/WiseriaAI/Pie/issues>

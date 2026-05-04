@@ -27,8 +27,17 @@ locally and talks directly to your provider.
 - **Side panel, not pop-up.** Pie lives in Chrome's side panel and stays
   open while you browse — chat, run agent tasks, manage tabs without losing
   context.
-- **Asks before it acts.** Risk-classified confirm cards gate destructive
-  or cross-origin actions, so you stay in informed control.
+- **Native tool calling.** Anthropic `tool_use` blocks and OpenAI
+  `function_calling` plug straight into the agent loop, no JSON-mode
+  workarounds.
+- **Skills as a first-class object.** Save a prompt template with a scoped
+  tool whitelist; run it as `/skill_name`. The agent can author its own
+  skills, too — gated by an 8-guard capability boundary so they cannot
+  expand their own privileges.
+- **Asks before it acts.** Every high-risk action (form submit, sensitive
+  field, raw CDP input, cross-origin tab op, closing a pinned tab) is
+  gated by a confirm card showing the exact action, raw arguments, and
+  affected origin — so you stay in informed control.
 - **Multi-session, durable.** Conversations survive Service Worker
   restarts; archived sessions evict on storage pressure (LRU + 30-day hard
   delete).
@@ -38,19 +47,69 @@ locally and talks directly to your provider.
 ### Page understanding
 Ask questions about the page you're on. Pie extracts visible text (with
 hardened scrubbing of credential fields) and sends only that to the LLM.
+Page snippets are wrapped in `<untrusted_*>` markers in the prompt to
+defeat prompt-injection attempts from page DOM.
 
-### Agent automation
-Describe a task in natural language; the LLM plans steps and executes them
-through a tool registry — DOM clicks, typing, selecting, scrolling, page
-snapshots, and (opt-in) raw keyboard simulation via Chrome DevTools
-Protocol for canvas editors like Feishu Docs.
+### Agent automation with tool calling
+Describe a task in natural language. The LLM plans steps and executes
+them through Pie's tool registry, using your provider's native
+tool-calling protocol — Anthropic `tool_use` blocks for Claude, OpenAI
+`function_calling` for everyone else. The built-in toolset covers:
 
-### Smart tab management
-Cross-tab agent tools (`list_tabs`, `close_tabs`, `group_tabs`,
-`activate_tab`, `get_tab_content`, ...) plus three ready-to-use skills:
-`auto_group_tabs`, `close_duplicate_tabs`, `close_inactive_tabs`. Write
-your own in the SkillsList editor — Pie enforces an 8-guard capability
-boundary so a skill cannot escape its declared tool whitelist.
+- **DOM actions** — click, type, select, scroll, structured snapshot of
+  interactive elements (links, buttons, inputs)
+- **Cross-tab tools** — list, activate, close, group / ungroup, move,
+  fetch readable content from another tab
+- **CDP keyboard** (opt-in, off by default) — `Input.dispatchKeyEvent`
+  and `Input.insertText` for canvas-based editors like Lark Docs and
+  Google Docs, where standard DOM events are not honored
+- **Skill meta-tools** — the agent can create / update / delete / list
+  its own skills (see *Skill system* below)
+
+Three cross-tab skills ship built-in: `auto_group_tabs`,
+`close_duplicate_tabs`, `close_inactive_tabs`.
+
+### Skill system
+Skills are saved prompt templates with explicit tool whitelists. Open
+**Settings → Skills** to create, edit, or delete your own — name, prompt
+template, parameter JSON schema, and the exact set of tools that skill
+is allowed to call. Run any skill from chat by typing `/skill_name`.
+
+The agent itself can author skills via `create_skill` / `update_skill` /
+`delete_skill` meta-tools — useful for capturing a workflow the model
+just walked through, so it can be replayed in the next session. An
+agent-authored skill is tainted with `author='agent'` and triggers a
+one-time confirmation card on its first run; a skill the model invented
+never silently executes the next time around.
+
+A skill cannot escape its declared tool whitelist. Eight capability-grant
+invariants are enforced on every skill mutation — hard size caps (≤8 KB
+prompt template, ≤2 KB parameter schema), forbidden meta-tool nesting,
+1 MB per-installation storage budget, name validation against the live
+tool registry — so a runaway skill cannot widen its own privileges.
+
+### High-risk operation approval
+Pie classifies every tool call before it runs. Anything irreversible or
+cross-origin requires you to approve a confirmation card first.
+**High-risk** triggers include: submitting forms, typing into password
+/ payment / email fields, raw keyboard input via CDP, closing a pinned
+tab, and any cross-origin tab operation.
+
+The confirm card shows you:
+
+- The exact tool name and the raw argument the agent intends to pass
+  (so you can spot a mistake or a prompt-injected instruction in the
+  page DOM before it runs)
+- The origin and tab title for each affected tab, called out
+  separately when the action would cross the original task's pinned
+  origin
+- An **Approve** / **Reject** pair, plus a task-level **Discard**
+  option for when you want to abandon the agent's plan entirely
+
+The CDP keyboard-simulation feature is **off by default** — you opt in
+from Settings before it can be attached at all. If you reject three
+actions on the same task, Pie terminates the task automatically rather
+than burning your tokens on a plan you've already disagreed with.
 
 ### Supported providers
 
@@ -68,17 +127,40 @@ local Ollama are on the [roadmap](docs/ROADMAP.md).
 
 ## Install
 
-Pie is in **MVP pre-release**. Installation is via an unpacked developer
-build; a Chrome Web Store listing is in preparation.
+Pie ships in two end-user channels and one source-build channel. Pick
+whichever fits.
 
-### Prerequisites
+Requires a Chromium-based browser with side-panel support — Chrome 114+,
+Edge, Brave, Arc, etc.
 
-- [Node.js](https://nodejs.org) 20+
-- [pnpm](https://pnpm.io) 10+
-- A Chromium-based browser with side-panel support (Chrome 114+, Edge,
-  Brave, Arc, …)
+### Option 1 — Chrome Web Store (recommended)
 
-### Build and load
+> *Pending review.* The CWS listing will appear here once Google's
+> review completes; until then, use Option 2 for a one-click install.
+
+Click **Add to Chrome**, then pin Pie to the toolbar.
+
+### Option 2 — GitHub Release zip (unpacked install)
+
+For users who want to install the same artifact without the Web Store,
+or while the listing is still under review:
+
+1. Download the latest `pie-x.y.z.zip` from the
+   [Releases page](https://github.com/WiseriaAI/Pie/releases)
+2. Unzip it to a directory you'll keep around (Chrome reads from this
+   directory at runtime — don't delete it after install)
+3. Open `chrome://extensions`
+4. Enable **Developer mode** (top right)
+5. Click **Load unpacked** and select the unzipped directory
+6. Pin Pie to the toolbar; click the icon to open the side panel
+
+Updates: download the next release zip, replace the directory contents,
+and click **Reload** on Pie's card in `chrome://extensions`.
+
+### Option 3 — Build from source (contributors)
+
+If you want HMR, are sending a PR, or just don't trust prebuilt
+binaries:
 
 ```bash
 git clone https://github.com/WiseriaAI/Pie.git
@@ -87,12 +169,9 @@ pnpm install
 pnpm build
 ```
 
-Then in your browser:
-
-1. Open `chrome://extensions`
-2. Enable **Developer mode** (top right)
-3. Click **Load unpacked** and select the generated `dist/` directory
-4. Pin Pie to the toolbar; click the icon to open the side panel
+Then load the generated `dist/` directory as an unpacked extension
+(steps 3–6 above). For the inner dev loop see [Development](#development)
+below.
 
 ## Configuration
 

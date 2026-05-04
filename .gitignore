@@ -5,3 +5,6 @@ dist/
 .DS_Store
 
 .context/
+
+# Release artifacts uploaded to GitHub Releases / Chrome Web Store
+pie-*.zip
