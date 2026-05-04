@@ -189,3 +189,41 @@ beforeEach(() => {
 });
 
 export { chromeMock };
+
+// ── Phase 5 multimodal image input — happy-dom polyfill for SW environment ──
+//
+// happy-dom does not provide OffscreenCanvas / createImageBitmap. Tests that
+// exercise resize-sw.ts use these fakes; the wrapper logic (validate → decode
+// → downscale → encode) is what we test here, not the canvas pixel ops.
+
+class FakeOffscreenCanvas {
+  width: number;
+  height: number;
+  constructor(w: number, h: number) {
+    this.width = w;
+    this.height = h;
+  }
+  getContext() {
+    return { drawImage: () => {} };
+  }
+  async convertToBlob(opts?: { type?: string; quality?: number }): Promise<Blob> {
+    const buf = new Uint8Array(245678);
+    return new Blob([buf], { type: opts?.type ?? "image/jpeg" });
+  }
+}
+
+class FakeImageBitmap {
+  constructor(public width: number, public height: number) {}
+  close(): void {}
+}
+
+(globalThis as unknown as { OffscreenCanvas: typeof FakeOffscreenCanvas }).OffscreenCanvas =
+  FakeOffscreenCanvas;
+(globalThis as unknown as {
+  createImageBitmap: (src: Blob | { width: number; height: number }) => Promise<FakeImageBitmap>;
+}).createImageBitmap = async (src) => {
+  if ("width" in src && typeof src.width === "number") {
+    return new FakeImageBitmap(src.width, src.height);
+  }
+  return new FakeImageBitmap(3000, 2000);
+};
