@@ -1,8 +1,10 @@
 import {
   getSessionAgent,
+  getSessionMeta,
   listSessionIndex,
   markFailedAndScrub,
   markPaused,
+  setSessionMeta,
 } from "@/lib/sessions/storage";
 
 /**
@@ -101,13 +103,30 @@ export async function detectAndMarkPaused(
   // Step 2 — re-list to skip the sessions just marked failed; among
   // remaining `active`, mark paused for any with stepIndex > 0
   // (in-flight task interrupted by SW death).
+  //
+  // R14 — image-bearing in-flight sessions MUST be marked `failed` (not
+  // `paused`) on SW cold-start. The in-memory image cache (image-cache.ts)
+  // is cleared by evictAllOnSWStartup at startup, so any session whose
+  // `hasImageContent` flag is true cannot be resumed — the image bytes the
+  // LLM originally saw are gone. We mark these `failed` so the UI shows
+  // an appropriate error state rather than a "Resume" button that would
+  // silently drop image context.
   const refreshedIndex = await listSessionIndex();
   for (const entry of refreshedIndex) {
     if (entry.status !== "active") continue;
     const agent = await getSessionAgent(entry.id);
     if (agent && agent.stepIndex > 0) {
-      const ok = await markPaused(entry.id);
-      if (ok) stats.paused += 1;
+      if (agent.hasImageContent) {
+        // R14 — image cache evicted on SW restart; session is unresumable.
+        const meta = await getSessionMeta(entry.id);
+        if (meta) {
+          await setSessionMeta({ ...meta, status: "failed" });
+          stats.failed += 1;
+        }
+      } else {
+        const ok = await markPaused(entry.id);
+        if (ok) stats.paused += 1;
+      }
     }
     // stepIndex === 0 is the tombstone state (M1-U3) — no in-flight task,
     // leave the session as `active`.
@@ -152,8 +171,19 @@ export async function transitionPortInFlightSessionsToPaused(
         const ok = await markFailedAndScrub(sid);
         if (ok) stats.failed += 1;
       } else if (agent.stepIndex > 0) {
-        const ok = await markPaused(sid);
-        if (ok) stats.paused += 1;
+        // R14 — mirror cold-start logic: port disconnect triggers
+        // evictByInFlightSet which drops image bytes; image-bearing sessions
+        // can't be resumed (bytes gone with the port's in-memory cache).
+        if (agent.hasImageContent) {
+          const meta = await getSessionMeta(sid);
+          if (meta) {
+            await setSessionMeta({ ...meta, status: "failed" });
+            stats.failed += 1;
+          }
+        } else {
+          const ok = await markPaused(sid);
+          if (ok) stats.paused += 1;
+        }
       }
       // stepIndex === 0 → tombstone, task finished cleanly; leave it alone.
     } catch (e) {

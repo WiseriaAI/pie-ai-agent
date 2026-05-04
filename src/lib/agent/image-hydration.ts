@@ -10,7 +10,7 @@ import type { ImageRef } from "@/lib/images";
  * placeholder fallthrough).
  *
  * Returns:
- *   - `messages` (mutated copy) where placeholders that hit the cache are
+ *   - `messages` (new array; modified messages are shallow-cloned) where placeholders that hit the cache are
  *     promoted back to ImageAttachment with bytes
  *   - `hasImageContent` true if at least one image (cached or fresh) is
  *     present after hydration — drives R14 fail-on-image precondition.

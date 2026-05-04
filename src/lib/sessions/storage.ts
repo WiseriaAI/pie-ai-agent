@@ -5,6 +5,7 @@ import type {
   SessionStatus,
   PendingConfirmRecord,
 } from "./types";
+import type { ImageAttachment } from "@/lib/images";
 
 // ── Key shape ────────────────────────────────────────────────────────────────
 //
@@ -168,16 +169,61 @@ export async function getSessionMeta(id: string): Promise<SessionMeta | null> {
   return raw ?? null;
 }
 
+// ── R10 storage scrub ────────────────────────────────────────────────────────
+//
+// `ImageAttachment.data` (base64 bytes) must never land in chrome.storage —
+// the 8 MB quota would be exhausted by a handful of screenshots. Before
+// persisting SessionMeta we strip `data` + `byteLength` from every
+// ImageAttachment in `meta.messages`, replacing the entry with an
+// ImagePlaceholder. The in-memory cache (image-cache.ts) holds the bytes for
+// the lifetime of the session; hydrateAttachments re-inflates on resume if
+// the session is still warm, or leaves the placeholder on a cold-start cache
+// miss (the user sees a "session drifted" card, not a quota error).
+function scrubAttachmentBytes(meta: SessionMeta): SessionMeta {
+  if (!meta.messages?.length) return meta;
+  let mutated = false;
+  // Cast through unknown: DisplayMessage currently has no `attachments` field
+  // in its static type, but Phase 5 may add one; this guard is defensive and
+  // runtime-correct regardless of the static type shape.
+  const scrubbed = (meta.messages as unknown[]).map((msg) => {
+    const m = msg as Record<string, unknown>;
+    const attachments = m["attachments"];
+    if (!Array.isArray(attachments) || attachments.length === 0) return msg;
+    const scrubbed = attachments.map((a) => {
+      if ((a as ImageAttachment).kind !== "image") return a;
+      const img = a as ImageAttachment;
+      // Strip bytes → ImagePlaceholder. `data` and `byteLength` are omitted.
+      const placeholder = {
+        kind: "image_placeholder" as const,
+        id: img.id,
+        mediaType: img.mediaType,
+        width: img.width,
+        height: img.height,
+      };
+      mutated = true;
+      return placeholder;
+    });
+    return { ...m, attachments: scrubbed };
+  });
+  if (!mutated) return meta;
+  return { ...meta, messages: scrubbed as SessionMeta["messages"] };
+}
+
 /**
  * Persist session meta. If `status`, `pinnedTabId`, `lastAccessedAt`, or
  * `title` differ from what's currently in the index, the index is updated
  * in the same atomic batch (D9). If the session is missing from the index
  * altogether (e.g. createSession was bypassed in a test) it is added.
+ *
+ * R10 — strips `ImageAttachment.data` bytes from `meta.messages` before
+ * persisting. Bytes live in the in-memory image cache; placeholders survive
+ * in storage so identity is preserved for warm-resume hydration.
  */
 export async function setSessionMeta(meta: SessionMeta): Promise<void> {
+  const scrubbedMeta = scrubAttachmentBytes(meta);
   const index = await readIndex();
-  const nextEntry = indexEntryFromMeta(meta);
-  const existingEntry = index.find((e) => e.id === meta.id);
+  const nextEntry = indexEntryFromMeta(scrubbedMeta);
+  const existingEntry = index.find((e) => e.id === scrubbedMeta.id);
 
   const indexChanged =
     !existingEntry ||
@@ -187,7 +233,7 @@ export async function setSessionMeta(meta: SessionMeta): Promise<void> {
     existingEntry.pinnedTabId !== nextEntry.pinnedTabId ||
     existingEntry.messageCount !== nextEntry.messageCount;
 
-  const batch: WriteBatch = { [metaKey(meta.id)]: meta };
+  const batch: WriteBatch = { [metaKey(scrubbedMeta.id)]: scrubbedMeta };
   if (indexChanged) {
     batch[INDEX_KEY] = upsertIndexEntry(index, nextEntry);
   }

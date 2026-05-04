@@ -187,6 +187,56 @@ describe("setSessionMeta / setSessionAgent — D2 dual-key independence", () => 
     expect(Object.keys(call)).toEqual([`session_${meta.id}_meta`]);
     setSpy.mockRestore();
   });
+
+  it("R10 — setSessionMeta strips ImageAttachment bytes → ImagePlaceholder before persisting", async () => {
+    const meta = await createSession();
+    const imageAttachment = {
+      kind: "image" as const,
+      id: "img_test_abc",
+      mediaType: "image/jpeg" as const,
+      data: "AAAABASE64BYTES",
+      width: 800,
+      height: 600,
+      byteLength: 12345,
+    };
+    // Inject an attachment into a user message via unknown cast (DisplayMessage
+    // doesn't have attachments in its static type; the scrub is a runtime guard).
+    const messageWithImage = {
+      role: "user" as const,
+      content: "look at this",
+      attachments: [imageAttachment],
+    };
+    await setSessionMeta({
+      ...meta,
+      messages: [messageWithImage as unknown as import("@/types").DisplayMessage],
+    });
+
+    const stored = await getSessionMeta(meta.id);
+    const storedMsg = (stored!.messages[0] as unknown as Record<string, unknown>);
+    const storedAttachments = storedMsg["attachments"] as Array<Record<string, unknown>>;
+    expect(storedAttachments).toHaveLength(1);
+    // Bytes stripped → ImagePlaceholder shape
+    expect(storedAttachments[0]!["kind"]).toBe("image_placeholder");
+    expect(storedAttachments[0]!["id"]).toBe("img_test_abc");
+    expect(storedAttachments[0]!["mediaType"]).toBe("image/jpeg");
+    expect(storedAttachments[0]!["width"]).toBe(800);
+    expect(storedAttachments[0]!["height"]).toBe(600);
+    // data and byteLength MUST NOT be in storage
+    expect("data" in storedAttachments[0]!).toBe(false);
+    expect("byteLength" in storedAttachments[0]!).toBe(false);
+  });
+
+  it("R10 — setSessionMeta is a no-op when no ImageAttachment present", async () => {
+    const meta = await createSession();
+    const setSpy = vi.spyOn(chromeMock.storage.local, "set");
+    await setSessionMeta({
+      ...meta,
+      messages: [{ role: "user", content: "no images here" }],
+    });
+    // No scrubbing needed → single atomic write (no extra set calls)
+    expect(setSpy).toHaveBeenCalledTimes(1);
+    setSpy.mockRestore();
+  });
 });
 
 describe("listSessionIndex", () => {
