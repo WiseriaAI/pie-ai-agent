@@ -627,19 +627,28 @@ export function useSession(): UseSession {
       // active→failed) must land even mid-stream (e.g. SW cold-start marking
       // a task paused while the panel thinks it's still running).
       if (newMeta?.status !== undefined) setStatus(newMeta.status);
-      // Pin update is always adopted — the SW or a sibling panel may have
-      // landed a fresh pin between this panel's reads, and the Chat view's
-      // PINNED indicator should reflect the persisted truth.
+      // M5 — propagate pinMode + pinnedTabId/Origin. Subtle invariant:
+      // when SW transitions task → auto via clearTaskPinIfActive, it
+      // `delete`s pinnedTabId/Origin from the meta object. The deleted
+      // fields are NOT present in newValue, so a `newMeta?.pinnedOrigin
+      // !== undefined` check would never fire and panel state would
+      // retain the stale pin. Fix: when pinMode flips to 'auto' explicitly,
+      // force-clear pin state to match the storage invariant ("auto mode
+      // never persists pin"). For task/user transitions, adopt the pin
+      // fields normally.
+      if (newMeta?.pinMode !== undefined) {
+        setPinModeState(newMeta.pinMode);
+        if (newMeta.pinMode === "auto") {
+          // Auto mode invariant: pin fields are absent. Mirror that in panel state.
+          setPinnedOriginState(null);
+          setPinnedTabIdState(null);
+        }
+      }
       if (newMeta?.pinnedOrigin !== undefined) {
         setPinnedOriginState(newMeta.pinnedOrigin || null);
       }
-      // M5 — propagate pinnedTabId + pinMode for Chat.tsx live-tracking
-      // and pageChanged effects.
-      if ("pinnedTabId" in (newMeta ?? {})) {
-        setPinnedTabIdState(newMeta?.pinnedTabId ?? null);
-      }
-      if (newMeta?.pinMode !== undefined) {
-        setPinModeState(newMeta.pinMode);
+      if (newMeta?.pinnedTabId !== undefined) {
+        setPinnedTabIdState(newMeta.pinnedTabId);
       }
       if (newMeta?.messages !== undefined) {
         // P1-6 + Bug-fix-A — prevent self-write echo AND stale SW write-back

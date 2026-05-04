@@ -840,12 +840,32 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
   // synthesizeAgentTurnText can discriminate the 5 paths. The synth is
   // fired fire-and-forget (no await) after sendAgentDone and before the
   // tombstone snapshot, matching the step-snapshot fire-and-forget pattern.
-  const emitDone = (
+  const emitDone = async (
     msg: Omit<AgentDoneTaskMessage, "sessionId">,
     terminationReason: TerminationReason = "abort",
-  ): void => {
+  ): Promise<void> => {
     if (doneEmitted) return;
     doneEmitted = true;
+
+    // M5 — clear task-mode pin BEFORE sendAgentDone. Lost-update race fix:
+    // the panel's chat-done handler triggers `persistMessages` → RMW on
+    // session_${id}_meta. If pin-clear was fire-and-forget after sendAgentDone,
+    // the panel's RMW (read at T0, write at T2) could resurrect a stale
+    // pin field that the SW had cleared mid-window (T1). Awaiting here
+    // forces the SW write to land first; panel's chat-done arrives via
+    // chrome.runtime IPC after this returns, so its persistMessages reads
+    // the already-cleared meta.
+    if (ctx.onTaskDone) {
+      try {
+        await ctx.onTaskDone();
+      } catch (e) {
+        console.warn(
+          `[agent] onTaskDone (task-pin clear) failed for session=${ctx.sessionId}:`,
+          e,
+        );
+      }
+    }
+
     sendAgentDone(port, { ...msg, sessionId });
 
     // Phase 5 — R13 path (a): evict image cache on any terminal state.
@@ -876,19 +896,6 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       ctx.onStepSnapshot(buildSessionAgentTombstone(synth)).catch((e) => {
         console.warn(
           `[agent] tombstone snapshot failed for session=${ctx.sessionId}:`,
-          e,
-        );
-      });
-    }
-
-    // M5 — task-mode pin auto-unpin. Fire-and-forget meta write; errors
-    // logged but never fail the emitDone path. SW dispatcher provides the
-    // implementation (loop.ts is pure and doesn't import session storage).
-    // 'user' mode pins are preserved by the helper inside the callback.
-    if (ctx.onTaskDone) {
-      ctx.onTaskDone().catch((e) => {
-        console.warn(
-          `[agent] onTaskDone (task-pin clear) failed for session=${ctx.sessionId}:`,
           e,
         );
       });
@@ -924,7 +931,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (!tab?.id || !tab.url || isRestrictedUrl(tab.url)) {
-        emitDone({
+        await emitDone({
           type: "agent-done-task",
           success: false,
           summary: "Cannot run agent on this page type",
@@ -934,7 +941,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       }
       const origin = safeParseOrigin(tab.url);
       if (!origin) {
-        emitDone({
+        await emitDone({
           type: "agent-done-task",
           success: false,
           summary: "Cannot run agent on this page (unresolvable origin)",
@@ -945,7 +952,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       pinnedTabId = tab.id;
       pinnedOrigin = origin;
     } catch {
-      emitDone({
+      await emitDone({
         type: "agent-done-task",
         success: false,
         summary: "Failed to get active tab",
@@ -1077,7 +1084,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       try {
         const currentTab = await chrome.tabs.get(pinnedTabId);
         if (!currentTab.url || isRestrictedUrl(currentTab.url)) {
-          emitDone({
+          await emitDone({
             type: "agent-done-task",
             success: false,
             summary: "Page navigated to a restricted URL, agent stopped",
@@ -1087,7 +1094,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         }
         const currentOrigin = safeParseOrigin(currentTab.url);
         if (!currentOrigin || currentOrigin !== pinnedOrigin) {
-          emitDone({
+          await emitDone({
             type: "agent-done-task",
             success: false,
             summary: "Page origin changed, agent stopped for safety",
@@ -1097,7 +1104,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         }
         currentUrl = currentTab.url;
       } catch {
-        emitDone({
+        await emitDone({
           type: "agent-done-task",
           success: false,
           summary: "Tab was closed, agent stopped",
@@ -1115,7 +1122,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         });
         snapshot = (results[0]?.result as PageSnapshot) ?? { url: currentUrl, title: "", elements: [] };
       } catch {
-        emitDone({
+        await emitDone({
           type: "agent-done-task",
           success: false,
           summary: "Failed to snapshot page. The page may have navigated.",
@@ -1261,7 +1268,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           }
         } else if (event.type === "error") {
           port.postMessage(withSession({ type: "chat-error", error: event.error }, sessionId));
-          emitDone({
+          await emitDone({
             type: "agent-done-task",
             success: false,
             summary: `LLM stream error: ${event.error}`,
@@ -1803,7 +1810,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
                   observation: fatigueMsg,
                   skillAuthor: skillAuthorForStep,
                 });
-                emitDone({
+                await emitDone({
                   type: "agent-done-task",
                   success: false,
                   summary: fatigueMsg,
@@ -2046,7 +2053,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
 
       // Terminal tool check
       if (shouldTerminate && terminationResult) {
-        emitDone({
+        await emitDone({
           type: "agent-done-task",
           success: terminationResult.success,
           summary: terminationResult.summary,
@@ -2057,7 +2064,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
     }
 
     // Max steps exceeded
-    emitDone({
+    await emitDone({
       type: "agent-done-task",
       success: false,
       summary: "Max steps reached",
@@ -2095,7 +2102,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           summary = "任务已取消";
           break;
       }
-      emitDone({
+      await emitDone({
         type: "agent-done-task",
         success: false,
         summary,
