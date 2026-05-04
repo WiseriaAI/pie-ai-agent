@@ -63,7 +63,6 @@ import {
   dispatchCaptureVisibleTab,
   dispatchCaptureFullPageTab,
 } from "@/lib/agent/tools/screenshot";
-import { acquireCdpSession } from "./cdp-session";
 import { makeCdpAdapterForScreenshot } from "./cdp-adapter";
 import type { ScreenshotConfirmExtras } from "@/types";
 import type { ImageAttachment } from "@/lib/images";
