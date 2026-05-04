@@ -6,20 +6,42 @@ import { readSSELines } from "@/lib/model-router/sse";
 // - system role messages (string content) are hoisted to the top-level `system` field.
 // - user/assistant messages pass content blocks through directly (Anthropic native format).
 // - Multiple system messages are joined with "\n\n" (preserves Phase 1 behavior).
+// - ImageBlock: camelCase mediaType → snake_case media_type for Anthropic wire.
 function toWireMessages(messages: AgentMessage[]): {
   system: string | undefined;
-  messages: { role: string; content: string | ContentBlock[] }[];
+  messages: { role: string; content: string | unknown[] }[];
 } {
   const systemParts: string[] = [];
-  const wireMessages: { role: string; content: string | ContentBlock[] }[] = [];
+  const wireMessages: { role: string; content: string | unknown[] }[] = [];
 
   for (const msg of messages) {
     if (msg.role === "system") {
       // system content is always string (enforced at type level)
       systemParts.push(msg.content);
-    } else {
-      wireMessages.push({ role: msg.role, content: msg.content });
+      continue;
     }
+    if (typeof msg.content === "string") {
+      wireMessages.push({ role: msg.role, content: msg.content });
+      continue;
+    }
+    // ContentBlock[] — map each block to Anthropic wire shape.
+    // Most blocks pass through verbatim (text, tool_use, tool_result use
+    // Anthropic-native field names already). ImageBlock needs camelCase →
+    // snake_case translation on mediaType → media_type for the Anthropic wire.
+    const wireBlocks = msg.content.map((block) => {
+      if (block.type === "image") {
+        return {
+          type: "image",
+          source: {
+            type: "base64",
+            media_type: block.source.mediaType,
+            data: block.source.data,
+          },
+        };
+      }
+      return block;
+    });
+    wireMessages.push({ role: msg.role, content: wireBlocks });
   }
 
   return {
@@ -27,6 +49,9 @@ function toWireMessages(messages: AgentMessage[]): {
     messages: wireMessages,
   };
 }
+
+// Test-only export — Phase 5 wire shape validation
+export const _toWireMessagesForTest = toWireMessages;
 
 // Map Anthropic stop_reason to our normalized stopReason
 function mapStopReason(

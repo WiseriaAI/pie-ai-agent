@@ -5,7 +5,7 @@ import { readSSELines } from "@/lib/model-router/sse";
 // OpenAI wire message type
 interface OpenAIWireMessage {
   role: string;
-  content: string | null;
+  content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> | null;
   tool_calls?: {
     id: string;
     type: "function";
@@ -71,8 +71,13 @@ function toWireMessages(messages: AgentMessage[]): OpenAIWireMessage[] {
       }
       result.push(wireMsg);
     } else if (msg.role === "user") {
-      // Collect text and tool_result blocks separately
+      // Collect text, tool_result, and image blocks separately.
+      // - tool_result → separate role:"tool" wire messages (unchanged behavior)
+      // - image → collected; if any present, user msg content becomes an array
+      //   (OpenAI vision shape: [{type:"image_url",...}, {type:"text",...}])
+      // - text only → string content (unchanged behavior)
       const textParts: string[] = [];
+      const imageBlocks: Array<{ type: "image_url"; image_url: { url: string } }> = [];
 
       for (const block of content) {
         if (block.type === "text") {
@@ -84,12 +89,28 @@ function toWireMessages(messages: AgentMessage[]): OpenAIWireMessage[] {
             content: block.content,
             tool_call_id: block.toolUseId,
           });
+        } else if (block.type === "image") {
+          imageBlocks.push({
+            type: "image_url",
+            image_url: {
+              url: `data:${block.source.mediaType};base64,${block.source.data}`,
+            },
+          });
         }
         // tool_use in user position is unusual — skip
       }
 
-      // If there were text parts, emit a user message
-      if (textParts.length > 0) {
+      if (imageBlocks.length > 0) {
+        // OpenAI requires content as an array when images are present.
+        const parts: Array<{ type: string; text?: string; image_url?: { url: string } }> = [
+          ...imageBlocks,
+        ];
+        if (textParts.length > 0) {
+          parts.push({ type: "text", text: textParts.join("") });
+        }
+        result.push({ role: "user", content: parts });
+      } else if (textParts.length > 0) {
+        // Text-only path: keep string content (unchanged behavior)
         result.push({ role: "user", content: textParts.join("") });
       }
     }
@@ -296,3 +317,6 @@ export async function* streamChat(
     };
   }
 }
+
+// Test-only export — Phase 5 wire shape validation
+export const _toWireMessagesForTest = toWireMessages;
