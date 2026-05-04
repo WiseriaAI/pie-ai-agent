@@ -445,23 +445,22 @@ export default function SessionDrawer({
             gap: 8,
           }}
         >
-          {/* Logo: 18×18 circle + inner dot */}
+          {/* Logo: V3 bite-curve mark, 18×18.
+              Uses --c-fg-1 / --c-canvas tokens so the mark inverts cleanly
+              between light and dark mode (deep base on light surface, light
+              base on dark surface) while staying a 1:1 silhouette of the
+              manifest icon. */}
           <svg
             width="18"
             height="18"
-            viewBox="0 0 18 18"
+            viewBox="0 0 128 128"
             fill="none"
             aria-hidden="true"
             style={{ flexShrink: 0 }}
           >
-            <circle
-              cx="9"
-              cy="9"
-              r="8.5"
-              stroke="var(--c-accent)"
-              strokeWidth="1"
-            />
-            <circle cx="9" cy="9" r="2" fill="var(--c-accent)" />
+            <rect width="128" height="128" rx="26" fill="var(--c-fg-1)" />
+            <circle cx="64" cy="64" r="44" fill="var(--c-canvas)" />
+            <circle cx="98" cy="30" r="22" fill="var(--c-fg-1)" />
           </svg>
 
           {/* Title */}
