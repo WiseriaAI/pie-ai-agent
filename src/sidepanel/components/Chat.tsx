@@ -121,6 +121,8 @@ export default function Chat({
     error,
     toast,
     pinnedOrigin: sessionPinnedOrigin,
+    pinnedTabId: sessionPinnedTabId,
+    pinMode,
     sendMessage: sessionSendMessage,
     abort,
     resolveConfirm,
@@ -223,7 +225,15 @@ export default function Chat({
   // expected the pin to stay put for the whole conversation. The new
   // rule mirrors the underlying persistence: pin is captured once at
   // first send and stays until the session is cleared.
-  const isLocked = streaming || messages.length > 0;
+  // M5 — isLocked is now driven by pinMode, not messages.length:
+  //   - 'auto' (default for empty + post-task sessions): UI live-tracks
+  //     the user's currently-active tab; PINNED row updates dynamically
+  //   - 'task' (in-flight): pin frozen to send-time active tab
+  //   - 'user' (user-locked): pin frozen to user's dropdown choice
+  // Streaming forces locked regardless of mode (defensive — there's
+  // always a task pin while streaming, and we don't want the UI to
+  // re-render mid-task as the user tab-switches).
+  const isLocked = streaming || (pinMode !== null && pinMode !== "auto");
 
   useEffect(() => {
     if (isLocked) {
@@ -276,23 +286,38 @@ export default function Chat({
     };
   }, [isLocked]);
 
-  // Separate effect: pageChanged banner only cares about live URL
-  // changes on the pinned tab while the session is non-empty. Kept in
-  // its own listener so the locked-state main effect can early-return.
+  // M5 — pageChanged banner only cares about navigation on the SPECIFIC
+  // pinned tab, and only during a 'task'-mode in-flight task.
+  //
+  // Old behavior (pre-M5 bug): watched ANY tab.active+changeInfo.url, which
+  // false-positived whenever the user switched to a different tab — that
+  // tab's url change (already-loaded page → "active" event includes a URL)
+  // would trigger the banner even though the pinned tab itself was idle.
+  //
+  // New invariants:
+  //   - 'task' only — 'user' mode pins are fixed by user intent (origin
+  //     change is the user's call, no warning). 'auto' has no pin.
+  //   - filter chrome.tabs.onUpdated by tabId === sessionPinnedTabId — only
+  //     navigation on the pinned tab itself flags page-changed.
   useEffect(() => {
-    if (messages.length === 0) return;
+    if (pinMode !== "task") return;
+    if (sessionPinnedTabId === null) return;
+    const targetTabId = sessionPinnedTabId;
     const onUpdated = (
-      _tabId: number,
+      tabId: number,
       changeInfo: chrome.tabs.TabChangeInfo,
-      tab: chrome.tabs.Tab,
+      _tab: chrome.tabs.Tab,
     ) => {
-      if (changeInfo.url && tab.active) {
+      // Only fire for the actual pinned tab navigating — not any other tab,
+      // not even when the user switches to a different active tab.
+      if (tabId !== targetTabId) return;
+      if (changeInfo.url) {
         setPageChanged(true);
       }
     };
     chrome.tabs.onUpdated.addListener(onUpdated);
     return () => chrome.tabs.onUpdated.removeListener(onUpdated);
-  }, [messages.length]);
+  }, [pinMode, sessionPinnedTabId]);
 
   // Display source: locked → persisted session pin; free → live preview.
   // Both paths normalize to host-only via extractHost so the visual

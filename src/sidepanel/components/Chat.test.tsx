@@ -53,6 +53,8 @@ function makeSession(overrides?: Partial<UseSession>): UseSession {
     ready: true,
     status: "active",
     pinnedOrigin: null,
+    pinnedTabId: null,
+    pinMode: "auto",
     messages: [] as DisplayMessage[],
     streaming: false,
     streamingText: "",
@@ -606,5 +608,167 @@ describe("Chat — send clears attachments", () => {
     expect(sendMock).toHaveBeenCalledWith(
       expect.objectContaining({ content: "Hello" }),
     );
+  });
+});
+
+// ── M5 — pinMode-driven isLocked + pageChanged effect ────────────────────────
+
+describe("Chat — M5 pinMode behavior", () => {
+  it("auto mode: live-preview listeners ARE registered (chrome.tabs.onActivated)", async () => {
+    seedProvider("anthropic");
+    const session = makeSession({
+      pinMode: "auto",
+      pinnedTabId: null,
+      pinnedOrigin: null,
+      messages: [{ role: "user" as const, content: "hello" }] as DisplayMessage[],
+    });
+    await act(async () => {
+      render(
+        <Chat
+          session={session}
+          onOpenSettings={vi.fn()}
+          onOpenSessionList={vi.fn()}
+          activePanel="chat"
+        />,
+      );
+    });
+
+    // In auto mode the live-tracking effect runs even with messages,
+    // unlike old behavior (which locked on messages.length > 0).
+    expect(tabsOnActivated.addListener).toHaveBeenCalled();
+    expect(windowsOnFocusChanged.addListener).toHaveBeenCalled();
+  });
+
+  it("task mode: live-preview listeners are NOT registered (PINNED is frozen)", async () => {
+    seedProvider("anthropic");
+    const session = makeSession({
+      pinMode: "task",
+      pinnedTabId: 42,
+      pinnedOrigin: "https://example.com",
+    });
+    await act(async () => {
+      render(
+        <Chat
+          session={session}
+          onOpenSettings={vi.fn()}
+          onOpenSessionList={vi.fn()}
+          activePanel="chat"
+        />,
+      );
+    });
+
+    // Live-tracking effect is bypassed when locked
+    expect(tabsOnActivated.addListener).not.toHaveBeenCalled();
+    expect(windowsOnFocusChanged.addListener).not.toHaveBeenCalled();
+  });
+
+  it("user mode: live-preview listeners are NOT registered (user-locked pin)", async () => {
+    seedProvider("anthropic");
+    const session = makeSession({
+      pinMode: "user",
+      pinnedTabId: 7,
+      pinnedOrigin: "https://user.com",
+    });
+    await act(async () => {
+      render(
+        <Chat
+          session={session}
+          onOpenSettings={vi.fn()}
+          onOpenSessionList={vi.fn()}
+          activePanel="chat"
+        />,
+      );
+    });
+
+    expect(tabsOnActivated.addListener).not.toHaveBeenCalled();
+  });
+
+  it("pageChanged effect ONLY registers in task mode (not user, not auto)", async () => {
+    seedProvider("anthropic");
+
+    // user mode — pageChanged effect does NOT register
+    tabsOnUpdated.addListener.mockClear();
+    const userSession = makeSession({
+      pinMode: "user",
+      pinnedTabId: 5,
+      pinnedOrigin: "https://x.com",
+    });
+    const { unmount: unmountUser } = render(
+      <Chat session={userSession} onOpenSettings={vi.fn()} onOpenSessionList={vi.fn()} activePanel="chat" />,
+    );
+    // Live-preview is gated by isLocked → user mode = locked = no listeners.
+    // Only the pageChanged effect could register tabsOnUpdated.
+    const userCalls = tabsOnUpdated.addListener.mock.calls.length;
+    unmountUser();
+
+    // task mode — pageChanged effect DOES register
+    tabsOnUpdated.addListener.mockClear();
+    const taskSession = makeSession({
+      pinMode: "task",
+      pinnedTabId: 5,
+      pinnedOrigin: "https://x.com",
+    });
+    const { unmount: unmountTask } = render(
+      <Chat session={taskSession} onOpenSettings={vi.fn()} onOpenSessionList={vi.fn()} activePanel="chat" />,
+    );
+    const taskCalls = tabsOnUpdated.addListener.mock.calls.length;
+    unmountTask();
+
+    // task should register at least one listener; user should register zero
+    // for pageChanged. The live-preview path doesn't fire in either (both
+    // are locked), so any difference is from the pageChanged effect.
+    expect(taskCalls).toBeGreaterThan(userCalls);
+  });
+
+  it("pageChanged in task mode: filter by tabId — irrelevant tab navigation does NOT fire banner", async () => {
+    seedProvider("anthropic");
+    const session = makeSession({
+      pinMode: "task",
+      pinnedTabId: 100,
+      pinnedOrigin: "https://example.com",
+    });
+
+    // Capture the listener so we can invoke it directly.
+    let onUpdatedFn: ((
+      tabId: number,
+      changeInfo: chrome.tabs.TabChangeInfo,
+      tab: chrome.tabs.Tab,
+    ) => void) | undefined;
+    tabsOnUpdated.addListener.mockClear();
+    tabsOnUpdated.addListener.mockImplementation((fn: unknown) => {
+      onUpdatedFn = fn as typeof onUpdatedFn;
+    });
+
+    await act(async () => {
+      render(
+        <Chat session={session} onOpenSettings={vi.fn()} onOpenSessionList={vi.fn()} activePanel="chat" />,
+      );
+    });
+
+    expect(onUpdatedFn).toBeDefined();
+
+    // Simulate a different tab (id=999) navigating — should NOT trigger banner.
+    await act(async () => {
+      onUpdatedFn!(
+        999,
+        { url: "https://other.example.com/" },
+        { id: 999, url: "https://other.example.com/", active: true } as chrome.tabs.Tab,
+      );
+    });
+
+    // Banner element only shows when pageChanged state is true. Look for the
+    // banner text.
+    expect(screen.queryByText(/Page changed/i)).toBeNull();
+
+    // Now simulate the actual pinned tab (id=100) navigating — should fire banner.
+    await act(async () => {
+      onUpdatedFn!(
+        100,
+        { url: "https://example.com/other" },
+        { id: 100, url: "https://example.com/other", active: true } as chrome.tabs.Tab,
+      );
+    });
+
+    expect(screen.getByText(/Page changed/i)).toBeTruthy();
   });
 });

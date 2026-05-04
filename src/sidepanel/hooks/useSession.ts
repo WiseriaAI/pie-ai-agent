@@ -141,6 +141,12 @@ export interface UseSession {
    *  Updated on bootstrap, setActive, and chrome.storage onChanged for
    *  the active session's meta key. */
   pinnedOrigin: string | null;
+  /** M5 — persisted pinned tab id (for filtering chrome.tabs.onUpdated
+   *  events in the pageChanged effect). null when no pin or auto mode. */
+  pinnedTabId: number | null;
+  /** M5 — pin state machine: 'auto' / 'task' / 'user' (or null pre-bootstrap).
+   *  Drives Chat.tsx's isLocked decision and per-effect listener wiring. */
+  pinMode: "auto" | "task" | "user" | null;
   messages: DisplayMessage[];
   streaming: boolean;
   streamingText: string;
@@ -187,6 +193,15 @@ export function useSession(): UseSession {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [status, setStatus] = useState<SessionStatus | null>(null);
   const [pinnedOrigin, setPinnedOriginState] = useState<string | null>(null);
+  // M5 — pinned tab id (for filtering chrome.tabs.onUpdated events; previously
+  // Chat.tsx watched all active-tab url changes which caused the page-changed
+  // banner to false-positive whenever the user switched tabs).
+  const [pinnedTabId, setPinnedTabIdState] = useState<number | null>(null);
+  // M5 — pin mode state machine: auto / task / user. Drives the Chat.tsx
+  // isLocked decision (was: messages.length > 0; now: pinMode !== 'auto').
+  const [pinMode, setPinModeState] = useState<"auto" | "task" | "user" | null>(
+    null,
+  );
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [streamingText, setStreamingText] = useState("");
@@ -557,6 +572,8 @@ export function useSession(): UseSession {
         setSessionId(meta.id);
         setStatus(meta.status);
         setPinnedOriginState(null);
+        setPinnedTabIdState(null);
+        setPinModeState(meta.pinMode ?? "auto");
         setMessages([]);
         portRef.current = connectPortFor(meta.id);
       } finally {
@@ -592,6 +609,8 @@ export function useSession(): UseSession {
             messages?: DisplayMessage[];
             status?: SessionStatus;
             pinnedOrigin?: string;
+            pinnedTabId?: number;
+            pinMode?: "auto" | "task" | "user";
           }
         | undefined;
       // Status update is always adopted — the SW transitions (paused→active,
@@ -603,6 +622,14 @@ export function useSession(): UseSession {
       // PINNED indicator should reflect the persisted truth.
       if (newMeta?.pinnedOrigin !== undefined) {
         setPinnedOriginState(newMeta.pinnedOrigin || null);
+      }
+      // M5 — propagate pinnedTabId + pinMode for Chat.tsx live-tracking
+      // and pageChanged effects.
+      if ("pinnedTabId" in (newMeta ?? {})) {
+        setPinnedTabIdState(newMeta?.pinnedTabId ?? null);
+      }
+      if (newMeta?.pinMode !== undefined) {
+        setPinModeState(newMeta.pinMode);
       }
       if (newMeta?.messages !== undefined) {
         // P1-6 + Bug-fix-A — prevent self-write echo AND stale SW write-back
@@ -792,6 +819,8 @@ export function useSession(): UseSession {
               lastAccessedAt: Date.now(),
             });
             setPinnedOriginState(pin.pinnedOrigin);
+            setPinnedTabIdState(pin.pinnedTabId);
+            setPinModeState("task");
           } catch (e) {
             console.warn("[useSession] pin patch on first send failed:", e);
           }
@@ -986,6 +1015,8 @@ export function useSession(): UseSession {
     setSessionId(id);
     setStatus(metaForActivate.status);
     setPinnedOriginState(metaForActivate.pinnedOrigin ?? null);
+    setPinnedTabIdState(metaForActivate.pinnedTabId ?? null);
+    setPinModeState(metaForActivate.pinMode ?? "auto");
     setMessages(metaForActivate.messages ?? []);
     setError(null);
     setToast(null);
@@ -1035,6 +1066,8 @@ export function useSession(): UseSession {
     setSessionId(meta.id);
     setStatus(meta.status);
     setPinnedOriginState(null); // brand new session — no pin yet
+    setPinnedTabIdState(null);
+    setPinModeState("auto");
     setMessages([]);
     setError(null);
     setToast(null);
@@ -1049,6 +1082,8 @@ export function useSession(): UseSession {
     ready,
     status,
     pinnedOrigin,
+    pinnedTabId,
+    pinMode,
     messages,
     streaming,
     streamingText,
