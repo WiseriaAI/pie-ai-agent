@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import {
-  addImage, getImages, getImagesByUserTurn, evictSession,
-  evictAllOnSWStartup, evictOnSetActive, evictByInFlightSet, _resetForTests,
+  addImage, getImages, getImagesByUserTurn, getImageById,
+  evictSession, evictAllOnSWStartup, evictOnSetActive, evictByInFlightSet,
+  _resetForTests,
 } from "./image-cache";
 import type { ImageRef } from "@/lib/images";
 
@@ -21,6 +22,12 @@ describe("image-cache — basic", () => {
     addImage("s1", mkRef("i1", "s1", "t1"));
     addImage("s1", mkRef("i2", "s1", "t2"));
     expect(getImagesByUserTurn("s1", "t1").map((r) => r.id)).toEqual(["i1"]);
+  });
+  it("getImageById finds an image by id, undefined if missing", () => {
+    addImage("s1", mkRef("i1", "s1", "t1"));
+    expect(getImageById("s1", "i1")?.id).toBe("i1");
+    expect(getImageById("s1", "missing")).toBeUndefined();
+    expect(getImageById("nonexistent-session", "i1")).toBeUndefined();
   });
 });
 

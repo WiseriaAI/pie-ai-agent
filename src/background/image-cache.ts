@@ -13,8 +13,15 @@ export function addImage(sessionId: string, ref: ImageRef): void {
   enforceLRU(sessionId);
 }
 
+/**
+ * Returns a shallow copy of the cached image refs for a session. Callers
+ * may freely sort/reverse/filter without corrupting cache invariants.
+ * `ImageRef` itself is treated as immutable (Task 4 contract — Tasks 11/12
+ * never mutate fields of returned refs).
+ */
 export function getImages(sessionId: string): ImageRef[] {
-  return cache.get(sessionId) ?? [];
+  const list = cache.get(sessionId);
+  return list ? [...list] : [];
 }
 
 export function getImagesByUserTurn(sessionId: string, userTurnId: string): ImageRef[] {
