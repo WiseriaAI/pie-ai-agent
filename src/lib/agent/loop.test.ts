@@ -30,6 +30,7 @@ describe("buildSessionAgentSnapshot", () => {
       agentMessages: history,
       stepIndex: 1,
       skillExecutionScopeStack: [],
+      hasImageContent: false,
     });
   });
 
@@ -171,6 +172,7 @@ describe("buildSessionAgentSnapshot", () => {
       agentMessages: [],
       stepIndex: 0,
       skillExecutionScopeStack: [],
+      hasImageContent: false,
     });
   });
 
@@ -818,5 +820,43 @@ describe("U2 — chatMessageToAgentMessage (D7 wrap invariants)", () => {
     const m2: ChatMessage = { role: "user", content: "plain safe content" };
     const twice = chatMessageToAgentMessage(m2);
     expect(once.content).toBe(twice.content);
+  });
+
+  it("user message with attachments emits ContentBlock[] preserving wrap on text", () => {
+    const m: ChatMessage = {
+      role: "user",
+      content: "what is this?",
+      attachments: [{
+        kind: "image", id: "i1", mediaType: "image/jpeg",
+        data: "AAAA", width: 100, height: 100, byteLength: 3,
+      }],
+    };
+    const a = chatMessageToAgentMessage(m);
+    expect(a.role).toBe("user");
+    expect(Array.isArray(a.content)).toBe(true);
+    const blocks = a.content as ContentBlock[];
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0].type).toBe("image");
+    expect(blocks[1].type).toBe("text");
+    expect((blocks[1] as { type: "text"; text: string }).text)
+      .toBe("<untrusted_user_message>what is this?</untrusted_user_message>");
+  });
+
+  it("user message with image_placeholder attachment + text wraps text + emits placeholder text block", () => {
+    const m: ChatMessage = {
+      role: "user",
+      content: "follow up",
+      attachments: [{
+        kind: "image_placeholder", id: "i1", mediaType: "image/jpeg",
+        width: 100, height: 100,
+      }],
+    };
+    const a = chatMessageToAgentMessage(m);
+    const blocks = a.content as ContentBlock[];
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0].type).toBe("text");
+    expect((blocks[0] as { type: "text"; text: string }).text).toMatch(/image released/i);
+    expect((blocks[1] as { type: "text"; text: string }).text)
+      .toMatch(/<untrusted_user_message>follow up<\/untrusted_user_message>/);
   });
 });

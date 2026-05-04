@@ -18,7 +18,16 @@ export interface ToolResultBlock {
   isError?: boolean;
 }
 
-export type ContentBlock = TextBlock | ToolUseBlock | ToolResultBlock;
+export interface ImageBlock {
+  type: "image";
+  source: {
+    type: "base64";
+    mediaType: "image/jpeg" | "image/png" | "image/webp" | "image/gif";
+    data: string;
+  };
+}
+
+export type ContentBlock = TextBlock | ToolUseBlock | ToolResultBlock | ImageBlock;
 
 // AgentMessage IR — LLM-facing message type (parallel to ChatMessage, never exposed to Panel)
 // system role is constrained to string-only at type level

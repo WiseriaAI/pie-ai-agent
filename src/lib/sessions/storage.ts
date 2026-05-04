@@ -147,6 +147,7 @@ export async function createSession(
     agentMessages: [],
     stepIndex: 0,
     skillExecutionScopeStack: [],
+    hasImageContent: false,
   };
 
   const index = await readIndex();

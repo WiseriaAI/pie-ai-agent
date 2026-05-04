@@ -122,6 +122,7 @@ describe("setSessionMeta / setSessionAgent — D2 dual-key independence", () => 
       agentMessages: [{ role: "user", content: "hi" }],
       stepIndex: 7,
       skillExecutionScopeStack: [],
+      hasImageContent: false,
     };
     await setSessionAgent(meta.id, agentBefore);
 
@@ -140,6 +141,7 @@ describe("setSessionMeta / setSessionAgent — D2 dual-key independence", () => 
       agentMessages: [{ role: "assistant", content: "ok" }],
       stepIndex: 1,
       skillExecutionScopeStack: [],
+      hasImageContent: false,
     });
 
     const metaAfter = await getSessionMeta(meta.id);
@@ -342,6 +344,7 @@ describe("setPendingConfirm / scrubPendingConfirm — M1-U4", () => {
       agentMessages: [{ role: "user", content: "hi" }],
       stepIndex: 3,
       skillExecutionScopeStack: [],
+      hasImageContent: false,
     });
     await setPendingConfirm(meta.id, sampleRecord);
     const agent = await getSessionAgent(meta.id);
@@ -362,6 +365,7 @@ describe("setPendingConfirm / scrubPendingConfirm — M1-U4", () => {
       agentMessages: [{ role: "user", content: "hi" }],
       stepIndex: 3,
       skillExecutionScopeStack: [],
+      hasImageContent: false,
     });
     await setPendingConfirm(meta.id, sampleRecord);
     await scrubPendingConfirm(meta.id);
@@ -735,6 +739,7 @@ describe("setLastTaskSynth / clearLastTaskSynth — U3 (AD1 fix: agent-state)", 
         agentMessages: snapshotMessages,
         stepIndex: 3,
         skillExecutionScopeStack: [],
+        hasImageContent: false,
       }),
     ]);
 
@@ -773,6 +778,7 @@ describe("setLastTaskSynth / clearLastTaskSynth — U3 (AD1 fix: agent-state)", 
       agentMessages: [],
       stepIndex: 0,
       skillExecutionScopeStack: [],
+      hasImageContent: false,
       lastTaskSynth: synth,
     };
     await setSessionAgent(meta.id, tombstone);
@@ -882,6 +888,7 @@ describe("migrateLastTaskSynthFromMeta — AD1 migration", () => {
       agentMessages: [],
       stepIndex: 0,
       skillExecutionScopeStack: [],
+      hasImageContent: false,
       lastTaskSynth: synth,
     });
 

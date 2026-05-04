@@ -233,14 +233,33 @@ export interface AgentLoopContext {
  * Exported for unit testing (D7 wrap invariant).
  */
 export function chatMessageToAgentMessage(m: ChatMessage): AgentMessage {
-  if (m.role === "user") {
-    const escaped = escapeUntrustedWrappers(m.content);
-    return {
-      role: "user",
-      content: `<untrusted_user_message>${escaped}</untrusted_user_message>`,
-    };
+  if (m.role !== "user") return { role: m.role, content: m.content };
+
+  const wrappedText =
+    m.content.length > 0
+      ? `<untrusted_user_message>${escapeUntrustedWrappers(m.content)}</untrusted_user_message>`
+      : "";
+
+  if (!m.attachments?.length) {
+    return { role: "user", content: wrappedText };
   }
-  return { role: m.role, content: m.content };
+
+  const blocks: ContentBlock[] = [];
+  for (const a of m.attachments) {
+    if (a.kind === "image") {
+      blocks.push({
+        type: "image",
+        source: { type: "base64", mediaType: a.mediaType, data: a.data },
+      });
+    } else {
+      blocks.push({
+        type: "text",
+        text: "[image released — no longer available]",
+      });
+    }
+  }
+  if (wrappedText) blocks.push({ type: "text", text: wrappedText });
+  return { role: "user", content: blocks };
 }
 
 function toolsToDefinitions(tools: Tool[]): ToolDefinition[] {
@@ -588,6 +607,7 @@ export function buildSessionAgentSnapshot(
     agentMessages: structuredClone(history),
     stepIndex,
     skillExecutionScopeStack: structuredClone(skillExecutionScopeStack),
+    hasImageContent: false,
   };
 }
 
@@ -619,6 +639,7 @@ export function buildSessionAgentTombstone(lastTaskSynth?: string | null): Sessi
     agentMessages: [],
     stepIndex: 0,
     skillExecutionScopeStack: [],
+    hasImageContent: false,
   };
   if (lastTaskSynth != null) {
     base.lastTaskSynth = lastTaskSynth;

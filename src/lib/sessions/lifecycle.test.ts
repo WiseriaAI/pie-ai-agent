@@ -31,6 +31,7 @@ const EMPTY_AGENT: SessionAgentState = {
   agentMessages: [],
   stepIndex: 0,
   skillExecutionScopeStack: [],
+  hasImageContent: false,
 };
 
 /** Seed storage with `bytes` worth of data to simulate pressure. */
@@ -168,6 +169,7 @@ describe("Scenario 4: archive releases meta + agent storage bytes", () => {
       agentMessages: [{ role: "user", content: "hello ".repeat(100) }],
       stepIndex: 5,
       skillExecutionScopeStack: [],
+      hasImageContent: false,
     };
     await chromeMock.storage.local.set({ [`session_${session.id}_agent`]: largeAgent });
 

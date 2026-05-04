@@ -136,6 +136,21 @@ export interface SessionAgentState {
     skillId: string;
     allowedTools: string[] | null;
   }>;
+  /**
+   * R14 — set true the first time an image ContentBlock is added to
+   * `agentMessages`. Persisted across SW restart so `detectAndMarkPaused`
+   * can transition image-bearing in-flight sessions to `failed` (image
+   * bytes not in storage; resume would feed an LLM context with cache-miss
+   * text markers, breaking the "look at the image" task semantics).
+   *
+   * Set in three places:
+   *   - loop.ts: when ChatStartMessage attachments arrive (Task 11)
+   *   - loop.ts: when screenshot tool result is appended (Task 11)
+   *   - storage.ts buildSessionAgentSnapshot: preserved across writes
+   *
+   * Idempotent — once true, stays true for the lifetime of the session.
+   */
+  hasImageContent: boolean;
   /** Set while a confirm is awaiting user response. Cleared synchronously
    *  on resolve. M1-U5 cold-start sweep unconditionally clears this on
    *  SW startup before any other recovery work. */

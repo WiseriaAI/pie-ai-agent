@@ -102,6 +102,7 @@ export async function runSessionMigrations(): Promise<{ cleared: string[] }> {
     agentMessages: rawAgent?.agentMessages ?? [],
     stepIndex: rawAgent?.stepIndex ?? 0,
     skillExecutionScopeStack: rawAgent?.skillExecutionScopeStack ?? [],
+    hasImageContent: rawAgent?.hasImageContent ?? false,
     ...(rawAgent?.pendingConfirm != null
       ? { pendingConfirm: rawAgent.pendingConfirm }
       : {}),

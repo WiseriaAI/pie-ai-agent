@@ -3,8 +3,9 @@
 import { streamChat as anthropicStreamChat } from "./providers/anthropic";
 import { streamChat as openaiStreamChat } from "./providers/openai";
 import { getProviderMeta } from "./providers/registry";
+import type { Attachment } from "@/lib/images";
 
-export type { StreamEvent, AgentMessage, ContentBlock, TextBlock, ToolUseBlock, ToolResultBlock, ToolDefinition } from "./types";
+export type { StreamEvent, AgentMessage, ContentBlock, TextBlock, ToolUseBlock, ToolResultBlock, ImageBlock, ToolDefinition } from "./types";
 export { PROVIDER_REGISTRY, getProviderMeta } from "./providers/registry";
 export type { ProviderMeta } from "./providers/registry";
 
@@ -26,10 +27,14 @@ export interface ModelConfig {
   maxTokens?: number;
 }
 
-// Panel↔SW wire protocol message — content stays string only, never modified
+// Panel↔SW wire protocol message — content stays string (Phase 1 wire invariant);
+// `attachments` is the Phase 5 additive field for image input. Storage
+// always carries `attachments` items as `kind: 'image_placeholder'` (R10);
+// SW hydrates `data` field from per-session image cache when available.
 export interface ChatMessage {
   role: "user" | "assistant" | "system";
   content: string;
+  attachments?: Attachment[];
 }
 
 export interface ChatResponse {
@@ -38,12 +43,29 @@ export interface ChatResponse {
 }
 
 // Adapter: convert ChatMessage[] (Panel wire) to AgentMessage[] (model-router IR).
-// String content passes through unchanged. Structural compat is preserved because
-// ChatMessage is a subtype of AgentMessage (string content satisfies string | ContentBlock[]).
+// String content passes through unchanged when no attachments are present.
+// When attachments are present, expands into ContentBlock[] with image/placeholder blocks.
 export function chatMessagesToAgent(
   messages: ChatMessage[],
 ): import("./types").AgentMessage[] {
-  return messages as import("./types").AgentMessage[];
+  return messages.map((m): import("./types").AgentMessage => {
+    if (m.role === "system") return { role: "system", content: m.content };
+    if (!m.attachments?.length) return { role: m.role, content: m.content };
+
+    const blocks: import("./types").ContentBlock[] = [];
+    for (const a of m.attachments) {
+      if (a.kind === "image") {
+        blocks.push({
+          type: "image",
+          source: { type: "base64", mediaType: a.mediaType, data: a.data },
+        });
+      } else {
+        blocks.push({ type: "text", text: "[image released — no longer available]" });
+      }
+    }
+    if (m.content.length > 0) blocks.push({ type: "text", text: m.content });
+    return { role: m.role, content: blocks };
+  });
 }
 
 export async function* streamChat(

@@ -8,6 +8,11 @@ export interface ProviderMeta {
   placeholder: string;
   type: "anthropic" | "openai-compatible";
   supportsTools: boolean;
+  /** Phase 5 multimodal — true if provider's vision wire format is wired into
+   *  the corresponding shaper. v1 first wave: anthropic / openai / openrouter.
+   *  Drives Chat.tsx upload affordance + risk classifier early-fail for
+   *  screenshot tools (R9 mixed-vision-provider 4 sub-paths). */
+  supportsVision: boolean;
   /** Approximate context window size in tokens, used by the token-budget guard (U5). */
   maxContextTokens: number;
 }
@@ -21,6 +26,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     placeholder: "sk-ant-...",
     type: "anthropic",
     supportsTools: true,
+    supportsVision: true,
     maxContextTokens: 200_000,
   },
   {
@@ -31,6 +37,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     placeholder: "sk-...",
     type: "openai-compatible",
     supportsTools: true,
+    supportsVision: true,
     maxContextTokens: 128_000,
   },
   {
@@ -41,6 +48,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     placeholder: "sk-or-...",
     type: "openai-compatible",
     supportsTools: true,
+    supportsVision: true,
     // Conservative: OpenRouter routes to many different models; v2 can expose
     // a Settings UI to let users set the actual routed model's context window.
     maxContextTokens: 32_000,
@@ -53,6 +61,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     placeholder: "eyJ...",
     type: "openai-compatible",
     supportsTools: true,
+    supportsVision: false,
     // Conservative default; documented context varies by model.
     maxContextTokens: 32_000,
   },
@@ -64,6 +73,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     placeholder: "API key",
     type: "openai-compatible",
     supportsTools: true,
+    supportsVision: false,
     // Conservative default; documented context varies by model.
     maxContextTokens: 32_000,
   },
@@ -75,6 +85,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     placeholder: "sk-...",
     type: "openai-compatible",
     supportsTools: true,
+    supportsVision: false,
     // Conservative default; documented context varies by model.
     maxContextTokens: 32_000,
   },
