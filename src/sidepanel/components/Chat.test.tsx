@@ -730,15 +730,18 @@ describe("Chat — M5 pinMode behavior", () => {
       pinnedOrigin: "https://example.com",
     });
 
-    // Capture the listener so we can invoke it directly.
-    let onUpdatedFn: ((
+    // Capture all listeners — Chat.tsx may register multiple onUpdated
+    // listeners (pageChanged effect + lockedPinnedTitle fetcher); we want
+    // to dispatch to all of them so the test reflects production behavior.
+    type OnUpdatedFn = (
       tabId: number,
       changeInfo: chrome.tabs.TabChangeInfo,
       tab: chrome.tabs.Tab,
-    ) => void) | undefined;
+    ) => void;
+    const onUpdatedFns: OnUpdatedFn[] = [];
     tabsOnUpdated.addListener.mockClear();
     tabsOnUpdated.addListener.mockImplementation((fn: unknown) => {
-      onUpdatedFn = fn as typeof onUpdatedFn;
+      onUpdatedFns.push(fn as OnUpdatedFn);
     });
 
     await act(async () => {
@@ -747,11 +750,19 @@ describe("Chat — M5 pinMode behavior", () => {
       );
     });
 
-    expect(onUpdatedFn).toBeDefined();
+    expect(onUpdatedFns.length).toBeGreaterThan(0);
+
+    const dispatchAll = (
+      tabId: number,
+      changeInfo: chrome.tabs.TabChangeInfo,
+      tab: chrome.tabs.Tab,
+    ) => {
+      for (const fn of onUpdatedFns) fn(tabId, changeInfo, tab);
+    };
 
     // Simulate a different tab (id=999) navigating — should NOT trigger banner.
     await act(async () => {
-      onUpdatedFn!(
+      dispatchAll(
         999,
         { url: "https://other.example.com/" },
         { id: 999, url: "https://other.example.com/", active: true } as chrome.tabs.Tab,
@@ -764,7 +775,7 @@ describe("Chat — M5 pinMode behavior", () => {
 
     // Now simulate the actual pinned tab (id=100) navigating — should fire banner.
     await act(async () => {
-      onUpdatedFn!(
+      dispatchAll(
         100,
         { url: "https://example.com/other" },
         { id: 100, url: "https://example.com/other", active: true } as chrome.tabs.Tab,

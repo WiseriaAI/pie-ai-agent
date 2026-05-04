@@ -142,12 +142,18 @@ export default function Chat({
   const [enabledSkills, setEnabledSkills] = useState<SkillDefinition[]>([]);
   const [popoverSelected, setPopoverSelected] = useState(0);
   const [dismissedInput, setDismissedInput] = useState<string | null>(null);
-  // Live preview of the user's currently-active tab origin. Only used
-  // when the session is empty (no messages, not streaming) — that's when
-  // the user can still freely tab-switch and the panel reflects "the tab
-  // your next first-message will lock to". Once messages exist, the
-  // display flips to the persisted `sessionPinnedOrigin` (frozen).
+  // Live preview of the user's currently-active tab origin + title. Only
+  // used when the session is in 'auto' mode — then the user can still
+  // freely tab-switch and the panel reflects "the tab your next first-
+  // message will lock to". In 'task'/'user' mode, the display flips to
+  // the persisted `sessionPinnedOrigin` + `lockedPinnedTitle` (frozen).
   const [livePinnedOrigin, setLivePinnedOrigin] = useState<string | null>(null);
+  const [livePinnedTitle, setLivePinnedTitle] = useState<string | null>(null);
+  // M5 follow-up — locked pin's title (task / user mode). Read from
+  // chrome.tabs.get(sessionPinnedTabId); refreshed on onUpdated when the
+  // tab itself changes title (most pages update document.title async).
+  // null = not yet fetched / tab closed → fall back to host display.
+  const [lockedPinnedTitle, setLockedPinnedTitle] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Phase 5 image input state
@@ -249,37 +255,41 @@ export default function Chat({
       // burn cycles in the locked state.
       return;
     }
-    async function refreshLiveOrigin() {
+    async function refreshLive() {
       try {
         const [tab] = await chrome.tabs.query({
           active: true,
           currentWindow: true,
         });
         setLivePinnedOrigin(tab?.url ? extractOrigin(tab.url) : null);
+        setLivePinnedTitle(tab?.title ? tab.title : null);
       } catch {
         // non-fatal — keep prior value
       }
     }
 
-    void refreshLiveOrigin();
+    void refreshLive();
 
     const onActivated = () => {
-      void refreshLiveOrigin();
+      void refreshLive();
     };
     const onUpdated = (
       _tabId: number,
       changeInfo: chrome.tabs.TabChangeInfo,
       tab: chrome.tabs.Tab,
     ) => {
-      if (changeInfo.url && tab.active) {
-        void refreshLiveOrigin();
+      // Refresh on any url OR title change of the active tab. Title alone
+      // (no url change) covers SPAs that update document.title after load
+      // and same-origin route changes that just rename the tab.
+      if (tab.active && (changeInfo.url || changeInfo.title)) {
+        void refreshLive();
       }
     };
     const onFocusChanged = (winId: number) => {
       // chrome.windows.WINDOW_ID_NONE === -1 fires when chrome loses focus
       // entirely; ignore to avoid clearing pin on app-switch.
       if (winId === chrome.windows.WINDOW_ID_NONE) return;
-      void refreshLiveOrigin();
+      void refreshLive();
     };
 
     chrome.tabs.onActivated.addListener(onActivated);
@@ -325,14 +335,68 @@ export default function Chat({
     return () => chrome.tabs.onUpdated.removeListener(onUpdated);
   }, [pinMode, sessionPinnedTabId]);
 
-  // Display source: locked → persisted session pin; free → live preview.
-  // Both paths normalize to host-only via extractHost so the visual
-  // format is consistent across states.
-  const displayPinnedOrigin = isLocked
-    ? sessionPinnedOrigin
-      ? extractHost(sessionPinnedOrigin) ?? sessionPinnedOrigin
-      : null
-    : livePinnedOrigin;
+  // M5 follow-up — locked-mode title fetcher. Reads the pinned tab's
+  // current title via chrome.tabs.get; refreshes whenever the pinned tab
+  // updates its title (SPAs change document.title async on route change).
+  // Falls back to null on closed/inaccessible tab — display layer handles
+  // host-fallback in that case.
+  useEffect(() => {
+    if (!isLocked) {
+      setLockedPinnedTitle(null);
+      return;
+    }
+    if (sessionPinnedTabId === null) {
+      setLockedPinnedTitle(null);
+      return;
+    }
+    const targetTabId = sessionPinnedTabId;
+    let cancelled = false;
+    async function fetchTitle() {
+      try {
+        const tab = await chrome.tabs.get(targetTabId);
+        if (cancelled) return;
+        setLockedPinnedTitle(tab.title ?? null);
+      } catch {
+        if (cancelled) return;
+        setLockedPinnedTitle(null);
+      }
+    }
+    void fetchTitle();
+    const onUpdated = (
+      tabId: number,
+      changeInfo: chrome.tabs.TabChangeInfo,
+      tab: chrome.tabs.Tab,
+    ) => {
+      if (tabId !== targetTabId) return;
+      if (changeInfo.title || changeInfo.url) {
+        setLockedPinnedTitle(tab.title ?? null);
+      }
+    };
+    chrome.tabs.onUpdated.addListener(onUpdated);
+    return () => {
+      cancelled = true;
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+    };
+  }, [isLocked, sessionPinnedTabId]);
+
+  // Display label — prefer tab title for human readability; fall back to
+  // host (extracted from origin) when title is unavailable. Locked vs
+  // free state pick from different sources but same fallback chain.
+  const PIN_LABEL_MAX_LEN = 60;
+  function truncate(s: string): string {
+    return s.length > PIN_LABEL_MAX_LEN ? s.slice(0, PIN_LABEL_MAX_LEN - 1) + "…" : s;
+  }
+  const displayPinnedOrigin = (() => {
+    if (isLocked) {
+      if (lockedPinnedTitle) return truncate(lockedPinnedTitle);
+      if (sessionPinnedOrigin)
+        return extractHost(sessionPinnedOrigin) ?? sessionPinnedOrigin;
+      return null;
+    }
+    if (livePinnedTitle) return truncate(livePinnedTitle);
+    if (livePinnedOrigin) return extractHost(livePinnedOrigin) ?? livePinnedOrigin;
+    return null;
+  })();
 
   async function checkConfig() {
     const active = await getActiveProvider();
@@ -560,8 +624,11 @@ export default function Chat({
 
   return (
     <div className="flex h-full flex-col">
-      {/* Pinned origin + provider label info bar */}
-      {(displayPinnedOrigin || providerLabel) && (
+      {/* Pinned origin + step counter info bar.
+       *  M5 follow-up: provider/model label removed — was getting squeezed by
+       *  the new PinnedTabDropdown button. Provider info still visible in
+       *  Settings; users typically switch there, not from the chat header. */}
+      {(displayPinnedOrigin || (streaming && stepCount > 0)) && (
         <div className="relative flex flex-shrink-0 items-center gap-2 border-b border-line bg-canvas px-4 py-1.5">
           {displayPinnedOrigin && (
             <>
@@ -600,11 +667,6 @@ export default function Chat({
           {streaming && stepCount > 0 && (
             <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-accent tabular">
               step {String(stepCount).padStart(2, "0")}
-            </span>
-          )}
-          {providerLabel && (
-            <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-fg-2">
-              {providerLabel}
             </span>
           )}
         </div>
