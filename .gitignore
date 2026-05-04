@@ -6,5 +6,8 @@ dist/
 
 .context/
 
+# Git worktrees for isolated parallel development
+.worktrees/
+
 # Release artifacts uploaded to GitHub Releases / Chrome Web Store
 pie-*.zip
