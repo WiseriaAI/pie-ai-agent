@@ -21,6 +21,7 @@ import {
   clearLastTaskSynth,
   migrateLastTaskSynthFromMeta,
   clearTaskPinAtSessionEnd,
+  upgradeAutoToTaskAtChatStart,
   agentKey,
   metaKey,
 } from "./storage";
@@ -1121,6 +1122,156 @@ describe("M5 — clearTaskPinAtSessionEnd (emitDone hook)", () => {
     const back = await getSessionMeta(id);
     expect(back?.pinMode).toBe("auto");
     expect(back?.pinnedTabId).toBeUndefined();
+  });
+});
+
+// ── M5 — upgradeAutoToTaskAtChatStart (chat-start hook) ───────────────────
+
+describe("M5 — upgradeAutoToTaskAtChatStart (chat-start hook)", () => {
+  const captureFn = (pin: { tabId: number; origin: string } | null) =>
+    () => Promise.resolve(pin);
+
+  it("upgrades auto-mode session to task with captured pin", async () => {
+    const meta = await createSession();
+    expect(meta.pinMode).toBe("auto");
+
+    const pin = { tabId: 42, origin: "https://example.com" };
+    const result = await upgradeAutoToTaskAtChatStart(meta.id, captureFn(pin));
+    expect(result).toEqual(pin);
+
+    const back = await getSessionMeta(meta.id);
+    expect(back?.pinMode).toBe("task");
+    expect(back?.pinnedTabId).toBe(42);
+    expect(back?.pinnedOrigin).toBe("https://example.com");
+
+    // Index also updated
+    const idx = await listSessionIndex();
+    expect(idx.find((e) => e.id === meta.id)?.pinnedTabId).toBe(42);
+  });
+
+  it("is a no-op when pinMode='task' (idempotent backstop)", async () => {
+    const meta = await createSession({
+      pinMode: "task",
+      pinnedTabId: 10,
+      pinnedOrigin: "https://existing.com",
+    });
+
+    const setSpy = vi.spyOn(chromeMock.storage.local, "set");
+    const result = await upgradeAutoToTaskAtChatStart(
+      meta.id,
+      captureFn({ tabId: 99, origin: "https://different.com" }),
+    );
+    expect(result).toBeNull();
+    expect(setSpy).not.toHaveBeenCalled();
+    setSpy.mockRestore();
+
+    // Pin unchanged
+    const back = await getSessionMeta(meta.id);
+    expect(back?.pinnedTabId).toBe(10);
+  });
+
+  it("is a no-op when pinMode='user' (preserves user choice)", async () => {
+    const meta = await createSession({
+      pinMode: "user",
+      pinnedTabId: 5,
+      pinnedOrigin: "https://user.com",
+    });
+
+    const result = await upgradeAutoToTaskAtChatStart(
+      meta.id,
+      captureFn({ tabId: 99, origin: "https://different.com" }),
+    );
+    expect(result).toBeNull();
+
+    const back = await getSessionMeta(meta.id);
+    expect(back?.pinMode).toBe("user");
+    expect(back?.pinnedTabId).toBe(5);
+  });
+
+  it("is a no-op when captureFn returns null (restricted URL)", async () => {
+    const meta = await createSession();
+    expect(meta.pinMode).toBe("auto");
+
+    const result = await upgradeAutoToTaskAtChatStart(meta.id, captureFn(null));
+    expect(result).toBeNull();
+
+    // Session stays in auto — loop's active-tab fallback will handle it
+    const back = await getSessionMeta(meta.id);
+    expect(back?.pinMode).toBe("auto");
+    expect(back?.pinnedTabId).toBeUndefined();
+  });
+
+  it("returns null for non-existent session", async () => {
+    const result = await upgradeAutoToTaskAtChatStart(
+      "nonexistent",
+      captureFn({ tabId: 1, origin: "https://x.com" }),
+    );
+    expect(result).toBeNull();
+  });
+
+  it("upgrades legacy session (pinMode undefined + stepIndex=0) — treats as auto", async () => {
+    // Legacy session with stale pin but no in-flight task
+    const id = "legacy-stale";
+    await chromeMock.storage.local.set({
+      [metaKey(id)]: {
+        id,
+        createdAt: 1000,
+        lastAccessedAt: 1000,
+        status: "active",
+        messages: [],
+        pinnedTabId: 7,
+        pinnedOrigin: "https://stale.com",
+      } satisfies SessionMeta,
+      [agentKey(id)]: {
+        agentMessages: [],
+        stepIndex: 0,
+        skillExecutionScopeStack: [],
+        hasImageContent: false,
+      } satisfies SessionAgentState,
+      session_index: [
+        { id, lastAccessedAt: 1000, status: "active", pinnedTabId: 7 },
+      ],
+    });
+
+    const newPin = { tabId: 42, origin: "https://new.com" };
+    const result = await upgradeAutoToTaskAtChatStart(id, captureFn(newPin));
+    expect(result).toEqual(newPin);
+
+    const back = await getSessionMeta(id);
+    expect(back?.pinMode).toBe("task");
+    expect(back?.pinnedTabId).toBe(42);
+  });
+
+  it("does NOT upgrade legacy session with stepIndex>0 (resumed task)", async () => {
+    // Legacy in-flight session — getEffectivePinMode infers 'task',
+    // upgrade is a no-op, original pin preserved.
+    const id = "legacy-in-flight";
+    await chromeMock.storage.local.set({
+      [metaKey(id)]: {
+        id,
+        createdAt: 1000,
+        lastAccessedAt: 1000,
+        status: "active",
+        messages: [],
+        pinnedTabId: 7,
+        pinnedOrigin: "https://existing.com",
+      } satisfies SessionMeta,
+      [agentKey(id)]: {
+        agentMessages: [],
+        stepIndex: 5,
+        skillExecutionScopeStack: [],
+        hasImageContent: false,
+      } satisfies SessionAgentState,
+    });
+
+    const result = await upgradeAutoToTaskAtChatStart(
+      id,
+      captureFn({ tabId: 99, origin: "https://new.com" }),
+    );
+    expect(result).toBeNull();
+
+    const back = await getSessionMeta(id);
+    expect(back?.pinnedTabId).toBe(7);
   });
 });
 

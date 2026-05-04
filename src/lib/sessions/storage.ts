@@ -479,6 +479,42 @@ export async function markFailedAndScrub(id: string): Promise<boolean> {
 }
 
 /**
+ * M5 — chat-start auto→task pin upgrade (SW-side authoritative).
+ *
+ * On every chat-start: if the session's effective pin mode is 'auto', read
+ * the active tab via the provided capture function and upgrade the session
+ * to 'task' mode with that tab as the captured pin. Idempotent — already
+ * 'task' / 'user' modes return null without writing.
+ *
+ * The captureFn parameter is injected so the helper can be unit-tested
+ * without dragging chrome.tabs into the storage module's import surface.
+ * SW dispatcher passes a wrapper that calls
+ * `chrome.tabs.query({active: true, currentWindow: true})` and parses
+ * origin (with restricted-URL filter, mirroring useSession.captureActivePinned).
+ *
+ * Returns the captured pin object on upgrade, or null on no-op.
+ */
+export async function upgradeAutoToTaskAtChatStart(
+  sessionId: string,
+  captureFn: () => Promise<{ tabId: number; origin: string } | null>,
+): Promise<{ tabId: number; origin: string } | null> {
+  const meta = await getSessionMeta(sessionId);
+  if (!meta) return null;
+  const agent = await getSessionAgent(sessionId);
+  const mode = getEffectivePinMode(meta, agent);
+  if (mode !== "auto") return null;
+  const pin = await captureFn();
+  if (!pin) return null;
+  await setSessionMeta({
+    ...meta,
+    pinMode: "task",
+    pinnedTabId: pin.tabId,
+    pinnedOrigin: pin.origin,
+  });
+  return pin;
+}
+
+/**
  * M5 — task-mode pin auto-unpin at task end.
  *
  * Called by runAgentLoop's emitDone (via ctx.onTaskDone) on every terminal

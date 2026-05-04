@@ -34,6 +34,7 @@ import {
   clearLastTaskSynth,
   migrateLastTaskSynthFromMeta,
   clearTaskPinAtSessionEnd,
+  upgradeAutoToTaskAtChatStart,
 } from "@/lib/sessions/storage";
 import { escapeUntrustedWrappers } from "@/lib/agent/untrusted-wrappers";
 import {
@@ -73,6 +74,37 @@ import type { ImageAttachment } from "@/lib/images";
 // Phase 5 follow-up — shared resolver for the screenshot first-task pin race
 // (see effective-pinned.ts for the three-tier fallback rationale).
 const resolveEffectivePinned = makeResolveEffectivePinned(getSessionMeta);
+
+// M5 — SW-side captureActivePinned, mirrors useSession.ts:93-112. Used by
+// upgradeAutoToTaskAtChatStart to capture the send-time active tab.
+// Restricted-URL prefix list matches the panel-side helper exactly so both
+// paths converge on the same eligibility decision (any divergence would
+// produce a session whose pin slipped past one filter but not the other).
+const SW_RESTRICTED_PIN_PREFIXES = [
+  "chrome://",
+  "chrome-extension://",
+  "about:",
+  "edge://",
+  "file://",
+  "data:",
+  "javascript:",
+  "blob:",
+];
+async function captureSwActivePinned(): Promise<
+  { tabId: number; origin: string } | null
+> {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id || !tab.url) return null;
+    if (!Number.isInteger(tab.id) || tab.id < 0) return null;
+    if (SW_RESTRICTED_PIN_PREFIXES.some((p) => tab.url!.startsWith(p))) return null;
+    const origin = new URL(tab.url).origin;
+    if (!origin || origin === "null") return null;
+    return { tabId: tab.id, origin };
+  } catch {
+    return null;
+  }
+}
 
 // Open side panel when extension icon is clicked
 chrome.action.onClicked.addListener(async (tab) => {
@@ -476,7 +508,15 @@ async function handleResumeRequest(
     return;
   }
 
-  const drift = await checkPinnedDrift(meta, agent.stepIndex);
+  // M5 — drift card only fires for 'task' mode (the loop captured the pin
+  // automatically; if it changed since chat-start the user wasn't expecting
+  // it). 'user' mode pins were chosen explicitly by the user; if the page
+  // navigated, that's their decision — resume directly. 'auto' mode has no
+  // pin so checkPinnedDrift would short-circuit anyway.
+  const driftEligibleMode = getEffectivePinMode(meta, agent) === "task";
+  const drift = driftEligibleMode
+    ? await checkPinnedDrift(meta, agent.stepIndex)
+    : null;
   if (drift !== null) {
     // Push the drift card. Register a resolver entry so
     // panel-mounted re-emit + discard-task wire up correctly.
@@ -968,6 +1008,24 @@ async function handleChatStream(
         e,
       );
     });
+
+    // M5 — chat-start auto→task pin upgrade. Idempotent: if the session is
+    // already 'task' or 'user', this is a no-op. For 'auto' sessions we
+    // capture the send-time active tab as the task pin (frozen for this
+    // task; emitDone will downgrade back to auto). Runs BEFORE synthMeta
+    // load so the subsequent meta read sees the upgraded pinMode.
+    //
+    // Panel-side fire-and-forget capture (useSession.ts:783) may race with
+    // this; both paths set pinMode='task', so the second write is a no-op
+    // (idempotent invariant). SW-side path is the authoritative backstop.
+    await upgradeAutoToTaskAtChatStart(sessionId, captureSwActivePinned).catch(
+      (e) => {
+        console.warn(
+          `[sw] upgradeAutoToTaskAtChatStart failed for session=${sessionId}:`,
+          e,
+        );
+      },
+    );
 
     // Step 2: read lastTaskSynth from agent state (post-AD1 location).
     // Read session meta in parallel for pinned tab fields (used below).
