@@ -33,6 +33,7 @@ import {
   isPendingConfirmFloodLimited,
   clearLastTaskSynth,
   migrateLastTaskSynthFromMeta,
+  clearTaskPinAtSessionEnd,
 } from "@/lib/sessions/storage";
 import { escapeUntrustedWrappers } from "@/lib/agent/untrusted-wrappers";
 import {
@@ -738,6 +739,8 @@ async function handleResumeRequest(
     taskId: resumeTaskId,
     // M3-U4 (TOCTOU fix) — refresh per dispatch; see chat-start twin.
     refreshCrossSessionPinnedTabIds: () => getCrossSessionPinnedTabIds(sessionId),
+    // M5 — auto-unpin task-mode pin at task end (resume path).
+    onTaskDone: () => clearTaskPinAtSessionEnd(sessionId),
     // U4 — same telemetry hook as chat-start path.
     onHistoryRepaired: (violations, rawMessages) => {
       logHistoryRepaired(violations, rawMessages).catch((e) => {
@@ -1215,6 +1218,8 @@ async function handleChatStream(
       // registry per tool dispatch. The frozen snapshot here would miss
       // sessions created mid-loop.
       refreshCrossSessionPinnedTabIds: () => getCrossSessionPinnedTabIds(sessionId),
+      // M5 — auto-unpin task-mode pin at task end (chat-start path).
+      onTaskDone: () => clearTaskPinAtSessionEnd(sessionId),
       // U2 — pass the full (possibly synth-injected) messages array so
       // runAgentLoop can seed a proper multi-turn history instead of the
       // bare [system, user(task)] two-entry seed.

@@ -6,7 +6,7 @@ import type {
   PendingConfirmRecord,
 } from "./types";
 import type { ImageAttachment } from "@/lib/images";
-import { getEffectivePinMode } from "./pin-state";
+import { getEffectivePinMode, clearTaskPinIfActive } from "./pin-state";
 
 // ── Key shape ────────────────────────────────────────────────────────────────
 //
@@ -476,6 +476,30 @@ export async function markFailedAndScrub(id: string): Promise<boolean> {
   const ok = await markFailed(id);
   if (ok) await scrubPendingConfirm(id);
   return ok;
+}
+
+/**
+ * M5 — task-mode pin auto-unpin at task end.
+ *
+ * Called by runAgentLoop's emitDone (via ctx.onTaskDone) on every terminal
+ * state. Idempotent — 'user' mode pins are preserved (`clearTaskPinIfActive`
+ * is a no-op for them). Writes meta only when the helper actually mutated;
+ * for 'auto' / 'user' / fresh sessions this is a no-op pair (one read, no write).
+ *
+ * Returns true when a pin was cleared, false when no change was needed.
+ *
+ * Errors are logged by the caller (emitDone wraps the call in .catch); the
+ * fire-and-forget contract means emitDone proceeds regardless of failure.
+ */
+export async function clearTaskPinAtSessionEnd(
+  sessionId: string,
+): Promise<boolean> {
+  const meta = await getSessionMeta(sessionId);
+  if (!meta) return false;
+  const cleared = clearTaskPinIfActive(meta);
+  if (cleared === meta) return false;
+  await setSessionMeta(cleared);
+  return true;
 }
 
 /**

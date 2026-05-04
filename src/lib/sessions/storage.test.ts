@@ -20,6 +20,7 @@ import {
   setLastTaskSynth,
   clearLastTaskSynth,
   migrateLastTaskSynthFromMeta,
+  clearTaskPinAtSessionEnd,
   agentKey,
   metaKey,
 } from "./storage";
@@ -1033,6 +1034,93 @@ describe("M5 — pinMode normalize-on-write", () => {
     expect(back?.pinMode).toBe("user");
     expect(back?.pinnedTabId).toBe(9);
     expect(back?.title).toBe("renamed");
+  });
+});
+
+// ── M5 — clearTaskPinAtSessionEnd (emitDone hook) ─────────────────────────
+
+describe("M5 — clearTaskPinAtSessionEnd (emitDone hook)", () => {
+  it("clears task-mode pin: pinMode → auto, pinnedTabId/Origin removed", async () => {
+    const meta = await createSession({
+      pinMode: "task",
+      pinnedTabId: 9,
+      pinnedOrigin: "https://x.com",
+    });
+
+    const cleared = await clearTaskPinAtSessionEnd(meta.id);
+    expect(cleared).toBe(true);
+
+    const back = await getSessionMeta(meta.id);
+    expect(back?.pinMode).toBe("auto");
+    expect(back?.pinnedTabId).toBeUndefined();
+    expect(back?.pinnedOrigin).toBeUndefined();
+
+    const idx = await listSessionIndex();
+    expect(idx.find((e) => e.id === meta.id)?.pinnedTabId).toBeUndefined();
+  });
+
+  it("preserves user-mode pin (returns false, no write)", async () => {
+    const meta = await createSession({
+      pinMode: "user",
+      pinnedTabId: 9,
+      pinnedOrigin: "https://x.com",
+    });
+
+    const cleared = await clearTaskPinAtSessionEnd(meta.id);
+    expect(cleared).toBe(false);
+
+    const back = await getSessionMeta(meta.id);
+    expect(back?.pinMode).toBe("user");
+    expect(back?.pinnedTabId).toBe(9);
+  });
+
+  it("is a no-op on auto-mode session (no write, returns false)", async () => {
+    const meta = await createSession();
+    expect(meta.pinMode).toBe("auto");
+
+    const setSpy = vi.spyOn(chromeMock.storage.local, "set");
+    const cleared = await clearTaskPinAtSessionEnd(meta.id);
+    expect(cleared).toBe(false);
+    expect(setSpy).not.toHaveBeenCalled();
+    setSpy.mockRestore();
+  });
+
+  it("returns false for non-existent session (no throw)", async () => {
+    const cleared = await clearTaskPinAtSessionEnd("nonexistent-session");
+    expect(cleared).toBe(false);
+  });
+
+  it("downgrades legacy in-flight session (pinMode undefined + has pin)", async () => {
+    // Legacy M3 session shape (pre-M5): pinMode undefined, has pin.
+    // emitDone treats this as a task that just ended.
+    const id = "legacy-session";
+    await chromeMock.storage.local.set({
+      [metaKey(id)]: {
+        id,
+        createdAt: 1000,
+        lastAccessedAt: 1000,
+        status: "active",
+        messages: [],
+        pinnedTabId: 7,
+        pinnedOrigin: "https://legacy.com",
+      } satisfies SessionMeta,
+      [agentKey(id)]: {
+        agentMessages: [],
+        stepIndex: 0,
+        skillExecutionScopeStack: [],
+        hasImageContent: false,
+      } satisfies SessionAgentState,
+      session_index: [
+        { id, lastAccessedAt: 1000, status: "active", pinnedTabId: 7 },
+      ],
+    });
+
+    const cleared = await clearTaskPinAtSessionEnd(id);
+    expect(cleared).toBe(true);
+
+    const back = await getSessionMeta(id);
+    expect(back?.pinMode).toBe("auto");
+    expect(back?.pinnedTabId).toBeUndefined();
   });
 });
 

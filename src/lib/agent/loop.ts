@@ -222,6 +222,18 @@ export interface AgentLoopContext {
    */
   messages?: ChatMessage[];
   /**
+   * M5 — fired once per emitDone (idempotent at the emitDone level — only
+   * the first emitDone call propagates here; subsequent emitDone calls are
+   * short-circuited by `doneEmitted`). Use to clear task-mode pin from
+   * session meta (downgrade pinMode='task' → 'auto', strip pinnedTabId/Origin).
+   * 'user' mode pins are preserved by the SW-side handler.
+   *
+   * Fire-and-forget: errors logged but never fail the emitDone path; the
+   * panel sees agent-done-task regardless. If the meta write fails, next
+   * setSessionMeta call will normalize the pin via the lazy migration path.
+   */
+  onTaskDone?: () => Promise<void>;
+  /**
    * U4 — called when `validateAndRepairAdjacentRoles` detects and repairs
    * one or more adjacent same-role messages in the windowed history before
    * the LLM call. Fired once per LLM iteration that has violations.
@@ -853,6 +865,19 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       ctx.onStepSnapshot(buildSessionAgentTombstone(synth)).catch((e) => {
         console.warn(
           `[agent] tombstone snapshot failed for session=${ctx.sessionId}:`,
+          e,
+        );
+      });
+    }
+
+    // M5 — task-mode pin auto-unpin. Fire-and-forget meta write; errors
+    // logged but never fail the emitDone path. SW dispatcher provides the
+    // implementation (loop.ts is pure and doesn't import session storage).
+    // 'user' mode pins are preserved by the helper inside the callback.
+    if (ctx.onTaskDone) {
+      ctx.onTaskDone().catch((e) => {
+        console.warn(
+          `[agent] onTaskDone (task-pin clear) failed for session=${ctx.sessionId}:`,
           e,
         );
       });
