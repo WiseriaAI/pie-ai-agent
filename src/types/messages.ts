@@ -1,6 +1,7 @@
 import type { ChatMessage } from "@/lib/model-router";
 import type { SkillDefinition } from "@/lib/skills";
 import type { Attachment } from "@/lib/images";
+import type { CapturedActionPayload, RecordedAction } from "@/lib/recording/types";
 
 // --- Page Content ---
 
@@ -448,6 +449,65 @@ export interface SessionToastMessage {
   sessionId: string;
 }
 
+// --- Recording v1 — Side Panel → Service Worker ---
+
+/** 用户点 Start recording。SW 创建 RecordingSession，注入 capture listener。 */
+export interface RecordingStartMessage {
+  type: "recording-start";
+  sessionId: string;
+}
+
+/** capture inject 函数 → SW（**通过 sendMessage**，不走 port）。 */
+export interface RecordingActionMessage {
+  type: "recording-action";
+  payload: CapturedActionPayload;
+}
+
+/** 用户在 Save dialog 点 Save。skillName / skillDescription / 编辑后的 actions[] /
+ *  user-confirmed allowedTools。SW 据此调 saveSkill 创建 user-authored skill。 */
+export interface RecordingFinishMessage {
+  type: "recording-finish";
+  sessionId: string;
+  skillName: string;
+  skillDescription: string;
+  finalActions: RecordedAction[];
+  finalAllowedTools: string[];
+}
+
+/** 用户在 Save dialog 点 Discard。 */
+export interface RecordingDiscardMessage {
+  type: "recording-discard";
+  sessionId: string;
+}
+
+// --- Recording v1 — Service Worker → Side Panel ---
+
+export interface RecordingStartedBroadcast {
+  type: "recording-started";
+  sessionId: string;
+  tabId: number;
+  origin: string;
+  startedAt: number;
+}
+
+export interface RecordingActionBroadcast {
+  type: "recording-action-broadcast";
+  sessionId: string;
+  action: RecordedAction;
+}
+
+export interface RecordingFinishedBroadcast {
+  type: "recording-finished";
+  sessionId: string;
+  skillId: string;
+}
+
+export interface RecordingAbortedBroadcast {
+  type: "recording-aborted";
+  sessionId: string;
+  reason: "sw-restart" | "session-switched" | "panel-disconnect" | "tab-closed" | "csp-blocked" | "user-discard";
+}
+
 // --- Discriminated Unions ---
 
 export type PortMessageToWorker =
@@ -456,7 +516,10 @@ export type PortMessageToWorker =
   | AgentConfirmResponseMessage
   | PanelMountedMessage
   | ResumeTaskMessage
-  | DiscardTaskMessage;
+  | DiscardTaskMessage
+  | RecordingStartMessage      // NEW
+  | RecordingFinishMessage     // NEW
+  | RecordingDiscardMessage;   // NEW
 
 export type PortMessageToPanel =
   | ChatChunkMessage
@@ -466,4 +529,8 @@ export type PortMessageToPanel =
   | AgentConfirmRequestMessage
   | AgentDoneTaskMessage
   | SessionConfirmRequestMessage
-  | SessionToastMessage;
+  | SessionToastMessage
+  | RecordingStartedBroadcast        // NEW
+  | RecordingActionBroadcast         // NEW
+  | RecordingFinishedBroadcast       // NEW
+  | RecordingAbortedBroadcast;       // NEW

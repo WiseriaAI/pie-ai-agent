@@ -74,10 +74,35 @@ import { makeCdpAdapterForScreenshot } from "./cdp-adapter";
 import { makeResolveEffectivePinned } from "./effective-pinned";
 import type { ScreenshotConfirmExtras, OpenUrlConfirmExtras } from "@/types";
 import type { ImageAttachment } from "@/lib/images";
+import {
+  handleRecordingStart,
+  handleRecordingAction,
+  handleRecordingFinish,
+  handleRecordingDiscard,
+  handleRecordingTabClosed,
+  handleRecordingNavCommitted,
+  handleRecordingHistoryStateUpdated,
+  abortRecordingForSession,
+  recordingState,
+} from "./recording-orchestrator";
+import type { RecordingSession } from "@/lib/recording/types";
 
 // Phase 5 follow-up — shared resolver for the screenshot first-task pin race
 // (see effective-pinned.ts for the three-tier fallback rationale).
 const resolveEffectivePinned = makeResolveEffectivePinned(getSessionMeta);
+
+// Recording v1 — per-sessionId → port registry. Used by the chrome.runtime.onMessage
+// handler (capture inject sends sendMessage with no port reference) to find a port
+// for broadcasting recording-action-broadcast back to the panel.
+const portsBySession = new Map<string, chrome.runtime.Port>();
+
+function findRecordingSessionByTabId(tabId: number | undefined): RecordingSession | null {
+  if (tabId === undefined) return null;
+  for (const sess of recordingState.values()) {
+    if (sess.tabId === tabId) return sess;
+  }
+  return null;
+}
 
 // M5 — SW-side captureActivePinned, mirrors useSession.ts:93-112. Used by
 // upgradeAutoToTaskAtChatStart to capture the send-time active tab.
@@ -321,7 +346,17 @@ async function handleExtractPage(): Promise<ExtractPageResponse> {
 }
 
 // Message listener for page extraction requests
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // Recording v1 — capture inject 函数 → SW（不走 port）
+  if (message?.type === "recording-action") {
+    const sess = findRecordingSessionByTabId(sender.tab?.id);
+    if (sess) {
+      const port = portsBySession.get(sess.sessionId);
+      if (port) handleRecordingAction(sender, message, port);
+    }
+    return; // no async response
+  }
+
   if (message.type === "extract-page") {
     handleExtractPage().then(sendResponse);
     return true; // async response
@@ -1595,10 +1630,30 @@ chrome.runtime.onConnect.addListener((port) => {
           e,
         );
       });
+    } else if (message.type === "recording-start") {
+      if (!verifyPortSession(message.sessionId, "recording-start")) return;
+      portsBySession.set(message.sessionId, port);
+      handleRecordingStart(port, message, (sid) => inFlightSessionIds.has(sid)).catch((e) => {
+        console.warn(`[sw] recording-start failed for session=${message.sessionId}:`, e);
+      });
+    } else if (message.type === "recording-finish") {
+      if (!verifyPortSession(message.sessionId, "recording-finish")) return;
+      handleRecordingFinish(port, message).catch((e) => {
+        console.warn(`[sw] recording-finish failed for session=${message.sessionId}:`, e);
+      });
+    } else if (message.type === "recording-discard") {
+      if (!verifyPortSession(message.sessionId, "recording-discard")) return;
+      handleRecordingDiscard(port, message).catch((e) => {
+        console.warn(`[sw] recording-discard failed for session=${message.sessionId}:`, e);
+      });
     }
   });
 
   port.onDisconnect.addListener(() => {
+    // Recording v1 — panel disconnect aborts any active recording for this session.
+    abortRecordingForSession(port, portSessionId, "panel-disconnect");
+    portsBySession.delete(portSessionId);
+
     abortController.abort();
     clearInterval(keepAliveInterval);
     // Drain pending confirmations with reason='aborted' (Bug-fix-D — see
@@ -1637,6 +1692,38 @@ chrome.runtime.onConnect.addListener((port) => {
       console.warn("[sw] panel-disconnect cleanup failed:", e);
     });
   });
+});
+
+// Recording v1 — webNavigation hooks for hard-nav re-inject + SPA route record.
+if (chrome.webNavigation) {
+  chrome.webNavigation.onCommitted.addListener((details) => {
+    const sess = findRecordingSessionByTabId(details.tabId);
+    if (!sess) return;
+    const port = portsBySession.get(sess.sessionId);
+    if (!port) return;
+    handleRecordingNavCommitted(port, details).catch((e) => {
+      console.warn("[sw] recording-nav-committed failed:", e);
+    });
+  });
+  chrome.webNavigation.onHistoryStateUpdated.addListener((details) => {
+    const sess = findRecordingSessionByTabId(details.tabId);
+    if (!sess) return;
+    const port = portsBySession.get(sess.sessionId);
+    if (!port) return;
+    handleRecordingHistoryStateUpdated(port, details).catch((e) => {
+      console.warn("[sw] recording-history-state-updated failed:", e);
+    });
+  });
+}
+
+// Recording v1 — abort recording when the recorded tab closes.
+chrome.tabs.onRemoved.addListener((closedTabId) => {
+  for (const sess of Array.from(recordingState.values())) {
+    if (sess.tabId !== closedTabId) continue;
+    const port = portsBySession.get(sess.sessionId);
+    if (port) handleRecordingTabClosed(port, closedTabId);
+    else recordingState.delete(sess.sessionId);
+  }
 });
 
 console.log("[Pie] Service worker started");
