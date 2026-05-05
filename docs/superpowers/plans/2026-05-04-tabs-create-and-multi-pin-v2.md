@@ -272,9 +272,11 @@ describe("v1.5 pin-state helpers (multi-pin Path A)", () => {
 Run: `pnpm vitest run src/lib/sessions/pin-state.test.ts`
 Expected: All new test cases FAIL with "getPrimaryPin is not a function" / "addPinToMeta is not a function" / etc., or with assertion mismatches because helpers still operate on single fields.
 
-- [ ] **Step 3: Update `SessionMeta`, `SessionAgentState`, `SessionIndexEntry` types (clean replace)**
+- [ ] **Step 3: Update `SessionMeta`, `SessionAgentState`, `SessionIndexEntry` types (additive; legacy fields retained as @deprecated)**
 
-In `src/lib/sessions/types.ts`, **delete** `pinnedTabId?: number` and `pinnedOrigin?: string` from `SessionMeta`. **Add**:
+> **IMPORTANT — phased deletion:** legacy fields (`SessionMeta.pinnedTabId/Origin`, `SessionIndexEntry.pinnedTabId`) MUST stay declared in this task to avoid breaking compile across all callsites (storage.ts, useSession.ts, Chat.tsx, background/index.ts, etc.). They're marked `@deprecated v1.5` here, **not actually removed**. Final cleanup Task (Task 10) deletes them once Tasks 2-9 have migrated every consumer to read `pinnedTabs[]` instead. Helpers in this task's pin-state.ts MUST still treat the array as the only source of truth (no legacy fallback) — that's the runtime clean-break.
+
+In `src/lib/sessions/types.ts`, **add** to `SessionMeta`:
 
 ```typescript
   /**
@@ -304,7 +306,9 @@ In `SessionAgentState`, add:
   currentFocusTabId?: number;
 ```
 
-In `SessionIndexEntry`, **delete** `pinnedTabId?: number`. **Add**:
+**Mark** the existing `pinnedTabId?: number` and `pinnedOrigin?: string` fields with `@deprecated v1.5 — read by legacy callsites only; will be removed in Task 10 once all consumers migrate. Storage no longer writes these.` (Do NOT delete the field declarations.)
+
+In `SessionIndexEntry`, **add** (alongside the existing `pinnedTabId?: number`, which is also marked `@deprecated v1.5`):
 
 ```typescript
   /**
@@ -2145,9 +2149,54 @@ git commit -m "feat(v1.5): multi-pin + open_url + focus_tab end-to-end (Path A u
 
 ---
 
+## Task 10: Final cleanup — delete @deprecated legacy fields
+
+Goal: After Tasks 1-9 have migrated every consumer to read `pinnedTabs[]` / `pinnedTabIds[]`, delete the now-unreferenced `@deprecated` legacy fields from `SessionMeta` and `SessionIndexEntry`. This is the actual "clean break" moment — until this task lands the legacy fields exist as TypeScript-only stubs to keep compile green.
+
+**Files:**
+- Modify: `src/lib/sessions/types.ts`
+
+- [ ] **Step 1: Search for any remaining consumers of legacy fields**
+
+```bash
+grep -rn "\.pinnedTabId\b\|\.pinnedOrigin\b" src/ --include="*.ts" --include="*.tsx"
+```
+
+Expected: zero non-test hits, and only test files asserting the field is `undefined` after migration. If non-test hits exist, the prior task missed them — go back and fix before deleting the field.
+
+- [ ] **Step 2: Delete the @deprecated fields**
+
+In `src/lib/sessions/types.ts`:
+
+- Delete `pinnedTabId?: number` from `SessionMeta`
+- Delete `pinnedOrigin?: string` from `SessionMeta`
+- Delete `pinnedTabId?: number` from `SessionIndexEntry`
+
+- [ ] **Step 3: Run the full test + build**
+
+```bash
+pnpm vitest run
+pnpm build
+```
+
+Expected: PASS.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add src/lib/sessions/types.ts
+git commit -m "feat(sessions)!: delete @deprecated legacy single-pin fields (Path A unit 10)
+
+BREAKING: SessionMeta.pinnedTabId/Origin and SessionIndexEntry.pinnedTabId
+are now removed entirely. Existing chrome.storage data with these fields
+will be ignored on read (no migration); user must reinstall."
+```
+
+---
+
 ## Self-review checklist (run before handing off)
 
-After all 9 tasks land, verify:
+After all 10 tasks land, verify:
 
 - [ ] **Spec coverage**: every brainstorm requirement R1–R14 has a corresponding task or is intentionally deferred (and the deferral noted).
   - R1 open_url tool — Task 7
