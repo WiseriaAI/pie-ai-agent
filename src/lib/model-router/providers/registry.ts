@@ -54,7 +54,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
       { id: "gpt-4o", vision: true, tools: true, maxContextTokens: 128_000 },
       { id: "gpt-4o-mini", vision: true, tools: true, maxContextTokens: 128_000 },
       { id: "o3-mini", vision: false, tools: true, maxContextTokens: 200_000 },
-      { id: "o3", vision: false, tools: true, maxContextTokens: 200_000 },
+      { id: "o3", vision: true, tools: true, maxContextTokens: 200_000 },
     ],
   },
   {
@@ -72,7 +72,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     placeholder: "eyJ...",
     models: [
       { id: "MiniMax-Text-01", vision: false, tools: true, maxContextTokens: 1_000_000 },
-      { id: "MiniMax-VL", vision: true, tools: true, maxContextTokens: 256_000 },
+      { id: "MiniMax-VL-01", vision: true, tools: true, maxContextTokens: 256_000 },
     ],
   },
   {
@@ -82,7 +82,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     placeholder: "API key",
     models: [
       { id: "glm-4-plus", vision: false, tools: true, maxContextTokens: 128_000 },
-      { id: "glm-4v-plus", vision: true, tools: true, maxContextTokens: 8_000 },
+      { id: "glm-4v-plus", vision: true, tools: true, maxContextTokens: 16_000 },
       { id: "glm-4-air", vision: false, tools: true, maxContextTokens: 128_000 },
     ],
   },
@@ -104,7 +104,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     placeholder: "AIza...",
     models: [
       { id: "gemini-2.0-flash", vision: true, tools: true, maxContextTokens: 1_000_000 },
-      { id: "gemini-2.0-pro", vision: true, tools: true, maxContextTokens: 2_000_000 },
+      { id: "gemini-2.5-pro", vision: true, tools: true, maxContextTokens: 1_000_000 },
     ],
   },
 ];

@@ -65,4 +65,37 @@ describe("ModelMeta capability flags (per-model)", () => {
   it("getModelMeta returns undefined for unknown model", () => {
     expect(getModelMeta("anthropic", "no-such-model")).toBeUndefined();
   });
+
+  it("gpt-4o has tools: true", () => {
+    expect(getModelMeta("openai", "gpt-4o")?.tools).toBe(true);
+  });
+
+  it("o3 has vision: true; o3-mini has vision: false (text-only)", () => {
+    expect(getModelMeta("openai", "o3")?.vision).toBe(true);
+    expect(getModelMeta("openai", "o3-mini")?.vision).toBe(false);
+  });
+
+  it("glm-4v-plus maxContextTokens is 16K", () => {
+    expect(getModelMeta("zhipu", "glm-4v-plus")?.maxContextTokens).toBe(16_000);
+  });
+
+  it("MiniMax-VL-01 is registered (not MiniMax-VL)", () => {
+    expect(getModelMeta("minimax", "MiniMax-VL-01")).toBeDefined();
+    expect(getModelMeta("minimax", "MiniMax-VL")).toBeUndefined();
+  });
+
+  it("gemini-2.5-pro is registered (not gemini-2.0-pro)", () => {
+    expect(getModelMeta("gemini", "gemini-2.5-pro")).toBeDefined();
+    expect(getModelMeta("gemini", "gemini-2.0-pro")).toBeUndefined();
+  });
+});
+
+describe("Per-provider model id uniqueness", () => {
+  it("no provider has duplicate model ids", () => {
+    for (const provider of PROVIDER_REGISTRY) {
+      const ids = provider.models.map((m) => m.id);
+      const unique = new Set(ids);
+      expect(unique.size).toBe(ids.length);
+    }
+  });
 });
