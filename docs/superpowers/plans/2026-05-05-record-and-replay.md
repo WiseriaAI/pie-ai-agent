@@ -1,5 +1,24 @@
 # 网页操作录制 + 回放（trace-as-Skill）Implementation Plan
 
+> **⚠️ POST-SHIP REFRAME (2026-05-05)** — 8 unit 全部 ship 后 user feedback：
+> SaveSkillDialog UI 太简陋；skill 创建应该 LLM-driven 而非 form-driven。
+> Refactor 把 SaveSkillDialog 整个删掉，改为 chat 输入框 chip + 显式调用
+> 新增 built-in skill `create_skill_from_recording`。**本 plan 文档保留作为
+> 历史 trace；新流程的真相源是 `docs/solutions/2026-05-05-record-and-replay-v1-invariant-trace.md`。**
+>
+> Reframe 简介（落地见 commits `ab46025` + `d9cb699`）：
+> 1. RecordingMode "Finish" → SW serialize trace → broadcast 给 panel
+> 2. App.tsx pendingRecording state → Chat 输入框上方 chip "📼 已录制 N 步"
+> 3. user 写 prompt → Send → expandedForLLM 显式调用 create_skill_from_recording
+> 4. LLM 调 create_skill meta tool → 走 R10 first-run confirm 卡片
+> 5. R10 confirm 卡片是 capability review surface（替代 SaveSkillDialog 心智）
+>
+> Decision 2 重新表述：录制 skill 由 LLM 创建 → author='agent' → R10 fire
+> （不是原 plan 写的"author='user' R10 不 fire"）。
+>
+> Reframe 影响的 unit：5（orchestrator）/ 6（hook）/ 7（UI 全推翻）/ 8（trace doc）。
+> Unit 1-4（types / redact / selector / serialize / capture）原封不动。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 让用户在 sidepanel 里点 "Record"，演示一次网页操作（点按钮 / 填表 / 翻页）后，自动序列化为一份 user-authored Skill 写入 chrome.storage；下次用户可以通过 `/skillname` 调用，由 LLM 跟着记录的步骤回放（复用现有 click / type / scroll / open_url 工具 + ReAct loop）。
