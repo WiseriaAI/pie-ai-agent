@@ -79,21 +79,18 @@
 
 **4 个方向都不是单条 PR 能拿下的 scope**——除了方向 1 已 nail，2/3/4 各自至少 1 轮独立 brainstorm 才能进 plan。
 
-## 6. 多轮对话上下文（pre-existing gap, 用户 2026-05-02 报告）
+## 6. 多轮对话上下文（pre-existing gap, 用户 2026-05-02 报告）— ✅ **SHIPPED 2026-05-04**
 
-**Status**: 非 M1 / M2 / M3 范围。Phase 2 起 SW 端 `background/index.ts:226-227` 只取最后一个 user message 作为 `task` 字符串丢给 `runAgentLoop`，**LLM 每轮都从零开始**——panel 累积的 user/assistant DisplayMessage 在 wire 层被 SW 直接丢弃。从 ChatGPT 风格"多轮对话"视角看是缺陷；从"每个 sendMessage 是独立 task"语义看是 by-design。当前实现倾向后者，但用户体感倾向前者。
+**Status (2026-05-04)**: PR #15 (`feat/multi-turn-conversation`, merge `550e039`) ship 了 Half A + Half B；PR #16 (`fix/multi-turn-followup-p1`, merge `f96cf8e`) 跟进修了 3 个 P1 residual。Plan `docs/plans/2026-05-03-001-feat-multi-turn-conversation-context-plan.md` frontmatter `status=completed`。
 
-**Two halves（必须一起设计，单独修半 A 只是把症状从 100% 降到 50%）**:
+**实际落地**：
 
-- **半 A：纯 chat 多轮**——`handleChatStream` 把整个 `messages` 数组传给 `runAgentLoop`，起手 `history = [system, ...messages]`。`useSession` 已经把 user/assistant DisplayMessage filter 留出来发上来了，纯改 SW 侧 ~10 行
-- **半 B：agent 任务多轮（设计决策）**——`useSession.sendMessage` 的 filter 把 agent-step / agent-confirm / agent-summary 全丢掉，导致 agent task 后接着对话时 LLM 看到连续两个 user message（多家 provider 直接 400）。需要决定前一轮 agent task 以什么形态作为 assistant turn 喂给 LLM：
-  - 选项 1：用 `agent-summary.summary` 作为 assistant turn
-  - 选项 2：完整 agent IR（tool_use + tool_result）翻译——但 M1-U3 tombstone 已清掉
-  - 选项 3：合成"上一轮做了 X / 看到了 Y"摘要
+- **Half A 纯 chat 多轮** — `handleChatStream` 现接整个 `messages` 数组 (`background/index.ts:1078`)；`runAgentLoop` 起手 `history = [system, ...messages]`，第二条及后续 user message 时 LLM 看到完整 `[system, user1, assistant1, …, userN]` (R1 闭环)
+- **Half B agent task 后接对话** — 选 D1 hybrid synth (选项 1c)：SW 端 `emitDone` 时从 5 路径 summary 来源合成 assistant turn 文本写入 `session_${id}_meta.lastTaskSynth`，下一轮 `handleChatStream` 起手注入到 history。避免连续两个 user message → provider 400 (R2 闭环)
+- **支撑模块** — `src/lib/agent/synthesize-agent-turn.ts` (合成器) + `history-validation.ts` (拼接处不变量) + `window-token-budget.ts` (Half A 多轮 history 注入后 sliding window `preserved=slice(0,2)` 硬编码假设破除)
+- **不做（明确 scope out）** — 选项 2 完整 IR 翻译（M1-U3 tombstone 已清掉、物理不可行）/ 选项 3 LLM 调用变形（BYOK token 成本，留 v2）
 
-**前置依赖**：✅ M1 完成 (2026-05-02, PR #8)；与 `applySlidingWindow` token 预算策略联动。
-
-**建议路径**：M1 已 ship — **可以开始单独 `/ce:brainstorm` + `/ce:plan`**，不塞进 session-persistent-layer plan。Half A 半小时改完 SW 一处取 `task` 的逻辑改用整个 messages 数组；Half B 需要决定上一轮 agent task IR (tool_use / tool_result / agent-summary) 怎么呈现成 assistant turn — 三个候选 (`agent-summary` 文本 / 完整 IR 翻译 / 合成摘要)。
+**Acceptance**：5 条 chat 第 5 条引用第 1 条内容（Half A regression）+ chat→agent→chat 立即接"总结一下"含上一轮信息（Half B happy path）皆通过。
 
 ---
 
@@ -186,14 +183,14 @@ ce:review autofix sweep 时已提但未做的项，不影响 R24/R25/R26 accepta
 
 按"用户痛感 × 解锁后续能力"性价比（已纳入 §5 4-way 评估结果）：
 
-1. **多轮对话上下文（§6）** — Half A 半小时 + Half B 决策 1 个；用户已报告，用户痛感最直接
+1. **多轮对话上下文（§6）** — ✅ **SHIPPED 2026-05-04**：PR #15 (Half A + Half B hybrid synth) + PR #16 (3 P1 residual)；plan completed；R1/R2 全闭环
 2. **多模态输入图片（§5 #1）** — ✅ **PR #20 merged 2026-05-04**：15 task / 339→461 tests (+122 net) / R1-R15 全闭环；user acceptance 期间发现 2 个跨层集成 bug（first-task pin race + screenshotPreview wire transit）— 修复并 push (commits `0927031` + `517435d`) 已合并。Phase 5 v1.1 backlog 见 §8
 3. **Provider + Model 能力中心化管理（§7）** — 用户 2026-05-04 反馈；Settings 改 dropdown + 删手填 BaseURL；解锁中国 provider vision 完整接入路径
 4. **Chrome narrow（§5 #3）** — ✅ **SHIPPED 2026-05-05** as v1.5 Path A: `open_url` + `focus_tab` + multi-pin schema. 10 task / 572 tests pass / manifest 0.5.2 / PR #21. v1.5.1 backlog 详见 §10。Engineering patterns（4 个跨切层 type migration 模式）沉淀在 `docs/solutions/2026-05-05-cross-cutting-type-migration-lessons.md`
-5. **Gemini provider** — 最小补丁；与 §7 协同（自家 inline_data + host_permission 同期评估），独立 SSE 协议另行 brainstorm
-6. **Ollama 本地模型** — 与 BYOK 定位契合；manifest + streaming 协议适配
-7. **快捷键支持** — 打磨项，零结构性风险
-8. **行为录制 → Skill seed（§5 #4）** — 收窄后单独 plan；产品差异化大但工程量高
+5. **行为录制 → Skill seed（§5 #4）** — ✅ **SHIPPED 2026-05-05** v1（单 tab + LLM-driven create_skill_from_recording）；v1.1 backlog: cross-tab 录制 / N 行数据循环 / 重录覆盖 UX
+6. **Gemini provider** — 最小补丁；与 §7 协同（自家 inline_data + host_permission 同期评估），独立 SSE 协议另行 brainstorm
+7. **Ollama 本地模型** — 与 BYOK 定位契合；manifest + streaming 协议适配
+8. **快捷键支持** — 打磨项，零结构性风险
 9. **Skill 脚本化（§5 #2）** — 收窄 (a)/(b)/(c)/(d) 后再决定
 10. **page-match 自动触发** — 需要先解决 prompt-injection-by-page 防御
 
