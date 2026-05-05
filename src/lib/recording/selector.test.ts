@@ -114,7 +114,7 @@ describe("describeElement", () => {
       regionSiblingCount: 1,
       isSensitive: false,
     });
-    expect(r.selectorHint).toBe("input[name='email']");
+    expect(r.selectorHint).toBe(`input[name="email"]`);
   });
 
   it("does NOT attach selectorHint when only weak identifiers (aria-label / role / text)", () => {

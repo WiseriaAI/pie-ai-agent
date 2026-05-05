@@ -69,10 +69,19 @@ const REGION_TO_CN: Record<string, string> = {
 const WRAPPER_TAGS_RE =
   /<\/?(?:untrusted_page_content|untrusted_skill_params|untrusted_tab_metadata|untrusted_user_message|untrusted_prior_task_summary|untrusted_continuity_marker)>/gi;
 
-// Strip C0 control chars (U+0000-U+001F), DEL + C1 (U+007F-U+009F),
-// zero-width chars (U+200B-U+200F), and bidi override chars (U+202A-U+202E).
+// Suppress selectorHint when id/name contains any sensitive keyword.
+// Wider than redact.ts's SENSITIVE_TEXT_PATTERN by design — false positives
+// here only mute a hint (recoverable; LLM still has the label), so a wider
+// net is fail-safe. NOT word-boundary-anchored on purpose.
+const SENSITIVE_HINT_RE = /password|secret|token|api|auth|pwd/i;
+
+// Strip C0 controls (U+0000-U+001F), DEL + C1 (U+007F-U+009F),
+// Arabic Letter Mark (U+061C), line/paragraph separators (U+2028-2029),
+// zero-width chars (U+200B-200F), bidi overrides (U+202A-202E),
+// Word Joiner (U+2060), directional isolates (U+2066-2069), BOM (U+FEFF).
+// Mirrors the ZERO_WIDTH_RE family in src/lib/agent/untrusted-wrappers.ts.
 const CONTROL_CHARS_RE =
-  /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e]/g;
+  /[\u0000-\u001f\u007f-\u009f\u061c\u2028-\u2029\u200b-\u200f\u202a-\u202e\u2060\u2066-\u2069\ufeff]/g;
 
 function sanitize(s: string, maxLen = 80): string {
   let cleaned = s.replace(CONTROL_CHARS_RE, "");
@@ -112,11 +121,11 @@ function buildSelectorHint(meta: ElementMetaForDescribe): string | undefined {
   if (meta.dataTestId) {
     return `[data-testid="${cssEscape(meta.dataTestId)}"]`;
   }
-  if (meta.id && !/password|secret|token|api|auth|pwd/i.test(meta.id)) {
+  if (meta.id && !SENSITIVE_HINT_RE.test(meta.id)) {
     return `#${cssEscape(meta.id)}`;
   }
-  if (meta.name && !/password|secret|token|api|auth|pwd/i.test(meta.name)) {
-    return `${meta.tag.toLowerCase()}[name='${cssEscape(meta.name)}']`;
+  if (meta.name && !SENSITIVE_HINT_RE.test(meta.name)) {
+    return `${meta.tag.toLowerCase()}[name="${cssEscape(meta.name)}"]`;
   }
   return undefined;
 }
@@ -149,7 +158,7 @@ export function describeElement(meta: ElementMetaForDescribe): DescribeResult {
       label = `${kind} (name='${primary.text}')`;
       break;
     case "nth": {
-      label = `${regionCn}区第 ${primary.index} 个${kind}`;
+      label = `${regionCn} 第 ${primary.index} 个${kind}`;
       unstable = true;
       break;
     }
