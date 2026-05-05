@@ -254,3 +254,35 @@ write. No eager migration script — matches the M2-U1 idempotent pattern.
   - `PinnedTabDropdown.test.tsx` — 10 UI tests
 
 Total: ~58 new M5 tests; suite goes from 487 → 519 passing.
+
+## v1.5 — Multi-Pin (Path A: focus_tab)
+
+Schema:
+- `SessionMeta.pinnedTabs?: Array<{tabId, origin}>` replaces `pinnedTabId/Origin`.
+- `SessionAgentState.currentFocusTabId?: number` task-scoped pointer.
+- `SessionIndexEntry.pinnedTabIds?: number[]` replaces single `pinnedTabId`.
+
+Lifecycle (per pinMode):
+| Mode | pinnedTabs[] | currentFocusTabId | R7 registry |
+|---|---|---|---|
+| auto | empty | undefined | skipped |
+| task | [chat-start, ...open_url pushes] | mutable via focus_tab; reset at chat-start | listed (all entries) |
+| user | ≥1 (multi-select) | always pinnedTabs[0].tabId | listed |
+
+New tools:
+- `focus_tab(tabId)` — low risk; mutates currentFocusTabId; takes effect next iteration.
+- `open_url(url, active?)` — always-high; chrome.tabs.create + push to pinnedTabs[].
+
+Migration:
+- Storage dual-writes legacy `pinnedTabId/Origin` synthesized from `pinnedTabs[0]` for back-compat through Tasks 2-9.
+- Task 10 deletes the @deprecated legacy fields when no consumers remain.
+
+Task 9 changes (final integration):
+- K-9 close protection walks all `pinnedTabs[]` entries (not just `ctx.tabId`).
+- `checkPinnedDrift` walks all task-mode `pinnedTabs[]` entries; returns first drift.
+- `background/index.ts` pin construction sites migrated to `getPrimaryPin(meta)`.
+- `effective-pinned.ts` tier-2 fallback uses `getPrimaryPin`.
+- `useSession`: `pinnedTabs[]` state replaces single `pinnedOrigin/pinnedTabId`; `setUserPin` → `togglePinTab` (multi-select via `togglePinTabUserMode`).
+- `Chat.tsx`: `pageChanged` filters by `pinnedTabIds` set; ×N count badge for ≥2 pins.
+- `PinnedTabDropdown`: multi-select; each row toggles, dropdown stays open; Auto row clears all and closes.
+- Manifest bumped 0.5.1 → 0.5.2.

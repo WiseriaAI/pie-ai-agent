@@ -391,22 +391,26 @@ const closeTabsTool: Tool = {
       };
     }
 
-    // K-9 (M5 revision): only refuse close on a USER-locked pinned tab.
+    // K-9 (v1.5): user-locked pin protects ALL pinnedTabs[] entries from agent close.
     // 'task' mode = the loop captured the pin at chat-start; the user has
     // already given high-risk confirm consent for this close, and the
     // per-iteration origin check will gracefully abort the task if the
     // pinned tab disappears (observation: "Page origin changed").
-    // 'user' mode = the user explicitly pinned this tab via the dropdown;
-    // closing it would yank their explicit choice — refuse upfront.
+    // 'user' mode = the user explicitly pinned these tabs via the dropdown;
+    // closing any of them would yank their explicit choice — refuse upfront.
     // 'auto' mode = no persistent pin (ctx.tabId is the loop's anchor for
     // this task only; same logic as 'task').
-    if (ctx.pinMode === "user" && a.tabIds.includes(ctx.tabId)) {
-      return {
-        success: false,
-        error:
-          "close_tabs cannot close the user's explicitly pinned tab (pinMode=user). " +
-          "Use the PINNED dropdown to clear or change the pin, then retry.",
-      };
+    if (ctx.pinMode === "user" && ctx.pinnedTabs && ctx.pinnedTabs.length > 0) {
+      const pinnedIds = new Set(ctx.pinnedTabs.map((p) => p.tabId));
+      const blocked = a.tabIds.filter((id) => pinnedIds.has(id));
+      if (blocked.length > 0) {
+        return {
+          success: false,
+          error:
+            `close_tabs cannot close user-pinned tab(s) [${blocked.join(", ")}] (pinMode=user). ` +
+            `Use the PINNED dropdown to clear or change the pin, then retry.`,
+        };
+      }
     }
 
     const result: PartialCompletionResult = { ok: [], skipped: [], errors: [] };

@@ -1,18 +1,19 @@
-// M5 — PinnedTabDropdown
+// v1.5 — PinnedTabDropdown (multi-select)
 //
 // Opens from the PINNED row's button in the top bar. Lists every tab in the
-// current window plus an "Auto" item at the top. Picking a tab writes
-// pinMode='user' + pinnedTabId/Origin to the active session's meta. Picking
-// "Auto" reverts pinMode='user' → 'auto' (only meaningful when currently
-// in user mode; the dropdown disables the option for task mode since the
-// loop owns the pin during in-flight tasks).
+// current window plus an "Auto" item at the top.
+//
+// Multi-select mode (v1.5): each tab row TOGGLES its membership in
+// pinnedTabs[] without closing the dropdown, so the user can pin multiple
+// tabs. The "Auto" row clears all pins and closes. ESC / outside-click
+// also close without changing the pin state.
 //
 // Lifecycle: the dropdown is uncontrolled (its visibility is owned by the
 // parent Chat.tsx state). It self-fetches the tab list on mount via
 // chrome.tabs.query({currentWindow: true}); no event subscription needed
 // since the user typically picks immediately.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { PinMode } from "@/lib/sessions/pin-state";
 
 interface TabRow {
@@ -28,15 +29,16 @@ interface TabRow {
 interface PinnedTabDropdownProps {
   /** Currently active session's pin mode. Drives "Auto" item enabled state. */
   pinMode: PinMode | null;
-  /** Currently pinned tab id (used to render the checkmark). null for auto. */
-  currentPinnedTabId: number | null;
+  /** Currently pinned tabs array (v1.5 multi-select). null for auto mode. */
+  pinnedTabs: ReadonlyArray<{ tabId: number; origin: string }> | null;
   /** Streaming flag — disables interactions while a task is in flight. */
   streaming: boolean;
-  /** User picked a tab → caller writes meta with pinMode='user'. */
-  onPick: (tabId: number, origin: string) => void;
+  /** User toggled a tab row → caller toggles its membership in pinnedTabs[].
+   *  Dropdown stays OPEN for multi-select. */
+  onToggle: (tabId: number, origin: string) => void;
   /** User picked "Auto" → caller writes meta with pinMode='auto'. */
   onClearPin: () => void;
-  /** ESC / outside click / picking → caller closes the dropdown. */
+  /** ESC / outside click / Auto row click → caller closes the dropdown. */
   onClose: () => void;
 }
 
@@ -65,15 +67,21 @@ function tabIsPinnable(url: string | undefined): boolean {
 
 export default function PinnedTabDropdown({
   pinMode,
-  currentPinnedTabId,
+  pinnedTabs,
   streaming,
-  onPick,
+  onToggle,
   onClearPin,
   onClose,
 }: PinnedTabDropdownProps) {
   const [tabs, setTabs] = useState<TabRow[]>([]);
   const [loading, setLoading] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // v1.5 — set of currently pinned tabIds for O(1) membership check in render.
+  const pinnedSet = useMemo(
+    () => new Set((pinnedTabs ?? []).map((p) => p.tabId)),
+    [pinnedTabs],
+  );
 
   // Fetch tab list on mount.
   useEffect(() => {
@@ -160,6 +168,12 @@ export default function PinnedTabDropdown({
             the task to change pin.
           </div>
         )}
+        {/* v1.5 — multi-select hint */}
+        {isUserMode && pinnedTabs && pinnedTabs.length > 0 && (
+          <div className="mt-1 text-[11px] text-fg-3">
+            {pinnedTabs.length} tab{pinnedTabs.length > 1 ? "s" : ""} pinned. Click again to unpin.
+          </div>
+        )}
       </div>
 
       <ul
@@ -203,7 +217,9 @@ export default function PinnedTabDropdown({
           </li>
         ) : (
           tabs.map((t) => {
-            const selected = currentPinnedTabId === t.id && isUserMode;
+            // v1.5 — selected = in pinnedSet AND user mode (task mode pins are
+            // shown read-only checkmarks; auto mode shows none).
+            const selected = pinnedSet.has(t.id) && isUserMode;
             const disabled = isTaskMode || streaming;
             return (
               <li
@@ -214,8 +230,10 @@ export default function PinnedTabDropdown({
                 onMouseDown={(e) => {
                   e.preventDefault();
                   if (disabled) return;
-                  onPick(t.id, t.origin);
-                  onClose();
+                  // v1.5 — toggle membership; do NOT close the dropdown so the
+                  // user can continue adding/removing pins. onClose fires only
+                  // for the "Auto" row, ESC, and outside-click.
+                  onToggle(t.id, t.origin);
                 }}
                 className={`flex cursor-pointer items-center gap-2 px-3.5 py-2 ${
                   disabled

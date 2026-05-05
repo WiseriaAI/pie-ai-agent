@@ -14,6 +14,7 @@
 
 import { isRestrictedUrl } from "@/lib/agent/loop";
 import type { SessionMeta } from "@/lib/sessions/types";
+import { getPrimaryPin } from "@/lib/sessions/pin-state";
 
 export type PinnedCtx = { tabId: number; origin: string };
 
@@ -31,7 +32,8 @@ export type QueryActiveTabFn = () => Promise<
  *
  * 1. `closurePinned` — already captured at chat-start (fast path, no I/O).
  * 2. Re-read sessionMeta — the panel-side pin patch may have landed since
- *    chat-start; `pinnedTabId` + `pinnedOrigin` are both required.
+ *    chat-start; resolved via `getPrimaryPin(meta)` which reads
+ *    `pinnedTabs[0]` (v1.5 multi-pin schema).
  * 3. `chrome.tabs.query` active-tab — same fallback the agent loop uses for
  *    non-screenshot tools. Restricted-URL schemes are rejected.
  *
@@ -51,8 +53,9 @@ export async function resolveEffectivePinned(
   // Tier 2 — re-read sessionMeta (pin patch may have landed since chat-start).
   try {
     const fresh = await getMetaFn(sessionId);
-    if (fresh?.pinnedTabId !== undefined && fresh.pinnedOrigin) {
-      return { tabId: fresh.pinnedTabId, origin: fresh.pinnedOrigin };
+    const primary = fresh ? getPrimaryPin(fresh) : undefined;
+    if (primary) {
+      return primary;
     }
   } catch {
     // Non-fatal; fall through to tier 3.

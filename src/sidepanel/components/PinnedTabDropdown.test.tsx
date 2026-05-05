@@ -51,9 +51,9 @@ describe("PinnedTabDropdown — list rendering", () => {
       render(
         <PinnedTabDropdown
           pinMode="auto"
-          currentPinnedTabId={null}
+          pinnedTabs={null}
           streaming={false}
-          onPick={vi.fn()}
+          onToggle={vi.fn()}
           onClearPin={vi.fn()}
           onClose={vi.fn()}
         />,
@@ -81,9 +81,9 @@ describe("PinnedTabDropdown — list rendering", () => {
       render(
         <PinnedTabDropdown
           pinMode="auto"
-          currentPinnedTabId={null}
+          pinnedTabs={null}
           streaming={false}
-          onPick={vi.fn()}
+          onToggle={vi.fn()}
           onClearPin={vi.fn()}
           onClose={vi.fn()}
         />,
@@ -105,9 +105,9 @@ describe("PinnedTabDropdown — list rendering", () => {
       render(
         <PinnedTabDropdown
           pinMode="auto"
-          currentPinnedTabId={null}
+          pinnedTabs={null}
           streaming={false}
-          onPick={vi.fn()}
+          onToggle={vi.fn()}
           onClearPin={vi.fn()}
           onClose={vi.fn()}
         />,
@@ -119,18 +119,18 @@ describe("PinnedTabDropdown — list rendering", () => {
 });
 
 describe("PinnedTabDropdown — actions", () => {
-  it("clicking a tab fires onPick + onClose with tabId and origin", async () => {
+  it("clicking a tab calls onToggle but does NOT close (multi-select stays open)", async () => {
     seedTabs([{ id: 42, url: "https://example.com/path", title: "Example" }]);
-    const onPick = vi.fn();
+    const onToggle = vi.fn();
     const onClose = vi.fn();
 
     await act(async () => {
       render(
         <PinnedTabDropdown
           pinMode="auto"
-          currentPinnedTabId={null}
+          pinnedTabs={null}
           streaming={false}
-          onPick={onPick}
+          onToggle={onToggle}
           onClearPin={vi.fn()}
           onClose={onClose}
         />,
@@ -142,8 +142,9 @@ describe("PinnedTabDropdown — actions", () => {
       fireEvent.mouseDown(item);
     });
 
-    expect(onPick).toHaveBeenCalledWith(42, "https://example.com");
-    expect(onClose).toHaveBeenCalled();
+    expect(onToggle).toHaveBeenCalledWith(42, "https://example.com");
+    // v1.5 multi-select: clicking a tab row DOES NOT close the dropdown
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it("clicking Auto fires onClearPin + onClose", async () => {
@@ -155,9 +156,9 @@ describe("PinnedTabDropdown — actions", () => {
       render(
         <PinnedTabDropdown
           pinMode="user"
-          currentPinnedTabId={1}
+          pinnedTabs={[{ tabId: 1, origin: "https://x.com" }]}
           streaming={false}
-          onPick={vi.fn()}
+          onToggle={vi.fn()}
           onClearPin={onClearPin}
           onClose={onClose}
         />,
@@ -181,9 +182,9 @@ describe("PinnedTabDropdown — actions", () => {
       render(
         <PinnedTabDropdown
           pinMode="auto"
-          currentPinnedTabId={null}
+          pinnedTabs={null}
           streaming={false}
-          onPick={vi.fn()}
+          onToggle={vi.fn()}
           onClearPin={vi.fn()}
           onClose={onClose}
         />,
@@ -196,21 +197,49 @@ describe("PinnedTabDropdown — actions", () => {
 
     expect(onClose).toHaveBeenCalled();
   });
+
+  it("toggling a pinned tab calls onToggle and stays open", async () => {
+    seedTabs([{ id: 12, url: "https://a.com/", title: "A" }]);
+    const onToggle = vi.fn();
+    const onClose = vi.fn();
+
+    await act(async () => {
+      render(
+        <PinnedTabDropdown
+          pinMode="user"
+          pinnedTabs={[{ tabId: 12, origin: "https://a.com" }]}
+          streaming={false}
+          onToggle={onToggle}
+          onClearPin={vi.fn()}
+          onClose={onClose}
+        />,
+      );
+    });
+
+    const item = screen.getByText("A").closest("li")!;
+    await act(async () => {
+      fireEvent.mouseDown(item);
+    });
+
+    expect(onToggle).toHaveBeenCalled();
+    // v1.5: dropdown stays open so user can continue multi-selecting
+    expect(onClose).not.toHaveBeenCalled();
+  });
 });
 
 describe("PinnedTabDropdown — task-mode disable", () => {
   it("task mode: tabs are aria-disabled and clicks are no-ops", async () => {
     seedTabs([{ id: 42, url: "https://example.com/", title: "Example" }]);
-    const onPick = vi.fn();
+    const onToggle = vi.fn();
     const onClearPin = vi.fn();
 
     await act(async () => {
       render(
         <PinnedTabDropdown
           pinMode="task"
-          currentPinnedTabId={42}
+          pinnedTabs={[{ tabId: 42, origin: "https://example.com" }]}
           streaming={false}
-          onPick={onPick}
+          onToggle={onToggle}
           onClearPin={onClearPin}
           onClose={vi.fn()}
         />,
@@ -226,20 +255,20 @@ describe("PinnedTabDropdown — task-mode disable", () => {
     await act(async () => {
       fireEvent.mouseDown(item);
     });
-    expect(onPick).not.toHaveBeenCalled();
+    expect(onToggle).not.toHaveBeenCalled();
   });
 
   it("streaming: items are disabled regardless of pinMode", async () => {
     seedTabs([{ id: 42, url: "https://example.com/", title: "Example" }]);
-    const onPick = vi.fn();
+    const onToggle = vi.fn();
 
     await act(async () => {
       render(
         <PinnedTabDropdown
           pinMode="auto"
-          currentPinnedTabId={null}
+          pinnedTabs={null}
           streaming={true}
-          onPick={onPick}
+          onToggle={onToggle}
           onClearPin={vi.fn()}
           onClose={vi.fn()}
         />,
@@ -251,12 +280,12 @@ describe("PinnedTabDropdown — task-mode disable", () => {
     await act(async () => {
       fireEvent.mouseDown(item);
     });
-    expect(onPick).not.toHaveBeenCalled();
+    expect(onToggle).not.toHaveBeenCalled();
   });
 });
 
 describe("PinnedTabDropdown — checkmark", () => {
-  it("user mode + matching tabId: tab row shows checkmark", async () => {
+  it("user mode + matching tabId in pinnedTabs: tab row shows checkmark", async () => {
     seedTabs([
       { id: 1, url: "https://a.com/", title: "A" },
       { id: 2, url: "https://b.com/", title: "B" },
@@ -266,9 +295,9 @@ describe("PinnedTabDropdown — checkmark", () => {
       render(
         <PinnedTabDropdown
           pinMode="user"
-          currentPinnedTabId={2}
+          pinnedTabs={[{ tabId: 2, origin: "https://b.com" }]}
           streaming={false}
-          onPick={vi.fn()}
+          onToggle={vi.fn()}
           onClearPin={vi.fn()}
           onClose={vi.fn()}
         />,
@@ -288,9 +317,9 @@ describe("PinnedTabDropdown — checkmark", () => {
       render(
         <PinnedTabDropdown
           pinMode="auto"
-          currentPinnedTabId={null}
+          pinnedTabs={null}
           streaming={false}
-          onPick={vi.fn()}
+          onToggle={vi.fn()}
           onClearPin={vi.fn()}
           onClose={vi.fn()}
         />,

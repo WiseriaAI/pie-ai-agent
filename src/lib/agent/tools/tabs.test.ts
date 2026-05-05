@@ -75,18 +75,19 @@ describe("list_tabs — phantom-tabId filter (Chrome TAB_ID_NONE = -1)", () => {
 
 // ── M5 — close_tabs K-9 (user-locked pin protection only) ───────────────────
 
-describe("close_tabs K-9 (M5) — pinMode-aware pinned-tab protection", () => {
-  it("REFUSES close when pinMode='user' and tabId is in args.tabIds", async () => {
+describe("close_tabs K-9 (M5/v1.5) — pinMode-aware pinned-tab protection", () => {
+  it("REFUSES close when pinMode='user' and tabId is in pinnedTabs[]", async () => {
     const result = await closeTabsTool.handler(
       { tabIds: [42, 7] },
       {
         tabId: 42,
         snapshot: { url: "", title: "", elements: [] },
         pinMode: "user",
+        pinnedTabs: [{ tabId: 42, origin: "https://example.com" }],
       },
     );
     expect(result.success).toBe(false);
-    expect(result.error).toMatch(/user's explicitly pinned tab/i);
+    expect(result.error).toMatch(/cannot close user-pinned tab/i);
     expect(result.error).toMatch(/PINNED dropdown/i);
   });
 
@@ -115,11 +116,12 @@ describe("close_tabs K-9 (M5) — pinMode-aware pinned-tab protection", () => {
         snapshot: { url: "", title: "", elements: [] },
         pinMode: "task",
         confirmedTabTargets,
+        pinnedTabs: [{ tabId: 42, origin: "https://example.com" }],
       },
     );
 
-    // K-9 did NOT fire (no "user's explicitly pinned tab" error)
-    expect(result.error ?? "").not.toMatch(/user's explicitly pinned tab/i);
+    // K-9 did NOT fire (task mode doesn't protect)
+    expect(result.error ?? "").not.toMatch(/cannot close user-pinned tab/i);
     // Handler proceeded to chrome.tabs.remove
     expect(removeSpy).toHaveBeenCalledWith([42]);
     expect(result.success).toBe(true);
@@ -150,7 +152,7 @@ describe("close_tabs K-9 (M5) — pinMode-aware pinned-tab protection", () => {
         confirmedTabTargets,
       },
     );
-    expect(result.error ?? "").not.toMatch(/user's explicitly pinned tab/i);
+    expect(result.error ?? "").not.toMatch(/cannot close user-pinned tab/i);
     expect(removeSpy).toHaveBeenCalled();
 
     delete (chromeMock.tabs as unknown as { remove?: unknown }).remove;
@@ -179,14 +181,14 @@ describe("close_tabs K-9 (M5) — pinMode-aware pinned-tab protection", () => {
         confirmedTabTargets,
       },
     );
-    expect(result.error ?? "").not.toMatch(/user's explicitly pinned tab/i);
+    expect(result.error ?? "").not.toMatch(/cannot close user-pinned tab/i);
     expect(removeSpy).toHaveBeenCalled();
 
     delete (chromeMock.tabs as unknown as { remove?: unknown }).remove;
   });
 
   it("user mode REFUSES even when other tabIds in the list are non-pinned", async () => {
-    // K-9 is a hard refuse on the entire batch when the pinned tab is in it.
+    // K-9 is a hard refuse on the entire batch when any pinned tab is in it.
     // The agent must explicitly retry without the pinned tab.
     const result = await closeTabsTool.handler(
       { tabIds: [42, 7, 99] },
@@ -194,10 +196,60 @@ describe("close_tabs K-9 (M5) — pinMode-aware pinned-tab protection", () => {
         tabId: 42,
         snapshot: { url: "", title: "", elements: [] },
         pinMode: "user",
+        pinnedTabs: [{ tabId: 42, origin: "https://example.com" }],
       },
     );
     expect(result.success).toBe(false);
-    expect(result.error).toMatch(/user's explicitly pinned tab/i);
+    expect(result.error).toMatch(/cannot close user-pinned tab/i);
+  });
+
+  it("user mode ALLOWS close of non-pinned tabs when pinnedTabs doesn't include them", async () => {
+    chromeMock.tabs.__tabsById.set(7, {
+      id: 7,
+      url: "https://other.com/",
+      title: "Other",
+      active: false,
+      windowId: 1,
+    });
+    const removeSpy = vi.fn(async () => undefined);
+    (chromeMock.tabs as unknown as { remove: unknown }).remove = removeSpy;
+    const confirmedTabTargets = new Map([
+      [7, { origin: "https://other.com", title: "Other" }],
+    ]);
+
+    const result = await closeTabsTool.handler(
+      { tabIds: [7] },
+      {
+        tabId: 42,
+        snapshot: { url: "", title: "", elements: [] },
+        pinMode: "user",
+        // pinnedTabs only has tab 42, not tab 7
+        pinnedTabs: [{ tabId: 42, origin: "https://example.com" }],
+        confirmedTabTargets,
+      },
+    );
+    // Tab 7 is not in pinnedTabs, so K-9 does not block
+    expect(result.error ?? "").not.toMatch(/cannot close user-pinned tab/i);
+    expect(removeSpy).toHaveBeenCalledWith([7]);
+
+    delete (chromeMock.tabs as unknown as { remove?: unknown }).remove;
+  });
+
+  it("K-9 v1.5: user mode refuses close on any tab in pinnedTabs[]", async () => {
+    const r = await closeTabsTool.handler(
+      { tabIds: [12, 13] },
+      {
+        tabId: 12,
+        snapshot: { url: "", title: "", elements: [] },
+        pinMode: "user",
+        pinnedTabs: [
+          { tabId: 12, origin: "https://a.com" },
+          { tabId: 13, origin: "https://b.com" },
+        ],
+      },
+    );
+    expect(r.success).toBe(false);
+    expect(r.error).toMatch(/cannot close user-pinned tab/);
   });
 });
 

@@ -52,7 +52,7 @@ import {
 import { KEYBOARD_SIMULATION_STORAGE_KEY } from "@/lib/keyboard-simulation";
 import { runSessionMigrations } from "@/lib/sessions/migration";
 import { getCrossSessionPinnedTabIds } from "@/lib/sessions/pinned-tab-registry";
-import { getEffectivePinMode } from "@/lib/sessions/pin-state";
+import { getEffectivePinMode, getPrimaryPin } from "@/lib/sessions/pin-state";
 import { chat } from "@/lib/model-router";
 import { generateTitle, maybeUpgradeFallbackTitle } from "@/lib/sessions/title-generator";
 // Phase 5 — image cache lifecycle + pre-capture (Task 12 wiring)
@@ -413,7 +413,7 @@ async function handlePanelMounted(
  * `escapeUntrustedWrappers` before they reach the panel (P3-G family).
  */
 async function checkPinnedDrift(
-  meta: { pinnedTabId?: number; pinnedOrigin?: string; messages: DisplayMessage[] },
+  meta: { pinnedTabId?: number; pinnedOrigin?: string; pinnedTabs?: Array<{ tabId: number; origin: string }>; messages: DisplayMessage[] },
   agentStepIndex: number,
 ): Promise<PinnedTabDriftPayload | null> {
   // Pull the original task from the first user message if available.
@@ -421,7 +421,17 @@ async function checkPinnedDrift(
   const rawTask = firstUser && firstUser.role === "user" ? firstUser.content : "";
   const originalTask = escapeUntrustedWrappers(rawTask);
 
-  if (meta.pinnedTabId === undefined || !meta.pinnedOrigin) {
+  // v1.5 — Walk all pinnedTabs[] entries. Return on first drift detected.
+  // Fall back to legacy pinnedTabId/pinnedOrigin fields for M1/M2 sessions
+  // that predate the pinnedTabs[] array.
+  const pins: Array<{ tabId: number; origin: string }> =
+    meta.pinnedTabs && meta.pinnedTabs.length > 0
+      ? meta.pinnedTabs
+      : meta.pinnedTabId !== undefined && meta.pinnedOrigin
+        ? [{ tabId: meta.pinnedTabId, origin: meta.pinnedOrigin }]
+        : [];
+
+  if (pins.length === 0) {
     // M1 sessions don't have pinned anchored at creation (M3-U2
     // ships that). No drift can be detected — treat as drift=null
     // and let the loop's per-round origin check pick up real drift
@@ -429,32 +439,34 @@ async function checkPinnedDrift(
     return null;
   }
 
-  let tab: chrome.tabs.Tab | null = null;
-  try {
-    tab = await chrome.tabs.get(meta.pinnedTabId);
-  } catch {
-    return {
-      reason: "tab-closed",
-      originalTask,
-      lastPinnedTabTitle: "",
-      pinnedOrigin: meta.pinnedOrigin,
-      lastStepIndex: agentStepIndex,
-    };
-  }
+  for (const pin of pins) {
+    let tab: chrome.tabs.Tab;
+    try {
+      tab = await chrome.tabs.get(pin.tabId);
+    } catch {
+      return {
+        reason: "tab-closed",
+        originalTask,
+        lastPinnedTabTitle: "",
+        pinnedOrigin: pin.origin,
+        lastStepIndex: agentStepIndex,
+      };
+    }
 
-  const currentUrl = tab.url ?? "";
-  const currentOrigin = safeParseOrigin(currentUrl);
-  const lastPinnedTabTitle = escapeUntrustedWrappers(tab.title ?? "");
+    const currentUrl = tab.url ?? "";
+    const currentOrigin = safeParseOrigin(currentUrl);
+    const lastPinnedTabTitle = escapeUntrustedWrappers(tab.title ?? "");
 
-  if (!currentOrigin || currentOrigin !== meta.pinnedOrigin) {
-    return {
-      reason: "origin-changed",
-      originalTask,
-      lastPinnedTabTitle,
-      pinnedOrigin: meta.pinnedOrigin,
-      currentOrigin: currentOrigin ?? undefined,
-      lastStepIndex: agentStepIndex,
-    };
+    if (!currentOrigin || currentOrigin !== pin.origin) {
+      return {
+        reason: "origin-changed",
+        originalTask,
+        lastPinnedTabTitle,
+        pinnedOrigin: pin.origin,
+        currentOrigin: currentOrigin ?? undefined,
+        lastStepIndex: agentStepIndex,
+      };
+    }
   }
 
   return null;
@@ -580,10 +592,8 @@ async function handleResumeRequest(
   // M3-U2 — same pin injection as chat-start path. checkPinnedDrift
   // already validated the pin against current tab state above; the loop
   // itself will re-check on every iteration.
-  const pinned =
-    meta.pinnedTabId !== undefined && meta.pinnedOrigin
-      ? { tabId: meta.pinnedTabId, origin: meta.pinnedOrigin }
-      : undefined;
+  // v1.5 — use getPrimaryPin to read from pinnedTabs[] (falls back to legacy fields via storage shim).
+  const pinned = getPrimaryPin(meta);
 
   // Reuse the chat-stream sendConfirmRequest pattern. Same persist +
   // scrub flow applies to confirms during the resumed task.
@@ -867,9 +877,11 @@ async function handleDiscardRequest(
   const lastStepIndex = agent?.stepIndex ?? 0;
 
   let recapTitle = "(unknown)";
-  if (meta.pinnedTabId !== undefined) {
+  // v1.5 — use getPrimaryPin to read primary pinned tab from pinnedTabs[].
+  const primaryPinForRecap = getPrimaryPin(meta);
+  if (primaryPinForRecap !== undefined) {
     try {
-      const tab = await chrome.tabs.get(meta.pinnedTabId);
+      const tab = await chrome.tabs.get(primaryPinForRecap.tabId);
       recapTitle = escapeUntrustedWrappers(tab.title ?? "");
     } catch {
       recapTitle = "(closed)";
@@ -1108,14 +1120,11 @@ async function handleChatStream(
     // inject into the loop context. Legacy sessions without a pin fall
     // through to the loop's active-tab fallback (already handled there).
     // AD1 fix: synthMeta was fetched in parallel with synthAgent above
-    // (Promise.all) — reuse it here for pinnedTabId/pinnedOrigin.
+    // (Promise.all) — reuse it here for pinnedTabs[].
     const sessionMeta = synthMeta;
-    // M3-U2 — both-or-neither: only construct the pin object when both
-    // fields are present (defends against partially-corrupted meta).
-    const pinned =
-      sessionMeta?.pinnedTabId !== undefined && sessionMeta.pinnedOrigin
-        ? { tabId: sessionMeta.pinnedTabId, origin: sessionMeta.pinnedOrigin }
-        : undefined;
+    // v1.5 — use getPrimaryPin to read primary pin from pinnedTabs[] (storage
+    // shim maintains legacy field back-compat for older sessions).
+    const pinned = sessionMeta != null ? getPrimaryPin(sessionMeta) : undefined;
     // M5 — pin mode at chat-start. Frozen for the loop's lifetime; downstream
     // close_tabs K-9 reads this to refuse user-locked pin closes. Defaults
     // to 'auto' when meta is missing (M1 cold-start corner cases).

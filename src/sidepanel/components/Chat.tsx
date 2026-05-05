@@ -121,10 +121,9 @@ export default function Chat({
     streamingText,
     error,
     toast,
-    pinnedOrigin: sessionPinnedOrigin,
-    pinnedTabId: sessionPinnedTabId,
+    pinnedTabs,
     pinMode,
-    setUserPin,
+    togglePinTab,
     clearUserPin,
     sendMessage: sessionSendMessage,
     abort,
@@ -133,6 +132,10 @@ export default function Chat({
     clearError,
     clearToast,
   } = session;
+  // Derive convenience aliases from pinnedTabs[] for the locked-pin display.
+  // Primary pin is the first entry (oldest / chat-start anchor).
+  const sessionPinnedOrigin = pinnedTabs?.[0]?.origin ?? null;
+  const sessionPinnedTabId = pinnedTabs?.[0]?.tabId ?? null;
   const [input, setInput] = useState("");
   const [hasConfig, setHasConfig] = useState<boolean | null>(null);
   const [pageChanged, setPageChanged] = useState(false);
@@ -302,8 +305,14 @@ export default function Chat({
     };
   }, [isLocked]);
 
+  // v1.5 — Set of ALL pinned tab IDs for the pageChanged effect filter.
+  const pinnedTabIds = useMemo(
+    () => new Set((pinnedTabs ?? []).map((p) => p.tabId)),
+    [pinnedTabs],
+  );
+
   // M5 — pageChanged banner only cares about navigation on the SPECIFIC
-  // pinned tab, and only during a 'task'-mode in-flight task.
+  // pinned tab(s), and only during a 'task'-mode in-flight task.
   //
   // Old behavior (pre-M5 bug): watched ANY tab.active+changeInfo.url, which
   // false-positived whenever the user switched to a different tab — that
@@ -313,27 +322,26 @@ export default function Chat({
   // New invariants:
   //   - 'task' only — 'user' mode pins are fixed by user intent (origin
   //     change is the user's call, no warning). 'auto' has no pin.
-  //   - filter chrome.tabs.onUpdated by tabId === sessionPinnedTabId — only
-  //     navigation on the pinned tab itself flags page-changed.
+  //   - v1.5: filter chrome.tabs.onUpdated by pinnedTabIds set — only
+  //     navigation on any pinned tab flags page-changed.
   useEffect(() => {
     if (pinMode !== "task") return;
-    if (sessionPinnedTabId === null) return;
-    const targetTabId = sessionPinnedTabId;
+    if (pinnedTabIds.size === 0) return;
     const onUpdated = (
       tabId: number,
-      changeInfo: chrome.tabs.TabChangeInfo,
+      info: chrome.tabs.TabChangeInfo,
       _tab: chrome.tabs.Tab,
     ) => {
-      // Only fire for the actual pinned tab navigating — not any other tab,
+      // Only fire for an actual pinned tab navigating — not any other tab,
       // not even when the user switches to a different active tab.
-      if (tabId !== targetTabId) return;
-      if (changeInfo.url) {
+      if (!pinnedTabIds.has(tabId)) return;
+      if (info.url) {
         setPageChanged(true);
       }
     };
     chrome.tabs.onUpdated.addListener(onUpdated);
     return () => chrome.tabs.onUpdated.removeListener(onUpdated);
-  }, [pinMode, sessionPinnedTabId]);
+  }, [pinMode, pinnedTabIds]);
 
   // M5 follow-up — locked-mode title fetcher. Reads the pinned tab's
   // current title via chrome.tabs.get; refreshes whenever the pinned tab
@@ -645,15 +653,20 @@ export default function Chat({
                 <span className="flex-1 truncate font-mono text-[11px] text-fg-2">
                   {displayPinnedOrigin}
                 </span>
+                {pinnedTabs && pinnedTabs.length > 1 ? (
+                  <span className="ml-1 rounded bg-accent-tint px-1 text-[10px] text-accent">
+                    ×{pinnedTabs.length}
+                  </span>
+                ) : null}
                 <span className="text-fg-3 text-[10px]" aria-hidden="true">▾</span>
               </button>
               {pinDropdownOpen && (
                 <PinnedTabDropdown
                   pinMode={pinMode}
-                  currentPinnedTabId={sessionPinnedTabId}
+                  pinnedTabs={pinnedTabs}
                   streaming={streaming}
-                  onPick={(tabId, origin) => {
-                    void setUserPin(tabId, origin);
+                  onToggle={(tabId, origin) => {
+                    void togglePinTab(tabId, origin);
                   }}
                   onClearPin={() => {
                     void clearUserPin();

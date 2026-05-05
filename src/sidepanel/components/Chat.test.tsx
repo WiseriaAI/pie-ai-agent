@@ -52,8 +52,7 @@ function makeSession(overrides?: Partial<UseSession>): UseSession {
     sessionId: "test-session-id",
     ready: true,
     status: "active",
-    pinnedOrigin: null,
-    pinnedTabId: null,
+    pinnedTabs: null,
     pinMode: "auto",
     messages: [] as DisplayMessage[],
     streaming: false,
@@ -70,7 +69,7 @@ function makeSession(overrides?: Partial<UseSession>): UseSession {
     clearToast: vi.fn(),
     setActive: vi.fn().mockResolvedValue(null),
     createAndActivate: vi.fn().mockResolvedValue(null),
-    setUserPin: vi.fn().mockResolvedValue(undefined),
+    togglePinTab: vi.fn().mockResolvedValue(undefined),
     clearUserPin: vi.fn().mockResolvedValue(undefined),
     sessions: [],
     ...overrides,
@@ -620,8 +619,7 @@ describe("Chat — M5 pinMode behavior", () => {
     seedProvider("anthropic");
     const session = makeSession({
       pinMode: "auto",
-      pinnedTabId: null,
-      pinnedOrigin: null,
+      pinnedTabs: null,
       messages: [{ role: "user" as const, content: "hello" }] as DisplayMessage[],
     });
     await act(async () => {
@@ -645,8 +643,7 @@ describe("Chat — M5 pinMode behavior", () => {
     seedProvider("anthropic");
     const session = makeSession({
       pinMode: "task",
-      pinnedTabId: 42,
-      pinnedOrigin: "https://example.com",
+      pinnedTabs: [{ tabId: 42, origin: "https://example.com" }],
     });
     await act(async () => {
       render(
@@ -668,8 +665,7 @@ describe("Chat — M5 pinMode behavior", () => {
     seedProvider("anthropic");
     const session = makeSession({
       pinMode: "user",
-      pinnedTabId: 7,
-      pinnedOrigin: "https://user.com",
+      pinnedTabs: [{ tabId: 7, origin: "https://user.com" }],
     });
     await act(async () => {
       render(
@@ -692,8 +688,7 @@ describe("Chat — M5 pinMode behavior", () => {
     tabsOnUpdated.addListener.mockClear();
     const userSession = makeSession({
       pinMode: "user",
-      pinnedTabId: 5,
-      pinnedOrigin: "https://x.com",
+      pinnedTabs: [{ tabId: 5, origin: "https://x.com" }],
     });
     const { unmount: unmountUser } = render(
       <Chat session={userSession} onOpenSettings={vi.fn()} onOpenSessionList={vi.fn()} activePanel="chat" />,
@@ -707,8 +702,7 @@ describe("Chat — M5 pinMode behavior", () => {
     tabsOnUpdated.addListener.mockClear();
     const taskSession = makeSession({
       pinMode: "task",
-      pinnedTabId: 5,
-      pinnedOrigin: "https://x.com",
+      pinnedTabs: [{ tabId: 5, origin: "https://x.com" }],
     });
     const { unmount: unmountTask } = render(
       <Chat session={taskSession} onOpenSettings={vi.fn()} onOpenSessionList={vi.fn()} activePanel="chat" />,
@@ -726,8 +720,7 @@ describe("Chat — M5 pinMode behavior", () => {
     seedProvider("anthropic");
     const session = makeSession({
       pinMode: "task",
-      pinnedTabId: 100,
-      pinnedOrigin: "https://example.com",
+      pinnedTabs: [{ tabId: 100, origin: "https://example.com" }],
     });
 
     // Capture all listeners — Chat.tsx may register multiple onUpdated

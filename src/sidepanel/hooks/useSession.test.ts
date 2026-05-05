@@ -582,8 +582,8 @@ describe("useSession — M3-U2 lock-on-send pin (post-acceptance rule)", () => {
     expect(meta).not.toBeNull();
     expect(meta!.pinnedTabId).toBeUndefined();
     expect(meta!.pinnedOrigin).toBeUndefined();
-    // Hook also exposes pinnedOrigin: null for the new empty session.
-    expect(result.current.pinnedOrigin).toBeNull();
+    // Hook also exposes pinnedTabs: null for the new empty session.
+    expect(result.current.pinnedTabs).toBeNull();
   });
 
   it("bootstrap does NOT backfill an empty legacy session — the pin is captured at first send instead", async () => {
@@ -887,6 +887,91 @@ describe("useSession — M3-U2 lock-on-send pin (post-acceptance rule)", () => {
     const after = await getSessionMeta(sessionB.id);
     expect(after?.pinnedTabId).toBe(99);
     expect(after?.pinnedOrigin).toBe("https://original.example.com");
+  });
+
+  it("v1.5 togglePinTab cycles auto → user[A] → user[A,B] → user[B] → auto across multi-toggle (cross-layer integration)", async () => {
+    // v1.5 multi-pin integration test: covers the panel→storage round-trip
+    // for togglePinTab. pin-state's unit tests cover togglePinTabUserMode
+    // directly, but this asserts useSession's togglePinTab callback wires
+    // through getSessionMeta + setSessionMeta + onChanged correctly.
+    // (Cross-layer regression per CLAUDE.md memory: high unit-test count
+    // cannot replace integration tests.)
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    const sid = result.current.sessionId!;
+
+    // Pre-toggle: fresh session is auto, no pins.
+    expect(result.current.pinMode).toBe("auto");
+    expect(result.current.pinnedTabs).toBeNull();
+
+    // Toggle 1: auto → user [A]
+    await act(async () => {
+      await result.current.togglePinTab(12, "https://a.com");
+    });
+    await waitFor(() => {
+      expect(result.current.pinnedTabs).toEqual([
+        { tabId: 12, origin: "https://a.com" },
+      ]);
+      expect(result.current.pinMode).toBe("user");
+    });
+    {
+      const meta = await getSessionMeta(sid);
+      expect(meta?.pinMode).toBe("user");
+      expect(meta?.pinnedTabs).toEqual([
+        { tabId: 12, origin: "https://a.com" },
+      ]);
+    }
+
+    // Toggle 2: user [A] → user [A, B] (multi-select append)
+    await act(async () => {
+      await result.current.togglePinTab(13, "https://b.com");
+    });
+    await waitFor(() => {
+      expect(result.current.pinnedTabs).toEqual([
+        { tabId: 12, origin: "https://a.com" },
+        { tabId: 13, origin: "https://b.com" },
+      ]);
+      expect(result.current.pinMode).toBe("user");
+    });
+    {
+      const meta = await getSessionMeta(sid);
+      expect(meta?.pinnedTabs).toEqual([
+        { tabId: 12, origin: "https://a.com" },
+        { tabId: 13, origin: "https://b.com" },
+      ]);
+    }
+
+    // Toggle 3: user [A, B] → user [B] (toggling existing tab removes it)
+    await act(async () => {
+      await result.current.togglePinTab(12, "https://a.com");
+    });
+    await waitFor(() => {
+      expect(result.current.pinnedTabs).toEqual([
+        { tabId: 13, origin: "https://b.com" },
+      ]);
+      expect(result.current.pinMode).toBe("user");
+    });
+    {
+      const meta = await getSessionMeta(sid);
+      expect(meta?.pinMode).toBe("user");
+      expect(meta?.pinnedTabs).toEqual([
+        { tabId: 13, origin: "https://b.com" },
+      ]);
+    }
+
+    // Toggle 4: user [B] → auto (last entry removed flips back to auto)
+    await act(async () => {
+      await result.current.togglePinTab(13, "https://b.com");
+    });
+    await waitFor(() => {
+      expect(result.current.pinnedTabs).toBeNull();
+      expect(result.current.pinMode).toBe("auto");
+    });
+    {
+      const meta = await getSessionMeta(sid);
+      expect(meta?.pinMode).toBe("auto");
+      expect(meta?.pinnedTabs).toBeUndefined();
+    }
   });
 });
 

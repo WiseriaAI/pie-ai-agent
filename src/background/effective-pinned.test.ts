@@ -39,23 +39,24 @@ describe("resolveEffectivePinned", () => {
     expect(result).toEqual(PINNED_CTX);
   });
 
-  it("tier-2: returns meta pin when closure is undefined but meta has pin", async () => {
+  it("tier-2: returns meta pin when closure is undefined but meta has pinnedTabs[]", async () => {
+    // v1.5 — tier-2 reads pinnedTabs[] via getPrimaryPin.
     const result = await resolveEffectivePinned(
       undefined,
       SESSION_ID,
-      makeGetMeta({ pinnedTabId: 7, pinnedOrigin: "https://meta.example.com" }),
+      makeGetMeta({ pinnedTabs: [{ tabId: 7, origin: "https://meta.example.com" }] }),
       makeQueryActiveTab(null), // should not be called
       noRestrict,
     );
     expect(result).toEqual({ tabId: 7, origin: "https://meta.example.com" });
   });
 
-  it("tier-2: skips meta when pinnedTabId is missing even if pinnedOrigin present", async () => {
-    // Both fields must be present (both-or-neither invariant from M3-U2).
+  it("tier-2: skips meta when pinnedTabs[] is empty/absent, falls through to tier 3", async () => {
+    // v1.5 — no pinnedTabs[] → getPrimaryPin returns undefined → fall through.
     const result = await resolveEffectivePinned(
       undefined,
       SESSION_ID,
-      makeGetMeta({ pinnedOrigin: "https://meta.example.com" }), // no pinnedTabId
+      makeGetMeta({ pinnedOrigin: "https://meta.example.com" }), // no pinnedTabs
       makeQueryActiveTab({ id: 99, url: "https://active.example.com" }),
       noRestrict,
     );
