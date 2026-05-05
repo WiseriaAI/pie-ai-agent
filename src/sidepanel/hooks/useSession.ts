@@ -196,6 +196,9 @@ export interface UseSession {
    * and removes all pinned tabs. No-op for 'task' mode (loop-managed)
    * or already-auto sessions. */
   clearUserPin: () => Promise<void>;
+  /** Recording v1 — exposes the active per-session port so useRecording can
+   *  attach its own onMessage listener. Null until ready=true. */
+  port: chrome.runtime.Port | null;
 }
 
 export function useSession(): UseSession {
@@ -1138,6 +1141,7 @@ export function useSession(): UseSession {
 
   return {
     sessionId,
+    port: portRef.current,
     ready,
     status,
     pinnedTabs: pinnedTabsState,
