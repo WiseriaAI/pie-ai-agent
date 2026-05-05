@@ -1,7 +1,6 @@
 // Model Router — unified LLM interface abstraction
 
-import { streamChat as anthropicStreamChat } from "./providers/anthropic";
-import { streamChat as openaiStreamChat } from "./providers/openai";
+import { streamChatByProvider } from "./providers";
 import { getProviderMeta } from "./providers/registry";
 import type { Attachment } from "@/lib/images";
 
@@ -93,14 +92,7 @@ export async function* streamChat(
     baseUrl: config.baseUrl || meta.defaultBaseUrl,
   };
 
-  switch (meta.type) {
-    case "anthropic":
-      yield* anthropicStreamChat(resolvedConfig, messages, signal, tools);
-      break;
-    case "openai-compatible":
-      yield* openaiStreamChat(resolvedConfig, messages, signal, tools);
-      break;
-  }
+  yield* streamChatByProvider[config.provider](resolvedConfig, messages, signal, tools);
 }
 
 export async function chat(
