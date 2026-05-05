@@ -12,9 +12,7 @@ import { normalizeSkillSlashKey } from "@/lib/skills";
 import { useSession } from "@/sidepanel/hooks/useSession";
 import { useRecording } from "@/sidepanel/hooks/useRecording";
 import RecordingMode from "@/sidepanel/components/RecordingMode";
-import SaveSkillDialog from "@/sidepanel/components/SaveSkillDialog";
 import TopBarRecordButton from "@/sidepanel/components/TopBarRecordButton";
-import type { RecordedAction } from "@/lib/recording/types";
 import { listSessionIndex } from "@/lib/sessions/storage";
 import { hardDeleteExpired } from "@/lib/sessions/lifecycle";
 import type { SessionIndexEntry, SessionAgentState } from "@/lib/sessions/types";
@@ -64,9 +62,22 @@ export default function App() {
 
   const session = useSession();
 
-  const [pendingSave, setPendingSave] = useState<RecordedAction[] | null>(null);
-  const handleRecordingFinished = useCallback((_skillId: string) => {
-    setPendingSave(null);
+  // Reframe (2026-05-05) — pendingRecording is the serialized trace + step
+  // count surfaced after Finish. App passes it to Chat, which shows a chip
+  // above the input and on Send injects it into expandedForLLM as args to
+  // the create_skill_from_recording built-in skill.
+  const [pendingRecording, setPendingRecording] = useState<{
+    trace: string;
+    stepCount: number;
+  } | null>(null);
+  const handleRecordingFinished = useCallback(
+    (serializedTrace: string, stepCount: number) => {
+      setPendingRecording({ trace: serializedTrace, stepCount });
+    },
+    [],
+  );
+  const handlePendingRecordingConsumed = useCallback(() => {
+    setPendingRecording(null);
   }, []);
   const recording = useRecording({
     port: session.port,
@@ -284,10 +295,10 @@ export default function App() {
         {/* Record button */}
         <TopBarRecordButton
           active={recording.active}
-          disabled={!session.sessionId || session.streaming || pendingSave !== null}
+          disabled={!session.sessionId || session.streaming || pendingRecording !== null}
           onClick={() => {
             if (recording.active) {
-              setPendingSave(recording.actions);
+              recording.finishRecording();
             } else {
               recording.startRecording();
             }
@@ -312,24 +323,12 @@ export default function App() {
         className="view-enter"
         style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}
       >
-        {view === "agent" && pendingSave !== null ? (
-          <SaveSkillDialog
-            actions={pendingSave}
-            onSave={(args) => {
-              recording.finishRecording(args);
-              setPendingSave(null);
-            }}
-            onDiscard={() => {
-              recording.discardRecording();
-              setPendingSave(null);
-            }}
-          />
-        ) : view === "agent" && recording.active ? (
+        {view === "agent" && recording.active ? (
           <RecordingMode
             active={recording.active}
             actions={recording.actions}
             lastAbortReason={recording.lastAbortReason}
-            onFinish={() => setPendingSave(recording.actions)}
+            onFinish={() => recording.finishRecording()}
             onDiscard={() => recording.discardRecording()}
           />
         ) : view === "agent" ? (
@@ -339,6 +338,8 @@ export default function App() {
             prefillInput={chatPrefill}
             onPrefillConsumed={() => setChatPrefill(undefined)}
             session={session}
+            pendingRecording={pendingRecording}
+            onPendingRecordingConsumed={handlePendingRecordingConsumed}
           />
         ) : (
           <Settings

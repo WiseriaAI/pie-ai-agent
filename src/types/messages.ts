@@ -463,18 +463,19 @@ export interface RecordingActionMessage {
   payload: CapturedActionPayload;
 }
 
-/** 用户在 Save dialog 点 Save。skillName / skillDescription / 编辑后的 actions[] /
- *  user-confirmed allowedTools。SW 据此调 saveSkill 创建 user-authored skill。 */
+/** 用户点 Finish。SW 序列化 trace 后通过 RecordingFinishedBroadcast 推回 panel；
+ *  panel 在 chat 输入框显示 chip + Send 时 prefix /create_skill_from_recording。
+ *
+ *  Reframe (2026-05-05)：SW 不再直接 saveSkill。改由 LLM 看到 trace 后调用
+ *  built-in skill `create_skill_from_recording` → 该 skill 调 create_skill
+ *  meta tool → 走 R10 first-run confirm 卡片作为 capability review surface
+ *  （替代原 SaveSkillDialog 心智）。 */
 export interface RecordingFinishMessage {
   type: "recording-finish";
   sessionId: string;
-  skillName: string;
-  skillDescription: string;
-  finalActions: RecordedAction[];
-  finalAllowedTools: string[];
 }
 
-/** 用户在 Save dialog 点 Discard。 */
+/** 用户在 chat 输入框 chip × 掉，或 RecordingMode discard。 */
 export interface RecordingDiscardMessage {
   type: "recording-discard";
   sessionId: string;
@@ -496,10 +497,16 @@ export interface RecordingActionBroadcast {
   action: RecordedAction;
 }
 
+/** SW → panel：录制结束。serializedTrace 是中文步骤序列（已经过 serialize.ts 处理，
+ *  含 wrapper-escape + 8KB 上限校验）；stepCount 给 chip 文案用。
+ *
+ *  Reframe (2026-05-05)：废弃 skillId 字段。新流程下 skill 由 LLM 在 chat 收到
+ *  trace + user prompt 后调 create_skill 创建（走 R10 confirm 卡片）。 */
 export interface RecordingFinishedBroadcast {
   type: "recording-finished";
   sessionId: string;
-  skillId: string;
+  serializedTrace: string;
+  stepCount: number;
 }
 
 export interface RecordingAbortedBroadcast {

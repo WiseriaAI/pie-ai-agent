@@ -121,52 +121,84 @@ describe("recording-orchestrator", () => {
     expect(port.postMessage.mock.calls.length).toBe(portCount);
   });
 
-  it("handleRecordingFinish writes user-authored skill and clears session", async () => {
+  it("handleRecordingFinish broadcasts serializedTrace + stepCount + clears session (Reframe)", async () => {
     await handleRecordingStart(port as unknown as chrome.runtime.Port, {
       type: "recording-start",
       sessionId: "S5",
     });
-    const finalActions: RecordedAction[] = [
-      { type: "click", label: "按钮 'X'", url: "u", region: "main", timestamp: 1 },
-    ];
+    // Feed an action via handleRecordingAction (sess.actions is now SW-side
+    // owned, not panel-supplied) — Reframe (2026-05-05) removes finalActions
+    // from RecordingFinishMessage.
+    handleRecordingAction(
+      { tab: { id: 1 } } as chrome.runtime.MessageSender,
+      {
+        type: "recording-action",
+        payload: { type: "click", label: "按钮 'X'", url: "u", region: "main" },
+      },
+      port as unknown as chrome.runtime.Port,
+    );
+    port.postMessage.mockClear();
     await handleRecordingFinish(port as unknown as chrome.runtime.Port, {
       type: "recording-finish",
       sessionId: "S5",
-      skillName: "Login Flow",
-      skillDescription: "logs in to example",
-      finalActions,
-      finalAllowedTools: ["click", "done", "fail"],
     });
     expect(recordingState.has("S5")).toBe(false);
-    const stored = Array.from(skillStore.entries()).find(([k]) => k.includes("user_"));
-    expect(stored).toBeDefined();
-    expect((stored![1] as { author?: string }).author).toBe("user");
+    // Reframe: SW does NOT save skill anymore — chat input chip + LLM does it.
+    expect(skillStore.size).toBe(0);
     expect(port.postMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "recording-finished", sessionId: "S5" }),
+      expect.objectContaining({
+        type: "recording-finished",
+        sessionId: "S5",
+        serializedTrace: expect.stringContaining("第 1 步：点击按钮 'X'"),
+        stepCount: 1,
+      }),
     );
   });
 
-  it("handleRecordingFinish rejects when promptTemplate exceeds 8KB", async () => {
+  it("handleRecordingFinish rejects empty recording (no actions captured)", async () => {
+    await handleRecordingStart(port as unknown as chrome.runtime.Port, {
+      type: "recording-start",
+      sessionId: "S5b",
+    });
+    port.postMessage.mockClear();
+    await handleRecordingFinish(port as unknown as chrome.runtime.Port, {
+      type: "recording-finish",
+      sessionId: "S5b",
+    });
+    // Session NOT cleared so user can keep recording.
+    expect(recordingState.has("S5b")).toBe(true);
+    expect(port.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "session-toast",
+        level: "warn",
+        text: expect.stringMatching(/empty/i),
+      }),
+    );
+  });
+
+  it("handleRecordingFinish rejects when serialized trace exceeds 8KB", async () => {
     await handleRecordingStart(port as unknown as chrome.runtime.Port, {
       type: "recording-start",
       sessionId: "S6",
     });
+    // Feed 50 long actions via SW path so sess.actions grows beyond 8KB serialized.
     const longLabel = "x".repeat(500);
-    const finalActions: RecordedAction[] = Array.from({ length: 50 }, () => ({
-      type: "click" as const,
-      label: longLabel,
-      url: "u",
-      region: "main",
-      timestamp: 1,
-    }));
+    for (let i = 0; i < 50; i++) {
+      handleRecordingAction(
+        { tab: { id: 1 } } as chrome.runtime.MessageSender,
+        {
+          type: "recording-action",
+          payload: { type: "click", label: longLabel, url: "u", region: "main" },
+        },
+        port as unknown as chrome.runtime.Port,
+      );
+    }
+    port.postMessage.mockClear();
     await handleRecordingFinish(port as unknown as chrome.runtime.Port, {
       type: "recording-finish",
       sessionId: "S6",
-      skillName: "tooBig",
-      skillDescription: "x",
-      finalActions,
-      finalAllowedTools: ["click"],
     });
+    // Session NOT cleared so user can discard + re-record shorter.
     expect(recordingState.has("S6")).toBe(true);
     expect(port.postMessage).toHaveBeenCalledWith(
       expect.objectContaining({ type: "session-toast", level: "error" }),

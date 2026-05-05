@@ -19,22 +19,6 @@ import type {
 import type { RecordedAction, RecordingSession } from "@/lib/recording/types";
 import { installCaptureListener } from "@/lib/recording/capture";
 import { serialize, PromptTooLargeError } from "@/lib/recording/serialize";
-import { saveSkill, generateUserSkillId, getSkillStorageBytes } from "@/lib/skills/storage";
-import type { SkillDefinition } from "@/lib/skills/types";
-import { ALL_KNOWN_NON_SKILL_TOOL_NAMES } from "@/lib/agent/tool-names";
-
-function countAllStringChars(value: unknown): number {
-  if (typeof value === "string") return value.length;
-  if (Array.isArray(value)) {
-    return value.reduce<number>((sum, item) => sum + countAllStringChars(item), 0);
-  }
-  if (typeof value === "object" && value !== null) {
-    let total = 0;
-    for (const v of Object.values(value as Record<string, unknown>)) total += countAllStringChars(v);
-    return total;
-  }
-  return 0;
-}
 
 const RESTRICTED_URL_PREFIXES = [
   "chrome://",
@@ -46,8 +30,6 @@ const RESTRICTED_URL_PREFIXES = [
   "javascript:",
   "blob:",
 ];
-
-const SKILL_STORAGE_QUOTA_BYTES = 1 * 1024 * 1024;
 
 /** Module-level state: sessionId → RecordingSession. **In-memory only.** */
 export const recordingState = new Map<string, RecordingSession>();
@@ -213,6 +195,17 @@ export function handleRecordingAction(
   }
 }
 
+/**
+ * Reframe (2026-05-05)：handleRecordingFinish 不再 saveSkill。
+ * 改为：serialize trace → broadcast `recording-finished {serializedTrace, stepCount}` → clear state。
+ * Panel 收到后注入 chat 输入框 chip，user 加 prompt 后 Send 时 prefix
+ * `/create_skill_from_recording` slash 命令，让 LLM 看 trace + user prompt
+ * 后调 create_skill meta tool（走 R10 first-run confirm 卡片作为 capability
+ * review surface）。
+ *
+ * SW 端只负责 trace 序列化 + 8KB 上限校验；不再做 allowedTools / quota /
+ * SkillDefinition 构建——这些都由 LLM 决定 + skill-meta.ts handler enforce。
+ */
 export async function handleRecordingFinish(
   port: chrome.runtime.Port,
   msg: RecordingFinishMessage,
@@ -228,11 +221,11 @@ export async function handleRecordingFinish(
     return;
   }
 
-  if (!msg.skillName.trim() || !msg.skillDescription.trim()) {
+  if (sess.actions.length === 0) {
     postToPanel(port, {
       type: "session-toast",
       level: "warn",
-      text: "Skill name and description are required.",
+      text: "Recording is empty — operate the page first, or click Discard.",
       sessionId: msg.sessionId,
     });
     return;
@@ -240,13 +233,13 @@ export async function handleRecordingFinish(
 
   let serialized;
   try {
-    serialized = serialize(msg.finalActions);
+    serialized = serialize(sess.actions);
   } catch (e) {
     if (e instanceof PromptTooLargeError) {
       postToPanel(port, {
         type: "session-toast",
         level: "error",
-        text: `Prompt too long (${e.actualBytes}/${e.maxBytes} bytes). Trim some steps and try again.`,
+        text: `Recording too long (${e.actualBytes}/${e.maxBytes} bytes). Discard and re-record a shorter flow.`,
         sessionId: msg.sessionId,
       });
       return;
@@ -254,65 +247,12 @@ export async function handleRecordingFinish(
     throw e;
   }
 
-  for (const t of msg.finalAllowedTools) {
-    if (!ALL_KNOWN_NON_SKILL_TOOL_NAMES.has(t)) {
-      postToPanel(port, {
-        type: "session-toast",
-        level: "error",
-        text: `Unknown tool in allowedTools: ${t}`,
-        sessionId: msg.sessionId,
-      });
-      return;
-    }
-  }
-
-  // P0-B (defense-in-depth)
-  const SCHEMA_STRINGS_MAX = 2 * 1024;
-  const schemaChars = countAllStringChars(serialized.parameters);
-  if (schemaChars > SCHEMA_STRINGS_MAX) {
-    postToPanel(port, {
-      type: "session-toast",
-      level: "error",
-      text: `parameters schema strings too long (${schemaChars}/${SCHEMA_STRINGS_MAX} bytes). Reduce the number of distinct redacted fields.`,
-      sessionId: msg.sessionId,
-    });
-    return;
-  }
-
-  const finalTools = Array.from(new Set([...msg.finalAllowedTools, "done", "fail"]));
-
-  const skill: SkillDefinition = {
-    id: generateUserSkillId(),
-    name: msg.skillName.trim(),
-    description: msg.skillDescription.trim(),
-    promptTemplate: serialized.promptTemplate,
-    toolSchema: { parameters: serialized.parameters },
-    allowedTools: finalTools,
-    enabled: true,
-    builtIn: false,
-    author: "user",
-    createdAt: Date.now(),
-  };
-
-  const currentBytes = await getSkillStorageBytes();
-  const additional = JSON.stringify(skill).length + `skill_${skill.id}`.length;
-  if (currentBytes + additional > SKILL_STORAGE_QUOTA_BYTES) {
-    postToPanel(port, {
-      type: "session-toast",
-      level: "error",
-      text: `Skill storage quota exceeded (${currentBytes + additional}/${SKILL_STORAGE_QUOTA_BYTES} bytes). Delete unused skills first.`,
-      sessionId: msg.sessionId,
-    });
-    return;
-  }
-
-  await saveSkill(skill);
-
   recordingState.delete(msg.sessionId);
   postToPanel(port, {
     type: "recording-finished",
     sessionId: msg.sessionId,
-    skillId: skill.id,
+    serializedTrace: serialized.promptTemplate,
+    stepCount: sess.actions.length,
   });
 }
 

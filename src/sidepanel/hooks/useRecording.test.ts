@@ -69,17 +69,22 @@ describe("useRecording", () => {
     expect(result.current.active).toBe(false);
   });
 
-  it("recording-finished resets state and surfaces skillId", () => {
+  it("recording-finished resets state and surfaces serializedTrace + stepCount (Reframe)", () => {
     const port = fakePort();
     const onFinished = vi.fn();
     const { result } = renderHook(() => useRecording({ port: port as unknown as chrome.runtime.Port, sessionId: "S1", onFinished }));
     act(() => {
       port.fire({ type: "recording-started", sessionId: "S1", tabId: 1, origin: "https://x.com", startedAt: 0 });
-      port.fire({ type: "recording-finished", sessionId: "S1", skillId: "skill_user_xyz" });
+      port.fire({
+        type: "recording-finished",
+        sessionId: "S1",
+        serializedTrace: "第 1 步：点击按钮 'X'",
+        stepCount: 1,
+      });
     });
     expect(result.current.active).toBe(false);
     expect(result.current.actions).toEqual([]);
-    expect(onFinished).toHaveBeenCalledWith("skill_user_xyz");
+    expect(onFinished).toHaveBeenCalledWith("第 1 步：点击按钮 'X'", 1);
   });
 
   it("recording-aborted resets state and exposes reason", () => {
@@ -109,7 +114,7 @@ describe("useRecording", () => {
     expect(result.current.active).toBe(false);
   });
 
-  it("finishRecording posts recording-finish with serialized payload", () => {
+  it("finishRecording posts simple recording-finish (Reframe — no payload)", () => {
     const port = fakePort();
     const { result } = renderHook(() => useRecording({ port: port as unknown as chrome.runtime.Port, sessionId: "S1" }));
     act(() => {
@@ -119,16 +124,8 @@ describe("useRecording", () => {
     act(() => {
       port.fire({ type: "recording-action-broadcast", sessionId: "S1", action });
     });
-    act(() =>
-      result.current.finishRecording({
-        skillName: "Test",
-        skillDescription: "desc",
-        finalActions: [action],
-        finalAllowedTools: ["click", "done", "fail"],
-      }),
-    );
-    expect(port.postMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "recording-finish", sessionId: "S1", skillName: "Test" }),
-    );
+    act(() => result.current.finishRecording());
+    // Reframe: SW is now the source of truth for actions; finish carries only sessionId.
+    expect(port.postMessage).toHaveBeenCalledWith({ type: "recording-finish", sessionId: "S1" });
   });
 });

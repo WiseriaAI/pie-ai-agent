@@ -5,14 +5,10 @@ import type { PortMessageToPanel } from "@/types";
 interface UseRecordingArgs {
   port: chrome.runtime.Port | null;
   sessionId: string | null;
-  onFinished?: (skillId: string) => void;
-}
-
-interface FinishArgs {
-  skillName: string;
-  skillDescription: string;
-  finalActions: RecordedAction[];
-  finalAllowedTools: string[];
+  /** Reframe (2026-05-05)：onFinished receives the serialized trace + step
+   *  count. Caller (App.tsx) sets pendingRecording state → Chat input shows
+   *  chip → Send time prefixes /create_skill_from_recording. */
+  onFinished?: (serializedTrace: string, stepCount: number) => void;
 }
 
 interface UseRecording {
@@ -28,7 +24,9 @@ interface UseRecording {
     | "user-discard"
     | null;
   startRecording: () => void;
-  finishRecording: (args: FinishArgs) => void;
+  /** Reframe (2026-05-05)：no longer takes name/desc/etc. SW serializes the
+   *  trace and broadcasts it back via onFinished. */
+  finishRecording: () => void;
   discardRecording: () => void;
 }
 
@@ -84,7 +82,7 @@ export function useRecording({ port, sessionId, onFinished }: UseRecordingArgs):
         setActive(false);
         activeRef.current = false;
         setActions([]);
-        if (onFinished) onFinished(msg.skillId);
+        if (onFinished) onFinished(msg.serializedTrace, msg.stepCount);
       } else if (msg.type === "recording-aborted") {
         setActive(false);
         activeRef.current = false;
@@ -111,24 +109,14 @@ export function useRecording({ port, sessionId, onFinished }: UseRecordingArgs):
     }
   }, [port, sessionId]);
 
-  const finishRecording = useCallback(
-    (args: FinishArgs) => {
-      if (!port || !sessionId) return;
-      try {
-        port.postMessage({
-          type: "recording-finish",
-          sessionId,
-          skillName: args.skillName,
-          skillDescription: args.skillDescription,
-          finalActions: args.finalActions,
-          finalAllowedTools: args.finalAllowedTools,
-        });
-      } catch {
-        // non-fatal
-      }
-    },
-    [port, sessionId],
-  );
+  const finishRecording = useCallback(() => {
+    if (!port || !sessionId) return;
+    try {
+      port.postMessage({ type: "recording-finish", sessionId });
+    } catch {
+      // non-fatal
+    }
+  }, [port, sessionId]);
 
   const discardRecording = useCallback(() => {
     if (!port || !sessionId) return;

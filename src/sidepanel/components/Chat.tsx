@@ -73,6 +73,12 @@ interface ChatProps {
   /** Session state owned by App so port + onMessage listener survive
    *  Chat unmounts (Settings sub-view swap). */
   session: UseSession;
+  /** Recording v1 (Reframe 2026-05-05) — present after RecordingMode "Finish".
+   *  Renders a chip above the input and on Send injects into expandedForLLM
+   *  as args to the create_skill_from_recording built-in skill. */
+  pendingRecording?: { trace: string; stepCount: number } | null;
+  /** Called when user × the chip OR Send consumes the trace. */
+  onPendingRecordingConsumed?: () => void;
 }
 
 function filterAndSortSkillsForSlash(
@@ -113,6 +119,8 @@ export default function Chat({
   prefillInput,
   onPrefillConsumed,
   session,
+  pendingRecording,
+  onPendingRecordingConsumed,
 }: ChatProps) {
   const {
     ready,
@@ -520,15 +528,41 @@ export default function Chat({
   }
 
   async function sendMessage(text?: string) {
-    const content = (text ?? input).trim();
-    if (!content || streaming || !ready) return;
+    const userInput = (text ?? input).trim();
+    if (streaming || !ready) return;
+    // Allow empty userInput when a pendingRecording exists (LLM still gets
+    // the full trace + an empty user-prompt).
+    if (!userInput && !pendingRecording) return;
 
     setInput("");
     clearError();
     setAttachLocalToast(null);
 
+    let content = userInput;
     let expandedForLLM: string | undefined = undefined;
-    if (content.startsWith("/")) {
+
+    if (pendingRecording) {
+      // Reframe (2026-05-05): on Send with pendingRecording, the LLM-facing
+      // message is an instruction to invoke create_skill_from_recording with
+      // the serialized trace + user's free-text prompt. The user-visible
+      // content shows a concise "📼 从录制创建 skill" badge + their prompt.
+      const userPromptText = userInput || "(no additional guidance)";
+      content = userInput
+        ? `📼 从录制创建 skill：${userInput}`
+        : `📼 从录制创建 skill（${pendingRecording.stepCount} 步）`;
+      expandedForLLM = `Run the "Create Skill from Recording" skill (id: create_skill_from_recording).
+
+Pass these parameters when invoking the tool:
+- recordingTrace: the verbatim text below between <recordingTrace> tags
+- userPrompt: ${JSON.stringify(userPromptText)}
+
+<recordingTrace>
+${pendingRecording.trace}
+</recordingTrace>
+
+After the skill completes, briefly summarize what was created (the user will see an R10 confirm card before the new skill is persisted).`;
+      if (onPendingRecordingConsumed) onPendingRecordingConsumed();
+    } else if (content.startsWith("/")) {
       try {
         const skills = await getEnabledSkills();
         const match = resolveSlashCommand(content, skills);
@@ -968,6 +1002,53 @@ export default function Chat({
               </button>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Recording v1 (Reframe 2026-05-05) — pendingRecording chip above
+          the composer. × dismisses; Send consumes via expandedForLLM. */}
+      {pendingRecording && (
+        <div
+          data-testid="pending-recording-chip"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "6px 10px",
+            margin: "0 12px 6px",
+            background: "var(--c-bg-2, #f5f5f5)",
+            border: "1px solid var(--c-line, #ccc)",
+            borderRadius: 6,
+            fontSize: 13,
+            color: "var(--c-fg-1)",
+          }}
+          title={`Send → 由 LLM 调 create_skill_from_recording 创建 skill\n\n预览（前 200 字）：\n${pendingRecording.trace.slice(0, 200)}${pendingRecording.trace.length > 200 ? "…" : ""}`}
+        >
+          <span>📼 已录制 {pendingRecording.stepCount} 步 — 写提示后 Send 让 LLM 创建 skill</span>
+          <button
+            type="button"
+            aria-label="discard recording"
+            data-testid="dismiss-pending-recording"
+            onClick={() => onPendingRecordingConsumed?.()}
+            style={{
+              marginLeft: "auto",
+              width: 20,
+              height: 20,
+              borderRadius: "50%",
+              background: "var(--c-canvas)",
+              color: "var(--c-fg-1)",
+              border: "1px solid var(--c-line)",
+              fontSize: 13,
+              lineHeight: 1,
+              cursor: "pointer",
+              padding: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            ×
+          </button>
         </div>
       )}
 
