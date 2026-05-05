@@ -5,9 +5,9 @@ import { TAB_TOOL_NAMES, SCREENSHOT_TOOL_NAMES } from "./tool-names";
 
 /**
  * Phase 3 — context for cross-origin args introspection. Loop dispatch
- * passes pinnedOrigin (task-level pin) and a cache of tab origins it has
+ * passes pinnedTabs (task-level pins) and a cache of tab origins it has
  * already fetched (chrome.tabs.get) so risk classifier can detect when a
- * tab tool's args.tabIds touch tabs whose origin differs from pinnedOrigin
+ * tab tool's args.tabIds touch tabs whose origin differs from any pinned tab
  * and escalate.
  *
  * allTabsCache may be partial — for tabIds not in the cache, the classifier
@@ -15,47 +15,73 @@ import { TAB_TOOL_NAMES, SCREENSHOT_TOOL_NAMES } from "./tool-names";
  * confirm; never under-classifies).
  */
 export interface RiskClassifyContext {
-  pinnedOrigin?: string;
+  /**
+   * v1.5 — full session pinned tabs. The classifier flags any tabId not in
+   * this list as cross-origin (conservative). When pinnedTabs is empty/absent,
+   * any args.tabIds touching a tab is considered cross-origin (fail-high).
+   */
+  pinnedTabs?: Array<{ tabId: number; origin: string }>;
   allTabsCache?: Map<number, { origin: string }>;
 }
 
 /**
- * Phase 3 — does any of args.tabIds (or args.tabId) touch a tab whose
- * origin differs from pinnedOrigin? Returns true on miss-match OR on any
- * tab whose origin we couldn't determine (conservative fail-high).
+ * Phase 3 / v1.5 — does any of args.tabIds (or args.tabId) touch a tab
+ * that is not in pinnedTabs? Returns crossOrigin=true on any unowned tab OR
+ * on any tab whose origin we couldn't determine (conservative fail-high).
+ * When pinnedTabs is empty, any tab reference is treated as cross-origin
+ * (auto mode safety / fail-high).
  *
  * Used by tab tools (close_tabs / activate_tab / group_tabs / ungroup_tabs /
  * move_tabs / get_tab_content). Each tool's risk branch decides what to do
  * with the result — most are always-high regardless and just fold the
  * cross-origin signal into the reason string.
+ *
+ * INVARIANT: agent execution should never reach this code path with an empty
+ * pinnedTabs (loop.ts always resolves a pin before classifyRisk runs). The
+ * empty-pin branch is a fail-safe — if the invariant ever breaks, every
+ * cross-tab op gets escalated to confirm rather than silently allowed.
  */
 export function hasCrossOriginTab(
   args: { tabIds?: number[]; tabId?: number },
   ctx: RiskClassifyContext | undefined,
 ): { crossOrigin: boolean; offendingOrigins: string[] } {
-  if (!ctx?.pinnedOrigin || !ctx.allTabsCache) {
+  if (!ctx?.allTabsCache) {
     return { crossOrigin: false, offendingOrigins: [] };
   }
-  const ids: number[] = [];
-  if (args.tabIds && Array.isArray(args.tabIds)) ids.push(...args.tabIds);
-  if (typeof args.tabId === "number") ids.push(args.tabId);
+  const ownedByTabId = new Map<number, string>();
+  if (ctx.pinnedTabs && ctx.pinnedTabs.length > 0) {
+    for (const p of ctx.pinnedTabs) ownedByTabId.set(p.tabId, p.origin);
+  }
+  const ids = collectIds(args);
+  if (ownedByTabId.size === 0) {
+    // No pin → conservative fail-high so any tab tool target is cross-origin.
+    const offending = new Set<string>();
+    for (const id of ids) {
+      const info = ctx.allTabsCache.get(id);
+      offending.add(info?.origin ?? "(unknown)");
+    }
+    return {
+      crossOrigin: ids.length > 0,
+      offendingOrigins: Array.from(offending),
+    };
+  }
   const offending = new Set<string>();
   for (const id of ids) {
-    const entry = ctx.allTabsCache.get(id);
-    if (!entry) {
-      // Unknown — conservative fail-high. The actual tab might be same-origin
-      // but we choose the safer side; user will see one extra confirm.
-      offending.add("(unknown)");
-      continue;
-    }
-    if (entry.origin !== ctx.pinnedOrigin) {
-      offending.add(entry.origin);
-    }
+    if (ownedByTabId.has(id)) continue; // owned tab, same-origin by definition
+    const info = ctx.allTabsCache.get(id);
+    offending.add(info?.origin ?? "(unknown)");
   }
   return {
     crossOrigin: offending.size > 0,
     offendingOrigins: Array.from(offending),
   };
+}
+
+function collectIds(args: { tabIds?: number[]; tabId?: number }): number[] {
+  const ids: number[] = [];
+  if (Array.isArray(args.tabIds)) ids.push(...args.tabIds);
+  if (typeof args.tabId === "number") ids.push(args.tabId);
+  return ids;
 }
 
 /**

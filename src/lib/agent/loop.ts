@@ -1741,7 +1741,13 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         }
 
         const riskCtx: RiskClassifyContext = {
-          pinnedOrigin,
+          // Task 4: synthesize single-element array from the loop's still-single
+          // ctx.pinned. Mathematically equivalent to pre-Task-4 single-pinnedOrigin
+          // behavior at this site. CONSEQUENCE: if ctx.pinned ever becomes multi-pin
+          // without this synthesis being replaced (Task 5's job), second-pin tabIds
+          // will be misclassified cross-origin. Task 5 must replace this with
+          // ctx.pinnedTabs ?? [].
+          pinnedTabs: ctx.pinned ? [ctx.pinned] : [],
           allTabsCache: tabTargetsToOriginCache(tabTargets),
         };
 
