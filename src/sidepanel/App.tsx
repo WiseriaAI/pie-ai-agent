@@ -6,8 +6,7 @@ import TopBarListButton from "@/sidepanel/components/TopBarListButton";
 import TopBarNewSessionButton from "@/sidepanel/components/TopBarNewSessionButton";
 import TopBarSettingsButton from "@/sidepanel/components/TopBarSettingsButton";
 import TopBarThemeButton, { type ThemeMode } from "@/sidepanel/components/TopBarThemeButton";
-import { getActiveProvider, getProviderConfig } from "@/lib/storage";
-import { getProviderMeta } from "@/lib/model-router";
+import { getActiveInstance, getInstance } from "@/lib/instances";
 import { normalizeSkillSlashKey } from "@/lib/skills";
 import { useSession } from "@/sidepanel/hooks/useSession";
 import { useRecording } from "@/sidepanel/hooks/useRecording";
@@ -139,8 +138,12 @@ export default function App() {
     loadProviderLabel();
 
     const listener = (changes: { [key: string]: chrome.storage.StorageChange }) => {
-      // Refresh provider label if provider config changed
-      if (changes.active_provider || Object.keys(changes).some((k) => k.startsWith("provider_"))) {
+      // Refresh provider label if instance config changed
+      if (
+        changes.active_instance_id ||
+        changes.instances_index ||
+        Object.keys(changes).some((k) => k.startsWith("instance_"))
+      ) {
         loadProviderLabel();
       }
       // Refresh session index if session_index or any session key changed
@@ -166,17 +169,15 @@ export default function App() {
   }, [refreshSessionIndex, refreshPendingCount]);
 
   async function loadProviderLabel() {
-    const active = await getActiveProvider();
-    if (!active) {
-      setProviderLabel(null);
-      return;
-    }
     try {
-      const config = await getProviderConfig(active);
-      if (config) {
-        const meta = getProviderMeta(active);
-        const name = meta?.name ?? active;
-        setProviderLabel(`${name} · ${config.model}`);
+      const activeId = await getActiveInstance();
+      if (!activeId) {
+        setProviderLabel(null);
+        return;
+      }
+      const inst = await getInstance(activeId);
+      if (inst) {
+        setProviderLabel(`${inst.nickname.toUpperCase()} · ${inst.model}`);
       } else {
         setProviderLabel(null);
       }

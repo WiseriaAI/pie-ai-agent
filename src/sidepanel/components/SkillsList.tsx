@@ -10,8 +10,8 @@ import {
   getSkillStorageBytes,
 } from "@/lib/skills";
 import { ALL_KNOWN_NON_SKILL_TOOL_NAMES } from "@/lib/agent/tool-names";
-import { getActiveProvider } from "@/lib/storage";
-import { getProviderMeta } from "@/lib/model-router/providers/registry";
+import { getActiveInstance, getInstance } from "@/lib/instances";
+import { getModelMeta } from "@/lib/model-router";
 
 interface SkillsListProps {
   onRunSkill: (skillId: string, skillName: string) => void;
@@ -169,13 +169,30 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
 
   useEffect(() => {
     async function checkVision() {
-      const active = await getActiveProvider();
-      const meta = active ? getProviderMeta(active) : undefined;
-      setSupportsVision(meta?.supportsVision ?? true);
+      try {
+        const activeId = await getActiveInstance();
+        if (!activeId) {
+          setSupportsVision(false);
+          return;
+        }
+        const inst = await getInstance(activeId);
+        if (!inst) {
+          setSupportsVision(false);
+          return;
+        }
+        const meta = getModelMeta(inst.provider, inst.model);
+        setSupportsVision(meta?.vision ?? false);
+      } catch {
+        setSupportsVision(false);
+      }
     }
     checkVision();
     const listener = (changes: Record<string, chrome.storage.StorageChange>) => {
-      if (Object.keys(changes).some((k) => k === "active_provider" || k.startsWith("provider_"))) {
+      if (
+        changes.active_instance_id ||
+        changes.instances_index ||
+        Object.keys(changes).some((k) => k.startsWith("instance_"))
+      ) {
         checkVision();
       }
     };

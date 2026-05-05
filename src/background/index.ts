@@ -1032,14 +1032,6 @@ async function handleChatStream(
       });
       return;
     }
-    // Per-session pin: if we fell back to global active, persist instanceId so
-    // future chat-starts for this session don't depend on global active changing.
-    if (chatSessionMeta && !chatSessionMeta.instanceId) {
-      setSessionMeta({ ...chatSessionMeta, instanceId: chatInstanceId }).catch((e) => {
-        console.warn(`[sw] instanceId pin failed for session=${sessionId}:`, e);
-      });
-    }
-
     // M2-U1 trigger (b) — bump lastAccessedAt when the SW receives a new
     // chat-start for this session. Fire-and-forget; failure is non-fatal.
     updateLastAccessed(sessionId).catch((e) => {
@@ -1144,6 +1136,17 @@ async function handleChatStream(
       getSessionAgent(sessionId),
       getSessionMeta(sessionId),
     ]);
+
+    // Per-session pin: if we fell back to global active, persist instanceId so
+    // future chat-starts for this session don't depend on global active changing.
+    // Placed AFTER upgradeAutoToTaskAtChatStart to avoid clobbering the
+    // upgraded pinMode='task' + pinnedTabs[] (lost-update fix).
+    if (synthMeta && !synthMeta.instanceId && chatInstanceId) {
+      await setSessionMeta({ ...synthMeta, instanceId: chatInstanceId }).catch((e) => {
+        console.warn(`[sw] instanceId pin failed for session=${sessionId}:`, e);
+      });
+    }
+
     const lastTaskSynth = synthAgent?.lastTaskSynth ?? null;
 
     let effectiveMessages = messages;

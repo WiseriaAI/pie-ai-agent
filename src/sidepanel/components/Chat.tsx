@@ -6,8 +6,8 @@ import {
   expandSlashCommand,
   normalizeSkillSlashKey,
 } from "@/lib/skills";
-import { getActiveProvider, getProviderConfig } from "@/lib/storage";
 import { getModelMeta } from "@/lib/model-router";
+import { listInstances, getActiveInstance, getInstance, type DecryptedInstance } from "@/lib/instances";
 import { resizePanel } from "@/lib/images/resize-panel";
 import type { ImageAttachment } from "@/lib/images";
 import type { UseSession } from "@/sidepanel/hooks/useSession";
@@ -16,7 +16,6 @@ import AgentConfirmCard from "./AgentConfirmCard";
 import PinnedTabDropdown from "./PinnedTabDropdown";
 import type { DisplayMessage } from "@/types";
 import InstanceSelector from "./InstanceSelector";
-import { listInstances, type DecryptedInstance } from "@/lib/instances";
 import {
   getSessionMeta,
   setSessionMeta,
@@ -222,7 +221,18 @@ export default function Chat({
 
   useEffect(() => {
     checkConfig();
-  }, []);
+    const listener = (changes: Record<string, chrome.storage.StorageChange>) => {
+      if (
+        changes.active_instance_id ||
+        changes.instances_index ||
+        Object.keys(changes).some((k) => k.startsWith("instance_"))
+      ) {
+        checkConfig();
+      }
+    };
+    chrome.storage.local.onChanged.addListener(listener);
+    return () => chrome.storage.local.onChanged.removeListener(listener);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // R9 sub-path b — clear pending image attachments when the user switches
   // to a provider that lacks vision support. The dependency array intentionally
@@ -460,17 +470,25 @@ export default function Chat({
   })();
 
   async function checkConfig() {
-    const active = await getActiveProvider();
-    if (!active) {
-      setHasConfig(false);
-      setSupportsVision(false);
-      return;
-    }
     try {
-      const config = await getProviderConfig(active);
-      setHasConfig(!!config);
-      const modelMeta = config ? getModelMeta(active, config.model) : undefined;
-      setSupportsVision(modelMeta?.vision ?? false);
+      const all = await listInstances();
+      if (all.length === 0) {
+        setHasConfig(false);
+        setSupportsVision(false);
+        return;
+      }
+      setHasConfig(true);
+      // Vision support is per-model, resolved from the active instance.
+      const activeId = await getActiveInstance();
+      if (activeId) {
+        const inst = await getInstance(activeId);
+        if (inst) {
+          const modelMeta = getModelMeta(inst.provider, inst.model);
+          setSupportsVision(modelMeta?.vision ?? false);
+          return;
+        }
+      }
+      setSupportsVision(false);
     } catch {
       setHasConfig(false);
       setSupportsVision(false);

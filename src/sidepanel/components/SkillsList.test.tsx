@@ -12,13 +12,18 @@ import SkillsList from "./SkillsList";
 
 // ── Mock storage + provider deps so component mounts without chrome.storage ──
 
-vi.mock("@/lib/storage", () => ({
-  getActiveProvider: vi.fn().mockResolvedValue("anthropic"),
+vi.mock("@/lib/instances", () => ({
+  getActiveInstance: vi.fn().mockResolvedValue("inst-1"),
+  getInstance: vi.fn().mockResolvedValue({ id: "inst-1", provider: "anthropic", model: "claude-opus-4-7", nickname: "Test", apiKey: "sk-test", createdAt: 0 }),
 }));
 
-vi.mock("@/lib/model-router/providers/registry", () => ({
-  getProviderMeta: vi.fn().mockReturnValue({ supportsVision: true }),
-}));
+vi.mock("@/lib/model-router", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/lib/model-router")>();
+  return {
+    ...original,
+    getModelMeta: vi.fn().mockReturnValue({ vision: true, tools: true, maxContextTokens: 200_000 }),
+  };
+});
 
 vi.mock("@/lib/skills", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/lib/skills")>();
