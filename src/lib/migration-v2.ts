@@ -27,7 +27,8 @@ export async function migrateV1toV2(): Promise<void> {
     let plain: string;
     try {
       plain = await decrypt(old.encryptedKey, key);
-    } catch {
+    } catch (e) {
+      console.warn(`[migration-v2] decrypt failed for provider_${p.id}, skipping`, e);
       // unable to decrypt — skip silently (corrupt data); user will reconfigure
       removes.push(`provider_${p.id}`);
       continue;
