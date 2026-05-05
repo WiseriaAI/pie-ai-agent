@@ -37,6 +37,59 @@ describe("Gemini wire converter", () => {
     expect(wire.find((c) => c.role === "system")).toBeUndefined();
     expect(wire).toContainEqual({ role: "user", parts: [{ text: "hi" }] });
   });
+
+  it("assistant tool_use → functionCall part with id, name, args", () => {
+    const msgs: AgentMessage[] = [
+      {
+        role: "assistant",
+        content: [
+          { type: "tool_use", id: "call_xyz", name: "read_page", input: { url: "https://example.com" } },
+        ],
+      },
+    ];
+    const wire = _toGeminiContentsForTest(msgs);
+    expect(wire).toEqual([
+      { role: "model", parts: [{ functionCall: { name: "read_page", args: { url: "https://example.com" } } }] },
+    ]);
+  });
+
+  it("tool_result → role:'function' content with functionResponse.name resolved from prior tool_use", () => {
+    const msgs: AgentMessage[] = [
+      {
+        role: "assistant",
+        content: [
+          { type: "tool_use", id: "call_42", name: "search_tabs", input: { q: "github" } },
+        ],
+      },
+      {
+        role: "user",
+        content: [
+          { type: "tool_result", toolUseId: "call_42", content: '{"matches":3}' },
+        ],
+      },
+    ];
+    const wire = _toGeminiContentsForTest(msgs);
+    // assistant becomes role:"model" + functionCall part (covered by previous test)
+    // tool_result becomes role:"function" with name="search_tabs" (the function name, NOT the call id)
+    expect(wire).toContainEqual({
+      role: "function",
+      parts: [{ functionResponse: { name: "search_tabs", response: { content: '{"matches":3}' } } }],
+    });
+  });
+
+  it("orphan tool_result (no matching tool_use in history) falls back to using toolUseId as name", () => {
+    const msgs: AgentMessage[] = [
+      {
+        role: "user",
+        content: [{ type: "tool_result", toolUseId: "orphan_id", content: "ok" }],
+      },
+    ];
+    const wire = _toGeminiContentsForTest(msgs);
+    expect(wire).toContainEqual({
+      role: "function",
+      parts: [{ functionResponse: { name: "orphan_id", response: { content: "ok" } } }],
+    });
+  });
 });
 
 describe("Gemini streamChat", () => {

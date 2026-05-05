@@ -14,6 +14,15 @@ interface GeminiContent {
 }
 
 function toGeminiContents(messages: AgentMessage[]): GeminiContent[] {
+  // First pass: build id → name from all assistant tool_use blocks
+  const idToName = new Map<string, string>();
+  for (const msg of messages) {
+    if (msg.role !== "assistant" || typeof msg.content === "string") continue;
+    for (const block of msg.content) {
+      if (block.type === "tool_use") idToName.set(block.id, block.name);
+    }
+  }
+
   const result: GeminiContent[] = [];
   for (const msg of messages) {
     if (msg.role === "system") continue; // hoisted to systemInstruction below
@@ -36,7 +45,7 @@ function toGeminiContents(messages: AgentMessage[]): GeminiContent[] {
         parts.push({ functionCall: { name: block.name, args } });
       } else if (block.type === "tool_result" && msg.role === "user") {
         // Gemini wants tool results in role:"function" content
-        result.push({ role: "function", parts: [{ functionResponse: { name: block.toolUseId, response: { content: block.content } } }] });
+        result.push({ role: "function", parts: [{ functionResponse: { name: idToName.get(block.toolUseId) ?? block.toolUseId, response: { content: block.content } } }] });
         continue;
       }
     }
