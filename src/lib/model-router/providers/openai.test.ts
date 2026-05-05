@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import { _toWireMessagesForTest } from "./openai";
-import { getProviderMeta } from "./registry";
 import type { AgentMessage } from "../types";
 
 describe("openai toWireMessages — image", () => {
@@ -50,10 +49,8 @@ describe("openai toWireMessages — image", () => {
   });
 });
 
-describe("openai supportsVision wiring", () => {
-  it("OpenRouter inherits openai-compatible dispatch", () => {
-    const meta = getProviderMeta("openrouter");
-    expect(meta?.type).toBe("openai-compatible");
-    expect(meta?.supportsVision).toBe(true);
-  });
-});
+// NOTE: The old "openai supportsVision wiring" describe block was checking
+// ProviderMeta.type and ProviderMeta.supportsVision, both removed in Task 1
+// (registry schema upgrade). The dispatch is now id-keyed via streamChatByProvider
+// in providers/index.ts; vision is per-model via getModelMeta. Those paths are
+// covered in registry.test.ts. Removed here to avoid false failures.

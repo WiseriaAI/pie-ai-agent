@@ -7,7 +7,7 @@ import {
   normalizeSkillSlashKey,
 } from "@/lib/skills";
 import { getActiveProvider, getProviderConfig } from "@/lib/storage";
-import { getProviderMeta } from "@/lib/model-router/providers/registry";
+import { getModelMeta } from "@/lib/model-router";
 import { resizePanel } from "@/lib/images/resize-panel";
 import type { ImageAttachment } from "@/lib/images";
 import type { UseSession } from "@/sidepanel/hooks/useSession";
@@ -429,8 +429,8 @@ export default function Chat({
     try {
       const config = await getProviderConfig(active);
       setHasConfig(!!config);
-      const meta = getProviderMeta(active);
-      setSupportsVision(meta?.supportsVision ?? false);
+      const modelMeta = config ? getModelMeta(active, config.model) : undefined;
+      setSupportsVision(modelMeta?.vision ?? false);
     } catch {
       setHasConfig(false);
       setSupportsVision(false);

@@ -76,12 +76,22 @@ function makeSession(overrides?: Partial<UseSession>): UseSession {
   } as unknown as UseSession;
 }
 
+// Default models per provider that have known capability flags in the registry.
+// These must match real entries in PROVIDER_REGISTRY so getModelMeta resolves.
+const PROVIDER_DEFAULT_MODELS: Record<string, string> = {
+  anthropic: "claude-opus-4-7",   // vision: true
+  openai: "gpt-4o",               // vision: true
+  minimax: "MiniMax-Text-01",     // vision: false
+  openrouter: "gpt-4o",           // not in registry → treated as no-vision (fallback)
+};
+
 // Configure the mocked storage so checkConfig() resolves with the given provider.
-function seedProvider(providerId: string) {
+function seedProvider(providerId: string, modelOverride?: string) {
+  const model = modelOverride ?? PROVIDER_DEFAULT_MODELS[providerId] ?? "test-model";
   vi.mocked(getActiveProvider).mockResolvedValue(providerId as import("@/lib/model-router").Provider);
   vi.mocked(getProviderConfig).mockResolvedValue({
     provider: providerId as import("@/lib/model-router").Provider,
-    model: "test-model",
+    model,
     apiKey: "sk-test",
   });
 }
