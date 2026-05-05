@@ -17,7 +17,11 @@ import type {
   ModelConfig,
 } from "@/lib/model-router";
 import { getActiveProvider, getProviderConfig } from "@/lib/storage";
-import { runAgentLoop, safeParseOrigin } from "@/lib/agent/loop";
+import {
+  runAgentLoop,
+  safeParseOrigin,
+  mergeSessionAgentSnapshot,
+} from "@/lib/agent/loop";
 import type { RoleViolation } from "@/lib/agent/history-validation";
 import { logHistoryRepaired } from "@/lib/agent/history-validation-telemetry";
 import { getEnabledSkills, resolveSkillToTools } from "@/lib/skills";
@@ -775,7 +779,10 @@ async function handleResumeRequest(
     resumedSkillScopeStack: agent.skillExecutionScopeStack,
     // Phase 5 — propagate prior hasImageContent flag across resume.
     resumedHasImageContent: agent.hasImageContent,
-    pinned,
+    // v1.5 multi-pin: replace single `pinned` with the full array.
+    // Resume path restores currentFocusTabId from persisted agent state.
+    pinnedTabs: meta.pinnedTabs ?? [],
+    initialFocusTabId: agent.currentFocusTabId ?? meta.pinnedTabs?.[0]?.tabId,
     // Phase 5 — per-task screenshot budget key.
     taskId: resumeTaskId,
     // M3-U4 (TOCTOU fix) — refresh per dispatch; see chat-start twin.
@@ -894,7 +901,20 @@ async function handleDiscardRequest(
  */
 function makeStepSnapshotHandler(sessionId: string) {
   return async (snapshot: import("@/lib/sessions/types").SessionAgentState) => {
-    await setSessionAgent(sessionId, snapshot);
+    // v1.5: merge with existing state so fields written between snapshots
+    // (e.g., currentFocusTabId via setCurrentFocusTabId, pendingConfirm via
+    // setPendingConfirm) are preserved across the per-step boundary. The
+    // snapshot helper only carries history/stepIndex/skillStack/hasImageContent;
+    // any field the loop writes via a separate writer must survive the
+    // setSessionAgent full-key REPLACE that powers the snapshot path.
+    //
+    // Side effect: pendingConfirm now stays in storage even if a snapshot
+    // lands AFTER setPendingConfirm. Previous behavior was correct only by
+    // luck (the loop is suspended during user-confirm wait so no snapshot
+    // fired); the merge makes the invariant explicit.
+    const existing = await getSessionAgent(sessionId);
+    const merged = mergeSessionAgentSnapshot(existing, snapshot);
+    await setSessionAgent(sessionId, merged);
     if (snapshot.stepIndex % 5 === 0) {
       updateLastAccessed(sessionId).catch((e) => {
         console.warn(
@@ -1280,7 +1300,11 @@ async function handleChatStream(
       // (see makeStepSnapshotHandler). Errors caught + logged inside
       // runAgentLoop; this wrapper only does the storage calls.
       onStepSnapshot: makeStepSnapshotHandler(sessionId),
-      pinned,
+      // v1.5 multi-pin: replace single `pinned` with the full array.
+      // synthMeta is post-upgradeAutoToTaskAtChatStart (fetched after the
+      // upgrade at line 1035), so pinnedTabs[] reflects the upgraded state.
+      pinnedTabs: sessionMeta?.pinnedTabs ?? [],
+      initialFocusTabId: sessionMeta?.pinnedTabs?.[0]?.tabId,
       // Phase 5 — per-task screenshot budget key.
       taskId: chatTaskId,
       // M3-U4 (TOCTOU fix) — refresh the cross-session pinned-tab

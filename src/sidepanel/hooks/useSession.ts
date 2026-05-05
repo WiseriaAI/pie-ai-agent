@@ -808,7 +808,7 @@ export function useSession(): UseSession {
       // path untouched.
       //
       // First-task ordering note: SW's handleChatStream may read meta
-      // BEFORE the pin patch lands → ctx.pinned is undefined → the
+      // BEFORE the pin patch lands → ctx.pinnedTabs is empty → the
       // loop falls back to chrome.tabs.query active-tab. That fallback
       // returns the same tab the user just sent from (no tab switch in
       // the microsecond gap), so the first task pins to the right tab

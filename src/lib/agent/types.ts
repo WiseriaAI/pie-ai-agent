@@ -55,6 +55,35 @@ export interface ToolHandlerContext {
    * disappears).
    */
   pinMode?: "auto" | "task" | "user";
+  /**
+   * v1.5 — full pinnedTabs array carried into the handler. focus_tab uses
+   * this to validate target tabId; close_tabs K-9 (Task 9) checks intersection;
+   * open_url (Task 7) pushes new entries via the writer below.
+   */
+  pinnedTabs?: ReadonlyArray<{ tabId: number; origin: string }>;
+  /**
+   * v1.5 — write-side hook for tools that mutate pinnedTabs (open_url).
+   * Loop installs this; tools that don't write the array (most) ignore it.
+   * Tests pass undefined and the tools handle it gracefully.
+   *
+   * NOTE: Task 7 (open_url) may want to batch writes rather than issuing
+   * a full setSessionMeta per pin append — acceptable for scaffold; optimize
+   * in Task 7 if needed.
+   *
+   * WARNING: SessionMeta has TWO writers — SW (this writer +
+   * clearTaskPinAtSessionEnd) and panel (useSession.ts first-message pin
+   * patch around lines 805-840). The RMW pattern here is safe within a
+   * single SW step (sequential dispatch) but NOT cross-tier-safe. Task 7's
+   * open_url should NOT assume mutually-exclusive access to SessionMeta
+   * with the panel.
+   */
+  appendPinnedTab?: (pin: { tabId: number; origin: string }) => Promise<void>;
+  /**
+   * v1.5 — write-side hook for focus_tab (Task 6). Updates
+   * SessionAgentState.currentFocusTabId; the new focus takes effect on the
+   * NEXT iteration's snapshot.
+   */
+  setCurrentFocusTabId?: (tabId: number) => Promise<void>;
 }
 
 export interface Tool {

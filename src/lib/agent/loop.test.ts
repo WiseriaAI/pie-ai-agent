@@ -7,6 +7,8 @@ import {
   buildSessionAgentTombstone,
   collectCrossSessionConflicts,
   chatMessageToAgentMessage,
+  resolveFocusedPin,
+  mergeSessionAgentSnapshot,
 } from "./loop";
 import { synthesizeAgentTurnText } from "./synthesize-agent-turn";
 
@@ -868,5 +870,235 @@ describe("U2 — chatMessageToAgentMessage (D7 wrap invariants)", () => {
     expect((blocks[0] as { type: "text"; text: string }).text).toBe("[image released — no longer available]");
     expect((blocks[1] as { type: "text"; text: string }).text)
       .toMatch(/<untrusted_user_message>follow up<\/untrusted_user_message>/);
+  });
+});
+
+// ── v1.5 multi-pin focus-on-snapshot: resolveFocusedPin pure helper ──────────
+//
+// The full agent loop is too tightly coupled to Chrome APIs to mock
+// economically (see existing test-file rationale above). Instead, the
+// focus-resolution logic is extracted into the pure `resolveFocusedPin`
+// helper and tested here — matching the snapshot-helper pattern already
+// established by buildSessionAgentSnapshot.
+//
+// "snapshots the focused tab" is verified by asserting that the helper
+// returns the correct tab object; the loop passes the return value's tabId
+// to chrome.tabs.get and executeScript, so testing the pure selection is
+// the highest-value, lowest-cost coverage we can get without spinning up
+// the whole loop.
+
+describe("v1.5 multi-pin — resolveFocusedPin", () => {
+  it("returns undefined when pinnedTabs is undefined", () => {
+    expect(resolveFocusedPin(undefined, undefined)).toBeUndefined();
+  });
+
+  it("returns undefined when pinnedTabs is empty", () => {
+    expect(resolveFocusedPin([], undefined)).toBeUndefined();
+    expect(resolveFocusedPin([], 12)).toBeUndefined();
+  });
+
+  it("returns pinnedTabs[0] (primary) when currentFocusTabId is undefined", () => {
+    const pins = [
+      { tabId: 12, origin: "https://a.com" },
+      { tabId: 13, origin: "https://b.com" },
+    ];
+    const result = resolveFocusedPin(pins, undefined);
+    expect(result).toEqual({ tabId: 12, origin: "https://a.com" });
+  });
+
+  it("returns the matching entry when currentFocusTabId points to a secondary pin", () => {
+    // Simulates: loop has pinnedTabs=[{12,a}, {13,b}] and agent state
+    // has currentFocusTabId=13 (set by a prior focus_tab call in Task 6).
+    const pins = [
+      { tabId: 12, origin: "https://a.com" },
+      { tabId: 13, origin: "https://b.com" },
+    ];
+    const result = resolveFocusedPin(pins, 13);
+    expect(result).toEqual({ tabId: 13, origin: "https://b.com" });
+  });
+
+  it("falls back to pinnedTabs[0] when currentFocusTabId does not match any entry (stale pointer)", () => {
+    // Focus pointer may become stale if a tab was closed between iterations.
+    // Graceful degradation: fall back to primary rather than crashing.
+    const pins = [
+      { tabId: 12, origin: "https://a.com" },
+      { tabId: 13, origin: "https://b.com" },
+    ];
+    const result = resolveFocusedPin(pins, 99);
+    expect(result).toEqual({ tabId: 12, origin: "https://a.com" });
+  });
+
+  it("returns the single entry for a single-pin session regardless of currentFocusTabId", () => {
+    const pins = [{ tabId: 12, origin: "https://a.com" }];
+    expect(resolveFocusedPin(pins, undefined)).toEqual({ tabId: 12, origin: "https://a.com" });
+    expect(resolveFocusedPin(pins, 12)).toEqual({ tabId: 12, origin: "https://a.com" });
+    expect(resolveFocusedPin(pins, 99)).toEqual({ tabId: 12, origin: "https://a.com" });
+  });
+
+  it("tombstone does NOT set currentFocusTabId (fresh task resets focus)", () => {
+    // Regression guard for buildSessionAgentTombstone: currentFocusTabId
+    // must be absent so fresh tasks start with pinnedTabs[0] as focus.
+    const tombstone = buildSessionAgentTombstone();
+    expect(tombstone.currentFocusTabId).toBeUndefined();
+    expect("currentFocusTabId" in tombstone).toBe(false);
+  });
+});
+
+// ── v1.5 multi-pin: mergeSessionAgentSnapshot critical-bug regression ────────
+//
+// makeStepSnapshotHandler does a full key REPLACE via setSessionAgent
+// (writeAtomic). buildSessionAgentSnapshot only carries the four fields
+// {agentMessages, stepIndex, skillExecutionScopeStack, hasImageContent},
+// so without merge logic, currentFocusTabId set by setCurrentFocusTabId
+// (and pendingConfirm set by setPendingConfirm) would be silently dropped
+// at every per-step boundary. mergeSessionAgentSnapshot is the merge that
+// makeStepSnapshotHandler now applies before writing.
+
+describe("v1.5 multi-pin — mergeSessionAgentSnapshot", () => {
+  const baseSnapshot = (
+    overrides: Partial<SessionAgentState> = {},
+  ): SessionAgentState => ({
+    agentMessages: [{ role: "user", content: "x" }],
+    stepIndex: 1,
+    skillExecutionScopeStack: [],
+    hasImageContent: false,
+    ...overrides,
+  });
+
+  it("returns snapshot when existing is null (first-write path)", () => {
+    const snap = baseSnapshot();
+    const result = mergeSessionAgentSnapshot(null, snap);
+    expect(result).toBe(snap);
+  });
+
+  it("preserves currentFocusTabId from existing when snapshot omits it (CRITICAL fix)", () => {
+    // The bug: focus_tab calls ctx.setCurrentFocusTabId(13) mid-step. The
+    // step-boundary snapshot would replace the whole agent key, dropping
+    // currentFocusTabId back to undefined. Next iteration's resolveFocusedPin
+    // silently falls back to pinnedTabs[0] — focus lost on every iteration.
+    const existing: SessionAgentState = {
+      agentMessages: [],
+      stepIndex: 0,
+      skillExecutionScopeStack: [],
+      hasImageContent: false,
+      currentFocusTabId: 13,
+    };
+    const snapshot = baseSnapshot({
+      agentMessages: [{ role: "user", content: "next" }],
+      stepIndex: 1,
+    });
+    const merged = mergeSessionAgentSnapshot(existing, snapshot);
+    expect(merged.currentFocusTabId).toBe(13);
+    // Snapshot fields still won.
+    expect(merged.stepIndex).toBe(1);
+    expect(merged.agentMessages).toHaveLength(1);
+  });
+
+  it("preserves pendingConfirm from existing when snapshot omits it", () => {
+    const existing: SessionAgentState = {
+      agentMessages: [{ role: "user", content: "prev" }],
+      stepIndex: 1,
+      skillExecutionScopeStack: [],
+      hasImageContent: false,
+      pendingConfirm: {
+        confirmationId: "c-1",
+        kind: "agent-tool",
+        payload: { tool: "click", args: {} },
+      },
+    };
+    const snapshot = baseSnapshot({ stepIndex: 2 });
+    const merged = mergeSessionAgentSnapshot(existing, snapshot);
+    expect(merged.pendingConfirm).toEqual(existing.pendingConfirm);
+    expect(merged.stepIndex).toBe(2);
+  });
+
+  it("snapshot fields override existing for the four core fields", () => {
+    const existing: SessionAgentState = {
+      agentMessages: [{ role: "user", content: "old" }],
+      stepIndex: 5,
+      skillExecutionScopeStack: [{ skillId: "old", allowedTools: null }],
+      hasImageContent: false,
+      currentFocusTabId: 13,
+    };
+    const snapshot = baseSnapshot({
+      agentMessages: [{ role: "user", content: "new" }],
+      stepIndex: 6,
+      skillExecutionScopeStack: [],
+      hasImageContent: true,
+    });
+    const merged = mergeSessionAgentSnapshot(existing, snapshot);
+    // Snapshot wins for the four it carries:
+    expect((merged.agentMessages[0] as { content: string }).content).toBe("new");
+    expect(merged.stepIndex).toBe(6);
+    expect(merged.skillExecutionScopeStack).toEqual([]);
+    expect(merged.hasImageContent).toBe(true);
+    // Carry-over still preserved:
+    expect(merged.currentFocusTabId).toBe(13);
+  });
+
+  it("tombstone signature (stepIndex 0 + empty agentMessages) clears carry-over fields", () => {
+    // A tombstone is "fresh task reset" — currentFocusTabId and pendingConfirm
+    // MUST be cleared so a subsequent task starts with fresh focus on
+    // pinnedTabs[0]. Detect the tombstone shape by structure (the
+    // unambiguous output of buildSessionAgentTombstone) and bypass the merge.
+    const existing: SessionAgentState = {
+      agentMessages: [{ role: "user", content: "prev" }],
+      stepIndex: 7,
+      skillExecutionScopeStack: [],
+      hasImageContent: false,
+      currentFocusTabId: 13,
+      pendingConfirm: {
+        confirmationId: "c-1",
+        kind: "agent-tool",
+        payload: {},
+      },
+    };
+    const tombstone = buildSessionAgentTombstone();
+    const merged = mergeSessionAgentSnapshot(existing, tombstone);
+    // Tombstone wins fully — no carry-over.
+    expect(merged.currentFocusTabId).toBeUndefined();
+    expect(merged.pendingConfirm).toBeUndefined();
+    expect(merged.stepIndex).toBe(0);
+    expect(merged.agentMessages).toEqual([]);
+  });
+
+  it("tombstone with lastTaskSynth payload (folded by builder) still clears carry-over", () => {
+    // buildSessionAgentTombstone(synth) folds lastTaskSynth into the
+    // tombstone payload. The merge must still detect it as a tombstone
+    // (stepIndex 0 + empty agentMessages) and bypass the merge so
+    // currentFocusTabId from existing is dropped.
+    const existing: SessionAgentState = {
+      agentMessages: [{ role: "user", content: "prev" }],
+      stepIndex: 5,
+      skillExecutionScopeStack: [],
+      hasImageContent: false,
+      currentFocusTabId: 13,
+    };
+    const tombstone = buildSessionAgentTombstone("synthesized turn");
+    const merged = mergeSessionAgentSnapshot(existing, tombstone);
+    expect(merged.currentFocusTabId).toBeUndefined();
+    expect(merged.lastTaskSynth).toBe("synthesized turn");
+    expect(merged.stepIndex).toBe(0);
+  });
+
+  it("does NOT treat a live snapshot at stepIndex 0 with non-empty messages as tombstone", () => {
+    // Defensive: a hypothetical edge case where stepIndex=0 but agentMessages
+    // is non-empty (shouldn't happen per buildSessionAgentSnapshot, but test
+    // it for safety). The tombstone signature is the AND of both conditions.
+    const existing: SessionAgentState = {
+      agentMessages: [],
+      stepIndex: 0,
+      skillExecutionScopeStack: [],
+      hasImageContent: false,
+      currentFocusTabId: 13,
+    };
+    const odd: SessionAgentState = {
+      agentMessages: [{ role: "user", content: "x" }],
+      stepIndex: 0,
+      skillExecutionScopeStack: [],
+      hasImageContent: false,
+    };
+    const merged = mergeSessionAgentSnapshot(existing, odd);
+    expect(merged.currentFocusTabId).toBe(13);
   });
 });
