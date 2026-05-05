@@ -7,7 +7,8 @@ import type { Attachment } from "@/lib/images";
 
 export type { StreamEvent, AgentMessage, ContentBlock, TextBlock, ToolUseBlock, ToolResultBlock, ImageBlock, ToolDefinition } from "./types";
 export { PROVIDER_REGISTRY, getProviderMeta } from "./providers/registry";
-export type { ProviderMeta } from "./providers/registry";
+export type { ProviderMeta, ModelMeta } from "./providers/registry";
+export { getModelMeta } from "./providers/registry";
 
 export type Provider =
   | "anthropic"
@@ -16,8 +17,7 @@ export type Provider =
   | "minimax"
   | "zhipu"
   | "bailian"
-  | "google"
-  | "ollama";
+  | "gemini";
 
 export interface ModelConfig {
   provider: Provider;
