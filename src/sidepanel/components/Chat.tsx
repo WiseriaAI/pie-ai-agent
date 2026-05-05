@@ -742,6 +742,7 @@ export default function Chat({
                       resolved={msg.resolved}
                       metaSkillPreview={msg.metaSkillPreview}
                       screenshotPreview={msg.screenshotPreview}
+                      openUrlPreview={msg.openUrlPreview}
                       onApprove={() =>
                         resolveConfirm(msg.confirmationId, true)
                       }

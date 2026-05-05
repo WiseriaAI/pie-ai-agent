@@ -486,6 +486,15 @@ function SkillRow({
 
       <p className="text-[12px] leading-[18px] text-fg-2">{skill.description}</p>
 
+      {(skill.allowedTools ?? []).includes("open_url") && (
+        <span
+          className="self-start rounded border border-warning-line bg-warning-tint px-1.5 py-0.5 text-[10px] text-warning"
+          title="Each open_url call requires user approval"
+        >
+          Per-call approval
+        </span>
+      )}
+
       {awaitingFirstRun && (
         <div className="flex items-start gap-2 rounded border border-accent-line bg-accent-tint px-2.5 py-1.5">
           <svg

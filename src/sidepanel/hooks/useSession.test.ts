@@ -469,6 +469,48 @@ describe("useSession — R4 confirm card recovery (M1-U4)", () => {
       }),
     ]);
   });
+
+  it("threads openUrlPreview from agent-confirm-request to the agent-confirm DisplayMessage (v1.5)", async () => {
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    const port = chromeMock.runtime.__ports[0]!;
+
+    // SW pushes agent-confirm-request for open_url with pre-parsed URL extras.
+    // The wire payload's openUrlPreview must survive the wire → DisplayMessage
+    // hop so AgentConfirmCard can render the URL/host/active-flag without
+    // re-parsing (regression guard: same pattern as screenshotPreview Phase 5).
+    act(() =>
+      emitWithSession(port, {
+        type: "agent-confirm-request",
+        confirmationId: "c-open-url",
+        tool: "open_url",
+        args: { url: "https://example.com/", active: false },
+        resolvedElement: { text: "", tag: "" },
+        riskReason: "Opens a new browser tab (always requires approval)",
+        openUrlPreview: {
+          url: "https://example.com/",
+          host: "example.com",
+          origin: "https://example.com",
+          active: false,
+        },
+      } as never, result.current.sessionId!),
+    );
+
+    expect(result.current.messages).toEqual([
+      expect.objectContaining({
+        role: "agent-confirm",
+        confirmationId: "c-open-url",
+        tool: "open_url",
+        openUrlPreview: expect.objectContaining({
+          url: "https://example.com/",
+          host: "example.com",
+          origin: "https://example.com",
+          active: false,
+        }),
+      }),
+    ]);
+  });
 });
 
 describe("useSession — resolveConfirm", () => {

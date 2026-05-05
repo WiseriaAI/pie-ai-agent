@@ -72,7 +72,7 @@ import {
 } from "@/lib/agent/tools/screenshot";
 import { makeCdpAdapterForScreenshot } from "./cdp-adapter";
 import { makeResolveEffectivePinned } from "./effective-pinned";
-import type { ScreenshotConfirmExtras } from "@/types";
+import type { ScreenshotConfirmExtras, OpenUrlConfirmExtras } from "@/types";
 import type { ImageAttachment } from "@/lib/images";
 
 // Phase 5 follow-up — shared resolver for the screenshot first-task pin race
@@ -669,6 +669,29 @@ async function handleResumeRequest(
       }
     }
 
+    // v1.5 — pre-parse URL for open_url confirm card (K-1 informed-approval).
+    // URL.host returns punycode for IDN — defense against homograph attacks.
+    // Small text: safe to persist in storage (unlike screenshotPreview bytes).
+    let openUrlPreview: OpenUrlConfirmExtras | undefined;
+    if (payload.tool === "open_url") {
+      const args = payload.args as { url?: string; active?: boolean };
+      let host = "(invalid)";
+      let origin = "(invalid)";
+      try {
+        const u = new URL(args.url ?? "");
+        host = u.host;
+        origin = u.origin;
+      } catch {
+        // Shouldn't happen — handler validates upstream; defensive fallback.
+      }
+      openUrlPreview = {
+        url: args.url ?? "",
+        host,
+        origin,
+        active: args.active === true,
+      };
+    }
+
     try {
       await setPendingConfirm(sessionId, {
         confirmationId,
@@ -687,6 +710,8 @@ async function handleResumeRequest(
             : {}),
           // screenshotPreview intentionally omitted from storage — bytes must
           // not reach chrome.storage (8 MB quota). Panel renders from wire only.
+          // openUrlPreview is small text — safe to persist for R4 re-emit.
+          ...(openUrlPreview ? { openUrlPreview } : {}),
         },
       });
     } catch (e) {
@@ -733,6 +758,7 @@ async function handleResumeRequest(
           confirmationId,
           ...payload,
           ...(screenshotPreview ? { screenshotPreview } : {}),
+          ...(openUrlPreview ? { openUrlPreview } : {}),
           sessionId,
         } satisfies AgentConfirmRequestMessage);
       });
@@ -1206,6 +1232,29 @@ async function handleChatStream(
         }
       }
 
+      // v1.5 — pre-parse URL for open_url confirm card (K-1 informed-approval).
+      // URL.host returns punycode for IDN — defense against homograph attacks.
+      // Small text: safe to persist in storage (unlike screenshotPreview bytes).
+      let openUrlPreview: OpenUrlConfirmExtras | undefined;
+      if (payload.tool === "open_url") {
+        const args = payload.args as { url?: string; active?: boolean };
+        let host = "(invalid)";
+        let origin = "(invalid)";
+        try {
+          const u = new URL(args.url ?? "");
+          host = u.host;
+          origin = u.origin;
+        } catch {
+          // Shouldn't happen — handler validates upstream; defensive fallback.
+        }
+        openUrlPreview = {
+          url: args.url ?? "",
+          host,
+          origin,
+          active: args.active === true,
+        };
+      }
+
       try {
         await setPendingConfirm(sessionId, {
           confirmationId,
@@ -1224,6 +1273,8 @@ async function handleChatStream(
               : {}),
             // screenshotPreview intentionally omitted from storage — bytes must
             // not reach chrome.storage (8 MB quota). Panel renders from wire only.
+            // openUrlPreview is small text — safe to persist for R4 re-emit.
+            ...(openUrlPreview ? { openUrlPreview } : {}),
           },
         });
       } catch (e) {
@@ -1268,6 +1319,7 @@ async function handleChatStream(
             confirmationId,
             ...payload,
             ...(screenshotPreview ? { screenshotPreview } : {}),
+            ...(openUrlPreview ? { openUrlPreview } : {}),
             sessionId,
           } satisfies AgentConfirmRequestMessage);
         });

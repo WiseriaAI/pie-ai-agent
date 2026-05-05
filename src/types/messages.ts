@@ -124,6 +124,10 @@ export type DisplayMessage =
        *  AgentConfirmCard can render the EXACT image the LLM will receive
        *  (K-1 informed-approval). NEVER persisted (~MB-class bytes). */
       screenshotPreview?: ScreenshotConfirmExtras;
+      /** v1.5 — for open_url confirm cards. Persisted in session storage
+       *  (small text — safe unlike screenshotPreview bytes). Re-emitted on
+       *  R4 panel re-mount via the stored pendingConfirm payload. */
+      openUrlPreview?: OpenUrlConfirmExtras;
     }
   | {
       role: "agent-summary";
@@ -183,6 +187,23 @@ export interface TabTarget {
    *  time tabTargets was built. The card renders this row as "(closed)" but
    *  the handler will skip it during dispatch. */
   stale?: boolean;
+}
+
+/**
+ * v1.5 — for open_url confirm cards. The SW parses the URL upstream so the
+ * card can render host (URL.host, already punycode for IDN) + active flag
+ * without re-parsing. The raw URL is also passed through so the card can
+ * display the full address (folded for ≥1024 chars).
+ */
+export interface OpenUrlConfirmExtras {
+  /** Raw URL the agent requested (validated http/https upstream by the tool). */
+  url: string;
+  /** URL.host (returns punycode form for IDN — defense against homograph attacks). */
+  host: string;
+  /** URL.origin (scheme://host[:port]). */
+  origin: string;
+  /** When true, the new tab steals the user's current focus. */
+  active: boolean;
 }
 
 /**
@@ -276,6 +297,10 @@ export interface AgentConfirmRequestMessage {
    *  (K-1 informed-approval). Absent when pre-capture failed or is not
    *  applicable to the tool. */
   screenshotPreview?: ScreenshotConfirmExtras;
+  /** v1.5 — for open_url confirm cards (URL allowlist, host/origin display,
+   *  active flag badge). The SW pre-parses the URL so the card has stable
+   *  values without re-parsing client-side. */
+  openUrlPreview?: OpenUrlConfirmExtras;
   /** M2-U2 — session routing. See ChatChunkMessage.sessionId. */
   sessionId: string;
 }

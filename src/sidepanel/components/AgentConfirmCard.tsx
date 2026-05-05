@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { ResolvedElement, TabTarget, TabContentPreview, ScreenshotConfirmExtras } from "@/types";
+import type { ResolvedElement, TabTarget, TabContentPreview, ScreenshotConfirmExtras, OpenUrlConfirmExtras } from "@/types";
 import type { SkillDefinition } from "@/lib/skills";
 
 interface AgentConfirmCardProps {
@@ -17,6 +17,7 @@ interface AgentConfirmCardProps {
   tabTargets?: TabTarget[];
   contentPreview?: TabContentPreview;
   screenshotPreview?: ScreenshotConfirmExtras;
+  openUrlPreview?: OpenUrlConfirmExtras;
 }
 
 function redactArgsForDisplay(tool: string, args: unknown, riskReason: string): unknown {
@@ -160,6 +161,50 @@ function TabContentPreviewDetails({ preview }: { preview: TabContentPreview }) {
   );
 }
 
+const OPEN_URL_FOLD_THRESHOLD = 1024;
+
+function OpenUrlConfirmContent({ preview }: { preview: OpenUrlConfirmExtras }) {
+  const [expanded, setExpanded] = useState(false);
+  const long = preview.url.length >= OPEN_URL_FOLD_THRESHOLD;
+  return (
+    <div
+      role="region"
+      aria-label="Open URL preview"
+      className="flex flex-col gap-2 rounded border border-line bg-field p-2.5"
+    >
+      <div className="text-[12px] text-fg-2">Open new tab at:</div>
+      <div className="font-mono text-[11px] break-all text-fg-1">
+        {long && !expanded ? (
+          <>
+            {preview.url.slice(0, 256)}{"…"}
+            <button
+              type="button"
+              onClick={() => setExpanded(true)}
+              className="ml-2 text-accent underline"
+            >
+              show full URL
+            </button>
+          </>
+        ) : (
+          preview.url
+        )}
+      </div>
+      <div className="flex items-center gap-2 text-[11px] text-fg-3">
+        <span className="font-mono">{preview.host}</span>
+        {preview.active ? (
+          <span className="rounded border border-warning-line bg-warning-tint px-1.5 py-0.5 text-warning font-medium">
+            WILL STEAL FOCUS
+          </span>
+        ) : (
+          <span className="rounded border border-line bg-field px-1.5 py-0.5 text-fg-3">
+            loads in background
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function safeStringifyForPanel(value: unknown): string {
   try {
     return JSON.stringify(value, null, 2) ?? "null";
@@ -281,11 +326,13 @@ function describeAction(
   tool: string,
   resolvedElement: ResolvedElement | undefined,
   tabTargets: TabTarget[] | undefined,
+  openUrlPreview?: OpenUrlConfirmExtras,
 ): string {
   if (tabTargets && tabTargets.length > 0) {
     const live = tabTargets.filter((t) => !t.stale);
     return `${live.length} tab${live.length === 1 ? "" : "s"}`;
   }
+  if (tool === "open_url" && openUrlPreview) return openUrlPreview.host;
   if (tool === "create_skill") return "create new skill";
   if (tool === "update_skill") return "update existing skill";
   if (resolvedElement) {
@@ -309,6 +356,7 @@ export default function AgentConfirmCard({
   tabTargets,
   contentPreview,
   screenshotPreview,
+  openUrlPreview,
 }: AgentConfirmCardProps) {
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === "Enter") {
@@ -319,7 +367,7 @@ export default function AgentConfirmCard({
   const isMeta = isSkillMetaTool(tool);
   const hasTabTargets = !!tabTargets && tabTargets.length > 0;
   const headingId = `agent-confirm-heading-${tool}`;
-  const actionSummary = describeAction(tool, resolvedElement, tabTargets);
+  const actionSummary = describeAction(tool, resolvedElement, tabTargets, openUrlPreview);
 
   return (
     <div
@@ -424,6 +472,10 @@ export default function AgentConfirmCard({
           {hasTabTargets ? <TabTargetsList tabs={tabTargets!} /> : null}
 
           {contentPreview ? <TabContentPreviewDetails preview={contentPreview} /> : null}
+
+          {tool === "open_url" && openUrlPreview ? (
+            <OpenUrlConfirmContent preview={openUrlPreview} />
+          ) : null}
 
           {!hasTabTargets ? (
             <>

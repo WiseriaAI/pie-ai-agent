@@ -421,6 +421,7 @@ export function useSession(): UseSession {
           riskReason,
           metaSkillPreview,
           screenshotPreview,
+          openUrlPreview,
         } = message;
         setMessages((prev) => {
           // Idempotent — if the same confirmationId is already in
@@ -444,6 +445,10 @@ export function useSession(): UseSession {
               // Phase 5 — pre-captured thumbnail bytes for screenshot tools.
               // Wire-only; never persisted (would blow 8 MB chrome.storage quota).
               ...(screenshotPreview ? { screenshotPreview } : {}),
+              // v1.5 — open_url confirm extras (URL, host, origin, active flag).
+              // Small text; safe to include — omitted here by conditional so
+              // the DisplayMessage stays minimal for non-open_url tools.
+              ...(openUrlPreview ? { openUrlPreview } : {}),
               resolved: undefined,
             },
           ];
