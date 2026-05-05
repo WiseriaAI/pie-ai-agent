@@ -26,6 +26,22 @@
 import type { CapturedActionPayload } from "./types";
 
 export function installCaptureListener(): () => void {
+  // Idempotent install: if a previous capture is already attached to this
+  // page, don't double-attach. The orchestrator (Unit 5) re-injects after
+  // hard navigation; in some race conditions (e.g. SW restart while page
+  // navigates) the same install function could be called twice. Without
+  // this guard, every user event would be sent to the SW twice.
+  type WindowWithRecordingFlag = Window & { __pieRecordingInstalled?: boolean };
+  const w = window as WindowWithRecordingFlag;
+  if (w.__pieRecordingInstalled) {
+    return () => {
+      // Caller already has a previous uninstall reference; second-install
+      // returns a no-op so the caller doesn't accidentally clear the flag
+      // mid-recording.
+    };
+  }
+  w.__pieRecordingInstalled = true;
+
   // ── inline helpers (capture context — no outer imports) ──
 
   function getRegion(el: Element): string {
@@ -274,5 +290,6 @@ export function installCaptureListener(): () => void {
     document.removeEventListener("click", onClick, true);
     document.removeEventListener("change", onChange, true);
     document.removeEventListener("submit", onSubmit, true);
+    w.__pieRecordingInstalled = false;
   };
 }

@@ -9,6 +9,7 @@
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { installCaptureListener } from "./capture";
+import { detectSensitive } from "./redact";
 import type { CapturedActionPayload } from "./types";
 
 declare global {
@@ -24,6 +25,8 @@ describe("capture.installCaptureListener", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
     captured = [];
+    // Reset idempotent install flag so each test starts clean.
+    (window as Window & { __pieRecordingInstalled?: boolean }).__pieRecordingInstalled = false;
     window.chrome = {
       runtime: {
         sendMessage: vi.fn((msg: unknown) => {
@@ -180,7 +183,42 @@ describe("capture.installCaptureListener", () => {
       expect(captureLabel).toBe(ref.label);
       expect(captureHint).toBe(ref.selectorHint);
       expect(Boolean(captureUnstable)).toBe(ref.unstable);
+
+      // I1: assert redact parity vs Unit 1's canonical detectSensitive.
+      // capture.ts duplicates the redact logic for self-containment; without
+      // this, a future widening of redact.ts could drift unnoticed.
+      const inputEl = el as HTMLInputElement;
+      // Resolve associated <label for=id> text the same way capture.ts does.
+      let labelText = "";
+      if (inputEl.id) {
+        const lbl = document.querySelector<HTMLLabelElement>(`label[for="${inputEl.id}"]`);
+        if (lbl?.textContent) labelText = lbl.textContent;
+      }
+      const refRedact = detectSensitive({
+        type: inputEl.type,
+        autocomplete: inputEl.autocomplete,
+        ariaLabel: el.getAttribute("aria-label") ?? undefined,
+        name: inputEl.name || undefined,
+        placeholder: inputEl.placeholder || undefined,
+        labelText: labelText || undefined,
+      });
+      expect(Boolean(captured[idx]!.payload.redacted)).toBe(refRedact.redacted);
+      expect(captured[idx]!.payload.placeholderName).toBe(refRedact.placeholderName);
     });
     uninstall();
+  });
+
+  it("idempotent install: a second installCaptureListener() does not double-attach listeners", () => {
+    document.body.innerHTML = `<main><button>X</button></main>`;
+    const uninstall1 = installCaptureListener();
+    const uninstall2 = installCaptureListener(); // second install
+    document.querySelector("button")!.click();
+    expect(captured).toHaveLength(1); // would be 2 if double-attached
+    uninstall2(); // no-op uninstall returned by second call
+    document.querySelector("button")!.click();
+    expect(captured).toHaveLength(2); // still receiving (first install still alive)
+    uninstall1(); // tears down for real
+    document.querySelector("button")!.click();
+    expect(captured).toHaveLength(2); // no further capture
   });
 });
