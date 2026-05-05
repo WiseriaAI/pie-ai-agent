@@ -17,9 +17,17 @@ export default function InstancesList(props: Props) {
         const isOpen = props.expandedId === inst.id;
         return (
           <div key={inst.id} className="bg-surface">
-            <button
+            <div
+              role="button"
+              tabIndex={0}
               onClick={() => props.onToggleExpand(inst.id)}
-              className="flex w-full items-center gap-3 px-3.5 py-3 text-left hover:bg-field"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  props.onToggleExpand(inst.id);
+                }
+              }}
+              className="flex w-full cursor-pointer items-center gap-3 px-3.5 py-3 text-left hover:bg-field focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
             >
               <div className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${isActive ? "bg-accent" : "bg-fg-3"}`} />
               <div className="min-w-0 flex-1">
@@ -41,7 +49,7 @@ export default function InstancesList(props: Props) {
                   Activate
                 </button>
               )}
-            </button>
+            </div>
             {isOpen && <div className="border-t border-line bg-canvas">{props.renderForm(inst.id)}</div>}
           </div>
         );
