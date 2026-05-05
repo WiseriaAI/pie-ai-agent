@@ -198,3 +198,24 @@ export const ALL_KNOWN_NON_SKILL_TOOL_NAMES: ReadonlySet<string> = new Set<strin
   ...TAB_TOOL_NAMES,
   ...SCREENSHOT_TOOL_NAMES,
 ]);
+
+/**
+ * Superset of ALL_KNOWN_NON_SKILL_TOOL_NAMES that ALSO includes skill meta tool
+ * names. Used **only** by the BUILT_IN_SKILLS import-time assertion in
+ * `lib/skills/builtin.ts` — built-in skills are vetted at ship time and may
+ * legitimately reference meta tools (e.g. the `create_skill_from_recording`
+ * built-in needs `create_skill` in allowedTools so the LLM can persist a skill
+ * derived from the user's recorded trace).
+ *
+ * **DO NOT use this for user/agent skill validation** — `skill-meta.ts`'s
+ * `validateSkillContent` continues to use `ALL_KNOWN_NON_SKILL_TOOL_NAMES`
+ * to prevent agent-authored skills from chaining into create_skill etc.
+ * (the original confirm-fatigue privilege-chain defense).
+ */
+export const ALL_KNOWN_BUILT_IN_ALLOWED_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
+  ...PHASE_2_TOOL_NAMES,
+  ...KNOWN_KEYBOARD_TOOL_NAMES,
+  ...TAB_TOOL_NAMES,
+  ...SCREENSHOT_TOOL_NAMES,
+  ...SKILL_META_TOOL_NAMES_FOR_REGISTRY,
+]);

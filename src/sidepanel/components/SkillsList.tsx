@@ -301,6 +301,23 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
         onNew={openCreateForm}
       />
 
+      {/* Concept hint — Skill 与底层 tool 的区别。Phase 3+ 用户经常误以为
+          "为什么 click / type / open_url 这些没在列表里" — 它们是 LLM 的原子
+          工具，不是 reusable workflow（skill）。 */}
+      <div
+        style={{
+          padding: "8px 12px",
+          fontSize: 12,
+          color: "var(--c-fg-2, #888)",
+          background: "var(--c-bg-2, transparent)",
+          borderLeft: "2px solid var(--c-line, #ccc)",
+          lineHeight: 1.5,
+        }}
+      >
+        显示可复用工作流（skill）。底层工具（click / type / scroll / open_url /
+        capture_visible_tab 等）由 LLM 在执行 skill 时自动选用，不在此列表。
+      </div>
+
       {showForm && (
         <SkillForm
           form={form}
