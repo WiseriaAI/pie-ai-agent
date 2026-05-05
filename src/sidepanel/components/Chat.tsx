@@ -1254,7 +1254,7 @@ function Composer({
   recordingDisabled?: boolean;
 }) {
   return (
-    <div className="flex flex-shrink-0 flex-col gap-2 border-t border-line bg-canvas px-4 pb-4 pt-3">
+    <div className="flex flex-shrink-0 flex-col gap-2 border-t border-line bg-canvas px-4 pb-4 pt-4">
       <div className="relative">
         {popoverOpen && slashState && (
           <SkillSlashPopover
@@ -1271,9 +1271,9 @@ function Composer({
             onChange={(e) => onChange(e.target.value)}
             onKeyDown={onKeyDown}
             placeholder="Tell the agent what to do, or type / for skills…"
-            rows={1}
+            rows={3}
             disabled={streaming}
-            className="flex-1 resize-none bg-transparent text-[13px] leading-5 text-fg-1 placeholder:text-fg-3 disabled:opacity-50"
+            className="min-h-[60px] flex-1 resize-none bg-transparent text-[13px] leading-5 text-fg-1 placeholder:text-fg-3 disabled:opacity-50"
             onPaste={(e) => {
               const items = e.clipboardData?.items;
               if (!items) return;
