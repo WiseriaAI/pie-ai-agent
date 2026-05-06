@@ -169,7 +169,13 @@ const tabs = {
 };
 
 const chromeMock = {
-  storage: { local },
+  storage: {
+    local,
+    onChanged: {
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+    },
+  },
   runtime,
   tabs,
 };

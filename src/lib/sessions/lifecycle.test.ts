@@ -30,7 +30,6 @@ import type { SessionAgentState } from "./types";
 const EMPTY_AGENT: SessionAgentState = {
   agentMessages: [],
   stepIndex: 0,
-  skillExecutionScopeStack: [],
   hasImageContent: false,
 };
 
@@ -168,7 +167,6 @@ describe("Scenario 4: archive releases meta + agent storage bytes", () => {
     const largeAgent: SessionAgentState = {
       agentMessages: [{ role: "user", content: "hello ".repeat(100) }],
       stepIndex: 5,
-      skillExecutionScopeStack: [],
       hasImageContent: false,
     };
     await chromeMock.storage.local.set({ [`session_${session.id}_agent`]: largeAgent });

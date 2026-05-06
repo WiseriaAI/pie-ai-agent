@@ -31,7 +31,6 @@ describe("detectAndMarkPaused — happy paths", () => {
     await setSessionAgent(meta.id, {
       agentMessages: [{ role: "user", content: "task" }],
       stepIndex: 3,
-      skillExecutionScopeStack: [],
       hasImageContent: false,
     });
 
@@ -48,7 +47,6 @@ describe("detectAndMarkPaused — happy paths", () => {
     await setSessionAgent(meta.id, {
       agentMessages: [{ role: "user", content: "task" }],
       stepIndex: 2,
-      skillExecutionScopeStack: [],
       hasImageContent: false,
     });
     await setPendingConfirm(meta.id, samplePending);
@@ -87,13 +85,11 @@ describe("detectAndMarkPaused — happy paths", () => {
     await setSessionAgent(a.id, {
       agentMessages: [{ role: "user", content: "task-a" }],
       stepIndex: 3,
-      skillExecutionScopeStack: [],
       hasImageContent: false,
     });
     await setSessionAgent(b.id, {
       agentMessages: [{ role: "user", content: "task-b" }],
       stepIndex: 5,
-      skillExecutionScopeStack: [],
       hasImageContent: false,
     });
     await setPendingConfirm(b.id, samplePending);
@@ -113,7 +109,6 @@ describe("detectAndMarkPaused — R14 image-bearing sessions", () => {
     await setSessionAgent(meta.id, {
       agentMessages: [{ role: "user", content: "task" }],
       stepIndex: 2,
-      skillExecutionScopeStack: [],
       hasImageContent: true, // R14 trigger
     });
 
@@ -129,7 +124,6 @@ describe("detectAndMarkPaused — R14 image-bearing sessions", () => {
     await setSessionAgent(meta.id, {
       agentMessages: [{ role: "user", content: "task" }],
       stepIndex: 3,
-      skillExecutionScopeStack: [],
       hasImageContent: false,
     });
 
@@ -145,7 +139,6 @@ describe("detectAndMarkPaused — R14 image-bearing sessions", () => {
     await setSessionAgent(meta.id, {
       agentMessages: [{ role: "user", content: "task" }],
       stepIndex: 5,
-      skillExecutionScopeStack: [],
       hasImageContent: true,
     });
     await setPendingConfirm(meta.id, samplePending);
@@ -165,7 +158,6 @@ describe("detectAndMarkPaused — recoveryGuard", () => {
     await setSessionAgent(meta.id, {
       agentMessages: [{ role: "user", content: "task" }],
       stepIndex: 2,
-      skillExecutionScopeStack: [],
       hasImageContent: false,
     });
 
@@ -193,7 +185,6 @@ describe("detectAndMarkPaused — recoveryGuard", () => {
     await setSessionAgent(meta.id, {
       agentMessages: [{ role: "user", content: "task" }],
       stepIndex: 2,
-      skillExecutionScopeStack: [],
       hasImageContent: false,
     });
 
@@ -217,7 +208,6 @@ describe("detectAndMarkPaused — recoveryGuard", () => {
     await setSessionAgent(meta.id, {
       agentMessages: [{ role: "user", content: "task" }],
       stepIndex: 2,
-      skillExecutionScopeStack: [],
       hasImageContent: false,
     });
 
@@ -255,7 +245,6 @@ describe("transitionPortInFlightSessionsToPaused — per-port subset", () => {
     await setSessionAgent(meta.id, {
       agentMessages: [{ role: "user", content: "task" }],
       stepIndex: 4,
-      skillExecutionScopeStack: [],
       hasImageContent: false,
     });
 
@@ -271,7 +260,6 @@ describe("transitionPortInFlightSessionsToPaused — per-port subset", () => {
     await setSessionAgent(meta.id, {
       agentMessages: [{ role: "user", content: "task" }],
       stepIndex: 2,
-      skillExecutionScopeStack: [],
       hasImageContent: false,
     });
     await setPendingConfirm(meta.id, samplePending);
@@ -304,13 +292,11 @@ describe("transitionPortInFlightSessionsToPaused — per-port subset", () => {
     await setSessionAgent(a1.id, {
       agentMessages: [{ role: "user", content: "a1" }],
       stepIndex: 3,
-      skillExecutionScopeStack: [],
       hasImageContent: false,
     });
     await setSessionAgent(b1.id, {
       agentMessages: [{ role: "user", content: "b1" }],
       stepIndex: 7,
-      skillExecutionScopeStack: [],
       hasImageContent: false,
     });
 
@@ -326,7 +312,6 @@ describe("transitionPortInFlightSessionsToPaused — per-port subset", () => {
     await setSessionAgent(real.id, {
       agentMessages: [{ role: "user", content: "task" }],
       stepIndex: 1,
-      skillExecutionScopeStack: [],
       hasImageContent: false,
     });
 
@@ -344,7 +329,6 @@ describe("transitionPortInFlightSessionsToPaused — per-port subset", () => {
     await setSessionAgent(meta.id, {
       agentMessages: [{ role: "user", content: "task" }],
       stepIndex: 2,
-      skillExecutionScopeStack: [],
       hasImageContent: false,
     });
 
@@ -359,7 +343,6 @@ describe("transitionPortInFlightSessionsToPaused — per-port subset", () => {
     await setSessionAgent(meta.id, {
       agentMessages: [{ role: "user", content: "task" }],
       stepIndex: 3,
-      skillExecutionScopeStack: [],
       hasImageContent: true, // R14 trigger
     });
 
@@ -375,7 +358,6 @@ describe("transitionPortInFlightSessionsToPaused — per-port subset", () => {
     await setSessionAgent(meta.id, {
       agentMessages: [{ role: "user", content: "task" }],
       stepIndex: 2,
-      skillExecutionScopeStack: [],
       hasImageContent: false,
     });
 

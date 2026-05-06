@@ -876,9 +876,6 @@ async function handleResumeRequest(
     onStepSnapshot: makeStepSnapshotHandler(sessionId),
     resumedAgentMessages: agent.agentMessages,
     resumedFromStep: agent.stepIndex,
-    // M2-U1: restore the skill-scope stack so R2/R3 enforcement picks
-    // up where it left off if the task was paused mid-skill.
-    resumedSkillScopeStack: agent.skillExecutionScopeStack,
     // Phase 5 — propagate prior hasImageContent flag across resume.
     resumedHasImageContent: agent.hasImageContent,
     // v1.5 multi-pin: replace single `pinned` with the full array.

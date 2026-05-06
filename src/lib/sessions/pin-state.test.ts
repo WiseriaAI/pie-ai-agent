@@ -22,7 +22,6 @@ const FRESH = (overrides: Partial<SessionMeta> = {}): SessionMeta => ({
 const AGENT = (stepIndex: number): SessionAgentState => ({
   agentMessages: [],
   stepIndex,
-  skillExecutionScopeStack: [],
   hasImageContent: false,
 });
 

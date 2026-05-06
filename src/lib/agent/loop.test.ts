@@ -39,7 +39,6 @@ describe("buildSessionAgentSnapshot", () => {
     expect(snap).toEqual({
       agentMessages: history,
       stepIndex: 1,
-      skillExecutionScopeStack: [],
       hasImageContent: false,
     });
   });
@@ -164,14 +163,6 @@ describe("buildSessionAgentSnapshot", () => {
     expect(toolUse.input.text).not.toContain("•");
   });
 
-  it("skillExecutionScopeStack is empty in M1 (M2-U1 will populate)", () => {
-    const history: AgentMessage[] = [
-      { role: "user", content: "task" },
-    ];
-    const snap = buildSessionAgentSnapshot(history, 1);
-    expect(snap.skillExecutionScopeStack).toEqual([]);
-  });
-
   it("M1-U3 v2 tombstone — empty history + stepIndex 0 + empty scope stack", () => {
     // Tombstone is the 'no in-flight task' marker written by emitDone.
     // M1-U5 cold-start reads stepIndex > 0 as the in-flight signal;
@@ -181,7 +172,6 @@ describe("buildSessionAgentSnapshot", () => {
     expect(tombstone).toEqual({
       agentMessages: [],
       stepIndex: 0,
-      skillExecutionScopeStack: [],
       hasImageContent: false,
     });
   });
@@ -194,7 +184,6 @@ describe("buildSessionAgentSnapshot", () => {
     const b = buildSessionAgentTombstone();
     expect(a).not.toBe(b);
     expect(a.agentMessages).not.toBe(b.agentMessages);
-    expect(a.skillExecutionScopeStack).not.toBe(b.skillExecutionScopeStack);
   });
 
   it("does NOT set pendingConfirm on the snapshot", () => {
@@ -211,51 +200,9 @@ describe("buildSessionAgentSnapshot", () => {
     expect("pendingConfirm" in snap).toBe(false);
   });
 
-  // M2-U1 — skillExecutionScopeStack passed through to snapshot
-  it("M2-U1 — skillExecutionScopeStack is passed through to snapshot", () => {
-    const history: AgentMessage[] = [{ role: "user", content: "task" }];
-    const stack: SessionAgentState["skillExecutionScopeStack"] = [
-      { skillId: "my_skill", allowedTools: ["click", "type"] },
-    ];
-    const snap = buildSessionAgentSnapshot(history, 3, stack);
-    expect(snap.skillExecutionScopeStack).toEqual(stack);
-    expect(snap.stepIndex).toBe(3);
-  });
-
-  it("M2-U1 — skillExecutionScopeStack defaults to [] when not passed (existing callers unaffected)", () => {
-    const history: AgentMessage[] = [{ role: "user", content: "task" }];
-    // Called with only 2 args — must still work (backward compat for
-    // the 9 existing tests above that call buildSessionAgentSnapshot with 2 args).
-    const snap = buildSessionAgentSnapshot(history, 1);
-    expect(snap.skillExecutionScopeStack).toEqual([]);
-  });
-
-  it("M2-U1 — skillExecutionScopeStack is deep-cloned (mutation of input does not leak)", () => {
-    const history: AgentMessage[] = [{ role: "user", content: "task" }];
-    const stack: SessionAgentState["skillExecutionScopeStack"] = [
-      { skillId: "skill_a", allowedTools: ["click"] },
-    ];
-    const snap = buildSessionAgentSnapshot(history, 1, stack);
-
-    // Mutate the original stack and its inner allowedTools array.
-    stack[0]!.skillId = "tampered";
-    (stack[0]!.allowedTools as string[]).push("type");
-    stack.push({ skillId: "extra", allowedTools: null });
-
-    // Snapshot must be unaffected.
-    expect(snap.skillExecutionScopeStack).toHaveLength(1);
-    expect(snap.skillExecutionScopeStack[0]!.skillId).toBe("skill_a");
-    expect(snap.skillExecutionScopeStack[0]!.allowedTools).toEqual(["click"]);
-  });
-
-  it("M2-U1 — tombstone still emits empty skillExecutionScopeStack", () => {
-    const tombstone = buildSessionAgentTombstone();
-    expect(tombstone.skillExecutionScopeStack).toEqual([]);
-  });
-
   // Phase 5 — hasImageContent round-trip tests (Task 11)
-  it("accepts hasImageContent as the 4th parameter and round-trips it", () => {
-    const snap = buildSessionAgentSnapshot([], 0, [], true);
+  it("accepts hasImageContent as the 3rd parameter and round-trips it", () => {
+    const snap = buildSessionAgentSnapshot([], 0, true);
     expect(snap.hasImageContent).toBe(true);
   });
   it("defaults hasImageContent to false when omitted", () => {
@@ -311,67 +258,6 @@ describe("M2-U2 P1-9 + Bug-fix-D — only user-reject counts toward K-10", () =>
     const r: ConfirmResult = { approved: false };
     expect(r.approved).toBe(false);
     expect(r.reason === "user-reject").toBe(false);
-  });
-});
-
-// ── M2-U1: multi-session stack isolation smoke test ──────────────────────────
-//
-// The goal is to ensure that two concurrent runAgentLoop invocations
-// each use their own independent skill-scope stack. Since runAgentLoop
-// is too tightly coupled to Chrome APIs to mock in unit tests, we
-// validate the isolation property at the only publicly-testable level:
-// by verifying that buildSessionAgentSnapshot carries the stack that
-// was passed to it, not some module-level shared state.
-//
-// This test acts as a regression guard: if someone moves
-// skillExecutionScopeStack to module scope, this test will still pass
-// (because buildSessionAgentSnapshot takes it as an argument), but the
-// pattern it guards against can be caught by E2E / session recovery
-// tests. The framing is intentional — see advisor note.
-
-describe("M2-U1 — concurrent snapshot calls are stack-isolated", () => {
-  it("two concurrent buildSessionAgentSnapshot calls carry independent stacks", () => {
-    const historyA: AgentMessage[] = [{ role: "user", content: "task A" }];
-    const historyB: AgentMessage[] = [{ role: "user", content: "task B" }];
-
-    const stackA: SessionAgentState["skillExecutionScopeStack"] = [
-      { skillId: "skill_x", allowedTools: ["click"] },
-    ];
-    const stackB: SessionAgentState["skillExecutionScopeStack"] = [];
-
-    const snapA = buildSessionAgentSnapshot(historyA, 5, stackA);
-    const snapB = buildSessionAgentSnapshot(historyB, 2, stackB);
-
-    // A has a scope entry; B is empty. They must not share state.
-    expect(snapA.skillExecutionScopeStack).toHaveLength(1);
-    expect(snapA.skillExecutionScopeStack[0]!.skillId).toBe("skill_x");
-    expect(snapB.skillExecutionScopeStack).toHaveLength(0);
-
-    // Mutating B's (empty) stack must not affect A.
-    snapB.skillExecutionScopeStack.push({ skillId: "injected", allowedTools: null });
-    expect(snapA.skillExecutionScopeStack).toHaveLength(1);
-  });
-
-  it("resume path — stack from snapshot can be fed back via ctx.resumedSkillScopeStack contract", () => {
-    // Simulate what handleResumeRequest does: read snapshot, pass its
-    // skillExecutionScopeStack as resumedSkillScopeStack to runAgentLoop.
-    // We can't call runAgentLoop here, but we verify the round-trip data
-    // shape is preserved end-to-end.
-    const originalStack: SessionAgentState["skillExecutionScopeStack"] = [
-      { skillId: "my_skill", allowedTools: ["click", "type"] },
-    ];
-    const snapshot = buildSessionAgentSnapshot(
-      [{ role: "user", content: "task" }],
-      7,
-      originalStack,
-    );
-
-    // Simulate the resume call: snapshot.skillExecutionScopeStack is what
-    // handleResumeRequest passes as ctx.resumedSkillScopeStack. It should
-    // carry the full stack.
-    const resumedStack = snapshot.skillExecutionScopeStack;
-    expect(resumedStack).toEqual(originalStack);
-    expect(resumedStack[0]!.allowedTools).toEqual(["click", "type"]);
   });
 });
 
@@ -530,15 +416,8 @@ describe("M3-U5 — multi-session invariant regression", () => {
       { role: "user", content: "task-B" },
     ];
 
-    const stackA: SessionAgentState["skillExecutionScopeStack"] = [
-      { skillId: "skill-A", allowedTools: ["click"] },
-    ];
-    const stackB: SessionAgentState["skillExecutionScopeStack"] = [
-      { skillId: "skill-B", allowedTools: ["type"] },
-    ];
-
-    const snapA = buildSessionAgentSnapshot(historyA, 1, stackA);
-    const snapB = buildSessionAgentSnapshot(historyB, 2, stackB);
+    const snapA = buildSessionAgentSnapshot(historyA, 1);
+    const snapB = buildSessionAgentSnapshot(historyB, 2);
 
     // Independent contents.
     expect(snapA.agentMessages[0]).toEqual({
@@ -549,14 +428,10 @@ describe("M3-U5 — multi-session invariant regression", () => {
       role: "user",
       content: "task-B",
     });
-    // Independent stacks.
-    expect(snapA.skillExecutionScopeStack[0]!.skillId).toBe("skill-A");
-    expect(snapB.skillExecutionScopeStack[0]!.skillId).toBe("skill-B");
     // Independent step indices.
     expect(snapA.stepIndex).toBe(1);
     expect(snapB.stepIndex).toBe(2);
     // Independent object identities (no shared references).
-    expect(snapA.skillExecutionScopeStack).not.toBe(snapB.skillExecutionScopeStack);
   });
 
   it("collectCrossSessionConflicts — two simulated sessions with overlapping pin BOTH proceed (deadlock fix)", () => {
@@ -956,7 +831,6 @@ describe("v1.5 multi-pin — resolveFocusedPin", () => {
 //
 // makeStepSnapshotHandler does a full key REPLACE via setSessionAgent
 // (writeAtomic). buildSessionAgentSnapshot only carries the four fields
-// {agentMessages, stepIndex, skillExecutionScopeStack, hasImageContent},
 // so without merge logic, currentFocusTabId set by setCurrentFocusTabId
 // (and pendingConfirm set by setPendingConfirm) would be silently dropped
 // at every per-step boundary. mergeSessionAgentSnapshot is the merge that
@@ -968,7 +842,6 @@ describe("v1.5 multi-pin — mergeSessionAgentSnapshot", () => {
   ): SessionAgentState => ({
     agentMessages: [{ role: "user", content: "x" }],
     stepIndex: 1,
-    skillExecutionScopeStack: [],
     hasImageContent: false,
     ...overrides,
   });
@@ -987,7 +860,6 @@ describe("v1.5 multi-pin — mergeSessionAgentSnapshot", () => {
     const existing: SessionAgentState = {
       agentMessages: [],
       stepIndex: 0,
-      skillExecutionScopeStack: [],
       hasImageContent: false,
       currentFocusTabId: 13,
     };
@@ -1006,7 +878,6 @@ describe("v1.5 multi-pin — mergeSessionAgentSnapshot", () => {
     const existing: SessionAgentState = {
       agentMessages: [{ role: "user", content: "prev" }],
       stepIndex: 1,
-      skillExecutionScopeStack: [],
       hasImageContent: false,
       pendingConfirm: {
         confirmationId: "c-1",
@@ -1024,21 +895,18 @@ describe("v1.5 multi-pin — mergeSessionAgentSnapshot", () => {
     const existing: SessionAgentState = {
       agentMessages: [{ role: "user", content: "old" }],
       stepIndex: 5,
-      skillExecutionScopeStack: [{ skillId: "old", allowedTools: null }],
       hasImageContent: false,
       currentFocusTabId: 13,
     };
     const snapshot = baseSnapshot({
       agentMessages: [{ role: "user", content: "new" }],
       stepIndex: 6,
-      skillExecutionScopeStack: [],
       hasImageContent: true,
     });
     const merged = mergeSessionAgentSnapshot(existing, snapshot);
     // Snapshot wins for the four it carries:
     expect((merged.agentMessages[0] as { content: string }).content).toBe("new");
     expect(merged.stepIndex).toBe(6);
-    expect(merged.skillExecutionScopeStack).toEqual([]);
     expect(merged.hasImageContent).toBe(true);
     // Carry-over still preserved:
     expect(merged.currentFocusTabId).toBe(13);
@@ -1052,7 +920,6 @@ describe("v1.5 multi-pin — mergeSessionAgentSnapshot", () => {
     const existing: SessionAgentState = {
       agentMessages: [{ role: "user", content: "prev" }],
       stepIndex: 7,
-      skillExecutionScopeStack: [],
       hasImageContent: false,
       currentFocusTabId: 13,
       pendingConfirm: {
@@ -1078,7 +945,6 @@ describe("v1.5 multi-pin — mergeSessionAgentSnapshot", () => {
     const existing: SessionAgentState = {
       agentMessages: [{ role: "user", content: "prev" }],
       stepIndex: 5,
-      skillExecutionScopeStack: [],
       hasImageContent: false,
       currentFocusTabId: 13,
     };
@@ -1096,14 +962,12 @@ describe("v1.5 multi-pin — mergeSessionAgentSnapshot", () => {
     const existing: SessionAgentState = {
       agentMessages: [],
       stepIndex: 0,
-      skillExecutionScopeStack: [],
       hasImageContent: false,
       currentFocusTabId: 13,
     };
     const odd: SessionAgentState = {
       agentMessages: [{ role: "user", content: "x" }],
       stepIndex: 0,
-      skillExecutionScopeStack: [],
       hasImageContent: false,
     };
     const merged = mergeSessionAgentSnapshot(existing, odd);
@@ -1225,7 +1089,6 @@ describe("v1.5 Task 6+7 — readFocusFromStorage (integration regression)", () =
     await setSessionAgent(sessionId, {
       agentMessages: [{ role: "user", content: "x" }],
       stepIndex: 1,
-      skillExecutionScopeStack: [],
       hasImageContent: false,
       currentFocusTabId: 20,
     });
@@ -1252,7 +1115,6 @@ describe("v1.5 Task 6+7 — readFocusFromStorage (integration regression)", () =
     await setSessionAgent(sessionId, {
       agentMessages: [],
       stepIndex: 0,
-      skillExecutionScopeStack: [],
       hasImageContent: false,
     });
 
@@ -1299,7 +1161,6 @@ describe("v1.5 Task 6+7 — readFocusFromStorage (integration regression)", () =
     await setSessionAgent(sessionId, {
       agentMessages: [{ role: "user", content: "x" }],
       stepIndex: 1,
-      skillExecutionScopeStack: [],
       hasImageContent: false,
       currentFocusTabId: 50,
     });
