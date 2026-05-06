@@ -20,17 +20,12 @@ const ENABLED_SKILLS_KEY = "enabled_skills";
  * Defaults:
  *   author = 'user'              (treat unknown-origin as user-authored, matching pre-2.6 storage)
  *   createdAt = 0                (sorts to the bottom of SkillsList)
- *   allowedTools = null          (no scope restriction; legacy behavior — meta tool
- *                                 write path enforces non-null at write time, P1-F)
- *   firstRunConfirmedAt          (kept undefined; R10 gate skips because
- *                                 default author='user' won't trigger anyway)
  */
 export function withSkillDefaults(skill: SkillDefinition): SkillDefinition {
   return {
     ...skill,
     author: skill.author ?? "user",
     createdAt: skill.createdAt ?? 0,
-    allowedTools: skill.allowedTools === undefined ? null : skill.allowedTools,
   };
 }
 
@@ -64,16 +59,6 @@ export async function getSkillStorageBytes(): Promise<number> {
     }
   }
   return total;
-}
-
-/**
- * Mark a skill's first-run-confirm timestamp. Used by R10 first-run gate after
- * the user approves the first execution of an agent-authored skill.
- */
-export async function markSkillFirstRun(id: string, ts: number): Promise<void> {
-  const skill = await getSkill(id);
-  if (!skill) return;
-  await saveSkill({ ...skill, firstRunConfirmedAt: ts });
 }
 
 // --- User-defined skill CRUD ---

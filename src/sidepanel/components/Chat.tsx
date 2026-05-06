@@ -57,6 +57,7 @@ function buildSegments(messages: readonly DisplayMessage[]): RenderSegment[] {
         resolvedElement: s.resolvedElement,
         status: s.status,
         observation: s.observation,
+        autoApproved: s.autoApproved,
       });
       i++;
     }

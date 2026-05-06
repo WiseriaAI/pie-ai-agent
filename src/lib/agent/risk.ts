@@ -176,9 +176,7 @@ export function classifyRisk(
   // create_skill / update_skill grant the agent new persistent capabilities
   // (write to chrome.storage.local; the new skill becomes a callable tool on
   // subsequent turns). They are ALWAYS high until the user has reviewed the
-  // proposed skill content. Future降级 (e.g. low risk when allowedTools is
-  // entirely low-risk) can use riskOfAllowedTools below; the conservative
-  // default for now is unconditional high.
+  // proposed skill content.
   //
   // delete_skill / list_skills are low: delete reduces capabilities (blast
   // radius shrinks), list is a pure read.
@@ -361,19 +359,6 @@ export function classifyRisk(
  * from typos (the meta tool handler already P1-G-rejects unknown names at
  * write time).
  */
-const ALWAYS_HIGH_RISK_TOOL_NAMES = new Set<string>([
-  ...KEYBOARD_TOOL_NAMES,
-  "create_skill",
-  "update_skill",
-]);
-
-export function riskOfAllowedTools(names: string[]): RiskLevel {
-  for (const n of names) {
-    if (ALWAYS_HIGH_RISK_TOOL_NAMES.has(n)) return "high";
-  }
-  return "low";
-}
-
 // ── Phase 5 screenshot tools — always-high constant + build-time check ──────
 //
 // ALWAYS_HIGH_SCREENSHOT_TOOLS mirrors the G-1 pattern: every name in
@@ -394,23 +379,20 @@ for (const name of SCREENSHOT_TOOL_NAMES) {
   }
 }
 
-// ── Phase 3 G-1 acceptance gate — build-time exhaustive check ──────────────
+// ── Phase 3 G-1 — cross-tab tool classification gate ────────────────────────
 //
-// The K-3 decision (do not upgrade SkillDefinition.allowedTools schema in v1)
-// rests on a load-bearing claim: every cross-tab write tool returns high risk
-// every time it's called. If a future PR introduces a low-risk cross-tab
-// tool (a "peek_tab_metadata", "read_tab_title", etc.) without first
-// upgrading the allowedTools schema to (name, scope) tuple, the K-3 defense
-// silently breaks — agent-authored skills could thereafter add the new
-// low-risk tool to allowedTools and R10 first-run-confirm would only fire
-// once, granting indefinite access.
+// Build-time check ensuring every name in TAB_TOOL_NAMES is classified as
+// always-high (write tools + always-high reads), args-conditional (risk
+// depends on args), or always-low. A new entry that doesn't appear in any
+// of the three sets throws at module load.
 //
-// This block enforces the gate at build time: every name in TAB_TOOL_NAMES
-// must be classified as either always-high (write/read tools) or
-// args-conditional (the two existing tools whose risk depends on args).
-// A new entry that doesn't appear in either set throws at module load —
-// the PR introducing it cannot be shipped without consciously updating
-// this list, which is the prompt to revisit G-1.
+// Historical note: this gate was originally introduced as the K-3 defense
+// support for SkillDefinition.allowedTools (issue #26 removed allowedTools
+// and R10 first-run-confirm, deprecating the K-3 invariant chain). The
+// gate is retained because the underlying property — every new tab tool
+// must be consciously classified — is independently valuable: it prevents
+// a default-low classification from silently shipping for a write-class
+// cross-tab op.
 const ALWAYS_HIGH_TAB_TOOLS = new Set<string>([
   "close_tabs",
   "group_tabs",
@@ -429,11 +411,6 @@ const ARGS_CONDITIONAL_TAB_TOOLS = new Set<string>([
 
 // v1.5 — focus_tab is always low. It only mutates the session's internal
 // currentFocusTabId pointer (no tab state, no cross-origin data exposure).
-// NOTE: G-1 K-3 rationale still holds for this tool — skills that add
-// focus_tab to allowedTools will only be granted per-call low-risk focus
-// switching, which does not open the K-3 privilege-chain vector (focus_tab
-// cannot itself call any tool; it just changes what tab the next snapshot
-// targets). No allowedTools schema upgrade needed.
 const ALWAYS_LOW_TAB_TOOLS = new Set<string>(["focus_tab"]);
 
 for (const name of TAB_TOOL_NAMES) {
@@ -446,8 +423,7 @@ for (const name of TAB_TOOL_NAMES) {
       `[Phase 3 G-1] cross-tab tool "${name}" is in TAB_TOOL_NAMES but ` +
         `not classified in risk.ts (ALWAYS_HIGH_TAB_TOOLS, ARGS_CONDITIONAL_TAB_TOOLS, ` +
         `or ALWAYS_LOW_TAB_TOOLS). ` +
-        `If this is a new low-risk cross-tab tool, add it to ALWAYS_LOW_TAB_TOOLS. ` +
-        `If it needs K-3 schema upgrade review, see plan G-1 acceptance gate / K-3.`,
+        `If this is a new low-risk cross-tab tool, add it to ALWAYS_LOW_TAB_TOOLS.`,
     );
   }
 }

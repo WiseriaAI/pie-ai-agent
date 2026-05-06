@@ -5,7 +5,6 @@ import {
   KNOWN_BUILT_IN_TOOL_NAMES,
   KNOWN_KEYBOARD_TOOL_NAMES,
   TAB_TOOL_NAMES,
-  ALL_KNOWN_NON_SKILL_TOOL_NAMES,
 } from "./tool-names";
 
 describe("M3-U4 — TOOL_CLASSES registry", () => {
@@ -75,9 +74,5 @@ describe("Phase 5 screenshot tools — names + classes", () => {
   it("screenshot tools are class=read (no tab-state mutation)", () => {
     expect(getToolClass("capture_visible_tab")).toBe("read");
     expect(getToolClass("capture_fullpage_tab")).toBe("read");
-  });
-  it("screenshot tools are legal in skill allowedTools", () => {
-    expect(ALL_KNOWN_NON_SKILL_TOOL_NAMES.has("capture_visible_tab")).toBe(true);
-    expect(ALL_KNOWN_NON_SKILL_TOOL_NAMES.has("capture_fullpage_tab")).toBe(true);
   });
 });

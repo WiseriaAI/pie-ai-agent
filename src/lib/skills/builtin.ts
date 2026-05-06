@@ -1,5 +1,4 @@
 import type { SkillDefinition } from "./types";
-import { ALL_KNOWN_BUILT_IN_ALLOWED_TOOL_NAMES } from "@/lib/agent/tool-names";
 
 export const BUILT_IN_SKILLS: SkillDefinition[] = [
   {
@@ -29,17 +28,8 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     builtIn: true,
     author: "user",
     createdAt: 0,
-    allowedTools: null,
   },
   // ── Phase 3 — Tab management built-in skills ──────────────────────────────
-  //
-  // Three skills (auto_group_tabs / close_duplicate_tabs / close_inactive_tabs)
-  // ship the first-week experience. Users with more specialized tab tasks
-  // (close all reddit / move all docs to a window / etc.) write their own via
-  // SkillsList, validating the Phase 2.6 self-service surface. Each skill
-  // declares allowedTools — the loop's R2 scope enforcement uses this
-  // whitelist; the import-time assertion below verifies every name resolves
-  // to a registered non-skill tool.
   {
     id: "auto_group_tabs",
     name: "Auto Group Tabs",
@@ -73,7 +63,6 @@ Constraints:
     builtIn: true,
     author: "user",
     createdAt: 0,
-    allowedTools: ["list_tabs", "group_tabs", "ungroup_tabs", "done", "fail"],
   },
   {
     id: "close_duplicate_tabs",
@@ -112,7 +101,6 @@ Constraints:
     builtIn: true,
     author: "user",
     createdAt: 0,
-    allowedTools: ["list_tabs", "close_tabs", "done", "fail"],
   },
   {
     id: "close_inactive_tabs",
@@ -155,7 +143,6 @@ Constraints:
     builtIn: true,
     author: "user",
     createdAt: 0,
-    allowedTools: ["list_tabs", "close_tabs", "done", "fail"],
   },
   // ── Phase 5 — Screenshot built-in skill ───────────────────────────────────
   {
@@ -196,7 +183,6 @@ Constraints:
     builtIn: true,
     author: "user",
     createdAt: 0,
-    allowedTools: ["capture_visible_tab", "done", "fail"],
   },
   // ── v1.5 — Open URL built-in skill ────────────────────────────────────────
   {
@@ -238,7 +224,6 @@ Constraints:
     builtIn: true,
     author: "user",
     createdAt: 0,
-    allowedTools: ["open_url", "done", "fail"],
   },
   // ── Recording v1 — Create Skill from Recording ────────────────────────────
   //
@@ -295,15 +280,13 @@ Your job:
    (already shown as {{placeholder}} in the trace) MUST become parameters.
    Other user-typed values MAY become parameters if the user's guidance
    suggests parameterization.
-3. Decide allowedTools — only the tools actually used in the trace
-   (click / type / scroll / select / open_url) plus done / fail.
-4. Write a clean Chinese promptTemplate that mirrors the recorded steps
+3. Write a clean Chinese promptTemplate that mirrors the recorded steps
    but substitutes parameters where appropriate. Keep step numbering ("第 N 步：").
-5. Call create_skill with: name (short), description (what it does),
-   promptTemplate (your rewritten steps), parameters (JSON Schema), and
-   allowedTools. The user will see an R10 confirm card with the full
-   skill content before it is persisted — that is their review surface.
-6. After create_skill succeeds, call done with a 1-2 sentence summary
+4. Call create_skill with: name (short), description (what it does),
+   promptTemplate (your rewritten steps), parameters (JSON Schema). The
+   user will see a confirm card with the full skill content before it is
+   persisted — that is their review surface.
+5. After create_skill succeeds, call done with a 1-2 sentence summary
    ("Created skill 'X' with N steps and M parameters").
 
 Constraints:
@@ -318,33 +301,16 @@ Constraints:
     builtIn: true,
     author: "user",
     createdAt: 0,
-    allowedTools: ["create_skill", "done", "fail"],
   },
 ];
 
-// ── Import-time assertions — Phase 2.6 P1-G covers user/agent skills via the
-// meta-tool write path; built-in skills are loaded directly from this array
-// and bypass that validation. These assertions ensure a typo or a stale
-// allowedTools entry can't ship in a release.
-//
-// Two checks per skill:
-//   (1) builtIn === true (P0-A regression guard — auto_group_tabs etc. must
-//       remain unmodifiable via update_skill)
-//   (2) every name in allowedTools (when non-null) is a registered non-skill
-//       tool (P1-G applied to the built-in seam)
+// ── Import-time assertion — P0-A regression guard ───────────────────────────
+// Ensures every BUILT_IN_SKILLS entry has builtIn:true, so update_skill
+// cannot mutate built-in skills (their update handler rejects builtIn===true).
 for (const skill of BUILT_IN_SKILLS) {
   if (skill.builtIn !== true) {
     throw new Error(
       `[BUILT_IN_SKILLS] skill ${skill.id} is missing builtIn:true — would allow update_skill mutation, breaking P0-A.`,
     );
-  }
-  if (skill.allowedTools !== null && skill.allowedTools !== undefined) {
-    for (const name of skill.allowedTools) {
-      if (!ALL_KNOWN_BUILT_IN_ALLOWED_TOOL_NAMES.has(name)) {
-        throw new Error(
-          `[BUILT_IN_SKILLS] skill ${skill.id} references unknown tool "${name}" in allowedTools (not in ALL_KNOWN_BUILT_IN_ALLOWED_TOOL_NAMES — superset that includes meta tools like create_skill which built-in skills may use).`,
-        );
-      }
-    }
   }
 }

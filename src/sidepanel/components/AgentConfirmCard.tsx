@@ -233,12 +233,6 @@ function SkillContentDetails({
     isUpdate &&
     existing !== null &&
     safeStringifyForPanel(existing.toolSchema.parameters) === safeStringifyForPanel(eff.toolSchema.parameters);
-  const allowedToolsUnchanged =
-    isUpdate &&
-    existing !== null &&
-    JSON.stringify(existing.allowedTools ?? null) === JSON.stringify(eff.allowedTools ?? null);
-
-  const allowedTools = eff.allowedTools;
 
   return (
     <div className="flex flex-col gap-2.5">
@@ -246,11 +240,12 @@ function SkillContentDetails({
         {isUpdate ? (
           <>
             Updating <code className="font-mono">{existing?.id ?? eff.id}</code>. After
-            approval the skill is re-marked as agent-authored and the user will be asked
-            to re-confirm on its next execution. Fields tagged "(unchanged)" stay as they were.
+            approval the skill is saved and runs without further confirmation. Fields
+            tagged "(unchanged)" stay as they were.
           </>
         ) : (
-          <>Creating a new agent-authored skill. The user will be asked to re-confirm on its first execution.</>
+          <>Creating a new agent-authored skill. After approval the skill is saved
+            and callable on subsequent turns.</>
         )}
       </div>
       {isUpdate && existing !== null && (
@@ -288,29 +283,6 @@ function SkillContentDetails({
         <pre className="max-h-48 overflow-auto rounded border border-line bg-field p-2 font-mono text-[11px] text-fg-2">
           {safeStringifyForPanel(eff.toolSchema.parameters)}
         </pre>
-      </div>
-      <div>
-        <div className="text-[11px] text-fg-3">
-          allowedTools: {allowedToolsUnchanged && <span className="text-fg-3">(unchanged)</span>}
-        </div>
-        {allowedTools === null || allowedTools === undefined ? (
-          <div className="text-[11px] italic text-fg-3">(legacy: no scope restriction)</div>
-        ) : allowedTools.length === 0 ? (
-          <div className="text-[11px] italic text-fg-3">
-            (empty — only done / fail callable inside this skill's scope)
-          </div>
-        ) : (
-          <div className="mt-1 flex flex-wrap gap-1">
-            {allowedTools.map((t, i) => (
-              <code
-                key={i}
-                className="rounded border border-line bg-field px-1.5 py-0.5 font-mono text-[11px] text-fg-1"
-              >
-                {t}
-              </code>
-            ))}
-          </div>
-        )}
       </div>
     </div>
   );

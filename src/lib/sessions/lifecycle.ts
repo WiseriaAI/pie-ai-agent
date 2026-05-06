@@ -156,7 +156,6 @@ export async function unarchiveSession(id: string): Promise<void> {
     [agentKey(id)]: payload.agent ?? {
       agentMessages: [],
       stepIndex: 0,
-      skillExecutionScopeStack: [],
     },
     [archivedKey(id)]: undefined,
     [INDEX_KEY]: updatedIndex,

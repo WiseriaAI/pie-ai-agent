@@ -18,7 +18,6 @@ function seedDefaultAgent(agentMessages: unknown[] = [], stepIndex = 0) {
   chromeMock.storage.local.__store["session_default_agent"] = {
     agentMessages,
     stepIndex,
-    skillExecutionScopeStack: [],
   };
 }
 

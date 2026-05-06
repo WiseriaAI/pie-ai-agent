@@ -9,9 +9,6 @@ import {
   generateUserSkillId,
   getSkillStorageBytes,
 } from "@/lib/skills";
-import { ALL_KNOWN_NON_SKILL_TOOL_NAMES } from "@/lib/agent/tool-names";
-import { getActiveInstance, getInstance } from "@/lib/instances";
-import { getModelMeta } from "@/lib/model-router";
 
 interface SkillsListProps {
   onRunSkill: (skillId: string, skillName: string) => void;
@@ -29,7 +26,6 @@ interface SkillFormState {
   description: string;
   promptTemplate: string;
   parametersText: string;
-  allowedToolsText: string;
 }
 
 function emptyForm(): SkillFormState {
@@ -38,7 +34,6 @@ function emptyForm(): SkillFormState {
     description: "",
     promptTemplate: "",
     parametersText: '{\n  "type": "object",\n  "properties": {},\n  "required": []\n}',
-    allowedToolsText: "scroll, wait, done, fail",
   };
 }
 
@@ -51,7 +46,6 @@ function formFromSkill(skill: SkillDefinition): SkillFormState {
     description: skill.description,
     promptTemplate: skill.promptTemplate,
     parametersText: JSON.stringify(skill.toolSchema.parameters, null, 2),
-    allowedToolsText: (skill.allowedTools ?? []).join(", "),
   };
 }
 
@@ -75,7 +69,6 @@ interface BuiltSkillFields {
   description: string;
   promptTemplate: string;
   parameters: Record<string, unknown>;
-  allowedTools: string[];
 }
 
 function validateAndBuild(
@@ -108,19 +101,6 @@ function validateAndBuild(
     };
   }
 
-  const allowedTools = form.allowedToolsText
-    .split(/[,\n]+/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
-  if (allowedTools.length === 0) {
-    return { ok: false, error: "AllowedTools must include at least one tool name (e.g. 'done', 'fail')" };
-  }
-  for (const t of allowedTools) {
-    if (!ALL_KNOWN_NON_SKILL_TOOL_NAMES.has(t)) {
-      return { ok: false, error: `Unknown tool: '${t}'. Skills cannot reference other skills.` };
-    }
-  }
-
   return {
     ok: true,
     built: {
@@ -128,7 +108,6 @@ function validateAndBuild(
       description: form.description.trim(),
       promptTemplate: form.promptTemplate,
       parameters: parameters as Record<string, unknown>,
-      allowedTools,
     },
   };
 }
@@ -161,44 +140,6 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
   const [form, setForm] = useState<SkillFormState>(emptyForm());
   const [formError, setFormError] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  // R9 sub-path d — warn when a skill's allowedTools contains screenshot
-  // tools but the current provider doesn't support vision. Loaded once on
-  // mount (same pattern as Chat.tsx checkConfig) and refreshed whenever
-  // chrome.storage changes (provider switch).
-  const [supportsVision, setSupportsVision] = useState<boolean>(true);
-
-  useEffect(() => {
-    async function checkVision() {
-      try {
-        const activeId = await getActiveInstance();
-        if (!activeId) {
-          setSupportsVision(false);
-          return;
-        }
-        const inst = await getInstance(activeId);
-        if (!inst) {
-          setSupportsVision(false);
-          return;
-        }
-        const meta = getModelMeta(inst.provider, inst.model);
-        setSupportsVision(meta?.vision ?? false);
-      } catch {
-        setSupportsVision(false);
-      }
-    }
-    checkVision();
-    const listener = (changes: Record<string, chrome.storage.StorageChange>) => {
-      if (
-        changes.active_instance_id ||
-        changes.instances_index ||
-        Object.keys(changes).some((k) => k.startsWith("instance_"))
-      ) {
-        checkVision();
-      }
-    };
-    chrome.storage.local.onChanged.addListener(listener);
-    return () => chrome.storage.local.onChanged.removeListener(listener);
-  }, []);
 
   useEffect(() => {
     loadSkills();
@@ -267,8 +208,6 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
       builtIn: false,
       author: "user",
       createdAt: form.editingCreatedAt ?? Date.now(),
-      allowedTools: v.built.allowedTools,
-      firstRunConfirmedAt: undefined,
     };
     const newBytes = JSON.stringify(newSkill).length + `skill_${newSkill.id}`.length;
     const oldBytes = isEdit
@@ -352,7 +291,6 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
               key={skill.id}
               skill={skill}
               enabled={isEffectivelyEnabled(skill)}
-              supportsVision={supportsVision}
               onToggle={() => handleToggle(skill)}
               onRun={() => onRunSkill(skill.id, skill.name)}
               onEdit={() => openEditForm(skill)}
@@ -372,7 +310,6 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
               key={skill.id}
               skill={skill}
               enabled={isEffectivelyEnabled(skill)}
-              supportsVision={supportsVision}
               onToggle={() => handleToggle(skill)}
               onRun={() => onRunSkill(skill.id, skill.name)}
               onEdit={() => openEditForm(skill)}
@@ -464,7 +401,6 @@ function SkillsSection({
 function SkillRow({
   skill,
   enabled,
-  supportsVision,
   onToggle,
   onRun,
   onEdit,
@@ -475,10 +411,6 @@ function SkillRow({
 }: {
   skill: SkillDefinition;
   enabled: boolean;
-  /** R9 sub-path d — when false and the skill's allowedTools includes a
-   *  screenshot tool, show a warning so the user knows the skill won't work
-   *  with the current provider. */
-  supportsVision: boolean;
   onToggle: () => void;
   onRun: () => void;
   onEdit: () => void;
@@ -489,18 +421,10 @@ function SkillRow({
 }) {
   const tag = authorTag(skill);
   const slug = normalizeSlug(skill.name) || skill.id;
-  const awaitingFirstRun =
-    skill.author === "agent" && skill.firstRunConfirmedAt === undefined;
-  const hasScreenshotTool = (skill.allowedTools ?? []).some(
-    (t) => t === "capture_visible_tab" || t === "capture_fullpage_tab",
-  );
-  const showVisionWarning = hasScreenshotTool && !supportsVision;
 
   return (
     <div
-      className={`flex flex-col gap-2 bg-surface px-3.5 py-3.5 ${
-        awaitingFirstRun ? "border-l-2 border-l-accent pl-[12px]" : ""
-      }`}
+      className="flex flex-col gap-2 bg-surface px-3.5 py-3.5"
     >
       <div className="flex items-center gap-2.5">
         <button
@@ -514,56 +438,16 @@ function SkillRow({
         />
         <code className="font-mono text-[12px] text-accent">/{slug}</code>
         <span className="ml-auto font-mono text-[10px] uppercase tracking-[0.08em] text-fg-3">
-          {awaitingFirstRun ? "AGENT · NEW" : tag}
+          {tag}
         </span>
       </div>
 
       <p className="text-[12px] leading-[18px] text-fg-2">{skill.description}</p>
 
-      {(skill.allowedTools ?? []).includes("open_url") && (
-        <span
-          className="self-start rounded border border-warning-line bg-warning-tint px-1.5 py-0.5 text-[10px] text-warning"
-          title="Each open_url call requires user approval"
-        >
-          Per-call approval
-        </span>
-      )}
-
-      {awaitingFirstRun && (
-        <div className="flex items-start gap-2 rounded border border-accent-line bg-accent-tint px-2.5 py-1.5">
-          <svg
-            width="11"
-            height="11"
-            viewBox="0 0 11 11"
-            fill="none"
-            className="mt-0.5 flex-shrink-0"
-          >
-            <circle cx="5.5" cy="5.5" r="4.5" stroke="var(--c-accent)" strokeWidth="1" />
-            <path
-              d="M5.5 3.5V6M5.5 7.5V8"
-              stroke="var(--c-accent)"
-              strokeWidth="1"
-              strokeLinecap="round"
-            />
-          </svg>
-          <span className="text-[11px] leading-[16px] text-accent">
-            Will request your approval the first time the agent runs this.
-          </span>
-        </div>
-      )}
-
-      {showVisionWarning && (
-        <div className="text-fg-3 text-xs mt-1">
-          Screenshot tools in this skill require a vision-capable provider (anthropic / openai / openrouter). Current provider does not support vision.
-        </div>
-      )}
-
       <div className="flex items-center gap-2 pt-1.5">
         <span className="font-mono text-[10px] text-fg-3">
-          {(skill.allowedTools ?? []).length} tool
-          {(skill.allowedTools ?? []).length === 1 ? "" : "s"}
           {skill.createdAt && skill.createdAt > 0
-            ? ` · ${formatBytes(JSON.stringify(skill).length)}`
+            ? formatBytes(JSON.stringify(skill).length)
             : ""}
         </span>
         <div className="flex-1" />
@@ -683,19 +567,6 @@ function SkillForm({
           rows={6}
           className="w-full rounded border border-line bg-field px-3 py-2 font-mono text-[11px] leading-4 text-fg-1 focus:border-accent-line"
         />
-      </FormField>
-
-      <FormField label="Allowed tools" hint="comma or newline separated">
-        <textarea
-          value={form.allowedToolsText}
-          onChange={(e) => onChange((p) => ({ ...p, allowedToolsText: e.target.value }))}
-          rows={2}
-          className="w-full rounded border border-line bg-field px-3 py-2 font-mono text-[11px] leading-4 text-fg-1 placeholder:text-fg-3 focus:border-accent-line"
-          placeholder="scroll, wait, done, fail"
-        />
-        <div className="mt-1 font-mono text-[10px] text-fg-3">
-          Valid: {Array.from(ALL_KNOWN_NON_SKILL_TOOL_NAMES).join(", ")}
-        </div>
       </FormField>
 
       <div className="flex justify-end gap-2 pt-1">

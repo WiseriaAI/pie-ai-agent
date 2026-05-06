@@ -201,7 +201,6 @@ export async function createSession(
   const agent: SessionAgentState = {
     agentMessages: [],
     stepIndex: 0,
-    skillExecutionScopeStack: [],
     hasImageContent: false,
   };
 

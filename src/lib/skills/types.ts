@@ -26,16 +26,18 @@ export interface SkillDefinition {
    *  Optional for back-compat with pre-Phase-2.6 storage; defaults to 'user'
    *  when missing. */
   author?: SkillAuthor;
-  /** ms timestamp of creation. Used for SkillsList sort and R10 confirm copy.
+  /** ms timestamp of creation. Used for SkillsList sort.
    *  Built-in skills use 0 (sorts to bottom). Optional for back-compat. */
   createdAt?: number;
-  /** Whitelist of tool names callable inside this skill's scope. `null` = no
-   *  scope restriction (legacy behavior). Meta tool write path requires a
-   *  non-null array (P1-F); read path tolerates null for back-compat. */
+  /**
+   * @deprecated since 2026-05-06 (issue #26). Field kept for back-compat
+   * deserialization of pre-#26 storage data; new code paths neither read
+   * nor write it. R2 enforcement was removed alongside the field.
+   */
   allowedTools?: string[] | null;
-  /** ms timestamp of when the user approved the first execution of this skill
-   *  after it was authored or last modified by an agent. R10 first-run-confirm
-   *  is gated on this field being absent AND author === 'agent'. update_skill
-   *  clears this field on every modification (taint propagation defense). */
+  /**
+   * @deprecated since 2026-05-06 (issue #26). R10 first-run-confirm was
+   * removed; field kept for back-compat deserialization only.
+   */
   firstRunConfirmedAt?: number;
 }

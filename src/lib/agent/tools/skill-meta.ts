@@ -9,11 +9,11 @@
 //
 //   P0-A  update_skill rejects builtIn=true targets
 //   P0-B  parameters JSON Schema string fields total length ≤ 2 KB
-//   P0-C  update_skill taint: author='agent' + clears firstRunConfirmedAt
+//   P0-C  update_skill taint: author='agent'
 //   P0-D  promptTemplate length ≤ 8 KB (paired with confirm-card cap bypass in Unit 7)
 //   P1-E  schema additionalProperties:false + handler strips args.id explicitly
-//   P1-F  allowedTools required non-null array (empty [] = done/fail-only)
-//   P1-G  every name in allowedTools must be currently registered (no capability creep)
+//   P1-F  removed (#26 — allowedTools / R2 deleted)
+//   P1-G  removed (#26 — allowedTools / R2 deleted)
 //   P1-H  total skill_* storage ≤ 1 MB (defense against confirm-fatigue DoS)
 
 import type { ActionResult } from "../../dom-actions/types";
@@ -27,7 +27,6 @@ import {
   getSkillStorageBytes,
 } from "../../skills/storage";
 import { getAllSkills } from "../../skills";
-import { ALL_KNOWN_NON_SKILL_TOOL_NAMES } from "../tool-names";
 
 // ── Configuration / limits ───────────────────────────────────────────────────
 
@@ -76,12 +75,11 @@ function estimateSkillBytes(skill: SkillDefinition): number {
   return JSON.stringify(skill).length + `skill_${skill.id}`.length;
 }
 
-/** Run all P0-B / P0-D / P1-F / P1-G content validations. Returns null when ok,
+/** Run all P0-B / P0-D content validations. Returns null when ok,
  *  or an error reason. */
 function validateSkillContent(args: {
   promptTemplate: string;
   parameters: unknown;
-  allowedTools: unknown;
 }): string | null {
   // P0-D
   if (args.promptTemplate.length > PROMPT_TEMPLATE_MAX_BYTES) {
@@ -96,15 +94,6 @@ function validateSkillContent(args: {
   if (schemaChars > SCHEMA_STRINGS_MAX_BYTES) {
     return `parameters schema strings too long (max ${SCHEMA_STRINGS_MAX_BYTES} bytes, got ${schemaChars})`;
   }
-  // P1-F
-  if (!Array.isArray(args.allowedTools)) {
-    return "allowedTools must be an array (use [] for done/fail-only)";
-  }
-  // P1-G
-  for (const t of args.allowedTools) {
-    if (typeof t !== "string") return `allowedTools entries must be strings`;
-    if (!ALL_KNOWN_NON_SKILL_TOOL_NAMES.has(t)) return `unknown tool: ${t}`;
-  }
   return null;
 }
 
@@ -113,11 +102,11 @@ function validateSkillContent(args: {
 const createSkillTool: Tool = {
   name: "create_skill",
   description:
-    "Persist a new reusable workflow as a callable Skill. The skill becomes a tool the agent can later invoke. Use sparingly — only when you recognize the user repeatedly performs a similar workflow. The user must confirm before save and again on the skill's first execution.",
+    "Persist a new reusable workflow as a callable Skill. The skill becomes a tool the agent can later invoke. Use sparingly — only when you recognize the user repeatedly performs a similar workflow. The user must confirm before save.",
   parameters: {
     type: "object",
     additionalProperties: false,
-    required: ["name", "description", "promptTemplate", "parameters", "allowedTools"],
+    required: ["name", "description", "promptTemplate", "parameters"],
     properties: {
       name: {
         type: "string",
@@ -137,12 +126,6 @@ const createSkillTool: Tool = {
         description:
           "JSON Schema for skill invocation parameters: { type: 'object', properties: {...}, required: [...] }.",
       },
-      allowedTools: {
-        type: "array",
-        items: { type: "string" },
-        description:
-          "Required whitelist of tool names callable inside this skill's scope. Use [] for done/fail-only. Cannot reference other skills.",
-      },
     },
   },
   handler: async (args: unknown): Promise<ActionResult> => {
@@ -157,7 +140,6 @@ const createSkillTool: Tool = {
     const validationErr = validateSkillContent({
       promptTemplate: a.promptTemplate as string,
       parameters: a.parameters,
-      allowedTools: a.allowedTools,
     });
     if (validationErr) return err(validationErr);
 
@@ -171,8 +153,6 @@ const createSkillTool: Tool = {
       builtIn: false,
       author: "agent",
       createdAt: Date.now(),
-      allowedTools: a.allowedTools as string[],
-      // firstRunConfirmedAt intentionally undefined — R10 will trigger on first run
     };
 
     // P1-H quota
@@ -187,7 +167,7 @@ const createSkillTool: Tool = {
     await saveSkill(skill);
     return {
       success: true,
-      observation: `skill created: id=${skill.id} name="${skill.name}". Will require first-run confirm before execution.`,
+      observation: `skill created: id=${skill.id} name="${skill.name}". Callable on subsequent turns.`,
     };
   },
 };
@@ -195,7 +175,7 @@ const createSkillTool: Tool = {
 const updateSkillTool: Tool = {
   name: "update_skill",
   description:
-    "Modify an existing non-built-in Skill. Only description / promptTemplate / parameters / allowedTools can change. Built-in skills are immutable. Updating any field re-marks the skill as agent-authored and requires the user to re-confirm on the next execution.",
+    "Modify an existing non-built-in Skill. Only description / promptTemplate / parameters can change. Built-in skills are immutable. Updating any field re-marks the skill as agent-authored.",
   parameters: {
     type: "object",
     additionalProperties: false,
@@ -210,7 +190,6 @@ const updateSkillTool: Tool = {
           description: { type: "string" },
           promptTemplate: { type: "string" },
           parameters: { type: "object" },
-          allowedTools: { type: "array", items: { type: "string" } },
         },
       },
     },
@@ -242,22 +221,16 @@ const updateSkillTool: Tool = {
     if ("parameters" in patch) {
       merged.toolSchema = { parameters: patch.parameters as Record<string, unknown> };
     }
-    if ("allowedTools" in patch) {
-      merged.allowedTools = patch.allowedTools as string[];
-    }
 
-    // Re-validate full content (so e.g. an old skill with allowedTools=null
-    // can't slip through if patch only changed promptTemplate)
+    // Re-validate full content
     const validationErr = validateSkillContent({
       promptTemplate: merged.promptTemplate,
       parameters: merged.toolSchema.parameters,
-      allowedTools: merged.allowedTools,
     });
     if (validationErr) return err(validationErr);
 
     // P0-C taint propagation
     merged.author = "agent";
-    merged.firstRunConfirmedAt = undefined;
 
     // P1-H quota — net change, since we're replacing
     const currentBytes = await getSkillStorageBytes();
@@ -270,7 +243,7 @@ const updateSkillTool: Tool = {
     await saveSkill(merged);
     return {
       success: true,
-      observation: `skill updated: id=${merged.id}. author tainted to 'agent'; first-run confirm will be required on next execution.`,
+      observation: `skill updated: id=${merged.id}. author marked 'agent'.`,
     };
   },
 };
@@ -301,7 +274,7 @@ const deleteSkillTool: Tool = {
 const listSkillsTool: Tool = {
   name: "list_skills",
   description:
-    "List all available skills with their id, name, description, author (user/agent), and enabled state. Use this before proposing create_skill to check for existing reusable workflows. Does NOT return promptTemplate, parameters, or allowedTools (use the returned id with subsequent flows if you need full content).",
+    "List all available skills with their id, name, description, author (user/agent), and enabled state. Use this before proposing create_skill to check for existing reusable workflows. Does NOT return promptTemplate or parameters (use the returned id with subsequent flows if you need full content).",
   parameters: {
     type: "object",
     additionalProperties: false,
@@ -338,7 +311,6 @@ export async function previewMetaSkillCall(
     const a = (args && typeof args === "object" ? { ...(args as Record<string, unknown>) } : {}) as Record<string, unknown>;
     delete a.id;
     if (typeof a.name !== "string" || typeof a.description !== "string" || typeof a.promptTemplate !== "string") return null;
-    if (!Array.isArray(a.allowedTools)) return null;
     if (typeof a.parameters !== "object" || a.parameters === null || Array.isArray(a.parameters)) return null;
     const effective: SkillDefinition = {
       // Real id is generated on save; render placeholder to make this explicit.
@@ -351,7 +323,6 @@ export async function previewMetaSkillCall(
       builtIn: false,
       author: "agent",
       createdAt: Date.now(),
-      allowedTools: a.allowedTools as string[],
     };
     return { existing: null, effective };
   }
@@ -373,13 +344,9 @@ export async function previewMetaSkillCall(
     ) {
       merged.toolSchema = { parameters: patch.parameters as Record<string, unknown> };
     }
-    if (Array.isArray(patch.allowedTools)) {
-      merged.allowedTools = patch.allowedTools as string[];
-    }
     // Mirror the taint applied by the actual handler so the user sees what
-    // will REALLY be persisted (author=agent, firstRunConfirmedAt cleared).
+    // will REALLY be persisted (author=agent).
     merged.author = "agent";
-    merged.firstRunConfirmedAt = undefined;
     return { existing, effective: merged };
   }
   return null;

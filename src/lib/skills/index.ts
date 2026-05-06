@@ -10,7 +10,6 @@ export {
   generateSkillId,
   generateUserSkillId,
   getSkillStorageBytes,
-  markSkillFirstRun,
 } from "./storage";
 export { BUILT_IN_SKILLS } from "./builtin";
 export {

@@ -80,7 +80,6 @@ describe("createSession", () => {
     expect(agent).not.toBeNull();
     expect(agent!.agentMessages).toEqual([]);
     expect(agent!.stepIndex).toBe(0);
-    expect(agent!.skillExecutionScopeStack).toEqual([]);
     expect(agent!.pendingConfirm).toBeUndefined();
   });
 
@@ -165,7 +164,6 @@ describe("setSessionMeta / setSessionAgent — D2 dual-key independence", () => 
     const agentBefore: SessionAgentState = {
       agentMessages: [{ role: "user", content: "hi" }],
       stepIndex: 7,
-      skillExecutionScopeStack: [],
       hasImageContent: false,
     };
     await setSessionAgent(meta.id, agentBefore);
@@ -184,7 +182,6 @@ describe("setSessionMeta / setSessionAgent — D2 dual-key independence", () => 
     await setSessionAgent(meta.id, {
       agentMessages: [{ role: "assistant", content: "ok" }],
       stepIndex: 1,
-      skillExecutionScopeStack: [],
       hasImageContent: false,
     });
 
@@ -438,7 +435,6 @@ describe("setPendingConfirm / scrubPendingConfirm — M1-U4", () => {
     await setSessionAgent(meta.id, {
       agentMessages: [{ role: "user", content: "hi" }],
       stepIndex: 3,
-      skillExecutionScopeStack: [],
       hasImageContent: false,
     });
     await setPendingConfirm(meta.id, sampleRecord);
@@ -459,7 +455,6 @@ describe("setPendingConfirm / scrubPendingConfirm — M1-U4", () => {
     await setSessionAgent(meta.id, {
       agentMessages: [{ role: "user", content: "hi" }],
       stepIndex: 3,
-      skillExecutionScopeStack: [],
       hasImageContent: false,
     });
     await setPendingConfirm(meta.id, sampleRecord);
@@ -799,7 +794,6 @@ describe("setLastTaskSynth / clearLastTaskSynth — U3 (AD1 fix: agent-state)", 
     const agent = await getSessionAgent(meta.id);
     expect(agent!.stepIndex).toBe(7);
     expect(agent!.agentMessages).toEqual([]);
-    expect(agent!.skillExecutionScopeStack).toEqual([]);
   });
 
   // ── AD1 race regression ───────────────────────────────────────────────────
@@ -833,7 +827,6 @@ describe("setLastTaskSynth / clearLastTaskSynth — U3 (AD1 fix: agent-state)", 
       setSessionAgent(meta.id, {
         agentMessages: snapshotMessages,
         stepIndex: 3,
-        skillExecutionScopeStack: [],
         hasImageContent: false,
       }),
     ]);
@@ -872,7 +865,6 @@ describe("setLastTaskSynth / clearLastTaskSynth — U3 (AD1 fix: agent-state)", 
     const tombstone: SessionAgentState = {
       agentMessages: [],
       stepIndex: 0,
-      skillExecutionScopeStack: [],
       hasImageContent: false,
       lastTaskSynth: synth,
     };
@@ -1091,7 +1083,6 @@ describe("M5 — upgradeAutoToTaskAtChatStart (chat-start hook)", () => {
       [agentKey(id)]: {
         agentMessages: [],
         stepIndex: 0,
-        skillExecutionScopeStack: [],
         hasImageContent: false,
       } satisfies SessionAgentState,
       session_index: [{ id, lastAccessedAt: 1000, status: "active" }],
@@ -1200,7 +1191,6 @@ describe("migrateLastTaskSynthFromMeta — AD1 migration", () => {
     await setSessionAgent(meta.id, {
       agentMessages: [],
       stepIndex: 0,
-      skillExecutionScopeStack: [],
       hasImageContent: false,
       lastTaskSynth: synth,
     });
@@ -1292,7 +1282,6 @@ describe("v1.5 multi-pin storage", () => {
     await setSessionAgent("s4", {
       agentMessages: [],
       stepIndex: 1,
-      skillExecutionScopeStack: [],
       hasImageContent: false,
     });
     const result = await upgradeAutoToTaskAtChatStart("s4", async () => ({

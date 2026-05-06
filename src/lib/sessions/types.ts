@@ -149,11 +149,6 @@ export interface SessionMeta {
  * concern only (R28 v2 reinterpretation, see plan D7 / M1-U3). Resume
  * needs the raw values to give the LLM enough context to plan the next
  * step.
- *
- * `skillExecutionScopeStack` is an array — M1-U1 ships it because
- * `SessionAgentState` is the natural carrier and M2-U1 will wire it for
- * real. M1's single-session loop still uses the in-memory
- * `currentSkillScope` in `loop.ts`; the stack here is empty until M2.
  */
 export interface SessionAgentState {
   /** LLM-side conversation for the **current in-flight task**, including
@@ -165,11 +160,6 @@ export interface SessionAgentState {
    *  uses `stepIndex > 0` to detect in-flight tasks that need to be
    *  transitioned to `paused` after SW restart. */
   stepIndex: number;
-  /** Phase 2.6 skill scope stack. Empty in M1; populated by M2-U1. */
-  skillExecutionScopeStack: Array<{
-    skillId: string;
-    allowedTools: string[] | null;
-  }>;
   /**
    * R14 — set true the first time an image ContentBlock is added to
    * `agentMessages`. Persisted across SW restart so `detectAndMarkPaused`
