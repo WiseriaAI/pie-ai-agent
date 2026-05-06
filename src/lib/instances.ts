@@ -28,16 +28,33 @@ export async function createInstance(input: {
   nickname: string;
   apiKey: string;
   model: string;
+  /** Optional. Custom model ids the user added during the form session.
+   *  When omitted, auto-detects: if `model` isn't in the registry, push it
+   *  to customModels so it survives as a dropdown entry on next edit. */
+  customModels?: string[];
 }): Promise<string> {
   if (!input.apiKey.trim()) throw new Error("API key cannot be empty");
   const id = crypto.randomUUID();
   const key = await getOrCreateEncryptionKey();
+  const meta = getProviderMeta(input.provider);
+  const inRegistry = meta?.models.some((m) => m.id === input.model) ?? false;
+  // Resolve customModels: explicit > auto-detect (model not in registry)
+  let resolvedCustomModels: string[] | undefined;
+  if (input.customModels && input.customModels.length > 0) {
+    // Ensure the selected model is included if it's custom
+    resolvedCustomModels = inRegistry
+      ? input.customModels
+      : Array.from(new Set([...input.customModels, input.model]));
+  } else if (!inRegistry) {
+    resolvedCustomModels = [input.model];
+  }
   const stored: StoredInstance = {
     id,
     provider: input.provider,
     nickname: input.nickname,
     encryptedKey: await encrypt(input.apiKey, key),
     model: input.model,
+    ...(resolvedCustomModels && { customModels: resolvedCustomModels }),
     createdAt: Date.now(),
   };
   const idx = await readIndex();

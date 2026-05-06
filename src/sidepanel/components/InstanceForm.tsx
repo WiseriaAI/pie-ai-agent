@@ -7,6 +7,7 @@ export interface InstanceFormPayload {
   nickname: string;
   apiKey: string;
   model: string;
+  customModels: string[];
 }
 
 /** Render-prop API exposed when the parent wants to compose a custom action footer
@@ -50,13 +51,20 @@ export default function InstanceForm(props: Props) {
   const [apiKey, setApiKey] = useState("");
   const [showKey, setShowKey] = useState(false);
   const [model, setModel] = useState(props.initialModel ?? "");
+  // Locally-tracked custom models. Initialised from initialCustomModels but
+  // accumulates user's "+ 添加自定义模型" entries during the form session so
+  // they appear in the dropdown immediately AND get carried to onSave.
+  // Edit-mode parents (Settings.tsx) also persist async via onAddCustomModel
+  // for cross-session durability; on form remount, initialCustomModels prop
+  // re-seeds local state.
+  const [customModels, setCustomModels] = useState<string[]>(props.initialCustomModels ?? []);
   // Edit mode: start in read-only partial-reveal; create mode: always in replacing state
   const [replacing, setReplacing] = useState(props.mode === "create" || !props.existingApiKey);
 
   const requireApiKey = props.mode === "create" || replacing;
   const canSave = (!requireApiKey || apiKey.trim().length > 0) && model.trim().length > 0;
 
-  const payload: InstanceFormPayload = { nickname, apiKey, model };
+  const payload: InstanceFormPayload = { nickname, apiKey, model, customModels };
 
   return (
     <div className="flex flex-col">
@@ -129,13 +137,21 @@ export default function InstanceForm(props: Props) {
         <ModelDropdown
           provider={props.provider}
           value={model}
-          customModels={props.initialCustomModels ?? []}
+          customModels={customModels}
           fetchedModels={props.fetchedModels}
           fetchedAt={props.fetchedAt}
           isFetching={props.isFetching}
           onChange={setModel}
-          onAddCustom={(id) => { setModel(id); props.onAddCustomModel?.(id); }}
-          onRemoveCustom={props.onRemoveCustomModel}
+          onAddCustom={(id) => {
+            setCustomModels((prev) => (prev.includes(id) ? prev : [...prev, id]));
+            setModel(id);
+            props.onAddCustomModel?.(id);
+          }}
+          onRemoveCustom={(id) => {
+            setCustomModels((prev) => prev.filter((x) => x !== id));
+            if (model === id) setModel("");
+            props.onRemoveCustomModel?.(id);
+          }}
           onRefresh={props.onRefreshModels ?? (() => {})}
         />
       </Field>

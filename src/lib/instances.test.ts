@@ -69,4 +69,38 @@ describe("instances CRUD", () => {
       baseUrl: "https://api.anthropic.com",
     });
   });
+
+  it("createInstance auto-pushes model to customModels when not in registry", async () => {
+    const id = await createInstance({
+      provider: "deepseek",
+      nickname: "DS",
+      apiKey: "sk-test",
+      model: "deepseek-chat", // not in registry seed (only v4-flash, v4-pro)
+    });
+    const inst = await getInstance(id);
+    expect(inst!.customModels).toEqual(["deepseek-chat"]);
+  });
+
+  it("createInstance respects explicit customModels and ensures selected model is included", async () => {
+    const id = await createInstance({
+      provider: "deepseek",
+      nickname: "DS",
+      apiKey: "sk-test",
+      model: "deepseek-chat",
+      customModels: ["deepseek-coder", "deepseek-chat"],
+    });
+    const inst = await getInstance(id);
+    expect(inst!.customModels).toEqual(["deepseek-coder", "deepseek-chat"]);
+  });
+
+  it("createInstance with registry model leaves customModels undefined", async () => {
+    const id = await createInstance({
+      provider: "anthropic",
+      nickname: "A",
+      apiKey: "sk-test",
+      model: "claude-opus-4-7", // in registry
+    });
+    const inst = await getInstance(id);
+    expect(inst!.customModels).toBeUndefined();
+  });
 });
