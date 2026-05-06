@@ -759,8 +759,14 @@ export function resolveFocusedPin(
  * resolveFocusedPin falls back to pinnedTabs[0] when currentFocusTabId is
  * undefined (auto/legacy mode) or stale (target pin was removed).
  *
- * Returns undefined when there is no pinned tab to resolve (legacy active-tab
- * fallback path).
+ * Returns `{ focused, pinnedTabs }` so callers can rebroadcast the
+ * refreshed array — not just the focused pin — into per-iteration
+ * `riskCtx.pinnedTabs` and handler `ctx.pinnedTabs`. Issue #33 was a
+ * direct consequence of returning only `focused` here: focus_tab and
+ * other handlers kept validating against the frozen task-start snapshot,
+ * so a pin appended mid-task by `open_url` was never accepted as a
+ * legitimate `focus_tab` target. `focused` is undefined when no pin is
+ * resolvable (legacy active-tab fallback path).
  *
  * IMPORTANT field-path constraint (regression guard):
  *   - currentFocusTabId lives on SessionAgentState, NOT SessionMeta
@@ -775,13 +781,19 @@ export function resolveFocusedPin(
 export async function readFocusFromStorage(
   sessionId: string,
   ctxPinnedTabs: ReadonlyArray<{ tabId: number; origin: string }> | undefined,
-): Promise<{ tabId: number; origin: string } | undefined> {
+): Promise<{
+  focused: { tabId: number; origin: string } | undefined;
+  pinnedTabs: ReadonlyArray<{ tabId: number; origin: string }>;
+}> {
   const [agentSnap, metaSnap] = await Promise.all([
     getSessionAgent(sessionId),
     getSessionMeta(sessionId),
   ]);
   const refreshedPins = metaSnap?.pinnedTabs ?? ctxPinnedTabs ?? [];
-  return resolveFocusedPin(refreshedPins, agentSnap?.currentFocusTabId);
+  return {
+    focused: resolveFocusedPin(refreshedPins, agentSnap?.currentFocusTabId),
+    pinnedTabs: refreshedPins,
+  };
 }
 
 /**
@@ -1156,6 +1168,15 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
   const confirmRejections = new Map<string, number>();
   const CONFIRM_REJECT_THRESHOLD = 3;
 
+  // v1.5 Task 6+7 / Issue #33 — per-iteration refreshed pinnedTabs.
+  // ctx.pinnedTabs is captured at task-start and frozen inside the loop
+  // closure. open_url writes new pins to SessionMeta (storage), so each
+  // iteration's readFocusFromStorage rebroadcasts the up-to-date array
+  // here; downstream riskCtx + handler ctx read this instead of
+  // ctx.pinnedTabs to see open_url's mid-task additions.
+  let currentPinnedTabs: ReadonlyArray<{ tabId: number; origin: string }> =
+    ctx.pinnedTabs ?? [];
+
   try {
     // M1-U5 — resume path starts the counter at the next step beyond
     // what was persisted. The MAX_STEPS bound still applies as the
@@ -1165,14 +1186,15 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       lastStepIndex = stepIndex;
       if (signal.aborted) return; // → finally
 
-      // v1.5 Task 6+7 — per-iteration focus refresh.
-      const refreshedFocus = await readFocusFromStorage(
+      // v1.5 Task 6+7 — per-iteration focus + pinnedTabs refresh.
+      const refreshed = await readFocusFromStorage(
         sessionId,
         ctx.pinnedTabs,
       );
-      if (refreshedFocus) {
-        pinnedTabId = refreshedFocus.tabId;
-        pinnedOrigin = refreshedFocus.origin;
+      currentPinnedTabs = refreshed.pinnedTabs;
+      if (refreshed.focused) {
+        pinnedTabId = refreshed.focused.tabId;
+        pinnedOrigin = refreshed.focused.origin;
       }
 
       // Origin check
@@ -1799,8 +1821,11 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         }
 
         const riskCtx: RiskClassifyContext = {
-          // v1.5: direct multi-pin array — no synthesis shim needed.
-          pinnedTabs: ctx.pinnedTabs ?? [],
+          // v1.5: direct multi-pin array. Issue #33 — uses the
+          // per-iteration refreshed array (open_url writes), not the
+          // frozen ctx.pinnedTabs, so a newly opened tab isn't flagged
+          // cross-origin on the next click/type.
+          pinnedTabs: currentPinnedTabs,
           allTabsCache: tabTargetsToOriginCache(tabTargets),
         };
 
@@ -1957,8 +1982,11 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             // close_tabs K-9 reads this to refuse closing user-locked pins.
             pinMode: ctx.pinMode,
             // v1.5 — full pinnedTabs array for validation + mutation by
-            // focus_tab (Task 6) and open_url (Task 7).
-            pinnedTabs: ctx.pinnedTabs,
+            // focus_tab (Task 6) and open_url (Task 7). Issue #33 —
+            // currentPinnedTabs is the per-iteration refreshed array, so
+            // focus_tab(newPinId) sees pins appended by open_url in
+            // earlier iterations of the same task.
+            pinnedTabs: currentPinnedTabs,
             appendPinnedTab: async (pin) => {
               const meta = await getSessionMeta(sessionId);
               if (!meta) return;

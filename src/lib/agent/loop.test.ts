@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import "@/test/setup";
 import type { AgentMessage, ContentBlock } from "@/lib/model-router";
 import type { ChatMessage } from "@/lib/model-router";
@@ -12,6 +12,9 @@ import {
   readFocusFromStorage,
   mergeSessionAgentSnapshot,
 } from "./loop";
+import { TAB_TOOLS } from "./tools/tabs";
+
+const focusTabTool = TAB_TOOLS.find((t) => t.name === "focus_tab")!;
 import { synthesizeAgentTurnText } from "./synthesize-agent-turn";
 import {
   getSessionAgent,
@@ -1093,10 +1096,10 @@ describe("v1.5 Task 6+7 — readFocusFromStorage (integration regression)", () =
       currentFocusTabId: 20,
     });
 
-    const refreshedFocus = await readFocusFromStorage(sessionId, []);
+    const refreshed = await readFocusFromStorage(sessionId, []);
 
-    expect(refreshedFocus?.tabId).toBe(20);
-    expect(refreshedFocus?.origin).toBe("https://b.example.com");
+    expect(refreshed.focused?.tabId).toBe(20);
+    expect(refreshed.focused?.origin).toBe("https://b.example.com");
   });
 
   it("REGRESSION (wrong field path): pinnedTabs is read from SessionMeta, not SessionAgentState", async () => {
@@ -1120,12 +1123,12 @@ describe("v1.5 Task 6+7 — readFocusFromStorage (integration regression)", () =
 
     // Fallback ctxPinnedTabs is intentionally a different value to confirm
     // meta wins (otherwise the test would pass trivially).
-    const refreshedFocus = await readFocusFromStorage(sessionId, [
+    const refreshed = await readFocusFromStorage(sessionId, [
       { tabId: 999, origin: "https://stale-ctx.example.com" },
     ]);
 
-    expect(refreshedFocus?.tabId).toBe(30);
-    expect(refreshedFocus?.origin).toBe("https://only-in-meta.example.com");
+    expect(refreshed.focused?.tabId).toBe(30);
+    expect(refreshed.focused?.origin).toBe("https://only-in-meta.example.com");
   });
 
   it("Task 7 forward-provision: SessionMeta.pinnedTabs mutation IS observable in next iteration (no closure staleness)", async () => {
@@ -1166,21 +1169,127 @@ describe("v1.5 Task 6+7 — readFocusFromStorage (integration regression)", () =
     });
 
     // Pass the frozen ctxPinnedTabs (the loop closure's stale value).
-    const refreshedFocus = await readFocusFromStorage(
+    const refreshed = await readFocusFromStorage(
       sessionId,
       ctxPinnedTabsAtTaskStart,
     );
 
     // Focus correctly resolves to the newly-opened tab — meta's pinnedTabs
     // overrode the frozen ctx.
-    expect(refreshedFocus?.tabId).toBe(50);
-    expect(refreshedFocus?.origin).toBe("https://opened.example.com");
+    expect(refreshed.focused?.tabId).toBe(50);
+    expect(refreshed.focused?.origin).toBe("https://opened.example.com");
   });
 
   it("returns undefined when no meta and ctx is empty (legacy fallback path)", async () => {
     // No setSessionMeta call → meta is null. Empty ctx → no pinnedTabs
     // anywhere → caller should fall back to the legacy active-tab anchor.
-    const refreshedFocus = await readFocusFromStorage("sess-no-pin", []);
-    expect(refreshedFocus).toBeUndefined();
+    const refreshed = await readFocusFromStorage("sess-no-pin", []);
+    expect(refreshed.focused).toBeUndefined();
+    expect(refreshed.pinnedTabs).toEqual([]);
+  });
+
+  it("(closes #33) returns refreshed pinnedTabs[] alongside focused pin so handler ctx can rebroadcast it", async () => {
+    // Bug #33: readFocusFromStorage previously returned only the focused
+    // pin (a single object). The loop fed that pin into pinnedTabId but
+    // never refreshed `ctx.pinnedTabs` itself, so when open_url appended
+    // a new pin to SessionMeta the focus_tab handler still validated
+    // against the stale frozen array — focus_tab(newPinId) failed with
+    // "tab N not in pinnedTabs (current: [oldPin])" even though the new
+    // pin was correctly persisted to storage.
+    //
+    // The fix: return the refreshed array too. Loop pipes it into both
+    // riskCtx (cross-origin classification) and handler ctx (focus_tab,
+    // close_tabs K-9, etc.) every iteration.
+    const sessionId = "sess-issue-33-helper";
+    const ctxPinnedTabsAtTaskStart = [
+      { tabId: 10, origin: "https://a.example.com" },
+    ];
+    await setSessionMeta(
+      baseMeta({
+        id: sessionId,
+        pinMode: "task",
+        pinnedTabs: ctxPinnedTabsAtTaskStart,
+      }),
+    );
+
+    // open_url appends tab 50 to storage between iterations.
+    const meta1 = await getSessionMeta(sessionId);
+    await setSessionMeta({
+      ...meta1!,
+      pinnedTabs: [
+        ...ctxPinnedTabsAtTaskStart,
+        { tabId: 50, origin: "https://opened.example.com" },
+      ],
+    });
+
+    const refreshed = await readFocusFromStorage(
+      sessionId,
+      ctxPinnedTabsAtTaskStart,
+    );
+
+    // Refreshed array reflects the storage state, not the frozen ctx.
+    expect(refreshed.pinnedTabs).toEqual([
+      { tabId: 10, origin: "https://a.example.com" },
+      { tabId: 50, origin: "https://opened.example.com" },
+    ]);
+    // Focused pin still defaults to pinnedTabs[0] when currentFocusTabId
+    // is undefined (LLM hasn't called focus_tab yet).
+    expect(refreshed.focused?.tabId).toBe(10);
+  });
+
+  it("(closes #33) cross-layer: open_url's appended pin is visible to focus_tab handler via refreshed array", async () => {
+    // End-to-end regression: storage.pinnedTabs (open_url write) →
+    // readFocusFromStorage → focus_tab handler ctx.pinnedTabs. Before the
+    // fix the chain dropped the array between readFocusFromStorage and
+    // the handler, so the LLM's "next iteration" focus_tab(newPinId)
+    // call would always reject with the bug #33 error.
+    const sessionId = "sess-issue-33-handler";
+    const ctxPinnedTabsAtTaskStart = [
+      { tabId: 10, origin: "https://a.example.com" },
+    ];
+    await setSessionMeta(
+      baseMeta({
+        id: sessionId,
+        pinMode: "task",
+        pinnedTabs: ctxPinnedTabsAtTaskStart,
+      }),
+    );
+    await setSessionAgent(sessionId, {
+      agentMessages: [{ role: "user", content: "x" }],
+      stepIndex: 1,
+      skillExecutionScopeStack: [],
+      hasImageContent: false,
+    });
+
+    // open_url appends tab 50 to storage.
+    const meta1 = await getSessionMeta(sessionId);
+    await setSessionMeta({
+      ...meta1!,
+      pinnedTabs: [
+        ...ctxPinnedTabsAtTaskStart,
+        { tabId: 50, origin: "https://opened.example.com" },
+      ],
+    });
+
+    // Loop's per-iteration refresh.
+    const refreshed = await readFocusFromStorage(
+      sessionId,
+      ctxPinnedTabsAtTaskStart,
+    );
+
+    // Loop pipes refreshed.pinnedTabs into the handler ctx.
+    const setCurrentFocusTabId = vi.fn(async () => undefined);
+    const result = await focusTabTool.handler(
+      { tabId: 50 },
+      {
+        tabId: refreshed.focused?.tabId ?? 10,
+        snapshot: { url: "", title: "", elements: [] },
+        pinnedTabs: refreshed.pinnedTabs,
+        setCurrentFocusTabId,
+      },
+    );
+    expect(result.success).toBe(true);
+    expect(setCurrentFocusTabId).toHaveBeenCalledWith(50);
+    expect(result.observation).toContain("focus changed to tab 50");
   });
 });
