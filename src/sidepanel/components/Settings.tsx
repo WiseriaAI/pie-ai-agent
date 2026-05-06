@@ -14,6 +14,7 @@ import {
 import { getProviderMeta } from "@/lib/model-router/providers/registry";
 import { fetchOpenRouterModels } from "@/lib/openrouter-models-fetch";
 import { isKeyboardSimulationEnabled, setKeyboardSimulationEnabled } from "@/lib/keyboard-simulation";
+import { isSkipPermissionsEnabled, setSkipPermissionsEnabled } from "@/lib/skip-permissions";
 import SkillsList from "./SkillsList";
 import InstanceForm, { type InstanceFormPayload } from "./InstanceForm";
 import InstancesList from "./InstancesList";
@@ -33,6 +34,8 @@ export default function Settings({ onBack, onRunSkill }: Props) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showWizard, setShowWizard] = useState(false);
   const [keyboardSim, setKeyboardSim] = useState(false);
+  const [skipPermissions, setSkipPermissions] = useState(false);
+  const [showSkipPermissionsModal, setShowSkipPermissionsModal] = useState(false);
   const [testResult, setTestResult] = useState<Record<string, { ok: boolean; message: string }>>({});
   // Per-provider custom models pool — sticky across instances of the same provider.
   const [providerPools, setProviderPools] = useState<Record<string, string[]>>({});
@@ -50,7 +53,27 @@ export default function Settings({ onBack, onRunSkill }: Props) {
   useEffect(() => {
     reload();
     isKeyboardSimulationEnabled().then(setKeyboardSim);
+    isSkipPermissionsEnabled().then(setSkipPermissions);
   }, [reload]);
+
+  function handleSkipPermissionsToggle(next: boolean) {
+    if (next) {
+      setShowSkipPermissionsModal(true);
+    } else {
+      setSkipPermissions(false);
+      void setSkipPermissionsEnabled(false);
+    }
+  }
+
+  async function confirmSkipPermissions() {
+    setSkipPermissions(true);
+    await setSkipPermissionsEnabled(true);
+    setShowSkipPermissionsModal(false);
+  }
+
+  function cancelSkipPermissions() {
+    setShowSkipPermissionsModal(false);
+  }
 
   async function handleCreate(provider: Provider, payload: InstanceFormPayload) {
     await createInstance({ provider, ...payload });
@@ -229,6 +252,17 @@ export default function Settings({ onBack, onRunSkill }: Props) {
               enabled={keyboardSim}
               onToggle={async (n) => { setKeyboardSim(n); await setKeyboardSimulationEnabled(n); }}
             />
+
+            <SkipPermissionsSection
+              enabled={skipPermissions}
+              onToggle={handleSkipPermissionsToggle}
+            />
+            {showSkipPermissionsModal && (
+              <SkipPermissionsConfirmModal
+                onConfirm={confirmSkipPermissions}
+                onCancel={cancelSkipPermissions}
+              />
+            )}
           </div>
         ) : (
           <SkillsList onRunSkill={onRunSkill ?? (() => {})} />
@@ -365,6 +399,75 @@ function Switch({
         }`}
       />
     </button>
+  );
+}
+
+function SkipPermissionsSection({
+  enabled,
+  onToggle,
+}: {
+  enabled: boolean;
+  onToggle: (next: boolean) => void;
+}) {
+  return (
+    <section className="flex flex-col gap-3">
+      <div className="flex items-baseline justify-between">
+        <span className="caps text-fg-3">DANGER</span>
+      </div>
+      <div className="flex flex-col gap-3 rounded-lg border border-warning-line bg-warning-tint p-3.5">
+        <div className="flex items-start gap-3">
+          <div className="flex flex-1 flex-col gap-1">
+            <div className="text-[13px] font-medium text-warning">⚠ Skip permissions</div>
+            <p className="text-[12px] leading-[18px] text-warning/90">
+              Auto-approve every tool call (high-risk clicks, keyboard input, screenshots,
+              cross-tab writes, skill creation). The agent will execute without asking.
+              Recommended only for trusted, well-tested skills and providers you control.
+            </p>
+            <p className="text-[11px] leading-[16px] text-warning/80">
+              Page-content prompt-injection defenses (untrusted wrappers, cross-session tab locks)
+              remain on.
+            </p>
+          </div>
+          <Switch checked={enabled} onChange={onToggle} />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function SkipPermissionsConfirmModal({
+  onConfirm,
+  onCancel,
+}: {
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className="flex max-w-sm flex-col gap-3 rounded-lg border border-warning-line bg-surface p-4">
+        <div className="text-[14px] font-semibold text-warning">Enable skip permissions?</div>
+        <p className="text-[12px] leading-[18px] text-fg-2">
+          Every tool call will be auto-approved without showing a confirm card. The agent
+          can click submit buttons, type into sensitive fields, capture screenshots, open
+          new tabs, and create skills with no further confirmation. You can disable this
+          at any time.
+        </p>
+        <div className="flex justify-end gap-2 pt-1">
+          <button
+            onClick={onCancel}
+            className="rounded border border-line bg-transparent px-3 py-1.5 text-[12px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className="rounded border border-warning-line bg-warning-tint px-3 py-1.5 text-[12px] text-warning hover:bg-warning/20"
+          >
+            I understand, enable
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
