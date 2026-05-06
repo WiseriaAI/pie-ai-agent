@@ -50,6 +50,7 @@ import {
   detachAllSessions,
 } from "./cdp-session";
 import { KEYBOARD_SIMULATION_STORAGE_KEY } from "@/lib/keyboard-simulation";
+import { isSkipPermissionsEnabled } from "@/lib/skip-permissions";
 import { runSessionMigrations } from "@/lib/sessions/migration";
 import { getCrossSessionPinnedTabIds } from "@/lib/sessions/pinned-tab-registry";
 import { getEffectivePinMode, getPrimaryPin } from "@/lib/sessions/pin-state";
@@ -639,6 +640,7 @@ async function handleResumeRequest(
 
   // Reuse the chat-stream sendConfirmRequest pattern. Same persist +
   // scrub flow applies to confirms during the resumed task.
+  const skipPermissionsAtStart = await isSkipPermissionsEnabled();
   const sendConfirmRequest = async (
     confirmationId: string,
     payload: Omit<AgentConfirmRequestMessage, "type" | "confirmationId">,
@@ -742,6 +744,28 @@ async function handleResumeRequest(
         origin,
         active: args.active === true,
       };
+    }
+
+    // R2.3 — global skip-permissions short-circuit. After pre-capture
+    // (screenshot) and URL pre-parse (open_url) so LLM-fed bytes / typed
+    // origin payloads are still produced, but the panel confirm card is
+    // never shown and the agent-confirm-response wait is bypassed.
+    if (skipPermissionsAtStart) {
+      if (isScreenshotTool) {
+        const consumed = consumePreCapture(confirmationId);
+        if (!consumed?.image) {
+          return {
+            approved: false,
+            reason: "pre-capture-failed",
+            failureReason: "pre-capture cache miss (skip-permissions auto-approve path)",
+          };
+        }
+        return {
+          approved: true,
+          screenshotResult: consumed.image,
+        };
+      }
+      return { approved: true };
     }
 
     try {
@@ -863,6 +887,7 @@ async function handleResumeRequest(
     initialFocusTabId: agent.currentFocusTabId ?? meta.pinnedTabs?.[0]?.tabId,
     // Phase 5 — per-task screenshot budget key.
     taskId: resumeTaskId,
+    skipPermissions: skipPermissionsAtStart,
     // M3-U4 (TOCTOU fix) — refresh per dispatch; see chat-start twin.
     refreshCrossSessionPinnedTabIds: () => getCrossSessionPinnedTabIds(sessionId),
     // M5 — pin mode frozen at chat-start (here: resume start). close_tabs K-9
@@ -1212,6 +1237,7 @@ async function handleChatStream(
     // Phase 5 — screenshotPreview bytes MUST NOT land in storage either
     // (8 MB quota — same rule as preFetchedContent). The wire-only path
     // carries them to the panel; storage carries only the metadata fields.
+    const skipPermissionsAtStart = await isSkipPermissionsEnabled();
     const sendConfirmRequest = async (
       confirmationId: string,
       payload: Omit<AgentConfirmRequestMessage, "type" | "confirmationId">,
@@ -1321,6 +1347,28 @@ async function handleChatStream(
         };
       }
 
+      // R2.3 — global skip-permissions short-circuit. After pre-capture
+      // (screenshot) and URL pre-parse (open_url) so LLM-fed bytes / typed
+      // origin payloads are still produced, but the panel confirm card is
+      // never shown and the agent-confirm-response wait is bypassed.
+      if (skipPermissionsAtStart) {
+        if (isScreenshotTool) {
+          const consumed = consumePreCapture(confirmationId);
+          if (!consumed?.image) {
+            return {
+              approved: false,
+              reason: "pre-capture-failed",
+              failureReason: "pre-capture cache miss (skip-permissions auto-approve path)",
+            };
+          }
+          return {
+            approved: true,
+            screenshotResult: consumed.image,
+          };
+        }
+        return { approved: true };
+      }
+
       try {
         await setPendingConfirm(sessionId, {
           confirmationId,
@@ -1425,6 +1473,7 @@ async function handleChatStream(
       initialFocusTabId: sessionMeta?.pinnedTabs?.[0]?.tabId,
       // Phase 5 — per-task screenshot budget key.
       taskId: chatTaskId,
+      skipPermissions: skipPermissionsAtStart,
       // M3-U4 (TOCTOU fix) — refresh the cross-session pinned-tab
       // registry per tool dispatch. The frozen snapshot here would miss
       // sessions created mid-loop.

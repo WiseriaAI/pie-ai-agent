@@ -154,6 +154,18 @@ export interface AgentLoopContext {
    */
   resumedSkillScopeStack?: Array<{ skillId: string; allowedTools: string[] | null }>;
   /**
+   * Task-level snapshot of the global skip-permissions toggle, read at
+   * chat-start by the SW dispatcher (`isSkipPermissionsEnabled()`). When
+   * true, the SW-side `sendConfirmRequest` short-circuits every high-risk
+   * confirm and auto-approves; loop-side this also drives the
+   * `autoApproved: true` wire flag on agent-step events so the panel can
+   * render the audit footer (R2.5).
+   *
+   * Snapshot semantics: toggling mid-task does NOT affect the in-flight
+   * task — same shape as keyboardSimEnabledAtStart.
+   */
+  skipPermissions: boolean;
+  /**
    * Phase 5 — when resuming a paused session, the prior in-flight
    * snapshot's hasImageContent flag, so we don't lose the R14
    * fail-on-image precondition across restarts.
