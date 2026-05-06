@@ -202,17 +202,27 @@ export default function Chat({
   useEffect(() => {
     listInstances().then(setInstances).catch(() => setInstances([]));
     if (!sessionId) return;
-    getSessionMeta(sessionId)
-      .then((meta) => setCurrentInstanceId(meta?.instanceId ?? null))
-      .catch(() => setCurrentInstanceId(null));
-    // Also react to SW writing meta.instanceId (e.g. Task 14 backfill at chat-start)
-    const key = metaKey(sessionId);
+
+    // Effective id = per-session pin fallback to global active
+    async function loadEffective() {
+      const meta = await getSessionMeta(sessionId);
+      const fallback = meta?.instanceId ?? (await getActiveInstance());
+      setCurrentInstanceId(fallback);
+    }
+    loadEffective().catch(() => setCurrentInstanceId(null));
+
+    const sessionMetaKey = metaKey(sessionId);
     const onChanged = (changes: Record<string, chrome.storage.StorageChange>) => {
-      if (key in changes) {
-        const meta = changes[key]?.newValue as { instanceId?: string } | undefined;
-        if (meta && meta.instanceId !== undefined) {
-          setCurrentInstanceId(meta.instanceId);
+      if (sessionMetaKey in changes) {
+        const newMeta = changes[sessionMetaKey]?.newValue as { instanceId?: string } | undefined;
+        if (newMeta && newMeta.instanceId !== undefined) {
+          setCurrentInstanceId(newMeta.instanceId);
+          return;
         }
+      }
+      // Global active changed AND session has no own pin → re-compute fallback
+      if (changes.active_instance_id) {
+        loadEffective().catch(() => {});
       }
     };
     chrome.storage.local.onChanged.addListener(onChanged);

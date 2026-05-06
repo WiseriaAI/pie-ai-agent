@@ -50,6 +50,8 @@ vi.mock("@/lib/sessions/storage", () => ({
 
 // Import the mocked instances so individual tests can override return values.
 import { listInstances, getActiveInstance, getInstance } from "@/lib/instances";
+// Import the mocked sessions/storage so individual tests can override getSessionMeta.
+import { getSessionMeta } from "@/lib/sessions/storage";
 
 // ── UseSession mock ──────────────────────────────────────────────────────────
 // Build a minimal UseSession shape with no-op vi.fn() defaults so Chat can
@@ -792,5 +794,42 @@ describe("Chat — M5 pinMode behavior", () => {
     });
 
     expect(screen.getByText(/Page changed/i)).toBeTruthy();
+  });
+});
+
+// ── Regression: InstanceSelector chip fallback for new sessions ───────────────
+
+describe("Chat — InstanceSelector chip fallback (new session no pin)", () => {
+  it("chip displays active instance nickname when session has no per-session pin", async () => {
+    // Session meta has no instanceId (new session)
+    vi.mocked(getSessionMeta).mockResolvedValue(null);
+    // Global active instance
+    vi.mocked(getActiveInstance).mockResolvedValue("active-1");
+    // One instance with that id
+    const inst = {
+      id: "active-1",
+      provider: "anthropic" as import("@/lib/model-router").Provider,
+      model: "claude-opus-4-7",
+      nickname: "My Work Key",
+      apiKey: "sk-test",
+      createdAt: 0,
+    };
+    vi.mocked(listInstances).mockResolvedValue([inst] as import("@/lib/instances").DecryptedInstance[]);
+    vi.mocked(getInstance).mockResolvedValue(inst as import("@/lib/instances").DecryptedInstance);
+
+    await act(async () => {
+      render(
+        <Chat
+          providerLabel="Anthropic"
+          onOpenSettings={vi.fn()}
+          session={makeSession({ sessionId: "new-session-no-pin" })}
+        />,
+      );
+    });
+
+    // InstanceSelector should show the active instance's nickname, not "(none)"
+    // The chip label includes nickname · model
+    expect(await screen.findByText(/My Work Key/)).toBeTruthy();
+    expect(screen.queryByText(/\(none\)/)).toBeNull();
   });
 });
