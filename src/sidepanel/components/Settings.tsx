@@ -12,7 +12,7 @@ import {
   removeProviderCustomModel,
 } from "@/lib/provider-custom-models";
 import { getProviderMeta } from "@/lib/model-router/providers/registry";
-import type { ModelMeta } from "@/lib/model-router";
+import { fetchOpenRouterModels } from "@/lib/openrouter-models-fetch";
 import { isKeyboardSimulationEnabled, setKeyboardSimulationEnabled } from "@/lib/keyboard-simulation";
 import SkillsList from "./SkillsList";
 import InstanceForm, { type InstanceFormPayload } from "./InstanceForm";
@@ -180,23 +180,12 @@ export default function Settings({ onBack, onRunSkill }: Props) {
                           await removeProviderCustomModel(inst.provider, mid);
                           await reload();
                         }}
-                        onRefreshModels={async () => {
+                        onRefreshModels={async (apiKey) => {
                           if (inst.provider !== "openrouter") return;
+                          if (!apiKey.trim()) return;
                           const meta = getProviderMeta("openrouter")!;
-                          const baseUrl = meta.defaultBaseUrl.replace(/\/$/, "");
-                          const url = `${baseUrl}${meta.modelsEndpoint!}`;
                           try {
-                            const res = await fetch(url, {
-                              headers: { authorization: `Bearer ${inst.apiKey}` },
-                            });
-                            if (!res.ok) return;
-                            const data = await res.json();
-                            const fetched: ModelMeta[] = (data.data ?? []).map((m: { id: string; architecture?: { input_modalities?: string[] }; context_length?: number }) => ({
-                              id: m.id,
-                              vision: m.architecture?.input_modalities?.includes("image") ?? false,
-                              tools: true,
-                              maxContextTokens: m.context_length ?? 32_000,
-                            }));
+                            const fetched = await fetchOpenRouterModels(meta.defaultBaseUrl, apiKey);
                             await updateInstance(id, { fetchedModels: fetched, fetchedAt: Date.now() });
                             await reload();
                           } catch {

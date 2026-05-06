@@ -1,11 +1,12 @@
 import { useState, useEffect } from "react";
-import type { Provider } from "@/lib/model-router";
+import type { Provider, ModelMeta } from "@/lib/model-router";
 import { PROVIDER_REGISTRY, getProviderMeta } from "@/lib/model-router/providers/registry";
 import {
   getProviderCustomModels,
   addProviderCustomModel,
   removeProviderCustomModel,
 } from "@/lib/provider-custom-models";
+import { fetchOpenRouterModels } from "@/lib/openrouter-models-fetch";
 import InstanceForm, { type InstanceFormPayload } from "./InstanceForm";
 
 interface Props {
@@ -20,10 +21,19 @@ export default function NewConfigWizard(props: Props) {
   // Provider-level custom models pool — pre-populates the form's dropdown
   // so user sees previously-typed custom ids carry across instances.
   const [pool, setPool] = useState<string[]>([]);
+  // Lazy-fetched OpenRouter model list, scoped to this wizard session.
+  // Lives here (not in InstanceForm) so the model list persists even when
+  // the user clicks ← provider and navigates back to step 2.
+  const [fetchedModels, setFetchedModels] = useState<ModelMeta[] | undefined>(undefined);
+  const [fetchedAt, setFetchedAt] = useState<number | undefined>(undefined);
+  const [isFetching, setIsFetching] = useState(false);
 
   useEffect(() => {
     if (!provider) return;
     getProviderCustomModels(provider).then(setPool).catch(() => setPool([]));
+    // Reset fetched cache when provider changes — different provider, different model list.
+    setFetchedModels(undefined);
+    setFetchedAt(undefined);
   }, [provider]);
 
   if (step === 1 || !provider) {
@@ -69,6 +79,9 @@ export default function NewConfigWizard(props: Props) {
         provider={provider}
         initialNickname={meta.name}
         initialCustomModels={pool}
+        fetchedModels={fetchedModels}
+        fetchedAt={fetchedAt}
+        isFetching={isFetching}
         saveLabel="Create"
         onSave={(p) => props.onCreate(provider, p)}
         onTest={(p) => props.onTest(provider, p)}
@@ -79,6 +92,20 @@ export default function NewConfigWizard(props: Props) {
         onRemoveCustomModel={async (id) => {
           const next = await removeProviderCustomModel(provider, id);
           setPool(next);
+        }}
+        onRefreshModels={async (apiKey) => {
+          // Only OpenRouter has /v1/models lazy fetch; other providers stay hardcoded.
+          if (provider !== "openrouter" || !apiKey.trim()) return;
+          setIsFetching(true);
+          try {
+            const fetched = await fetchOpenRouterModels(meta.defaultBaseUrl, apiKey);
+            setFetchedModels(fetched);
+            setFetchedAt(Date.now());
+          } catch {
+            // silent for v1; user can retry via ↻ refresh button
+          } finally {
+            setIsFetching(false);
+          }
         }}
         renderActions={({ canSave, triggerSave, triggerTest, saveLabel }) => (
           <div className="flex flex-wrap items-center gap-1.5 border-t border-line px-3.5 py-3">

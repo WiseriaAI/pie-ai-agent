@@ -37,7 +37,9 @@ interface Props {
   onDelete?: () => void;
   onAddCustomModel?: (id: string) => void;
   onRemoveCustomModel?: (id: string) => void;
-  onRefreshModels?: () => void;
+  /** Receives the form's effective apiKey (just-typed or existing) so the
+   *  parent can fetch /v1/models without forcing the user to save first. */
+  onRefreshModels?: (apiKey: string) => void | Promise<void>;
   saveLabel?: string;
   /** Optional render-prop replacing the default Test/Save/Forget action row.
    *  When provided, InstanceForm renders ONLY the form fields; the parent
@@ -171,7 +173,12 @@ export default function InstanceForm(props: Props) {
             if (model === id) setModel("");
             props.onRemoveCustomModel?.(id);
           }}
-          onRefresh={props.onRefreshModels ?? (() => {})}
+          onRefresh={() => {
+            // Effective apiKey: just-typed (replacing OR creating) takes
+            // precedence; otherwise fall back to existing stored key.
+            const effective = apiKey.trim().length > 0 ? apiKey : (props.existingApiKey ?? "");
+            props.onRefreshModels?.(effective);
+          }}
         />
       </Field>
 
