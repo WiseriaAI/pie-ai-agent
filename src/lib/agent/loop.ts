@@ -30,7 +30,7 @@ import {
   type RoleViolation,
 } from "./history-validation";
 import { isKeyboardSimulationEnabled } from "../keyboard-simulation";
-import { getEnabledSkills, markSkillFirstRun, type SkillDefinition } from "../skills";
+import { getEnabledSkills, type SkillDefinition } from "../skills";
 import {
   acquireCdpSession,
   type CdpSession,
@@ -1875,6 +1875,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             status: "ok",
             observation: screenshotObs,
             skillAuthor: skillAuthorForStep,
+            autoApproved: ctx.skipPermissions ? true : undefined,
           });
           continue;
         }
@@ -2011,67 +2012,6 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           }
         }
 
-        // ── Phase 2.6 — R10 first-run confirm for agent-authored skills ────
-        // Triggers on skill-resolved tool_call when:
-        //   skill.author === 'agent' (covers create_skill output AND any
-        //     skill recently update_skill'd — author is tainted by P0-C)
-        //   skill.firstRunConfirmedAt is absent (cleared on every update)
-        // After approval we persist the timestamp; if persistence fails we
-        // fail-open (proceed with handler; next run will gate again).
-        if (skillResolvedNames.has(tc.name)) {
-          const skillDef = skillDefByName.get(tc.name);
-          if (
-            skillDef &&
-            skillDef.author === "agent" &&
-            !skillDef.firstRunConfirmedAt
-          ) {
-            const firstRunConfirmId = crypto.randomUUID();
-            const dateStr = skillDef.createdAt
-              ? new Date(skillDef.createdAt).toLocaleString()
-              : "an earlier session";
-            const firstRunReason = `This skill was authored or last modified by the agent on ${dateStr}. This is its first execution since modification — review the skill in Settings if needed, then confirm to allow it to run.`;
-            const firstRunResult = await sendConfirmRequest(firstRunConfirmId, {
-              tool: tc.name,
-              args: tc.args,
-              resolvedElement: resolvedElement ?? { text: skillDef.name, tag: "skill" },
-              riskReason: firstRunReason,
-            });
-            if (!firstRunResult.approved) {
-              const rejectionMsg = "Skill first-run not approved";
-              toolResultBlocks.push({
-                type: "tool_result",
-                toolUseId: tc.id,
-                content: rejectionMsg,
-                isError: true,
-              });
-              emitStep({
-                type: "agent-step",
-                stepIndex,
-                tool: tc.name,
-                args: redactArgsForPanel(tc.name, tc.args),
-                resolvedElement,
-                status: "error",
-                observation: rejectionMsg,
-                skillAuthor: skillAuthorForStep,
-              });
-              continue;
-            }
-            const firstRunTs = Date.now();
-            try {
-              await markSkillFirstRun(tc.name, firstRunTs);
-              // Update in-memory cache so a re-call within the same step
-              // does not re-trigger the gate.
-              skillDefByName.set(tc.name, { ...skillDef, firstRunConfirmedAt: firstRunTs });
-            } catch (e) {
-              // fail-open: proceed with handler; next call will gate again.
-              console.warn(
-                `[loop] markSkillFirstRun failed for ${tc.name}; first-run gate will re-fire on next execution:`,
-                e,
-              );
-            }
-          }
-        }
-
         // Phase 3 — confirm-time TabTarget snapshot for cross-tab handlers.
         // K-8: handlers compare live tab origin against this map's origin
         // (what the user saw on the confirm card), NOT pinnedOrigin. If a
@@ -2151,6 +2091,8 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           status: result.success ? "ok" : "error",
           observation,
           skillAuthor: skillAuthorForStep,
+          autoApproved:
+            ctx.skipPermissions && risk.level === "high" ? true : undefined,
         });
 
         // Phase 2.6 / M2-U1 — Skill scope transition.

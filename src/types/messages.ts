@@ -256,6 +256,13 @@ export interface AgentStepMessage {
    *  by origin. Absent for non-skill tools (built-in BUILT_IN_TOOLS, keyboard,
    *  meta tools). Phase 2.6 — see plan R17. */
   skillAuthor?: "user" | "agent" | "builtIn";
+  /**
+   * R2.5 — when the SW auto-approved this step due to global
+   * skipPermissions toggle (and the step would otherwise have shown a
+   * confirm card: high-risk tool, screenshot tool). Absent on regular
+   * approved/low-risk steps. Panel renders an audit footer when true.
+   */
+  autoApproved?: boolean;
   /** M2-U2 — session routing. See ChatChunkMessage.sessionId. */
   sessionId: string;
 }
