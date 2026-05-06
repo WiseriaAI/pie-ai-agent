@@ -22,6 +22,7 @@ import { clickByIndex } from "../../dom-actions/click";
 import { safeParseOrigin } from "../loop";
 import type { CdpSession } from "../../../background/cdp-session";
 import type { Tool, ToolHandlerContext } from "../types";
+import { withActionSettle } from "../wait-for-settle";
 
 // ── Configuration ────────────────────────────────────────────────────────────
 
@@ -193,10 +194,15 @@ export function buildKeyboardTools(deps: KeyboardToolDeps): Tool[] {
         required: ["text"],
         additionalProperties: false,
       },
+      // Issue #27 — wrap dispatch in `withActionSettle` so the page
+      // settles after the keystrokes (Enter may submit a form or trigger
+      // navigation; insertText into autocompletes can fire async DOM
+      // updates). Validation failures short-circuit before any wait
+      // because the helper exits on !result.success.
       handler: async (
         args: unknown,
         ctx: ToolHandlerContext,
-      ): Promise<ActionResult> => {
+      ): Promise<ActionResult> => withActionSettle(ctx.tabId, async () => {
         const a = args as { text: string; after_element_index?: number };
 
         const validation = validateText(a.text);
@@ -319,7 +325,7 @@ export function buildKeyboardTools(deps: KeyboardToolDeps): Tool[] {
           success: true,
           observation: `Typed ${lengthDesc}${enterDesc} via keyboard simulation (value redacted)`,
         };
-      },
+      }),
     },
     {
       name: "press_key",
@@ -336,10 +342,13 @@ export function buildKeyboardTools(deps: KeyboardToolDeps): Tool[] {
         required: ["key"],
         additionalProperties: false,
       },
+      // Issue #27 — same settle wrap as dispatch_keyboard_input. Enter
+      // / Space / Tab can submit forms or trigger navigation; arrow
+      // keys can scroll lists and load more content asynchronously.
       handler: async (
         args: unknown,
         ctx: ToolHandlerContext,
-      ): Promise<ActionResult> => {
+      ): Promise<ActionResult> => withActionSettle(ctx.tabId, async () => {
         const a = args as { key: string };
         const mapping = KEY_MAP[a.key];
         if (!mapping) {
@@ -387,7 +396,7 @@ export function buildKeyboardTools(deps: KeyboardToolDeps): Tool[] {
           success: true,
           observation: `Pressed ${a.key} via keyboard simulation`,
         };
-      },
+      }),
     },
   ];
 }

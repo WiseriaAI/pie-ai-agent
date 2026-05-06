@@ -8,6 +8,7 @@ import type { Tool, ToolHandlerContext } from "./types";
 import { buildKeyboardTools, type KeyboardToolDeps } from "./tools/keyboard";
 import { SKILL_META_TOOLS } from "./tools/skill-meta";
 import { TAB_TOOLS } from "./tools/tabs";
+import { withActionSettle } from "./wait-for-settle";
 
 export {
   KEYBOARD_TOOL_NAMES,
@@ -66,9 +67,15 @@ export const BUILT_IN_TOOLS: Tool[] = [
       required: ["elementIndex"],
       additionalProperties: false,
     },
+    // Issue #27 — wrap click in `withActionSettle` so any consequence
+    // (cross-doc nav, SPA pushState, async DOM update) settles before
+    // the loop's next-iteration snapshot reads the page. See
+    // `wait-for-settle.ts` for the dual-signal design.
     handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
       const a = args as { elementIndex: number };
-      return execInTab(ctx.tabId, clickByIndex, [a.elementIndex]);
+      return withActionSettle(ctx.tabId, () =>
+        execInTab(ctx.tabId, clickByIndex, [a.elementIndex]),
+      );
     },
   },
 
