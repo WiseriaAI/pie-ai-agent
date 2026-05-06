@@ -21,6 +21,10 @@ import {
   setSessionMeta,
   metaKey,
 } from "@/lib/sessions/storage";
+import {
+  isSkipPermissionsEnabled,
+  SKIP_PERMISSIONS_STORAGE_KEY,
+} from "@/lib/skip-permissions";
 
 const MAX_IMAGES_PER_TURN = 3;
 
@@ -171,6 +175,7 @@ export default function Chat({
   // the persisted `sessionPinnedOrigin` + `lockedPinnedTitle` (frozen).
   const [livePinnedOrigin, setLivePinnedOrigin] = useState<string | null>(null);
   const [livePinnedTitle, setLivePinnedTitle] = useState<string | null>(null);
+  const [skipPermissionsBanner, setSkipPermissionsBanner] = useState(false);
   // M5 follow-up — locked pin's title (task / user mode). Read from
   // chrome.tabs.get(sessionPinnedTabId); refreshed on onUpdated when the
   // tab itself changes title (most pages update document.title async).
@@ -228,6 +233,21 @@ export default function Chat({
     chrome.storage.local.onChanged.addListener(onChanged);
     return () => chrome.storage.local.onChanged.removeListener(onChanged);
   }, [sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    void isSkipPermissionsEnabled().then(setSkipPermissionsBanner);
+    const onChange = (
+      changes: Record<string, chrome.storage.StorageChange>,
+      areaName: string,
+    ) => {
+      if (areaName !== "local") return;
+      if (SKIP_PERMISSIONS_STORAGE_KEY in changes) {
+        setSkipPermissionsBanner(!!changes[SKIP_PERMISSIONS_STORAGE_KEY]?.newValue);
+      }
+    };
+    chrome.storage.onChanged.addListener(onChange);
+    return () => chrome.storage.onChanged.removeListener(onChange);
+  }, []);
 
   useEffect(() => {
     checkConfig();
@@ -810,6 +830,22 @@ After the skill completes, briefly summarize what was created (the user will see
             aria-label="Resume the paused task"
           >
             RESUME TASK
+          </button>
+        </div>
+      )}
+
+      {skipPermissionsBanner && (
+        <div
+          className="flex items-center gap-2 border-b border-warning-line bg-warning-tint px-3 py-1.5 text-[11px] text-warning"
+          role="status"
+        >
+          <span>⚠ Skip-permissions ON — tool calls auto-approved</span>
+          <button
+            type="button"
+            onClick={() => onOpenSettings?.()}
+            className="ml-auto underline hover:text-warning/80"
+          >
+            Disable
           </button>
         </div>
       )}
