@@ -1180,7 +1180,7 @@ function MessageBubble({
     );
   }
   return (
-    <div className="flex max-w-[320px] flex-col gap-1.5">
+    <div className="flex flex-col gap-1.5">
       <div className="flex items-center gap-2">
         <div className="h-1 w-1 rounded-full bg-accent" />
         <span className="caps text-fg-2">AGENT</span>
