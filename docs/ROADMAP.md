@@ -200,9 +200,26 @@ ce:review autofix sweep 时已提但未做的项，不影响 R24/R25/R26 accepta
 
 ---
 
+## 12. Open feat issues 优先级 (2026-05-07)
+
+GitHub `state:open` 的 3 条 feat 性 issue（虽未打 label，但标题均为 `feat:` / `feat(...)`），按"用户痛感 × 实现就绪度 × scope 清晰度"排：
+
+| 优先级 | Issue | 标题 | 状态 / 下一步 |
+|---|---|---|---|
+| **P0** | [#30](https://github.com/WiseriaAI/Pie/issues/30) | feat(session): 并发会话支持 — 当前 task 后台继续 / 新建 session 不影响（M3-U6+） | SW 侧 PR #29 已 ship per-session port + per-task abortController + `pendingConfirmationsBySession` + `inFlightSessionIds`，**卡点纯 panel state migration**：`streaming` / `streamingText` / `error` / `toast` / `accumulatedRef` / `streamFinishedRef` / `messagesRef` / `portRef` 全部 `Map<sessionId, …>`；`handlePortMessage` routing 不再 drop non-current；`setActive` / `createAndActivate` 切 session 不 disconnect 仍在跑的 port；移除 #29 临时 streaming guard。Issue body checklist 已细到接近可直接进 `/ce:plan`，brainstorm 仅需 align 4 个设计决策：a) 后台 session 收 `agent-confirm-request` 怎么提示（drawer 红点已有但易错过） / b) CDP / image-cache / screenshot quota 全局上限 / c) session_index `lastAccessedAt` 抖动 / d) panel unmount 集中 disconnect 还是 task done 即时回收。同时关闭 §3 / §9 / §10 的 M3-U6+ 锚点。**需要 cross-layer 集成测试**（per memory `feedback_cross_layer_integration_tests`）：A 跑 → 新建 B → A 完成 → 切回 A 看到 done summary 的 wire→DisplayMessage 透传 |
+| **P1** | [#34](https://github.com/WiseriaAI/Pie/issues/34) | feat: agent working 中途可发送新指令，当前单次 loop 完成后参与后续循环 | scope 含糊 — 必须先 `/ce:brainstorm` 收窄 3 处：a) "插入"是覆盖原始 task 还是纯附加 / b) 是否要二次 confirm / c) 同 loop 后多条 pending 是合并提交还是分批。默认建议：纯附加（不动 task） + 不 confirm（输入即排队） + 多条按时序合并到下一轮 user role + 用 `[User Mid-Task Instruction]:` 标签让 LLM 区分。与 #30 互补但**应在 #30 之后启动**：当前单 port + 单 streaming state 的 architecture 下，pending queue 会和 #29 streaming guard 互锁；#30 ship 后 pending queue 自然 per-session 隔离 |
+| **P2** | [#38](https://github.com/WiseriaAI/Pie/issues/38) | feat: 输入时支持引用页内内容（组件元素、文字、图片）及划词显示组件 | 工作量最大、scope 最含糊、prompt-injection 风险最高。issue 含 4 个独立 feature 维度（DOM 元素引用 / 划词组件边界识别 / side panel 引用面板 / SPA+iframe+Canvas+OCR 兼容），任一都够独立 milestone。`src/content/` 当前是 placeholder（DOM 操作走 `executeScript`），引用功能需要常驻 content script 监听 selection / mousemove / click — 需先评估 ship 常驻 content script 的成本（vs 现有 `executeScript` 套路）+ 与 R15 image untrusted boundary 的协作。先 `/ce:brainstorm` 强制 narrow v1 — 推荐 v1 = 纯文字选中 → chat chip 注入 + 选中元素截图复用 Phase 5 image attach pipeline；v2 剥离组件边界 heuristic / iframe / Canvas+OCR。引用内容必须走 `<untrusted_page_content>` wrapper（同 R15 image boundary） |
+
+**Acceptance gate（3 条共用）**：
+- 都未单独 brainstorm 过；P0 的 issue body 最贴近 ready-to-plan，P1/P2 都需先走完整 `/ce:brainstorm`
+- 都属于 panel↔SW wire shape 变化范围，**必须有 cross-layer regression test**（panel state model 变化必有 wire→DisplayMessage 透传测）
+- P0 / P1 严格串行：#30 解掉 panel state 全局单态后再做 #34，否则两个 PR 互相会动同一批 refs / Map 结构
+
+---
+
 ## 推荐推进顺序
 
-按"用户痛感 × 解锁后续能力"性价比（已纳入 §5 4-way 评估结果）：
+按"用户痛感 × 解锁后续能力"性价比（已纳入 §5 4-way 评估 + §12 open issues）：
 
 1. **多轮对话上下文（§6）** — ✅ **SHIPPED 2026-05-04**：PR #15 (Half A + Half B hybrid synth) + PR #16 (3 P1 residual)；plan completed；R1/R2 全闭环
 2. **多模态输入图片（§5 #1）** — ✅ **PR #20 merged 2026-05-04**：15 task / 339→461 tests (+122 net) / R1-R15 全闭环；user acceptance 期间发现 2 个跨层集成 bug（first-task pin race + screenshotPreview wire transit）— 修复并 push (commits `0927031` + `517435d`) 已合并。Phase 5 v1.1 backlog 见 §8
@@ -210,9 +227,12 @@ ce:review autofix sweep 时已提但未做的项，不影响 R24/R25/R26 accepta
 4. **Chrome narrow（§5 #3）** — ✅ **SHIPPED 2026-05-05** as v1.5 Path A: `open_url` + `focus_tab` + multi-pin schema. 10 task / 572 tests pass / manifest 0.5.2 / PR #21. v1.5.1 backlog 详见 §10。Engineering patterns（4 个跨切层 type migration 模式）沉淀在 `docs/solutions/2026-05-05-cross-cutting-type-migration-lessons.md`
 5. **行为录制 → Skill seed（§5 #4）** — ✅ **SHIPPED 2026-05-05** v1（单 tab + LLM-driven create_skill_from_recording）；v1.1 backlog: cross-tab 录制 / N 行数据循环 / 重录覆盖 UX
 6. **Gemini provider** — ✅ **SHIPPED 2026-05-06** 与 §7 同期（PR #28）。Native module + `inline_data` + `?alt=sse` + `function_declarations` + manifest host_permission
-7. **Ollama 本地模型** — 与 BYOK 定位契合；manifest + streaming 协议适配
-8. **快捷键支持** — 打磨项，零结构性风险
-9. **Skill 脚本化（§5 #2）** — 收窄 (a)/(b)/(c)/(d) 后再决定
-10. **page-match 自动触发** — 需要先解决 prompt-injection-by-page 防御
+7. **并发会话支持（§12 #30, P0）** — SW 已就绪（PR #29），纯 panel state migration（per-session Map + routing filter）；M3 系列 natural close-out；可直接进 `/ce:plan`
+8. **Agent 中途插入指令（§12 #34, P1）** — 与 #30 互补；scope 含糊先 `/ce:brainstorm` 收窄 3 个设计决策；**应在 #30 ship 后启动**避免与 #29 临时 streaming guard 互锁
+9. **页内内容引用（§12 #38, P2）** — Phase 级 scope（4 个独立维度）；先 `/ce:brainstorm` 强制 narrow v1（纯文字选中 chip + 选中元素截图复用 Phase 5 image attach），v2 剥离组件边界 / iframe / Canvas+OCR；需评估常驻 content script 成本
+10. **Ollama 本地模型** — 与 BYOK 定位契合；manifest + streaming 协议适配
+11. **快捷键支持** — 打磨项，零结构性风险
+12. **Skill 脚本化（§5 #2）** — 收窄 (a)/(b)/(c)/(d) 后再决定
+13. **page-match 自动触发** — 需要先解决 prompt-injection-by-page 防御
 
 Checkpoint & Resume 的 M1 已 ship；M2/M3 PR #10 / #13 已 ship。定时工作流仍依赖 SW 5 min 限制突破。
