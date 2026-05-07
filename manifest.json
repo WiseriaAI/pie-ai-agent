@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Pie",
-  "version": "0.5.3",
+  "version": "0.6.0",
   "description": "BYOK Chrome Extension Agent — bring your own API key for page understanding, multi-step task automation, and smart tab management.",
   "permissions": ["activeTab", "sidePanel", "storage", "tabs", "tabGroups", "scripting", "debugger", "webNavigation"],
   "host_permissions": [
