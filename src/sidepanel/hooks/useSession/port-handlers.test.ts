@@ -192,3 +192,44 @@ describe("agent-step", () => {
     expect(deps.slotsRef.current.get("s1")!.messages).toHaveLength(2);
   });
 });
+
+describe("agent-confirm-request", () => {
+  it("appends an agent-confirm DisplayMessage with optional preview fields", () => {
+    const deps = makeDeps();
+    const { handleMessage } = createPortHandlers(deps);
+    handleMessage({
+      type: "agent-confirm-request",
+      sessionId: "s1",
+      confirmationId: "c1",
+      tool: "click",
+      args: { selector: "#submit" },
+      riskReason: "submit-button",
+      screenshotPreview: { kind: "image_placeholder", id: "i1", mime: "image/jpeg" },
+    } as PortMessageToPanel);
+    const slot = deps.slotsRef.current.get("s1")!;
+    expect(slot.messages).toHaveLength(1);
+    expect(slot.messages[0]).toMatchObject({
+      role: "agent-confirm",
+      confirmationId: "c1",
+      tool: "click",
+      riskReason: "submit-button",
+      screenshotPreview: { kind: "image_placeholder", id: "i1", mime: "image/jpeg" },
+      resolved: undefined,
+    });
+  });
+
+  it("is idempotent — same confirmationId does not stack", () => {
+    const deps = makeDeps();
+    const { handleMessage } = createPortHandlers(deps);
+    const same = {
+      type: "agent-confirm-request",
+      sessionId: "s1",
+      confirmationId: "c1",
+      tool: "click",
+      args: {},
+    } as PortMessageToPanel;
+    handleMessage(same);
+    handleMessage(same);
+    expect(deps.slotsRef.current.get("s1")!.messages).toHaveLength(1);
+  });
+});

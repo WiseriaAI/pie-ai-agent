@@ -127,6 +127,37 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
       return;
     }
 
+    if (msg.type === "agent-confirm-request") {
+      const prev = slotsRef.current.get(id);
+      const baseMessages = prev?.messages ?? [];
+      // Idempotent — re-emit on panel-mounted (R4) must not stack.
+      for (let i = baseMessages.length - 1; i >= 0; i--) {
+        const m = baseMessages[i]!;
+        if (m.role === "agent-confirm" && m.confirmationId === msg.confirmationId) {
+          return;
+        }
+      }
+      const {
+        confirmationId, tool, args, resolvedElement, riskReason,
+        metaSkillPreview, screenshotPreview, openUrlPreview, originChangePreview,
+      } = msg;
+      const entry: DisplayMessage = {
+        role: "agent-confirm",
+        confirmationId,
+        tool,
+        args,
+        resolvedElement,
+        riskReason,
+        metaSkillPreview,
+        ...(screenshotPreview ? { screenshotPreview } : {}),
+        ...(openUrlPreview ? { openUrlPreview } : {}),
+        ...(originChangePreview ? { originChangePreview } : {}),
+        resolved: undefined,
+      };
+      patchSlot(id, { messages: [...baseMessages, entry] });
+      return;
+    }
+
     // Subsequent branches added in Tasks 2c–2g.
   };
 
