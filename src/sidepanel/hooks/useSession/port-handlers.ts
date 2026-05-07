@@ -209,9 +209,21 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
     // Subsequent branches added in Tasks 2c–2g.
   };
 
-  const makeDisconnectHandler = (_sessionId: string) => {
+  const makeDisconnectHandler = (sessionId: string) => {
     return () => {
-      // Implemented in Task 2h.
+      const slot = slotsRef.current.get(sessionId);
+      if (!slot || slot.streamFinished) return;
+      const next: DisplayMessage[] = slot.accumulated.trim()
+        ? [...slot.messages, { role: "assistant", content: slot.accumulated }]
+        : slot.messages;
+      patchSlot(sessionId, {
+        messages: next,
+        accumulated: "",
+        streamingText: "",
+        streaming: false,
+        streamFinished: true,
+      });
+      void persistMessages(sessionId, next);
     };
   };
 

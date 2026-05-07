@@ -308,3 +308,44 @@ describe("session-toast", () => {
     expect(deps.slotsRef.current.get("s1")!.toast).toEqual({ level: "warn", text: "flood" });
   });
 });
+
+describe("makeDisconnectHandler", () => {
+  it("no-op when streamFinished is true", () => {
+    const deps = makeDeps();
+    deps.slotsRef.current.set("s1", { ...EMPTY_SLOT, streamFinished: true });
+    const { makeDisconnectHandler } = createPortHandlers(deps);
+    makeDisconnectHandler("s1")();
+    expect(deps.persistMessages).not.toHaveBeenCalled();
+    expect(deps.slotsRef.current.get("s1")?.streaming).toBe(false);
+  });
+
+  it("flushes partial text and persists when streamFinished is false", () => {
+    const deps = makeDeps();
+    deps.slotsRef.current.set("s1", {
+      ...EMPTY_SLOT,
+      accumulated: "half",
+      streaming: true,
+      streamFinished: false,
+    });
+    const { makeDisconnectHandler } = createPortHandlers(deps);
+    makeDisconnectHandler("s1")();
+    const slot = deps.slotsRef.current.get("s1")!;
+    expect(slot.messages).toEqual([{ role: "assistant", content: "half" }]);
+    expect(slot.accumulated).toBe("");
+    expect(slot.streaming).toBe(false);
+    expect(slot.streamFinished).toBe(true);
+    expect(deps.persistMessages).toHaveBeenCalledWith(
+      "s1",
+      [{ role: "assistant", content: "half" }],
+    );
+  });
+
+  it("scopes to the captured sessionId only", () => {
+    const deps = makeDeps();
+    deps.slotsRef.current.set("s1", { ...EMPTY_SLOT, streaming: true, streamFinished: false });
+    deps.slotsRef.current.set("s2", { ...EMPTY_SLOT, streaming: true, streamFinished: false });
+    const { makeDisconnectHandler } = createPortHandlers(deps);
+    makeDisconnectHandler("s1")();
+    expect(deps.slotsRef.current.get("s2")?.streaming).toBe(true);
+  });
+});
