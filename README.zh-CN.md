@@ -140,7 +140,7 @@ Arc 等均可。
 
 适用于不想走 Web Store 但要装同一份产物的用户，或商店审核期间的临时方案：
 
-1. 从 [Releases 页面](https://github.com/WiseriaAI/Pie/releases)
+1. 从 [Releases 页面](https://github.com/WiseriaAI/pie-ai-agent/releases)
    下载最新的 `pie-x.y.z.zip`
 2. 解压到一个会长期保留的目录（Chrome 运行时会从这个目录加载，安装后
    不要删除）
@@ -157,7 +157,7 @@ Arc 等均可。
 如果你想要 HMR、要发 PR，或者就是不信任预编译产物：
 
 ```bash
-git clone https://github.com/WiseriaAI/Pie.git
+git clone https://github.com/WiseriaAI/pie-ai-agent.git
 cd Pie
 pnpm install
 pnpm build

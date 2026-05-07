@@ -10,7 +10,7 @@ export async function* streamChat(
 ): AsyncGenerator<StreamEvent> {
   yield* streamChatOpenAICompat(config, messages, signal, tools, {
     customHeaders: () => ({
-      "HTTP-Referer": "https://github.com/WiseriaAI/chrome-ai-agent",
+      "HTTP-Referer": "https://github.com/WiseriaAI/pie-ai-agent",
       "X-OpenRouter-Title": "Pie",
     }),
   });

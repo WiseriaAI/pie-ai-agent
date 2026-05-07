@@ -159,7 +159,7 @@ For users who want to install the same artifact without the Web Store,
 or while the listing is still under review:
 
 1. Download the latest `pie-x.y.z.zip` from the
-   [Releases page](https://github.com/WiseriaAI/Pie/releases)
+   [Releases page](https://github.com/WiseriaAI/pie-ai-agent/releases)
 2. Unzip it to a directory you'll keep around (Chrome reads from this
    directory at runtime — don't delete it after install)
 3. Open `chrome://extensions`
@@ -176,7 +176,7 @@ If you want HMR, are sending a PR, or just don't trust prebuilt
 binaries:
 
 ```bash
-git clone https://github.com/WiseriaAI/Pie.git
+git clone https://github.com/WiseriaAI/pie-ai-agent.git
 cd Pie
 pnpm install
 pnpm build

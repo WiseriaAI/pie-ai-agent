@@ -104,9 +104,9 @@ If this policy changes, the `Last updated` date at the top of this
 document will be updated and the extension version bumped. The current
 version is always available at:
 
-<https://github.com/WiseriaAI/Pie/blob/main/PRIVACY.md>
+<https://github.com/WiseriaAI/pie-ai-agent/blob/main/PRIVACY.md>
 
 ## Contact
 
 - Email: <xiewkevo66@gmail.com>
-- Issues: <https://github.com/WiseriaAI/Pie/issues>
+- Issues: <https://github.com/WiseriaAI/pie-ai-agent/issues>
