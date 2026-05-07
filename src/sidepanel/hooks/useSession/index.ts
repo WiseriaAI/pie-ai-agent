@@ -895,51 +895,18 @@ export function useSession(): UseSession {
    * into the new session's UI (K-1 informed-approval bypass).
    */
   const createAndActivate = useCallback(async (): Promise<string | null> => {
-    // P0-1 — refuse when a stream is in flight (no per-session port yet;
-    // M3-U1 will allow concurrent sessions with per-session ports).
-    //
-    // Issue #24 (Bug 2) — read from `streamingRef.current` instead of the
-    // `streaming` state. `useCallback`'s dep array is `[connectPortFor]`
-    // (intentional — `connectPortFor` is stable, so `createAndActivate`
-    // can stay referentially stable across renders). Closing over the
-    // `streaming` state would capture its mount-time value (false) and
-    // never see subsequent flips, so this guard would never fire while
-    // a task is running. `streamingRef` is the documented synchronous
-    // source of truth (see `streamingRef` JSDoc above).
-    if (streamingRef.current) {
-      setToast({ level: "warn", text: "Stop the current task before starting a new session." });
-      return null;
-    }
-    // Defense-in-depth: reset per-stream scratch state. If a prior stream
-    // ended abnormally without flipping these, we start clean.
-    accumulatedRef.current = "";
-    streamFinishedRef.current = true;
-
-    // M3-U2 (post-acceptance) — new session starts WITHOUT a pin. The
-    // user can still tab-switch freely while the session is empty;
-    // PINNED is locked at the moment of first sendMessage instead. This
-    // matches the user-facing rule "empty session can change pin, non-
-    // empty session is locked".
+    // #30 — streaming guard removed; old port stays connected for the
+    // background task. SW already supports concurrent ports per PR #29.
     const meta = await createSession();
-    // M3-U1 — swap to the new session's port (the new session's id is
-    // freshly minted, so the prior port belongs to a different session
-    // and must be disconnected to release its SW-side resources).
-    // (multi-session: old port stays connected, deletion deferred to Tasks 7+8)
-
-    // Update ref immediately (same reasoning as setActive)
     sessionIdRef.current = meta.id;
     setSessionId(meta.id);
     setStatus(meta.status);
-    setPinnedTabsState(null); // brand new session — no pin yet
+    setPinnedTabsState(null);
     setPinModeState("auto");
-    setMessages([]);
-    setError(null);
-    setToast(null);
-
+    patchSlot(meta.id, EMPTY_SLOT);
     portsRef.current.set(meta.id, connectPortFor(meta.id));
-
     return meta.id;
-  }, [connectPortFor]);
+  }, [connectPortFor, patchSlot]);
 
   // v1.5 — PinnedTabDropdown actions. Direct storage writes (panel can write
   // session_${id}_meta) — no need to round-trip through SW. The storage

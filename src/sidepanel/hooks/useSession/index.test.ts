@@ -1020,45 +1020,6 @@ describe("useSession — M3-U1 per-session port routing", () => {
     });
   });
 
-  it("createAndActivate refuses while a task is streaming (Issue #24 Bug 2)", async () => {
-    // Regression: createAndActivate's useCallback deps were
-    // [connectPortFor], so the closure captured `streaming=false` from the
-    // mount render and the guard never fired once a task was running. The
-    // user could click "新建 session" mid-task and the new session would
-    // inherit `streaming=true` because no chat-done / agent-done-task
-    // arrived on the new per-session port. Fix reads `streamingRef.current`
-    // (the documented synchronous source of truth) instead of `streaming`.
-    const { result } = renderHook(() => useSession());
-    await waitFor(() => expect(result.current.ready).toBe(true));
-    const oldId = result.current.sessionId!;
-    const oldPort = chromeMock.runtime.__ports.at(-1)!;
-    const portCountBefore = chromeMock.runtime.__ports.length;
-
-    // Kick off a task — sendMessage flips streamingRef.current = true.
-    act(() => {
-      result.current.sendMessage({ content: "ping" });
-    });
-    expect(result.current.streaming).toBe(true);
-
-    // User clicks "新建 session" while task is still running.
-    let newId: string | null = "sentinel";
-    await act(async () => {
-      newId = await result.current.createAndActivate();
-    });
-
-    // Guard fires — refused, no new session, port unchanged, toast shown.
-    expect(newId).toBeNull();
-    expect(result.current.sessionId).toBe(oldId);
-    expect(oldPort.disconnect).not.toHaveBeenCalled();
-    expect(chromeMock.runtime.__ports.length).toBe(portCountBefore);
-    expect(result.current.toast).toEqual({
-      level: "warn",
-      text: "Stop the current task before starting a new session.",
-    });
-    // Streaming state must remain true (task is still running) — never
-    // bleed a "false" reset into a session that's still mid-task.
-    expect(result.current.streaming).toBe(true);
-  });
 });
 
 describe("useSession — abort", () => {
