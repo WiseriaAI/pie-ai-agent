@@ -76,6 +76,9 @@ describe("image-cache — 4 evict paths (R13)", () => {
     expect(getImages("s2")).toEqual([]);
   });
 
+  // Function-body unit test retained — SW path no longer calls this since
+  // #30 (concurrent sessions). Kept exported for any future user-driven
+  // explicit-clear surface.
   it("(c) evictOnSetActive keeps only the newly active session", () => {
     addImage("s1", mkRef("i1", "s1", "t1"));
     addImage("s2", mkRef("i2", "s2", "t1"));

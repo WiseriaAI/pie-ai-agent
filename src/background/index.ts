@@ -59,7 +59,6 @@ import { generateTitle, maybeUpgradeFallbackTitle } from "@/lib/sessions/title-g
 // Phase 5 — image cache lifecycle + pre-capture (Task 12 wiring)
 import {
   evictAllOnSWStartup,
-  evictOnSetActive,
   evictByInFlightSet,
 } from "./image-cache";
 import {
@@ -1544,11 +1543,11 @@ chrome.runtime.onConnect.addListener((port) => {
     return;
   }
 
-  // R13(c) — session switch: useSession.connectPortFor opens a new port
-  // with the newly-activated sessionId on every setActive / createAndActivate
-  // call in the panel. Evict all sessions OTHER than the one this port is
-  // bound to so the active session keeps its warm cache.
-  evictOnSetActive(portSessionId);
+  // R13(c) evictOnSetActive removed (#30) — multi-session: a new port no
+  // longer means the previous active session is exiting. Image-cache 30 MB
+  // per-session LRU + R13(a) emitDone + R13(b) SW restart + R13(d) port
+  // disconnect remain in effect. evictOnSetActive function body retained
+  // in image-cache.ts for any future explicit-clear UI surface.
 
   // Issue #24 (Bug 1) — abort controller is per-task, NOT per-port. An
   // AbortSignal is one-shot: once `chat-abort` aborts it, the next
