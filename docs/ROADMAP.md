@@ -35,6 +35,8 @@
 
 > **Status (2026-05-04)**: Brainstorm 升级为 "session 作为 first-class persistent layer" → `docs/brainstorms/2026-05-02-checkpoint-resume-requirements.md`。Plan (14 unit / M1→M2→M3) → `docs/plans/2026-05-02-001-feat-session-persistent-layer-plan.md`，frontmatter status=`completed`. **M1 (PR #8)** single-session 持久化 + SW restart recovery + R11 drift card → `docs/solutions/2026-05-02-session-as-first-class-persistent-layer-m1.md`。**M2 (PR #9 + #10 + 未编号)** multi-session UI drawer + LLM 标题 + LRU archive + 30d 硬删 + soft delete + storage indicator。**M3 (PR #13)** per-session port + per-session pinned tab/origin + R7 cross-session lock + ownerToken `{sessionId, tabId}` + queueTabOp 串行化 + R14 fail-on-image precondition (与 Phase 5 协同) → `docs/solutions/2026-05-03-multi-session-invariant-trace.md`。M3 残余 advisory 项见 §9。
 
+> **§M3-U6 close-out (2026-05-08)**: Panel state per-session migration shipped. M3 series fully complete.
+
 **Original C1–C5 outline (now superseded by full plan above; kept for traceability)**:
 
 `docs/brainstorms/2026-05-01-skill-autonomous-crud-requirements.md` L127–135 outline 级，**未单独 brainstorm**。Phase 2.6 plan 的 1 MB skill 配额 + 4 MB 余量已为它预留。
@@ -147,6 +149,8 @@
 
 ## 9. M3 残余 advisory 项（M3 ship 后未实现的可选优化）
 
+> **2026-05-08 update**: M3-U6 panel concurrent state migration shipped (#30). The advisory items below remain optional maintenance and are not blockers for any roadmap item.
+
 ce:review autofix sweep 时已提但未做的项，不影响 R24/R25/R26 acceptance gate；可作为 ad-hoc 维护任务穿插：
 
 | 类别 | 项 | 备注 |
@@ -166,6 +170,8 @@ ce:review autofix sweep 时已提但未做的项，不影响 R24/R25/R26 accepta
 ---
 
 ## 10. v1.5.1 follow-ups（multi-pin + open_url ship 后已知 deferred）
+
+> **2026-05-08 update**: M3-U6+ anchor resolved by concurrent sessions ship (#30). The items below are independent deferred polish and not blocked by any roadmap item.
 
 来源 `docs/solutions/2026-05-03-multi-session-invariant-trace.md` v1.5.1 backlog 章节 + final review minor findings + plan 的 v1.5 boundary。Engineering patterns 见 `docs/solutions/2026-05-05-cross-cutting-type-migration-lessons.md`。
 
@@ -206,7 +212,7 @@ GitHub `state:open` 的 3 条 feat 性 issue（虽未打 label，但标题均为
 
 | 优先级 | Issue | 标题 | 状态 / 下一步 |
 |---|---|---|---|
-| **P0** | [#30](https://github.com/WiseriaAI/Pie/issues/30) | feat(session): 并发会话支持 — 当前 task 后台继续 / 新建 session 不影响（M3-U6+） | SW 侧 PR #29 已 ship per-session port + per-task abortController + `pendingConfirmationsBySession` + `inFlightSessionIds`，**卡点纯 panel state migration**：`streaming` / `streamingText` / `error` / `toast` / `accumulatedRef` / `streamFinishedRef` / `messagesRef` / `portRef` 全部 `Map<sessionId, …>`；`handlePortMessage` routing 不再 drop non-current；`setActive` / `createAndActivate` 切 session 不 disconnect 仍在跑的 port；移除 #29 临时 streaming guard。Issue body checklist 已细到接近可直接进 `/ce:plan`，brainstorm 仅需 align 4 个设计决策：a) 后台 session 收 `agent-confirm-request` 怎么提示（drawer 红点已有但易错过） / b) CDP / image-cache / screenshot quota 全局上限 / c) session_index `lastAccessedAt` 抖动 / d) panel unmount 集中 disconnect 还是 task done 即时回收。同时关闭 §3 / §9 / §10 的 M3-U6+ 锚点。**需要 cross-layer 集成测试**（per memory `feedback_cross_layer_integration_tests`）：A 跑 → 新建 B → A 完成 → 切回 A 看到 done summary 的 wire→DisplayMessage 透传 |
+| **P0** | [#30](https://github.com/WiseriaAI/Pie/issues/30) | feat(session): 并发会话支持 — 当前 task 后台继续 / 新建 session 不影响（M3-U6+） | ✅ **SHIPPED 2026-05-08** — panel state migration to per-session `Map<sessionId, T>` + slots/slotsRef hub + createPortHandlers factory + setActive/createAndActivate simplified + #29 streaming guard removed + SW R13(c) evictOnSetActive removed + SW keep-alive scoped to in-flight tasks. ~14 tasks / cross-layer regression for agent-done-task transit / 700+ tests pass / acceptance AC-1..AC-9 met. Closes §3 / §9 / §10 M3-U6+ anchors. Trace doc → `docs/solutions/2026-05-03-multi-session-invariant-trace.md` §M3-U6 (appended) |
 | **P1** | [#34](https://github.com/WiseriaAI/Pie/issues/34) | feat: agent working 中途可发送新指令，当前单次 loop 完成后参与后续循环 | scope 含糊 — 必须先 `/ce:brainstorm` 收窄 3 处：a) "插入"是覆盖原始 task 还是纯附加 / b) 是否要二次 confirm / c) 同 loop 后多条 pending 是合并提交还是分批。默认建议：纯附加（不动 task） + 不 confirm（输入即排队） + 多条按时序合并到下一轮 user role + 用 `[User Mid-Task Instruction]:` 标签让 LLM 区分。与 #30 互补但**应在 #30 之后启动**：当前单 port + 单 streaming state 的 architecture 下，pending queue 会和 #29 streaming guard 互锁；#30 ship 后 pending queue 自然 per-session 隔离 |
 | **P2** | [#38](https://github.com/WiseriaAI/Pie/issues/38) | feat: 输入时支持引用页内内容（组件元素、文字、图片）及划词显示组件 | 工作量最大、scope 最含糊、prompt-injection 风险最高。issue 含 4 个独立 feature 维度（DOM 元素引用 / 划词组件边界识别 / side panel 引用面板 / SPA+iframe+Canvas+OCR 兼容），任一都够独立 milestone。`src/content/` 当前是 placeholder（DOM 操作走 `executeScript`），引用功能需要常驻 content script 监听 selection / mousemove / click — 需先评估 ship 常驻 content script 的成本（vs 现有 `executeScript` 套路）+ 与 R15 image untrusted boundary 的协作。先 `/ce:brainstorm` 强制 narrow v1 — 推荐 v1 = 纯文字选中 → chat chip 注入 + 选中元素截图复用 Phase 5 image attach pipeline；v2 剥离组件边界 heuristic / iframe / Canvas+OCR。引用内容必须走 `<untrusted_page_content>` wrapper（同 R15 image boundary） |
 
@@ -227,7 +233,7 @@ GitHub `state:open` 的 3 条 feat 性 issue（虽未打 label，但标题均为
 4. **Chrome narrow（§5 #3）** — ✅ **SHIPPED 2026-05-05** as v1.5 Path A: `open_url` + `focus_tab` + multi-pin schema. 10 task / 572 tests pass / manifest 0.5.2 / PR #21. v1.5.1 backlog 详见 §10。Engineering patterns（4 个跨切层 type migration 模式）沉淀在 `docs/solutions/2026-05-05-cross-cutting-type-migration-lessons.md`
 5. **行为录制 → Skill seed（§5 #4）** — ✅ **SHIPPED 2026-05-05** v1（单 tab + LLM-driven create_skill_from_recording）；v1.1 backlog: cross-tab 录制 / N 行数据循环 / 重录覆盖 UX
 6. **Gemini provider** — ✅ **SHIPPED 2026-05-06** 与 §7 同期（PR #28）。Native module + `inline_data` + `?alt=sse` + `function_declarations` + manifest host_permission
-7. **并发会话支持（§12 #30, P0）** — SW 已就绪（PR #29），纯 panel state migration（per-session Map + routing filter）；M3 系列 natural close-out；可直接进 `/ce:plan`
+7. **并发会话支持（§12 #30, P0）** — ✅ **SHIPPED 2026-05-08** as #30: per-session `Map<sessionId, T>` panel state + createPortHandlers factory + SW R13(c) removal + keep-alive scoped to in-flight tasks. Unblocks #34 (P1).
 8. **Agent 中途插入指令（§12 #34, P1）** — 与 #30 互补；scope 含糊先 `/ce:brainstorm` 收窄 3 个设计决策；**应在 #30 ship 后启动**避免与 #29 临时 streaming guard 互锁
 9. **页内内容引用（§12 #38, P2）** — Phase 级 scope（4 个独立维度）；先 `/ce:brainstorm` 强制 narrow v1（纯文字选中 chip + 选中元素截图复用 Phase 5 image attach），v2 剥离组件边界 / iframe / Canvas+OCR；需评估常驻 content script 成本
 10. **Ollama 本地模型** — 与 BYOK 定位契合；manifest + streaming 协议适配

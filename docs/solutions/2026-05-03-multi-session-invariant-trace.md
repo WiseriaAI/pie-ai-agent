@@ -300,3 +300,27 @@ Task 10 changes (final cleanup, post-final-review):
 - **ownerToken refresh on focus_tab**: keyboard tools route correctly to focused tab via ctx.tabId; ownerToken.tabId stays at task-start. Metadata-only inconsistency. Defense-in-depth: refresh ownerToken or surface a guard warning when keyboard + focus_tab combine.
 - **PinnedTabDropdown mount-only refresh**: tab list doesn't update while dropdown is open. Cosmetic; multi-select makes it more visible.
 - **CDP-keyboard comment audit (DONE in v0.5.2 polish)**: `loop.ts:1073-1080`, `cdp-session.ts:43-65`, `tabs.ts:1024-1036` previously claimed keyboard tools route to wrong tab after focus_tab — corrected; routing is via `ctx.tabId` and is always live.
+
+---
+
+## §M3-U6 — Panel concurrent state migration (2026-05-08)
+
+Closes the M3-U6+ anchor referenced throughout this trace. Spec → `docs/superpowers/specs/2026-05-08-concurrent-sessions-design.md`. PR → (TBD on merge).
+
+**Shipped invariants**:
+- Panel `useSession` is split into `useSession/{index, runtime-map, port-handlers}.ts` directory module
+- All per-task runtime state (streaming/streamingText/error/toast/messages/accumulated/streamFinished) lives in `Map<sessionId, SessionRuntimeSlot>`; the active-session view is derived via `deriveActiveView(slots, sessionId)`
+- `portsRef: Map<sessionId, Port>`; `setActive` / `createAndActivate` no longer disconnect prior ports
+- `#29 streamingRef.current` guard removed in `createAndActivate` and `setActive`
+- Single-instance `handleMessage` listener routes by `message.sessionId`; per-port `makeDisconnectHandler` flushes partial text scoped to its session
+- `setActive` does NOT auto-create a port for paused / archived sessions (Resume flow owns connection)
+- panel unmount disconnects every port in `portsRef` — `transitionPortInFlightSessionsToPaused` invariant preserved per port
+
+**SW-side delta**:
+- `R13(c) evictOnSetActive(portSessionId)` removed from `chrome.runtime.onConnect` closure (still exported from image-cache.ts)
+- `keepAliveInterval` replaced by `createKeepAlive({ tick, inFlight })` controller; ensure() at chat-start / resume-task; maybeStop() at task terminal state via `try/finally` in handleChatStream / handleResumeRequest; stop() at port.onDisconnect
+
+**Acceptance**:
+- AC-1..AC-9 from spec all green
+- Cross-layer regression `concurrent-task-summary.test.ts` ensures wire→DisplayMessage transit even on backgrounded sessions
+- 700+ existing tests preserved (single-session behavior unchanged)
