@@ -17,8 +17,7 @@
  */
 
 import type { AgentMessage, ContentBlock } from "../model-router/types";
-import { getProviderMeta } from "../model-router/providers/registry";
-import type { Provider } from "../model-router";
+import { resolveProviderMeta } from "../model-router/providers/registry";
 import { findReactStartIdx } from "./window";
 
 /** Fallback context window when provider metadata is missing. */
@@ -124,12 +123,12 @@ export function estimateTokens(messages: AgentMessage[], provider?: string): num
  * @param messages  Full message history (output of applySlidingWindow).
  * @param provider  Provider ID string, used to look up maxContextTokens.
  */
-export function applyTokenBudget(
+export async function applyTokenBudget(
   messages: AgentMessage[],
   provider: string,
-): AgentMessage[] {
+): Promise<AgentMessage[]> {
   // Resolve context window limit.
-  const meta = getProviderMeta(provider as Provider);
+  const meta = await resolveProviderMeta(provider);
   const maxContextTokens = meta?.maxContextTokens ?? FALLBACK_MAX_CONTEXT_TOKENS;
   const threshold = maxContextTokens * 0.8;
 

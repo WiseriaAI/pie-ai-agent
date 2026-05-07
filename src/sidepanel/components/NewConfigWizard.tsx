@@ -1,23 +1,28 @@
 import { useState, useEffect } from "react";
-import type { Provider, ModelMeta } from "@/lib/model-router";
-import { PROVIDER_REGISTRY, getProviderMeta } from "@/lib/model-router/providers/registry";
+import type { ProviderRef, BuiltinProvider, ModelMeta } from "@/lib/model-router";
+import { PROVIDER_REGISTRY, getProviderMeta, resolveProviderMeta } from "@/lib/model-router/providers/registry";
 import {
   getProviderCustomModels,
   addProviderCustomModel,
   removeProviderCustomModel,
 } from "@/lib/provider-custom-models";
+import { listCustomProviders, type StoredCustomProvider, CUSTOM_PREFIX } from "@/lib/custom-providers";
 import { fetchOpenRouterModels } from "@/lib/openrouter-models-fetch";
 import InstanceForm, { type InstanceFormPayload } from "./InstanceForm";
+import CustomProviderForm from "./CustomProviderForm";
 
 interface Props {
-  onCreate: (provider: Provider, payload: InstanceFormPayload) => void;
+  onCreate: (provider: ProviderRef, payload: InstanceFormPayload) => void;
   onCancel: () => void;
-  onTest: (provider: Provider, payload: InstanceFormPayload) => void;
+  onTest: (provider: ProviderRef, payload: InstanceFormPayload) => void;
 }
 
 export default function NewConfigWizard(props: Props) {
   const [step, setStep] = useState<1 | 2>(1);
-  const [provider, setProvider] = useState<Provider | null>(null);
+  const [provider, setProvider] = useState<ProviderRef | null>(null);
+  const [customProviders, setCustomProviders] = useState<StoredCustomProvider[]>([]);
+  const [showCustomForm, setShowCustomForm] = useState(false);
+  const [step2Meta, setStep2Meta] = useState<{ name: string; defaultBaseUrl: string } | null>(null);
   // Provider-level custom models pool — pre-populates the form's dropdown
   // so user sees previously-typed custom ids carry across instances.
   const [pool, setPool] = useState<string[]>([]);
@@ -29,11 +34,19 @@ export default function NewConfigWizard(props: Props) {
   const [isFetching, setIsFetching] = useState(false);
 
   useEffect(() => {
+    listCustomProviders().then(setCustomProviders).catch(() => setCustomProviders([]));
+  }, []);
+
+  useEffect(() => {
     if (!provider) return;
     getProviderCustomModels(provider).then(setPool).catch(() => setPool([]));
     // Reset fetched cache when provider changes — different provider, different model list.
     setFetchedModels(undefined);
     setFetchedAt(undefined);
+    // Resolve meta for step 2 header
+    resolveProviderMeta(provider).then((m) => {
+      if (m) setStep2Meta({ name: m.name, defaultBaseUrl: m.defaultBaseUrl });
+    });
     // OpenRouter /v1/models is public — pre-fetch immediately on provider select
     // so the dropdown is populated before the user even opens it.
     if (provider === "openrouter") {
@@ -50,6 +63,21 @@ export default function NewConfigWizard(props: Props) {
         .finally(() => setIsFetching(false));
     }
   }, [provider]);
+
+  if (showCustomForm) {
+    return (
+      <CustomProviderForm
+        onSaved={(saved) => {
+          setShowCustomForm(false);
+          const ref: ProviderRef = `custom:${saved.id}`;
+          setProvider(ref);
+          setStep(2);
+          listCustomProviders().then(setCustomProviders).catch(() => {});
+        }}
+        onBack={() => setShowCustomForm(false)}
+      />
+    );
+  }
 
   if (step === 1 || !provider) {
     return (
@@ -70,6 +98,31 @@ export default function NewConfigWizard(props: Props) {
             </button>
           ))}
         </div>
+
+        {customProviders.length > 0 && (
+          <div className="flex flex-col gap-1.5">
+            <span className="caps px-1 text-fg-3">CUSTOM PROVIDERS</span>
+            {customProviders.map((cp) => (
+              <button
+                key={cp.id}
+                onClick={() => { setProvider(`custom:${cp.id}`); setStep(2); }}
+                className="flex items-center gap-2 rounded border border-line px-3 py-2 text-left hover:bg-field"
+              >
+                <div className="h-1.5 w-1.5 rounded-full bg-fg-3" />
+                <span className="text-[13px] text-fg-1">{cp.name}</span>
+                <span className="ml-auto font-mono text-[10px] text-fg-3">{cp.baseUrl.replace(/^https?:\/\//, "")}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        <button
+          onClick={() => setShowCustomForm(true)}
+          className="flex items-center gap-2 self-start rounded border border-dashed border-line bg-transparent px-3 py-2 text-[12px] text-accent hover:bg-field"
+        >
+          + New custom provider
+        </button>
+
         <div className="flex pt-1">
           <button
             type="button"
@@ -83,16 +136,16 @@ export default function NewConfigWizard(props: Props) {
     );
   }
 
-  const meta = getProviderMeta(provider)!;
+  const metaName = step2Meta?.name ?? provider;
   return (
     <div className="rounded-lg border border-line bg-canvas">
       <div className="border-b border-line px-3.5 py-2">
-        <div className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-3">STEP 2 — {meta.name}</div>
+        <div className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-3">STEP 2 — {metaName}</div>
       </div>
       <InstanceForm
         mode="create"
         provider={provider}
-        initialNickname={meta.name}
+        initialNickname={metaName}
         initialCustomModels={pool}
         fetchedModels={fetchedModels}
         fetchedAt={fetchedAt}
@@ -114,7 +167,7 @@ export default function NewConfigWizard(props: Props) {
           if (provider !== "openrouter") return;
           setIsFetching(true);
           try {
-            const fetched = await fetchOpenRouterModels(meta.defaultBaseUrl, apiKey || undefined);
+            const fetched = await fetchOpenRouterModels(step2Meta?.defaultBaseUrl ?? getProviderMeta("openrouter")!.defaultBaseUrl, apiKey || undefined);
             setFetchedModels(fetched);
             setFetchedAt(Date.now());
           } catch {

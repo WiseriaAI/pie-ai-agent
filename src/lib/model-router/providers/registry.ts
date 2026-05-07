@@ -1,4 +1,5 @@
-import type { Provider } from "@/lib/model-router";
+import type { BuiltinProvider, ProviderRef } from "@/lib/model-router";
+import { getCustomProvider } from "@/lib/custom-providers";
 
 export interface ModelMeta {
   /** Provider-native model id (sent to API as-is). */
@@ -14,7 +15,7 @@ export interface ModelMeta {
 }
 
 export interface ProviderMeta {
-  id: Provider;
+  id: ProviderRef;
   name: string;
   /** Hardcoded official endpoint. Single source of truth — UI never edits. */
   defaultBaseUrl: string;
@@ -119,12 +120,62 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
   },
 ];
 
-export function getProviderMeta(id: Provider): ProviderMeta | undefined {
+export function getProviderMeta(id: BuiltinProvider): ProviderMeta | undefined {
   return PROVIDER_REGISTRY.find((p) => p.id === id);
 }
 
-export function getModelMeta(provider: Provider, modelId: string): ModelMeta | undefined {
+export function getModelMeta(provider: BuiltinProvider, modelId: string): ModelMeta | undefined {
   return getProviderMeta(provider)?.models.find((m) => m.id === modelId);
+}
+
+/**
+ * Async version of getProviderMeta that works for both builtin and custom
+ * providers. Custom providers are loaded from storage and a dynamic
+ * ProviderMeta is constructed on the fly.
+ */
+export async function resolveProviderMeta(ref: ProviderRef): Promise<ProviderMeta | null> {
+  // Try builtin first
+  const builtin = getProviderMeta(ref as BuiltinProvider);
+  if (builtin) return builtin;
+
+  // Try custom provider
+  if (ref.startsWith("custom:")) {
+    const id = ref.slice("custom:".length);
+    const cp = await getCustomProvider(id);
+    if (!cp) return null;
+    return {
+      id: ref,
+      name: cp.name,
+      defaultBaseUrl: cp.baseUrl,
+      placeholder: "Custom",
+      models: cp.models,
+      modelsEndpoint: undefined,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Async version of getModelMeta that works for both builtin and custom providers.
+ */
+export async function resolveModelMeta(ref: ProviderRef, modelId: string): Promise<ModelMeta | null> {
+  // Try builtin first
+  if (!ref.startsWith("custom:")) {
+    const hit = getModelMeta(ref as BuiltinProvider, modelId);
+    if (hit) return hit;
+  }
+
+  // Try custom provider models
+  if (ref.startsWith("custom:")) {
+    const id = ref.slice("custom:".length);
+    const cp = await getCustomProvider(id);
+    if (!cp) return null;
+    const model = cp.models.find((m) => m.id === modelId);
+    return model ?? null;
+  }
+
+  return null;
 }
 
 /**
@@ -145,7 +196,7 @@ export function getModelMeta(provider: Provider, modelId: string): ModelMeta | u
  * out of screenshot tools.
  */
 export function resolveModelVision(
-  provider: Provider,
+  provider: BuiltinProvider,
   modelId: string,
   fetchedModels?: Pick<ModelMeta, "id" | "vision">[],
 ): boolean | undefined {

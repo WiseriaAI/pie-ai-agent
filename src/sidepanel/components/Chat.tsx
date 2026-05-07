@@ -7,6 +7,7 @@ import {
   normalizeSkillSlashKey,
 } from "@/lib/skills";
 import { resolveModelVision } from "@/lib/model-router/providers/registry";
+import type { BuiltinProvider } from "@/lib/model-router";
 import { listInstances, getActiveInstance, getInstance, type DecryptedInstance } from "@/lib/instances";
 import { resizePanel } from "@/lib/images/resize-panel";
 import type { ImageAttachment } from "@/lib/images";
@@ -500,7 +501,7 @@ export default function Chat({
           // fail-closed for unknown ids — a slightly different policy from the
           // loop's screenshot guard (fail-open) because the disabled button
           // is a visible UX cue, while a silent screenshot-tool block is not.
-          setSupportsVision(resolveModelVision(inst.provider, inst.model, inst.fetchedModels) ?? false);
+          setSupportsVision(resolveModelVision(inst.provider as BuiltinProvider, inst.model, inst.fetchedModels) ?? false);
           return;
         }
       }

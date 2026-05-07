@@ -51,11 +51,11 @@ function makeCjkString(length: number, cjkRatio: number): string {
 
 describe("U5 — applyTokenBudget", () => {
   describe("Scenario 1: short English chat (5 rounds, ~1k chars) — no drop", () => {
-    it("returns history unchanged when under budget", () => {
+    it("returns history unchanged when under budget", async () => {
       // ~1000 chars total, 0% CJK → divisor 4 → ~250 tokens
       // Anthropic threshold = 200_000 × 0.8 = 160_000 tokens — far below
       const history = buildChatHistory(5, 20, 0); // 5 rounds × 2 × 20 = 200 chars
-      const result = applyTokenBudget(history, "anthropic");
+      const result = await applyTokenBudget(history, "anthropic");
       expect(result).toEqual(history);
     });
   });
@@ -65,13 +65,13 @@ describe("U5 — applyTokenBudget", () => {
   // -------------------------------------------------------------------------
 
   describe("Scenario 2: long English chat exceeding threshold — drop pairs", () => {
-    it("drops oldest user-assistant pairs until under budget (Anthropic 200k × 0.8 = 160k tokens)", () => {
+    it("drops oldest user-assistant pairs until under budget (Anthropic 200k × 0.8 = 160k tokens)", async () => {
       // Target: est > 160k tokens, 0% CJK → divisor 4
       // Need > 640k chars total. 50 rounds × 2 msg × ~7000 chars = 700k chars
       const history = buildChatHistory(50, 7_000, 0);
       const original = history.length;
 
-      const result = applyTokenBudget(history, "anthropic");
+      const result = await applyTokenBudget(history, "anthropic");
 
       // Must have dropped some messages
       expect(result.length).toBeLessThan(original);
@@ -90,12 +90,12 @@ describe("U5 — applyTokenBudget", () => {
   // -------------------------------------------------------------------------
 
   describe("Scenario 3: CJK long chat with 32k provider — CJK divisor switches", () => {
-    it("CJK 90% ratio (divisor 1.5) causes drops where English ratio (divisor 4) would not", () => {
+    it("CJK 90% ratio (divisor 1.5) causes drops where English ratio (divisor 4) would not", async () => {
       // 30 rounds × 2 × 1_000 chars = 60_000 chars (+ system + trailing user ≈ 62k)
       // With CJK 90%: est ≈ ceil(62000 / 1.5) ≈ 41_334 tokens
       // openrouter threshold = 32_000 × 0.8 = 25_600 tokens → OVER, should drop
       const cjkHistory = buildChatHistory(30, 1_000, 0.9);
-      const cjkResult = applyTokenBudget(cjkHistory, "openrouter");
+      const cjkResult = await applyTokenBudget(cjkHistory, "openrouter");
       expect(cjkResult.length).toBeLessThan(cjkHistory.length);
       const cjkEstimate = estimateTokens(cjkResult);
       expect(cjkEstimate).toBeLessThanOrEqual(32_000 * 0.8);
@@ -103,7 +103,7 @@ describe("U5 — applyTokenBudget", () => {
       // Same char count, 0% CJK: est ≈ ceil(62000 / 4) = 15_500 tokens
       // openrouter threshold = 25_600 tokens → UNDER, should NOT drop
       const englishHistory = buildChatHistory(30, 1_000, 0);
-      const englishResult = applyTokenBudget(englishHistory, "openrouter");
+      const englishResult = await applyTokenBudget(englishHistory, "openrouter");
       expect(englishResult.length).toBe(englishHistory.length);
     });
   });
@@ -113,7 +113,7 @@ describe("U5 — applyTokenBudget", () => {
   // -------------------------------------------------------------------------
 
   describe("Scenario 4: single over-size CJK user message — no drop, warn", () => {
-    it("returns history unchanged when only the current user message exceeds budget", () => {
+    it("returns history unchanged when only the current user message exceeds budget", async () => {
       // history = [system, user(200k CJK chars)]
       // est ≈ ceil(200_000 / 1.5) ≈ 133_333 tokens
       // openrouter threshold = 25_600 tokens → over, but can't drop current user
@@ -124,14 +124,14 @@ describe("U5 — applyTokenBudget", () => {
       ];
 
       const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-      const result = applyTokenBudget(history, "openrouter");
+      const result = await applyTokenBudget(history, "openrouter");
       warnSpy.mockRestore();
 
       // Should return with original content (no drop)
       expect(result).toEqual(history);
     });
 
-    it("emits a console.warn when no pairs can be dropped", () => {
+    it("emits a console.warn when no pairs can be dropped", async () => {
       const bigContent = "一".repeat(200_000);
       const history: AgentMessage[] = [
         makeMsg("system", "System."),
@@ -139,7 +139,7 @@ describe("U5 — applyTokenBudget", () => {
       ];
 
       const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-      applyTokenBudget(history, "openrouter");
+      await applyTokenBudget(history, "openrouter");
       expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Cannot reduce token count further"));
       warnSpy.mockRestore();
     });
@@ -150,14 +150,14 @@ describe("U5 — applyTokenBudget", () => {
   // -------------------------------------------------------------------------
 
   describe("Scenario 5: system + single user message — no drop", () => {
-    it("never drops the only user message even when over budget", () => {
+    it("never drops the only user message even when over budget", async () => {
       const history: AgentMessage[] = [
         makeMsg("system", "System."),
         makeMsg("user", "A".repeat(500_000)), // huge but no prior pairs
       ];
 
       const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-      const result = applyTokenBudget(history, "openrouter");
+      const result = await applyTokenBudget(history, "openrouter");
       warnSpy.mockRestore();
 
       expect(result).toHaveLength(2);
@@ -171,19 +171,19 @@ describe("U5 — applyTokenBudget", () => {
   // -------------------------------------------------------------------------
 
   describe("Scenario 6: unknown provider ID — fallback to 32k", () => {
-    it("uses 32k fallback context window for unrecognized provider IDs", () => {
+    it("uses 32k fallback context window for unrecognized provider IDs", async () => {
       // history with 30 rounds × 1000 chars CJK 90% would exceed 32k × 0.8 = 25.6k threshold
       const history = buildChatHistory(30, 1_000, 0.9);
-      const resultKnown = applyTokenBudget(history, "openrouter");   // known, 32k
-      const resultUnknown = applyTokenBudget(history, "unknown_provider_xyz"); // fallback 32k
+      const resultKnown = await applyTokenBudget(history, "openrouter");   // known, 32k
+      const resultUnknown = await applyTokenBudget(history, "unknown_provider_xyz"); // fallback 32k
 
       // Both should drop the same amount (same effective threshold)
       expect(resultUnknown.length).toBe(resultKnown.length);
     });
 
-    it("fallback drops are applied just as with an explicit 32k provider", () => {
+    it("fallback drops are applied just as with an explicit 32k provider", async () => {
       const history = buildChatHistory(30, 1_000, 0.9);
-      const result = applyTokenBudget(history, "some_future_provider");
+      const result = await applyTokenBudget(history, "some_future_provider");
       // Must still be under budget with the 32k fallback
       expect(estimateTokens(result)).toBeLessThanOrEqual(32_000 * 0.8);
     });
@@ -219,9 +219,9 @@ describe("U5 — applyTokenBudget", () => {
       expect(estimateTokens(msgs)).toBe(0);
     });
 
-    it("returns history unchanged when total chars is 0", () => {
+    it("returns history unchanged when total chars is 0", async () => {
       const msgs: AgentMessage[] = [makeMsg("system", ""), makeMsg("user", "")];
-      const result = applyTokenBudget(msgs, "openrouter");
+      const result = await applyTokenBudget(msgs, "openrouter");
       expect(result).toEqual(msgs);
     });
   });
@@ -231,7 +231,7 @@ describe("U5 — applyTokenBudget", () => {
   // -------------------------------------------------------------------------
 
   describe("Scenario 9: integration — sliding window + token budget", () => {
-    it("token budget only drops head pairs, not react segment", () => {
+    it("token budget only drops head pairs, not react segment", async () => {
       // Build a history: [system, chat prefix (many pairs), current user, react pairs]
       // The react segment has ContentBlock[] content.
       const head: AgentMessage[] = [
@@ -269,7 +269,7 @@ describe("U5 — applyTokenBudget", () => {
       const bigHistory = [...bigHead, ...react];
       // chars ≈ 20 × 2 × 10_000 = 400_000 chars / 4 = 100_000 tokens >> 25_600
 
-      const result = applyTokenBudget(bigHistory, "openrouter");
+      const result = await applyTokenBudget(bigHistory, "openrouter");
 
       // React segment should be intact at the end
       const reactInResult = result.filter((m) => Array.isArray(m.content));
@@ -375,7 +375,7 @@ describe("estimateTokens — image-skip (Phase 5 HARD GATE)", () => {
 });
 
 describe("applyTokenBudget — image-bearing turn drop semantics unchanged", () => {
-  it("image turns drop in age order (oldest first), no special preservation", () => {
+  it("image turns drop in age order (oldest first), no special preservation", async () => {
     // Spec: image cache lifecycle handles eviction, NOT the budget. The budget
     // treats image-bearing turns same as text-bearing turns for drop-order purposes.
     const msgs: AgentMessage[] = [
@@ -390,7 +390,7 @@ describe("applyTokenBudget — image-bearing turn drop semantics unchanged", () 
       { role: "user", content: "current" },
     ];
     // Within budget — no drops expected
-    const result = applyTokenBudget(msgs, "openai");
+    const result = await applyTokenBudget(msgs, "openai");
     expect(result.length).toBe(6);
   });
 });

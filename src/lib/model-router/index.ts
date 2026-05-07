@@ -1,15 +1,16 @@
 // Model Router — unified LLM interface abstraction
 
-import { streamChatByProvider } from "./providers";
-import { getProviderMeta } from "./providers/registry";
+import { dispatchStreamChat } from "./providers";
+import { resolveProviderMeta } from "./providers/registry";
 import type { Attachment } from "@/lib/images";
 
 export type { StreamEvent, AgentMessage, ContentBlock, TextBlock, ToolUseBlock, ToolResultBlock, ImageBlock, ToolDefinition } from "./types";
-export { PROVIDER_REGISTRY, getProviderMeta } from "./providers/registry";
+export { PROVIDER_REGISTRY, getProviderMeta, resolveProviderMeta, resolveModelMeta } from "./providers/registry";
 export type { ProviderMeta, ModelMeta } from "./providers/registry";
 export { getModelMeta } from "./providers/registry";
+export { dispatchStreamChat } from "./providers";
 
-export type Provider =
+export type BuiltinProvider =
   | "anthropic"
   | "openai"
   | "openrouter"
@@ -19,11 +20,18 @@ export type Provider =
   | "gemini"
   | "deepseek";
 
+export type ProviderRef = BuiltinProvider | `custom:${string}`;
+
+/** @deprecated Use `BuiltinProvider` instead. Kept for backward compat. */
+export type Provider = BuiltinProvider;
+
 export interface ModelConfig {
-  provider: Provider;
+  provider: ProviderRef;
   model: string;
   apiKey: string;
   baseUrl?: string;
+  /** Display name for error messages — resolved at instance load time. */
+  providerName?: string;
   maxTokens?: number;
   /**
    * Whether the resolved model accepts image input. Resolved at task-start
@@ -87,7 +95,7 @@ export async function* streamChat(
   signal?: AbortSignal,
   tools?: import("./types").ToolDefinition[],
 ): AsyncGenerator<import("./types").StreamEvent> {
-  const meta = getProviderMeta(config.provider);
+  const meta = await resolveProviderMeta(config.provider);
   if (!meta) {
     yield {
       type: "error",
@@ -102,7 +110,7 @@ export async function* streamChat(
     baseUrl: config.baseUrl || meta.defaultBaseUrl,
   };
 
-  yield* streamChatByProvider[config.provider](resolvedConfig, messages, signal, tools);
+  yield* dispatchStreamChat(config)(resolvedConfig, messages, signal, tools);
 }
 
 export async function chat(

@@ -1,6 +1,8 @@
-import { useState, useEffect } from "react";
-import type { Provider, ModelMeta } from "@/lib/model-router";
+import { useState, useEffect, useMemo } from "react";
+import type { ProviderRef, BuiltinProvider, ModelMeta } from "@/lib/model-router";
 import { getProviderMeta } from "@/lib/model-router";
+import { useProviderMeta } from "@/sidepanel/hooks/useProviderMeta";
+import { CUSTOM_PREFIX } from "@/lib/custom-providers";
 import ModelDropdown from "./ModelDropdown";
 
 export interface InstanceFormPayload {
@@ -23,7 +25,7 @@ export interface InstanceFormActionsApi {
 
 interface Props {
   mode: "create" | "edit";
-  provider: Provider;
+  provider: ProviderRef;
   initialNickname: string;
   initialModel?: string;
   initialCustomModels?: string[];
@@ -48,7 +50,16 @@ interface Props {
 }
 
 export default function InstanceForm(props: Props) {
-  const meta = getProviderMeta(props.provider);
+  const { meta: resolvedMeta, loading: metaLoading } = useProviderMeta(props.provider);
+  // For builtin providers, resolve meta synchronously so the field renders
+  // immediately without waiting for the async hook to fire.
+  const syncMeta = props.provider.startsWith(CUSTOM_PREFIX) ? undefined : getProviderMeta(props.provider as BuiltinProvider);
+  const meta = resolvedMeta ?? syncMeta;
+  const isCustomProvider = props.provider.startsWith(CUSTOM_PREFIX);
+  const effectiveFetchedModels = useMemo(() => {
+    if (isCustomProvider && meta?.models) return meta.models;
+    return props.fetchedModels;
+  }, [isCustomProvider, meta?.models, props.fetchedModels]);
   const [nickname, setNickname] = useState(props.initialNickname);
   const [apiKey, setApiKey] = useState("");
   const [showKey, setShowKey] = useState(false);
@@ -99,11 +110,15 @@ export default function InstanceForm(props: Props) {
         />
       </Field>
 
-      <Field label="PROVIDER" hint={meta?.defaultBaseUrl}>
-        <div className="flex items-center gap-2 rounded border border-line bg-field px-3 py-2 text-[12px] text-fg-2">
-          <span className="text-fg-1">{meta?.name ?? props.provider}</span>
-          <span className="ml-auto font-mono text-[10px] text-fg-3">LOCKED</span>
-        </div>
+      <Field label="PROVIDER" hint={metaLoading && isCustomProvider ? undefined : meta?.defaultBaseUrl}>
+        {metaLoading && isCustomProvider ? (
+          <div className="h-[38px] animate-pulse rounded border border-line bg-field" />
+        ) : (
+          <div className="flex items-center gap-2 rounded border border-line bg-field px-3 py-2 text-[12px] text-fg-2">
+            <span className="text-fg-1">{meta?.name ?? props.provider}</span>
+            <span className="ml-auto font-mono text-[10px] text-fg-3">LOCKED</span>
+          </div>
+        )}
       </Field>
 
       <Field label="API KEY" hint="AES-GCM · LOCAL">
@@ -159,16 +174,16 @@ export default function InstanceForm(props: Props) {
           provider={props.provider}
           value={model}
           customModels={customModels}
-          fetchedModels={props.fetchedModels}
+          fetchedModels={effectiveFetchedModels}
           fetchedAt={props.fetchedAt}
           isFetching={props.isFetching}
           onChange={setModel}
-          onAddCustom={(id) => {
+          onAddCustom={isCustomProvider ? undefined : (id) => {
             setCustomModels((prev) => (prev.includes(id) ? prev : [...prev, id]));
             setModel(id);
             props.onAddCustomModel?.(id);
           }}
-          onRemoveCustom={(id) => {
+          onRemoveCustom={isCustomProvider ? undefined : (id) => {
             setCustomModels((prev) => prev.filter((x) => x !== id));
             if (model === id) setModel("");
             props.onRemoveCustomModel?.(id);

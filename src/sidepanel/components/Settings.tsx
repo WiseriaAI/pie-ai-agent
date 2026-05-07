@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import type { Provider } from "@/lib/model-router";
+import type { ProviderRef, BuiltinProvider } from "@/lib/model-router";
 import { chat } from "@/lib/model-router";
 import {
   createInstance, listInstances, deleteInstance,
@@ -12,13 +12,19 @@ import {
   removeProviderCustomModel,
 } from "@/lib/provider-custom-models";
 import { getProviderMeta } from "@/lib/model-router/providers/registry";
+import { resolveProviderMeta } from "@/lib/model-router/providers/registry";
 import { fetchOpenRouterModels } from "@/lib/openrouter-models-fetch";
 import { isKeyboardSimulationEnabled, setKeyboardSimulationEnabled } from "@/lib/keyboard-simulation";
 import { isSkipPermissionsEnabled, setSkipPermissionsEnabled } from "@/lib/skip-permissions";
+import {
+  listCustomProviders, deleteCustomProvider, getInstancesUsingCustomProvider,
+  type StoredCustomProvider, CUSTOM_PREFIX, providerRefToId,
+} from "@/lib/custom-providers";
 import SkillsList from "./SkillsList";
 import InstanceForm, { type InstanceFormPayload } from "./InstanceForm";
 import InstancesList from "./InstancesList";
 import NewConfigWizard from "./NewConfigWizard";
+import CustomProviderForm from "./CustomProviderForm";
 
 interface Props {
   onBack: () => void;
@@ -39,6 +45,10 @@ export default function Settings({ onBack, onRunSkill }: Props) {
   const [testResult, setTestResult] = useState<Record<string, { ok: boolean; message: string }>>({});
   // Per-provider custom models pool — sticky across instances of the same provider.
   const [providerPools, setProviderPools] = useState<Record<string, string[]>>({});
+  const [customProviders, setCustomProviders] = useState<StoredCustomProvider[]>([]);
+  const [customProviderCounts, setCustomProviderCounts] = useState<Record<string, number>>({});
+  const [showCustomProviderForm, setShowCustomProviderForm] = useState(false);
+  const [editingCustomProvider, setEditingCustomProvider] = useState<StoredCustomProvider | null>(null);
 
   const reload = useCallback(async () => {
     const list = await listInstances();
@@ -48,6 +58,15 @@ export default function Settings({ onBack, onRunSkill }: Props) {
     const providers = Array.from(new Set(list.map((i) => i.provider)));
     const pools = await Promise.all(providers.map((p) => getProviderCustomModels(p).then((v) => [p, v] as const)));
     setProviderPools(Object.fromEntries(pools));
+    // Reload custom providers and their instance counts
+    const cpList = await listCustomProviders();
+    setCustomProviders(cpList);
+    const counts: Record<string, number> = {};
+    for (const cp of cpList) {
+      const refs = await getInstancesUsingCustomProvider(cp.id);
+      counts[cp.id] = refs.length;
+    }
+    setCustomProviderCounts(counts);
   }, []);
 
   useEffect(() => {
@@ -75,7 +94,7 @@ export default function Settings({ onBack, onRunSkill }: Props) {
     setShowSkipPermissionsModal(false);
   }
 
-  async function handleCreate(provider: Provider, payload: InstanceFormPayload) {
+  async function handleCreate(provider: ProviderRef, payload: InstanceFormPayload) {
     await createInstance({ provider, ...payload });
     setShowWizard(false);
     await reload();
@@ -101,8 +120,13 @@ export default function Settings({ onBack, onRunSkill }: Props) {
     await reload();
   }
 
-  async function handleTest(id: string | null, provider: Provider, payload: InstanceFormPayload) {
-    const meta = getProviderMeta(provider);
+  async function handleTest(id: string | null, provider: ProviderRef, payload: InstanceFormPayload) {
+    const meta = await resolveProviderMeta(provider);
+    if (!meta) {
+      const key = id ?? "_new";
+      setTestResult((p) => ({ ...p, [key]: { ok: false, message: `Unknown provider: ${provider}` } }));
+      return;
+    }
     const cfg = {
       provider,
       model: payload.model,
@@ -112,7 +136,7 @@ export default function Settings({ onBack, onRunSkill }: Props) {
         const inst = instances.find((i) => i.id === id);
         return inst?.apiKey ?? payload.apiKey;
       })(),
-      baseUrl: meta!.defaultBaseUrl,
+      baseUrl: meta.defaultBaseUrl,
       maxTokens: 1,
     };
     const key = id ?? "_new";
@@ -122,6 +146,30 @@ export default function Settings({ onBack, onRunSkill }: Props) {
     } catch (e) {
       setTestResult((p) => ({ ...p, [key]: { ok: false, message: e instanceof Error ? e.message : "Failed" } }));
     }
+  }
+
+  if (showCustomProviderForm) {
+    return (
+      <div className="flex h-full flex-col">
+        <CustomProviderForm
+          existing={editingCustomProvider}
+          onSaved={() => {
+            setShowCustomProviderForm(false);
+            setEditingCustomProvider(null);
+            void reload();
+          }}
+          onBack={() => {
+            setShowCustomProviderForm(false);
+            setEditingCustomProvider(null);
+          }}
+          onDeleted={() => {
+            setShowCustomProviderForm(false);
+            setEditingCustomProvider(null);
+            void reload();
+          }}
+        />
+      </div>
+    );
   }
 
   return (
@@ -247,6 +295,52 @@ export default function Settings({ onBack, onRunSkill }: Props) {
                 </button>
               )}
             </section>
+
+            {customProviders.length > 0 && (
+              <section className="flex flex-col gap-3.5">
+                <div className="flex items-baseline justify-between">
+                  <span className="caps text-fg-3">CUSTOM PROVIDERS</span>
+                  <span className="font-mono text-[10px] text-fg-3">{customProviders.length} providers</span>
+                </div>
+                <div className="flex flex-col gap-px overflow-hidden rounded-lg border border-line bg-line">
+                  {customProviders.map((cp) => (
+                    <div key={cp.id} className="flex items-center gap-3 bg-surface px-3.5 py-3">
+                      <div className="flex-1">
+                        <div className="text-[13px] font-medium text-fg-1">{cp.name}</div>
+                        <div className="font-mono text-[11px] text-fg-2">
+                          {cp.baseUrl} · {cp.models.length} models
+                          {customProviderCounts[cp.id] > 0 && (
+                            <span> · {customProviderCounts[cp.id]} instance{customProviderCounts[cp.id] > 1 ? "s" : ""}</span>
+                          )}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setEditingCustomProvider(cp);
+                          setShowCustomProviderForm(true);
+                        }}
+                        className="rounded border border-line bg-transparent px-2.5 py-1 text-[11px] text-fg-2 hover:text-fg-1"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={async () => {
+                          try {
+                            await deleteCustomProvider(cp.id);
+                            await reload();
+                          } catch (e) {
+                            alert(e instanceof Error ? e.message : "Failed to delete");
+                          }
+                        }}
+                        className="rounded border border-warning-line bg-transparent px-2.5 py-1 text-[11px] text-warning hover:bg-warning-tint"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
 
             <KeyboardSimSection
               enabled={keyboardSim}

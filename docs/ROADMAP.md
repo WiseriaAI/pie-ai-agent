@@ -236,3 +236,47 @@ GitHub `state:open` 的 3 条 feat 性 issue（虽未打 label，但标题均为
 13. **page-match 自动触发** — 需要先解决 prompt-injection-by-page 防御
 
 Checkpoint & Resume 的 M1 已 ship；M2/M3 PR #10 / #13 已 ship。定时工作流仍依赖 SW 5 min 限制突破。
+
+---
+
+## 12. 自定义 OpenAI-compat Provider — ✅ **SHIPPED 2026-05-07**
+
+**Status**: Branch `feat/custom-providers-impl`，在 §7 multi-instance + per-model capability + Provider 模块化的基础上实现用户自定义 OpenAI-compat provider。
+
+**Spec**: `docs/superpowers/specs/2026-05-07-custom-providers-design.md`
+
+**核心改动**：
+
+1. **数据模型**：新实体 `StoredCustomProvider`（name / baseUrl / models[]）+ `CustomModelMeta`（vision / tools / maxContextTokens），storage key `custom_provider_${uuid}` + `custom_providers_index`。Provider 层解耦于 instance，对齐已有"provider × N instance"模式。
+2. **类型系统**：`Provider` → `BuiltinProvider` + `ProviderRef = BuiltinProvider | \`custom:${string}\``，零迁移（老数据 `"openai"` 仍合法）。`ModelConfig.providerName?` 字段用于错误信息显示名。
+3. **Dispatch 改造**：`streamChatByProvider` record → `dispatchStreamChat(config)` function，custom provider 直走 `_shared/openai-compat-core.ts`（不带 hooks，仅标准 Bearer auth）。
+4. **Provider meta 异步解析**：`resolveProviderMeta(ref)` async 统一入口（builtin 同步查 registry，custom 从 storage 加载动态构造 `ProviderMeta`）。
+5. **CRUD + cascade-block**：`src/lib/custom-providers.ts` 提供 `saveCustomProvider` / `updateCustomProvider` / `deleteCustomProvider`（有 instance 引用时 throw + 引导先删 instance）。
+6. **通用 fetch helper**：`fetchOpenAICompatModels(baseUrl, apiKey?)` 带 URL 归一化（检测 `/v\d+$` 后缀避免 `/v1/v1/models` 404），`fetchOpenRouterModels` 重构为薄壳调通用 helper + OpenRouter 扩展字段。
+7. **UI 组件**：`CustomProviderForm.tsx`（Name/BaseURL/Models/Test connection/Advanced per-model flags）+ `useProviderMeta.ts` hook。
+8. **Settings UI**：新增 "CUSTOM PROVIDERS" section 平级于 "MY CONFIGS"，列出 provider + instance 计数 + edit/delete。
+9. **Wizard 集成**：NewConfigWizard Step 1 可选 custom provider 或 "+ 创建新的 custom provider" 直达表单。
+10. **Agent loop async**：`applyTokenBudget` / `streamChat` 改用 async `resolveProviderMeta`。
+
+**文件清单（8 new + 9 modified）**：
+
+| 新增 | 修改 |
+|------|------|
+| `src/lib/custom-providers.ts` | `src/lib/model-router/index.ts` |
+| `src/lib/openai-compat-models-fetch.ts` | `src/lib/model-router/providers/registry.ts` |
+| `src/sidepanel/components/CustomProviderForm.tsx` | `src/lib/model-router/providers/index.ts` |
+| `src/sidepanel/hooks/useProviderMeta.ts` | `src/lib/model-router/providers/_shared/openai-compat-core.ts` |
+| | `src/lib/instances.ts` |
+| | `src/lib/openrouter-models-fetch.ts` |
+| | `src/lib/agent/window-token-budget.ts` / `loop.ts` |
+| | `src/sidepanel/components/Settings.tsx` / `InstanceForm.tsx` / `NewConfigWizard.tsx` / `ModelDropdown.tsx` / `Chat.tsx` |
+
+**Invariant trace**：`docs/solutions/2026-05-07-custom-providers-invariant-trace.md`
+
+**不做（明确 punt）**：
+- Builtin provider 可编辑 baseUrl / model 列表 — 维持 `defaultBaseUrl` 唯一权威
+- Custom provider 走 native protocol（Anthropic / Gemini wire format）
+- Custom headers UI（HTTP-Referer / X-Title 等）
+- 远程 preset 库
+- Per-instance baseUrl override
+- OpenRouter 之外的 builtin lazy `/v1/models`

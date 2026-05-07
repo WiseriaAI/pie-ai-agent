@@ -1,22 +1,23 @@
 import { useState, useEffect } from "react";
-import type { Provider, ModelMeta } from "@/lib/model-router";
+import type { ProviderRef, ModelMeta, BuiltinProvider } from "@/lib/model-router";
 import { getProviderMeta } from "@/lib/model-router";
+import { CUSTOM_PREFIX } from "@/lib/custom-providers";
 
 interface Props {
-  provider: Provider;
+  provider: ProviderRef;
   value: string;
   customModels: string[];
   fetchedModels?: ModelMeta[];
   fetchedAt?: number;
   isFetching?: boolean;
   onChange: (modelId: string) => void;
-  onAddCustom: (modelId: string) => void;
+  onAddCustom?: (modelId: string) => void;
   onRemoveCustom?: (modelId: string) => void;
   onRefresh: () => void;
 }
 
 export default function ModelDropdown(props: Props) {
-  const meta = getProviderMeta(props.provider);
+  const meta = props.provider.startsWith(CUSTOM_PREFIX) ? undefined : getProviderMeta(props.provider as BuiltinProvider);
   const registryModels = meta?.models ?? [];
   const fetched = props.fetchedModels ?? [];
   const [open, setOpen] = useState(false);
@@ -132,7 +133,8 @@ export default function ModelDropdown(props: Props) {
             )}
           </div>
 
-          {/* Fixed footer — + 添加自定义模型 */}
+          {/* Fixed footer — + 添加自定义模型 (hidden for custom providers since models are defined there) */}
+          {!props.provider.startsWith(CUSTOM_PREFIX) && (
           <div className="border-t border-line">
             {!adding ? (
               <button
@@ -152,7 +154,7 @@ export default function ModelDropdown(props: Props) {
                 />
                 <button
                   disabled={!draft.trim()}
-                  onClick={() => { props.onAddCustom(draft.trim()); setDraft(""); setAdding(false); }}
+                  onClick={() => { props.onAddCustom?.(draft.trim()); setDraft(""); setAdding(false); }}
                   className="rounded bg-fg-1 px-2 py-1 text-[10px] text-canvas disabled:opacity-30"
                 >
                   保存
@@ -166,6 +168,7 @@ export default function ModelDropdown(props: Props) {
               </div>
             )}
           </div>
+          )}
         </div>
       )}
     </div>

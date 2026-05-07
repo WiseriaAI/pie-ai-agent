@@ -20,6 +20,19 @@ import { readSSELines } from "@/lib/model-router/sse";
  *    zero-arg tools. We accumulate `initialArgs` from the first chunk and
  *    emit a tool-call-delta if non-empty.
  */
+
+/**
+ * Sync helper for error display — returns the friendly provider name if
+ * available, falling back to the raw provider ref.
+ *
+ * `providerName` is resolved once at instance-load time by
+ * `resolveInstanceToModelConfig`, so no async storage call is needed
+ * in the streaming error path.
+ */
+export function displayProviderName(config: ModelConfig): string {
+  return config.providerName ?? config.provider;
+}
+
 export interface OpenAICompatHooks {
   /** Headers merged on top of standard `Authorization` + `content-type`. */
   customHeaders?: (config: ModelConfig) => Record<string, string>;
@@ -139,13 +152,13 @@ export async function* streamChatOpenAICompat(
     response = await fetch(endpoint, { method: "POST", headers, body: JSON.stringify(requestBody), signal });
   } catch (e) {
     if (signal?.aborted) return;
-    yield { type: "error", error: `Network error: ${e instanceof Error ? e.message : `Failed to connect to ${config.provider} API`}` };
+    yield { type: "error", error: `Network error: ${e instanceof Error ? e.message : `Failed to connect to ${displayProviderName(config)} API`}` };
     return;
   }
 
   if (!response.ok) {
     const text = await response.text().catch(() => "");
-    const name = config.provider;
+    const name = displayProviderName(config);
     if (response.status === 401) yield { type: "error", error: `Invalid ${name} API key` };
     else if (response.status === 429) {
       const retryAfter = response.headers.get("retry-after");

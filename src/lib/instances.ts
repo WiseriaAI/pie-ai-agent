@@ -1,11 +1,11 @@
-import type { Provider, ModelConfig } from "@/lib/model-router";
-import { getProviderMeta } from "@/lib/model-router";
+import type { ProviderRef, BuiltinProvider, ModelConfig } from "@/lib/model-router";
+import { resolveProviderMeta, getProviderMeta } from "@/lib/model-router/providers/registry";
 import { resolveModelVision } from "@/lib/model-router/providers/registry";
 import { getOrCreateEncryptionKey, encrypt, decrypt } from "@/lib/crypto";
 
 export interface StoredInstance {
   id: string;
-  provider: Provider;
+  provider: ProviderRef;
   nickname: string;
   encryptedKey: string;
   model: string;
@@ -20,12 +20,12 @@ export interface DecryptedInstance extends Omit<StoredInstance, "encryptedKey"> 
   apiKey: string;
 }
 
-const INSTANCE_KEY = (id: string) => `instance_${id}`;
-const INDEX_KEY = "instances_index";
+export const INSTANCE_KEY = (id: string) => `instance_${id}`;
+export const INDEX_KEY = "instances_index";
 const ACTIVE_KEY = "active_instance_id";
 
 export async function createInstance(input: {
-  provider: Provider;
+  provider: ProviderRef;
   nickname: string;
   apiKey: string;
   model: string;
@@ -37,7 +37,7 @@ export async function createInstance(input: {
   if (!input.apiKey.trim()) throw new Error("API key cannot be empty");
   const id = crypto.randomUUID();
   const key = await getOrCreateEncryptionKey();
-  const meta = getProviderMeta(input.provider);
+  const meta = getProviderMeta(input.provider as BuiltinProvider);
   const inRegistry = meta?.models.some((m) => m.id === input.model) ?? false;
   // Resolve customModels: explicit > auto-detect (model not in registry)
   let resolvedCustomModels: string[] | undefined;
@@ -107,11 +107,17 @@ export async function getActiveInstance(): Promise<string | null> {
 export async function resolveInstanceToModelConfig(id: string): Promise<ModelConfig | null> {
   const inst = await getInstance(id);
   if (!inst) return null;
-  const meta = getProviderMeta(inst.provider);
+  const meta = await resolveProviderMeta(inst.provider);
   if (!meta) return null;
-  const vision = resolveModelVision(inst.provider, inst.model, inst.fetchedModels);
+  // For custom providers, resolveModelVision is a no-op (sync BuiltinProvider-only).
+  // vision/tools flags come from CustomModelMeta but are consumed downstream
+  // via config.vision — undefined means fail-open, which is safe.
+  const vision = inst.provider.startsWith("custom:")
+    ? undefined
+    : resolveModelVision(inst.provider as BuiltinProvider, inst.model, inst.fetchedModels);
   return {
     provider: inst.provider,
+    providerName: meta.name,
     model: inst.model,
     apiKey: inst.apiKey,
     baseUrl: meta.defaultBaseUrl,

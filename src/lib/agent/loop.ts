@@ -1412,7 +1412,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // U5 — Token budget guard: drop oldest head pairs if estimated token
       // count exceeds 80% of the provider's context window. CJK-aware divisor
       // prevents 4× undercount for Chinese/Japanese/Korean conversations.
-      const windowedHistoryRaw = applyTokenBudget(
+      const windowedHistoryRaw = await applyTokenBudget(
         windowedHistorySlid,
         modelConfig.provider,
       );
