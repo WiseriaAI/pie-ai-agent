@@ -76,6 +76,57 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
       return;
     }
 
+    if (msg.type === "agent-step") {
+      const prev = slotsRef.current.get(id);
+      const baseMessages = prev?.messages ?? [];
+      const accumulated = prev?.accumulated ?? "";
+
+      // 1. Flush pending accumulated text first (legacy behavior preserved
+      //    from useSession.ts:349-365).
+      let nextMessages: DisplayMessage[] = baseMessages;
+      let flushed = false;
+      if (accumulated.trim()) {
+        nextMessages = [
+          ...nextMessages,
+          { role: "assistant", content: accumulated },
+        ];
+        flushed = true;
+      }
+
+      // 2. Either update the trailing matching step in place, or append.
+      const { stepIndex, tool, args, resolvedElement, status, observation, image } = msg;
+      const tail = nextMessages.length - 1;
+      const last = tail >= 0 ? nextMessages[tail] : null;
+      const matchesTail =
+        last &&
+        last.role === "agent-step" &&
+        last.stepIndex === stepIndex &&
+        last.tool === tool;
+
+      const stepEntry: DisplayMessage = {
+        role: "agent-step",
+        stepIndex,
+        tool,
+        args,
+        resolvedElement,
+        status,
+        observation,
+        ...(image && { image }),
+      };
+
+      if (matchesTail) {
+        nextMessages = [...nextMessages.slice(0, tail), stepEntry];
+      } else {
+        nextMessages = [...nextMessages, stepEntry];
+      }
+
+      patchSlot(id, {
+        messages: nextMessages,
+        ...(flushed ? { accumulated: "", streamingText: "" } : {}),
+      });
+      return;
+    }
+
     // Subsequent branches added in Tasks 2c–2g.
   };
 
