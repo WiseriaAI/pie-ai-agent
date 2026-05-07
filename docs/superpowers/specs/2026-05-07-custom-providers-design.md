@@ -373,17 +373,13 @@ UI 测试：
 - OpenAI-compat 第三方服务兼容性矩阵
 - stress / load test
 
-## Pre-existing Bug — 顺手修
+## Pre-existing Bug — 单独修
 
-`src/lib/agent/loop.ts:1784-1786` 用 `providerMeta?.supportsVision`，但 `ProviderMeta` 自 2026-05-06 重构后已无 `supportsVision` 字段（vision 已下放 `ModelMeta` per-model）。当前代码永远走 "no vision" 分支 → screenshot tools 实际永远不可用。
+调用点 enumeration 期间发现 `src/lib/agent/loop.ts:1784-1786` 用 `providerMeta?.supportsVision`，但该字段自 2026-05-06 重构后已下放 `ModelMeta` per-model 维度，导致 screenshot tools 永远被拦截。
 
-本 spec 实现时改为：
-```ts
-const modelMeta = await resolveModelMeta(modelConfig.provider, modelConfig.model);
-if (!modelMeta?.vision) { /* no-vision error path */ }
-```
+**已开 issue 单独修**：[#39](https://github.com/WiseriaAI/pie-ai-agent/issues/39)。
 
-修复属顺手活，不算本 spec 主功能；但与 dispatch async 化是同一处改动，归一起做。
+本 spec 实现时**仅做 async 化**（`getProviderMeta` → `resolveProviderMeta`），不动 vision 判断逻辑。Issue #39 修完后，未来 cleanup 可再把 vision 判断改成 model-level（`resolveModelMeta(...).vision`）；如果 #39 先合本 spec 再合，spec 实现要 rebase 一下避免 conflict。
 
 ## Critical Files to Modify
 
@@ -405,7 +401,7 @@ if (!modelMeta?.vision) { /* no-vision error path */ }
 | `src/sidepanel/components/Chat.tsx` | `getModelMeta` → `resolveModelMeta` async（useEffect 内 await） |
 | `src/sidepanel/hooks/useProviderMeta.ts` | **新增** hook |
 | `src/lib/agent/window-token-budget.ts:127-133` | `applyTokenBudget(provider)` 改 async；`getProviderMeta` → `resolveProviderMeta` |
-| `src/lib/agent/loop.ts:1784-1786` | `getProviderMeta` → `resolveModelMeta` async；**修 pre-existing supportsVision bug** |
+| `src/lib/agent/loop.ts:1784-1786` | `getProviderMeta` → `resolveProviderMeta` async（vision 判断逻辑暂不动，由 [#39](https://github.com/WiseriaAI/pie-ai-agent/issues/39) 单独修） |
 
 **已 grep 过的全部调用点**（`getProviderMeta` / `getModelMeta` / `streamChatByProvider` / `PROVIDER_REGISTRY`）— 上表已穷举。
 
