@@ -1,7 +1,7 @@
 <div align="center">
   <img src="public/icons/icon-128.svg" alt="Pie" width="96" height="96" />
   <h1>Pie</h1>
-  <p><strong>BYOK 浏览器 Agent 扩展 —— 用你已有的 LLM API key，把浏览器升级为 AI 助手。</strong></p>
+  <p><strong>Chrome 浏览器自动化 Agent —— 通过原生工具调用、Skill 系统、CDP 键盘控制和执行前确认机制，把自然语言任务变成可控的浏览器操作。</strong></p>
   <p>
     <a href="README.md">English</a> ·
     <strong>简体中文</strong>
@@ -19,18 +19,20 @@
 
 ## 为什么是 Pie
 
-Pie 把任意现代 Chromium 浏览器变成一个 AI Agent —— 页面理解、多步任务自动化、
-跨标签页管理 —— 而你不需要再订阅任何一家 AI 服务。你自带 API key（Anthropic、
-OpenAI、OpenRouter，或四家中国区供应商任选其一），Pie 只在本地加密保管它，
-请求直接发到你选择的供应商。
+Pie 把 Chrome 变成一个浏览器自动化 Agent。用自然语言描述一个任务，LLM
+拆解步骤，并通过类型化的工具注册表执行 —— 包括 DOM 动作、跨标签页编排，
+以及面向飞书文档、Google Docs 这类不响应标准 DOM 事件的 canvas 编辑器
+的 CDP 键盘注入。工作流可以保存为带显式工具白名单的 Skill。每一个不可
+逆或跨域操作都会先弹出确认卡片，确保你知情可控。BYOK：把你已有的 API
+key 粘进来即可（支持 8 家 LLM 供应商）—— 本地加密保存，无 Pie 后端，
+无埋点。
 
-- **你的 key，你的数据。** 通过 Web Crypto AES-GCM 加密后写入
-  `chrome.storage.local`。Pie 没有后端、没有埋点、不走代理。详见
-  [PRIVACY.md](PRIVACY.md)。
-- **侧边栏，不是弹窗。** Pie 常驻 Chrome 侧边栏，浏览过程中保持打开 ——
-  对话、Agent 任务、标签页管理可以同时进行而不丢上下文。
-- **原生工具调用。** 直接对接 Anthropic 的 `tool_use` 块和 OpenAI 的
-  `function_calling`，无需依赖任何 JSON-mode 变通方案。
+- **原生工具调用驱动的浏览器自动化。** LLM 通过 Anthropic `tool_use` 块或
+  OpenAI `function_calling` 操控类型化工具注册表 —— DOM 动作（点击、输入、
+  下拉选择、滚动、结构化快照）、跨标签页编排（列表 / 激活 / 关闭 / 分组 /
+  移动 / 抓取可读内容），以及（需手动开启的）面向 canvas 编辑器（飞书文档、
+  Google Docs 等）的 CDP 键盘注入（`Input.dispatchKeyEvent`、
+  `Input.insertText`）。
 - **Skill 是一等公民。** Skill 是带工具白名单的提示词模板，对话里输入
   `/skill_name` 即可触发。Agent 也能自己写 Skill —— 但被 8 道能力授权
   不变量约束，无法越权扩张自身权限。
@@ -39,6 +41,11 @@ OpenAI、OpenRouter，或四家中国区供应商任选其一），Pie 只在本
   确切动作、原始参数、影响到的 origin —— 你始终保有知情控制权。
 - **多会话持久化。** 对话状态在 Service Worker 重启后仍然可恢复；
   归档会话在存储压力下按 LRU 淘汰，30 天后硬删除。
+- **侧边栏，不是弹窗。** Pie 常驻 Chrome 侧边栏，浏览过程中保持打开 ——
+  对话、Agent 任务、标签页管理可以同时进行而不丢上下文。
+- **BYOK。** 自带 API key（支持 8 家 LLM 供应商）。通过 Web Crypto
+  AES-GCM 加密后写入 `chrome.storage.local`。Pie 没有后端、没有埋点、
+  不走代理。详见 [PRIVACY.md](PRIVACY.md)。
 
 ## 功能
 
@@ -106,13 +113,15 @@ CDP 键盘模拟功能 **默认关闭** —— 必须先在设置里开启才能
 |---|---|
 | Anthropic Claude | 原生 API + 原生 `tool_use` |
 | OpenAI | OpenAI `function_calling` |
+| Gemini | 原生 API |
 | OpenRouter | OpenAI 兼容 |
+| DeepSeek | OpenAI 兼容 |
 | MiniMax | OpenAI 兼容 |
 | 智谱 ZhiPu | OpenAI 兼容 |
 | 百炼 Bailian | OpenAI 兼容 |
 
-新增一家供应商只需要一条 registry 条目加一条 host permission。Gemini 与
-本地 Ollama 见 [路线图](docs/ROADMAP.md)。
+新增一家供应商只需要一条 registry 条目加一条 host permission。本地
+Ollama 见 [路线图](docs/ROADMAP.md)。
 
 ## 安装
 
@@ -218,7 +227,6 @@ service worker 后到 `chrome://extensions` 点 **重新加载**。
 
 延期里程碑列表见 [`docs/ROADMAP.md`](docs/ROADMAP.md)。要点：
 
-- Gemini 供应商
 - 通过 Ollama 接入本地模型
 - 快捷键
 - 按页面 URL 匹配自动触发 Skill

@@ -1,7 +1,7 @@
 <div align="center">
   <img src="public/icons/icon-128.svg" alt="Pie" width="96" height="96" />
   <h1>Pie</h1>
-  <p><strong>BYOK Chrome Extension Agent — your browser, augmented with the LLM you already pay for.</strong></p>
+  <p><strong>Browser-automation agent for Chrome — natural-language tasks executed through native tool calling, scoped Skills, CDP keyboard control, and a confirm-before-act security model.</strong></p>
   <p>
     <strong>English</strong> ·
     <a href="README.zh-CN.md">简体中文</a>
@@ -19,32 +19,39 @@
 
 ## Why Pie
 
-Pie turns any modern Chromium browser into an AI agent — page understanding,
-multi-step task automation, and tab management — without subscribing to yet
-another AI service. You bring your own API key (Anthropic, OpenAI,
-OpenRouter, or any of four China-region providers); Pie keeps it encrypted
-locally and talks directly to your provider.
+Pie turns Chrome into a browser-automation agent. Describe a task in
+natural language; the LLM plans steps and executes them through a typed
+tool registry — DOM actions, cross-tab orchestration, and CDP-level
+keyboard input for canvas editors that don't honor standard DOM events.
+Workflows can be saved as Skills with explicit tool whitelists. Every
+irreversible or cross-origin step is gated by a confirm card so you stay
+in informed control. BYOK: paste your own API key from any of eight LLM
+providers — encrypted locally, no Pie backend, no telemetry.
 
-- **Your key, your data.** Encrypted at rest with AES-GCM in
-  `chrome.storage.local`. Pie has no backend, no telemetry, no proxy. See
-  [PRIVACY.md](PRIVACY.md).
-- **Side panel, not pop-up.** Pie lives in Chrome's side panel and stays
-  open while you browse — chat, run agent tasks, manage tabs without losing
-  context.
-- **Native tool calling.** Anthropic `tool_use` blocks and OpenAI
-  `function_calling` plug straight into the agent loop, no JSON-mode
-  workarounds.
+- **Browser automation through native tool calling.** The LLM uses
+  Anthropic `tool_use` blocks or OpenAI `function_calling` to drive a
+  typed tool registry — DOM actions (click, type, select, scroll,
+  structured snapshot), cross-tab orchestration (list / activate / close /
+  group / move / fetch readable content), and opt-in CDP keyboard
+  injection (`Input.dispatchKeyEvent`, `Input.insertText`) for canvas
+  editors like Lark Docs and Google Docs.
 - **Skills as a first-class object.** Save a prompt template with a scoped
   tool whitelist; run it as `/skill_name`. The agent can author its own
-  skills, too — gated by an 8-guard capability boundary so they cannot
+  skills too — gated by an 8-guard capability boundary so they cannot
   expand their own privileges.
 - **Asks before it acts.** Every high-risk action (form submit, sensitive
   field, raw CDP input, cross-origin tab op, closing a pinned tab) is
-  gated by a confirm card showing the exact action, raw arguments, and
+  gated by a confirm card showing the exact tool, raw arguments, and
   affected origin — so you stay in informed control.
 - **Multi-session, durable.** Conversations survive Service Worker
   restarts; archived sessions evict on storage pressure (LRU + 30-day hard
   delete).
+- **Side panel, not pop-up.** Pie lives in Chrome's side panel and stays
+  open while you browse — chat, run agent tasks, manage tabs without
+  losing context.
+- **BYOK.** Bring your own API key from any of eight LLM providers.
+  Encrypted at rest with AES-GCM in `chrome.storage.local`. No Pie
+  backend, no telemetry, no proxy. See [PRIVACY.md](PRIVACY.md).
 
 ## Features
 
@@ -121,13 +128,15 @@ than burning your tokens on a plan you've already disagreed with.
 |---|---|
 | Anthropic Claude | Native API + native `tool_use` |
 | OpenAI | OpenAI `function_calling` |
+| Gemini | Native API |
 | OpenRouter | OpenAI-compatible |
+| DeepSeek | OpenAI-compatible |
 | MiniMax | OpenAI-compatible |
 | ZhiPu (智谱) | OpenAI-compatible |
 | Bailian (百炼) | OpenAI-compatible |
 
-Adding a provider is a registry entry plus a host permission. Gemini and
-local Ollama are on the [roadmap](docs/ROADMAP.md).
+Adding a provider is a registry entry plus a host permission. Local
+Ollama is on the [roadmap](docs/ROADMAP.md).
 
 ## Install
 
@@ -243,7 +252,6 @@ project's compound-engineering notes and contributor guidance are in
 See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the deferred-milestone
 backlog. Highlights:
 
-- Gemini provider
 - Local model support via Ollama
 - Keyboard shortcuts
 - Page-URL-matched skill auto-trigger
