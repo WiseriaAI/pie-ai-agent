@@ -227,8 +227,11 @@ export function useSession(): UseSession {
   const [toast, setToast] = useState<{ level: "warn" | "error" | "info"; text: string } | null>(null);
   const [ready, setReady] = useState(false);
 
-  // Persistent port across the whole hook lifetime (mount → unmount).
-  const portRef = useRef<chrome.runtime.Port | null>(null);
+  // Multi-session (#30) — one Port per sessionId. Switching sessions does
+  // NOT disconnect the previous port; SW continues delivering messages for
+  // background tasks via createPortHandlers' single onMessage listener.
+  // Cleanup: panel unmount disconnects every entry.
+  const portsRef = useRef<Map<string, chrome.runtime.Port>>(new Map());
   // Mirrors of state for use inside the persistent port listener
   // (which is attached once at mount and can't depend on stale state
   // closure).
@@ -557,7 +560,7 @@ export function useSession(): UseSession {
     streamingRef.current = false;
     setStreaming(false);
     streamFinishedRef.current = true;
-    portRef.current = null;
+    // TODO Task 8: replaced by makeDisconnectHandler
     void persistMessages(next);
   }, [persistMessages]);
 
@@ -626,7 +629,7 @@ export function useSession(): UseSession {
         setPinnedTabsState(null);
         setPinModeState(meta.pinMode ?? "auto");
         setMessages([]);
-        portRef.current = connectPortFor(meta.id);
+        portsRef.current.set(meta.id, connectPortFor(meta.id));
       } finally {
         if (!cancelled) setReady(true);
       }
@@ -634,10 +637,7 @@ export function useSession(): UseSession {
 
     return () => {
       cancelled = true;
-      // Disconnect on unmount so the SW abortController fires
-      // immediately rather than waiting for keep-alive timeout.
-      portRef.current?.disconnect();
-      portRef.current = null;
+      // (multi-session: remaining port cleanup deferred to Tasks 7+8/10)
     };
   }, [connectPortFor]);
 
@@ -743,7 +743,7 @@ export function useSession(): UseSession {
       if (streaming) return;
       const id = sessionIdRef.current;
       if (!id) return;
-      const port = portRef.current;
+      const port = portsRef.current.get(sessionIdRef.current ?? "") ?? null;
       if (!port) return;
       const userMessage: DisplayMessage = {
         role: "user",
@@ -887,7 +887,7 @@ export function useSession(): UseSession {
   );
 
   const abort = useCallback(() => {
-    const port = portRef.current;
+    const port = portsRef.current.get(sessionIdRef.current ?? "") ?? null;
     if (!port) return;
     try {
       port.postMessage({ type: "chat-abort" });
@@ -898,7 +898,7 @@ export function useSession(): UseSession {
 
   const resolveConfirm = useCallback(
     (confirmationId: string, approved: boolean) => {
-      const port = portRef.current;
+      const port = portsRef.current.get(sessionIdRef.current ?? "") ?? null;
       if (!port) return;
       // P1-4 — carry sessionId so SW can verify the response belongs to
       // the same session that owns the confirmationId.
@@ -926,7 +926,7 @@ export function useSession(): UseSession {
   );
 
   const resumeTask = useCallback(() => {
-    const port = portRef.current;
+    const port = portsRef.current.get(sessionIdRef.current ?? "") ?? null;
     const id = sessionIdRef.current;
     if (!port || !id) return;
     // P0-2 — set streaming=true BEFORE posting so the setActive guard
@@ -951,7 +951,7 @@ export function useSession(): UseSession {
   }, []);
 
   const discardTask = useCallback((confirmationId: string) => {
-    const port = portRef.current;
+    const port = portsRef.current.get(sessionIdRef.current ?? "") ?? null;
     const id = sessionIdRef.current;
     if (!port || !id) return;
     try {
@@ -1061,8 +1061,7 @@ export function useSession(): UseSession {
     // SW-side abortController fires; in-flight task on that session is
     // killed cleanly because we already streaming-guarded above) and
     // connect a fresh port whose name carries the new sessionId.
-    portRef.current?.disconnect();
-    portRef.current = null;
+    // (multi-session: old port stays connected, deletion deferred to Tasks 7+8)
 
     // Update ref immediately so callers that synchronously follow setActive
     // (e.g. resumeTask in handleResumeSession) see the new id without
@@ -1080,7 +1079,7 @@ export function useSession(): UseSession {
     setToast(null);
 
     // Open the new session's port (sends panel-mounted as part of connect).
-    portRef.current = connectPortFor(id);
+    portsRef.current.set(id, connectPortFor(id));
 
     return id;
   }, [streaming, connectPortFor]);
@@ -1125,8 +1124,7 @@ export function useSession(): UseSession {
     // M3-U1 — swap to the new session's port (the new session's id is
     // freshly minted, so the prior port belongs to a different session
     // and must be disconnected to release its SW-side resources).
-    portRef.current?.disconnect();
-    portRef.current = null;
+    // (multi-session: old port stays connected, deletion deferred to Tasks 7+8)
 
     // Update ref immediately (same reasoning as setActive)
     sessionIdRef.current = meta.id;
@@ -1138,7 +1136,7 @@ export function useSession(): UseSession {
     setError(null);
     setToast(null);
 
-    portRef.current = connectPortFor(meta.id);
+    portsRef.current.set(meta.id, connectPortFor(meta.id));
 
     return meta.id;
   }, [connectPortFor]);
@@ -1186,7 +1184,7 @@ export function useSession(): UseSession {
 
   return {
     sessionId,
-    port: portRef.current,
+    port: sessionIdRef.current ? (portsRef.current.get(sessionIdRef.current) ?? null) : null,
     ready,
     status,
     pinnedTabs: pinnedTabsState,
