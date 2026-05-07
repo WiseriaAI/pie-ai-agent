@@ -6,6 +6,20 @@ export interface CreatePortHandlersDeps {
   slotsRef: MutableRefObject<Map<string, SessionRuntimeSlot>>;
   setSlots: Dispatch<SetStateAction<Map<string, SessionRuntimeSlot>>>;
   persistMessages: (sessionId: string, messages: DisplayMessage[]) => Promise<void>;
+  /** #30 migration bridge — sync legacy single-tenant state while callers
+   *  still read from it. Removed in Task 9b. */
+  legacy?: {
+    sessionIdRef: MutableRefObject<string | null>;
+    setMessages: Dispatch<SetStateAction<DisplayMessage[]>>;
+    messagesRef: MutableRefObject<DisplayMessage[]>;
+    setStreaming: Dispatch<SetStateAction<boolean>>;
+    streamingRef: MutableRefObject<boolean>;
+    setStreamingText: Dispatch<SetStateAction<string>>;
+    setError: Dispatch<SetStateAction<string | null>>;
+    setToast: Dispatch<SetStateAction<{ level: "warn" | "error" | "info"; text: string } | null>>;
+    accumulatedRef: MutableRefObject<string>;
+    streamFinishedRef: MutableRefObject<boolean>;
+  };
 }
 
 export interface PortHandlers {
@@ -16,7 +30,7 @@ export interface PortHandlers {
 }
 
 export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
-  const { slotsRef, setSlots, persistMessages } = deps;
+  const { slotsRef, setSlots, persistMessages, legacy } = deps;
 
   /** Sync write to slotsRef (Bug-fix-A truth source) + setSlots for React commit. */
   function patchSlot(
@@ -27,6 +41,26 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
   ) {
     slotsRef.current = withSlot(slotsRef.current, id, patch);
     setSlots(slotsRef.current);
+
+    // #30 migration bridge — sync legacy single-tenant state while callers
+    // still read from it (removed in Task 9b).
+    if (legacy && id === legacy.sessionIdRef.current) {
+      const slot = slotsRef.current.get(id);
+      if (slot) {
+        legacy.streamingRef.current = slot.streaming;
+        legacy.setStreaming(slot.streaming);
+        legacy.setStreamingText(slot.streamingText);
+        legacy.setError(slot.error);
+        legacy.setToast(slot.toast);
+        legacy.accumulatedRef.current = slot.accumulated;
+        legacy.streamFinishedRef.current = slot.streamFinished;
+        // messages: only set if they differ (avoids unnecessary re-renders)
+        if (legacy.messagesRef.current !== slot.messages) {
+          legacy.messagesRef.current = slot.messages;
+          legacy.setMessages(slot.messages);
+        }
+      }
+    }
   }
 
   const handleMessage = (msg: PortMessageToPanel) => {

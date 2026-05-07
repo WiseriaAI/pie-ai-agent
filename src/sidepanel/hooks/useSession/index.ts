@@ -327,242 +327,51 @@ export function useSession(): UseSession {
     [],
   );
 
-  // ── Persistent port listener ───────────────────────────────────────
-  // Attached once at mount; handles every SW push for the lifetime of
-  // the hook. Per-stream variables (`accumulated`, `streamFinished`)
-  // live in refs so this single listener instance can be reused across
-  // many sendMessage calls.
-  const handlePortMessage = useCallback(
-    (message: PortMessageToPanel) => {
-      // M2-U2 P1-11 — session routing filter. Every SW→panel message now
-      // carries sessionId. Drop messages that belong to a session the user
-      // has navigated away from (e.g. user opened a new session mid-stream).
-      // This guard must appear BEFORE any state mutation so a wrong-session
-      // agent-confirm-request can never render into the current session's UI.
-      if (message.sessionId !== sessionIdRef.current) {
-        return;
-      }
-      if (message.type === "chat-chunk") {
-        accumulatedRef.current += message.text;
-        setStreamingText(accumulatedRef.current);
-      } else if (message.type === "chat-done") {
-        streamFinishedRef.current = true;
-        let next = messagesRef.current;
-        if (accumulatedRef.current.trim()) {
-          next = [
-            ...next,
-            { role: "assistant", content: accumulatedRef.current },
-          ];
-          setMessages(next);
-          messagesRef.current = next;
-        }
-        accumulatedRef.current = "";
-        setStreamingText("");
-        streamingRef.current = false;
-        setStreaming(false);
-        void persistMessages(next);
-      } else if (message.type === "chat-error") {
-        streamFinishedRef.current = true;
-        setError(message.error);
-        let next = messagesRef.current;
-        if (accumulatedRef.current.trim()) {
-          next = [
-            ...next,
-            { role: "assistant", content: accumulatedRef.current },
-          ];
-          setMessages(next);
-          messagesRef.current = next;
-        }
-        accumulatedRef.current = "";
-        setStreamingText("");
-        streamingRef.current = false;
-        setStreaming(false);
-        void persistMessages(next);
-      } else if (message.type === "agent-step") {
-        if (accumulatedRef.current.trim()) {
-          const flushed = accumulatedRef.current;
-          setMessages((prev) => {
-            const next = [
-              ...prev,
-              { role: "assistant" as const, content: flushed },
-            ];
-            // Bug-fix-A — keep messagesRef in lock-step with the React
-            // commit so the second setMessages updater below + any concurrent
-            // metaKey listener invocation both see the flushed assistant
-            // text instead of a stale (pre-flush) snapshot.
-            messagesRef.current = next;
-            return next;
-          });
-          accumulatedRef.current = "";
-          setStreamingText("");
-        }
-        const {
-          stepIndex,
-          tool,
-          args,
-          resolvedElement,
-          status,
-          observation,
-          image,
-        } = message;
-        setMessages((prev) => {
-          // Update existing step bubble in place if same (stepIndex,
-          // tool) is already at the tail — avoids duplicate rows
-          // when SW emits status=pending then status=ok.
-          for (let i = prev.length - 1; i >= 0; i--) {
-            const m = prev[i]!;
-            if (m.role !== "agent-step" && m.role !== "agent-confirm")
-              break;
-            if (
-              m.role === "agent-step" &&
-              m.stepIndex === stepIndex &&
-              m.tool === tool
-            ) {
-              const next = [...prev];
-              next[i] = {
-                role: "agent-step",
-                stepIndex,
-                tool,
-                args,
-                resolvedElement,
-                status,
-                observation,
-                ...(image && { image }),
-              };
-              return next;
-            }
-          }
-          return [
-            ...prev,
-            {
-              role: "agent-step",
-              stepIndex,
-              tool,
-              args,
-              resolvedElement,
-              status,
-              observation,
-              ...(image && { image }),
-            },
-          ];
-        });
-      } else if (message.type === "agent-confirm-request") {
-        // M1-U4 — covers both first-time emit AND R4 re-emit on
-        // panel-mounted. The listener doesn't care which path triggered
-        // it; the discriminator is the message type alone.
-        const {
-          confirmationId,
-          tool,
-          args,
-          resolvedElement,
-          riskReason,
-          metaSkillPreview,
-          screenshotPreview,
-          openUrlPreview,
-          originChangePreview,
-        } = message;
-        setMessages((prev) => {
-          // Idempotent — if the same confirmationId is already in
-          // messages (panel was mid-render when SW re-pushed), skip.
-          for (let i = prev.length - 1; i >= 0; i--) {
-            const m = prev[i]!;
-            if (m.role === "agent-confirm" && m.confirmationId === confirmationId) {
-              return prev;
-            }
-          }
-          return [
-            ...prev,
-            {
-              role: "agent-confirm",
-              confirmationId,
-              tool,
-              args,
-              resolvedElement,
-              riskReason,
-              metaSkillPreview,
-              // Phase 5 — pre-captured thumbnail bytes for screenshot tools.
-              // Wire-only; never persisted (would blow 8 MB chrome.storage quota).
-              ...(screenshotPreview ? { screenshotPreview } : {}),
-              // v1.5 — open_url confirm extras (URL, host, origin, active flag).
-              // Small text; safe to include — omitted here by conditional so
-              // the DisplayMessage stays minimal for non-open_url tools.
-              ...(openUrlPreview ? { openUrlPreview } : {}),
-              // Issue #33 follow-up — origin-change confirm extras.
-              ...(originChangePreview ? { originChangePreview } : {}),
-              resolved: undefined,
-            },
-          ];
-        });
-      } else if (message.type === "agent-done-task") {
-        streamFinishedRef.current = true;
-        const { success, summary, stepCount } = message;
-        const next: DisplayMessage[] = [
-          ...messagesRef.current,
-          { role: "agent-summary", success, summary, stepCount },
-        ];
-        setMessages(next);
-        messagesRef.current = next;
-        accumulatedRef.current = "";
-        setStreamingText("");
-        streamingRef.current = false;
-        setStreaming(false);
-        void persistMessages(next);
-      } else if (message.type === "session-confirm-request") {
-        // M1-U5 — drift card / paused-resume card. Idempotent by
-        // confirmationId so SW re-emit (panel-mounted) doesn't stack
-        // duplicate rows.
-        const { confirmationId, kind, payload } = message;
-        setMessages((prev) => {
-          for (let i = prev.length - 1; i >= 0; i--) {
-            const m = prev[i]!;
-            if (
-              m.role === "session-confirm" &&
-              m.confirmationId === confirmationId
-            ) {
-              return prev;
-            }
-          }
-          return [
-            ...prev,
-            {
-              role: "session-confirm",
-              confirmationId,
-              kind,
-              payload,
-              resolved: undefined,
-            },
-          ];
-        });
-      } else if (message.type === "session-toast") {
-        // SEC-PLAN-009 — transient warning from SW (flood-limit, etc.)
-        // Rendered as a dismissable banner by Chat.
-        setToast({ level: message.level, text: message.text });
-      }
+  // Multi-session (#30) — sessionId-explicit variant for port handlers. The
+  // legacy persistMessages (which reads sessionIdRef) is preserved during
+  // migration and removed in Task 9b once all callers move off it.
+  const persistMessagesById = useCallback(
+    async (id: string, next: DisplayMessage[]) => {
+      const current = await getSessionMeta(id);
+      if (!current) return;
+      if (current.status === "archived") return;
+      const titlePatch =
+        current.title === undefined || current.title === ""
+          ? deriveTitleFromMessages(next)
+          : undefined;
+      await setSessionMeta({
+        ...current,
+        messages: next,
+        lastAccessedAt: Date.now(),
+        ...(titlePatch !== undefined ? { title: titlePatch } : {}),
+      });
     },
-    [persistMessages],
+    [],
   );
 
-  const handlePortDisconnect = useCallback(() => {
-    if (streamFinishedRef.current) return;
-    // Unexpected disconnect during a stream — flush partial text and
-    // persist so the user sees what they got before the SW bailed.
-    let next = messagesRef.current;
-    if (accumulatedRef.current.trim()) {
-      next = [
-        ...next,
-        { role: "assistant", content: accumulatedRef.current },
-      ];
-      setMessages(next);
-      messagesRef.current = next;
-    }
-    accumulatedRef.current = "";
-    setStreamingText("");
-    streamingRef.current = false;
-    setStreaming(false);
-    streamFinishedRef.current = true;
-    // TODO Task 8: replaced by makeDisconnectHandler
-    void persistMessages(next);
-  }, [persistMessages]);
+  // Multi-session (#30) — single onMessage listener routes by message.sessionId;
+  // per-port disconnect closure flushes partial text scoped to that port's session.
+  const portHandlers = useMemo(
+    () => createPortHandlers({
+      slotsRef,
+      setSlots,
+      persistMessages: persistMessagesById,
+      // #30 migration bridge — sync legacy state until Task 9b.
+      legacy: {
+        sessionIdRef,
+        setMessages,
+        messagesRef,
+        setStreaming,
+        streamingRef,
+        setStreamingText,
+        setError,
+        setToast,
+        accumulatedRef,
+        streamFinishedRef,
+      },
+    }),
+    [persistMessagesById],
+  );
 
   // ── Mount: bootstrap active session + open per-session port ─────────
   // M3-U1 — port name is `chat-stream-${sessionId}`. The SW parses the
@@ -576,12 +385,12 @@ export function useSession(): UseSession {
   const connectPortFor = useCallback(
     (id: string) => {
       const port = chrome.runtime.connect({ name: `chat-stream-${id}` });
-      port.onMessage.addListener(handlePortMessage);
-      port.onDisconnect.addListener(handlePortDisconnect);
+      port.onMessage.addListener(portHandlers.handleMessage);
+      port.onDisconnect.addListener(portHandlers.makeDisconnectHandler(id));
       port.postMessage({ type: "panel-mounted", sessionId: id });
       return port;
     },
-    [handlePortMessage, handlePortDisconnect],
+    [portHandlers],
   );
 
   useEffect(() => {
@@ -784,6 +593,17 @@ export function useSession(): UseSession {
       accumulatedRef.current = "";
       streamFinishedRef.current = false;
 
+      // #30 — initialize the slot so port handler's legacy sync doesn't
+      // overwrite the user message with an empty slot (removed in Task 9b).
+      patchSlot(id, {
+        messages: updated,
+        streaming: true,
+        streamFinished: false,
+        accumulated: "",
+        streamingText: "",
+        error: null,
+      });
+
       // Build the LLM-facing chat history (text-only, slash-expanded).
       // Phase 5: the very last user ChatMessage carries image attachments
       // (passed via input.attachments) so the LLM sees them. Attachments
@@ -883,7 +703,7 @@ export function useSession(): UseSession {
         })();
       }
     },
-    [streaming, persistMessages],
+    [streaming, persistMessages, patchSlot],
   );
 
   const abort = useCallback(() => {
