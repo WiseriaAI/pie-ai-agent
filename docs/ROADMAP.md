@@ -2,7 +2,7 @@
 
 延续 `docs/design.md` 的 Phase 0/1/2/3 终态。本文件是已交付 phase 状态 + 后续 backlog 的 single source of truth；invariant 级别细节见 `docs/solutions/`。
 
-**已交付**：Phase 0 / 1 / 2 / 2.5 / 2.6 / 3 / 4 (M1 + M2 + M3) / 5 (multimodal v1) / v1.5 (multi-pin + open_url + focus_tab)。Skill scope 解禁 + 全局 skip-permissions toggle ([#26](docs/solutions/2026-05-06-skill-scope-and-skip-permissions.md))。
+**已交付**：Phase 0 / 1 / 2 / 2.5 / 2.6 / 3 / 4 (M1 + M2 + M3) / 5 (multimodal v1) / v1.5 (multi-pin + open_url + focus_tab)。Skill scope 解禁 + 全局 skip-permissions toggle ([#26](docs/solutions/2026-05-06-skill-scope-and-skip-permissions.md))。Confirm 层彻底删除（risk classifier / confirm card / skip-permissions toggle / K-10 reject-3-strikes）— 2026-05-08。
 
 本文件汇总各 brainstorm / plan 主动 defer 的 milestone，是后续工作的 backlog。每条目标是"够用以决定下一步"，不是 plan，立 plan 时再 brainstorm + plan 走完整链路。
 
@@ -229,7 +229,7 @@ GitHub `state:open` 的 3 条 feat 性 issue（虽未打 label，但标题均为
 
 ### 第一梯队 — 用户每天会卡的真问题
 
-1. **reject-3-strikes 软化（§13 P2 #45-6）** — 拒同一 tool 3 次 → 整 task abort。日常频率最高、`loop.ts` 一处逻辑。先 brainstorm 收窄 "换策略 vs 换工具" fallback 协议 + abort 兜底门槛
+1. **reject-3-strikes 软化（§13 P2 #45-6）** — ✅ **SHIPPED 2026-05-08**：升级为彻底删除 confirm 层（risk classifier / informed-approval / skip-permissions / K-10），详见 [v0.8.0 release notes](docs/release-notes/v0.8.0.md)
 2. **Page snapshot 加 semantic 层（§13 P2 #44-3 / #45-3）** — interactive-only snapshot 让 LLM 在复杂页面"看不见报错/状态文案/表单 label"，是好用阶段最显眼失败模式。需 brainstorm 4 层观察（lightweight / semantic / fulltext / screenshot）默认值 + 每轮 token 成本 + R15 untrusted 边界协作
 3. **Anthropic `cache_control: ephemeral` on image content blocks（§8 / §11）** — 一张图 × 6 轮 task ≈ 9.4K 重复 vision token；BYOK 成本痛点 #1，改动局部（content block 加字段），ROI 极高
 4. **凭证场景 pause/resume（§13 P2 #45-7）** — 登录墙日常常见场景，当前只能 `fail`。M3 sandbox / lifecycle 基础设施可复用；scope 收得住
@@ -269,6 +269,7 @@ GitHub `state:open` 的 3 条 feat 性 issue（虽未打 label，但标题均为
 - ✅ 行为录制 → Skill seed（§5 #4）— 2026-05-05 (v1)
 - ✅ Chrome narrow / multi-pin / open_url / focus_tab（§5 #3）— 2026-05-05 (PR #21, manifest 0.5.2)
 - ✅ Skill scope 解禁 + 全局 skip-permissions toggle — 2026-05-06 (PR #26)
+- ✅ Confirm 层彻底删除（§13 P2 #45-6 升级版）— 2026-05-08
 - ✅ Provider + Model 能力中心化（§7）+ Gemini provider（§1）+ DeepSeek provider — 2026-05-06 (PR #28)
 - ✅ 自定义 OpenAI-compat Provider（§12）— 2026-05-07
 - ✅ 并发会话支持（§12 #30, P0）— 2026-05-08
@@ -343,7 +344,7 @@ GitHub `state:open` 的 3 条 feat 性 issue（虽未打 label，但标题均为
 |---|---|---|
 | **Page snapshot 加 semantic 层（标题 / 区块 / 状态文案 / 表单 label / 错误提示）** | #44-3 / #45-3 | ✅ **SHIPPED 2026-05-08**：单 PR 落地 spec [`2026-05-08-semantic-snapshot-design.md`](superpowers/specs/2026-05-08-semantic-snapshot-design.md)。snapshotInteractiveElements 单 executeScript 内增量采集 page-level（h1-h3 / role=alert / role=status / aria-live，per-field char caps + max counts）+ element-level（`<label for>` / aria-labelledby / ancestor `<label>` fallback chain，aria-invalid+describedby → error）。buildObservationMessage 渲染 `<untrusted_page_content>` 内 `Semantic:` / `Elements:` 子段，复用 wrapper 不增 sanitize 表面。HARD INVARIANT：所有 5 个新文本源走 sanitizeText。STATIC_AGENT_SYSTEM_PROMPT 加一行格式说明。snapshot.test.ts 31 case + prompt.test.ts 8 case + cross-layer.test.ts 3 case 覆盖 |
 | **业务按钮语义风险识别** | #44-9 | 当前 risk classifier 只看工具类型 + 关键字 + cross-origin args；提交/删除/支付/发布按钮缺业务级保护。设计点：(a) DOM hint（按钮文案 + form context）→ risk 升级 (b) 高风险点击前要求 LLM 复述即将发生的动作 |
-| **reject-3-strikes 软化** | #45-6 | 当前 `loop.ts` reject 同一 tool 3 次直接 abort 整个 task。设计点：reject 后给 LLM 一次"换策略/换工具"机会，仍同操作才终止；保留 abort 兜底防死循环 |
+| **reject-3-strikes 软化** | #45-6 | ✅ **SHIPPED 2026-05-08**：升级为确认层彻底删除，不再有 reject 计数逻辑 |
 | **凭证场景优雅降级（pause/resume）** | #45-7 | 当前登录墙只能 `fail`。设计点：task 主动 pause + UI 提示"等用户登录完成后继续" + resume 时重做最近 snapshot。M3 已有 sandbox/lifecycle 基础设施可复用 |
 
 ### P3 — 设计权衡需深入
