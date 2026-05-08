@@ -286,3 +286,70 @@ Checkpoint & Resume 的 M1 已 ship；M2/M3 PR #10 / #13 已 ship。定时工作
 - 远程 preset 库
 - Per-instance baseUrl override
 - OpenRouter 之外的 builtin lazy `/v1/models`
+
+---
+
+## 13. Issue #44 / #45 模型侧设计审查（2026-05-08）
+
+来源：[#44](https://github.com/WiseriaAI/Pie/issues/44)（9 大类高层建议）+ [#45](https://github.com/WiseriaAI/Pie/issues/45)（12 项细粒度）共 21 条。两条 issue 大量重叠，且约 60% 内容**基于对 tool/skill 分层的误读或过时认知**。下表按"用户痛感 × 实现就绪度 × 是否真问题"分级。
+
+**关键事实校准**（issue 里的多数误读集中在这三点）：
+
+1. **tool ≠ skill**：`take_screenshot` / `open_url_in_tab` / `extract_structured_data` / `auto_group_tabs` / `close_duplicate_tabs` / `create_skill_from_recording` 全部是 `src/lib/skills/builtin.ts` 里的 **built-in skill**（用户可见包装层），底层 tool 是 `capture_visible_tab` / `open_url` / `get_tab_content` / `group_tabs`。skill 是 LLM-driven workflow，最终调用 tool，不是 tool 重叠
+2. **`allowedTools` 早已不是 required**：issue #26 (2026-05-06) 已删 R2 enforcement；`SkillDefinition.allowedTools: string[] | null`（`src/lib/skills/types.ts:37`）现在是可选。但 `prompt.ts:32-39` 的 `META_TOOL_GUIDANCE` 仍说 "allowedTools must be a non-empty array of currently registered tool names" — 这是 **prompt-vs-impl drift 真 bug**（见 P1）
+3. **active/focus 双轨**：是有意为之的安全边界（用户视角 vs agent 操作目标分离），不是设计缺陷；`prompt.ts:49` 已显式说 "activate_tab does NOT change the agent's pinned tab"
+
+### P1 — quick wins（独立可做、不需 brainstorm）
+
+| 项 | 来源 | 备注 |
+|---|---|---|
+| **清理 `META_TOOL_GUIDANCE` 中过时 allowedTools 描述** | #45-1 / #45-12 | prompt.ts:32-39 还在说 "allowedTools must be a non-empty array..."，但实现里该字段已是 optional（issue #26 删 R2）。修法 = 删/重写过时段落，顺手核 META_TOOL_GUIDANCE 其余陈述。1 个小 PR |
+| **`dispatch_keyboard_input` 软换行支持** | #45-10 | 当前每个 `\n` = Enter；Notion / Feishu / Google Docs 段内换行需 Shift+Enter。两条修法选一：(a) 文档化 `press_key("shift+enter")` 已有用法 (b) `dispatch_keyboard_input` 增加 `softBreak: boolean` 参数。低风险 |
+
+### P2 — 需 brainstorm 但 scope 较清晰
+
+| 项 | 来源 | 备注 |
+|---|---|---|
+| **Page snapshot 加 semantic 层（标题 / 区块 / 状态文案 / 表单 label / 错误提示）** | #44-3 / #45-3 | 当前 snapshot 只含 interactive elements（`prompt.ts:194-220`）— LLM 在复杂页面只能"看按钮做事"。设计点：4 层观察（lightweight interactive / semantic / fulltext / screenshot），默认 semantic。需评估每轮 token 成本 + R15 untrusted 边界 |
+| **业务按钮语义风险识别** | #44-9 | 当前 risk classifier 只看工具类型 + 关键字 + cross-origin args；提交/删除/支付/发布按钮缺业务级保护。设计点：(a) DOM hint（按钮文案 + form context）→ risk 升级 (b) 高风险点击前要求 LLM 复述即将发生的动作 |
+| **reject-3-strikes 软化** | #45-6 | 当前 `loop.ts` reject 同一 tool 3 次直接 abort 整个 task。设计点：reject 后给 LLM 一次"换策略/换工具"机会，仍同操作才终止；保留 abort 兜底防死循环 |
+| **凭证场景优雅降级（pause/resume）** | #45-7 | 当前登录墙只能 `fail`。设计点：task 主动 pause + UI 提示"等用户登录完成后继续" + resume 时重做最近 snapshot。M3 已有 sandbox/lifecycle 基础设施可复用 |
+
+### P3 — 设计权衡需深入
+
+| 项 | 来源 | 备注 |
+|---|---|---|
+| **元素 index 替换为 role + name + within 三元组** | #44-4 | 当前 `[N]` 索引每次 snapshot 重排，page 变化/弹窗后失效。改为 `{role: "button", name: "Create", within: "issue form"}` 是高价值改动，但成本极高（snapshot 协议 + LLM prompt + click/type/select 全部 tool 改）。需先 spike 验证 LLM 在三元组下定位准确率 |
+| **任务级 / scope 级授权** | #44-5 / #45-5 | 当前 `get_tab_content` always-high 是有意（凭据 mirror 风险），但同 origin / 多步任务确认疲劳实在。设计点：(a) "本任务内允许读取当前 origin 内容" (b) "5 分钟内允许同 origin 截图"。提交/删除/跨域不放开。需精心设计避免越权 + 与 R10 first-run-confirm 协作 |
+| **安全规则部分下沉到工具层** | #44-8 / #45-8 | prompt 现在偏长（KEYBOARD_SIM_GUIDANCE + META_TOOL_GUIDANCE + TAB_TOOLS_GUIDANCE 累计 ~180 行）。现实是 risk classifier 已下沉部分（CDP 永远 high / cross-origin args 自动升级），但 prompt 仍在重复声明。trade-off：透明可审 vs 黑盒省 token |
+| **skill 与 tool 命名空间隔离** | #45-9 衍生 | issue 第 9 条本身是误读（已验证 `tools.ts` / `tools/*.ts` description 全部英文，中文都在 `skills/builtin.ts`），但暴露真问题：LLM 在工具列表里同时看到 tool（`open_url`）和 skill（`open_url_in_tab`）名字相近，认知摩擦。可考虑加 prefix（`skill__open_url_in_tab`）或 description 显式标注 "(skill — composes lower-level tools)"。有 storage migration 成本 |
+| **会话间轻量持久化（用户偏好层）** | #45-11 | 当前持久层有：session（first-class）/ instance（provider 配置）/ skill（跨 session workflow）/ settings（全局）。"用户偏好"模糊 — 需先 narrow：是 (a) 跨 session 的常用 prompt 片段 (b) 用户行为习惯学习 (c) 项目/网站维度的 context note。类似 §2 "Agent 自主建议 Skill"，UX 不能成 confirm-fatigue 放大器 |
+
+### P4 — YAGNI 风险高
+
+| 项 | 来源 | 备注 |
+|---|---|---|
+| **输入工具自适应编辑器（系统侧识别 Notion / Monaco / CodeMirror）** | #44-6 / #45-2 部分 | 当前 prompt.ts:26 是 fail-fallback：`type` 失败返回 "hidden IME / keyboard capture buffer" → LLM 自动 fallback 到 `dispatch_keyboard_input`。这是 honest signaling，DOM 端编辑器类型检测 fragile（react contenteditable / 各种 shadow root / iframe），写好成本远超 fail-fallback。Punt |
+| **合并工具到高层意图（read_page / open_page / input_text / interact_with_page）** | #44-1 后半 | "暴露大量底层工具 → 提供更稳定语义接口"是合理方向，但当前 9 个核心 tool 已经收敛，强行加一层 `interact_with_page(action)` 会变成路由器（违反 CLAUDE.md "不要预设抽象"）。LLM 已经能直接调底层工具，加意图层是 abstraction-for-its-own-sake |
+
+### P5 — 不做（违反已落地的设计/不变量）
+
+| 项 | 来源 | 备注 |
+|---|---|---|
+| **create_skill 增加 allowedTools 必填字段** | #45-1 / #45-12 | issue #26 (2026-05-06) 故意删了 R2 enforcement — 见 ROADMAP 顶部 "Skill scope 解禁 + 全局 skip-permissions toggle"。重新加回去等于回退 |
+| **pinned/active/focus 合并为 switch_working_tab** | #44-2 / #45-4 | active vs focus 分离是有意安全边界（用户视角 vs agent 操作目标）。合并会让 "用户切 tab 看页面" 自动改 agent 操作目标 — 与 v1.5 multi-pin 设计冲突。`prompt.ts:49` 已显式澄清 |
+| **"工具重叠"误读项** | #44-1 前 3 组 / #45-2 前 2 组 / #45-9 整条 | `take_screenshot` / `open_url_in_tab` / `extract_structured_data` 是 built-in **skill**，不是 tool；分层不是重叠。所谓"中英混杂"也是 skill description（中文）vs tool description（英文）的 by-design 分工 |
+
+### 重复 / 已在 backlog
+
+| 项 | 来源 | 备注 |
+|---|---|---|
+| **系统侧检测重复 workflow → 主动建议 Skill** | #44-7 | 重复 §2 "Agent 自主建议 / 推荐 Skill"；punt 理由相同（UX 不能成 confirm-fatigue 放大器） |
+| **`type` vs `dispatch_keyboard_input` 真 tool 重叠** | #44-1 第 4 组 / #45-2 第 3 组 | 两者确实都是 tool，但分工已在 `prompt.ts:24-28` 明示（`type` 走 DOM input event，`dispatch_keyboard_input` 走 CDP）。移除任一会丢失 canvas 编辑器支持。归为"分层是 by design"而非 backlog 项 |
+
+### 推进策略
+
+- **P1 立即可做**：单 PR 修 prompt drift（45-1）+ 软换行支持（45-10），不进 §5 4-way 主线
+- **P2 走 brainstorm 流程**：4 项各自需 `/ce:brainstorm`，与 §10/§11 已知 backlog 一同排队；优先级在 §12 #34 (P1) 之后
+- **P3 留给观察期**：先看哪几项的用户报告最多再选着做
+- **P4/P5 + 重复**：close issue 时点明，不入工作排期
