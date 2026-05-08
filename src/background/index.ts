@@ -76,11 +76,15 @@ import {
 } from "./abort-rotation";
 import { createKeepAlive, type KeepAlive } from "./keep-alive";
 import { cleanupLegacySkipPermissions } from "./cleanup-migration";
+import { cleanupThinShellSkills } from "@/lib/skills/migration-cleanup-thinshell";
 
 // Run V1→V2 migration once on SW load (idempotent via schema_version sentinel).
 migrateV1toV2().catch((e) => console.error("migration v2 failed", e));
 cleanupLegacySkipPermissions().catch((e) =>
   console.error("legacy skip-permissions cleanup failed", e),
+);
+cleanupThinShellSkills().catch((e) =>
+  console.error("thin-shell skills cleanup failed", e),
 );
 
 // Recording v1 — per-sessionId → port registry. Used by the chrome.runtime.onMessage
