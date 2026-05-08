@@ -168,8 +168,26 @@ or while the listing is still under review:
 5. Click **Load unpacked** and select the unzipped directory
 6. Pin Pie to the toolbar; click the icon to open the side panel
 
-Updates: download the next release zip, replace the directory contents,
-and click **Reload** on Pie's card in `chrome://extensions`.
+#### Upgrading without data loss
+
+Chrome derives the extension ID from the unpacked directory's path, and
+your sessions / encrypted API keys / Skills are scoped to that ID in
+`chrome.storage.local`. To carry them across releases, **upgrade in
+place** — don't unzip the new release to a different folder.
+
+1. Open `chrome://extensions` and find Pie's card. Note the unpacked
+   directory path (shown under the card, or via **Details** → "Source")
+2. Delete the contents of that directory, but keep the directory itself
+3. Unzip the new `pie-x.y.z.zip` into that same directory
+4. Click the **↻ reload** icon on Pie's card
+
+> ⚠️ Do **not** click **Remove** on the old card. Remove drops the
+> extension's `chrome.storage.local` along with the encrypted API keys
+> and chat history. If you already removed it, re-add provider keys
+> from Settings; chat history can't be recovered.
+
+Web Store users (Option 1, once available) skip this section — Chrome
+auto-updates the extension and storage carries over automatically.
 
 ### Option 3 — Build from source (contributors)
 
