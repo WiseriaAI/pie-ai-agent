@@ -88,6 +88,7 @@ import {
 } from "./recording-orchestrator";
 import type { RecordingSession } from "@/lib/recording/types";
 import { migrateV1toV2 } from "@/lib/migration-v2";
+import { cleanupThinShellSkills } from "@/lib/skills/migration-cleanup-thinshell";
 import {
   createAbortRotation,
   rotateAbortController,
@@ -96,6 +97,9 @@ import { createKeepAlive, type KeepAlive } from "./keep-alive";
 
 // Run V1→V2 migration once on SW load (idempotent via schema_version sentinel).
 migrateV1toV2().catch((e) => console.error("migration v2 failed", e));
+cleanupThinShellSkills().catch((e) =>
+  console.error("cleanup thin-shell skills failed", e),
+);
 
 // Phase 5 follow-up — shared resolver for the screenshot first-task pin race
 // (see effective-pinned.ts for the three-tier fallback rationale).
