@@ -4,7 +4,7 @@ type: feat
 status: completed
 date: 2026-05-02
 last_updated: 2026-05-04
-origin: docs/brainstorms/2026-05-02-checkpoint-resume-requirements.md
+origin: docs/specs/2026-05-02-checkpoint-resume-requirements.md
 m1_pr: https://github.com/WiseriaAI/Pie/pull/8
 m3_pr: https://github.com/WiseriaAI/Pie/pull/13
 m1_learnings: docs/solutions/2026-05-02-session-as-first-class-persistent-layer-m1.md
@@ -23,7 +23,7 @@ m3_learnings: docs/solutions/2026-05-03-multi-session-invariant-trace.md
 
 ## Problem Frame
 
-当前会话状态没有专属持久层（详见 origin: `docs/brainstorms/2026-05-02-checkpoint-resume-requirements.md` Problem Frame）。三大症状：
+当前会话状态没有专属持久层（详见 origin: `docs/specs/2026-05-02-checkpoint-resume-requirements.md` Problem Frame）。三大症状：
 - **高频** — 用户切 sub-view（chat ↔ settings）触发 `App.tsx:80-91` 的 `<Chat>` unmount，11 个 React useState 全丢（`Chat.tsx:106-121`）
 - **中频** — SW idle 30s 终止，in-flight agent task 直接消失（`background/index.ts:268-316` AbortController + 25s keep-alive，无任何持久化）
 - **中频** — confirm 卡 pending 期间 SW 死，pending Promise resolver 在 SW 内存里，全失活
@@ -32,7 +32,7 @@ m3_learnings: docs/solutions/2026-05-03-multi-session-invariant-trace.md
 
 ## Requirements Trace
 
-来源: `docs/brainstorms/2026-05-02-checkpoint-resume-requirements.md` 的 R1–R29 + K1–K9。本计划逐 unit 反向 trace。
+来源: `docs/specs/2026-05-02-checkpoint-resume-requirements.md` 的 R1–R29 + K1–K9。本计划逐 unit 反向 trace。
 
 **M1 覆盖**: R1 (session 字段) · R2 (chat 切 sub-view 不丢) · R3 (per-step snapshot) · R4 (in-memory pending confirm 恢复) · R10 (cold start paused) · R11 (drift informed-approval 卡, 单 button) · R12 (resume re-plan, pending-confirm carve out) · R28 (redaction preservation, C4 inheritance)
 
@@ -931,7 +931,7 @@ stateDiagram-v2
 
 ## Sources & References
 
-- **Origin document**: [docs/brainstorms/2026-05-02-checkpoint-resume-requirements.md](../brainstorms/2026-05-02-checkpoint-resume-requirements.md)
+- **Origin document**: [docs/specs/2026-05-02-checkpoint-resume-requirements.md](../brainstorms/2026-05-02-checkpoint-resume-requirements.md)
 - **ROADMAP**: [docs/ROADMAP.md](../ROADMAP.md) (Section 3 — Checkpoint & Resume 推荐排序 #1)
 - **Project conventions**: [CLAUDE.md](../../CLAUDE.md) (Phase 1/2/2.5/2.6/3 architecture)
 - Related code:

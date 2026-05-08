@@ -3,7 +3,7 @@ date: 2026-05-07
 topic: custom-providers
 status: brainstormed
 related:
-  - docs/superpowers/specs/2026-05-06-provider-config-center-design.md  # 前置 spec：multi-instance + per-model capability + provider 模块拆分（已落地，本 spec 在其之上扩展）
+  - docs/specs/2026-05-06-provider-config-center-design.md  # 前置 spec：multi-instance + per-model capability + provider 模块拆分（已落地，本 spec 在其之上扩展）
   - src/lib/model-router/providers/registry.ts  # 当前 PROVIDER_REGISTRY hardcoded 8 家
   - src/lib/model-router/providers/_shared/openai-compat-core.ts  # 5 家 OpenAI-compat 共享 core，custom provider 复用
   - src/lib/instances.ts  # 多实例 schema（StoredInstance.provider 字段类型扩展）
@@ -414,7 +414,7 @@ UI 测试：
 
 ## References
 
-- 前置 spec：`docs/superpowers/specs/2026-05-06-provider-config-center-design.md`（已落地，本 spec 在其之上扩展）
+- 前置 spec：`docs/specs/2026-05-06-provider-config-center-design.md`（已落地，本 spec 在其之上扩展）
 - Brainstorm（本 spec 来源）：本对话 2026-05-07，4 轮 Q&A + 6 段 section review + advisor 6 条反馈 merge
 - 当前 registry：`src/lib/model-router/providers/registry.ts`
 - 当前 instances：`src/lib/instances.ts`

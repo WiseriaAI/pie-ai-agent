@@ -3,7 +3,7 @@ title: "feat: Skill scope 解禁 + 全局 skip-permissions toggle"
 type: feat
 status: draft
 date: 2026-05-06
-origin: docs/brainstorms/2026-05-06-skill-scope-and-skip-permissions-requirements.md
+origin: docs/specs/2026-05-06-skill-scope-and-skip-permissions-requirements.md
 issue: "#26"
 ---
 
@@ -21,7 +21,7 @@ issue: "#26"
 
 ## Requirements Trace
 
-源自 `docs/brainstorms/2026-05-06-skill-scope-and-skip-permissions-requirements.md`：
+源自 `docs/specs/2026-05-06-skill-scope-and-skip-permissions-requirements.md`：
 
 - **R1.1 – R1.10** Change 1：解禁 skill scope（删 R2/R3/R10、字段 deprecated、schema 清理、storage helper 删）
 - **R2.1 – R2.9** Change 2：全局 toggle（新模块、SW 短路、ctx 注入、agent-step 标记、Settings UI、Chat banner）
@@ -187,7 +187,7 @@ Expected: FAIL — module `./skip-permissions` not found.
 // src/lib/skip-permissions.ts
 // Global "skip permissions" toggle. When ON, sendConfirmRequest in the SW
 // short-circuits every high-risk confirm card and auto-approves. Default OFF.
-// See docs/brainstorms/2026-05-06-skill-scope-and-skip-permissions-requirements.md
+// See docs/specs/2026-05-06-skill-scope-and-skip-permissions-requirements.md
 // (R2.1) — task-level snapshot semantics applied at chat-start (R2.2).
 
 const STORAGE_KEY = "skip_permissions_enabled";
@@ -1940,7 +1940,7 @@ git commit -m "test(cross-layer): wire→panel autoApproved + R2/R3/R10 removal 
 ---
 date: 2026-05-06
 phase: skill-scope-and-skip-permissions (issue #26)
-origin: docs/brainstorms/2026-05-06-skill-scope-and-skip-permissions-requirements.md
+origin: docs/specs/2026-05-06-skill-scope-and-skip-permissions-requirements.md
 plan: docs/plans/2026-05-06-001-feat-skill-scope-and-skip-permissions-plan.md
 ---
 

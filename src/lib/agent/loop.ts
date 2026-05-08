@@ -1352,7 +1352,12 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           target: { tabId: pinnedTabId },
           func: snapshotInteractiveElements,
         });
-        snapshot = (results[0]?.result as PageSnapshot) ?? { url: currentUrl, title: "", elements: [] };
+        snapshot = (results[0]?.result as PageSnapshot) ?? {
+          url: currentUrl,
+          title: "",
+          elements: [],
+          semantic: { headings: [], alerts: [], status: [] },
+        };
       } catch {
         await emitDone({
           type: "agent-done-task",

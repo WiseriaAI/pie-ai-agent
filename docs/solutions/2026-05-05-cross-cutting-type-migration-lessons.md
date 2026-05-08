@@ -28,7 +28,7 @@ tags:
 
 # Cross-Cutting Type Migration — Engineering Lessons (v1.5 Multi-Pin Epic)
 
-> **Scope:** This is **pattern documentation**, not feature documentation. The v1.5 multi-pin feature itself is documented in `docs/solutions/2026-05-03-multi-session-invariant-trace.md` (§v1.5 section, lines 258-295) and `docs/release-notes/v0.5.2.md`. The plan is at `docs/superpowers/plans/2026-05-04-tabs-create-and-multi-pin-v2.md`. Read those for "what shipped". Read this for "how to ship the next cross-cutting migration without the failure modes that almost slipped through this one."
+> **Scope:** This is **pattern documentation**, not feature documentation. The v1.5 multi-pin feature itself is documented in `docs/solutions/2026-05-03-multi-session-invariant-trace.md` (§v1.5 section, lines 258-295) and `docs/release-notes/v0.5.2.md`. The plan is at `docs/plans/2026-05-04-tabs-create-and-multi-pin-v2.md`. Read those for "what shipped". Read this for "how to ship the next cross-cutting migration without the failure modes that almost slipped through this one."
 
 ## Problem
 
@@ -184,7 +184,7 @@ This generalizes the project's existing memory rule (`feedback_cross_layer_integ
 
 - `docs/solutions/2026-05-03-multi-session-invariant-trace.md` §v1.5 (lines 258-295) — Feature trace: schema, lifecycle table, dual-write shim, T10 cleanup. Read this for "what shipped".
 - `docs/solutions/2026-05-04-multimodal-image-input-v1-acceptance-bugs.md` — Canonical cross-layer integration gap story; same class of bug at a different layer (wire→DisplayMessage). The integration test template originates here.
-- `docs/superpowers/plans/2026-05-04-tabs-create-and-multi-pin-v2.md` — The plan that specified phased deletion + dual-write + clean-break sequencing.
+- `docs/plans/2026-05-04-tabs-create-and-multi-pin-v2.md` — The plan that specified phased deletion + dual-write + clean-break sequencing.
 - `docs/release-notes/v0.5.2.md` — User-facing BREAKING notice for the storage shape change.
 - `docs/solutions/2026-05-02-session-as-first-class-persistent-layer-m1.md` — `writeAtomic` precedent and snapshot scrub symmetry (open/close pattern).
 

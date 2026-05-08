@@ -305,7 +305,7 @@ Task 10 changes (final cleanup, post-final-review):
 
 ## §M3-U6 — Panel concurrent state migration (2026-05-08)
 
-Closes the M3-U6+ anchor referenced throughout this trace. Spec → `docs/superpowers/specs/2026-05-08-concurrent-sessions-design.md`. PR → (TBD on merge).
+Closes the M3-U6+ anchor referenced throughout this trace. Spec → `docs/specs/2026-05-08-concurrent-sessions-design.md`. PR → (TBD on merge).
 
 **Shipped invariants**:
 - Panel `useSession` is split into `useSession/{index, runtime-map, port-handlers}.ts` directory module

@@ -178,5 +178,5 @@ Issue #26 提出两个明确诉求——
 
 - Issue #26 — 原始诉求
 - `docs/solutions/2026-05-01-llm-capability-grant-invariants.md` — K-3 防御链原始设计（被本 phase 显式弃用）
-- `docs/brainstorms/2026-05-01-skill-autonomous-crud-requirements.md` — Phase 2.6 Skill CRUD requirements（R2/R3/R10 出处）
+- `docs/specs/2026-05-01-skill-autonomous-crud-requirements.md` — Phase 2.6 Skill CRUD requirements（R2/R3/R10 出处）
 - `docs/plans/2026-05-01-001-feat-skill-autonomous-crud-plan.md` — Phase 2.6 plan（P1-F/P1-G/G-1 gate 出处）

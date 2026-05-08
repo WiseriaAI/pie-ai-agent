@@ -215,6 +215,20 @@ const chromeMock = {
 // Cast through unknown to avoid clashing with the official @types/chrome shape.
 (globalThis as unknown as { chrome: typeof chromeMock }).chrome = chromeMock;
 
+// happy-dom does not compute CSS layout — getBoundingClientRect() returns all zeros
+// for every element. The snapshotInteractiveElements() self-contained function uses
+// isVisible() which checks rect.width > 0 && rect.height > 0 to filter hidden
+// elements. Without this stub, every element appears invisible and all snapshots
+// come back empty in unit tests.
+const _origGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+Element.prototype.getBoundingClientRect = function () {
+  const rect = _origGetBoundingClientRect.call(this);
+  if (rect.width === 0 && rect.height === 0) {
+    return { x: 0, y: 0, width: 100, height: 20, top: 0, right: 100, bottom: 20, left: 0 } as DOMRect;
+  }
+  return rect;
+};
+
 beforeEach(() => {
   local.__store = {};
   runtime.__ports = [];

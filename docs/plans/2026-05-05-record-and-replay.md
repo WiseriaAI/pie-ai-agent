@@ -3608,8 +3608,8 @@ Expected: PASS — 两条规则都满足
 
 ## Trace
 
-- Plan: `docs/superpowers/plans/2026-05-05-record-and-replay.md`
-- Spec: `docs/superpowers/specs/2026-05-04-record-and-replay-design.md`
+- Plan: `docs/plans/2026-05-05-record-and-replay.md`
+- Spec: `docs/specs/2026-05-04-record-and-replay-design.md`
 - Invariant trace: `docs/solutions/2026-05-05-record-and-replay-v1-invariant-trace.md`
 ```
 
@@ -3663,7 +3663,7 @@ Expected: PASS — 两条规则都满足
 修改 `docs/ROADMAP.md`：找到 §5 #4 行（"行为录制 + AI 回放循环操作"），改为：
 
 ```markdown
-| **4** | 行为录制 + AI 回放循环操作 | ✅ **SHIPPED 2026-05-05** (v1，单 tab + trace-as-Skill 形态)：sidepanel Record button → DOM event capture → 序列化为中文 promptTemplate + 推断 allowedTools/parameters → 写入 user-authored Skill via 现有 saveSkill。回放完全复用现有 ReAct + click/type 工具路径。所有 Phase 2.6 capability + Phase 3 cross-tab + M3 multi-session 自动兼容。trace doc → `docs/solutions/2026-05-05-record-and-replay-v1-invariant-trace.md`；plan → `docs/superpowers/plans/2026-05-05-record-and-replay.md`。v1.1 backlog：cross-tab 录制 / N 行数据循环 / 重录覆盖 UX | 完成 |
+| **4** | 行为录制 + AI 回放循环操作 | ✅ **SHIPPED 2026-05-05** (v1，单 tab + trace-as-Skill 形态)：sidepanel Record button → DOM event capture → 序列化为中文 promptTemplate + 推断 allowedTools/parameters → 写入 user-authored Skill via 现有 saveSkill。回放完全复用现有 ReAct + click/type 工具路径。所有 Phase 2.6 capability + Phase 3 cross-tab + M3 multi-session 自动兼容。trace doc → `docs/solutions/2026-05-05-record-and-replay-v1-invariant-trace.md`；plan → `docs/plans/2026-05-05-record-and-replay.md`。v1.1 backlog：cross-tab 录制 / N 行数据循环 / 重录覆盖 UX | 完成 |
 ```
 
 并在 §10 v1.5.1 follow-ups 末加一行：

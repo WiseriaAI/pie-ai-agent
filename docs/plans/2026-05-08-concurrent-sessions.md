@@ -2,7 +2,7 @@
 date: 2026-05-08
 topic: concurrent-sessions
 status: ready-to-execute
-spec: docs/superpowers/specs/2026-05-08-concurrent-sessions-design.md
+spec: docs/specs/2026-05-08-concurrent-sessions-design.md
 issue: https://github.com/WiseriaAI/Pie/issues/30
 ---
 
@@ -2627,7 +2627,7 @@ In `docs/solutions/2026-05-03-multi-session-invariant-trace.md`, append a new se
 ```markdown
 ## §M3-U6 — Panel concurrent state migration (2026-05-08)
 
-Closes the M3-U6+ anchor referenced throughout this trace. Spec → `docs/superpowers/specs/2026-05-08-concurrent-sessions-design.md`. PR → (TBD on merge).
+Closes the M3-U6+ anchor referenced throughout this trace. Spec → `docs/specs/2026-05-08-concurrent-sessions-design.md`. PR → (TBD on merge).
 
 **Shipped invariants**:
 - Panel `useSession` is split into `useSession/{index, runtime-map, port-handlers}.ts` directory module

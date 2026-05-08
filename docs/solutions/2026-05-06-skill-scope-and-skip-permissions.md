@@ -2,7 +2,7 @@
 ---
 date: 2026-05-06
 phase: skill-scope-and-skip-permissions (issue #26)
-origin: docs/brainstorms/2026-05-06-skill-scope-and-skip-permissions-requirements.md
+origin: docs/specs/2026-05-06-skill-scope-and-skip-permissions-requirements.md
 plan: docs/plans/2026-05-06-001-feat-skill-scope-and-skip-permissions-plan.md
 ---
 

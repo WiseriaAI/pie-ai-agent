@@ -19,7 +19,7 @@ Output formatting (for text responses):
 - Keep short conversational replies plain — don't add headings or bullets for a one-sentence answer.
 - When summarizing page content, lead with a 1–2 sentence takeaway, then use bullets or sections for details.
 
-On each turn you will receive a snapshot of the page's interactive elements wrapped in <untrusted_page_content>. Use these observations to plan your next tool call, or to answer questions about the page.`.trim();
+On each turn you will receive a snapshot of the page wrapped in <untrusted_page_content>. The observation contains a \`Semantic:\` block (page title, headings, alerts, status — for orienting yourself) and an \`Elements:\` block (interactive elements you operate on via [N] indices). Form labels and validation errors are inlined on the relevant [N] row. Use these observations to plan your next tool call, or to answer questions about the page.`.trim();
 
 const KEYBOARD_SIM_GUIDANCE = `
 
@@ -201,17 +201,28 @@ export function buildObservationMessage(
     }
 
     // Primary label: text or ariaLabel
-    const label = el.text || el.ariaLabel;
-    if (label) {
-      parts.push(`"${label}"`);
+    const primary = el.text || el.ariaLabel;
+    if (primary) {
+      parts.push(`"${primary}"`);
     }
 
     // Show placeholder only when there's no primary label
-    if (!label && el.placeholder) {
+    if (!primary && el.placeholder) {
       parts.push(`placeholder="${el.placeholder}"`);
     }
 
-    // Region in parentheses
+    // Inline form label (#44 P0). Dedupe vs ariaLabel/placeholder is
+    // already handled at collection time in snapshot.ts — render layer
+    // just emits whatever was set.
+    if (el.label) {
+      parts.push(`label="${el.label}"`);
+    }
+
+    // Inline validation error (#44 P0).
+    if (el.error) {
+      parts.push(`error="${el.error}"`);
+    }
+
     parts.push(`(region:${el.region})`);
 
     if (el.disabled) {
@@ -221,13 +232,43 @@ export function buildObservationMessage(
     return parts.join(" ");
   });
 
-  const body = [
+  // Page-level semantic block (#44 P0). Sub-section omitted when its
+  // array is empty; whole Semantic: block omitted when all three are
+  // empty (avoids noise on plain pages).
+  const { headings, alerts, status } = snapshot.semantic;
+  const semanticLines: string[] = [];
+  if (headings.length > 0 || alerts.length > 0 || status.length > 0) {
+    semanticLines.push("Semantic:");
+    if (headings.length > 0) {
+      semanticLines.push("  Headings:");
+      for (const h of headings) {
+        semanticLines.push(`    H${h.level}: ${h.text}`);
+      }
+    }
+    if (alerts.length > 0) {
+      semanticLines.push("  Alerts:");
+      for (const a of alerts) {
+        semanticLines.push(`    - "${a}"`);
+      }
+    }
+    if (status.length > 0) {
+      semanticLines.push("  Status:");
+      for (const s of status) {
+        semanticLines.push(`    - "${s}"`);
+      }
+    }
+  }
+
+  const lines = [
     `Current URL: ${currentUrl}`,
-    `Elements:`,
+    `Page title: ${snapshot.title}`,
+    ...(semanticLines.length > 0 ? ["", ...semanticLines] : []),
+    "",
+    "Elements:",
     elementLines.length > 0
       ? elementLines.join("\n")
       : "(no interactive elements found)",
-  ].join("\n");
+  ];
 
-  return `<untrusted_page_content>\n${body}\n</untrusted_page_content>`;
+  return `<untrusted_page_content>\n${lines.join("\n")}\n</untrusted_page_content>`;
 }

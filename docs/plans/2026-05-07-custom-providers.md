@@ -6,7 +6,7 @@
 
 **Architecture:** `Provider` 类型从 8 字面量 union 升级为 `BuiltinProvider | \`custom:${string}\`` 的 `ProviderRef` discriminator；新增 `StoredCustomProvider` storage entity（CRUD + cascade-block）；`PROVIDER_REGISTRY` 同步查询保留给 builtin，加 `resolveProviderMeta` async 统一入口（builtin / custom 都走它）；dispatch 从 `Record<Provider, fn>` 改为 `dispatchStreamChat(config)` function，custom 一律路由到 `_shared/openai-compat-core.ts`；UI 新增 Custom Providers section + CustomProviderForm 组件，复用 InstanceForm / ModelDropdown / NewConfigWizard。零 storage migration（老 instance 的 `provider: "openai"` 等字符串自然属于新 union）；不动 manifest（`<all_urls>` 已覆盖）。
 
-**Tech Stack:** TypeScript 6, React 19, TailwindCSS v4, vitest + @testing-library/react + happy-dom, chrome.storage.local with AES-GCM via Web Crypto. Spec: `docs/superpowers/specs/2026-05-07-custom-providers-design.md`. Pre-existing supportsVision bug deferred to issue #39.
+**Tech Stack:** TypeScript 6, React 19, TailwindCSS v4, vitest + @testing-library/react + happy-dom, chrome.storage.local with AES-GCM via Web Crypto. Spec: `docs/specs/2026-05-07-custom-providers-design.md`. Pre-existing supportsVision bug deferred to issue #39.
 
 ---
 
@@ -2993,7 +2993,7 @@ Append to the bullet list under "Architecture Invariants" in `CLAUDE.md`:
 In `docs/ROADMAP.md`, find the "已交付" section and add a line:
 
 ```markdown
-- **2026-05-07** Custom Providers — 用户可在 UI 内自定义 OpenAI-compat provider（name + baseUrl + 模型清单 + capability flags），与 8 家 builtin 共存。零 storage migration；不动 manifest。Spec: `docs/superpowers/specs/2026-05-07-custom-providers-design.md`
+- **2026-05-07** Custom Providers — 用户可在 UI 内自定义 OpenAI-compat provider（name + baseUrl + 模型清单 + capability flags），与 8 家 builtin 共存。零 storage migration；不动 manifest。Spec: `docs/specs/2026-05-07-custom-providers-design.md`
 ```
 
 - [ ] **Step 5: Add solutions trace doc**
@@ -3003,8 +3003,8 @@ Create `docs/solutions/2026-05-07-custom-providers.md`:
 ```markdown
 # Custom Providers — Solution Trace
 
-**Spec**: `docs/superpowers/specs/2026-05-07-custom-providers-design.md`
-**Plan**: `docs/superpowers/plans/2026-05-07-custom-providers.md`
+**Spec**: `docs/specs/2026-05-07-custom-providers-design.md`
+**Plan**: `docs/plans/2026-05-07-custom-providers.md`
 
 ## New invariants
 
@@ -3045,8 +3045,8 @@ gh pr create --title "feat: custom OpenAI-compat providers (BYOK self-define)" -
 
 - 新增「用户自定义 OpenAI-compat provider」能力：UI 内填 name + baseUrl + 模型清单 + capability flags
 - 8 家 builtin provider 不动；零 storage migration；零 manifest 改动
-- Spec: \`docs/superpowers/specs/2026-05-07-custom-providers-design.md\`
-- Plan: \`docs/superpowers/plans/2026-05-07-custom-providers.md\`
+- Spec: \`docs/specs/2026-05-07-custom-providers-design.md\`
+- Plan: \`docs/plans/2026-05-07-custom-providers.md\`
 
 ## Test plan
 

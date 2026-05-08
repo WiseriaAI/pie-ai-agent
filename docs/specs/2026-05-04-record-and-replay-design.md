@@ -3,7 +3,7 @@ date: 2026-05-04
 topic: record-and-replay
 status: brainstormed
 related:
-  - docs/brainstorms/2026-05-04-tabs-create-and-nav-requirements.md  # 方向 3，依赖
+  - docs/specs/2026-05-04-tabs-create-and-nav-requirements.md  # 方向 3，依赖
   - docs/ROADMAP.md  # §2 Skill 框架进阶 / §5 #4 行为录制
 ---
 
@@ -358,7 +358,7 @@ sidepanel "Finish recording" 按钮
 
 ## Dependencies / Assumptions
 
-- **方向 3 multi-pin + open_url 已 ship**：本 spec 的 Flow 2 cross-origin nav 录制 / Flow 4 回放时 navigate action 调 `open_url` 都依赖此前置；方向 3 仍在 brainstorm finalize（`docs/brainstorms/2026-05-04-tabs-create-and-nav-requirements.md`），需先 ship。Plan 阶段需在方向 3 ship 后启动
+- **方向 3 multi-pin + open_url 已 ship**：本 spec 的 Flow 2 cross-origin nav 录制 / Flow 4 回放时 navigate action 调 `open_url` 都依赖此前置；方向 3 仍在 brainstorm finalize（`docs/specs/2026-05-04-tabs-create-and-nav-requirements.md`），需先 ship。Plan 阶段需在方向 3 ship 后启动
 - **Phase 2.6 Skill 系统机制已稳定**：promptTemplate 8KB 限制 / allowedTools 必须 ⊂ KNOWN_*_TOOL_NAMES / R10 first-run-confirm / capability invariants 全部依赖
 - **M1 paused/resume 机制不识别 recording session**：录制不持久化 chrome.storage，detectAndMarkPaused 不 enumerate 录制 session（与 Fail-on-image 心智一致）
 - **M3 multi-session sandbox**：每 session 独立 RecordingSession（不串味）；session 切走 setActive 时录制自动 abort

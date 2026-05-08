@@ -96,7 +96,7 @@ LLM 永远只看到「这一轮」。两个 user 体感场景：
 - **Phase 2 Decision 1** (`docs/plans/2026-04-17-001-feat-phase2-agent-capabilities-plan.md`)：`ChatMessage.content: string` 不变 + `AgentMessage` IR (string | ContentBlock[]) 仅 SW-internal。理由是 `systemMessages.map(m => m.content).join("\n\n")` 在 content 是数组时 silent 输出 `"[object Object]"` 注入 system prompt 的 footgun。**多轮设计必须保持这个分离 — 合成的 agent-task assistant turn 是 string，不是 ContentBlock[]，因为它进 ChatMessage wire**
 - **M1 R28 v2 redaction policy** (`docs/solutions/2026-05-02-session-as-first-class-persistent-layer-m1.md` §What Didn't Work #1)：storage 持 raw agentMessages，panel display 才走 redact。多轮 plan 的合成 assistant turn 来自 agent-step / agent-summary DisplayMessage（panel 已 redact 过）→ 重新走 LLM 时拿到的是 redacted 版本，不破 R28；同时也不暴露原本 redact 在 storage 层的 raw args（plan scope boundary）
 - **wrapper escape attack families** (`docs/solutions/security-issues/2026-05-02-wrapper-tag-escape-attack-families.md` Prevention)：`escapeUntrustedWrappers` 幂等，user message 在多轮 history 中重复 wrap 安全
-- **K9 trust boundary** (`docs/brainstorms/2026-05-02-checkpoint-resume-requirements.md`)：本 plan **不**把旧 agent task 的 page snapshot tool_result 放进新 task 的 LLM history（合成 assistant 仅含 step name + readable args + summary，不含 raw page snapshot），自然不放大 trust surface
+- **K9 trust boundary** (`docs/specs/2026-05-02-checkpoint-resume-requirements.md`)：本 plan **不**把旧 agent task 的 page snapshot tool_result 放进新 task 的 LLM history（合成 assistant 仅含 step name + readable args + summary，不含 raw page snapshot），自然不放大 trust surface
 
 ### External References
 

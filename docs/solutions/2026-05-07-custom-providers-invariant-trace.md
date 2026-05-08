@@ -1,7 +1,7 @@
 # Custom Provider Invariant Trace
 
 Date: 2026-05-07
-Spec: docs/superpowers/specs/2026-05-07-custom-providers-design.md
+Spec: docs/specs/2026-05-07-custom-providers-design.md
 
 ## Invariants
 

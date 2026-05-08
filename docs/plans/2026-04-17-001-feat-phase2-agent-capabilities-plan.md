@@ -4,7 +4,7 @@ type: feat
 status: completed
 date: 2026-04-17
 deepened: 2026-04-17
-origin: docs/brainstorms/2026-04-16-phase2-agent-capabilities-requirements.md
+origin: docs/specs/2026-04-16-phase2-agent-capabilities-requirements.md
 ---
 
 # feat: Phase 2 — Agent 能力
@@ -731,7 +731,7 @@ graph LR
 
 ## Sources & References
 
-- **Origin document:** [docs/brainstorms/2026-04-16-phase2-agent-capabilities-requirements.md](../../docs/brainstorms/2026-04-16-phase2-agent-capabilities-requirements.md)
+- **Origin document:** [docs/specs/2026-04-16-phase2-agent-capabilities-requirements.md](../../docs/specs/2026-04-16-phase2-agent-capabilities-requirements.md)
 - Phase 0 findings: 同 origin 文档 "Phase 0 Findings" 章节
 - Related Phase 1 plan: [docs/plans/2026-04-15-001-feat-phase1-basic-chat-plan.md](./2026-04-15-001-feat-phase1-basic-chat-plan.md)
 - Related code:

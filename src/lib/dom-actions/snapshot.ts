@@ -154,6 +154,78 @@ export function snapshotInteractiveElements(): PageSnapshot {
       | "other";
     const rect = el.getBoundingClientRect();
 
+    // ── Element-level semantic resolution (#44 P0) ──
+
+    // Helper: walk aria-labelledby / aria-describedby id list and concat
+    // referenced nodes' innerText. Used by both label (labelledby) and
+    // error (describedby).
+    function resolveAriaIdRefs(idList: string): string {
+      const ids = idList.split(/\s+/).filter(Boolean);
+      const parts: string[] = [];
+      for (const id of ids) {
+        const ref = document.getElementById(id);
+        if (!ref) continue;
+        const txt = (ref as HTMLElement).innerText?.trim();
+        if (txt) parts.push(txt);
+      }
+      return parts.join(" ");
+    }
+
+    // Form label fallback chain (W3C accessible-name aligned).
+    // Priority: <label for> → aria-labelledby → ancestor <label>.
+    // Dedupe against ariaLabel/placeholder (NOT against text — innerText is
+    // a button's own text, not a label).
+    let resolvedLabel: string | undefined;
+    if (el.id) {
+      try {
+        const labelEl = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
+        const txt = (labelEl as HTMLElement | null)?.innerText?.trim();
+        if (txt) resolvedLabel = txt;
+      } catch {
+        // CSS.escape should never throw on a valid string; guard for safety.
+      }
+    }
+    if (!resolvedLabel) {
+      const labelledBy = el.getAttribute("aria-labelledby");
+      if (labelledBy) {
+        const txt = resolveAriaIdRefs(labelledBy);
+        if (txt) resolvedLabel = txt;
+      }
+    }
+    if (!resolvedLabel) {
+      const ancestorLabel = el.closest("label");
+      if (ancestorLabel) {
+        // Clone and remove descendant form controls to get label text only.
+        const clone = ancestorLabel.cloneNode(true) as HTMLElement;
+        clone.querySelectorAll("input, textarea, select, button").forEach((n) => n.remove());
+        const txt = clone.innerText?.trim();
+        if (txt) resolvedLabel = txt;
+      }
+    }
+
+    let label: string | undefined;
+    if (resolvedLabel) {
+      const labelTrim = resolvedLabel.trim();
+      const ariaLabelTrim = (ariaLabel ?? "").trim();
+      const placeholderTrim = (placeholder ?? "").trim();
+      const isDuplicate =
+        (ariaLabelTrim && labelTrim === ariaLabelTrim) ||
+        (placeholderTrim && labelTrim === placeholderTrim);
+      if (!isDuplicate) {
+        label = sanitizeText(labelTrim, 80);
+      }
+    }
+
+    // Error: aria-invalid=true + aria-describedby refs.
+    let error: string | undefined;
+    if (el.getAttribute("aria-invalid") === "true") {
+      const describedBy = el.getAttribute("aria-describedby");
+      if (describedBy) {
+        const txt = resolveAriaIdRefs(describedBy);
+        if (txt) error = sanitizeText(txt, 120);
+      }
+    }
+
     return {
       index: idx,
       tag,
@@ -162,6 +234,8 @@ export function snapshotInteractiveElements(): PageSnapshot {
       text,
       ...(placeholder !== undefined ? { placeholder } : {}),
       ...(ariaLabel !== undefined ? { ariaLabel } : {}),
+      ...(label !== undefined ? { label } : {}),
+      ...(error !== undefined ? { error } : {}),
       disabled,
       region,
       boundingBox: {
@@ -173,9 +247,79 @@ export function snapshotInteractiveElements(): PageSnapshot {
     };
   });
 
+  // ── Page-level semantic (#44 P0): headings / alerts / status ──
+
+  // Helper: collect distinct visible elements matching `selector`, capped
+  // at `max`, mapping each via `mapper` and skipping empty results.
+  function collectSemanticTexts(
+    selector: string,
+    max: number,
+    perItemCap: number,
+  ): string[] {
+    const out: string[] = [];
+    const seen = new Set<Element>();
+    const matches = document.querySelectorAll(selector);
+    for (const el of Array.from(matches)) {
+      if (seen.has(el)) continue;
+      seen.add(el);
+      if (!isVisible(el)) continue;
+      const raw = (el as HTMLElement).innerText?.trim();
+      if (!raw) continue;
+      const text = sanitizeText(raw, perItemCap);
+      if (!text) continue;
+      out.push(text);
+      if (out.length >= max) break;
+    }
+    return out;
+  }
+
+  function collectHeadings(): Array<{ level: 1 | 2 | 3; text: string }> {
+    const HEADING_SELECTOR =
+      'h1, h2, h3, [role="heading"][aria-level="1"], [role="heading"][aria-level="2"], [role="heading"][aria-level="3"]';
+    const out: Array<{ level: 1 | 2 | 3; text: string }> = [];
+    const matches = document.querySelectorAll(HEADING_SELECTOR);
+    for (const el of Array.from(matches)) {
+      if (!isVisible(el)) continue;
+      const raw = (el as HTMLElement).innerText?.trim();
+      if (!raw) continue;
+      const text = sanitizeText(raw, 80);
+      if (!text) continue;
+      // Resolve level: prefer aria-level when role=heading, else tag.
+      let level: 1 | 2 | 3;
+      const ariaLevel = el.getAttribute("aria-level");
+      if (ariaLevel === "1") level = 1;
+      else if (ariaLevel === "2") level = 2;
+      else if (ariaLevel === "3") level = 3;
+      else {
+        const tag = el.tagName.toLowerCase();
+        if (tag === "h1") level = 1;
+        else if (tag === "h2") level = 2;
+        else level = 3;
+      }
+      out.push({ level, text });
+      if (out.length >= 8) break;
+    }
+    return out;
+  }
+
+  const semantic = {
+    headings: collectHeadings(),
+    alerts: collectSemanticTexts(
+      '[role="alert"], [aria-live="assertive"]',
+      5,
+      200,
+    ),
+    status: collectSemanticTexts(
+      '[role="status"], [aria-live="polite"]',
+      3,
+      100,
+    ),
+  };
+
   return {
     url: location.href,
     title: document.title,
     elements,
+    semantic,
   };
 }

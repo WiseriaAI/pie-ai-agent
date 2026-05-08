@@ -71,6 +71,14 @@ Anthropic (native), OpenAI, OpenRouter, MiniMax, ZhiPu (智谱), Bailian (百炼
 
 - `docs/ROADMAP.md` — 已交付 phases + backlog（single source of truth）
 - `docs/solutions/` — 落地后的 invariant trace docs（per phase / per milestone）
-- `docs/brainstorms/` + `docs/plans/` — `/ce:brainstorm` + `/ce:plan` 产出
+- `docs/specs/` — superpowers `brainstorming` skill 产出（design / requirements / spec），含 Phase 1–3 历史 brainstorm 合并归档
+- `docs/plans/` — superpowers `planning` skill 产出（实施 plan），含 Phase 1–3 历史 plan 合并归档
 - `docs/release-notes/` — 用户可见 changelog
 - `docs/design.md` — 早期 Phase 0–3 设计构想（历史档案）
+
+### Convention：superpowers brainstorm / plan 输出位置
+
+- `brainstorming` skill 产出（design doc / requirements / spec）→ `docs/specs/<YYYY-MM-DD>-<slug>.md`
+- `planning` skill 产出（实施 plan）→ `docs/plans/<YYYY-MM-DD>-<slug>.md`
+- 不再使用 `docs/superpowers/` 子目录或 `docs/brainstorms/`（已合并迁出）
+- 历史与新产出在同一目录共存；按文件名日期前缀排序即可区分新旧

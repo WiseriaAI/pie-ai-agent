@@ -149,7 +149,7 @@ The fix required two pieces:
 ## Related Issues
 
 - `docs/solutions/2026-05-04-multimodal-image-input-v1.md` — Phase 5 multimodal trace doc that established the rule "scan `index.css` for the closest existing token rather than introducing new colors" — applies directly to the prevention rule above.
-- `docs/superpowers/plans/2026-05-05-record-and-replay.md:3357` — origin of the bug. The plan's TopBarRecordButton snippet (later removed in the paper-landing reframe) used the same `var(--c-pending, #f0f)` / `var(--c-line, #ccc)` inline-fallback pattern that birthed `var(--c-bg-2, #f5f5f5)` two units later. The plan is now stale on this UI detail; the actual ship in `Chat.tsx` uses Tailwind utilities throughout. Future planners should not paste inline-hex-fallback snippets into plan documents — they get copy-pasted into code.
+- `docs/plans/2026-05-05-record-and-replay.md:3357` — origin of the bug. The plan's TopBarRecordButton snippet (later removed in the paper-landing reframe) used the same `var(--c-pending, #f0f)` / `var(--c-line, #ccc)` inline-fallback pattern that birthed `var(--c-bg-2, #f5f5f5)` two units later. The plan is now stale on this UI detail; the actual ship in `Chat.tsx` uses Tailwind utilities throughout. Future planners should not paste inline-hex-fallback snippets into plan documents — they get copy-pasted into code.
 - Commit `9ab6fdf` — the fix.
 - Commit `fe5d725` — the `@theme` registration of `--color-pending` that this fix depends on.
 - `src/sidepanel/index.css` (`@theme` block, lines 109–127) — definitive list of Tailwind-mapped design tokens; any new UI must reference these.

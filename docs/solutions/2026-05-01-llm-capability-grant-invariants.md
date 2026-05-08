@@ -1,7 +1,7 @@
 ---
 date: 2026-05-01
 topic: llm-capability-grant-invariants
-related_brainstorm: docs/brainstorms/2026-05-01-skill-autonomous-crud-requirements.md
+related_brainstorm: docs/specs/2026-05-01-skill-autonomous-crud-requirements.md
 related_plan: docs/plans/2026-05-01-001-feat-skill-autonomous-crud-plan.md
 tags:
   - capability-grant
@@ -195,7 +195,7 @@ if (isSkillMetaToolName(tc.name) && result.success) {
 ## 跨引用
 
 - 实施 plan：`docs/plans/2026-05-01-001-feat-skill-autonomous-crud-plan.md` — P0-A ~ P1-H 命名 + 每条 unit-level test scenario
-- 需求 brainstorm：`docs/brainstorms/2026-05-01-skill-autonomous-crud-requirements.md` — R5 / R10 / Key Decisions on allowedTools loop enforcement
+- 需求 brainstorm：`docs/specs/2026-05-01-skill-autonomous-crud-requirements.md` — R5 / R10 / Key Decisions on allowedTools loop enforcement
 - Phase 2.5 redaction-split 反例：`docs/plans/2026-04-28-001-feat-phase2.5-cdp-keyboard-simulation-plan.md` — 该 split 对 keyboard tool 正确，对 capability-grant 必须反向（本 doc I-4）
 - Phase 2 风险分级基线：`docs/plans/2026-04-17-001-feat-phase2-agent-capabilities-plan.md` — "default low + structural escalation" 仅适用 DOM tools；capability-grant tool 必须 hardcoded high
 - 主要 source：

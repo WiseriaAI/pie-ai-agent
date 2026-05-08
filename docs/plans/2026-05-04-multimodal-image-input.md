@@ -3583,7 +3583,7 @@ git commit -m "feat(image-input): R15 system prompt + R9 mixed-vision-provider 4
 
 ## Execution Handoff
 
-Plan saved to `docs/superpowers/plans/2026-05-04-multimodal-image-input.md`. Two execution options:
+Plan saved to `docs/plans/2026-05-04-multimodal-image-input.md`. Two execution options:
 
 **1. Subagent-Driven (recommended)** — I dispatch a fresh subagent per task, review between tasks, fast iteration. Best for this plan's 15-task surface — independent test suites per task make per-task gates clean.
 

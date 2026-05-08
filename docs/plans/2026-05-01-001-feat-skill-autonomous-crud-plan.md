@@ -4,7 +4,7 @@ type: feat
 status: completed
 date: 2026-05-01
 deepened: 2026-05-01
-origin: docs/brainstorms/2026-05-01-skill-autonomous-crud-requirements.md
+origin: docs/specs/2026-05-01-skill-autonomous-crud-requirements.md
 ---
 
 # feat: Skill 自主 CRUD 升级（Skill 作为 first-class 扩展能力）
@@ -28,11 +28,11 @@ Phase 2 完成后 Skill 框架是只读 prompt-template wrapper：
 - 用户视角：只能在 Settings 切开关、点 Run，不能手动 CRUD；agent 也不能自己增长 skill 库
 - 架构视角：每个新模块（如 Phase 3 标签管理）都要单开运行时；skill 作为"扩展能力地基"的设想没兑现
 
-origin 文档的核心决策已收敛（见 `docs/brainstorms/2026-05-01-skill-autonomous-crud-requirements.md`）：workflow / tool-composition skill、双通道 CRUD、confirm 后立即 enabled + 首次执行二次 confirm。本 plan 把这些决策落到具体文件、改动序列、verification scenarios 与**capability-grant 安全模型的关键 invariants**（经 security-sentinel review 后强化）。
+origin 文档的核心决策已收敛（见 `docs/specs/2026-05-01-skill-autonomous-crud-requirements.md`）：workflow / tool-composition skill、双通道 CRUD、confirm 后立即 enabled + 首次执行二次 confirm。本 plan 把这些决策落到具体文件、改动序列、verification scenarios 与**capability-grant 安全模型的关键 invariants**（经 security-sentinel review 后强化）。
 
 ## Requirements Trace
 
-源自 `docs/brainstorms/2026-05-01-skill-autonomous-crud-requirements.md`：
+源自 `docs/specs/2026-05-01-skill-autonomous-crud-requirements.md`：
 
 - R1. SkillDefinition 增加 `author` / `createdAt` / `allowedTools` 字段（本 plan 还会增 `firstRunConfirmedAt` 支撑 R10）
 - R2. **Loop 层强制 enforcement**：dispatch 前查 `current_skill_scope.allowedTools`，白名单外拒绝并返回 observation
@@ -607,7 +607,7 @@ for (const tc of completedToolCalls) {
 
 ## Sources & References
 
-- **Origin document:** [docs/brainstorms/2026-05-01-skill-autonomous-crud-requirements.md](../brainstorms/2026-05-01-skill-autonomous-crud-requirements.md)
+- **Origin document:** [docs/specs/2026-05-01-skill-autonomous-crud-requirements.md](../brainstorms/2026-05-01-skill-autonomous-crud-requirements.md)
 - **Phase 2 plan**（confirm 卡 / risk classifier 设计基础）: [docs/plans/2026-04-17-001-feat-phase2-agent-capabilities-plan.md](2026-04-17-001-feat-phase2-agent-capabilities-plan.md)
 - **Phase 2.5 plan**（redaction 二分通道 / 5-path detach pattern）: [docs/plans/2026-04-28-001-feat-phase2.5-cdp-keyboard-simulation-plan.md](2026-04-28-001-feat-phase2.5-cdp-keyboard-simulation-plan.md)
 - **Phase 2.5 spike verdict**（CDP keyboard）: [docs/solutions/2026-04-28-cdp-keyboard-simulation-on-canvas-editors.md](../solutions/2026-04-28-cdp-keyboard-simulation-on-canvas-editors.md)

@@ -1,7 +1,7 @@
 # Multimodal Image Input v1 — Implementation Notes
 
-**Plan:** `docs/superpowers/plans/2026-05-04-multimodal-image-input.md`
-**Brainstorm:** `docs/brainstorms/2026-05-04-multimodal-image-input-requirements.md`
+**Plan:** `docs/plans/2026-05-04-multimodal-image-input.md`
+**Brainstorm:** `docs/specs/2026-05-04-multimodal-image-input-requirements.md`
 **Branch:** `feat/multimodal-image-input` (in `.worktrees/multimodal-image-input`)
 **Final test count:** 448 tests passing (baseline 446 + 2 new R15 tests)
 **Tasks:** 15 / 15 implemented

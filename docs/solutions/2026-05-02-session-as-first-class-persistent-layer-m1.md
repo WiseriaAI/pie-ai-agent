@@ -19,7 +19,7 @@ related_components:
   - "src/sidepanel/hooks/useSession.ts"
   - "src/lib/agent/loop.ts"
   - "src/types/messages.ts"
-related_brainstorm: docs/brainstorms/2026-05-02-checkpoint-resume-requirements.md
+related_brainstorm: docs/specs/2026-05-02-checkpoint-resume-requirements.md
 related_plan: docs/plans/2026-05-02-001-feat-session-persistent-layer-plan.md
 tags:
   - session-persistence
@@ -42,7 +42,7 @@ Pre-M1, Chrome AI Agent had no dedicated storage layer for session state. Chat h
 
 ## Symptoms
 
-Three observable pre-M1 symptoms, ordered by frequency (from `docs/brainstorms/2026-05-02-checkpoint-resume-requirements.md` Problem Frame):
+Three observable pre-M1 symptoms, ordered by frequency (from `docs/specs/2026-05-02-checkpoint-resume-requirements.md` Problem Frame):
 
 **1. High frequency — chat history disappears on sub-view switch.**
 Reproduction: send several chat messages, switch to Settings tab, return to Chat. The entire history is gone. Root cause: `<Chat>` unmounts on the conditional render at `App.tsx:80-91`; all 11 `useState` fields in `Chat.tsx:106-121` are discarded.

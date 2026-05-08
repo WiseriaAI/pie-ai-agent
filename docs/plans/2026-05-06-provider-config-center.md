@@ -6,7 +6,7 @@
 
 **Architecture:** Extract `_shared/openai-compat-core.ts` from current `openai.ts`; each existing provider becomes a thin wrapper. Add Gemini as first new native module. Replace `provider_${id}` storage with `instance_${uuid}` keyed by uuid, indexed via `instances_index`, with `active_instance_id` global pointer + per-session `instanceId` override snapshot-locked at task start. Settings UI rewrite to instance-based list + 2-step new-config wizard. Chat composer gets a borderless `InstanceSelector` chip that opens an upward dropdown overlay.
 
-**Tech Stack:** TypeScript 6, React 19, vitest + @testing-library/react, chrome.storage.local with AES-GCM via Web Crypto. Spec: `docs/superpowers/specs/2026-05-06-provider-config-center-design.md`.
+**Tech Stack:** TypeScript 6, React 19, vitest + @testing-library/react, chrome.storage.local with AES-GCM via Web Crypto. Spec: `docs/specs/2026-05-06-provider-config-center-design.md`.
 
 ---
 
@@ -3182,7 +3182,7 @@ Placeholder scan: no "TBD" / "TODO" / "implement later" found. Type consistency:
 
 ---
 
-Plan complete and saved to `docs/superpowers/plans/2026-05-06-provider-config-center.md`. Two execution options:
+Plan complete and saved to `docs/plans/2026-05-06-provider-config-center.md`. Two execution options:
 
 **1. Subagent-Driven (recommended)** — I dispatch a fresh subagent per task, review between tasks, fast iteration.
 

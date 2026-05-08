@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript 6, React 19, Chrome MV3, Vitest + happy-dom + @testing-library/react.
 
-**Supersedes:** `docs/superpowers/plans/2026-05-04-tabs-create-and-multi-pin.md` (pre-M5 single-pin assumption).
+**Supersedes:** `docs/plans/2026-05-04-tabs-create-and-multi-pin.md` (pre-M5 single-pin assumption).
 
 ---
 

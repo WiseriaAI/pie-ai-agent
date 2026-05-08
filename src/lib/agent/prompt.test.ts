@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildAgentSystemPrompt } from "./prompt";
+import { buildAgentSystemPrompt, buildObservationMessage } from "./prompt";
+import type { PageSnapshot } from "../dom-actions/types";
 
 describe("buildAgentSystemPrompt — M3-U2 pinned-context block (single-pin back-compat)", () => {
   it("includes the pinned tab id and origin when a single pin is provided", () => {
@@ -174,5 +175,134 @@ describe("R15 — image-untrusted boundary", () => {
     );
     expect(userTaskIdx).toBeGreaterThan(0);
     expect(r15Idx).toBeGreaterThan(userTaskIdx);
+  });
+});
+
+describe("STATIC_AGENT_SYSTEM_PROMPT — semantic snapshot format hint (#44)", () => {
+  it("system prompt explains the Semantic / Elements block split", () => {
+    const prompt = buildAgentSystemPrompt("task", false, false);
+    expect(prompt).toContain("`Semantic:` block");
+    expect(prompt).toContain("`Elements:` block");
+    expect(prompt).toContain("Form labels and validation errors are inlined");
+  });
+});
+
+describe("buildObservationMessage — semantic snapshot rendering (#44)", () => {
+  function baseSnapshot(): PageSnapshot {
+    return {
+      url: "https://example.com/page",
+      title: "Page Title",
+      elements: [],
+      semantic: { headings: [], alerts: [], status: [] },
+    };
+  }
+
+  it("omits Semantic section entirely when all sub-arrays are empty", () => {
+    const snap = baseSnapshot();
+    const out = buildObservationMessage(snap, snap.url);
+    expect(out).not.toContain("Semantic:");
+    expect(out).toContain("Page title: Page Title");
+    expect(out).toContain("Elements:");
+  });
+
+  it("renders Headings sub-section with H<level>: prefix", () => {
+    const snap = baseSnapshot();
+    snap.semantic.headings = [
+      { level: 1, text: "Open issue" },
+      { level: 2, text: "Add title" },
+    ];
+    const out = buildObservationMessage(snap, snap.url);
+    expect(out).toContain("Semantic:");
+    expect(out).toContain("  Headings:");
+    expect(out).toContain("    H1: Open issue");
+    expect(out).toContain("    H2: Add title");
+  });
+
+  it("renders Alerts sub-section with quoted strings", () => {
+    const snap = baseSnapshot();
+    snap.semantic.alerts = ["Title is required", "Submit failed"];
+    const out = buildObservationMessage(snap, snap.url);
+    expect(out).toContain("  Alerts:");
+    expect(out).toContain('    - "Title is required"');
+    expect(out).toContain('    - "Submit failed"');
+  });
+
+  it("renders Status sub-section with quoted strings", () => {
+    const snap = baseSnapshot();
+    snap.semantic.status = ["Loading..."];
+    const out = buildObservationMessage(snap, snap.url);
+    expect(out).toContain("  Status:");
+    expect(out).toContain('    - "Loading..."');
+  });
+
+  it("omits empty sub-section but renders other present ones", () => {
+    const snap = baseSnapshot();
+    snap.semantic.headings = [{ level: 1, text: "H" }];
+    snap.semantic.alerts = []; // omitted
+    snap.semantic.status = ["S"]; // rendered
+    const out = buildObservationMessage(snap, snap.url);
+    expect(out).toContain("  Headings:");
+    expect(out).not.toContain("  Alerts:");
+    expect(out).toContain("  Status:");
+  });
+
+  it("renders inline label='...' when ElementInfo.label is present", () => {
+    const snap = baseSnapshot();
+    snap.elements = [
+      {
+        index: 0,
+        tag: "input",
+        type: "email",
+        text: "",
+        placeholder: "Title",
+        label: "Issue title",
+        disabled: false,
+        region: "main",
+        boundingBox: { x: 0, y: 0, width: 100, height: 20 },
+      },
+    ];
+    const out = buildObservationMessage(snap, snap.url);
+    expect(out).toContain('label="Issue title"');
+  });
+
+  it("renders inline error='...' when ElementInfo.error is present", () => {
+    const snap = baseSnapshot();
+    snap.elements = [
+      {
+        index: 12,
+        tag: "input",
+        text: "",
+        error: "Required field",
+        disabled: false,
+        region: "main",
+        boundingBox: { x: 0, y: 0, width: 100, height: 20 },
+      },
+    ];
+    const out = buildObservationMessage(snap, snap.url);
+    expect(out).toContain('error="Required field"');
+  });
+
+  it("does NOT render label/error when fields are absent", () => {
+    const snap = baseSnapshot();
+    snap.elements = [
+      {
+        index: 0,
+        tag: "button",
+        text: "Submit",
+        disabled: false,
+        region: "main",
+        boundingBox: { x: 0, y: 0, width: 100, height: 20 },
+      },
+    ];
+    const out = buildObservationMessage(snap, snap.url);
+    expect(out).not.toContain("label=");
+    expect(out).not.toContain("error=");
+  });
+
+  it("output is wrapped in <untrusted_page_content> tags", () => {
+    const snap = baseSnapshot();
+    const out = buildObservationMessage(snap, snap.url);
+    expect(out.startsWith("<untrusted_page_content>")).toBe(true);
+    expect(out.trimEnd().endsWith("</untrusted_page_content>")).toBe(true);
   });
 });
