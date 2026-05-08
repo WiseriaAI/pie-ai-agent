@@ -2,7 +2,7 @@ import type { ModelConfig, AgentMessage, ContentBlock, ToolDefinition } from "..
 import type { ChatMessage } from "../model-router";
 import { streamChat } from "../model-router";
 import { addImage, evictSession } from "../../background/image-cache";
-import { resetTaskBudget } from "./tools/screenshot";
+import { resetTaskBudget, dispatchCaptureVisibleTab, dispatchCaptureFullPageTab, type CdpAcquirer } from "./tools/screenshot";
 import { hydrateAttachments } from "./image-hydration";
 import { snapshotInteractiveElements } from "../dom-actions/snapshot";
 import type { PageSnapshot } from "../dom-actions/types";
@@ -12,15 +12,9 @@ import {
   isKeyboardToolName,
   isSkillMetaToolName,
 } from "./tools";
-import { previewMetaSkillCall } from "./tools/skill-meta";
-import type { Tool, PreFetchedTabContent } from "./types";
-import { classifyRisk, type RiskClassifyContext } from "./risk";
-import { TAB_TOOL_NAMES, getToolClass } from "./tool-names";
+import type { Tool } from "./types";
+import { getToolClass } from "./tool-names";
 import { escapeUntrustedWrappers } from "./untrusted-wrappers";
-import {
-  extractPageContentHardened,
-  GET_TAB_CONTENT_PREVIEW_BYTES,
-} from "./tools/tabs";
 import { buildAgentSystemPrompt, buildObservationMessage } from "./prompt";
 import { applySlidingWindow } from "./window";
 import { applyTokenBudget } from "./window-token-budget";
@@ -36,11 +30,8 @@ import {
 } from "../../background/cdp-session";
 import type {
   AgentStepMessage,
-  AgentConfirmRequestMessage,
   AgentDoneTaskMessage,
   ResolvedElement,
-  TabTarget,
-  TabContentPreview,
 } from "../../types/messages";
 import type { SessionAgentState } from "../sessions/types";
 import {
@@ -78,18 +69,6 @@ export interface AgentLoopContext {
   task: string;
   modelConfig: ModelConfig;
   signal: AbortSignal;
-  sendConfirmRequest: (
-    confirmationId: string,
-    payload: Omit<AgentConfirmRequestMessage, "type" | "confirmationId">,
-  ) => Promise<{
-    approved: boolean;
-    reason?: "flood-limit" | "user-reject" | "aborted" | "pre-capture-failed";
-    // Phase 5 — pre-capture extras (only set for screenshot tools, populated
-    // by Task 12 SW wiring).
-    screenshotResult?: import("@/lib/images").ImageAttachment;
-    stale?: boolean;
-    failureReason?: string;
-  }>;
   getEnabledSkillTools?: () => Promise<Tool[]>;
   /**
    * M1-U3 — session this task is bound to. Required so step-boundary
@@ -109,7 +88,7 @@ export interface AgentLoopContext {
    * line ~587) do not contaminate the persisted copy. R28 v2: the
    * snapshot's `agentMessages` are RAW (no redaction); panel-display
    * redaction happens via `redactArgsForPanel` on the
-   * `sendAgentStep` / `sendConfirmRequest` paths only.
+   * `sendAgentStep` paths only.
    *
    * Errors thrown by the handler are logged with sessionId + stepIndex
    * and otherwise swallowed — a quota / IO failure must not abort an
@@ -135,18 +114,6 @@ export interface AgentLoopContext {
    */
   resumedAgentMessages?: AgentMessage[];
   resumedFromStep?: number;
-  /**
-   * Task-level snapshot of the global skip-permissions toggle, read at
-   * chat-start by the SW dispatcher (`isSkipPermissionsEnabled()`). When
-   * true, the SW-side `sendConfirmRequest` short-circuits every high-risk
-   * confirm and auto-approves; loop-side this also drives the
-   * `autoApproved: true` wire flag on agent-step events so the panel can
-   * render the audit footer (R2.5).
-   *
-   * Snapshot semantics: toggling mid-task does NOT affect the in-flight
-   * task — same shape as keyboardSimEnabledAtStart.
-   */
-  skipPermissions: boolean;
   /**
    * Phase 5 — when resuming a paused session, the prior in-flight
    * snapshot's hasImageContent flag, so we don't lose the R14
@@ -374,242 +341,6 @@ export function safeParseOrigin(url: string): string | null {
     return origin;
   } catch {
     return null;
-  }
-}
-
-// ── Phase 3 — Tab target pre-compute for confirm cards ─────────────────────
-
-/** Sanitize a chrome.tabs.Tab title for confirm-card display. Same pipeline
- *  as wrapTabMetadata: strip line breaks → strip control chars → cap length
- *  → escape wrapper-tag literals (P3-G / P3-O). Kept inline (not exported
- *  from tabs.ts) because the panel is the consumer and we want a single
- *  caller-controlled cap for confirm UX. */
-const TAB_TITLE_CAP = 100;
-const TAB_URL_CAP = 200;
-const CONTROL_CHARS_RE = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g;
-const LINE_BREAK_RE = /[\n\r\v\f]/g;
-
-function sanitizeTitleForConfirm(title: string | undefined): string {
-  if (!title) return "(untitled)";
-  let cleaned = title.replace(LINE_BREAK_RE, " ").replace(CONTROL_CHARS_RE, "");
-  if (cleaned.length > TAB_TITLE_CAP) {
-    cleaned = cleaned.slice(0, TAB_TITLE_CAP) + "…";
-  }
-  return escapeUntrustedWrappers(cleaned);
-}
-
-function sanitizeUrlForConfirm(url: string | undefined): string {
-  if (!url) return "";
-  // URLs are not free-form text — control chars are protocol-violating, but
-  // we still cap length and escape any wrapper-tag literal that could appear
-  // in a query string.
-  const cleaned = url.replace(CONTROL_CHARS_RE, "").slice(0, TAB_URL_CAP);
-  return escapeUntrustedWrappers(cleaned);
-}
-
-/** Phase 3 SEC-5 — only accept https:// or data:image/ favicon URLs.
- *  Other protocols (javascript:, http:, chrome://favicon proxy, etc.) are
- *  page-controlled vectors that AgentConfirmCard would render via <img src>.
- *  When stripped, the panel falls back to a default icon. */
-function safeFavIconUrl(raw: string | undefined): string | undefined {
-  if (!raw) return undefined;
-  if (raw.startsWith("https://") || raw.startsWith("data:image/")) {
-    return raw;
-  }
-  return undefined;
-}
-
-/** Build a TabTarget array for a tool call. Returns undefined when the args
- *  don't reference any specific tabs (or any tabs at all — no pre-fetch is
- *  meaningful). The handler still receives the cached origins via ctx so the
- *  risk classifier can do cross-origin introspection (P3-A).
- *
- *  Inputs:
- *   - tabIds: number[]   — close_tabs / group_tabs / ungroup_tabs / move_tabs
- *   - tabId: number      — activate_tab / get_tab_content
- *   - scope: "allWindows" — list_tabs allWindows (we pre-fetch all tabs as
- *                            informed-approval payload)
- *
- *  All three branches share the same chrome.tabs.get / query → TabTarget[]
- *  pipeline. Stale tabs (chrome.tabs.get rejects) are still emitted with
- *  stale: true so the user sees them in the card and the handler can skip
- *  them at dispatch time (K-8 confirm-time origin re-verify).
- */
-async function buildTabTargets(
-  toolName: string,
-  args: Record<string, unknown>,
-  pinnedOrigin: string,
-): Promise<TabTarget[] | undefined> {
-  let candidates: chrome.tabs.Tab[] = [];
-  if (toolName === "list_tabs" && args.scope === "allWindows") {
-    // SEC-3: surface all tabs across windows in the confirm card so the user
-    // can see exactly what is being exposed to the BYOK provider.
-    try {
-      const all = await chrome.tabs.query({});
-      // Cap at 50 — wrapTabMetadata will report total + truncated to the LLM
-      // post-approval; the confirm card just needs the informed-approval set.
-      candidates = all.slice(0, 50);
-    } catch {
-      return undefined;
-    }
-  } else {
-    const ids: number[] = [];
-    if (Array.isArray(args.tabIds)) {
-      for (const v of args.tabIds) {
-        // chrome.tabs.get's API binding throws SYNCHRONOUSLY on negative
-        // ids ("Value must be at least 0"), which would crash the whole
-        // ids.map below before Promise.allSettled could observe it. Filter
-        // here AND require integer + finite so a hallucinated `args.tabIds:
-        // [-1]` from the LLM degrades to a stale-target observation
-        // instead of an unhandled throw that exits the agent loop.
-        if (typeof v === "number" && Number.isInteger(v) && v >= 0) {
-          ids.push(v);
-        }
-      }
-    }
-    if (
-      typeof args.tabId === "number" &&
-      Number.isInteger(args.tabId) &&
-      args.tabId >= 0
-    ) {
-      ids.push(args.tabId);
-    }
-    if (ids.length === 0) return undefined;
-    // Parallel chrome.tabs.get; reject → stale TabTarget placeholder.
-    // The synchronous-throw guard above means every id here is safe to
-    // pass directly; runtime rejects (tab closed since the LLM saw it)
-    // still flow through the .allSettled rejection branch.
-    const settled = await Promise.allSettled(ids.map((id) => chrome.tabs.get(id)));
-    settled.forEach((r, i) => {
-      const id = ids[i];
-      if (r.status === "fulfilled") {
-        candidates.push(r.value);
-      } else {
-        // Push a synthetic stale tab entry so the card row exists with
-        // (closed) marker.
-        candidates.push({
-          id,
-          url: "",
-          title: "(closed or inaccessible)",
-          active: false,
-          pinned: false,
-          highlighted: false,
-          incognito: false,
-          windowId: -1,
-          discarded: false,
-          autoDiscardable: true,
-          groupId: -1,
-          index: -1,
-          favIconUrl: undefined,
-          // We use _stale as a marker on the chrome.tabs.Tab shape and pick it
-          // up below; chrome's type doesn't include it, so cast.
-        } as unknown as chrome.tabs.Tab);
-      }
-    });
-  }
-
-  return candidates.map((t): TabTarget => {
-    const id = typeof t.id === "number" ? t.id : -1;
-    const url = t.url ?? "";
-    const origin = safeParseOrigin(url) ?? "";
-    const stale = !url || id === -1 || t.title === "(closed or inaccessible)";
-    return {
-      id,
-      title: sanitizeTitleForConfirm(t.title),
-      url: sanitizeUrlForConfirm(url),
-      origin,
-      favIconUrl: safeFavIconUrl(t.favIconUrl),
-      crossOrigin: !stale && origin !== pinnedOrigin,
-      stale: stale || undefined,
-    };
-  });
-}
-
-/** Build a Map<tabId, {origin}> from a TabTarget array for risk classifier
- *  ctx. Stale entries are intentionally absent so hasCrossOriginTab treats
- *  them as conservative-fail-high (which is the right call — if we don't
- *  know the origin we shouldn't assume same-origin). */
-function tabTargetsToOriginCache(
-  targets: TabTarget[] | undefined,
-): Map<number, { origin: string }> | undefined {
-  if (!targets || targets.length === 0) return undefined;
-  const m = new Map<number, { origin: string }>();
-  for (const t of targets) {
-    if (t.stale) continue;
-    if (!t.origin) continue;
-    m.set(t.id, { origin: t.origin });
-  }
-  return m;
-}
-
-/**
- * Phase 3 P3-U / SEC-2 — pre-fetch get_tab_content before the confirm card,
- * with timeout-guard for frozen tabs (W3C WebExtensions #527).
- *
- * Returns:
- *   - { ok: true, fullText, totalBytes } when extract succeeded
- *   - { ok: false, reason } for restricted URL / discarded tab / timeout /
- *     extract failure
- *
- * The full text goes into ctx.preFetchedContent so the handler doesn't
- * re-run executeScript after approval (avoids race with page navigation).
- * Only the first GET_TAB_CONTENT_PREVIEW_BYTES are shown in the confirm
- * card — the user sees enough to spot credentials before approving.
- */
-async function preFetchTabContent(
-  tabId: number,
-): Promise<
-  | { ok: true; fullText: string; totalBytes: number; origin: string }
-  | { ok: false; reason: string }
-> {
-  let tab: chrome.tabs.Tab;
-  try {
-    tab = await chrome.tabs.get(tabId);
-  } catch {
-    return { ok: false, reason: "missing" };
-  }
-  if (!tab.url || isRestrictedUrl(tab.url)) {
-    return { ok: false, reason: "restrictedUrl" };
-  }
-  if (tab.discarded) {
-    return { ok: false, reason: "discardedTabRequiresActivation" };
-  }
-  const origin = safeParseOrigin(tab.url);
-  if (!origin) {
-    return { ok: false, reason: "unresolvableOrigin" };
-  }
-
-  const FROZEN_TIMEOUT_MS = 5000;
-  try {
-    const fetchPromise = chrome.scripting.executeScript({
-      target: { tabId },
-      func: extractPageContentHardened,
-    });
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error("extractTimeout")), FROZEN_TIMEOUT_MS),
-    );
-    const results = (await Promise.race([
-      fetchPromise,
-      timeoutPromise,
-    ])) as chrome.scripting.InjectionResult<{
-      text: string;
-      totalBytes: number;
-    }>[];
-    const r = results[0]?.result;
-    if (!r) {
-      return { ok: false, reason: "extractFailed" };
-    }
-    return {
-      ok: true,
-      fullText: r.text,
-      totalBytes: r.totalBytes,
-      origin,
-    };
-  } catch (e) {
-    return {
-      ok: false,
-      reason: e instanceof Error ? e.message : "extractFailed",
-    };
   }
 }
 
@@ -870,7 +601,7 @@ function redactArgsForPanel(toolName: string, args: unknown): unknown {
 // ── Main loop ─────────────────────────────────────────────────────────────────
 
 export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
-  const { port, task, modelConfig, sendConfirmRequest, getEnabledSkillTools } = ctx;
+  const { port, task, modelConfig, getEnabledSkillTools } = ctx;
   const sessionId = ctx.sessionId;
 
   // Phase 2.5 lifecycle plumbing.
@@ -1149,16 +880,11 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
   // produce a duplicate observation and confuse the LLM.
   let isResumedFirstIteration = !!ctx.resumedAgentMessages;
 
-  // First-attach disclosure — true until the first keyboard-tool confirm
-  // has been shown. After that, subsequent confirms in the same task
-  // skip the debugger-activation preamble (yellow bar already visible).
-  let firstKeyboardConfirmShown = false;
-
   // v1.5 Task 6+7 / Issue #33 — per-iteration refreshed pinnedTabs.
   // ctx.pinnedTabs is captured at task-start and frozen inside the loop
   // closure. open_url writes new pins to SessionMeta (storage), so each
   // iteration's readFocusFromStorage rebroadcasts the up-to-date array
-  // here; downstream riskCtx + handler ctx read this instead of
+  // here; downstream handler ctx reads this instead of
   // ctx.pinnedTabs to see open_url's mid-task additions.
   let currentPinnedTabs: ReadonlyArray<{ tabId: number; origin: string }> =
     ctx.pinnedTabs ?? [];
@@ -1591,95 +1317,11 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           skillAuthor: skillAuthorForStep,
         });
 
-        // Phase 3 — pre-compute TabTarget[] for tab tools so the confirm card
-        // can render an informed-approval payload (P3-E) AND the risk
-        // classifier can do cross-origin args introspection (P3-A) using the
-        // already-fetched origins (no second chrome.tabs.get round-trip).
-        let tabTargets: TabTarget[] | undefined;
-        const isTabTool = (TAB_TOOL_NAMES as readonly string[]).includes(tc.name);
-        if (isTabTool) {
-          tabTargets = await buildTabTargets(tc.name, args, pinnedOrigin);
-        }
-
-        // Phase 3 P3-U / SEC-2 — pre-fetch get_tab_content BEFORE the confirm
-        // card so the user can see the actual content they're about to send
-        // to the LLM. The full text is cached on ctx so the handler reuses
-        // it after approval (no race with post-approval navigation).
-        //
-        // CRITICAL: pre-fetch failure (frozen tab, restricted URL, transient
-        // executeScript timeout, etc.) MUST still emit a contentPreview —
-        // otherwise the confirm card silently hides the preview block and
-        // the user approves blind, defeating the SEC-2 invariant. We emit a
-        // sentinel preview that explicitly says "preview unavailable" with
-        // the failure reason so the user can choose to reject.
-        let contentPreview: TabContentPreview | undefined;
-        let preFetchedContent: Map<number, PreFetchedTabContent> | undefined;
-        if (tc.name === "get_tab_content") {
-          const tabIdArg = typeof args.tabId === "number" ? args.tabId : undefined;
-          if (typeof tabIdArg === "number") {
-            const pre = await preFetchTabContent(tabIdArg);
-            if (pre.ok) {
-              const previewText = escapeUntrustedWrappers(
-                pre.fullText.slice(0, GET_TAB_CONTENT_PREVIEW_BYTES),
-              );
-              contentPreview = {
-                tabId: tabIdArg,
-                origin: pre.origin,
-                previewText,
-                truncatedAtBytes: GET_TAB_CONTENT_PREVIEW_BYTES,
-                totalBytes: pre.totalBytes,
-              };
-              preFetchedContent = new Map();
-              preFetchedContent.set(tabIdArg, {
-                fullText: pre.fullText,
-                totalBytes: pre.totalBytes,
-              });
-            } else {
-              // Sentinel preview — confirm card MUST show the failure
-              // explicitly. Approving blind is still possible (the user
-              // may legitimately want the agent to retry), but they see
-              // exactly what's missing.
-              contentPreview = {
-                tabId: tabIdArg,
-                origin: "",
-                previewText: `(preview unavailable: ${pre.reason}) — approving will let the agent fetch content fresh; fetch may still fail or expose content the preview could not show.`,
-                truncatedAtBytes: 0,
-                totalBytes: 0,
-              };
-              // preFetchedContent intentionally remains undefined so the
-              // handler runs a fresh fetch (which will likely fail the
-              // same way and surface the failure in the observation).
-            }
-          }
-        }
-
-        // Phase 5 — Screenshot tool dispatch (R5/R6).
-        //
-        // Screenshot tools get their own confirm path so the loop can
-        // consume the pre-capture extras (screenshotResult / stale /
-        // failureReason) that Task 12's SW wiring passes back through
-        // the widened sendConfirmRequest resolver. The generic
-        // risk-classify → confirm → handler pipeline is NOT used for
-        // these two tool names — we `continue` before reaching it.
+        // Screenshot tool dispatch (R5/R6) — direct capture without confirm.
         if (
           tc.name === "capture_visible_tab" ||
           tc.name === "capture_fullpage_tab"
         ) {
-          // R9 sub-path c — early-fail when the current model doesn't
-          // support vision. Avoids wasting a confirm-card flow + pre-capture
-          // budget for a tool whose result (image content) the model can't
-          // accept. The LLM gets a clear error so it can communicate the
-          // limitation to the user rather than looping on a confirm it can't
-          // process the result of.
-          //
-          // Vision capability is per-model (some providers like OpenAI ship
-          // both vision-capable gpt-4o and text-only o3-mini). `modelConfig.vision`
-          // is resolved at task-start by `resolveInstanceToModelConfig` —
-          // registry first, then instance.fetchedModels (OpenRouter lazy
-          // catalog). Strict `=== false` is intentional: `undefined` (unknown
-          // model, e.g. user-typed custom OpenRouter id) is fail-open so the
-          // LLM acts as a second line of defense rather than the user being
-          // silently locked out.
           if (modelConfig.vision === false) {
             const noVisionObs = `screenshot ${tc.name} unavailable: current model (${modelConfig.model}) does not support vision. Switch to a vision-capable model or remove the screenshot tool.`;
             toolResultBlocks.push({
@@ -1701,23 +1343,15 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             continue;
           }
 
-          const screenshotConfirmId = crypto.randomUUID();
-          const approval = await sendConfirmRequest(screenshotConfirmId, {
-            tool: tc.name,
-            args: tc.args,
-            resolvedElement: resolvedElement ?? { text: "", tag: "" },
-            riskReason:
-              "Screenshot tools require explicit user approval per capture (R5/R6) — pixel data cannot be sanitized.",
-          });
+          const captureCtx = { sessionId, taskId: ctx.taskId ?? sessionId, pinnedTabId };
+          const outcome = tc.name === "capture_visible_tab"
+            ? await dispatchCaptureVisibleTab(captureCtx)
+            : await dispatchCaptureFullPageTab(captureCtx, {
+                acquireSession: async ({ tabId }) => acquireSessionForTask(tabId),
+              });
 
-          if (!approval.approved) {
-            // Reject or pre-capture-failed. Feed observation; don't roll back
-            // budget (pre-capture was real if we got here via SW dispatch).
-            const reason = approval.reason ?? "user-reject";
-            const failureReason = approval.failureReason;
-            const rejectObs = failureReason
-              ? `screenshot ${tc.name} failed: ${failureReason}`
-              : `screenshot ${tc.name} rejected: ${reason}`;
+          if (!outcome.ok) {
+            const rejectObs = `screenshot failed: ${outcome.reason}`;
             toolResultBlocks.push({
               type: "tool_result",
               toolUseId: tc.id,
@@ -1737,54 +1371,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             continue;
           }
 
-          if (approval.stale === true) {
-            // Pre-capture > 5s old; SW discarded it. LLM can re-issue.
-            const staleObs =
-              "screenshot pre-capture stale (>5s) — re-issue the tool call to capture fresh pixels";
-            toolResultBlocks.push({
-              type: "tool_result",
-              toolUseId: tc.id,
-              isError: true,
-              content: staleObs,
-            });
-            emitStep({
-              type: "agent-step",
-              stepIndex,
-              tool: tc.name,
-              args: redactArgsForPanel(tc.name, tc.args),
-              resolvedElement,
-              status: "error",
-              observation: staleObs,
-              skillAuthor: skillAuthorForStep,
-            });
-            continue;
-          }
-
-          const img = approval.screenshotResult;
-          if (!img) {
-            // Should not happen per contract (approved + !stale should have
-            // an image), but defend against contract violation.
-            const noImgObs = `screenshot ${tc.name} failed: no image returned`;
-            toolResultBlocks.push({
-              type: "tool_result",
-              toolUseId: tc.id,
-              isError: true,
-              content: noImgObs,
-            });
-            emitStep({
-              type: "agent-step",
-              stepIndex,
-              tool: tc.name,
-              args: redactArgsForPanel(tc.name, tc.args),
-              resolvedElement,
-              status: "error",
-              observation: noImgObs,
-              skillAuthor: skillAuthorForStep,
-            });
-            continue;
-          }
-
-          // Cache the screenshot (subsequent turns can reference it).
+          const img = outcome.value;
           addImage(ctx.sessionId, {
             id: img.id,
             userTurnId: `turn_screenshot_${stepIndex}`,
@@ -1797,20 +1384,12 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           });
           hasImageContent = true;
 
-          // Feed image into agentMessages. Two blocks under one user msg:
-          // [tool_result, image]. Anthropic accepts this directly. OpenAI's
-          // shaper (Task 5) splits image_url into a separate user msg if
-          // needed — that's the shaper's job, not ours.
           const screenshotObs = `screenshot captured: ${img.width}x${img.height} jpeg`;
           toolResultBlocks.push({
             type: "tool_result",
             toolUseId: tc.id,
             content: screenshotObs,
           });
-          // Append the image block alongside the tool_result in the same
-          // user turn. Done by pushing an extra image block into toolResultBlocks
-          // so both land in the same user message (the history.push at end of
-          // loop body groups all toolResultBlocks into one user message).
           toolResultBlocks.push({
             type: "image",
             source: {
@@ -1828,118 +1407,8 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             status: "ok",
             observation: screenshotObs,
             skillAuthor: skillAuthorForStep,
-            autoApproved: ctx.skipPermissions ? true : undefined,
-            image: {
-              mediaType: img.mediaType,
-              data: img.data,
-              width: img.width,
-              height: img.height,
-            },
           });
           continue;
-        }
-
-        const riskCtx: RiskClassifyContext = {
-          // v1.5: direct multi-pin array. Issue #33 — uses the
-          // per-iteration refreshed array (open_url writes), not the
-          // frozen ctx.pinnedTabs, so a newly opened tab isn't flagged
-          // cross-origin on the next click/type.
-          pinnedTabs: currentPinnedTabs,
-          allTabsCache: tabTargetsToOriginCache(tabTargets),
-        };
-
-        // Risk classification
-        const risk = classifyRisk(
-          tc.name,
-          args as {
-            elementIndex?: number;
-            value?: string;
-            tabIds?: number[];
-            tabId?: number;
-            scope?: string;
-          },
-          snapshot,
-          riskCtx,
-        );
-
-        if (risk.level === "high") {
-          const confirmationId = crypto.randomUUID();
-
-          // Build confirm reason — keyboard tools' first call gets a
-          // debugger-activation disclosure prepended.
-          let riskReason = risk.reason ?? "High risk operation";
-          if (
-            isKeyboardToolName(tc.name) &&
-            !firstKeyboardConfirmShown &&
-            !cdpSession
-          ) {
-            riskReason =
-              "First keyboard-simulation call — Chrome debugger will activate (yellow bar) for the rest of this task. Cancel by clicking the yellow bar, ending the task, or toggling Settings off.\n\n" +
-              riskReason;
-            firstKeyboardConfirmShown = true;
-          }
-
-          // Phase 2.6 — for create_skill / update_skill, pre-compute the
-          // effective merged skill so AgentConfirmCard can render full
-          // content instead of just the patch (P0-D / adv-1 closure).
-          let metaSkillPreview: { existing: SkillDefinition | null; effective: SkillDefinition } | undefined;
-          if (tc.name === "create_skill" || tc.name === "update_skill") {
-            metaSkillPreview = (await previewMetaSkillCall(tc.name, tc.args)) ?? undefined;
-          }
-
-          // confirm-request keeps RAW args.text — user must see the
-          // actual content to make an informed approval. agent-step
-          // (above + below) uses redactArgsForPanel.
-          const confirmResult = await sendConfirmRequest(confirmationId, {
-            tool: tc.name,
-            args: tc.args,
-            resolvedElement: resolvedElement ?? { text: "", tag: "" },
-            riskReason,
-            metaSkillPreview,
-            tabTargets,
-            contentPreview,
-          });
-
-          if (!confirmResult.approved) {
-            const rejectionMsg =
-              confirmResult.reason === "flood-limit"
-                ? "Confirm queue full — please resolve other sessions first."
-                : confirmResult.reason === "aborted"
-                  ? "Confirm aborted (panel closed or task stopped)."
-                  : "User rejected";
-            toolResultBlocks.push({
-              type: "tool_result",
-              toolUseId: tc.id,
-              content: rejectionMsg,
-              isError: true,
-            });
-            emitStep({
-              type: "agent-step",
-              stepIndex,
-              tool: tc.name,
-              args: redactArgsForPanel(tc.name, tc.args),
-              resolvedElement,
-              status: "error",
-              observation: rejectionMsg,
-              skillAuthor: skillAuthorForStep,
-            });
-            continue;
-          }
-        }
-
-        // Phase 3 — confirm-time TabTarget snapshot for cross-tab handlers.
-        // K-8: handlers compare live tab origin against this map's origin
-        // (what the user saw on the confirm card), NOT pinnedOrigin. If a
-        // tab navigated between approval and dispatch, the handler skips it.
-        let confirmedTabTargets:
-          | Map<number, { origin: string; title: string }>
-          | undefined;
-        if (tabTargets && tabTargets.length > 0) {
-          confirmedTabTargets = new Map();
-          for (const t of tabTargets) {
-            if (t.stale) continue;
-            confirmedTabTargets.set(t.id, { origin: t.origin, title: t.title });
-          }
         }
 
         // Execute tool
@@ -1948,8 +1417,8 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           result = await tool.handler(tc.args, {
             tabId: pinnedTabId,
             snapshot,
-            confirmedTabTargets,
-            preFetchedContent,
+            confirmedTabTargets: undefined,
+            preFetchedContent: undefined,
             // M5 — frozen at chat-start (passed via AgentLoopContext.pinMode);
             // close_tabs K-9 reads this to refuse closing user-locked pins.
             pinMode: ctx.pinMode,
@@ -2009,8 +1478,6 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           status: result.success ? "ok" : "error",
           observation,
           skillAuthor: skillAuthorForStep,
-          autoApproved:
-            ctx.skipPermissions && risk.level === "high" ? true : undefined,
         });
 
         // Phase 2.6 — Skill cache invalidation after a successful meta-tool

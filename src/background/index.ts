@@ -882,7 +882,6 @@ async function handleResumeRequest(
     task: taskForPrompt,
     modelConfig,
     signal,
-    sendConfirmRequest,
     getEnabledSkillTools: async () => {
       const skills = await getEnabledSkills();
       return resolveSkillToTools(skills);
@@ -900,7 +899,6 @@ async function handleResumeRequest(
     initialFocusTabId: agent.currentFocusTabId ?? meta.pinnedTabs?.[0]?.tabId,
     // Phase 5 — per-task screenshot budget key.
     taskId: resumeTaskId,
-    skipPermissions: skipPermissionsAtStart,
     // M3-U4 (TOCTOU fix) — refresh per dispatch; see chat-start twin.
     refreshCrossSessionPinnedTabIds: () => getCrossSessionPinnedTabIds(sessionId),
     // M5 — pin mode frozen at chat-start (here: resume start). close_tabs K-9
@@ -1482,7 +1480,6 @@ async function handleChatStream(
       task,
       modelConfig,
       signal,
-      sendConfirmRequest,
       getEnabledSkillTools: async () => {
         const skills = await getEnabledSkills();
         return resolveSkillToTools(skills);
@@ -1500,7 +1497,6 @@ async function handleChatStream(
       initialFocusTabId: sessionMeta?.pinnedTabs?.[0]?.tabId,
       // Phase 5 — per-task screenshot budget key.
       taskId: chatTaskId,
-      skipPermissions: skipPermissionsAtStart,
       // M3-U4 (TOCTOU fix) — refresh the cross-session pinned-tab
       // registry per tool dispatch. The frozen snapshot here would miss
       // sessions created mid-loop.
