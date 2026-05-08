@@ -1081,7 +1081,20 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       >();
       const completedToolCalls: Array<{ id: string; name: string; args: unknown }> = [];
 
+      console.log("[sw][debug] streamChat entering", {
+        provider: modelConfig.provider,
+        model: modelConfig.model,
+        stepIndex,
+        sessionId,
+        historyLen: windowedHistory.length,
+        toolCount: toolDefinitions.length,
+      });
+      let __sawAnyEvent = false;
       for await (const event of streamChat(modelConfig, windowedHistory, signal, toolDefinitions)) {
+        if (!__sawAnyEvent) {
+          __sawAnyEvent = true;
+          console.log("[sw][debug] streamChat first event", { type: event.type });
+        }
         if (signal.aborted) return; // → finally
 
         if (event.type === "text-delta") {
@@ -1126,6 +1139,13 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           return;
         }
       }
+      console.log("[sw][debug] streamChat exited", {
+        sawAnyEvent: __sawAnyEvent,
+        stepIndex,
+        sessionId,
+        accumulatedTextLen: accumulatedText.length,
+        toolCallCount: completedToolCalls.length,
+      });
 
       // If abort fired during streaming, providers silently return from
       // the generator (no throw). Detect that here BEFORE treating an
