@@ -174,10 +174,41 @@ const tabs = {
   }),
 };
 
+// chrome.webNavigation mock — wait-for-settle.ts adds onCommitted /
+// onHistoryStateUpdated listeners around any DOM-touching action. Tests
+// that exercise action handlers (click / type / keyboard) need the API to
+// exist so the listener registration doesn't throw. Tests that want to
+// drive nav events directly can call the exposed __emit* helpers.
+type NavListener = (
+  details: chrome.webNavigation.WebNavigationFramedCallbackDetails,
+) => void;
+
+const webNavigation = {
+  __committedListeners: [] as NavListener[],
+  __historyListeners: [] as NavListener[],
+  onCommitted: {
+    addListener: (l: NavListener) => webNavigation.__committedListeners.push(l),
+    removeListener: (l: NavListener) => {
+      webNavigation.__committedListeners = webNavigation.__committedListeners.filter(
+        (x) => x !== l,
+      );
+    },
+  },
+  onHistoryStateUpdated: {
+    addListener: (l: NavListener) => webNavigation.__historyListeners.push(l),
+    removeListener: (l: NavListener) => {
+      webNavigation.__historyListeners = webNavigation.__historyListeners.filter(
+        (x) => x !== l,
+      );
+    },
+  },
+};
+
 const chromeMock = {
   storage: { local },
   runtime,
   tabs,
+  webNavigation,
 };
 
 // Install on globalThis so `chrome.storage.local.get(...)` works in src code.
@@ -192,6 +223,8 @@ beforeEach(() => {
   tabs.__tabsById.clear();
   tabs.query.mockClear();
   tabs.get.mockClear();
+  webNavigation.__committedListeners = [];
+  webNavigation.__historyListeners = [];
 });
 
 export { chromeMock };

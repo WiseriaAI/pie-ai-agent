@@ -47,6 +47,12 @@ const KEY_MAP: Record<
   End: { code: "End", windowsVirtualKeyCode: 35 },
 };
 
+// CDP modifier bitmask (Input.dispatchKeyEvent.modifiers field).
+//   Alt = 1, Ctrl = 2, Meta = 4, Shift = 8
+// Only Shift is currently used (soft-break paragraphs in Notion / Feishu /
+// Google Docs require Shift+Enter); other bits intentionally not exposed.
+const MODIFIER_SHIFT = 8;
+
 // Helper: send a paired keyDown/keyUp via CDP. Used internally when
 // expanding \n inside dispatch_keyboard_input — canvas editors (Feishu
 // Docs / Google Docs / Notion) bind paragraph breaks to keydown(Enter),
@@ -54,15 +60,17 @@ const KEY_MAP: Record<
 async function sendKeyPress(
   session: CdpSession,
   keyName: string,
+  modifiers = 0,
 ): Promise<void> {
   const mapping = KEY_MAP[keyName];
   if (!mapping) throw new Error(`No mapping for key '${keyName}'`);
-  const baseParams = {
+  const baseParams: Record<string, unknown> = {
     key: keyName,
     code: mapping.code,
     windowsVirtualKeyCode: mapping.windowsVirtualKeyCode,
     nativeVirtualKeyCode: mapping.windowsVirtualKeyCode,
   };
+  if (modifiers !== 0) baseParams.modifiers = modifiers;
   await session.send("Input.dispatchKeyEvent", {
     type: "keyDown",
     ...baseParams,
@@ -177,18 +185,23 @@ export function buildKeyboardTools(deps: KeyboardToolDeps): Tool[] {
     {
       name: "dispatch_keyboard_input",
       description:
-        "Send text input via simulated real keyboard (Chrome DevTools Protocol). Pass the FULL multi-paragraph content in one call — every newline character inside `text` is converted to an Enter key press, so paragraphs/lists/code blocks are inserted correctly. Avoid breaking content into many small calls; each call requires the user to approve. Use ONLY for canvas-rendered editors (Feishu Docs, Google Docs, Notion) where the regular `type` tool returns 'hidden IME / keyboard capture buffer'. Activates Chrome's debugger (yellow bar appears).",
+        "Send text input via simulated real keyboard (Chrome DevTools Protocol). Pass the FULL multi-paragraph content in one call — every newline character inside `text` is converted to an Enter key press, so paragraphs/lists/code blocks are inserted correctly. Avoid breaking content into many small calls; each call requires the user to approve. Use ONLY for canvas-rendered editors (Feishu Docs, Google Docs, Notion) where the regular `type` tool returns 'hidden IME / keyboard capture buffer'. Activates Chrome's debugger (yellow bar appears). Set `softBreak: true` if newlines should be intra-paragraph soft breaks (Shift+Enter) instead of new paragraphs — Notion / Feishu / Google Docs treat Enter as block break and Shift+Enter as line break within the same block.",
       parameters: {
         type: "object",
         properties: {
           text: {
             type: "string",
-            description: `Text to insert. Max ${MAX_TEXT_LENGTH} characters. Use real newline characters in the string for paragraph breaks (each newline becomes an Enter press). Must not contain other control characters or bidi formatting controls.`,
+            description: `Text to insert. Max ${MAX_TEXT_LENGTH} characters. Use real newline characters in the string for line breaks (each newline becomes Enter, or Shift+Enter when softBreak is true). Must not contain other control characters or bidi formatting controls.`,
           },
           after_element_index: {
             type: "number",
             description:
               "Optional: click this element index (from snapshot) before sending the input, to ensure the editor has focus.",
+          },
+          softBreak: {
+            type: "boolean",
+            description:
+              "If true, every newline in `text` is sent as Shift+Enter (intra-paragraph soft break) instead of Enter (new paragraph/block). Use when authoring inside Notion, Feishu Docs, or Google Docs and you want lines to stay inside the same block. Default false. If you need a mix of hard and soft breaks, split into two calls.",
           },
         },
         required: ["text"],
@@ -203,7 +216,12 @@ export function buildKeyboardTools(deps: KeyboardToolDeps): Tool[] {
         args: unknown,
         ctx: ToolHandlerContext,
       ): Promise<ActionResult> => withActionSettle(ctx.tabId, async () => {
-        const a = args as { text: string; after_element_index?: number };
+        const a = args as {
+          text: string;
+          after_element_index?: number;
+          softBreak?: boolean;
+        };
+        const enterModifiers = a.softBreak ? MODIFIER_SHIFT : 0;
 
         const validation = validateText(a.text);
         if (!validation.ok) {
@@ -294,7 +312,7 @@ export function buildKeyboardTools(deps: KeyboardToolDeps): Tool[] {
         try {
           for (let i = 0; i < segments.length; i++) {
             if (i > 0) {
-              await sendKeyPress(session, "Enter");
+              await sendKeyPress(session, "Enter", enterModifiers);
             }
             if (segments[i].length > 0) {
               await session.send("Input.insertText", { text: segments[i] });
@@ -317,9 +335,10 @@ export function buildKeyboardTools(deps: KeyboardToolDeps): Tool[] {
         // single newline char before splitting).
         const charCount = normalized.length - enterCount; // exclude newlines from char count
         const lengthDesc = `${charCount} character${charCount === 1 ? "" : "s"}`;
+        const breakLabel = a.softBreak ? "soft break" : "paragraph break";
         const enterDesc =
           enterCount > 0
-            ? ` (${enterCount} paragraph break${enterCount === 1 ? "" : "s"})`
+            ? ` (${enterCount} ${breakLabel}${enterCount === 1 ? "" : "s"})`
             : "";
         return {
           success: true,
