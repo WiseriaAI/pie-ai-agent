@@ -310,7 +310,7 @@ Checkpoint & Resume 的 M1 已 ship；M2/M3 PR #10 / #13 已 ship。定时工作
 
 | 项 | 来源 | 备注 |
 |---|---|---|
-| **Page snapshot 加 semantic 层（标题 / 区块 / 状态文案 / 表单 label / 错误提示）** | #44-3 / #45-3 | 当前 snapshot 只含 interactive elements（`prompt.ts:194-220`）— LLM 在复杂页面只能"看按钮做事"。设计点：4 层观察（lightweight interactive / semantic / fulltext / screenshot），默认 semantic。需评估每轮 token 成本 + R15 untrusted 边界 |
+| **Page snapshot 加 semantic 层（标题 / 区块 / 状态文案 / 表单 label / 错误提示）** | #44-3 / #45-3 | ✅ **SHIPPED 2026-05-08**：单 PR 落地 spec [`2026-05-08-semantic-snapshot-design.md`](superpowers/specs/2026-05-08-semantic-snapshot-design.md)。snapshotInteractiveElements 单 executeScript 内增量采集 page-level（h1-h3 / role=alert / role=status / aria-live，per-field char caps + max counts）+ element-level（`<label for>` / aria-labelledby / ancestor `<label>` fallback chain，aria-invalid+describedby → error）。buildObservationMessage 渲染 `<untrusted_page_content>` 内 `Semantic:` / `Elements:` 子段，复用 wrapper 不增 sanitize 表面。HARD INVARIANT：所有 5 个新文本源走 sanitizeText。STATIC_AGENT_SYSTEM_PROMPT 加一行格式说明。snapshot.test.ts 31 case + prompt.test.ts 8 case + cross-layer.test.ts 3 case 覆盖 |
 | **业务按钮语义风险识别** | #44-9 | 当前 risk classifier 只看工具类型 + 关键字 + cross-origin args；提交/删除/支付/发布按钮缺业务级保护。设计点：(a) DOM hint（按钮文案 + form context）→ risk 升级 (b) 高风险点击前要求 LLM 复述即将发生的动作 |
 | **reject-3-strikes 软化** | #45-6 | 当前 `loop.ts` reject 同一 tool 3 次直接 abort 整个 task。设计点：reject 后给 LLM 一次"换策略/换工具"机会，仍同操作才终止；保留 abort 兜底防死循环 |
 | **凭证场景优雅降级（pause/resume）** | #45-7 | 当前登录墙只能 `fail`。设计点：task 主动 pause + UI 提示"等用户登录完成后继续" + resume 时重做最近 snapshot。M3 已有 sandbox/lifecycle 基础设施可复用 |
