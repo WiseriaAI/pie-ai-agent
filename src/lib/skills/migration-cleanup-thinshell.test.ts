@@ -14,6 +14,9 @@ describe("cleanupThinShellSkills", () => {
 
     expect(removeSpy).not.toHaveBeenCalled();
     expect(setSpy).not.toHaveBeenCalled();
+
+    removeSpy.mockRestore();
+    setSpy.mockRestore();
   });
 
   it("removes stale skill_take_screenshot / skill_open_url_in_tab user-side copies", async () => {
@@ -64,5 +67,8 @@ describe("cleanupThinShellSkills", () => {
     // Second run must be a no-op (no extra writes / removes after first cleanup).
     expect(removeSpy.mock.calls.length).toBeLessThanOrEqual(2); // 1st run only
     expect(setSpy.mock.calls.length).toBeLessThanOrEqual(1); // 1st run only
+
+    removeSpy.mockRestore();
+    setSpy.mockRestore();
   });
 });
