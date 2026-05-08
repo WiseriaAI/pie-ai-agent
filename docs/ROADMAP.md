@@ -4,7 +4,7 @@
 
 **已交付**：Phase 0 / 1 / 2 / 2.5 / 2.6 / 3 / 4 (M1 + M2 + M3) / 5 (multimodal v1) / v1.5 (multi-pin + open_url + focus_tab)。Skill scope 解禁 + 全局 skip-permissions toggle ([#26](docs/solutions/2026-05-06-skill-scope-and-skip-permissions.md))。
 
-本文件汇总各 brainstorm / plan 主动 defer 的 milestone，是后续工作的 backlog。每条目标是"够用以决定下一步"，不是 plan，立 plan 时再 `/ce:brainstorm` + `/ce:plan` 走完整链路。
+本文件汇总各 brainstorm / plan 主动 defer 的 milestone，是后续工作的 backlog。每条目标是"够用以决定下一步"，不是 plan，立 plan 时再 brainstorm + plan 走完整链路。
 
 ---
 
@@ -74,9 +74,9 @@
 | # | 方向 | 状态 | 下一步 |
 |---|---|---|---|
 | **1** | 多模态输入图片 | ✅ **PR #20 merged 2026-05-04**：v1 = 用户上传（粘贴/拖拽/按钮 ≤3 张，auto-resize 1568px JPEG q85 + EXIF strip）+ LLM screenshot tools (`capture_visible_tab` / `capture_fullpage_tab` 两者 always-high) + No-persist SW per-session cache (30MB/last-3-turn LRU，4 evict 路径) + Fail-on-image (R14 paused→failed) + R15 image untrusted boundary system prompt + Anthropic/OpenAI/OpenRouter 三家。15 task / 339→461 tests (+122 net) / R1-R15 全闭环。v1.1 follow-up 见 §8 | 完成 |
-| **2** | Skill 脚本化（"完整 skill"） | ⚠️ **scope 含糊未深入**：必须先 narrow 含义到 (a) JS 自定义 tool handler / (b) DSL 描述固定步骤 / (c) prompt 加 control flow / (d) 录制+回放（与 #4 重叠）中的某一个。Manifest V3 CSP 对 (a) 是硬约束（禁 `eval`/`Function`，要 sandboxed iframe / Worker，BYOK trust model 重审）；(c) 与 LLM 自身 reasoning 重叠 YAGNI 风险高 | 单独 `/ce:brainstorm` 先 narrow 哪一种含义 + 当前 skill 系统真正卡住的用例 |
+| **2** | Skill 脚本化（"完整 skill"） | ⚠️ **scope 含糊未深入**：必须先 narrow 含义到 (a) JS 自定义 tool handler / (b) DSL 描述固定步骤 / (c) prompt 加 control flow / (d) 录制+回放（与 #4 重叠）中的某一个。Manifest V3 CSP 对 (a) 是硬约束（禁 `eval`/`Function`，要 sandboxed iframe / Worker，BYOK trust model 重审）；(c) 与 LLM 自身 reasoning 重叠 YAGNI 风险高 | 单独 brainstorm 先 narrow 哪一种含义 + 当前 skill 系统真正卡住的用例 |
 | **3** | 控制 Chrome 浏览器 | ✅ **SHIPPED 2026-05-05** (manifest 0.5.2, branch `feat/multi-pin-open-url-v15`, PR #21)：v1.5 Path A 全闭环 = `open_url(url, active=false)` + `focus_tab(tabId)` + **pinnedTabs[] schema** + per-iteration `currentFocusTabId` refresh + multi-select PinnedTabDropdown UI + URL allow-list (R6 显式 `protocol === 'http:'\|'https:'`) + IDN punycode 显示（防 homograph）+ always-high confirm + per-call SkillsList badge。10 task / 572 tests pass / @deprecated legacy single-pin fields 完全删除。**`nav_pinned_tab` cross-origin nav 仍推 v1.1 单独 brainstorm**——pre-multi-pin review 暴露 4 invariant 互动复杂度（R6 inTransitOrigin / R7 atomic swap / R9 CDP detach / R10 task-mutex）+ ADV-1 Premise collapse；R11 click-induced nav false-positive 才是用户最常见痛点，v1.5.1 评估优先级。Trace doc → `docs/solutions/2026-05-03-multi-session-invariant-trace.md` v1.5 章节；engineering patterns（phased deletion / dual-write shim / merge-not-replace snapshot / cross-storage integration tests）→ `docs/solutions/2026-05-05-cross-cutting-type-migration-lessons.md` | 完成；v1.5.1 backlog 见 §10 |
-| **3.1** | nav_pinned_tab cross-origin (defer) | ⚠️ **推 v1.1**：原稿（pre-multi-pin）暴露 4 P0（SEC-2 server-side redirect / SEC-5 pin-in-transit 永久 DoS / ADV-2 inTransitOrigin race basis / ADV-3 shared-pin sessions broken）+ R11 click-induced false-positive 才是用户最常见痛点。需独立 brainstorm 收窄 4 invariant 设计 + 评估 R11 false-positive 修是否更高 ROI | 单独 `/ce:brainstorm` 在 multi-pin v1 ship 后；评估"R11 click-nav false-positive 修"作为更轻量替代 |
+| **3.1** | nav_pinned_tab cross-origin (defer) | ⚠️ **推 v1.1**：原稿（pre-multi-pin）暴露 4 P0（SEC-2 server-side redirect / SEC-5 pin-in-transit 永久 DoS / ADV-2 inTransitOrigin race basis / ADV-3 shared-pin sessions broken）+ R11 click-induced false-positive 才是用户最常见痛点。需独立 brainstorm 收窄 4 invariant 设计 + 评估 R11 false-positive 修是否更高 ROI | 单独 brainstorm 在 multi-pin v1 ship 后；评估"R11 click-nav false-positive 修"作为更轻量替代 |
 | **4** | 行为录制 + AI 创建 Skill | ✅ **SHIPPED 2026-05-05** (v1，单 tab + LLM-driven skill 创建)：sidepanel Record button → DOM event capture → Finish 后 trace 通过 chat 输入框 chip 注入 → user 加自由 prompt → LLM 显式调用 built-in skill `create_skill_from_recording` → 该 skill 调 create_skill meta tool → R10 first-run confirm 卡片作为 capability review surface。回放完全复用现有 ReAct + click/type 工具路径。所有 Phase 2.6 capability + Phase 3 cross-tab + M3 multi-session 自动兼容。同时新增 2 个 built-in skill（`take_screenshot` / `open_url_in_tab`）+ SkillsList 概念说明。trace doc → `docs/solutions/2026-05-05-record-and-replay-v1-invariant-trace.md`；plan + reframe note → `docs/plans/2026-05-05-record-and-replay.md`。v1.1 backlog：cross-tab 录制 / N 行数据循环 / 重录覆盖 UX | 完成 |
 
 **4 个方向都不是单条 PR 能拿下的 scope**——除了方向 1 已 nail，2/3/4 各自至少 1 轮独立 brainstorm 才能进 plan。
@@ -213,11 +213,11 @@ GitHub `state:open` 的 3 条 feat 性 issue（虽未打 label，但标题均为
 | 优先级 | Issue | 标题 | 状态 / 下一步 |
 |---|---|---|---|
 | **P0** | [#30](https://github.com/WiseriaAI/Pie/issues/30) | feat(session): 并发会话支持 — 当前 task 后台继续 / 新建 session 不影响（M3-U6+） | ✅ **SHIPPED 2026-05-08** — panel state migration to per-session `Map<sessionId, T>` + slots/slotsRef hub + createPortHandlers factory + setActive/createAndActivate simplified + #29 streaming guard removed + SW R13(c) evictOnSetActive removed + SW keep-alive scoped to in-flight tasks. ~14 tasks / cross-layer regression for agent-done-task transit / 700+ tests pass / acceptance AC-1..AC-9 met. Closes §3 / §9 / §10 M3-U6+ anchors. Trace doc → `docs/solutions/2026-05-03-multi-session-invariant-trace.md` §M3-U6 (appended) |
-| **P1** | [#34](https://github.com/WiseriaAI/Pie/issues/34) | feat: agent working 中途可发送新指令，当前单次 loop 完成后参与后续循环 | scope 含糊 — 必须先 `/ce:brainstorm` 收窄 3 处：a) "插入"是覆盖原始 task 还是纯附加 / b) 是否要二次 confirm / c) 同 loop 后多条 pending 是合并提交还是分批。默认建议：纯附加（不动 task） + 不 confirm（输入即排队） + 多条按时序合并到下一轮 user role + 用 `[User Mid-Task Instruction]:` 标签让 LLM 区分。与 #30 互补但**应在 #30 之后启动**：当前单 port + 单 streaming state 的 architecture 下，pending queue 会和 #29 streaming guard 互锁；#30 ship 后 pending queue 自然 per-session 隔离 |
-| **P2** | [#38](https://github.com/WiseriaAI/Pie/issues/38) | feat: 输入时支持引用页内内容（组件元素、文字、图片）及划词显示组件 | 工作量最大、scope 最含糊、prompt-injection 风险最高。issue 含 4 个独立 feature 维度（DOM 元素引用 / 划词组件边界识别 / side panel 引用面板 / SPA+iframe+Canvas+OCR 兼容），任一都够独立 milestone。`src/content/` 当前是 placeholder（DOM 操作走 `executeScript`），引用功能需要常驻 content script 监听 selection / mousemove / click — 需先评估 ship 常驻 content script 的成本（vs 现有 `executeScript` 套路）+ 与 R15 image untrusted boundary 的协作。先 `/ce:brainstorm` 强制 narrow v1 — 推荐 v1 = 纯文字选中 → chat chip 注入 + 选中元素截图复用 Phase 5 image attach pipeline；v2 剥离组件边界 heuristic / iframe / Canvas+OCR。引用内容必须走 `<untrusted_page_content>` wrapper（同 R15 image boundary） |
+| **P1** | [#34](https://github.com/WiseriaAI/Pie/issues/34) | feat: agent working 中途可发送新指令，当前单次 loop 完成后参与后续循环 | scope 含糊 — 必须先 brainstorm 收窄 3 处：a) "插入"是覆盖原始 task 还是纯附加 / b) 是否要二次 confirm / c) 同 loop 后多条 pending 是合并提交还是分批。默认建议：纯附加（不动 task） + 不 confirm（输入即排队） + 多条按时序合并到下一轮 user role + 用 `[User Mid-Task Instruction]:` 标签让 LLM 区分。与 #30 互补但**应在 #30 之后启动**：当前单 port + 单 streaming state 的 architecture 下，pending queue 会和 #29 streaming guard 互锁；#30 ship 后 pending queue 自然 per-session 隔离 |
+| **P2** | [#38](https://github.com/WiseriaAI/Pie/issues/38) | feat: 输入时支持引用页内内容（组件元素、文字、图片）及划词显示组件 | 工作量最大、scope 最含糊、prompt-injection 风险最高。issue 含 4 个独立 feature 维度（DOM 元素引用 / 划词组件边界识别 / side panel 引用面板 / SPA+iframe+Canvas+OCR 兼容），任一都够独立 milestone。`src/content/` 当前是 placeholder（DOM 操作走 `executeScript`），引用功能需要常驻 content script 监听 selection / mousemove / click — 需先评估 ship 常驻 content script 的成本（vs 现有 `executeScript` 套路）+ 与 R15 image untrusted boundary 的协作。先 brainstorm 强制 narrow v1 — 推荐 v1 = 纯文字选中 → chat chip 注入 + 选中元素截图复用 Phase 5 image attach pipeline；v2 剥离组件边界 heuristic / iframe / Canvas+OCR。引用内容必须走 `<untrusted_page_content>` wrapper（同 R15 image boundary） |
 
 **Acceptance gate（3 条共用）**：
-- 都未单独 brainstorm 过；P0 的 issue body 最贴近 ready-to-plan，P1/P2 都需先走完整 `/ce:brainstorm`
+- 都未单独 brainstorm 过；P0 的 issue body 最贴近 ready-to-plan，P1/P2 都需先走完整 brainstorm
 - 都属于 panel↔SW wire shape 变化范围，**必须有 cross-layer regression test**（panel state model 变化必有 wire→DisplayMessage 透传测）
 - P0 / P1 严格串行：#30 解掉 panel state 全局单态后再做 #34，否则两个 PR 互相会动同一批 refs / Map 结构
 
@@ -225,23 +225,54 @@ GitHub `state:open` 的 3 条 feat 性 issue（虽未打 label，但标题均为
 
 ## 推荐推进顺序
 
-按"用户痛感 × 解锁后续能力"性价比（已纳入 §5 4-way 评估 + §12 open issues）：
+> **2026-05-08 重排（能用 → 好用）**：产品已过"能用"阶段——Phase 0–5 + v1.5 multi-pin + Provider 中心 + 并发会话 + recording 全部 ship。本节评估标准从"用户痛感 × 解锁后续能力"（功能扩展导向）切换为"是否每天会卡 × 是否影响信任 × 单次 ship cost"（打磨导向）。新能力扩展（Ollama / 定时工作流 / 页内引用 / Skill 脚本化）后撤到第四梯队，日常摩擦修复前置。已交付路径归档至本节尾部，§1–§13 各主题 backlog 不动（它们仍是该主题的 single source of truth，但优先级以本节为准）。
 
-1. **多轮对话上下文（§6）** — ✅ **SHIPPED 2026-05-04**：PR #15 (Half A + Half B hybrid synth) + PR #16 (3 P1 residual)；plan completed；R1/R2 全闭环
-2. **多模态输入图片（§5 #1）** — ✅ **PR #20 merged 2026-05-04**：15 task / 339→461 tests (+122 net) / R1-R15 全闭环；user acceptance 期间发现 2 个跨层集成 bug（first-task pin race + screenshotPreview wire transit）— 修复并 push (commits `0927031` + `517435d`) 已合并。Phase 5 v1.1 backlog 见 §8
-3. **Provider + Model 能力中心化管理（§7）** — ✅ **SHIPPED 2026-05-06** as PR #28 (B+ scope)：multi-instance 配置中心 + per-model capability schema + Provider 模块化（`_shared/openai-compat-core` + 5 wrapper）+ Gemini native module + DeepSeek provider + V1→V2 silent migration + Composer InstanceSelector chip。21 commits / 700 tests pass。同时关闭 §1 Gemini provider 项 + §8 vision 子项的 schema 部分
-4. **Chrome narrow（§5 #3）** — ✅ **SHIPPED 2026-05-05** as v1.5 Path A: `open_url` + `focus_tab` + multi-pin schema. 10 task / 572 tests pass / manifest 0.5.2 / PR #21. v1.5.1 backlog 详见 §10。Engineering patterns（4 个跨切层 type migration 模式）沉淀在 `docs/solutions/2026-05-05-cross-cutting-type-migration-lessons.md`
-5. **行为录制 → Skill seed（§5 #4）** — ✅ **SHIPPED 2026-05-05** v1（单 tab + LLM-driven create_skill_from_recording）；v1.1 backlog: cross-tab 录制 / N 行数据循环 / 重录覆盖 UX
-6. **Gemini provider** — ✅ **SHIPPED 2026-05-06** 与 §7 同期（PR #28）。Native module + `inline_data` + `?alt=sse` + `function_declarations` + manifest host_permission
-7. **并发会话支持（§12 #30, P0）** — ✅ **SHIPPED 2026-05-08** as #30: per-session `Map<sessionId, T>` panel state + createPortHandlers factory + SW R13(c) removal + keep-alive scoped to in-flight tasks. Unblocks #34 (P1).
-8. **Agent 中途插入指令（§12 #34, P1）** — 与 #30 互补；scope 含糊先 `/ce:brainstorm` 收窄 3 个设计决策；**应在 #30 ship 后启动**避免与 #29 临时 streaming guard 互锁
-9. **页内内容引用（§12 #38, P2）** — Phase 级 scope（4 个独立维度）；先 `/ce:brainstorm` 强制 narrow v1（纯文字选中 chip + 选中元素截图复用 Phase 5 image attach），v2 剥离组件边界 / iframe / Canvas+OCR；需评估常驻 content script 成本
-10. **Ollama 本地模型** — 与 BYOK 定位契合；manifest + streaming 协议适配
-11. **快捷键支持** — 打磨项，零结构性风险
-12. **Skill 脚本化（§5 #2）** — 收窄 (a)/(b)/(c)/(d) 后再决定
-13. **page-match 自动触发** — 需要先解决 prompt-injection-by-page 防御
+### 第一梯队 — 用户每天会卡的真问题
 
-Checkpoint & Resume 的 M1 已 ship；M2/M3 PR #10 / #13 已 ship。定时工作流仍依赖 SW 5 min 限制突破。
+1. **reject-3-strikes 软化（§13 P2 #45-6）** — 拒同一 tool 3 次 → 整 task abort。日常频率最高、`loop.ts` 一处逻辑。先 brainstorm 收窄 "换策略 vs 换工具" fallback 协议 + abort 兜底门槛
+2. **Page snapshot 加 semantic 层（§13 P2 #44-3 / #45-3）** — interactive-only snapshot 让 LLM 在复杂页面"看不见报错/状态文案/表单 label"，是好用阶段最显眼失败模式。需 brainstorm 4 层观察（lightweight / semantic / fulltext / screenshot）默认值 + 每轮 token 成本 + R15 untrusted 边界协作
+3. **Anthropic `cache_control: ephemeral` on image content blocks（§8 / §11）** — 一张图 × 6 轮 task ≈ 9.4K 重复 vision token；BYOK 成本痛点 #1，改动局部（content block 加字段），ROI 极高
+4. **凭证场景 pause/resume（§13 P2 #45-7）** — 登录墙日常常见场景，当前只能 `fail`。M3 sandbox / lifecycle 基础设施可复用；scope 收得住
+
+### 第二梯队 — 信任 / informed-approval 修复
+
+5. **`tabTargets` / `contentPreview` wire drop 修复（§10 K-1）** — close_tabs / group_tabs / get_tab_content confirm card 丢 origin list + content preview，pre-existing Phase 3 gap，影响用户审批决策正确性。单 PR 可修
+6. **业务按钮语义风险识别（§13 P2 #44-9）** — 提交 / 删除 / 支付 / 发布按钮缺业务级保护；当前 risk classifier 只看工具类型 + cross-origin args + 关键字
+
+### 第三梯队 — 体验质量打磨
+
+7. **快捷键支持（§1）** — 零结构性风险，高频用户体感差异大
+8. **Settings toggle: 1568 ↔ 1092 max-edge（§8）** — 给 BYOK 用户成本控制权（Anthropic 高 / 低 tier 价差大）
+9. **Phantom pin pruning（§10）** — 浏览器 crash / 手关 pinned tab 后 session 进降级状态；`removePinFromMeta` helper 已存在但无生产 caller
+
+### 第四梯队 — 新能力扩展（"好用"阶段稳住后再考虑）
+
+10. **Agent 中途插入指令（§12 #34, P1）** — 加分项不是日常卡点；scope 含糊先 brainstorm 收窄"附加 vs 覆盖 / 是否 confirm / 多条合并策略"3 处设计决策
+11. **页内内容引用（§12 #38, P2）** — Phase 级 scope（4 个独立维度），打磨期不开新坑；需评估常驻 content script 成本 + 与 R15 image untrusted boundary 协作
+12. **Ollama 本地模型（§1）** — 新 provider 维度，与"好用"正交；manifest + streaming 协议适配
+13. **Skill 脚本化（§5 #2）** — 含义含糊，需先 narrow (a) JS handler / (b) DSL / (c) prompt 控制流 / (d) 录制回放 中的某一种
+14. **定时工作流（§1）** — 依赖 SW 5 min 限制突破 + 任务持久化（Checkpoint & Resume M1/M2/M3 已 ship 但仍未触及 SW lifetime 命题）
+
+### 后续阶段（设计权衡需深入，不适合打磨期速决）
+
+- 元素 index → `{role, name, within}` 三元组（§13 P3 #44-4）— 成本极高（snapshot 协议 + LLM prompt + click/type/select 全部 tool 改），需先 spike 验证 LLM 定位准确率
+- 任务级 / scope 级授权（§13 P3 #44-5 / #45-5）— 越权风险大，需精心设计避免 + 与 R10 first-run-confirm 协作
+- 会话间用户偏好层（§13 P3 #45-11）— scope 含糊，需先 narrow 是 prompt 片段 / 行为习惯 / 站点 context note 哪一种
+- page-match Skill 自动触发（§2）— 需先解决 prompt-injection-by-page 防御
+- 安全规则下沉到工具层（§13 P3 #44-8 / #45-8）— 透明可审 vs 黑盒省 token 的 trade-off
+
+### 已交付路径（按时间序，仅历史 traceability）
+
+- ✅ Checkpoint & Resume M1/M2/M3（§3）— 2026-05-04 (PR #8 / #9 / #10 / #13)
+- ✅ 多轮对话上下文（§6）— 2026-05-04 (PR #15 + #16)
+- ✅ 多模态输入图片（§5 #1）— 2026-05-04 (PR #20)
+- ✅ 行为录制 → Skill seed（§5 #4）— 2026-05-05 (v1)
+- ✅ Chrome narrow / multi-pin / open_url / focus_tab（§5 #3）— 2026-05-05 (PR #21, manifest 0.5.2)
+- ✅ Skill scope 解禁 + 全局 skip-permissions toggle — 2026-05-06 (PR #26)
+- ✅ Provider + Model 能力中心化（§7）+ Gemini provider（§1）+ DeepSeek provider — 2026-05-06 (PR #28)
+- ✅ 自定义 OpenAI-compat Provider（§12）— 2026-05-07
+- ✅ 并发会话支持（§12 #30, P0）— 2026-05-08
+- ✅ §13 P1 quick wins（prompt drift + 软换行）— 2026-05-08 (PR #45)
 
 ---
 
@@ -350,6 +381,6 @@ Checkpoint & Resume 的 M1 已 ship；M2/M3 PR #10 / #13 已 ship。定时工作
 ### 推进策略
 
 - **P1 立即可做**：单 PR 修 prompt drift（45-1）+ 软换行支持（45-10），不进 §5 4-way 主线
-- **P2 走 brainstorm 流程**：4 项各自需 `/ce:brainstorm`，与 §10/§11 已知 backlog 一同排队；优先级在 §12 #34 (P1) 之后
+- **P2 走 brainstorm 流程**：4 项各自需 brainstorm，与 §10/§11 已知 backlog 一同排队；优先级在 §12 #34 (P1) 之后
 - **P3 留给观察期**：先看哪几项的用户报告最多再选着做
 - **P4/P5 + 重复**：close issue 时点明，不入工作排期
