@@ -40,13 +40,29 @@ async function execInTab<T extends unknown[]>(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   func: (...args: T) => ActionResult,
   args: T,
+  frameId?: number,
 ): Promise<ActionResult> {
-  const results = await chrome.scripting.executeScript({
-    target: { tabId },
-    func,
-    args,
-  });
-  return (results[0]?.result as ActionResult) ?? { success: false, error: "Execution failed" };
+  // iframe spec §5: writes target a specific frame via target.frameIds.
+  // Reads (snapshot/extract) go through allFrames in their own callsites,
+  // not through this helper.
+  const target: chrome.scripting.InjectionTarget = frameId !== undefined
+    ? { tabId, frameIds: [frameId] }
+    : { tabId };
+
+  try {
+    const results = await chrome.scripting.executeScript({ target, func, args });
+    return (results[0]?.result as ActionResult) ?? { success: false, error: "Execution failed" };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // iframe spec §5: frame already navigated away or removed.
+    if (frameId !== undefined && /Frame with ID .* not found|No frame with id/i.test(msg)) {
+      return {
+        success: false,
+        error: `Frame ${frameId} unreachable or removed. Re-snapshot.`,
+      };
+    }
+    throw err;
+  }
 }
 
 // ── Built-in tools ────────────────────────────────────────────────────────────
@@ -55,26 +71,26 @@ export const BUILT_IN_TOOLS: Tool[] = [
   {
     name: "click",
     description:
-      "Click an interactive element on the page identified by its element index from the most recent snapshot.",
+      "Click an interactive element on the page identified by its frame id and element index from the most recent snapshot.",
     parameters: {
       type: "object",
       properties: {
+        frameId: {
+          type: "number",
+          description: "Frame ID from the most recent snapshot. Use 0 for the top frame.",
+        },
         elementIndex: {
           type: "number",
-          description: "The index of the element to click (from snapshot).",
+          description: "The index of the element to click (from snapshot, within the specified frame).",
         },
       },
-      required: ["elementIndex"],
+      required: ["frameId", "elementIndex"],
       additionalProperties: false,
     },
-    // Issue #27 — wrap click in `withActionSettle` so any consequence
-    // (cross-doc nav, SPA pushState, async DOM update) settles before
-    // the loop's next-iteration snapshot reads the page. See
-    // `wait-for-settle.ts` for the dual-signal design.
     handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
-      const a = args as { elementIndex: number };
+      const a = args as { frameId: number; elementIndex: number };
       return withActionSettle(ctx.tabId, () =>
-        execInTab(ctx.tabId, clickByIndex, [a.elementIndex]),
+        execInTab(ctx.tabId, clickByIndex, [a.elementIndex], a.frameId),
       );
     },
   },
@@ -82,13 +98,17 @@ export const BUILT_IN_TOOLS: Tool[] = [
   {
     name: "type",
     description:
-      "Type text into an input, textarea, or contenteditable element identified by its element index.",
+      "Type text into an input, textarea, or contenteditable element identified by its frame id and element index.",
     parameters: {
       type: "object",
       properties: {
+        frameId: {
+          type: "number",
+          description: "Frame ID from the most recent snapshot. Use 0 for the top frame.",
+        },
         elementIndex: {
           type: "number",
-          description: "The index of the element to type into (from snapshot).",
+          description: "The index of the element to type into (from snapshot, within the specified frame).",
         },
         text: {
           type: "string",
@@ -99,18 +119,18 @@ export const BUILT_IN_TOOLS: Tool[] = [
           description: "If true, clear existing content before typing. Defaults to false.",
         },
       },
-      required: ["elementIndex", "text"],
+      required: ["frameId", "elementIndex", "text"],
       additionalProperties: false,
     },
     handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
-      const a = args as { elementIndex: number; text: string; clear?: boolean };
-      return execInTab(ctx.tabId, typeByIndex, [a.elementIndex, a.text, a.clear ?? false]);
+      const a = args as { frameId: number; elementIndex: number; text: string; clear?: boolean };
+      return execInTab(ctx.tabId, typeByIndex, [a.elementIndex, a.text, a.clear ?? false], a.frameId);
     },
   },
 
   {
     name: "scroll",
-    description: "Scroll the page up or down.",
+    description: "Scroll the page up or down. Defaults to the top frame if frameId is not specified.",
     parameters: {
       type: "object",
       properties: {
@@ -124,44 +144,48 @@ export const BUILT_IN_TOOLS: Tool[] = [
           description:
             "Pixels to scroll. Defaults to 80% of viewport height if omitted.",
         },
+        frameId: {
+          type: "number",
+          description: "Frame ID to scroll within. Defaults to 0 (top frame).",
+        },
       },
       required: ["direction"],
       additionalProperties: false,
     },
     handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
-      const a = args as { direction: "up" | "down"; amount?: number };
-      // chrome.scripting.executeScript args go through structuredClone, which
-      // rejects `undefined` (unlike JSON which silently drops it). When LLM
-      // omits the optional amount, drop the trailing slot entirely so the
-      // serializer sees [direction] not [direction, undefined].
+      const a = args as { direction: "up" | "down"; amount?: number; frameId?: number };
       const scrollArgs: ["up" | "down"] | ["up" | "down", number] =
         a.amount !== undefined ? [a.direction, a.amount] : [a.direction];
-      return execInTab(ctx.tabId, scroll, scrollArgs);
+      return execInTab(ctx.tabId, scroll, scrollArgs, a.frameId ?? 0);
     },
   },
 
   {
     name: "select",
     description:
-      "Select an option in a <select> element by its value, identified by element index.",
+      "Select an option in a <select> element by its value, identified by frame id and element index.",
     parameters: {
       type: "object",
       properties: {
+        frameId: {
+          type: "number",
+          description: "Frame ID from the most recent snapshot. Use 0 for the top frame.",
+        },
         elementIndex: {
           type: "number",
-          description: "The index of the <select> element (from snapshot).",
+          description: "The index of the <select> element (from snapshot, within the specified frame).",
         },
         value: {
           type: "string",
           description: "The option value to select.",
         },
       },
-      required: ["elementIndex", "value"],
+      required: ["frameId", "elementIndex", "value"],
       additionalProperties: false,
     },
     handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
-      const a = args as { elementIndex: number; value: string };
-      return execInTab(ctx.tabId, selectByIndex, [a.elementIndex, a.value]);
+      const a = args as { frameId: number; elementIndex: number; value: string };
+      return execInTab(ctx.tabId, selectByIndex, [a.elementIndex, a.value], a.frameId);
     },
   },
 
@@ -275,3 +299,22 @@ export const BUILT_IN_TOOLS: Tool[] = [
     },
   },
 ];
+
+// iframe spec R-iframe-1 — build-time assertion: writes target a specific
+// frame via (frameId, elementIndex) tuple. If this fails, a future schema
+// edit accidentally dropped frameId required-ness.
+(function assertWriteToolsRequireFrameId() {
+  const writeTools = ["click", "type", "select"];
+  for (const name of writeTools) {
+    const t = BUILT_IN_TOOLS.find((tool) => tool.name === name);
+    if (!t) {
+      throw new Error(`[R-iframe-1] BUILT_IN_TOOLS missing tool: ${name}`);
+    }
+    const required = (t.parameters as { required?: string[] }).required ?? [];
+    if (!required.includes("frameId")) {
+      throw new Error(
+        `[R-iframe-1] tool "${name}" must require frameId in its JSON schema`,
+      );
+    }
+  }
+})();
