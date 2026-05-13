@@ -4,11 +4,24 @@ import type { CapturedActionPayload, RecordedAction } from "@/lib/recording/type
 
 // --- Page Content ---
 
+export interface ExtractedFrameContent {
+  frameId: number;
+  frameUrl: string;
+  origin: string | null;
+  crossOrigin: boolean;
+  parentFrameId: number | null;
+  content: string;
+  truncated?: true;
+  unreachable?: true;
+  reason?: "sandbox" | "extension-child" | "about-blank" | "frame-error";
+}
+
 export interface PageContent {
   title: string;
   url: string;
   description: string;
   content: string;
+  frames: ExtractedFrameContent[];
 }
 
 // --- Side Panel → Service Worker (via Port) ---

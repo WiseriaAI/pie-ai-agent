@@ -95,3 +95,27 @@ export function escapeUntrustedWrappers(text: string): string {
     return `&lt;${inner}&gt;`;
   });
 }
+
+/**
+ * iframe spec §4 — sanitize attribute values before embedding into wrapper
+ * open tags (e.g. <untrusted_page_content frame_url="${escape(url)}">).
+ *
+ * Replaces the three characters that can break attribute syntax in HTML-like
+ * grammar — `<`, `>`, and `"` — with their HTML entities. Other characters
+ * pass through unchanged so URLs / origins remain human-readable.
+ *
+ * Defends against: a malicious page injecting a URL query string with
+ * `?x="><tag x="...` that would otherwise terminate the attribute and
+ * inject a new tag boundary into the LLM's view.
+ *
+ * NOTE: this is for the OPEN tag's attribute values only. The CLOSE tag and
+ * any wrapper-tag literals appearing inside the wrapper body are handled by
+ * `escapeUntrustedWrappers` above.
+ */
+export function escapeWrapperAttribute(value: string | null | undefined): string {
+  if (!value) return "";
+  return value
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}

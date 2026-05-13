@@ -5,7 +5,13 @@ import { addImage, evictSession } from "../../background/image-cache";
 import { resetTaskBudget, dispatchCaptureVisibleTab, dispatchCaptureFullPageTab, type CdpAcquirer } from "./tools/screenshot";
 import { hydrateAttachments } from "./image-hydration";
 import { snapshotInteractiveElements } from "../dom-actions/snapshot";
-import type { PageSnapshot } from "../dom-actions/types";
+import type {
+  PageSnapshot,
+  FrameInjectionResult,
+  ReachableFrameSnapshot,
+} from "../dom-actions/types";
+import { MAX_TOTAL_ELEMENTS } from "../dom-actions/types";
+import { getAllFramesAndDiff, type FrameInjection } from "./frame-discovery";
 import {
   BUILT_IN_TOOLS,
   getKeyboardTools,
@@ -282,16 +288,19 @@ function toolsToDefinitions(tools: Tool[]): ToolDefinition[] {
 function resolveElement(
   snapshot: PageSnapshot,
   elementIndex: unknown,
+  frameId?: unknown,
 ): ResolvedElement | undefined {
   if (typeof elementIndex !== "number") return undefined;
-  const el = snapshot.elements.find((e) => e.index === elementIndex);
+  const fid = typeof frameId === "number" ? frameId : 0;
+  const frame = snapshot.frames.find((f) => f.frameId === fid);
+  if (!frame || !("elements" in frame)) return undefined;
+  const el = frame.elements.find((e) => e.index === elementIndex);
   if (!el) return undefined;
   return {
     text: el.text,
     ariaLabel: el.ariaLabel,
     tag: el.tag,
     type: el.type,
-    // ElementInfo does not have href; leave undefined
   };
 }
 
@@ -961,15 +970,58 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       let snapshot: PageSnapshot;
       try {
         const results = await chrome.scripting.executeScript({
-          target: { tabId: pinnedTabId },
+          target: { tabId: pinnedTabId, allFrames: true },
           func: snapshotInteractiveElements,
         });
-        snapshot = (results[0]?.result as PageSnapshot) ?? {
-          url: currentUrl,
-          title: "",
-          elements: [],
-          semantic: { headings: [], alerts: [], status: [] },
+
+        const injections: FrameInjection[] = results.map((r) => ({
+          frameId: r.frameId,
+          result: r.result as FrameInjectionResult | undefined,
+        }));
+
+        let frames = await getAllFramesAndDiff(pinnedTabId, injections);
+
+        // Enforce MAX_TOTAL_ELEMENTS budget — top frame is first, never truncated
+        let totalSoFar = 0;
+        frames = frames.map((f) => {
+          if ("unreachable" in f && f.unreachable) return f;
+          const remaining = MAX_TOTAL_ELEMENTS - totalSoFar;
+          if (remaining <= 0) {
+            return { ...f, elements: [], truncated: true } as ReachableFrameSnapshot;
+          }
+          if (f.elements.length > remaining) {
+            return { ...f, elements: f.elements.slice(0, remaining), truncated: true } as ReachableFrameSnapshot;
+          }
+          totalSoFar += f.elements.length;
+          return f;
+        });
+
+        // Top frame is frames[0] — assemble PageSnapshot with top-frame
+        // semantic + title + url. snapshot.ts injection already filled semantic
+        // per frame; we use the top frame's only (plan §2 decision).
+        const topResult = injections.find((i) => i.frameId === 0)?.result;
+        snapshot = {
+          url: topResult?.url ?? currentUrl,
+          title: topResult?.title ?? "",
+          frames,
+          semantic: topResult?.semantic ?? { headings: [], alerts: [], status: [] },
         };
+
+        const reachable = frames.filter((f) => !("unreachable" in f && f.unreachable));
+        const unreachable = frames.filter((f) => "unreachable" in f && f.unreachable);
+        const crossOrigin = reachable.filter((f) => f.crossOrigin);
+        console.log(
+          `[snapshot] step=${stepIndex} frames=${frames.length} (reachable=${reachable.length}` +
+            (crossOrigin.length ? ` cross_origin=${crossOrigin.length}` : "") +
+            (unreachable.length ? ` unreachable=${unreachable.length}` : "") +
+            ")",
+        );
+        for (const f of frames) {
+          const kind = "unreachable" in f && f.unreachable
+            ? `unreachable reason=${f.reason}`
+            : `${f.elements.length} elements` + (f.crossOrigin ? " cross_origin" : "");
+          console.log(`  frame_id=${f.frameId} ${f.frameUrl} — ${kind}`);
+        }
       } catch {
         await emitDone({
           type: "agent-done-task",
@@ -1324,7 +1376,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         }
 
         // Resolve element for confirmation / display
-        const resolvedElement = resolveElement(snapshot, args.elementIndex);
+        const resolvedElement = resolveElement(snapshot, args.elementIndex, args.frameId);
 
         // Send pending step
         emitStep({

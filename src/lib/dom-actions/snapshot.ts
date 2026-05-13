@@ -1,11 +1,11 @@
-import type { PageSnapshot } from "./types";
+import type { FrameInjectionResult } from "./types";
 
 /**
  * Self-contained function injected via chrome.scripting.executeScript.
  * NO imports, NO closures, NO outer-scope references at runtime.
  * All helpers are nested inside this function.
  */
-export function snapshotInteractiveElements(): PageSnapshot {
+export function snapshotInteractiveElements(): FrameInjectionResult {
   // ── Helpers (all nested; captured when Chrome serializes this function) ──
 
   function sanitizeText(str: string, maxLen: number): string {
@@ -111,6 +111,9 @@ export function snapshotInteractiveElements(): PageSnapshot {
     "[tabindex]:not([tabindex='-1'])",
   ].join(", ");
 
+  // MUST stay in sync with MAX_ELEMENTS_PER_FRAME in ./types.ts. This injected
+  // function is serialized via chrome.scripting.executeScript and cannot import
+  // external constants — duplication is intentional, not a smell.
   const MAX_ELEMENTS = 200;
 
   // Clean up any previously stamped attributes first

@@ -325,13 +325,99 @@ async function handleExtractPage(): Promise<ExtractPageResponse> {
       };
     }
 
+    // iframe spec §6: allFrames fan-out + merge.
     const results = await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
+      target: { tabId: tab.id, allFrames: true },
       func: extractPageContent,
     });
 
-    const data = results[0]?.result as PageContent | undefined;
-    return { type: "page-content", data: data ?? null };
+    type RawContent = { title: string; url: string; description: string; content: string };
+    const injections = results.map((r) => ({
+      frameId: r.frameId,
+      result: r.result as RawContent | undefined,
+    }));
+
+    const tree = await chrome.webNavigation.getAllFrames({ tabId: tab.id });
+    if (!tree) {
+      return {
+        type: "page-content",
+        data: { title: "", url, description: "", content: "", frames: [] },
+      };
+    }
+
+    const top = tree.find((f) => f.frameId === 0);
+    const topUrl = top?.url ?? url;
+    let topOrigin: string | null = null;
+    try { topOrigin = new URL(topUrl).origin; } catch { topOrigin = null; }
+
+    const injectionMap = new Map<number, RawContent | undefined>();
+    for (const inj of injections) injectionMap.set(inj.frameId, inj.result);
+
+    const TOTAL_BUDGET = 50_000;
+    let usedBudget = 0;
+
+    const frames: ExtractedFrameContent[] = [];
+    for (const entry of tree) {
+      let origin: string | null = null;
+      try { origin = new URL(entry.url).origin; if (origin === "null") origin = null; } catch { origin = null; }
+      const crossOrigin = topOrigin !== null && origin !== null && origin !== topOrigin;
+      const parentFrameId = entry.frameId === 0 ? null : entry.parentFrameId;
+
+      const raw = injectionMap.get(entry.frameId);
+      if (!raw) {
+        const reason = entry.url.startsWith("chrome-extension://") ? "extension-child"
+          : entry.url === "about:blank" && !entry.errorOccurred ? "about-blank"
+          : entry.errorOccurred ? "frame-error"
+          : "sandbox";
+        frames.push({
+          frameId: entry.frameId,
+          frameUrl: entry.url,
+          origin,
+          crossOrigin,
+          parentFrameId,
+          content: "",
+          unreachable: true,
+          reason,
+        });
+        continue;
+      }
+
+      const remaining = TOTAL_BUDGET - usedBudget;
+      let content = raw.content;
+      let truncated: true | undefined;
+      if (content.length > remaining) {
+        if (remaining > 0) {
+          content = content.slice(0, remaining);
+          truncated = true;
+        } else {
+          content = "";
+          truncated = true;
+        }
+      }
+      usedBudget += content.length;
+
+      frames.push({
+        frameId: entry.frameId,
+        frameUrl: entry.url,
+        origin: origin ?? "",
+        crossOrigin,
+        parentFrameId,
+        content,
+        ...(truncated ? { truncated: true as const } : {}),
+      });
+    }
+
+    const topResult = injectionMap.get(0);
+
+    const data: PageContent = {
+      title: topResult?.title ?? "",
+      url: topResult?.url ?? url,
+      description: topResult?.description ?? "",
+      content: topResult?.content ?? "",
+      frames,
+    };
+
+    return { type: "page-content", data };
   } catch (e) {
     return {
       type: "page-content",

@@ -1,6 +1,6 @@
 import type { ActionResult } from "../../dom-actions/types";
 import type { ConfirmedTabTarget, Tool, ToolHandlerContext } from "../types";
-import { escapeUntrustedWrappers } from "../untrusted-wrappers";
+import { escapeUntrustedWrappers, escapeWrapperAttribute } from "../untrusted-wrappers";
 
 /**
  * Phase 3 — parse a chrome.tabs.Tab.url into an origin string. Returns ""
@@ -951,10 +951,11 @@ const getTabContentTool: Tool = {
     } else {
       // Fallback: fetch now with timeout-guard (W3C #527 frozen-tab issue —
       // executeScript can hang indefinitely on a frozen tab).
+      // iframe spec §6: allFrames fan-out + per-frame wrapper concat.
       const FROZEN_TIMEOUT_MS = 5000;
       try {
         const fetchPromise = chrome.scripting.executeScript({
-          target: { tabId: a.tabId },
+          target: { tabId: a.tabId, allFrames: true },
           func: extractPageContentHardened,
         });
         const timeoutPromise = new Promise<never>((_, reject) =>
@@ -970,12 +971,70 @@ const getTabContentTool: Tool = {
           text: string;
           totalBytes: number;
         }>[];
-        const r = results[0]?.result;
-        if (!r) {
-          return { success: false, error: "extract failed" };
+
+        type Raw = { text: string; totalBytes: number };
+        const injections = results.map((r) => ({
+          frameId: r.frameId,
+          raw: r.result as Raw | undefined,
+        }));
+
+        const tree = await chrome.webNavigation.getAllFrames({ tabId: a.tabId });
+        if (!tree) {
+          return { success: false, error: "Tab unavailable" };
         }
-        text = r.text;
-        totalBytes = r.totalBytes;
+
+        const top = tree.find((f) => f.frameId === 0);
+        const topUrl = top?.url ?? "";
+        let topOrigin: string | null = null;
+        try { topOrigin = new URL(topUrl).origin; } catch { topOrigin = null; }
+
+        const TOTAL_BUDGET = 50_000;
+        let used = 0;
+
+        const blocks: string[] = [];
+        for (const entry of tree) {
+          let origin: string | null = null;
+          try { origin = new URL(entry.url).origin; if (origin === "null") origin = null; } catch { origin = null; }
+          const crossOrigin = topOrigin !== null && origin !== null && origin !== topOrigin;
+
+          const inj = injections.find((i) => i.frameId === entry.frameId);
+
+          const attrs = [
+            `frame_id="${escapeWrapperAttribute(String(entry.frameId))}"`,
+            `frame_url="${escapeWrapperAttribute(entry.url)}"`,
+          ];
+          if (origin) attrs.push(`frame_origin="${escapeWrapperAttribute(origin)}"`);
+          if (crossOrigin) attrs.push(`cross_origin="true"`);
+
+          if (!inj || !inj.raw) {
+            const reason = entry.url.startsWith("chrome-extension://") ? "extension-child"
+              : entry.url === "about:blank" && !entry.errorOccurred ? "about-blank"
+              : entry.errorOccurred ? "frame-error"
+              : "sandbox";
+            attrs.push(`unreachable="true"`);
+            attrs.push(`reason="${escapeWrapperAttribute(reason)}"`);
+            blocks.push(`<untrusted_page_content ${attrs.join(" ")}></untrusted_page_content>`);
+            continue;
+          }
+
+          let content = inj.raw.text;
+          const remaining = TOTAL_BUDGET - used;
+          let truncated = false;
+          if (content.length > remaining) {
+            content = remaining > 0 ? content.slice(0, remaining) : "";
+            truncated = true;
+          }
+          used += content.length;
+
+          const safeBody = escapeUntrustedWrappers(content);
+
+          if (truncated) attrs.push(`truncated="true"`);
+
+          blocks.push(`<untrusted_page_content ${attrs.join(" ")}>\n${safeBody}\n</untrusted_page_content>`);
+        }
+
+        text = blocks.join("\n");
+        totalBytes = text.length;
       } catch (e) {
         return {
           success: false,
@@ -996,12 +1055,16 @@ const getTabContentTool: Tool = {
         ? `\n[truncated: ${totalBytes - GET_TAB_CONTENT_MAX_BYTES} bytes omitted]`
         : "";
 
-    const escaped = escapeUntrustedWrappers(capped);
-    const wrapped = `<untrusted_page_content origin="${verify.origin}">\n${escaped}${trailer}\n</untrusted_page_content>`;
+    // iframe spec §6 — text already contains per-frame <untrusted_page_content> blocks.
+    // Cached path still has the old single-frame format; wrap it in a single block
+    // with frame_origin attribute for backward compatibility.
+    const observation = cached
+      ? `<untrusted_page_content frame_id="0" frame_origin="${escapeWrapperAttribute(verify.origin)}">\n${escapeUntrustedWrappers(capped)}${trailer}\n</untrusted_page_content>`
+      : `${capped}${trailer}`;
 
     return {
       success: true,
-      observation: wrapped,
+      observation,
     };
   },
 };

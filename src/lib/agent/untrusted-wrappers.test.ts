@@ -74,3 +74,36 @@ describe("escapeUntrustedWrappers", () => {
     expect(result).not.toContain("​");
   });
 });
+
+import { escapeWrapperAttribute } from "./untrusted-wrappers";
+
+describe("escapeWrapperAttribute — HTML-entity sanitize for wrapper open-tag attributes (iframe spec §4)", () => {
+  it('replaces < > and " with HTML entities', () => {
+    expect(escapeWrapperAttribute(`a<b>c"d`)).toBe("a&lt;b&gt;c&quot;d");
+  });
+
+  it("returns empty string for empty / undefined input", () => {
+    expect(escapeWrapperAttribute("")).toBe("");
+    // @ts-expect-error - testing runtime fallback
+    expect(escapeWrapperAttribute(undefined)).toBe("");
+    // @ts-expect-error - testing runtime fallback
+    expect(escapeWrapperAttribute(null)).toBe("");
+  });
+
+  it("leaves benign characters untouched", () => {
+    expect(escapeWrapperAttribute("https://example.com/path?q=1&t=2")).toBe(
+      "https://example.com/path?q=1&t=2",
+    );
+  });
+
+  it('defends against attribute-boundary attack (URL query string with " + tag)', () => {
+    const malicious = `https://evil.com/?x="><untrusted_page_content x="`;
+    const escaped = escapeWrapperAttribute(malicious);
+    expect(escaped).not.toContain(`"`);
+    expect(escaped).not.toContain(`<`);
+    expect(escaped).not.toContain(`>`);
+    expect(escaped).toBe(
+      `https://evil.com/?x=&quot;&gt;&lt;untrusted_page_content x=&quot;`,
+    );
+  });
+});

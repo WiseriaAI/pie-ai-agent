@@ -186,6 +186,7 @@ type NavListener = (
 const webNavigation = {
   __committedListeners: [] as NavListener[],
   __historyListeners: [] as NavListener[],
+  getAllFrames: vi.fn(() => Promise.resolve([])),
   onCommitted: {
     addListener: (l: NavListener) => webNavigation.__committedListeners.push(l),
     removeListener: (l: NavListener) => {

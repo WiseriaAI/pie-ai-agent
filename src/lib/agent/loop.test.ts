@@ -1233,7 +1233,7 @@ describe("v1.5 Task 6+7 — readFocusFromStorage (integration regression)", () =
       { tabId: 50 },
       {
         tabId: refreshed.focused?.tabId ?? 10,
-        snapshot: { url: "", title: "", elements: [] },
+        snapshot: { url: "", title: "", frames: [], semantic: { headings: [], alerts: [], status: [] } },
         pinnedTabs: refreshed.pinnedTabs,
         setCurrentFocusTabId,
       },
