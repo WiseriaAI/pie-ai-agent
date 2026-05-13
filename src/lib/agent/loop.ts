@@ -48,6 +48,7 @@ import {
 } from "../sessions/storage";
 import { addPinToMeta } from "../sessions/pin-state";
 import { synthesizeAgentTurnText, type TerminationReason } from "./synthesize-agent-turn";
+import { waitForUrlSettle, type UrlSettleResult } from "./wait-for-url-settle";
 // setLastTaskSynth removed from emitDone — lastTaskSynth is now folded into
 // the tombstone write by buildSessionAgentTombstone(synth) to prevent the
 // two-write race on the agent key (AD1 fix). No import needed.
@@ -351,6 +352,110 @@ export function safeParseOrigin(url: string): string | null {
   } catch {
     return null;
   }
+}
+
+export type InterpretPinnedTabUrlResult =
+  | { kind: "ok"; url: string }
+  | { kind: "stop"; summary: string };
+
+export interface InterpretPinnedTabUrlArgs {
+  tab: chrome.tabs.Tab;
+  pinnedOrigin: string;
+  awaitSettle: (
+    tabId: number,
+    expectedOrigin: string,
+    timeoutMs: number,
+    signal?: AbortSignal,
+  ) => Promise<UrlSettleResult>;
+  signal?: AbortSignal;
+  timeoutMs?: number;
+}
+
+/**
+ * Issue #50 — per-iteration pinned-tab origin gate, with transient
+ * tolerance for navigations that have not yet committed.
+ *
+ * Three branches:
+ *   1. tab.url is a non-transient http(s) URL → run the classic
+ *      isRestrictedUrl + safeParseOrigin + origin === pinnedOrigin check
+ *      (same code path as the pre-#50 loop).
+ *   2. tab.url is transient ("" / undefined / "about:blank") AND
+ *      tab.pendingUrl reveals an origin that doesn't match pinnedOrigin
+ *      → fast-fail STOP with "origin changed" — avoids a wasted 5s wait
+ *      when we already know the navigation is going elsewhere.
+ *   3. tab.url is transient → await awaitSettle and translate the
+ *      UrlSettleResult into ok / stop. Timeout reuses the existing
+ *      "restricted URL" summary so the panel renders the same chip as
+ *      a real chrome:// hit (Decision 4 in the spec).
+ */
+export async function interpretPinnedTabUrl(
+  args: InterpretPinnedTabUrlArgs,
+): Promise<InterpretPinnedTabUrlResult> {
+  const { tab, pinnedOrigin, awaitSettle, signal, timeoutMs = 5000 } = args;
+  const url = tab.url ?? "";
+  const isTransient = url === "" || url === "about:blank";
+
+  if (!isTransient) {
+    if (isRestrictedUrl(url)) {
+      return {
+        kind: "stop",
+        summary: "Page navigated to a restricted URL, agent stopped",
+      };
+    }
+    const origin = safeParseOrigin(url);
+    if (!origin) {
+      return {
+        kind: "stop",
+        summary: "Page origin changed, agent stopped for safety",
+      };
+    }
+    if (origin !== pinnedOrigin) {
+      return {
+        kind: "stop",
+        summary: `Page origin changed from ${pinnedOrigin} to ${origin}, agent stopped`,
+      };
+    }
+    return { kind: "ok", url };
+  }
+
+  // Transient branch — pendingUrl fast-fail before paying the wait.
+  const pendingUrl = tab.pendingUrl ?? "";
+  if (pendingUrl) {
+    const pendingOrigin = safeParseOrigin(pendingUrl);
+    if (pendingOrigin && pendingOrigin !== pinnedOrigin) {
+      return {
+        kind: "stop",
+        summary: `Page origin changed from ${pinnedOrigin} to ${pendingOrigin}, agent stopped`,
+      };
+    }
+  }
+
+  if (typeof tab.id !== "number" || tab.id < 0) {
+    return { kind: "stop", summary: "Tab was closed, agent stopped" };
+  }
+
+  const r = await awaitSettle(tab.id, pinnedOrigin, timeoutMs, signal);
+  if (r.committed) {
+    return { kind: "ok", url: r.url };
+  }
+  if (r.reason === "origin-mismatch") {
+    const observed = r.observedUrl
+      ? safeParseOrigin(r.observedUrl) ?? "unknown"
+      : "unknown";
+    return {
+      kind: "stop",
+      summary: `Page origin changed from ${pinnedOrigin} to ${observed}, agent stopped`,
+    };
+  }
+  if (r.reason === "tab-gone") {
+    return { kind: "stop", summary: "Tab was closed, agent stopped" };
+  }
+  // reason === "timeout" — reuse existing copy so panel UI is identical
+  // to a real restricted-URL hit (Decision 4).
+  return {
+    kind: "stop",
+    summary: "Page navigated to a restricted URL, agent stopped",
+  };
 }
 
 // ── Phase 2.5 helpers ────────────────────────────────────────────────────────
@@ -918,45 +1023,28 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         pinnedOrigin = refreshed.focused.origin;
       }
 
-      // Origin check
+      // Origin check (Issue #50: transient-tolerant)
       let currentUrl: string;
       try {
         const currentTab = await chrome.tabs.get(pinnedTabId);
-        if (!currentTab.url || isRestrictedUrl(currentTab.url)) {
-          // Restricted URLs (chrome://, chrome-extension://, file:// etc.)
-          // are an absolute hard stop — no confirm path, the agent simply
-          // can't run there.
+        const decision = await interpretPinnedTabUrl({
+          tab: currentTab,
+          pinnedOrigin,
+          awaitSettle: waitForUrlSettle,
+          signal,
+        });
+        if (decision.kind === "stop") {
           await emitDone({
             type: "agent-done-task",
             success: false,
-            summary: "Page navigated to a restricted URL, agent stopped",
+            summary: decision.summary,
             stepCount: stepIndex - 1,
           }, "abort");
           return;
         }
-        const currentOrigin = safeParseOrigin(currentTab.url);
-        if (!currentOrigin) {
-          // Unparseable URL on a non-restricted scheme — treat as a hard
-          // stop (we have nothing meaningful to show in a confirm card).
-          await emitDone({
-            type: "agent-done-task",
-            success: false,
-            summary: "Page origin changed, agent stopped for safety",
-            stepCount: stepIndex - 1,
-          }, "abort");
-          return;
-        }
-        if (currentOrigin !== pinnedOrigin) {
-          await emitDone({
-            type: "agent-done-task",
-            success: false,
-            summary: `Page origin changed from ${pinnedOrigin} to ${currentOrigin}, agent stopped`,
-            stepCount: stepIndex - 1,
-          }, "abort");
-          return;
-        }
-        currentUrl = currentTab.url;
+        currentUrl = decision.url;
       } catch {
+        if (signal.aborted) return;
         await emitDone({
           type: "agent-done-task",
           success: false,

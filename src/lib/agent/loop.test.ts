@@ -20,6 +20,11 @@ import {
   setSessionAgent,
   setSessionMeta,
 } from "@/lib/sessions/storage";
+import {
+  interpretPinnedTabUrl,
+  type InterpretPinnedTabUrlResult,
+} from "./loop";
+import type { UrlSettleResult } from "./wait-for-url-settle";
 
 const focusTabTool = TAB_TOOLS.find((t) => t.name === "focus_tab")!;
 
@@ -1241,6 +1246,194 @@ describe("v1.5 Task 6+7 — readFocusFromStorage (integration regression)", () =
     expect(result.success).toBe(true);
     expect(setCurrentFocusTabId).toHaveBeenCalledWith(50);
     expect(result.observation).toContain("focus changed to tab 50");
+  });
+});
+
+describe("interpretPinnedTabUrl (Issue #50 — navigation transient tolerance)", () => {
+  const HTTPS_A = "https://a.example.com";
+  const HTTPS_B = "https://b.example.com";
+
+  function makeAwaitSettle(
+    impl: (
+      tabId: number,
+      expectedOrigin: string,
+      timeoutMs: number,
+    ) => Promise<UrlSettleResult>,
+  ) {
+    return vi.fn(impl);
+  }
+
+  it("returns ok for a normal http(s) url that matches pinnedOrigin (no settle call)", async () => {
+    const settle = makeAwaitSettle(async () => {
+      throw new Error("must not be called for non-transient url");
+    });
+    const r: InterpretPinnedTabUrlResult = await interpretPinnedTabUrl({
+      tab: { id: 1, url: `${HTTPS_A}/page` } as chrome.tabs.Tab,
+      pinnedOrigin: HTTPS_A,
+      awaitSettle: settle,
+    });
+    expect(r).toEqual({ kind: "ok", url: `${HTTPS_A}/page` });
+    expect(settle).not.toHaveBeenCalled();
+  });
+
+  it("returns stop with restricted summary for chrome:// URL (no settle call)", async () => {
+    const settle = makeAwaitSettle(async () => {
+      throw new Error("must not be called");
+    });
+    const r = await interpretPinnedTabUrl({
+      tab: { id: 1, url: "chrome://settings" } as chrome.tabs.Tab,
+      pinnedOrigin: HTTPS_A,
+      awaitSettle: settle,
+    });
+    expect(r).toEqual({
+      kind: "stop",
+      summary: "Page navigated to a restricted URL, agent stopped",
+    });
+    expect(settle).not.toHaveBeenCalled();
+  });
+
+  it("returns stop with origin-changed summary when origin diverges from pinnedOrigin", async () => {
+    const settle = makeAwaitSettle(async () => {
+      throw new Error("must not be called for non-transient url");
+    });
+    const r = await interpretPinnedTabUrl({
+      tab: { id: 1, url: `${HTTPS_B}/landing` } as chrome.tabs.Tab,
+      pinnedOrigin: HTTPS_A,
+      awaitSettle: settle,
+    });
+    expect(r).toEqual({
+      kind: "stop",
+      summary: `Page origin changed from ${HTTPS_A} to ${HTTPS_B}, agent stopped`,
+    });
+    expect(settle).not.toHaveBeenCalled();
+  });
+
+  it("returns stop for unparseable / opaque-origin url (existing safety behavior)", async () => {
+    const settle = makeAwaitSettle(async () => {
+      throw new Error("must not be called");
+    });
+    const r = await interpretPinnedTabUrl({
+      tab: { id: 1, url: "not a url" } as chrome.tabs.Tab,
+      pinnedOrigin: HTTPS_A,
+      awaitSettle: settle,
+    });
+    expect(r).toEqual({
+      kind: "stop",
+      summary: "Page origin changed, agent stopped for safety",
+    });
+  });
+
+  it("fast-fails on pendingUrl whose origin does not match pinnedOrigin (no settle call)", async () => {
+    const settle = makeAwaitSettle(async () => {
+      throw new Error("must not be called when pendingUrl pre-empts");
+    });
+    const r = await interpretPinnedTabUrl({
+      tab: {
+        id: 1,
+        url: "about:blank",
+        pendingUrl: `${HTTPS_B}/incoming`,
+      } as chrome.tabs.Tab,
+      pinnedOrigin: HTTPS_A,
+      awaitSettle: settle,
+    });
+    expect(r).toEqual({
+      kind: "stop",
+      summary: `Page origin changed from ${HTTPS_A} to ${HTTPS_B}, agent stopped`,
+    });
+    expect(settle).not.toHaveBeenCalled();
+  });
+
+  it("on about:blank with no pendingUrl: awaits settle and returns ok on commit", async () => {
+    const settle = makeAwaitSettle(async (_tabId, expectedOrigin) => {
+      expect(expectedOrigin).toBe(HTTPS_A);
+      return { committed: true, url: `${HTTPS_A}/landing` };
+    });
+    const r = await interpretPinnedTabUrl({
+      tab: { id: 1, url: "about:blank" } as chrome.tabs.Tab,
+      pinnedOrigin: HTTPS_A,
+      awaitSettle: settle,
+    });
+    expect(r).toEqual({ kind: "ok", url: `${HTTPS_A}/landing` });
+    expect(settle).toHaveBeenCalledTimes(1);
+    expect(settle).toHaveBeenCalledWith(1, HTTPS_A, 5000, undefined);
+  });
+
+  it("on about:blank: settle origin-mismatch returns stop with observed origin in summary", async () => {
+    const settle = makeAwaitSettle(async () => ({
+      committed: false,
+      reason: "origin-mismatch",
+      observedUrl: `${HTTPS_B}/post-commit`,
+    }));
+    const r = await interpretPinnedTabUrl({
+      tab: { id: 1, url: "about:blank" } as chrome.tabs.Tab,
+      pinnedOrigin: HTTPS_A,
+      awaitSettle: settle,
+    });
+    expect(r).toEqual({
+      kind: "stop",
+      summary: `Page origin changed from ${HTTPS_A} to ${HTTPS_B}, agent stopped`,
+    });
+  });
+
+  it("on about:blank: settle timeout returns stop with restricted-URL summary (reuses existing copy)", async () => {
+    const settle = makeAwaitSettle(async () => ({
+      committed: false,
+      reason: "timeout",
+    }));
+    const r = await interpretPinnedTabUrl({
+      tab: { id: 1, url: "about:blank" } as chrome.tabs.Tab,
+      pinnedOrigin: HTTPS_A,
+      awaitSettle: settle,
+    });
+    expect(r).toEqual({
+      kind: "stop",
+      summary: "Page navigated to a restricted URL, agent stopped",
+    });
+  });
+
+  it("on about:blank: settle tab-gone returns stop with tab-closed summary", async () => {
+    const settle = makeAwaitSettle(async () => ({
+      committed: false,
+      reason: "tab-gone",
+    }));
+    const r = await interpretPinnedTabUrl({
+      tab: { id: 1, url: "about:blank" } as chrome.tabs.Tab,
+      pinnedOrigin: HTTPS_A,
+      awaitSettle: settle,
+    });
+    expect(r).toEqual({
+      kind: "stop",
+      summary: "Tab was closed, agent stopped",
+    });
+  });
+
+  it("on empty / undefined url: behaves the same as about:blank (awaits settle)", async () => {
+    const settle = makeAwaitSettle(async () => ({
+      committed: true,
+      url: `${HTTPS_A}/x`,
+    }));
+    const r = await interpretPinnedTabUrl({
+      tab: { id: 1, url: "" } as chrome.tabs.Tab,
+      pinnedOrigin: HTTPS_A,
+      awaitSettle: settle,
+    });
+    expect(r).toEqual({ kind: "ok", url: `${HTTPS_A}/x` });
+    expect(settle).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes signal through to awaitSettle", async () => {
+    const ac = new AbortController();
+    const settle = makeAwaitSettle(async (_id, _origin, _timeout, sig) => {
+      expect(sig).toBe(ac.signal);
+      return { committed: true, url: `${HTTPS_A}/x` };
+    });
+    await interpretPinnedTabUrl({
+      tab: { id: 1, url: "about:blank" } as chrome.tabs.Tab,
+      pinnedOrigin: HTTPS_A,
+      awaitSettle: settle,
+      signal: ac.signal,
+    });
+    expect(settle).toHaveBeenCalledTimes(1);
   });
 });
 
