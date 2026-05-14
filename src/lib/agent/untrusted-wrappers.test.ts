@@ -107,3 +107,24 @@ describe("escapeWrapperAttribute — HTML-entity sanitize for wrapper open-tag a
     );
   });
 });
+
+describe("untrusted_page_quote / untrusted_page_element sanitize", () => {
+  it("escapes plain closing tag", () => {
+    expect(escapeUntrustedWrappers("</untrusted_page_quote>")).toContain("&lt;/untrusted_page_quote&gt;");
+    expect(escapeUntrustedWrappers("</untrusted_page_element>")).toContain("&lt;/untrusted_page_element&gt;");
+  });
+
+  it("escapes fullwidth bracket variant", () => {
+    expect(escapeUntrustedWrappers("＜/untrusted_page_quote＞")).toContain("&lt;/untrusted_page_quote&gt;");
+  });
+
+  it("escapes zero-width injection", () => {
+    const attack = "<​/untrusted_page_element>";
+    expect(escapeUntrustedWrappers(attack)).toContain("&lt;/untrusted_page_element&gt;");
+  });
+
+  it("escapeWrapperAttribute handles quote / lt / gt in source_url", () => {
+    const v = `https://x.test/?q="><tag`;
+    expect(escapeWrapperAttribute(v)).toBe(`https://x.test/?q=&quot;&gt;&lt;tag`);
+  });
+});

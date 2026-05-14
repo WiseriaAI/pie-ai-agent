@@ -31,7 +31,9 @@ export function snapshotInteractiveElements(): FrameInjectionResult {
       .replace(/<\/?untrusted_tab_metadata>/gi, "[filtered]")
       .replace(/<\/?untrusted_user_message>/gi, "[filtered]")
       .replace(/<\/?untrusted_prior_task_summary>/gi, "[filtered]")
-      .replace(/<\/?untrusted_continuity_marker>/gi, "[filtered]");
+      .replace(/<\/?untrusted_continuity_marker>/gi, "[filtered]")
+      .replace(/<\/?untrusted_page_quote>/gi, "[filtered]")
+      .replace(/<\/?untrusted_page_element>/gi, "[filtered]");
     if (cleaned.length > maxLen) {
       cleaned = cleaned.slice(0, maxLen) + "...";
     }
