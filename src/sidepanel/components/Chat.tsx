@@ -15,6 +15,9 @@ import type { UseSession } from "@/sidepanel/hooks/useSession";
 import AgentStepGroup, { type AgentStepData } from "./AgentStepGroup";
 import PinnedTabDropdown from "./PinnedTabDropdown";
 import type { DisplayMessage } from "@/types";
+import { QuoteChip } from "./QuoteChip";
+import { escapeWrapperAttribute } from "@/lib/agent/untrusted-wrappers";
+import type { Quote, TextQuote, ElementQuote } from "@/types";
 import InstanceSelector from "./InstanceSelector";
 import {
   getSessionMeta,
@@ -150,6 +153,11 @@ export default function Chat({
     clearMessages,
     clearError,
     clearToast,
+    quotes,
+    addQuote,
+    removeQuote,
+    clearQuotes,
+    port,
   } = session;
   // Derive convenience aliases from pinnedTabs[] for the locked-pin display.
   // Primary pin is the first entry (oldest / chat-start anchor).
@@ -161,6 +169,7 @@ export default function Chat({
   // M5 — PinnedTabDropdown open state. Lives in Chat (not the dropdown
   // itself) because the dropdown's anchor is the PINNED row in the info bar.
   const [pinDropdownOpen, setPinDropdownOpen] = useState(false);
+  const [pickerActive, setPickerActive] = useState(false);
   const [enabledSkills, setEnabledSkills] = useState<SkillDefinition[]>([]);
   const [popoverSelected, setPopoverSelected] = useState(0);
   const [dismissedInput, setDismissedInput] = useState<string | null>(null);
@@ -597,6 +606,12 @@ export default function Chat({
     setPopoverSelected(0);
   }, [slashState?.query]);
 
+  useEffect(() => {
+    if (pickerActive && quotes && quotes.some((q) => q.kind === "element")) {
+      setPickerActive(false);
+    }
+  }, [quotes, pickerActive]);
+
   function pickSlashSkill(skill: SkillDefinition) {
     const slug = normalizeSkillSlashKey(skill.name) || skill.id;
     setInput(`/${slug} `);
@@ -655,7 +670,53 @@ After the skill completes, briefly summarize what was created (the user will see
     const pendingAttachments = attachments.length > 0 ? [...attachments] : undefined;
     setAttachments([]);
 
-    sessionSendMessage({ content, expandedForLLM, attachments: pendingAttachments });
+    // Issue #38 v1 — serialize quotes into content + attachments
+    const quoteImages: ImageAttachment[] = [];
+    const quoteParts: string[] = [];
+    if (quotes) {
+      for (const q of quotes) {
+        if (q.kind === "text") {
+          quoteParts.push(
+            `<untrusted_page_quote source_url="${escapeWrapperAttribute(q.sourceUrl)}">\n${q.text}\n</untrusted_page_quote>`,
+          );
+        } else {
+          quoteParts.push(
+            `<untrusted_page_element source_url="${escapeWrapperAttribute(q.sourceUrl)}" role="${escapeWrapperAttribute(q.role)}" name="${escapeWrapperAttribute(q.accessibleName)}">\ntext_content: ${JSON.stringify(q.textContent)}\nouter_html: ${JSON.stringify(q.outerHTMLTruncated)}\n</untrusted_page_element>`,
+          );
+          if (q.imageDataUrl) {
+            const [meta, b64] = q.imageDataUrl.split(",");
+            const mediaType = (meta.match(/data:([^;]+)/)?.[1] ?? "image/jpeg") as "image/jpeg" | "image/png";
+            quoteImages.push({ id: `quote-${q.id}`, data: b64, mediaType });
+          }
+        }
+      }
+    }
+    const allAttachments = [...(pendingAttachments ?? []), ...quoteImages];
+
+    if (quoteParts.length > 0) {
+      const quoteText = quoteParts.join("\n\n");
+      content = content ? `${quoteText}\n\n${content}` : quoteText;
+    }
+
+    sessionSendMessage({ content, expandedForLLM, attachments: allAttachments.length > 0 ? allAttachments : undefined });
+
+    // Clear quotes after send
+    if (quotes && quotes.length > 0 && sessionId) {
+      clearQuotes(sessionId);
+    }
+  }
+
+  async function onPickElement() {
+    const tab = await chrome.tabs.query({ active: true, currentWindow: true });
+    const tabId = tab[0]?.id;
+    if (typeof tabId !== "number" || !port) return;
+    if (!pickerActive) {
+      port.postMessage({ type: "picker:start", tabId });
+      setPickerActive(true);
+    } else {
+      port.postMessage({ type: "picker:stop", tabId });
+      setPickerActive(false);
+    }
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -975,6 +1036,19 @@ After the skill completes, briefly summarize what was created (the user will see
         </div>
       )}
 
+      {/* Issue #38 v1 — quote chips row */}
+      {quotes && quotes.length > 0 && (
+        <div aria-label="page content references" className="flex gap-2 px-4 pb-2 flex-wrap">
+          {quotes.map((q) => (
+            <QuoteChip
+              key={q.id}
+              quote={q}
+              onRemove={(id) => sessionId && removeQuote(sessionId, id)}
+            />
+          ))}
+        </div>
+      )}
+
       {/* Phase 5 — thumbnail row: pending spinners + ready thumbnails */}
       {(attachments.length > 0 || resizing.size > 0) && (
         <div
@@ -1113,6 +1187,8 @@ After the skill completes, briefly summarize what was created (the user will see
         onSend={() => sendMessage()}
         onStop={handleStop}
         onAttachClick={() => fileInputRef.current?.click()}
+        onPickElement={onPickElement}
+        pickerActive={pickerActive}
         onPasteFiles={(files) => void addFiles(files)}
         onDropFiles={(files) => void addFiles(files)}
         onStartRecording={onStartRecording}
@@ -1285,6 +1361,8 @@ function Composer({
   onDropFiles,
   onStartRecording,
   recordingDisabled,
+  pickerActive,
+  onPickElement,
   instances,
   currentInstanceId,
   onInstanceChange,
@@ -1313,6 +1391,9 @@ function Composer({
   /** Disabled while a pendingRecording chip is sitting in the input
    *  (you'd send the existing chip first) or when no active session. */
   recordingDisabled?: boolean;
+  /** Issue #38 v1 — toggle element picker mode on the page. */
+  pickerActive?: boolean;
+  onPickElement?: () => void;
   instances: DecryptedInstance[];
   currentInstanceId: string | null;
   onInstanceChange: (id: string) => void;
@@ -1387,6 +1468,18 @@ function Composer({
               onManage={onManageInstances}
             />
             <div className="flex-1" />
+            {/* Issue #38 v1 — pick element button */}
+            {!streaming && onPickElement && (
+              <button
+                type="button"
+                aria-label={pickerActive ? "拾取中" : "拾取元素"}
+                onClick={onPickElement}
+                className="rounded border border-line px-2 py-1 text-[11px] text-fg-2 hover:border-fg-3 hover:text-fg-1 disabled:cursor-not-allowed disabled:opacity-40"
+                title={pickerActive ? "点击页面元素引用（Esc 取消）" : "拾取页面元素"}
+              >
+                {pickerActive ? "拾取中…" : "拾取元素"}
+              </button>
+            )}
             {/* Phase 5 — paperclip attach button (SVG, not emoji) */}
             {!streaming && (
               <button
