@@ -1,5 +1,5 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
-import type { DisplayMessage, PortMessageToPanel } from "@/types";
+import type { DisplayMessage, PortMessageToPanel, QuoteAddedMessage } from "@/types";
 import { withSlot, type SessionRuntimeSlot } from "./runtime-map";
 
 export interface CreatePortHandlersDeps {
@@ -206,6 +206,11 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
 
     if (msg.type === "session-toast") {
       patchSlot(id, { toast: { level: msg.level, text: msg.text } });
+      return;
+    }
+
+    if (msg.type === "quote-added") {
+      patchSlot(id, (prev) => ({ quotes: [...prev.quotes, (msg as QuoteAddedMessage).quote] }));
       return;
     }
 

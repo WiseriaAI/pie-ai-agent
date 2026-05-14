@@ -1,4 +1,4 @@
-import type { DisplayMessage } from "@/types";
+import type { DisplayMessage, Quote } from "@/types";
 
 /**
  * Per-session task runtime state. One Map<sessionId, SessionRuntimeSlot>
@@ -20,6 +20,8 @@ export type SessionRuntimeSlot = {
   accumulated: string;
   /** Equivalent to the legacy `streamFinishedRef.current`. */
   streamFinished: boolean;
+  /** Issue #38 v1 — per-session page content references (not persisted). */
+  quotes: Quote[];
 };
 
 export const EMPTY_SLOT: SessionRuntimeSlot = {
@@ -30,6 +32,7 @@ export const EMPTY_SLOT: SessionRuntimeSlot = {
   messages: [],
   accumulated: "",
   streamFinished: true,
+  quotes: [],
 };
 
 /**
