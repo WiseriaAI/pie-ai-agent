@@ -92,7 +92,6 @@ async function verifyConfirmedOrigin(
  * first upgrade SkillDefinition.allowedTools schema (see plan K-3 / G-1).
  */
 
-const LIST_TABS_MAX = 50;
 const TITLE_MAX_LEN = 100;
 const DOMAIN_MAX_LEN = 50;
 // Keep in sync with isRestrictedUrl in src/lib/agent/loop.ts (which gates
@@ -227,8 +226,9 @@ export function wrapTabMetadata(
  *   - scope = "allWindows"              → high + reason "crossWindowTabExposure" (Phase 3 P3-T)
  *
  * Limits:
- *   - default 50, max 50 (P3-I)
- *   - if more tabs exist, returns first 50 + total_count + truncated:true
+ *   - no default cap — return every visible tab
+ *   - caller can still pass `limit` to cap the response; when the cap is hit
+ *     the wrapper carries total_count + truncated:true
  *
  * Privacy invariant P3-K: incognito-window tabs are NOT visible because the
  * extension manifest deliberately omits "incognito": "spanning". Tested in
@@ -239,7 +239,8 @@ const listTabsTool: Tool = {
   description:
     "List open browser tabs with metadata (id, title, domain, active state, group). " +
     "Default scope is currentWindow (low risk). scope='allWindows' exposes tabs across " +
-    "all windows and triggers a high-risk user confirmation. Max 50 tabs returned per call.",
+    "all windows and triggers a high-risk user confirmation. By default every visible " +
+    "tab is returned; pass `limit` to cap the response.",
   parameters: {
     type: "object",
     properties: {
@@ -251,7 +252,8 @@ const listTabsTool: Tool = {
       },
       limit: {
         type: "number",
-        description: `Max tabs to return (default ${LIST_TABS_MAX}, hard cap ${LIST_TABS_MAX}).`,
+        description:
+          "Optional cap on tabs returned. Omit to return every visible tab.",
       },
     },
     additionalProperties: false,
@@ -261,8 +263,8 @@ const listTabsTool: Tool = {
     const scope = a.scope === "allWindows" ? "allWindows" : "currentWindow";
     const requestedLimit =
       typeof a.limit === "number" && Number.isFinite(a.limit) && a.limit > 0
-        ? Math.min(Math.floor(a.limit), LIST_TABS_MAX)
-        : LIST_TABS_MAX;
+        ? Math.floor(a.limit)
+        : Number.POSITIVE_INFINITY;
 
     const queryInfo: chrome.tabs.QueryInfo =
       scope === "currentWindow" ? { currentWindow: true } : {};

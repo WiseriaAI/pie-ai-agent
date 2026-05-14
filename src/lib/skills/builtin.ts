@@ -56,9 +56,7 @@ Steps:
 
 Constraints:
 - Never call close_tabs (you don't have permission to delete tabs in this skill).
-- Skip tabs whose domain looks like a Chrome system page ((restricted)).
-- If list_tabs returns truncated:true, group only the first 50 and tell
-  the user to re-run for the rest.`,
+- Skip tabs whose domain looks like a Chrome system page ((restricted)).`,
     enabled: true,
     builtIn: true,
     author: "user",
@@ -93,8 +91,6 @@ Steps:
 Constraints:
 - Never close the pinned/active tab even if it's a duplicate
   (close_tabs will reject it anyway via K-9).
-- If list_tabs returns truncated:true, only deduplicate the first 50;
-  tell the user to re-run.
 - If no duplicates are found, just say so and call done — never call
   close_tabs with an empty array.`,
     enabled: false,
