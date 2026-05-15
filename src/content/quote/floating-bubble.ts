@@ -1,5 +1,5 @@
 const HOST_ATTR = "data-pie-quote-bubble";
-const BUBBLE_HEIGHT = 34;
+const BUBBLE_HEIGHT = 28;
 const MARGIN = 6;
 
 let host: HTMLElement | null = null;
@@ -16,28 +16,30 @@ function ensureHost(): HTMLElement {
     <style>
       :host { all: initial; }
       .b {
-        background: #ffb95a;
-        color: #1c1d22;
-        font: 600 12px/1 -apple-system, "Helvetica Neue", sans-serif;
-        padding: 7px 11px 7px 9px;
-        border-radius: 999px;
+        width: 28px;
+        height: 28px;
+        padding: 0;
         border: 0;
+        border-radius: 8px;
+        background: transparent;
         cursor: pointer;
-        box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.32), 0 0 0 1px rgba(255, 255, 255, 0.06);
         display: inline-flex;
         align-items: center;
-        gap: 6px;
+        justify-content: center;
+        transition: transform 80ms ease;
       }
-      .b::before {
-        content: "+";
-        background: rgba(28,29,34,0.18);
-        width: 14px; height: 14px;
-        border-radius: 50%;
-        display: inline-flex; align-items: center; justify-content: center;
-        font-weight: 700; font-size: 11px;
-      }
+      .b:hover { transform: translateY(-1px); }
+      .b:active { transform: translateY(0); }
+      .b svg { display: block; }
     </style>
-    <button class="b" type="button">添加为引用</button>
+    <button class="b" type="button" aria-label="添加为引用" title="添加为引用">
+      <svg width="28" height="28" viewBox="0 0 128 128" aria-hidden="true">
+        <rect width="128" height="128" rx="26" fill="#14181D"/>
+        <circle cx="64" cy="64" r="44" fill="#FAFBFC"/>
+        <circle cx="98" cy="30" r="22" fill="#14181D"/>
+      </svg>
+    </button>
   `;
   shadow.querySelector<HTMLButtonElement>("button")!.addEventListener("click", () => {
     const cb = currentClick;
