@@ -76,13 +76,33 @@ const local = {
     return Promise.resolve();
   },
 
-  // Minimal onChanged stub. Tests that need real storage-change
-  // notifications can override; useSession's M1-U5 listener only
-  // needs the .addListener / .removeListener API to exist so it
-  // doesn't throw on mount.
+  __changedListeners: [] as Array<(
+    changes: Record<string, chrome.storage.StorageChange>,
+    areaName: string,
+  ) => void>,
   onChanged: {
-    addListener: vi.fn(),
-    removeListener: vi.fn(),
+    addListener(
+      l: (
+        changes: Record<string, chrome.storage.StorageChange>,
+        areaName: string,
+      ) => void,
+    ) {
+      local.__changedListeners.push(l);
+    },
+    removeListener(
+      l: (
+        changes: Record<string, chrome.storage.StorageChange>,
+        areaName: string,
+      ) => void,
+    ) {
+      local.__changedListeners = local.__changedListeners.filter((x) => x !== l);
+    },
+  },
+  __emitChange(
+    changes: Record<string, chrome.storage.StorageChange>,
+    areaName = "local",
+  ) {
+    for (const l of local.__changedListeners) l(changes, areaName);
   },
 };
 
@@ -205,11 +225,18 @@ const webNavigation = {
   },
 };
 
+const i18n = {
+  __uiLanguage: "en" as string,
+  getUILanguage: vi.fn(() => i18n.__uiLanguage),
+  getMessage: vi.fn((key: string) => key),
+};
+
 const chromeMock = {
   storage: { local },
   runtime,
   tabs,
   webNavigation,
+  i18n,
 };
 
 // Install on globalThis so `chrome.storage.local.get(...)` works in src code.
@@ -232,6 +259,7 @@ Element.prototype.getBoundingClientRect = function () {
 
 beforeEach(() => {
   local.__store = {};
+  local.__changedListeners = [];
   runtime.__ports = [];
   runtime.connect.mockClear();
   tabs.__activeTab = null;
@@ -240,6 +268,9 @@ beforeEach(() => {
   tabs.get.mockClear();
   webNavigation.__committedListeners = [];
   webNavigation.__historyListeners = [];
+  i18n.__uiLanguage = "en";
+  i18n.getUILanguage.mockClear();
+  i18n.getMessage.mockClear();
 });
 
 export { chromeMock };
