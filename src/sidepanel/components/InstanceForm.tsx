@@ -3,6 +3,7 @@ import type { ProviderRef, BuiltinProvider, ModelMeta } from "@/lib/model-router
 import { getProviderMeta } from "@/lib/model-router";
 import { useProviderMeta } from "@/sidepanel/hooks/useProviderMeta";
 import { CUSTOM_PREFIX } from "@/lib/custom-providers";
+import { useT } from "@/lib/i18n";
 import ModelDropdown from "./ModelDropdown";
 
 export interface InstanceFormPayload {
@@ -50,6 +51,7 @@ interface Props {
 }
 
 export default function InstanceForm(props: Props) {
+  const t = useT();
   const { meta: resolvedMeta, loading: metaLoading } = useProviderMeta(props.provider);
   // For builtin providers, resolve meta synchronously so the field renders
   // immediately without waiting for the async hook to fire.
@@ -101,7 +103,7 @@ export default function InstanceForm(props: Props) {
   return (
     <div className="flex flex-col">
       <div className="flex flex-col gap-3 px-3.5 py-3.5">
-      <Field label="NICKNAME">
+      <Field label={t("instanceForm.nickname")}>
         <input
           aria-label="nickname"
           value={nickname}
@@ -110,18 +112,18 @@ export default function InstanceForm(props: Props) {
         />
       </Field>
 
-      <Field label="PROVIDER" hint={metaLoading && isCustomProvider ? undefined : meta?.defaultBaseUrl}>
+      <Field label={t("instanceForm.provider")} hint={metaLoading && isCustomProvider ? undefined : meta?.defaultBaseUrl}>
         {metaLoading && isCustomProvider ? (
           <div className="h-[38px] animate-pulse rounded border border-line bg-field" />
         ) : (
           <div className="flex items-center gap-2 rounded border border-line bg-field px-3 py-2 text-[12px] text-fg-2">
             <span className="text-fg-1">{meta?.name ?? props.provider}</span>
-            <span className="ml-auto font-mono text-[10px] text-fg-3">LOCKED</span>
+            <span className="ml-auto font-mono text-[10px] text-fg-3">{t("instanceForm.locked")}</span>
           </div>
         )}
       </Field>
 
-      <Field label="API KEY" hint="AES-GCM · LOCAL">
+      <Field label={t("instanceForm.apiKey")} hint={t("instanceForm.aesGcmLocal")}>
         {!replacing && props.existingApiKey ? (
           <div className="flex flex-col gap-1.5">
             <div className="flex gap-1.5">
@@ -133,7 +135,7 @@ export default function InstanceForm(props: Props) {
                 onClick={() => setReplacing(true)}
                 className="rounded border border-line bg-field px-2.5 text-[11px] text-fg-2 hover:text-fg-1"
               >
-                Replace key
+                {t("instanceForm.replaceKey")}
               </button>
             </div>
           </div>
@@ -141,7 +143,7 @@ export default function InstanceForm(props: Props) {
           <div className="flex flex-col gap-1.5">
             <div className="flex gap-1.5">
               <input
-                aria-label="api key"
+                aria-label={t("instanceForm.apiKeyLabel")}
                 type={showKey ? "text" : "password"}
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
@@ -153,7 +155,7 @@ export default function InstanceForm(props: Props) {
                 onClick={() => setShowKey(!showKey)}
                 className="rounded border border-line bg-field px-2.5 text-[11px] text-fg-2"
               >
-                {showKey ? "Hide" : "Show"}
+                {showKey ? t("instanceForm.hideKey") : t("instanceForm.showKey")}
               </button>
             </div>
             {props.mode === "edit" && props.existingApiKey && (
@@ -162,14 +164,14 @@ export default function InstanceForm(props: Props) {
                 onClick={() => { setApiKey(""); setReplacing(false); }}
                 className="self-start rounded border border-line bg-transparent px-3 py-1.5 text-[11px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
               >
-                Cancel — keep current key
+                {t("instanceForm.cancelKeepKey")}
               </button>
             )}
           </div>
         )}
       </Field>
 
-      <Field label="MODEL">
+      <Field label={t("instanceForm.model")}>
         <ModelDropdown
           provider={props.provider}
           value={model}
@@ -204,21 +206,21 @@ export default function InstanceForm(props: Props) {
             disabled={!canSave}
             className="rounded border border-line bg-transparent px-3 py-1.5 text-[11px] text-fg-2 hover:border-fg-3 disabled:opacity-30"
           >
-            Test
+            {t("instanceForm.test")}
           </button>
           <button
             onClick={() => props.onSave(payload)}
             disabled={!canSave}
             className="rounded bg-fg-1 px-3 py-1.5 text-[11px] font-medium text-canvas disabled:opacity-30"
           >
-            {props.saveLabel ?? "Save"}
+            {props.saveLabel ?? t("instanceForm.save")}
           </button>
           {props.mode === "edit" && props.onDelete && (
             <button
               onClick={() => props.onDelete!()}
               className="ml-auto rounded border border-warning-line bg-transparent px-3 py-1.5 text-[11px] text-warning hover:bg-warning-tint"
             >
-              Forget config
+              {t("instanceForm.forgetConfig")}
             </button>
           )}
         </div>
@@ -227,7 +229,7 @@ export default function InstanceForm(props: Props) {
       {props.renderActions && props.renderActions({
         canSave,
         replacing,
-        saveLabel: props.saveLabel ?? "Save",
+        saveLabel: props.saveLabel ?? t("instanceForm.save"),
         triggerSave: () => props.onSave(payload),
         triggerTest: () => props.onTest(payload),
         triggerDelete: props.onDelete,

@@ -7,6 +7,7 @@ import {
   removeProviderCustomModel,
 } from "@/lib/provider-custom-models";
 import { listCustomProviders, type StoredCustomProvider, CUSTOM_PREFIX } from "@/lib/custom-providers";
+import { useT } from "@/lib/i18n";
 import { fetchOpenRouterModels } from "@/lib/openrouter-models-fetch";
 import InstanceForm, { type InstanceFormPayload } from "./InstanceForm";
 import CustomProviderForm from "./CustomProviderForm";
@@ -18,6 +19,7 @@ interface Props {
 }
 
 export default function NewConfigWizard(props: Props) {
+  const t = useT();
   const [step, setStep] = useState<1 | 2>(1);
   const [provider, setProvider] = useState<ProviderRef | null>(null);
   const [customProviders, setCustomProviders] = useState<StoredCustomProvider[]>([]);
@@ -83,7 +85,7 @@ export default function NewConfigWizard(props: Props) {
     return (
       <div className="flex flex-col gap-3 rounded-lg border border-line bg-canvas p-3.5">
         <div className="flex items-center justify-between">
-          <div className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-3">STEP 1 — 选 PROVIDER</div>
+          <div className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-3">{t("newConfigWizard.step1Title")}</div>
         </div>
         <div className="flex flex-col gap-1.5">
           {PROVIDER_REGISTRY.map((p) => (
@@ -101,7 +103,7 @@ export default function NewConfigWizard(props: Props) {
 
         {customProviders.length > 0 && (
           <div className="flex flex-col gap-1.5">
-            <span className="caps px-1 text-fg-3">CUSTOM PROVIDERS</span>
+            <span className="caps px-1 text-fg-3">{t("newConfigWizard.customProviders")}</span>
             {customProviders.map((cp) => (
               <button
                 key={cp.id}
@@ -120,7 +122,7 @@ export default function NewConfigWizard(props: Props) {
           onClick={() => setShowCustomForm(true)}
           className="flex items-center gap-2 self-start rounded border border-dashed border-line bg-transparent px-3 py-2 text-[12px] text-accent hover:bg-field"
         >
-          + New custom provider
+          {t("newConfigWizard.newCustomProvider")}
         </button>
 
         <div className="flex pt-1">
@@ -129,7 +131,7 @@ export default function NewConfigWizard(props: Props) {
             onClick={props.onCancel}
             className="rounded border border-line bg-transparent px-3 py-1.5 text-[11px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
           >
-            取消
+             {t("common.cancel")}
           </button>
         </div>
       </div>
@@ -140,7 +142,7 @@ export default function NewConfigWizard(props: Props) {
   return (
     <div className="rounded-lg border border-line bg-canvas">
       <div className="border-b border-line px-3.5 py-2">
-        <div className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-3">STEP 2 — {metaName}</div>
+        <div className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-3">{t("newConfigWizard.step2Title", { name: metaName })}</div>
       </div>
       <InstanceForm
         mode="create"
@@ -150,7 +152,7 @@ export default function NewConfigWizard(props: Props) {
         fetchedModels={fetchedModels}
         fetchedAt={fetchedAt}
         isFetching={isFetching}
-        saveLabel="Create"
+        saveLabel={t("newConfigWizard.create")}
         onSave={(p) => props.onCreate(provider, p)}
         onTest={(p) => props.onTest(provider, p)}
         onAddCustomModel={async (id) => {
@@ -183,7 +185,7 @@ export default function NewConfigWizard(props: Props) {
               onClick={() => setStep(1)}
               className="rounded border border-line bg-transparent px-3 py-1.5 text-[11px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
             >
-              ← 改 provider
+              {t("newConfigWizard.changeProvider")}
             </button>
             <div className="flex-1" />
             <button
@@ -191,15 +193,15 @@ export default function NewConfigWizard(props: Props) {
               onClick={props.onCancel}
               className="rounded border border-line bg-transparent px-3 py-1.5 text-[11px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
             >
-              取消
-            </button>
+               {t("common.cancel")}
+          </button>
             <button
               type="button"
               onClick={triggerTest}
               disabled={!canSave}
               className="rounded border border-line bg-transparent px-3 py-1.5 text-[11px] text-fg-2 hover:border-fg-3 disabled:opacity-30"
             >
-              Test
+              {t("common.test")}
             </button>
             <button
               type="button"

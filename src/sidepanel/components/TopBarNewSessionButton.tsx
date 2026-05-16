@@ -1,3 +1,5 @@
+import { useT } from "@/lib/i18n";
+
 /**
  * TopBarNewSessionButton — the + button that creates a new session.
  *
@@ -11,11 +13,12 @@ interface TopBarNewSessionButtonProps {
 export default function TopBarNewSessionButton({
   onClick,
 }: TopBarNewSessionButtonProps) {
+  const t = useT();
   return (
     <button
       type="button"
       onClick={onClick}
-      aria-label="New session"
+      aria-label={t("topBar.newSession")}
       style={{
         width: 24,
         height: 24,

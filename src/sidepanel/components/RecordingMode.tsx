@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import type { RecordedAction } from "@/lib/recording/types";
+import { useT } from "@/lib/i18n";
 
 /**
  * Recording v1 Booth — full-panel view shown while a recording session is
@@ -30,15 +31,6 @@ interface RecordingModeProps {
   onDiscard: () => void;
 }
 
-const TYPE_LABELS: Record<RecordedAction["type"], string> = {
-  click: "CLICK",
-  type: "TYPE",
-  select: "SELECT",
-  scroll: "SCROLL",
-  navigate: "NAV",
-  submit: "SUBMIT",
-};
-
 export default function RecordingMode({
   active,
   actions,
@@ -46,6 +38,8 @@ export default function RecordingMode({
   onFinish,
   onDiscard,
 }: RecordingModeProps) {
+  const t = useT();
+
   if (!active && lastAbortReason) {
     return (
       <div
@@ -70,13 +64,14 @@ export default function RecordingMode({
             color: "var(--c-warning)",
           }}
         >
-          RECORDING ABORTED
+          {t("recording.aborted")}
         </div>
         <div style={{ fontSize: 13, color: "var(--c-fg-2)" }}>
-          Reason: <code style={{ fontFamily: "'JetBrains Mono', monospace" }}>{lastAbortReason}</code>
+          {t("recording.reason")}{" "}
+          <code style={{ fontFamily: "'JetBrains Mono', monospace" }}>{lastAbortReason}</code>
         </div>
         <div style={{ fontSize: 12, color: "var(--c-fg-3)" }}>
-          Start a new recording from the chat composer.
+          {t("recording.startNew")}
         </div>
       </div>
     );
@@ -128,7 +123,7 @@ export default function RecordingMode({
                 color: "var(--c-fg-3)",
               }}
             >
-              {actions.length === 1 ? "STEP" : "STEPS"}
+              {actions.length === 1 ? t("recording.step") : t("recording.steps")}
             </span>
           </div>
           <div
@@ -140,7 +135,7 @@ export default function RecordingMode({
               color: "var(--c-pending)",
             }}
           >
-            RECORDING
+            {t("recording.recording")}
           </div>
         </div>
       </div>
@@ -164,7 +159,7 @@ export default function RecordingMode({
               color: "var(--c-fg-3)",
             }}
           >
-            SEQUENCE
+            {t("recording.sequence")}
           </span>
           <span style={{ flex: 1, height: 1, background: "var(--c-line)" }} />
         </div>
@@ -210,10 +205,10 @@ export default function RecordingMode({
                 color: "var(--c-fg-1)",
               }}
             >
-              RECORDING
+              {t("recording.recording")}
               <span style={{ color: "var(--c-fg-3)", fontWeight: 400, padding: "0 8px" }}>·</span>
               <span style={{ color: "var(--c-accent)", fontVariantNumeric: "tabular-nums" }}>
-                {actions.length} {actions.length === 1 ? "STEP" : "STEPS"}
+                {actions.length} {actions.length === 1 ? t("recording.step") : t("recording.steps")}
               </span>
             </div>
           </div>
@@ -236,7 +231,7 @@ export default function RecordingMode({
                 cursor: "pointer",
               }}
             >
-              Cancel
+              {t("recording.cancel")}
             </button>
             <button
               type="button"
@@ -258,7 +253,7 @@ export default function RecordingMode({
                 cursor: actions.length === 0 ? "not-allowed" : "pointer",
               }}
             >
-              Finish
+              {t("recording.finish")}
               <span
                 style={{
                   fontFamily: "'JetBrains Mono', monospace",
@@ -279,7 +274,7 @@ export default function RecordingMode({
               color: "var(--c-fg-3)",
             }}
           >
-            esc
+            {t("recording.esc")}
           </span>
           <span
             style={{
@@ -288,7 +283,7 @@ export default function RecordingMode({
               color: "var(--c-fg-3)",
             }}
           >
-            to cancel · ⏎ to finish · trace becomes a chip in chat
+            {t("recording.escHint")}
           </span>
         </div>
       </div>
@@ -342,7 +337,16 @@ function SmallPulseDot() {
 }
 
 function SequenceRow({ index, action }: { index: number; action: RecordedAction }) {
-  const typeLabel = TYPE_LABELS[action.type];
+  const tLoc = useT();
+  const typeLabels: Record<string, string> = {
+    click: tLoc("recording.typeLabels.click"),
+    type: tLoc("recording.typeLabels.type"),
+    select: tLoc("recording.typeLabels.select"),
+    scroll: tLoc("recording.typeLabels.scroll"),
+    navigate: tLoc("recording.typeLabels.nav"),
+    submit: tLoc("recording.typeLabels.submit"),
+  };
+  const typeLabel = typeLabels[action.type];
   return (
     <div
       style={{
@@ -468,7 +472,8 @@ function SequenceLabel({ action }: { action: RecordedAction }) {
 }
 
 function MetaChip({ kind }: { kind: "redacted" | "unstable" }) {
-  const label = kind === "redacted" ? "REDACTED" : "UNSTABLE";
+  const tLoc = useT();
+  const label = kind === "redacted" ? tLoc("recording.metaRedacted") : tLoc("recording.metaUnstable");
   return (
     <span
       style={{
@@ -502,6 +507,7 @@ function MetaChip({ kind }: { kind: "redacted" | "unstable" }) {
 }
 
 function AwaitingRow({ nextIndex }: { nextIndex: number }) {
+  const tLoc = useT();
   return (
     <div
       style={{
@@ -551,7 +557,7 @@ function AwaitingRow({ nextIndex }: { nextIndex: number }) {
             color: "var(--c-fg-3)",
           }}
         >
-          AWAITING
+          {tLoc("recording.awaiting")}
         </span>
       </span>
       <span
@@ -564,7 +570,7 @@ function AwaitingRow({ nextIndex }: { nextIndex: number }) {
           color: "var(--c-fg-3)",
         }}
       >
-        interact with the tab — capture is live
+        {tLoc("recording.awaitingHint")}
       </span>
     </div>
   );

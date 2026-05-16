@@ -10,6 +10,7 @@
  * title, status, and relative time — satisfying R27 a11y requirement.
  */
 
+import { useT } from "@/lib/i18n";
 import type { SessionIndexEntry } from "@/lib/sessions/types";
 
 interface SessionRowProps {
@@ -57,26 +58,32 @@ function FailedIcon() {
 
 // ── Time formatting ───────────────────────────────────────────────────────────
 
-function formatRelativeTime(ts: number): string {
+function formatRelativeTime(
+  ts: number,
+  t: ReturnType<typeof useT>,
+): string {
   const diff = Date.now() - ts;
   const minutes = Math.floor(diff / 60_000);
-  if (minutes < 1) return "just now";
-  if (minutes === 1) return "1 min ago";
-  if (minutes < 60) return `${minutes} min ago`;
+  if (minutes < 1) return t("sessions.justNow");
+  if (minutes === 1) return t("sessions.minsAgo", { n: 1 });
+  if (minutes < 60) return t("sessions.minsAgo", { n: minutes });
   const hours = Math.floor(minutes / 60);
-  if (hours === 1) return "1 hr ago";
-  if (hours < 24) return `${hours} hr ago`;
+  if (hours === 1) return t("sessions.hrsAgo", { n: 1 });
+  if (hours < 24) return t("sessions.hrsAgo", { n: hours });
   const days = Math.floor(hours / 24);
-  if (days === 1) return "yesterday";
-  return `${days}d ago`;
+  if (days === 1) return t("sessions.yesterday");
+  return t("sessions.daysAgo", { days });
 }
 
-function statusLabel(status: SessionIndexEntry["status"]): string {
+function statusLabel(
+  status: SessionIndexEntry["status"],
+  t: ReturnType<typeof useT>,
+): string {
   switch (status) {
-    case "active":   return "active";
-    case "paused":   return "paused";
-    case "failed":   return "failed";
-    case "archived": return "archived";
+    case "active":   return t("sessions.status.active");
+    case "paused":   return t("sessions.status.paused");
+    case "failed":   return t("sessions.status.failed");
+    case "archived": return t("sessions.status.archived");
   }
 }
 
@@ -88,10 +95,11 @@ export default function SessionRow({
   onSelect,
   onResume,
 }: SessionRowProps) {
+  const t = useT();
   const { id, status, title, lastAccessedAt } = session;
-  const displayTitle = title ?? "Untitled session";
-  const timeStr = formatRelativeTime(lastAccessedAt);
-  const ariaLabel = `${displayTitle}, ${statusLabel(status)}, ${timeStr}`;
+  const displayTitle = title ?? t("sessions.untitled");
+  const timeStr = formatRelativeTime(lastAccessedAt, t);
+  const ariaLabel = `${displayTitle}, ${statusLabel(status, t)}, ${timeStr}`;
 
   // Row bg / left-border for active-selected state
   const rowStyle: React.CSSProperties = {
@@ -131,9 +139,9 @@ export default function SessionRow({
   let metaText = timeStr;
   const metaColor = "var(--c-fg-3)";
   if (status === "paused") {
-    metaText = `${timeStr} · PAUSED`;
+    metaText = `${timeStr} · ${t("sessions.status.paused")}`;
   } else if (status === "failed") {
-    metaText = `${timeStr} · FAILED`;
+    metaText = `${timeStr} · ${t("sessions.status.failed")}`;
   }
 
   // Title color
@@ -212,7 +220,7 @@ export default function SessionRow({
             flexShrink: 0,
           }}
         >
-          Resume →
+          {t("sessions.resumeBtn")}
         </button>
       )}
     </li>

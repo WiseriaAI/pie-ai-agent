@@ -20,6 +20,7 @@
  */
 
 import { useState } from "react";
+import { useT } from "@/lib/i18n";
 import AgentStepLine from "./AgentStepLine";
 import type { ResolvedElement } from "@/types";
 import type { AgentStepImageExtras } from "@/types/messages";
@@ -46,6 +47,7 @@ export default function AgentStepGroup({
   currentStep,
 }: AgentStepGroupProps) {
   const [historyOpen, setHistoryOpen] = useState(false);
+  const t = useT();
 
   return (
     <div className="flex max-w-[320px] flex-col gap-1.5">
@@ -64,7 +66,9 @@ export default function AgentStepGroup({
               ›
             </span>
             <span>
-              {doneSteps.length} {doneSteps.length === 1 ? "step" : "steps"} done
+              {doneSteps.length}{" "}
+              {doneSteps.length === 1 ? t("agentStepGroup.step") : t("agentStepGroup.steps")}
+              {t("agentStepGroup.done")}
             </span>
           </button>
           {historyOpen && (

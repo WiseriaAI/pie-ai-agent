@@ -1,3 +1,5 @@
+import { useT } from "@/lib/i18n";
+
 /**
  * TopBarListButton — the ≡ hamburger button that toggles the SessionDrawer.
  *
@@ -20,7 +22,8 @@ export default function TopBarListButton({
   isOpen,
   onClick,
 }: TopBarListButtonProps) {
-  const ariaLabel = `Open sessions list${pendingCount > 0 ? `, ${pendingCount} pending` : ""}`;
+  const t = useT();
+  const ariaLabel = `${t("topBar.openSessionsList")}${pendingCount > 0 ? t("topBar.pendingBadge", { count: pendingCount }) : ""}`;
 
   return (
     <button

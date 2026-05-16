@@ -64,7 +64,7 @@ describe("AgentStepLine — image rendering (issue follow-up to #35/#39)", () =>
       />,
     );
     expect(screen.queryByRole("img")).toBeNull();
-    const toggle = screen.getByRole("button", { name: /详情/ });
+    const toggle = screen.getByRole("button", { name: /details/i });
     fireEvent.click(toggle);
     expect(screen.getByRole("img", { name: /screenshot/i })).toBeTruthy();
   });

@@ -48,8 +48,8 @@ beforeEach(() => {
   BASE_PROPS.onClose.mockReset();
   BASE_PROPS.onSelectSession.mockReset();
   BASE_PROPS.onResumeSession.mockReset();
-  chromeMock.storage.local.onChanged.addListener.mockClear();
-  chromeMock.storage.local.onChanged.removeListener.mockClear();
+  // onChanged listeners are reset by the global beforeEach in setup.ts
+  // (local.__changedListeners = [])
 });
 
 afterEach(() => {

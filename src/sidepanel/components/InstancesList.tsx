@@ -1,4 +1,5 @@
 import type { DecryptedInstance } from "@/lib/instances";
+import { useT } from "@/lib/i18n";
 
 interface Props {
   instances: DecryptedInstance[];
@@ -10,6 +11,7 @@ interface Props {
 }
 
 export default function InstancesList(props: Props) {
+  const t = useT();
   return (
     <div className="flex flex-col gap-px overflow-hidden rounded-lg border border-line bg-line">
       {props.instances.map((inst) => {
@@ -40,13 +42,13 @@ export default function InstancesList(props: Props) {
                 </div>
               </div>
               {isActive ? (
-                <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-accent">ACTIVE</span>
+                <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-accent">{t("instancesList.active")}</span>
               ) : (
                 <button
                   onClick={(e) => { e.stopPropagation(); props.onSetActive(inst.id); }}
                   className="rounded border border-line bg-transparent px-2.5 py-1 text-[11px] text-fg-2 hover:text-fg-1"
                 >
-                  Activate
+                  {t("instancesList.activate")}
                 </button>
               )}
             </div>

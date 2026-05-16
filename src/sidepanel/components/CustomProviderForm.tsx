@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useT } from "@/lib/i18n";
 import type { StoredCustomProvider, CustomModelMeta } from "@/lib/custom-providers";
 import {
   saveCustomProvider,
@@ -27,6 +28,7 @@ interface EditingModel {
 }
 
 export default function CustomProviderForm({ existing, onSaved, onBack, onDeleted }: Props) {
+  const t = useT();
   const isEdit = existing != null;
   const [name, setName] = useState(existing?.name ?? "");
   const [baseUrl, setBaseUrl] = useState(existing?.baseUrl ?? "");
@@ -229,7 +231,7 @@ export default function CustomProviderForm({ existing, onSaved, onBack, onDelete
           <button
             onClick={onBack}
             className="flex h-7 w-7 items-center justify-center rounded text-fg-2 hover:bg-field hover:text-fg-1"
-            aria-label="Back"
+            aria-label={t("customProvider.back")}
           >
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
               <path
@@ -243,7 +245,7 @@ export default function CustomProviderForm({ existing, onSaved, onBack, onDelete
           </button>
         )}
         <span className="text-[13px] font-semibold tracking-[-0.005em] text-fg-1">
-          {isEdit ? existing.name : "New Custom Provider"}
+          {isEdit ? existing.name : t("customProvider.newCustomProvider")}
         </span>
       </header>
 
@@ -255,17 +257,17 @@ export default function CustomProviderForm({ existing, onSaved, onBack, onDelete
             </div>
           )}
 
-          <Field label="NAME" hint={`${name.length}/40`}>
+          <Field label={t("customProvider.name")} hint={`${name.length}/40`}>
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
               maxLength={40}
-              placeholder="My custom provider"
+              placeholder={t("customProvider.namePlaceholder")}
               className="w-full rounded border border-line bg-field px-3 py-2 text-[12px] text-fg-1 placeholder:text-fg-3 focus:border-accent-line"
             />
           </Field>
 
-          <Field label="BASE URL">
+          <Field label={t("customProvider.baseUrl")}>
             <input
               value={baseUrl}
               onChange={(e) => {
@@ -273,16 +275,16 @@ export default function CustomProviderForm({ existing, onSaved, onBack, onDelete
                 if (fetchedModels.length > 0 || testError) resetTest();
               }}
               onBlur={handleBaseUrlBlur}
-              placeholder="https://api.example.com/v1"
+              placeholder={t("customProvider.baseUrlPlaceholder")}
               className="w-full rounded border border-line bg-field px-3 py-2 text-[12px] text-fg-1 placeholder:text-fg-3 focus:border-accent-line"
             />
             <div className="flex flex-col gap-0.5">
               <span className="font-mono text-[10px] text-fg-3">
-                ⓘ This URL will receive your API key — ensure you trust this service
+                ⓘ {t("customProvider.baseUrlWarning")}
               </span>
               {showHttpWarning && (
                 <span className="font-mono text-[10px] text-warning">
-                  ⚠ Unencrypted connection — API key sent in plain text
+                  ⚠ {t("customProvider.baseUrlWarningHttp")}
                 </span>
               )}
             </div>
@@ -300,7 +302,7 @@ export default function CustomProviderForm({ existing, onSaved, onBack, onDelete
                   <path d="M14 8A6 6 0 1 1 2 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                 </svg>
               )}
-              {testLoading ? "Testing..." : "Test connection"}
+              {testLoading ? t("customProvider.testing") : t("customProvider.testConnection")}
             </button>
           </div>
 
@@ -312,9 +314,9 @@ export default function CustomProviderForm({ existing, onSaved, onBack, onDelete
 
           {fetchedModels.length > 0 && (
             <div className="flex flex-col gap-2 rounded border border-line bg-surface p-2">
-              <span className="caps text-fg-3">IMPORT MODELS</span>
+              <span className="caps text-fg-3">{t("customProvider.importModels")}</span>
               <span className="font-mono text-[11px] text-accent">
-                ✓ Connected — found {fetchedModels.length} model{fetchedModels.length > 1 ? "s" : ""}
+                {t("customProvider.connectedModels", { count: fetchedModels.length, plural: fetchedModels.length > 1 ? "s" : "" })}
               </span>
               <div className="flex max-h-32 flex-col gap-0.5 overflow-y-auto">
                 {fetchedModels.map((m) => (
@@ -334,16 +336,16 @@ export default function CustomProviderForm({ existing, onSaved, onBack, onDelete
                 onClick={importSelectedModels}
                 className="self-start rounded border border-line bg-transparent px-3 py-1.5 text-[11px] text-fg-2 hover:border-fg-3"
               >
-                Import selected
+                {t("customProvider.importSelected")}
               </button>
             </div>
           )}
 
           <div className="flex flex-col gap-2">
-            <div className="caps text-fg-3">MODELS</div>
+            <div className="caps text-fg-3">{t("customProvider.models")}</div>
             {models.length === 0 && (
               <div className="rounded border border-dashed border-line px-3 py-3 text-center font-mono text-[11px] text-fg-3">
-                (no models — add some to use)
+                {t("customProvider.noModels")}
               </div>
             )}
             {models.map((m, i) => (
@@ -360,7 +362,7 @@ export default function CustomProviderForm({ existing, onSaved, onBack, onDelete
                 <button
                   onClick={() => openEditModel(i)}
                   className="rounded p-1 text-fg-3 hover:text-fg-1"
-                  aria-label="Edit model"
+                  aria-label={t("customProvider.editModel")}
                 >
                   <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
                     <path
@@ -374,7 +376,7 @@ export default function CustomProviderForm({ existing, onSaved, onBack, onDelete
                 <button
                   onClick={() => setModels((prev) => prev.filter((_, j) => j !== i))}
                   className="rounded p-1 text-fg-3 hover:text-warning"
-                  aria-label="Delete model"
+                  aria-label={t("customProvider.deleteModel")}
                 >
                   <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
                     <path
@@ -391,7 +393,7 @@ export default function CustomProviderForm({ existing, onSaved, onBack, onDelete
               onClick={openAddModel}
               className="flex items-center gap-1 self-start rounded border border-dashed border-line bg-transparent px-3 py-2 text-[12px] text-accent hover:bg-field"
             >
-              + Add model
+              {t("customProvider.addModel")}
             </button>
           </div>
 
@@ -400,7 +402,7 @@ export default function CustomProviderForm({ existing, onSaved, onBack, onDelete
               onClick={onBack}
               className="rounded border border-line bg-transparent px-3 py-1.5 text-[11px] text-fg-2 hover:border-fg-3 disabled:opacity-30"
             >
-              Cancel
+              {t("common.cancel")}
             </button>
             {isEdit && (
               <button
@@ -409,7 +411,7 @@ export default function CustomProviderForm({ existing, onSaved, onBack, onDelete
                 className="ml-auto rounded border border-warning-line bg-transparent px-3 py-1.5 text-[11px] text-warning hover:bg-warning-tint disabled:opacity-30"
                 title={forgetHint}
               >
-                Forget
+                {t("customProvider.forget")}
               </button>
             )}
             <button
@@ -417,7 +419,7 @@ export default function CustomProviderForm({ existing, onSaved, onBack, onDelete
               disabled={saving}
               className="ml-auto rounded bg-fg-1 px-3 py-1.5 text-[11px] font-medium text-canvas disabled:opacity-30"
             >
-              {saving ? "Saving..." : "Save"}
+              {saving ? t("customProvider.saving") : t("customProvider.save")}
             </button>
           </div>
           {(isEdit && forgetHint) && (
@@ -430,21 +432,23 @@ export default function CustomProviderForm({ existing, onSaved, onBack, onDelete
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="flex max-w-sm flex-col gap-3 rounded-lg border border-line bg-surface p-4">
             <span className="caps text-fg-1">
-              {editingModel.index !== undefined ? "Edit model" : "Add model"}
+              {editingModel.index !== undefined
+                ? t("customProvider.editModelCaps")
+                : t("customProvider.addModelCaps")}
             </span>
 
-            <Field label="MODEL ID">
+            <Field label={t("customProvider.modelId")}>
               <input
                 value={editingModel.id}
                 onChange={(e) =>
                   setEditingModel((prev) => (prev ? { ...prev, id: e.target.value } : prev))
                 }
-                placeholder="gpt-4o-mini"
+                placeholder={t("customProvider.modelIdPlaceholder")}
                 className="w-full rounded border border-line bg-field px-3 py-2 text-[12px] text-fg-1 placeholder:text-fg-3 focus:border-accent-line"
               />
             </Field>
 
-            <Field label="DISPLAY NAME">
+            <Field label={t("customProvider.displayName")}>
               <input
                 value={editingModel.displayName}
                 onChange={(e) =>
@@ -452,7 +456,7 @@ export default function CustomProviderForm({ existing, onSaved, onBack, onDelete
                     prev ? { ...prev, displayName: e.target.value } : prev,
                   )
                 }
-                placeholder="GPT-4o Mini"
+                placeholder={t("customProvider.displayNamePlaceholder")}
                 className="w-full rounded border border-line bg-field px-3 py-2 text-[12px] text-fg-1 placeholder:text-fg-3 focus:border-accent-line"
               />
             </Field>
@@ -474,7 +478,7 @@ export default function CustomProviderForm({ existing, onSaved, onBack, onDelete
               >
                 <path d="M3 1L7 5L3 9" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" />
               </svg>
-              ▸ Advanced
+              {t("customProvider.advanced")}
             </button>
 
             {editingModel.advancedOpen && (
@@ -489,7 +493,7 @@ export default function CustomProviderForm({ existing, onSaved, onBack, onDelete
                       )
                     }
                   />
-                  Tools
+                  {t("customProvider.tools")}
                 </label>
                 <label className="flex items-center gap-2 text-[12px] text-fg-1">
                   <input
@@ -501,9 +505,9 @@ export default function CustomProviderForm({ existing, onSaved, onBack, onDelete
                       )
                     }
                   />
-                  Vision
+                  {t("customProvider.vision")}
                 </label>
-                <Field label="MAX CONTEXT TOKENS">
+                <Field label={t("customProvider.maxContextTokens")}>
                   <input
                     type="number"
                     min={0}
@@ -527,14 +531,14 @@ export default function CustomProviderForm({ existing, onSaved, onBack, onDelete
                 onClick={() => setEditingModel(null)}
                 className="rounded border border-line bg-transparent px-3 py-1.5 text-[12px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
               >
-                Cancel
+                {t("common.cancel")}
               </button>
               <button
                 onClick={saveEditingModel}
                 disabled={!editingModel.id.trim()}
                 className="rounded bg-fg-1 px-3 py-1.5 text-[11px] font-medium text-canvas disabled:opacity-30"
               >
-                Save
+                {t("common.save")}
               </button>
             </div>
           </div>

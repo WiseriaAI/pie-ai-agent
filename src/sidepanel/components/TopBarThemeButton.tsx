@@ -1,3 +1,5 @@
+import { useT } from "@/lib/i18n";
+
 /**
  * TopBarThemeButton — three-state theme toggle (light / dark / system).
  *
@@ -26,10 +28,10 @@ function cycleTheme(current: ThemeMode): ThemeMode {
   return "light";
 }
 
-function modeLabel(mode: ThemeMode): string {
-  if (mode === "light") return "Theme: light. Click for dark.";
-  if (mode === "dark") return "Theme: dark. Click for system.";
-  return "Theme: system. Click for light.";
+function modeLabel(mode: ThemeMode, t: ReturnType<typeof useT>): string {
+  if (mode === "light") return t("topBar.themeLight");
+  if (mode === "dark") return t("topBar.themeDark");
+  return t("topBar.themeSystem");
 }
 
 function SunIcon() {
@@ -75,12 +77,13 @@ export default function TopBarThemeButton({
   mode,
   onModeChange,
 }: TopBarThemeButtonProps) {
+  const t = useT();
   return (
     <button
       type="button"
       onClick={() => onModeChange(cycleTheme(mode))}
-      aria-label={modeLabel(mode)}
-      title={modeLabel(mode)}
+      aria-label={modeLabel(mode, t)}
+      title={modeLabel(mode, t)}
       style={{
         width: 24,
         height: 24,

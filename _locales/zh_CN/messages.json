@@ -1,0 +1,10 @@
+{
+  "extension_name": {
+    "message": "Pie",
+    "description": "Extension name shown in Chrome and the Web Store."
+  },
+  "extension_description": {
+    "message": "BYOK Chrome 浏览器扩展 Agent — 自带 API key 获得 AI 浏览器自动化能力。",
+    "description": "Short description shown in the Web Store and chrome://extensions."
+  }
+}

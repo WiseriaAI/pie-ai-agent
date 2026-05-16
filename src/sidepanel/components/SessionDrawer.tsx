@@ -25,6 +25,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import { useT } from "@/lib/i18n";
 import type { SessionIndexEntry } from "@/lib/sessions/types";
 import { getTotalBytes } from "@/lib/sessions/storage";
 import {
@@ -88,6 +89,7 @@ function getFocusableElements(container: HTMLElement): HTMLElement[] {
 // ── StorageIndicator ──────────────────────────────────────────────────────────
 
 function StorageIndicator() {
+  const t = useT();
   const [usedBytes, setUsedBytes] = useState(0);
 
   useEffect(() => {
@@ -124,7 +126,7 @@ function StorageIndicator() {
     >
       <div style={{ display: "flex", alignItems: "center", marginBottom: 6 }}>
         <span
-          aria-label="Storage"
+          aria-label={t("sessions.storage")}
           style={{
             flex: 1,
             fontFamily: "'JetBrains Mono', monospace",
@@ -135,7 +137,7 @@ function StorageIndicator() {
             textTransform: "uppercase",
           }}
         >
-          Storage
+          {t("sessions.storage")}
         </span>
         <span
           style={{
@@ -153,7 +155,7 @@ function StorageIndicator() {
         aria-valuenow={Math.round(percent)}
         aria-valuemin={0}
         aria-valuemax={100}
-        aria-label={`${Math.round(percent)}% storage used`}
+        aria-label={t("sessions.storageUsed", { percent: Math.round(percent) })}
         style={{
           height: 2,
           background: "var(--c-line)",
@@ -184,17 +186,23 @@ interface ArchivedRowProps {
 }
 
 function ArchivedRow({ session, onUnarchive, onDeleteForever }: ArchivedRowProps) {
+  const t = useT();
   const { id, title, lastAccessedAt } = session;
-  const displayTitle = title ?? "Untitled session";
+  const displayTitle = title ?? t("sessions.untitled");
 
   const diff = Date.now() - lastAccessedAt;
   const days = Math.floor(diff / (24 * 60 * 60 * 1000));
-  const timeStr = days === 0 ? "today" : days === 1 ? "yesterday" : `${days}d ago`;
+  const timeStr =
+    days === 0
+      ? t("sessions.today")
+      : days === 1
+        ? t("sessions.yesterday")
+        : t("sessions.daysAgo", { days });
 
   return (
     <li
       role="listitem"
-      aria-label={`${displayTitle}, archived, ${timeStr}`}
+      aria-label={`${displayTitle}, ${t("sessions.status.archived")}, ${timeStr}`}
       style={{
         padding: "10px 16px",
         display: "flex",
@@ -252,7 +260,7 @@ function ArchivedRow({ session, onUnarchive, onDeleteForever }: ArchivedRowProps
       <span style={{ display: "flex", gap: 4, flexShrink: 0 }}>
         <button
           type="button"
-          aria-label={`Unarchive ${displayTitle}`}
+          aria-label={t("sessions.unarchiveAria", { title: displayTitle })}
           onClick={() => onUnarchive(id)}
           style={{
             fontFamily: "Inter, sans-serif",
@@ -266,11 +274,11 @@ function ArchivedRow({ session, onUnarchive, onDeleteForever }: ArchivedRowProps
             padding: "2px 6px",
           }}
         >
-          Restore
+          {t("sessions.restore")}
         </button>
         <button
           type="button"
-          aria-label={`Delete ${displayTitle} forever`}
+          aria-label={t("sessions.deleteForeverAria", { title: displayTitle })}
           onClick={() => onDeleteForever(id)}
           style={{
             fontFamily: "Inter, sans-serif",
@@ -284,7 +292,7 @@ function ArchivedRow({ session, onUnarchive, onDeleteForever }: ArchivedRowProps
             padding: "2px 6px",
           }}
         >
-          Delete
+          {t("sessions.delete")}
         </button>
       </span>
     </li>
@@ -301,6 +309,7 @@ export default function SessionDrawer({
   onSelectSession,
   onResumeSession,
 }: SessionDrawerProps) {
+  const t = useT();
   const drawerRef = useRef<HTMLDivElement>(null);
   // Track the element that had focus before the drawer opened so we can
   // restore it when the drawer closes.
@@ -418,7 +427,7 @@ export default function SessionDrawer({
         ref={drawerRef}
         role="dialog"
         aria-modal="true"
-        aria-label="Sessions"
+        aria-label={t("sessions.header")}
         data-state={isOpen ? "open" : "closed"}
         style={{
           position: "fixed",
@@ -473,12 +482,12 @@ export default function SessionDrawer({
               color: "var(--c-fg-1)",
             }}
           >
-            Sessions
+            {t("sessions.header")}
           </span>
 
           {/* Session count */}
           <span
-            aria-label={`${activeSessions.length} sessions`}
+            aria-label={t("sessions.sessionCount", { count: activeSessions.length })}
             style={{
               fontFamily: "'JetBrains Mono', monospace",
               fontSize: 10,
@@ -503,7 +512,7 @@ export default function SessionDrawer({
             textTransform: "uppercase",
           }}
         >
-          Active · {activeSessions.length}
+          {t("sessions.active")} · {activeSessions.length}
         </div>
 
         {/* Session list (scrollable) */}
@@ -555,7 +564,7 @@ export default function SessionDrawer({
               textTransform: "uppercase",
             }}
           >
-            {showArchived ? "Hide Archived" : "Show Archived"} · {archivedCount}
+            {showArchived ? t("sessions.hideArchived") : t("sessions.showArchived")} · {archivedCount}
           </span>
           {/* Chevron — flips when open */}
           <svg
@@ -587,7 +596,7 @@ export default function SessionDrawer({
           >
             <ul
               role="list"
-              aria-label="Archived sessions"
+              aria-label={t("sessions.archivedAria")}
               style={{ margin: 0, padding: 0, listStyle: "none" }}
             >
               {archivedSessions.length === 0 ? (
@@ -599,7 +608,7 @@ export default function SessionDrawer({
                     color: "var(--c-fg-4)",
                   }}
                 >
-                  No archived sessions
+                  {t("sessions.noArchived")}
                 </li>
               ) : (
                 archivedSessions.map((session) => (
@@ -641,6 +650,7 @@ function SessionRowWithDelete({
   onResume,
   onDelete,
 }: SessionRowWithDeleteProps) {
+  const t = useT();
   const [hovered, setHovered] = useState(false);
 
   return (
@@ -659,8 +669,8 @@ function SessionRowWithDelete({
       {hovered && session.status !== "archived" && (
         <button
           type="button"
-          aria-label={`Archive ${session.title ?? "session"}`}
-          title="Archive session"
+          aria-label={t("sessions.archiveAria", { title: session.title ?? t("sessions.untitled") })}
+          title={t("sessions.archiveSession")}
           onClick={(e) => {
             e.stopPropagation();
             void onDelete(session.id);
@@ -684,7 +694,7 @@ function SessionRowWithDelete({
             display: session.status === "paused" ? "none" : "block",
           }}
         >
-          Archive
+          {t("sessions.archive")}
         </button>
       )}
     </div>

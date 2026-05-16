@@ -9,6 +9,7 @@ import {
   generateUserSkillId,
   getSkillStorageBytes,
 } from "@/lib/skills";
+import { useT } from "@/lib/i18n";
 
 interface SkillsListProps {
   onRunSkill: (skillId: string, skillName: string) => void;
@@ -112,12 +113,6 @@ function validateAndBuild(
   };
 }
 
-function authorTag(skill: SkillDefinition): string {
-  if (skill.builtIn) return "BUILT-IN";
-  if (skill.author === "agent") return "AGENT";
-  return "USER";
-}
-
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
@@ -132,6 +127,7 @@ function normalizeSlug(name: string): string {
 }
 
 export default function SkillsList({ onRunSkill }: SkillsListProps) {
+  const t = useT();
   const [skills, setSkills] = useState<SkillDefinition[]>([]);
   const [enabledIds, setEnabledIds] = useState<Set<string>>(new Set());
   const [explicitDisabledIds, setExplicitDisabledIds] = useState<Set<string>>(new Set());
@@ -244,7 +240,6 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
   }
 
   const quotaPct = Math.min(100, (storageBytes / STORAGE_QUOTA_BYTES) * 100);
-  const builtIn = skills.filter((s) => s.builtIn);
   const custom = skills.filter((s) => !s.builtIn);
 
   return (
@@ -270,8 +265,7 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
           lineHeight: 1.5,
         }}
       >
-        显示可复用工作流（skill）。底层工具（click / type / scroll / open_url /
-        capture_visible_tab 等）由 LLM 在执行 skill 时自动选用，不在此列表。
+        {t("skills.empty.cta")}
       </div>
 
       {showForm && (
@@ -284,27 +278,8 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
         />
       )}
 
-      {builtIn.length > 0 && (
-        <SkillsSection title="BUILT-IN" subtitle={`${builtIn.length} · read-only`}>
-          {builtIn.map((skill) => (
-            <SkillRow
-              key={skill.id}
-              skill={skill}
-              enabled={isEffectivelyEnabled(skill)}
-              onToggle={() => handleToggle(skill)}
-              onRun={() => onRunSkill(skill.id, skill.name)}
-              onEdit={() => openEditForm(skill)}
-              confirmDelete={confirmDeleteId === skill.id}
-              onAskDelete={() => setConfirmDeleteId(skill.id)}
-              onCancelDelete={() => setConfirmDeleteId(null)}
-              onDelete={() => handleDelete(skill)}
-            />
-          ))}
-        </SkillsSection>
-      )}
-
       {custom.length > 0 && (
-        <SkillsSection title="YOURS" subtitle={`${custom.length} · editable`}>
+        <SkillsSection title={t("skills.section.yours.title")} subtitle={t("skills.section.yours.subtitleEditable", { count: custom.length })}>
           {custom.map((skill) => (
             <SkillRow
               key={skill.id}
@@ -323,9 +298,7 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
       )}
 
       {skills.length === 0 && !showForm && (
-        <p className="text-[12px] text-fg-3">
-          No skills yet — click "+ New skill" to add one.
-        </p>
+        <p className="text-[12px] text-fg-3">{t("skills.noSkills")}</p>
       )}
     </div>
   );
@@ -344,12 +317,13 @@ function CapacitySection({
   showFormButton: boolean;
   onNew: () => void;
 }) {
+  const t = useT();
   const overFill = quotaPct >= 80;
   return (
     <section className="flex flex-col gap-2.5">
       <div className="flex items-baseline justify-between">
         <div className="flex flex-col gap-0.5">
-          <span className="caps text-fg-3">CAPACITY</span>
+          <span className="caps text-fg-3">{t("skills.capacity")}</span>
           <span className="text-[14px] font-medium text-fg-1">
             {skillCount} skill{skillCount === 1 ? "" : "s"}{" "}
             <span className="text-fg-2">
@@ -362,7 +336,7 @@ function CapacitySection({
             onClick={onNew}
             className="rounded-md bg-fg-1 px-3.5 py-1.5 text-[12px] font-medium text-canvas hover:opacity-90"
           >
-            + New skill
+            {t("skills.newSkill")}
           </button>
         )}
       </div>
@@ -419,7 +393,12 @@ function SkillRow({
   onCancelDelete: () => void;
   onDelete: () => void;
 }) {
-  const tag = authorTag(skill);
+  const t = useT();
+  const tag = skill.builtIn
+    ? t("skills.authorTag.builtIn")
+    : skill.author === "agent"
+      ? t("skills.authorTag.agent")
+      : t("skills.authorTag.user");
   const slug = normalizeSlug(skill.name) || skill.id;
 
   return (
@@ -434,7 +413,11 @@ function SkillRow({
           className={`flex h-3 w-3 flex-shrink-0 items-center justify-center rounded-full border ${
             enabled ? "border-accent bg-accent" : "border-line bg-transparent"
           }`}
-          aria-label={`${enabled ? "Disable" : "Enable"} ${skill.name}`}
+          aria-label={
+            enabled
+              ? t("skills.toggleAria.disable", { name: skill.name })
+              : t("skills.toggleAria.enable", { name: skill.name })
+          }
         />
         <code className="font-mono text-[12px] text-accent">/{slug}</code>
         <span className="ml-auto font-mono text-[10px] uppercase tracking-[0.08em] text-fg-3">
@@ -456,7 +439,7 @@ function SkillRow({
           disabled={!enabled}
           className="rounded border border-line bg-transparent px-2.5 py-1 text-[11px] text-fg-2 hover:border-fg-3 hover:text-fg-1 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          Run
+          {t("common.run")}
         </button>
         {!skill.builtIn && (
           <>
@@ -464,7 +447,7 @@ function SkillRow({
               onClick={onEdit}
               className="rounded border border-line bg-transparent px-2.5 py-1 text-[11px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
             >
-              Edit
+              {t("common.edit")}
             </button>
             {confirmDelete ? (
               <>
@@ -472,13 +455,13 @@ function SkillRow({
                   onClick={onDelete}
                   className="rounded border border-warning-line bg-transparent px-2.5 py-1 text-[11px] text-warning hover:bg-warning-tint"
                 >
-                  Confirm
+                  {t("common.confirm")}
                 </button>
                 <button
                   onClick={onCancelDelete}
                   className="rounded border border-line bg-transparent px-2.5 py-1 text-[11px] text-fg-2 hover:text-fg-1"
                 >
-                  Cancel
+                  {t("common.cancel")}
                 </button>
               </>
             ) : (
@@ -486,7 +469,7 @@ function SkillRow({
                 onClick={onAskDelete}
                 className="rounded border border-line bg-transparent px-2.5 py-1 text-[11px] text-fg-3 hover:border-warning-line hover:text-warning"
               >
-                Delete
+                {t("common.delete")}
               </button>
             )}
           </>
@@ -509,17 +492,18 @@ function SkillForm({
   onCancel: () => void;
   onSubmit: () => void;
 }) {
+  const t = useT();
   return (
     <section className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-3.5">
       <div className="flex items-baseline justify-between">
         <span className="caps text-fg-3">
-          {form.editingId ? "EDIT SKILL" : "NEW SKILL"}
+          {form.editingId ? t("skills.form.editSkill") : t("skills.form.newSkill")}
         </span>
         <button
           onClick={onCancel}
           className="text-[11px] text-fg-2 hover:text-fg-1"
         >
-          Cancel
+          {t("common.cancel")}
         </button>
       </div>
 
@@ -529,26 +513,26 @@ function SkillForm({
         </div>
       )}
 
-      <FormField label="Name">
+      <FormField label={t("skills.form.name")}>
         <input
           value={form.name}
           onChange={(e) => onChange((p) => ({ ...p, name: e.target.value }))}
           className="w-full rounded border border-line bg-field px-3 py-2 text-[12px] text-fg-1 placeholder:text-fg-3 focus:border-accent-line"
-          placeholder="Extract product info"
+          placeholder={t("skills.form.namePlaceholder")}
         />
       </FormField>
 
-      <FormField label="Description">
+      <FormField label={t("skills.form.description")}>
         <input
           value={form.description}
           onChange={(e) => onChange((p) => ({ ...p, description: e.target.value }))}
           className="w-full rounded border border-line bg-field px-3 py-2 text-[12px] text-fg-1 placeholder:text-fg-3 focus:border-accent-line"
-          placeholder="What does this skill do, and when should the agent use it?"
+          placeholder={t("skills.form.descPlaceholder")}
         />
       </FormField>
 
       <FormField
-        label="Prompt template"
+        label={t("skills.form.promptTemplate")}
         hint={`${form.promptTemplate.length}/${PROMPT_TEMPLATE_MAX} chars`}
       >
         <textarea
@@ -556,11 +540,11 @@ function SkillForm({
           onChange={(e) => onChange((p) => ({ ...p, promptTemplate: e.target.value }))}
           rows={6}
           className="w-full rounded border border-line bg-field px-3 py-2 font-mono text-[11px] leading-4 text-fg-1 placeholder:text-fg-3 focus:border-accent-line"
-          placeholder="Use {{key}} placeholders. Example: Extract the following fields from the page: {{fields}}"
+          placeholder={t("skills.form.promptPlaceholder")}
         />
       </FormField>
 
-      <FormField label="Parameters" hint="JSON Schema">
+      <FormField label={t("skills.form.parameters")} hint={t("skills.form.jsonSchema")}>
         <textarea
           value={form.parametersText}
           onChange={(e) => onChange((p) => ({ ...p, parametersText: e.target.value }))}
@@ -574,13 +558,13 @@ function SkillForm({
           onClick={onCancel}
           className="rounded border border-line bg-transparent px-3 py-1.5 text-[11px] text-fg-2 hover:text-fg-1"
         >
-          Cancel
+          {t("common.cancel")}
         </button>
         <button
           onClick={onSubmit}
           className="rounded bg-fg-1 px-3 py-1.5 text-[11px] font-medium text-canvas hover:opacity-90"
         >
-          {form.editingId ? "Save changes" : "Create skill"}
+          {form.editingId ? t("skills.form.saveChanges") : t("skills.form.createSkill")}
         </button>
       </div>
     </section>

@@ -1,0 +1,10 @@
+{
+  "extension_name": {
+    "message": "Pie",
+    "description": "Extension name shown in Chrome and the Web Store."
+  },
+  "extension_description": {
+    "message": "BYOK Chrome Extension Agent — bring your own API key for AI-powered browser actions.",
+    "description": "Short description shown in the Web Store and chrome://extensions."
+  }
+}

@@ -1,3 +1,5 @@
+import { useT } from "@/lib/i18n";
+
 /**
  * TopBarSettingsButton — gear button that opens / closes the settings view.
  *
@@ -17,11 +19,12 @@ export default function TopBarSettingsButton({
   isActive,
   onClick,
 }: TopBarSettingsButtonProps) {
+  const t = useT();
   return (
     <button
       type="button"
       onClick={onClick}
-      aria-label={isActive ? "Close settings" : "Open settings"}
+      aria-label={isActive ? t("topBar.closeSettings") : t("topBar.openSettings")}
       aria-pressed={isActive}
       style={{
         width: 24,

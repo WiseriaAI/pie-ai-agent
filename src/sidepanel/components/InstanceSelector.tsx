@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useT } from "@/lib/i18n";
 import type { DecryptedInstance } from "@/lib/instances";
 
 interface Props {
@@ -18,6 +19,7 @@ function shortModel(modelId: string): string {
 }
 
 export default function InstanceSelector(props: Props) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const current = props.instances.find((i) => i.id === props.currentId);
@@ -38,11 +40,11 @@ export default function InstanceSelector(props: Props) {
         onClick={() => !props.locked && setOpen(!open)}
         disabled={props.locked}
         className="flex items-center gap-1.5 px-1.5 py-1 text-[10px] disabled:opacity-50"
-        aria-label={current ? `${current.nickname} ${current.model}` : "select config"}
+        aria-label={current ? `${current.nickname} ${current.model}` : t("instanceSelector.selectConfig")}
       >
         <span className={`h-1.5 w-1.5 rounded-full ${props.locked ? "bg-fg-3" : "bg-accent"}`} />
         <span className="font-mono tracking-[0.04em] text-fg-1">
-          {current ? `${current.nickname} · ${shortModel(current.model)}` : "(none)"}
+          {current ? `${current.nickname} · ${shortModel(current.model)}` : t("instanceSelector.none")}
         </span>
         {props.locked ? (
           <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
@@ -60,8 +62,8 @@ export default function InstanceSelector(props: Props) {
           style={{ boxShadow: "0 16px 40px rgba(0,0,0,0.7), 0 4px 12px rgba(0,0,0,0.5)" }}
         >
           <div className="flex items-baseline justify-between px-3.5 pt-2.5 pb-1.5">
-            <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-fg-3">SWITCH CONFIG</span>
-            <span className="font-mono text-[10px] text-fg-3">{props.instances.length} configs</span>
+            <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-fg-3">{t("instanceSelector.switchConfig")}</span>
+            <span className="font-mono text-[10px] text-fg-3">{props.instances.length} {t("settings.myConfigs.countSuffix")}</span>
           </div>
           <div className="flex flex-col">
             {props.instances.map((inst) => {
@@ -80,7 +82,7 @@ export default function InstanceSelector(props: Props) {
                     </div>
                     <div className="font-mono text-[10px] text-fg-2">{shortModel(inst.model)}</div>
                   </div>
-                  {isCurrent && <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-accent">ACTIVE</span>}
+                  {isCurrent && <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-accent">{t("instanceSelector.active")}</span>}
                 </button>
               );
             })}
@@ -89,7 +91,7 @@ export default function InstanceSelector(props: Props) {
             onClick={() => { setOpen(false); props.onManage(); }}
             className="flex w-full items-center gap-2 border-t border-line px-3.5 py-2 text-left text-[11px] text-fg-2 hover:bg-field"
           >
-            <span>+ 新建配置 / Manage configs</span>
+            <span>{t("instanceSelector.newConfigOrManage")}</span>
             <span className="ml-auto font-mono text-[10px] text-fg-3">⌘,</span>
           </button>
         </div>

@@ -1,3 +1,4 @@
+import { useT } from "@/lib/i18n";
 import MarkdownContent from "./Markdown";
 
 interface AgentSummaryProps {
@@ -11,6 +12,7 @@ export default function AgentSummary({
   summary,
   stepCount,
 }: AgentSummaryProps) {
+  const t = useT();
   return (
     <div className="flex flex-col gap-2.5 pt-2">
       <div className="flex items-center gap-2">
@@ -22,7 +24,9 @@ export default function AgentSummary({
         <span
           className={`caps ${success ? "text-fg-2" : "text-warning"}`}
         >
-          {success ? `DONE · ${stepCount} STEPS` : `FAILED AT STEP ${stepCount}`}
+          {success
+            ? t("agentSummary.doneSteps", { count: stepCount })
+            : t("agentSummary.failedAtStep", { step: stepCount })}
         </span>
       </div>
       <div className="text-[13px] leading-5 text-fg-1">

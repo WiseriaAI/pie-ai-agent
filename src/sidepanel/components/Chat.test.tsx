@@ -338,7 +338,7 @@ describe("Chat — attachment count cap", () => {
 });
 
 describe("Chat — ImagePlaceholder rendering (Task 14 / R10)", () => {
-  it("user message with image_placeholder attachment shows '[图已释放]' badge", async () => {
+  it("user message with image_placeholder attachment shows '[Image released]' badge", async () => {
     // Seed messages with a user message that carries an image_placeholder
     // attachment — the kind written to storage by the R10 scrub after a
     // SW restart / session switch / port disconnect (R13 eviction paths).
@@ -370,7 +370,7 @@ describe("Chat — ImagePlaceholder rendering (Task 14 / R10)", () => {
     await screen.findByRole("button", { name: /attach image/i });
 
     // The badge should be present with width×height.
-    const badge = screen.getByText(/图已释放/);
+    const badge = screen.getByText(/Image released/);
     expect(badge).toBeTruthy();
     expect(badge.textContent).toMatch(/100×200/);
   });

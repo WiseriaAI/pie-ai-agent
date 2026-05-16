@@ -14,6 +14,7 @@
 // since the user typically picks immediately.
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useT } from "@/lib/i18n";
 import type { PinMode } from "@/lib/sessions/pin-state";
 
 interface TabRow {
@@ -76,6 +77,7 @@ export default function PinnedTabDropdown({
   const [tabs, setTabs] = useState<TabRow[]>([]);
   const [loading, setLoading] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
+  const t = useT();
 
   // v1.5 — set of currently pinned tabIds for O(1) membership check in render.
   const pinnedSet = useMemo(
@@ -160,23 +162,23 @@ export default function PinnedTabDropdown({
     <div
       ref={containerRef}
       role="dialog"
-      aria-label="Pinned tab selector"
+      aria-label={t("pinnedTab.selector")}
       className="absolute left-0 right-0 top-full z-20 mt-1 max-h-[60vh] overflow-hidden rounded-[10px] border border-line bg-surface shadow-lg"
     >
       <div className="border-b border-line bg-canvas px-3.5 py-2">
         <div className="text-[11px] uppercase tracking-[0.08em] text-fg-3">
-          Pinned tab
+          {t("pinnedTab.header")}
         </div>
         {isTaskMode && (
           <div className="mt-1 text-[11px] text-fg-3">
-            A task is currently running — pin is locked for this task. Stop
-            the task to change pin.
+            {t("pinnedTab.taskLockedHint")}
           </div>
         )}
         {/* v1.5 — multi-select hint */}
         {isUserMode && pinnedTabs && pinnedTabs.length > 0 && (
           <div className="mt-1 text-[11px] text-fg-3">
-            {pinnedTabs.length} tab{pinnedTabs.length > 1 ? "s" : ""} pinned. Click again to unpin.
+            {pinnedTabs.length} tab{pinnedTabs.length > 1 ? "s" : ""}{" "}
+            {t("pinnedTab.pinnedHint")}
           </div>
         )}
       </div>
@@ -206,19 +208,19 @@ export default function PinnedTabDropdown({
             {pinMode === "auto" ? "✓" : ""}
           </div>
           <div className="flex-1">
-            <div className="text-[13px] text-fg-1">Auto (follow active tab)</div>
+            <div className="text-[13px] text-fg-1">{t("pinnedTab.autoTitle")}</div>
             <div className="text-[11px] text-fg-3">
-              Pin tracks the user's currently-active tab; locks at first message.
+              {t("pinnedTab.autoDesc")}
             </div>
           </div>
         </li>
 
         {/* Tab items */}
         {loading ? (
-          <li className="px-3.5 py-2 text-[12px] text-fg-3">Loading tabs…</li>
+          <li className="px-3.5 py-2 text-[12px] text-fg-3">{t("pinnedTab.loadingTabs")}</li>
         ) : tabs.length === 0 ? (
           <li className="px-3.5 py-2 text-[12px] text-fg-3">
-            No pinnable tabs in current window.
+            {t("pinnedTab.noPinnableTabs")}
           </li>
         ) : (
           tabs.map((t) => {
@@ -265,8 +267,8 @@ export default function PinnedTabDropdown({
       </ul>
 
       <div className="flex items-center gap-3 border-t border-line bg-canvas px-3.5 py-1.5 font-mono text-[10px] tracking-[0.08em] text-fg-3">
-        <span>esc to close</span>
-        {pinMode !== null && <span>mode: {pinMode}</span>}
+        <span>{t("pinnedTab.escToClose")}</span>
+        {pinMode !== null && <span>{t("pinnedTab.mode")} {pinMode}</span>}
       </div>
     </div>
   );

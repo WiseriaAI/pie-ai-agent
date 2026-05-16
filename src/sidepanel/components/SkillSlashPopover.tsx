@@ -1,5 +1,6 @@
 import type { SkillDefinition } from "@/lib/skills";
 import { normalizeSkillSlashKey } from "@/lib/skills";
+import { useT } from "@/lib/i18n";
 
 interface SkillSlashPopoverProps {
   skills: SkillDefinition[];
@@ -28,12 +29,6 @@ function highlightSubstring(text: string, q: string): React.ReactNode {
   );
 }
 
-function authorTag(skill: SkillDefinition): string {
-  if (skill.builtIn) return "BUILT-IN";
-  if (skill.author === "agent") return "AGENT";
-  return "USER";
-}
-
 export default function SkillSlashPopover({
   skills,
   query,
@@ -41,15 +36,17 @@ export default function SkillSlashPopover({
   onSelect,
   onPick,
 }: SkillSlashPopoverProps) {
+  const t = useT();
+
   if (skills.length === 0) {
     return (
       <div className="absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-[10px] border border-line bg-surface shadow-lg">
         <div className="flex items-center gap-2 border-b border-line px-3.5 py-2.5">
           <code className="font-mono text-[11px] text-accent">/{query}</code>
-          <span className="text-[11px] text-fg-3">no matches</span>
+          <span className="text-[11px] text-fg-3">{t("skillSlashPopover.noMatches")}</span>
         </div>
         <div className="px-3.5 py-2 text-[11px] text-fg-3">
-          Press Esc or keep typing.
+          {t("skillSlashPopover.noMatchesHint")}
         </div>
       </div>
     );
@@ -67,7 +64,11 @@ export default function SkillSlashPopover({
       <ul className="max-h-72 divide-y divide-line overflow-auto">
         {visible.map((skill, i) => {
           const slug = normalizeSkillSlashKey(skill.name) || skill.id;
-          const tag = authorTag(skill);
+          const tag = skill.builtIn
+            ? t("skills.authorTag.builtIn")
+            : skill.author === "agent"
+              ? t("skills.authorTag.agent")
+              : t("skills.authorTag.user");
           const selected = i === selectedIndex;
           return (
             <li
@@ -100,13 +101,13 @@ export default function SkillSlashPopover({
       </ul>
       {overflow > 0 && (
         <div className="border-t border-line px-3.5 py-1.5 text-[10px] text-fg-3">
-          {overflow} more — keep typing to narrow
+          {overflow} {t("skillSlashPopover.moreNarrow")}
         </div>
       )}
       <div className="flex items-center gap-3 border-t border-line bg-canvas px-3.5 py-1.5 font-mono text-[10px] tracking-[0.08em] text-fg-3">
-        <span>↑↓ navigate</span>
-        <span>↵ pick</span>
-        <span>esc dismiss</span>
+        <span>{t("skillSlashPopover.upDownNavigate")}</span>
+        <span>{t("skillSlashPopover.enterPick")}</span>
+        <span>{t("skillSlashPopover.escDismiss")}</span>
       </div>
     </div>
   );

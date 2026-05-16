@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import type { ProviderRef, ModelMeta, BuiltinProvider } from "@/lib/model-router";
 import { getProviderMeta } from "@/lib/model-router";
 import { CUSTOM_PREFIX } from "@/lib/custom-providers";
+import { useT } from "@/lib/i18n";
 
 interface Props {
   provider: ProviderRef;
@@ -17,6 +18,7 @@ interface Props {
 }
 
 export default function ModelDropdown(props: Props) {
+  const t = useT();
   const meta = props.provider.startsWith(CUSTOM_PREFIX) ? undefined : getProviderMeta(props.provider as BuiltinProvider);
   const registryModels = meta?.models ?? [];
   const fetched = props.fetchedModels ?? [];
@@ -61,11 +63,11 @@ export default function ModelDropdown(props: Props) {
   return (
     <div className="flex flex-col gap-1.5">
       <button
-        aria-label={props.value || "(选择模型)"}
+        aria-label={props.value || t("modelDropdown.selectModelPlaceholder")}
         onClick={() => setOpen(!open)}
         className="flex items-center gap-2 rounded border border-line bg-field px-3 py-2 text-left text-[12px] text-fg-1 hover:border-fg-3"
       >
-        <span className="font-mono">{props.value || "(选择模型)"}</span>
+        <span className="font-mono">{props.value || t("modelDropdown.selectModelPlaceholder")}</span>
         <span className="ml-auto text-fg-3">{open ? "▴" : "▾"}</span>
       </button>
 
@@ -76,9 +78,9 @@ export default function ModelDropdown(props: Props) {
             <div className="flex flex-col gap-1.5 border-b border-line p-2">
               {isLazy && (
                 <div className="flex items-center justify-between text-[10px] text-fg-3">
-                  <span className="font-mono">{props.fetchedAt ? new Date(props.fetchedAt).toLocaleString() : "未拉取"}</span>
+                  <span className="font-mono">{props.fetchedAt ? new Date(props.fetchedAt).toLocaleString() : t("modelDropdown.notFetched")}</span>
                   <button onClick={() => props.onRefresh()} className="hover:text-fg-1">
-                    {props.isFetching ? "拉取中…" : "↻ 刷新"}
+                    {props.isFetching ? t("modelDropdown.fetching") : t("modelDropdown.refresh")}
                   </button>
                 </div>
               )}
@@ -88,7 +90,7 @@ export default function ModelDropdown(props: Props) {
                   autoFocus
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder={`搜索 ${fullList.length} 个模型…`}
+                  placeholder={t("modelDropdown.searchPlaceholder", { count: fullList.length })}
                   className="rounded border border-line bg-field px-2 py-1 text-[11px] text-fg-1 placeholder:text-fg-3"
                 />
               )}
@@ -100,10 +102,10 @@ export default function ModelDropdown(props: Props) {
             {list.length === 0 ? (
               <div className="px-3 py-2 text-[11px] text-fg-3">
                 {props.isFetching
-                  ? "拉取中…"
+                  ? t("modelDropdown.fetching")
                   : q.length > 0
-                    ? `无匹配 (${fullList.length} total)`
-                    : "(空 — 用 + 添加自定义)"}
+                    ? t("modelDropdown.noMatch", { count: fullList.length })
+                    : t("modelDropdown.emptyUseAdd")}
               </div>
             ) : (
               list.map((m) => (
@@ -113,11 +115,11 @@ export default function ModelDropdown(props: Props) {
                   className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] hover:bg-field ${m.id === props.value ? "bg-field" : ""}`}
                 >
                   <span className="font-mono text-fg-1">{m.id}</span>
-                  {m.meta?.vision && <span className="rounded bg-line px-1 text-[9px] text-fg-3">vision</span>}
-                  {m.meta?.tools && <span className="rounded bg-line px-1 text-[9px] text-fg-3">tools</span>}
+                  {m.meta?.vision && <span className="rounded bg-line px-1 text-[9px] text-fg-3">{t("modelDropdown.vision")}</span>}
+                  {m.meta?.tools && <span className="rounded bg-line px-1 text-[9px] text-fg-3">{t("modelDropdown.tools")}</span>}
                   {m.isCustom && (
                     <>
-                      <span className="rounded bg-line px-1 text-[9px] text-fg-3">custom</span>
+                      <span className="rounded bg-line px-1 text-[9px] text-fg-3">{t("modelDropdown.custom")}</span>
                       {props.onRemoveCustom && (
                         <span
                           onClick={(e) => { e.stopPropagation(); props.onRemoveCustom!(m.id); }}
@@ -141,7 +143,7 @@ export default function ModelDropdown(props: Props) {
                 onClick={() => setAdding(true)}
                 className="w-full px-3 py-2 text-left text-[11px] text-accent hover:bg-field"
               >
-                + 添加自定义模型
+                {t("modelDropdown.addCustomModel")}
               </button>
             ) : (
               <div className="flex gap-1.5 p-2">
@@ -149,7 +151,7 @@ export default function ModelDropdown(props: Props) {
                   autoFocus
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
-                  placeholder="model id"
+                  placeholder={t("modelDropdown.modelIdPlaceholder")}
                   className="flex-1 rounded border border-line bg-field px-2 py-1 font-mono text-[11px] text-fg-1"
                 />
                 <button
@@ -157,13 +159,12 @@ export default function ModelDropdown(props: Props) {
                   onClick={() => { props.onAddCustom?.(draft.trim()); setDraft(""); setAdding(false); }}
                   className="rounded bg-fg-1 px-2 py-1 text-[10px] text-canvas disabled:opacity-30"
                 >
-                  保存
+                  {t("common.save")}
                 </button>
                 <button
-                  onClick={() => { setDraft(""); setAdding(false); }}
-                  className="rounded border border-line px-2 py-1 text-[10px] text-fg-3"
+                  className="rounded border border-line bg-surface px-2.5 py-1 text-[11px] text-fg-2 hover:text-fg-1"
                 >
-                  取消
+                  {t("common.cancel")}
                 </button>
               </div>
             )}

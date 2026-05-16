@@ -24,6 +24,7 @@ import InstanceForm, { type InstanceFormPayload } from "./InstanceForm";
 import InstancesList from "./InstancesList";
 import NewConfigWizard from "./NewConfigWizard";
 import CustomProviderForm from "./CustomProviderForm";
+import { useT, setLocale, type LocaleSetting } from "@/lib/i18n";
 
 interface Props {
   onBack: () => void;
@@ -33,6 +34,7 @@ interface Props {
 type Tab = "configs" | "skills";
 
 export default function Settings({ onBack, onRunSkill }: Props) {
+  const t = useT();
   const [tab, setTab] = useState<Tab>("configs");
   const [instances, setInstances] = useState<DecryptedInstance[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -91,7 +93,7 @@ export default function Settings({ onBack, onRunSkill }: Props) {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Forget this config?")) return;
+    if (!confirm(t("settings.forgetConfirm"))) return;
     await deleteInstance(id);
     setExpandedId(null);
     await reload();
@@ -155,7 +157,7 @@ export default function Settings({ onBack, onRunSkill }: Props) {
         <button
           onClick={onBack}
           className="flex h-7 w-7 items-center justify-center rounded text-fg-2 hover:bg-field hover:text-fg-1"
-          aria-label="Back to agent"
+          aria-label={t("settings.backToAgent")}
         >
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
             <path
@@ -167,7 +169,7 @@ export default function Settings({ onBack, onRunSkill }: Props) {
             />
           </svg>
         </button>
-        <span className="text-[13px] font-semibold tracking-[-0.005em] text-fg-1">Settings</span>
+        <span className="text-[13px] font-semibold tracking-[-0.005em] text-fg-1">{t("settings.title")}</span>
         <div className="flex-1" />
         <SegmentedTabs value={tab} onChange={setTab} />
       </header>
@@ -179,8 +181,10 @@ export default function Settings({ onBack, onRunSkill }: Props) {
 
             <section className="flex flex-col gap-3.5">
               <div className="flex items-baseline justify-between">
-                <span className="caps text-fg-3">MY CONFIGS</span>
-                <span className="font-mono text-[10px] text-fg-3">{instances.length} configs</span>
+                <span className="caps text-fg-3">{t("settings.myConfigs.title")}</span>
+                <span className="font-mono text-[10px] text-fg-3">
+                  {instances.length} {t("settings.myConfigs.countSuffix")}
+                </span>
               </div>
 
               <InstancesList
@@ -268,7 +272,7 @@ export default function Settings({ onBack, onRunSkill }: Props) {
                   onClick={() => setShowWizard(true)}
                   className="flex items-center gap-2 self-start rounded border border-line bg-transparent px-3.5 py-2 text-[12px] text-accent hover:bg-field"
                 >
-                  + 新建配置
+                  {t("settings.myConfigs.newConfigButton")}
                 </button>
               )}
             </section>
@@ -276,8 +280,8 @@ export default function Settings({ onBack, onRunSkill }: Props) {
             {customProviders.length > 0 && (
               <section className="flex flex-col gap-3.5">
                 <div className="flex items-baseline justify-between">
-                  <span className="caps text-fg-3">CUSTOM PROVIDERS</span>
-                  <span className="font-mono text-[10px] text-fg-3">{customProviders.length} providers</span>
+                  <span className="caps text-fg-3">{t("settings.customProviders.title")}</span>
+                  <span className="font-mono text-[10px] text-fg-3">{customProviders.length} {t("settings.customProviders.countSuffix")}</span>
                 </div>
                 <div className="flex flex-col gap-px overflow-hidden rounded-lg border border-line bg-line">
                   {customProviders.map((cp) => (
@@ -285,9 +289,9 @@ export default function Settings({ onBack, onRunSkill }: Props) {
                       <div className="flex-1">
                         <div className="text-[13px] font-medium text-fg-1">{cp.name}</div>
                         <div className="font-mono text-[11px] text-fg-2">
-                          {cp.baseUrl} · {cp.models.length} models
+                          {cp.baseUrl} · {cp.models.length} {t("settings.customProviders.modelsLabel")}
                           {customProviderCounts[cp.id] > 0 && (
-                            <span> · {customProviderCounts[cp.id]} instance{customProviderCounts[cp.id] > 1 ? "s" : ""}</span>
+                            <span> · {customProviderCounts[cp.id]} {customProviderCounts[cp.id] > 1 ? t("settings.customProviders.instancesLabel") : t("settings.customProviders.instanceLabel")}</span>
                           )}
                         </div>
                       </div>
@@ -298,7 +302,7 @@ export default function Settings({ onBack, onRunSkill }: Props) {
                         }}
                         className="rounded border border-line bg-transparent px-2.5 py-1 text-[11px] text-fg-2 hover:text-fg-1"
                       >
-                        Edit
+                        {t("common.edit")}
                       </button>
                       <button
                         onClick={async () => {
@@ -311,7 +315,7 @@ export default function Settings({ onBack, onRunSkill }: Props) {
                         }}
                         className="rounded border border-warning-line bg-transparent px-2.5 py-1 text-[11px] text-warning hover:bg-warning-tint"
                       >
-                        Delete
+                        {t("common.delete")}
                       </button>
                     </div>
                   ))}
@@ -323,6 +327,31 @@ export default function Settings({ onBack, onRunSkill }: Props) {
               enabled={keyboardSim}
               onToggle={async (n) => { setKeyboardSim(n); await setKeyboardSimulationEnabled(n); }}
             />
+
+            <section className="flex flex-col gap-3.5">
+              <div className="caps text-fg-3">{t("settings.language.sectionTitle")}</div>
+              <label className="flex items-center gap-2 text-[12px]">
+                <span className="text-fg-2 min-w-[120px]">{t("settings.language.label")}</span>
+                <select
+                  className="font-mono text-[12px] bg-field rounded px-2 py-1"
+                  defaultValue="auto"
+                  onChange={(e) => {
+                    void setLocale(e.target.value as LocaleSetting);
+                  }}
+                  ref={(el) => {
+                    if (!el) return;
+                    chrome.storage.local.get("ui_locale").then((g) => {
+                      const v = g["ui_locale"];
+                      if (v === "auto" || v === "en" || v === "zh-CN") el.value = v;
+                    });
+                  }}
+                >
+                  <option value="auto">{t("settings.language.optionAuto")}</option>
+                  <option value="en">{t("settings.language.optionEn")}</option>
+                  <option value="zh-CN">{t("settings.language.optionZhCN")}</option>
+                </select>
+              </label>
+            </section>
           </div>
         ) : (
           <SkillsList onRunSkill={onRunSkill ?? (() => {})} />
@@ -339,17 +368,18 @@ function ActiveSection({
   instances: DecryptedInstance[];
   activeId: string | null;
 }) {
+  const t = useT();
   const active = instances.find((i) => i.id === activeId);
   if (!active) {
     return (
       <section className="rounded-lg border border-warning-line bg-warning-tint px-3 py-2.5 text-[12px] text-warning">
-        No active config — pick one below.
+        {t("settings.noActiveConfig")}
       </section>
     );
   }
   return (
     <section className="flex flex-col gap-2">
-      <div className="caps text-fg-3">ACTIVE</div>
+      <div className="caps text-fg-3">{t("settings.active")}</div>
       <div className="flex items-baseline justify-between">
         <div className="text-[14px] font-semibold text-fg-1">{active.nickname}</div>
         <div className="font-mono text-[11px] text-accent">{active.model}</div>
@@ -365,18 +395,19 @@ function SegmentedTabs({
   value: Tab;
   onChange: (t: Tab) => void;
 }) {
+  const t = useT();
   const tabs: { id: Tab; label: string }[] = [
-    { id: "configs", label: "Configs" },
-    { id: "skills", label: "Skills" },
+    { id: "configs", label: t("settings.tabs.configs") },
+    { id: "skills", label: t("settings.tabs.skills") },
   ];
   return (
     <div className="flex">
-      {tabs.map((t, i) => {
-        const active = value === t.id;
+      {tabs.map((tab, i) => {
+        const active = value === tab.id;
         return (
           <button
-            key={t.id}
-            onClick={() => onChange(t.id)}
+            key={tab.id}
+            onClick={() => onChange(tab.id)}
             className={`border border-line px-3 py-1 text-[11px] ${
               i === 0 ? "rounded-l-md" : "-ml-px rounded-r-md"
             } ${
@@ -385,7 +416,7 @@ function SegmentedTabs({
                 : "bg-transparent text-fg-2 hover:text-fg-1"
             }`}
           >
-            {t.label}
+            {tab.label}
           </button>
         );
       })}
@@ -400,33 +431,34 @@ function KeyboardSimSection({
   enabled: boolean;
   onToggle: (next: boolean) => void;
 }) {
+  const t = useT();
   return (
     <section className="flex flex-col gap-3">
       <div className="flex items-baseline justify-between">
-        <span className="caps text-fg-3">EXPERIMENTAL</span>
+        <span className="caps text-fg-3">{t("settings.experimental")}</span>
       </div>
       <div className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-3.5">
         <div className="flex items-start gap-3">
           <div className="flex flex-1 flex-col gap-1">
-            <div className="text-[13px] font-medium text-fg-1">CDP keyboard input</div>
+            <div className="text-[13px] font-medium text-fg-1">{t("settings.cdpKeyboard.title")}</div>
             <p className="text-[12px] leading-[18px] text-fg-2">
-              Lets the agent type into canvas-rendered editors (Feishu Docs, Google Docs, Notion) via Chrome DevTools Protocol. Required only for those — regular sites work without this.
+              {t("settings.cdpKeyboard.description")}
             </p>
           </div>
           <Switch checked={enabled} onChange={onToggle} />
         </div>
         {enabled && (
           <div className="flex flex-col gap-1.5 rounded border border-warning-line bg-warning-tint px-3 py-2 text-[11px] leading-[16px] text-warning">
-            <span className="font-medium">Heads up — debugger access is active</span>
+            <span className="font-medium">{t("settings.cdpKeyboard.warningTitle")}</span>
             <ul className="flex flex-col gap-1 pl-3 text-warning/90">
               <li className="list-['—__'] pl-0">
-                Chrome shows a yellow debug bar on the target tab while the agent uses keyboard tools. Each call requires your approval.
+                {t("settings.cdpKeyboard.warning1")}
               </li>
               <li className="list-['—__'] pl-0">
-                If the window is minimized or the tab is off-screen, the bar may not be visible — the extension is still controlling it.
+                {t("settings.cdpKeyboard.warning2")}
               </li>
               <li className="list-['—__'] pl-0">
-                Click the yellow bar's "Cancel" anytime to revoke access.
+                {t("settings.cdpKeyboard.warning3")}
               </li>
             </ul>
           </div>

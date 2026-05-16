@@ -1,3 +1,4 @@
+import { useT } from "@/lib/i18n";
 import type { PinnedTabDriftPayload } from "@/types";
 
 /**
@@ -23,6 +24,7 @@ export default function SessionConfirmCard({
   resolved,
   onDiscard,
 }: Props) {
+  const t = useT();
   if (kind === "pinned-tab-drift") {
     return (
       <DriftCard
@@ -36,7 +38,7 @@ export default function SessionConfirmCard({
   // fallback so an SW emit doesn't crash the panel.
   return (
     <div className="rounded-lg border border-line bg-surface px-4 py-3 text-[13px] text-fg-2">
-      Session paused — please reopen the side panel to continue.
+      {t("sessions.sessionPausedMsg")}
     </div>
   );
 }
@@ -50,11 +52,16 @@ function DriftCard({
   resolved?: "discarded";
   onDiscard: () => void;
 }) {
+  const t = useT();
   const isDiscarded = resolved === "discarded";
   const reasonHeadline =
     payload.reason === "tab-closed"
-      ? "PINNED TAB CLOSED"
-      : "PAGE NAVIGATED AWAY";
+      ? t("sessions.pinnedTabClosed")
+      : t("sessions.pageNavigatedAway");
+
+  const driftParts = t("sessions.driftExplanation").split(". ");
+  const driftFirst = driftParts[0] ?? "";
+  const driftSecond = driftParts[1] ?? "";
 
   return (
     <div
@@ -67,27 +74,26 @@ function DriftCard({
           {reasonHeadline}
         </span>
         <p className="leading-5 text-fg-1">
-          The agent was working on your task when the side panel went idle.
-          The tab it was using has{" "}
+          {driftFirst}.{" "}
           {payload.reason === "tab-closed"
-            ? "been closed."
-            : "navigated to a different site."}{" "}
-          Resume isn't safe — the page is no longer the one you approved.
+            ? t("sessions.driftExplanationTabClosed")
+            : t("sessions.driftExplanationNavAway")}{" "}
+          {driftSecond}
         </p>
       </div>
 
       <dl className="flex flex-col gap-1 font-mono text-[11px] text-fg-2">
-        <Row label="ORIGINAL GOAL" value={payload.originalTask || "(empty)"} />
+        <Row label={t("sessions.originalGoal")} value={payload.originalTask || t("sessions.goalEmpty")} />
         <Row
-          label="LAST PINNED TAB"
-          value={payload.lastPinnedTabTitle || "(no title)"}
+          label={t("sessions.lastPinnedTab")}
+          value={payload.lastPinnedTabTitle || t("sessions.noTitle")}
         />
-        <Row label="PINNED ORIGIN" value={payload.pinnedOrigin} />
+        <Row label={t("sessions.pinnedOrigin")} value={payload.pinnedOrigin} />
         {payload.reason === "origin-changed" && payload.currentOrigin && (
-          <Row label="NOW SHOWS" value={payload.currentOrigin} />
+          <Row label={t("sessions.nowShows")} value={payload.currentOrigin} />
         )}
         <Row
-          label="STEPS COMPLETED"
+          label={t("sessions.stepsCompleted")}
           value={String(payload.lastStepIndex)}
         />
       </dl>
@@ -96,9 +102,9 @@ function DriftCard({
         onClick={onDiscard}
         disabled={isDiscarded}
         className="self-start rounded border border-warning-line bg-transparent px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.08em] text-warning hover:bg-warning-tint disabled:cursor-not-allowed disabled:opacity-50"
-        aria-label="Discard the paused task"
+        aria-label={t("sessions.discardTaskAria")}
       >
-        {isDiscarded ? "DISCARDED" : "DISCARD TASK"}
+        {isDiscarded ? t("sessions.discarded") : t("sessions.discardTask")}
       </button>
     </div>
   );
