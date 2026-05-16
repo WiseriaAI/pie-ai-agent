@@ -1528,16 +1528,35 @@ function Composer({
               onManage={onManageInstances}
             />
             <div className="flex-1" />
-            {/* Issue #38 v1 — pick element button */}
+            {/* Issue #38 v1 — pick element button (hand pointer icon) */}
             {!streaming && onPickElement && (
               <button
                 type="button"
-                aria-label={pickerActive ? "拾取中" : "拾取元素"}
+                aria-label={pickerActive ? "拾取中（Esc 取消）" : "拾取页面元素"}
                 onClick={onPickElement}
-                className="rounded border border-line px-2 py-1 text-[11px] text-fg-2 hover:border-fg-3 hover:text-fg-1 disabled:cursor-not-allowed disabled:opacity-40"
-                title={pickerActive ? "点击页面元素引用（Esc 取消）" : "拾取页面元素"}
+                className={
+                  pickerActive
+                    ? "rounded border border-accent px-1.5 py-1 text-accent"
+                    : "rounded border border-line px-1.5 py-1 text-fg-3 hover:border-fg-3 hover:text-fg-2"
+                }
+                title={pickerActive ? "拾取中：点击页面元素引用（Esc 取消）" : "拾取页面元素"}
               >
-                {pickerActive ? "拾取中…" : "拾取元素"}
+                {/* Hand pointer (index finger up) — outline, matches paperclip stroke style */}
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M9 11V5.5a1.5 1.5 0 1 1 3 0V11" />
+                  <path d="M12 9.5a1.5 1.5 0 1 1 3 0V13" />
+                  <path d="M15 11.5a1.5 1.5 0 1 1 3 0V16a6 6 0 0 1-6 6h-2a6 6 0 0 1-4.24-1.76L3.34 18.83a1.5 1.5 0 0 1 2.12-2.12L9 19" />
+                </svg>
               </button>
             )}
             {/* Phase 5 — paperclip attach button (SVG, not emoji) */}
