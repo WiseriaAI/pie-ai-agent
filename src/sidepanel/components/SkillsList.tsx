@@ -244,7 +244,6 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
   }
 
   const quotaPct = Math.min(100, (storageBytes / STORAGE_QUOTA_BYTES) * 100);
-  const builtIn = skills.filter((s) => s.builtIn);
   const custom = skills.filter((s) => !s.builtIn);
 
   return (
@@ -282,25 +281,6 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
           onCancel={closeForm}
           onSubmit={handleSubmit}
         />
-      )}
-
-      {builtIn.length > 0 && (
-        <SkillsSection title="BUILT-IN" subtitle={`${builtIn.length} · read-only`}>
-          {builtIn.map((skill) => (
-            <SkillRow
-              key={skill.id}
-              skill={skill}
-              enabled={isEffectivelyEnabled(skill)}
-              onToggle={() => handleToggle(skill)}
-              onRun={() => onRunSkill(skill.id, skill.name)}
-              onEdit={() => openEditForm(skill)}
-              confirmDelete={confirmDeleteId === skill.id}
-              onAskDelete={() => setConfirmDeleteId(skill.id)}
-              onCancelDelete={() => setConfirmDeleteId(null)}
-              onDelete={() => handleDelete(skill)}
-            />
-          ))}
-        </SkillsSection>
       )}
 
       {custom.length > 0 && (
