@@ -85,4 +85,32 @@ describe("selection listener", () => {
     // selectionchange fires during selectRange but listeners are detached
     expect(document.documentElement.querySelector("[data-pie-quote-bubble]")).toBeNull();
   });
+
+  it("attach twice (same instance) does not duplicate handler — sendMessage fires once", () => {
+    attachSelectionListener();
+    attachSelectionListener();
+    selectRange(0, 5);
+    const host = document.documentElement.querySelector("[data-pie-quote-bubble]");
+    const btn = host!.shadowRoot!.querySelector("button") as HTMLButtonElement;
+    btn.click();
+    expect(sendMessageMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("cross-instance attach cleans up stale window handlers (simulates SW reinject)", () => {
+    // Simulate the prior content-script instance: stale handlers parked on window.
+    const staleMouseUp = vi.fn();
+    const staleSelectionChange = vi.fn();
+    window.addEventListener("mouseup", staleMouseUp);
+    document.addEventListener("selectionchange", staleSelectionChange);
+    (window as unknown as { __pieQuoteHandlers?: { mouseup: EventListener; selectionchange: EventListener } })
+      .__pieQuoteHandlers = { mouseup: staleMouseUp, selectionchange: staleSelectionChange };
+
+    // New instance: attach should remove the stale ones first.
+    attachSelectionListener();
+    window.dispatchEvent(new MouseEvent("mouseup"));
+    document.dispatchEvent(new Event("selectionchange"));
+
+    expect(staleMouseUp).not.toHaveBeenCalled();
+    expect(staleSelectionChange).not.toHaveBeenCalled();
+  });
 });

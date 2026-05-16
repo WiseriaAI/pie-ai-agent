@@ -1,4 +1,5 @@
 import { extractElementQuotePayload } from "./bbox-extractor";
+import { safeSendMessage } from "./safe-send-message";
 
 const HOST_ATTR = "data-pie-quote-picker";
 
@@ -77,7 +78,7 @@ function onClickCapture(e: MouseEvent): void {
   e.preventDefault();
   e.stopPropagation();
   const payload = extractElementQuotePayload(target, location.href);
-  void chrome.runtime.sendMessage({ type: "quote-element-captured", payload });
+  safeSendMessage({ type: "quote-element-captured", payload });
   exitPicker();
 }
 

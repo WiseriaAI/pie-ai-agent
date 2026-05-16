@@ -1,5 +1,6 @@
 const HOST_ATTR = "data-pie-quote-bubble";
 const BUBBLE_HEIGHT = 24;
+const BUBBLE_WIDTH = 24;
 const MARGIN = 6;
 
 let host: HTMLElement | null = null;
@@ -62,8 +63,10 @@ export function showBubble(args: { anchorTop: number; anchorLeft: number; onClic
   currentClick = args.onClick;
   const above = args.anchorTop - BUBBLE_HEIGHT - MARGIN;
   const top = above >= 0 ? above : args.anchorTop + MARGIN;
+  const maxLeft = window.innerWidth - BUBBLE_WIDTH - MARGIN;
+  const left = Math.max(MARGIN, Math.min(maxLeft, args.anchorLeft));
   h.style.top = `${Math.round(top)}px`;
-  h.style.left = `${Math.round(Math.max(8, args.anchorLeft))}px`;
+  h.style.left = `${Math.round(left)}px`;
 }
 
 export function hideBubble(): void {

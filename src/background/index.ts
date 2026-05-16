@@ -76,6 +76,8 @@ import {
 } from "./abort-rotation";
 import { createKeepAlive, type KeepAlive } from "./keep-alive";
 import { cleanupLegacySkipPermissions } from "./cleanup-migration";
+import { reinjectAllTabs } from "./content-reinject";
+import { dispatchQuoteAdded, drainPendingQuotesToPort } from "./quote-dispatch";
 import { cleanupThinShellSkills } from "@/lib/skills/migration-cleanup-thinshell";
 import {
   handleQuoteTextCaptured,
@@ -185,6 +187,21 @@ chrome.runtime.onInstalled.addListener((details) => {
   recoveryReady.catch((e) => {
     console.warn("[sw] recovery on onInstalled failed:", e);
   });
+  // ROADMAP §14 v1.1 — re-inject content scripts into already-open tabs so
+  // they get a live runtime after extension reload/update. Without this,
+  // previously-open tabs would orphan and silently fail every sendMessage
+  // until the user manually refreshes the tab. Fire-and-forget; failures
+  // (restricted URLs, tab discarded) are counted in the result and
+  // surfaced via console.
+  reinjectAllTabs()
+    .then((res) => {
+      console.info(
+        `[sw] content reinject: ${res.injected} ok / ${res.skipped} skipped / ${res.failed} failed`,
+      );
+    })
+    .catch((e) => {
+      console.warn("[sw] content reinject failed:", e);
+    });
 });
 
 // M1-U5 — Chrome process startup recovery. NOTE: in MV3 this fires
@@ -451,6 +468,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === "quote-text-captured" || message.type === "quote-element-captured") {
+    // ROADMAP §14 v1.1 #4 — auto-open side panel on bubble click. Must run
+    // synchronously inside the onMessage handler to preserve the trusted
+    // user-gesture chain (bubble click → content sendMessage → here). Any
+    // await before this would invalidate the gesture and Chrome would reject
+    // sidePanel.open with "must be called in response to a user gesture".
+    const senderTabId = sender.tab?.id;
+    if (typeof senderTabId === "number") {
+      chrome.sidePanel.open({ tabId: senderTabId }).catch((e) => {
+        console.warn("[sw] sidePanel.open from quote bubble failed:", e);
+      });
+    }
     void (async () => {
       let out;
       if (message.type === "quote-text-captured") {
@@ -461,13 +489,67 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (!out) return;
       // 每个 port 绑定一个 sessionId（port name = chat-stream-${sessionId}）。
       // 派发时为每个 port 注入它自己的 sessionId，panel 的 port handler 才能
-      // 路由到对应 slot。
-      for (const [sessionId, port] of portsBySession.entries()) {
-        try { port.postMessage({ ...out, sessionId }); } catch { /* port closed */ }
-      }
+      // 路由到对应 slot。如果 ports 为空（bubble click 触发 sidePanel.open
+      // 但 panel 还在 mount），dispatchQuoteAdded 会 stash，onConnect 时 drain。
+      dispatchQuoteAdded(out, portsBySession);
     })();
     return;
   }
+});
+
+// ROADMAP §14 v1.1 #5 — keyboard shortcut for "add selection as quote".
+// manifest.commands["quote-selection"] declares the command (no
+// suggested_key; user binds it at chrome://extensions/shortcuts).
+// Flow: hotkey → onCommand → executeScript to read window.getSelection()
+// on the active tab → reuse handleQuoteTextCaptured + dispatchQuoteAdded
+// so the resulting chip and broadcast are identical to the bubble path.
+// Self-contained function injected via chrome.scripting.executeScript.
+// MUST NOT reference outer-scope identifiers (closures don't survive serialization).
+function extractCurrentSelectionForQuote(): { text: string; sourceUrl: string } | null {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return null;
+  const text = sel.toString().trim();
+  if (text.length === 0) return null;
+  return { text, sourceUrl: location.href };
+}
+
+chrome.commands.onCommand.addListener((command) => {
+  if (command !== "quote-selection") return;
+  void (async () => {
+    // Open side panel first so the user-gesture window is consumed before
+    // any tabs/scripting await drops it.
+    try {
+      const win = await chrome.windows.getCurrent();
+      if (typeof win.id === "number") {
+        await chrome.sidePanel.open({ windowId: win.id });
+      }
+    } catch (e) {
+      console.warn("[sw] sidePanel.open from shortcut failed:", e);
+    }
+
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (typeof tab?.id !== "number") return;
+
+    let payload: { text: string; sourceUrl: string } | null = null;
+    try {
+      const results = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: extractCurrentSelectionForQuote,
+      });
+      payload = (results[0]?.result as typeof payload) ?? null;
+    } catch (e) {
+      console.warn("[sw] shortcut: selection extraction failed:", e);
+      return;
+    }
+    if (!payload) return;
+
+    const out = await handleQuoteTextCaptured(
+      { tab: { id: tab.id } } as chrome.runtime.MessageSender,
+      payload,
+    );
+    if (!out) return;
+    dispatchQuoteAdded(out, portsBySession);
+  })();
 });
 
 // --- M1-U4: panel-mounted handler ---
@@ -1116,6 +1198,12 @@ chrome.runtime.onConnect.addListener((port) => {
   // panel connects, not when a recording starts. Without this, quote-added never
   // reaches the panel because the dispatch loop iterates an empty map.
   portsBySession.set(portSessionId, port);
+
+  // v1.1 — drain any quote-added stashed while panel was booting (bubble click
+  // triggers sidePanel.open + dispatchQuoteAdded back-to-back; the dispatch
+  // happens before the panel's port connects). The new port's sessionId is the
+  // session the panel landed in, which is exactly where the chip belongs.
+  drainPendingQuotesToPort(portSessionId, port);
 
   // R13(c) evictOnSetActive removed (#30) — multi-session: a new port no
   // longer means the previous active session is exiting. Image-cache 30 MB

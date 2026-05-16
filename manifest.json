@@ -39,5 +39,10 @@
     "32": "public/icons/icon-32.png",
     "48": "public/icons/icon-48.png",
     "128": "public/icons/icon-128.png"
+  },
+  "commands": {
+    "quote-selection": {
+      "description": "Add current text selection as a Pie quote (set hotkey at chrome://extensions/shortcuts)"
+    }
   }
 }

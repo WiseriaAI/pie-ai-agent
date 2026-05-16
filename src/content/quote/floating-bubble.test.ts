@@ -43,6 +43,28 @@ describe("floating bubble", () => {
     expect(__test__isVisible()).toBe(false);
   });
 
+  it("clamps left when selection touches viewport right edge", () => {
+    showBubble({ anchorTop: 100, anchorLeft: 1278, onClick: vi.fn() });
+    const host = document.documentElement.querySelector<HTMLElement>("[data-pie-quote-bubble]")!;
+    const styleLeft = parseInt(host.style.left, 10);
+    expect(styleLeft).toBeLessThanOrEqual(1280 - 24 - 6);
+    expect(styleLeft).toBeGreaterThanOrEqual(1280 - 24 - 6);
+  });
+
+  it("clamps left when selection touches viewport left edge", () => {
+    showBubble({ anchorTop: 100, anchorLeft: -50, onClick: vi.fn() });
+    const host = document.documentElement.querySelector<HTMLElement>("[data-pie-quote-bubble]")!;
+    const styleLeft = parseInt(host.style.left, 10);
+    expect(styleLeft).toBe(6);
+  });
+
+  it("respects anchorLeft when within viewport bounds", () => {
+    showBubble({ anchorTop: 100, anchorLeft: 600, onClick: vi.fn() });
+    const host = document.documentElement.querySelector<HTMLElement>("[data-pie-quote-bubble]")!;
+    const styleLeft = parseInt(host.style.left, 10);
+    expect(styleLeft).toBe(600);
+  });
+
   it("click in shadow root invokes callback then hides", () => {
     const onClick = vi.fn();
     showBubble({ anchorTop: 100, anchorLeft: 200, onClick });
