@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useT } from "@/lib/i18n";
 import type { DecryptedInstance } from "@/lib/instances";
 
 interface Props {
@@ -18,6 +19,7 @@ function shortModel(modelId: string): string {
 }
 
 export default function InstanceSelector(props: Props) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const current = props.instances.find((i) => i.id === props.currentId);
@@ -89,7 +91,7 @@ export default function InstanceSelector(props: Props) {
             onClick={() => { setOpen(false); props.onManage(); }}
             className="flex w-full items-center gap-2 border-t border-line px-3.5 py-2 text-left text-[11px] text-fg-2 hover:bg-field"
           >
-            <span>+ 新建配置 / Manage configs</span>
+            <span>{t("instanceSelector.newConfigOrManage")}</span>
             <span className="ml-auto font-mono text-[10px] text-fg-3">⌘,</span>
           </button>
         </div>

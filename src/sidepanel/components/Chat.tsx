@@ -19,6 +19,7 @@ import { QuoteChip } from "./QuoteChip";
 import { escapeWrapperAttribute } from "@/lib/agent/untrusted-wrappers";
 import type { Quote, TextQuote, ElementQuote } from "@/types";
 import InstanceSelector from "./InstanceSelector";
+import { useT } from "@/lib/i18n";
 import {
   getSessionMeta,
   setSessionMeta,
@@ -166,6 +167,7 @@ export default function Chat({
   const [input, setInput] = useState("");
   const [hasConfig, setHasConfig] = useState<boolean | null>(null);
   const [pageChanged, setPageChanged] = useState(false);
+  const t = useT();
   // M5 — PinnedTabDropdown open state. Lives in Chat (not the dropdown
   // itself) because the dropdown's anchor is the PINNED row in the info bar.
   const [pinDropdownOpen, setPinDropdownOpen] = useState(false);
@@ -640,8 +642,8 @@ export default function Chat({
       // content shows a concise "📼 从录制创建 skill" badge + their prompt.
       const userPromptText = userInput || "(no additional guidance)";
       content = userInput
-        ? `📼 从录制创建 skill：${userInput}`
-        : `📼 从录制创建 skill（${pendingRecording.stepCount} 步）`;
+        ? t("chat.recording.createSkillFromRecording", { input: userInput })
+        : t("chat.recording.createSkillFromRecordingWithStep", { stepCount: pendingRecording.stepCount });
       expandedForLLM = `Run the "Create Skill from Recording" skill (id: create_skill_from_recording).
 
 Pass these parameters when invoking the tool:
@@ -1153,7 +1155,7 @@ After the skill completes, briefly summarize what was created (the user will see
         <div
           data-testid="pending-recording-chip"
           className="mx-3 mb-1.5 flex items-center gap-2 rounded-md border border-line bg-field px-2.5 py-1.5 text-[13px] text-fg-1"
-          title={`Send → 由 LLM 调 create_skill_from_recording 创建 skill\n\n预览（前 200 字）：\n${pendingRecording.trace.slice(0, 200)}${pendingRecording.trace.length > 200 ? "…" : ""}`}
+          title={`${t("chat.recording.sendHint")}\n${pendingRecording.trace.slice(0, 200)}${pendingRecording.trace.length > 200 ? "…" : ""}`}
         >
           <span
             className="inline-block h-1.5 w-1.5 flex-shrink-0 rounded-full bg-pending"
@@ -1167,7 +1169,7 @@ After the skill completes, briefly summarize what was created (the user will see
             <span className="ml-1 text-fg-3">{pendingRecording.stepCount === 1 ? "step" : "steps"}</span>
           </span>
           <span className="text-fg-3">·</span>
-          <span className="text-fg-2">写提示 → Send 让 LLM 创建 skill</span>
+          <span className="text-fg-2">{t("chat.recording.composeHint")}</span>
           <button
             type="button"
             aria-label="discard recording"
@@ -1294,6 +1296,7 @@ function MessageBubble({
 }: {
   message: Extract<DisplayMessage, { role: "user" | "assistant" }>;
 }) {
+  const t = useT();
   if (message.role === "user") {
     // Issue #38 — quote element screenshots ride along in `attachments` so the
     // LLM sees them as image content blocks, but the bubble already renders a
@@ -1361,10 +1364,10 @@ function MessageBubble({
               // the user understands the image was here but is no longer cached.
               <span
                 key={a.id}
-                title="图片不持久化存储 — 切换会话或重启 SW 后释放"
+                title={t("chat.attachment.imagePlaceholderTitle")}
                 className="inline-block self-start rounded border border-line bg-field px-2 py-0.5 font-mono text-[11px] text-fg-3"
               >
-                {`[图已释放] ${a.width}×${a.height}`}
+                {t("chat.attachment.imageReleasedBadge", { width: a.width, height: a.height })}
               </span>
             ),
           )}

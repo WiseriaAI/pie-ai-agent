@@ -998,7 +998,7 @@ describe("port lifecycle — SW idle-out / disconnect recovery", () => {
 
       // streaming 必须 revert，否则 UI 永远卡在 spinner 上。
       await waitFor(() => expect(result.current.streaming).toBe(false));
-      expect(result.current.error).toBe("无法连接到后台服务，请重试");
+      expect(result.current.error).toBe("Unable to reach the background service. Please retry.");
       // 用户消息仍持久化（不丢），用户可重试。
       expect(result.current.messages).toEqual([
         { role: "user", content: "hello" },

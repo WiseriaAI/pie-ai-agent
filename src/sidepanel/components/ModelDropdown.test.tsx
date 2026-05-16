@@ -36,7 +36,7 @@ describe("ModelDropdown", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: /my-finetune/i }));
     expect(screen.getAllByText(/my-finetune/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/custom/i)).toBeTruthy();
+    expect(screen.getByText(/^custom$/)).toBeTruthy();
   });
 
   it("OpenRouter: empty registry triggers onRefresh on first open if no fetchedModels", () => {
@@ -52,7 +52,7 @@ describe("ModelDropdown", () => {
         onRefresh={onRefresh}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: /选择模型/ }));
+    fireEvent.click(screen.getByRole("button", { name: /select model/i }));
     expect(onRefresh).toHaveBeenCalled();
   });
 });

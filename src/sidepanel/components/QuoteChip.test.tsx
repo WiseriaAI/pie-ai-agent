@@ -17,7 +17,7 @@ describe("QuoteChip", () => {
       sourceTabId: 1,
     };
     render(<QuoteChip quote={q} onRemove={vi.fn()} />);
-    expect(screen.getByRole("button", { name: /移除引用/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /remove quote/i })).toBeTruthy();
     expect(screen.getByText(/Hello world/)).toBeTruthy();
   });
 
@@ -38,7 +38,7 @@ describe("QuoteChip", () => {
     expect(screen.getByText(/Create issue/)).toBeTruthy();
   });
 
-  it("element chip with null imageDataUrl shows [截图不可用]", () => {
+  it("element chip with null imageDataUrl shows [Screenshot unavailable]", () => {
     const q: Quote = {
       id: "q3",
       kind: "element",
@@ -53,14 +53,14 @@ describe("QuoteChip", () => {
     render(<QuoteChip quote={q} onRemove={vi.fn()} />);
     const chip = screen.getByText(/button/);
     fireEvent.mouseEnter(chip);
-    expect(screen.getByText(/截图不可用/)).toBeTruthy();
+    expect(screen.getByText(/screenshot unavailable/i)).toBeTruthy();
   });
 
   it("× button calls onRemove with id", () => {
     const onRemove = vi.fn();
     const q: Quote = { id: "qr", kind: "text", text: "x", sourceUrl: "u", sourceTabId: 1 };
     render(<QuoteChip quote={q} onRemove={onRemove} />);
-    fireEvent.click(screen.getByRole("button", { name: /移除引用/ }));
+    fireEvent.click(screen.getByRole("button", { name: /remove quote/i }));
     expect(onRemove).toHaveBeenCalledWith("qr");
   });
 });

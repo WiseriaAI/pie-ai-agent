@@ -9,6 +9,7 @@ import {
   generateUserSkillId,
   getSkillStorageBytes,
 } from "@/lib/skills";
+import { useT } from "@/lib/i18n";
 
 interface SkillsListProps {
   onRunSkill: (skillId: string, skillName: string) => void;
@@ -132,6 +133,7 @@ function normalizeSlug(name: string): string {
 }
 
 export default function SkillsList({ onRunSkill }: SkillsListProps) {
+  const t = useT();
   const [skills, setSkills] = useState<SkillDefinition[]>([]);
   const [enabledIds, setEnabledIds] = useState<Set<string>>(new Set());
   const [explicitDisabledIds, setExplicitDisabledIds] = useState<Set<string>>(new Set());
@@ -269,8 +271,7 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
           lineHeight: 1.5,
         }}
       >
-        显示可复用工作流（skill）。底层工具（click / type / scroll / open_url /
-        capture_visible_tab 等）由 LLM 在执行 skill 时自动选用，不在此列表。
+        {t("skills.empty.cta")}
       </div>
 
       {showForm && (
@@ -284,7 +285,7 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
       )}
 
       {custom.length > 0 && (
-        <SkillsSection title="YOURS" subtitle={`${custom.length} · editable`}>
+        <SkillsSection title={t("skills.section.yours.title")} subtitle={t("skills.section.yours.subtitleEditable", { count: custom.length })}>
           {custom.map((skill) => (
             <SkillRow
               key={skill.id}

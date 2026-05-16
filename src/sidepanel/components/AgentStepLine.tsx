@@ -15,6 +15,7 @@
  */
 
 import { useState } from "react";
+import { useT } from "@/lib/i18n";
 import type { ResolvedElement } from "@/types";
 import type { AgentStepImageExtras } from "@/types/messages";
 
@@ -42,6 +43,7 @@ export default function AgentStepLine({
   image,
 }: AgentStepLineProps) {
   const [expanded, setExpanded] = useState(defaultExpanded);
+  const t = useT();
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -50,7 +52,7 @@ export default function AgentStepLine({
         <span className={statusTextClass(status)}>
           {status === "pending" ? (
             <>
-              正在调用 <code className="font-mono text-fg-1">{tool}</code>
+              {t("agentStep.callingToolPrefix")} <code className="font-mono text-fg-1">{tool}</code>
               <span className="text-fg-3">…</span>
             </>
           ) : (
@@ -68,7 +70,7 @@ export default function AgentStepLine({
           aria-expanded={expanded}
           className="ml-auto font-mono text-[10px] uppercase tracking-[0.08em] text-fg-3 hover:text-fg-2"
         >
-          {expanded ? "收起" : "详情"}
+          {expanded ? t("agentStep.collapse") : t("agentStep.expand")}
         </button>
       </div>
 

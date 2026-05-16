@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useT } from "@/lib/i18n";
 import type { Quote } from "@/types";
 
 type Props = {
@@ -15,6 +16,7 @@ function sourceLabel(url: string): string {
 }
 
 export function QuoteChip({ quote, onRemove }: Props) {
+  const t = useT();
   const [hovered, setHovered] = useState(false);
   const isText = quote.kind === "text";
   const source = sourceLabel(quote.sourceUrl);
@@ -60,7 +62,7 @@ export function QuoteChip({ quote, onRemove }: Props) {
       </span>
       <button
         type="button"
-        aria-label="移除引用"
+        aria-label={t("quoteChip.removeQuote")}
         onClick={() => onRemove(quote.id)}
         className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-line bg-canvas text-[10px] leading-none text-fg-2 hover:border-fg-3 hover:text-fg-1"
       >
@@ -91,7 +93,7 @@ export function QuoteChip({ quote, onRemove }: Props) {
                   className="rounded"
                 />
               ) : (
-                <div className="italic text-fg-3">[截图不可用]</div>
+                <div className="italic text-fg-3">{t("quoteChip.screenshotUnavailable")}</div>
               )}
               <div className="mt-1 text-fg-2">role: {quote.role}</div>
               <div className="text-fg-2">name: {quote.accessibleName}</div>

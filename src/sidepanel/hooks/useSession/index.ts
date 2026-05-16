@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChatMessage } from "@/lib/model-router";
 import type { ImageAttachment } from "@/lib/images";
+import { useT } from "@/lib/i18n";
 import type {
   DisplayMessage,
   PortMessageToPanel,
@@ -228,6 +229,7 @@ export function useSession(): UseSession {
     null,
   );
   const [ready, setReady] = useState(false);
+  const t = useT();
 
   // Multi-session (#30) — one Port per sessionId. Switching sessions does
   // NOT disconnect the previous port; SW continues delivering messages for
@@ -624,7 +626,7 @@ export function useSession(): UseSession {
         patchSlot(id, {
           streaming: false,
           streamFinished: true,
-          error: "无法连接到后台服务，请重试",
+          error: t("errors.connectBackgroundFailedRetry"),
         });
         return;
       }
