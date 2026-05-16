@@ -40,13 +40,20 @@ const local = {
   },
 
   set(items: Record<string, unknown>): Promise<void> {
+    const changes: Record<string, chrome.storage.StorageChange> = {};
     for (const [k, v] of Object.entries(items)) {
+      const oldValue = local.__store[k];
       if (v === undefined) {
         delete local.__store[k];
       } else {
         local.__store[k] = v;
       }
+      changes[k] = { oldValue, newValue: v };
     }
+    // Emit onChanged after the store is updated (non-blocking).
+    Promise.resolve().then(() => {
+      for (const l of local.__changedListeners) l(changes, "local");
+    });
     return Promise.resolve();
   },
 
@@ -232,7 +239,13 @@ const i18n = {
 };
 
 const chromeMock = {
-  storage: { local },
+  storage: {
+    local,
+    onChanged: {
+      addListener: local.onChanged.addListener,
+      removeListener: local.onChanged.removeListener,
+    },
+  },
   runtime,
   tabs,
   webNavigation,
