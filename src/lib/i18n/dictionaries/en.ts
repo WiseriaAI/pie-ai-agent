@@ -11,6 +11,20 @@ export const enDict = {
     copy: "Copy",
     copyFailed: "Copy failed",
   },
+  settings: {
+    language: {
+      sectionTitle: "LANGUAGE",
+      label: "UI language",
+      optionAuto: "Auto (follow browser)",
+      optionEn: "English",
+      optionZhCN: "中文 (Simplified Chinese)",
+    },
+    myConfigs: {
+      title: "MY CONFIGS",
+      countSuffix: "configs",
+      newConfigButton: "+ New config",
+    },
+  },
 } as const satisfies DictNode;
 
 export type EnDict = typeof enDict;

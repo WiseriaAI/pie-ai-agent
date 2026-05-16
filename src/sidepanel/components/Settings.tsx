@@ -24,6 +24,7 @@ import InstanceForm, { type InstanceFormPayload } from "./InstanceForm";
 import InstancesList from "./InstancesList";
 import NewConfigWizard from "./NewConfigWizard";
 import CustomProviderForm from "./CustomProviderForm";
+import { useT, setLocale, type LocaleSetting } from "@/lib/i18n";
 
 interface Props {
   onBack: () => void;
@@ -33,6 +34,7 @@ interface Props {
 type Tab = "configs" | "skills";
 
 export default function Settings({ onBack, onRunSkill }: Props) {
+  const t = useT();
   const [tab, setTab] = useState<Tab>("configs");
   const [instances, setInstances] = useState<DecryptedInstance[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -179,8 +181,10 @@ export default function Settings({ onBack, onRunSkill }: Props) {
 
             <section className="flex flex-col gap-3.5">
               <div className="flex items-baseline justify-between">
-                <span className="caps text-fg-3">MY CONFIGS</span>
-                <span className="font-mono text-[10px] text-fg-3">{instances.length} configs</span>
+                <span className="caps text-fg-3">{t("settings.myConfigs.title")}</span>
+                <span className="font-mono text-[10px] text-fg-3">
+                  {instances.length} {t("settings.myConfigs.countSuffix")}
+                </span>
               </div>
 
               <InstancesList
@@ -268,7 +272,7 @@ export default function Settings({ onBack, onRunSkill }: Props) {
                   onClick={() => setShowWizard(true)}
                   className="flex items-center gap-2 self-start rounded border border-line bg-transparent px-3.5 py-2 text-[12px] text-accent hover:bg-field"
                 >
-                  + 新建配置
+                  {t("settings.myConfigs.newConfigButton")}
                 </button>
               )}
             </section>
@@ -323,6 +327,31 @@ export default function Settings({ onBack, onRunSkill }: Props) {
               enabled={keyboardSim}
               onToggle={async (n) => { setKeyboardSim(n); await setKeyboardSimulationEnabled(n); }}
             />
+
+            <section className="flex flex-col gap-3.5">
+              <div className="caps text-fg-3">{t("settings.language.sectionTitle")}</div>
+              <label className="flex items-center gap-2 text-[12px]">
+                <span className="text-fg-2 min-w-[120px]">{t("settings.language.label")}</span>
+                <select
+                  className="font-mono text-[12px] bg-field rounded px-2 py-1"
+                  defaultValue="auto"
+                  onChange={(e) => {
+                    void setLocale(e.target.value as LocaleSetting);
+                  }}
+                  ref={(el) => {
+                    if (!el) return;
+                    chrome.storage.local.get("ui_locale").then((g) => {
+                      const v = g["ui_locale"];
+                      if (v === "auto" || v === "en" || v === "zh-CN") el.value = v;
+                    });
+                  }}
+                >
+                  <option value="auto">{t("settings.language.optionAuto")}</option>
+                  <option value="en">{t("settings.language.optionEn")}</option>
+                  <option value="zh-CN">{t("settings.language.optionZhCN")}</option>
+                </select>
+              </label>
+            </section>
           </div>
         ) : (
           <SkillsList onRunSkill={onRunSkill ?? (() => {})} />

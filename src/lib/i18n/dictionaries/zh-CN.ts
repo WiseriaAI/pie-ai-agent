@@ -14,4 +14,18 @@ export const zhCNDict = {
     copy: "复制",
     copyFailed: "复制失败",
   },
+  settings: {
+    language: {
+      sectionTitle: "语言",
+      label: "界面语言",
+      optionAuto: "自动（跟随浏览器）",
+      optionEn: "English",
+      optionZhCN: "中文（简体）",
+    },
+    myConfigs: {
+      title: "我的配置",
+      countSuffix: "条配置",
+      newConfigButton: "+ 新建配置",
+    },
+  },
 } as const satisfies EnDict;
