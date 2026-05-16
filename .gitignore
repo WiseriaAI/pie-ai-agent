@@ -12,6 +12,12 @@ dist/
 # Release artifacts uploaded to GitHub Releases / Chrome Web Store
 pie-*.zip
 
+# Self-signed CRX pack artifacts (chrome://extensions "Pack extension").
+# dist.pem is the private signing key — never commit. We publish via CWS,
+# not via self-signed CRX, so neither file should leave the local machine.
+dist.crx
+dist.pem
+
 # Local CLI / agent scratch (not part of project)
 .deepseek/
 AGENTS.md
