@@ -21,3 +21,6 @@ dist.pem
 # Local CLI / agent scratch (not part of project)
 .deepseek/
 AGENTS.md
+
+# Playwright MCP local debug snapshots / console logs
+.playwright-mcp/
