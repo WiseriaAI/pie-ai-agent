@@ -46,6 +46,24 @@ Anthropic (native), OpenAI, OpenRouter, MiniMax, ZhiPu (智谱), Bailian (百炼
 3. Load unpacked 加载 `dist/` 目录
 4. 点击扩展图标打开 side panel
 
+## Release
+
+`.github/workflows/release.yml` 是唯一发布入口。**不要**手动 `gh release upload` 传 zip——除非是已发布 tag 的紧急补救。
+
+发新版流程：
+1. bump `package.json` 和 `manifest.json` 的 `version`（必须一致），commit
+2. `git tag v0.x.y && git push origin v0.x.y`
+3. 在 GitHub 上 publish release notes（tag 已存在即可）
+4. tag push 触发 workflow → CI 跑 `pnpm build` → 验 manifest invariant → 打包 `pie-0.x.y.zip` → 上传到对应 release
+
+Workflow 内置 invariant（任一失败则 CI fail，不会上传）：
+- `dist/manifest.json` 的 `background.service_worker` 和 `content_scripts[0].js[0]` 必须以 `.js` 结尾（不是 `.ts`）
+- `manifest.version` 必须等于 tag 去掉 `v` 前缀（即 package.json / manifest.json 没 bump 就发 tag 会被拦下）
+
+补传历史 tag：`gh workflow run release.yml -f tag=v0.x.y`（用 `workflow_dispatch`，会 checkout 那个 tag commit 重 build + `--clobber` 覆盖）。
+
+为什么严格：README Option 2 引导用户从 release 下载 `pie-x.y.z.zip` 解压加载；release 没有 asset → 用户只能下 GitHub 自动生成的 Source code (zip)，源码 manifest 引用 `src/**/*.ts` → Chrome 拒（Service worker registration failed / Invalid script mime type）。
+
 ## Architecture Invariants (evergreen)
 
 > Phase 落地的具体 invariant 清单（P3-A...V / M3-U1...U5 / capability-grant guards 等）见 `docs/solutions/`，不在此重复。
