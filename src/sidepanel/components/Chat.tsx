@@ -1496,6 +1496,18 @@ function Composer({
           />
           {/* Bottom row: action row */}
           <div className="flex items-center gap-2">
+            {!streaming && (
+              <ToolsMenu
+                onPickElement={onPickElement}
+                pickerActive={pickerActive}
+                onAttachClick={onAttachClick}
+                supportsVision={supportsVision}
+                attachmentCount={attachmentCount}
+                onStartRecording={onStartRecording}
+                recordingDisabled={recordingDisabled}
+              />
+            )}
+            <div className="flex-1" />
             <InstanceSelector
               instances={instances}
               currentId={currentInstanceId}
@@ -1503,110 +1515,182 @@ function Composer({
               onChange={onInstanceChange}
               onManage={onManageInstances}
             />
-            <div className="flex-1" />
-            {/* Issue #38 v1 — pick element button (hand pointer icon) */}
-            {!streaming && onPickElement && (
-              <button
-                type="button"
-                aria-label={pickerActive ? t("chat.elementPicker.activeAriaLabel") : t("chat.elementPicker.idle")}
-                onClick={onPickElement}
-                className={
-                  pickerActive
-                    ? "rounded border border-accent px-1.5 py-1 text-accent"
-                    : "rounded border border-line px-1.5 py-1 text-fg-3 hover:border-fg-3 hover:text-fg-2"
-                }
-                title={pickerActive ? t("chat.elementPicker.active") : t("chat.elementPicker.idle")}
-              >
-                {/* Hand silhouette (filled palm) — user-supplied icon */}
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 1024 1024"
-                  fill="currentColor"
-                  aria-hidden="true"
-                >
-                  <path d="M870.4 204.8c-18.6368 0-36.1472 5.0176-51.2 13.7728l0-64.9728c0-56.4736-45.9264-102.4-102.4-102.4-21.0944 0-40.6528 6.4-56.9856 17.3568-14.0288-39.8848-52.0192-68.5568-96.6144-68.5568s-82.6368 28.672-96.6144 68.5568c-16.2816-10.9568-35.8912-17.3568-56.9856-17.3568-56.4736 0-102.4 45.9264-102.4 102.4l0 377.4976-68.9152-119.4496c-13.3632-24.32-35.1744-41.6256-61.3888-48.7936-25.5488-6.9632-52.1216-3.2768-74.8544 10.3424-46.4384 27.8528-64.1536 90.8288-39.424 140.3904 1.536 3.1232 34.2016 70.0416 136.192 273.92 48.0256 96 100.7104 164.6592 156.6208 203.9808 43.8784 30.8736 74.1888 32.4608 79.8208 32.4608l256 0c43.5712 0 84.0704-14.1824 120.4224-42.0864 34.1504-26.2656 63.7952-64.256 88.064-112.8448 47.8208-95.6416 73.1136-227.9424 73.1136-382.6688l0-179.2c0-56.4736-45.9264-102.4-102.4-102.4zM921.6 486.4c0 146.7904-23.3984 271.1552-67.6864 359.7312-28.8768 57.7536-80.5888 126.6688-162.7136 126.6688l-255.488 0c-1.9968-0.1536-23.552-2.56-56.064-26.88-32.4096-24.2688-82.176-75.3664-135.0656-181.248-103.7824-207.5648-135.68-272.9472-135.9872-273.5616-0.0512-0.1024-0.0512-0.1536-0.1024-0.2048-12.8512-25.7536-3.7376-59.4944 19.9168-73.6768 10.6496-6.4 23.0912-8.0896 35.072-4.864 12.7488 3.4816 23.4496 12.0832 30.0544 24.1664 0.1024 0.1536 0.2048 0.3584 0.3072 0.512l79.9232 138.496c16.3328 29.8496 34.7136 42.3936 54.6304 37.3248 19.968-5.0688 30.0544-25.0368 30.0544-59.2384l0-400.0256c0-28.2112 22.9888-51.2 51.2-51.2s51.2 22.9888 51.2 51.2l0 332.8c0 14.1312 11.4688 25.6 25.6 25.6s25.6-11.4688 25.6-25.6l0-384c0-28.2112 22.9888-51.2 51.2-51.2s51.2 22.9888 51.2 51.2l0 384c0 14.1312 11.4688 25.6 25.6 25.6s25.6-11.4688 25.6-25.6l0-332.8c0-28.2112 22.9888-51.2 51.2-51.2s51.2 22.9888 51.2 51.2l0 384c0 14.1312 11.4688 25.6 25.6 25.6s25.6-11.4688 25.6-25.6l0-230.4c0-28.2112 22.9888-51.2 51.2-51.2s51.2 22.9888 51.2 51.2l0 179.2z" />
-                </svg>
-              </button>
-            )}
-            {/* Phase 5 — paperclip attach button (SVG, not emoji) */}
-            {!streaming && (
-              <button
-                type="button"
-                aria-label={t("chat.attachment.attachImage")}
-                disabled={!supportsVision || attachmentCount >= MAX_IMAGES_PER_TURN}
-                onClick={onAttachClick}
-                className="rounded border border-line px-1.5 py-1 text-fg-3 hover:border-fg-3 hover:text-fg-2 disabled:cursor-not-allowed disabled:opacity-40"
-                title={
-                  !supportsVision
-                    ? t("chat.attachment.attachImageNoVision")
-                    : attachmentCount >= MAX_IMAGES_PER_TURN
-                      ? t("chat.attachment.maxImagesPerMessage", { max: String(MAX_IMAGES_PER_TURN) })
-                      : t("chat.attachment.attachImageTitle")
-                }
-              >
-                {/* Paperclip icon — Heroicons outline style */}
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-                </svg>
-              </button>
-            )}
             {streaming ? (
               <button
+                type="button"
                 onClick={onStop}
-                className="rounded border border-warning-line bg-transparent px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.08em] text-warning hover:bg-warning-tint"
+                aria-label={t("chat.cancelRunningTask")}
                 title={t("chat.cancelRunningTask")}
+                className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded text-fg-1 transition-opacity hover:opacity-70"
               >
-                <span className="mr-1 inline-block h-[5px] w-[5px] rounded-full bg-warning align-middle" />
-                {t("common.stop")}
+                <svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor" aria-hidden="true">
+                  <path d="M256 256v512h512V256H256z m597.333333-85.333333v682.666666H170.666667V170.666667h682.666666z" />
+                </svg>
               </button>
             ) : (
-              <>
-                {/* Recording v1 — REC button sits next to Send when a startRecording
-                    handler is provided. Disabled while pendingRecording chip is up
-                    or no active session. */}
-                {onStartRecording && (
-                  <button
-                    type="button"
-                    onClick={onStartRecording}
-                    disabled={recordingDisabled}
-                    title={t("chat.recordTitle")}
-                    aria-label={t("chat.startRecording")}
-                    className="flex items-center gap-1.5 rounded border border-line px-2 py-1 font-mono text-[10px] tracking-[0.08em] text-fg-2 hover:border-fg-3 hover:text-fg-1 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    <span className="inline-block h-[5px] w-[5px] rounded-full bg-fg-3" />
-                    <span>{t("chat.rec")}</span>
-                  </button>
-                )}
-                <button
-                  onClick={onSend}
-                  disabled={!input.trim()}
-                  className="flex items-center gap-1.5 rounded border border-line px-2.5 py-1 text-[11px] text-fg-2 hover:border-fg-3 hover:text-fg-1 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <span>{t("common.send")}</span>
-                  <span className="font-mono text-[10px] text-fg-3">↵</span>
-                </button>
-              </>
+              <PieSendButton onClick={onSend} disabled={!input.trim()} />
             )}
           </div>
         </div>
       </div>
-      {/* Hint row OUTSIDE the box — no chip */}
-      <div className="flex items-center gap-4 px-0.5 font-mono text-[10px] tracking-[0.08em] text-fg-3">
-        <span>{t("chat.skillsHint")}</span>
-        <span>{t("chat.shiftNewline")}</span>
-      </div>
     </div>
+  );
+}
+
+function ToolsMenu({
+  onPickElement,
+  pickerActive,
+  onAttachClick,
+  supportsVision,
+  attachmentCount,
+  onStartRecording,
+  recordingDisabled,
+}: {
+  onPickElement?: () => void;
+  pickerActive?: boolean;
+  onAttachClick: () => void;
+  supportsVision: boolean;
+  attachmentCount: number;
+  onStartRecording?: () => void;
+  recordingDisabled?: boolean;
+}) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  const attachDisabled = !supportsVision || attachmentCount >= MAX_IMAGES_PER_TURN;
+  const attachTitle = !supportsVision
+    ? t("chat.attachment.attachImageNoVision")
+    : attachmentCount >= MAX_IMAGES_PER_TURN
+      ? t("chat.attachment.maxImagesPerMessage", { max: String(MAX_IMAGES_PER_TURN) })
+      : t("chat.attachment.attachImageTitle");
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        aria-label={t("chat.toolsMenu")}
+        aria-expanded={open}
+        title={t("chat.toolsMenu")}
+        onClick={() => setOpen((v) => !v)}
+        className={
+          pickerActive
+            ? "flex h-7 w-7 items-center justify-center rounded text-accent"
+            : "flex h-7 w-7 items-center justify-center rounded text-fg-3 hover:text-fg-1"
+        }
+      >
+        <svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor" aria-hidden="true">
+          <path d="M550.4 550.4v332.8c0 21.207-17.193 38.4-38.4 38.4s-38.4-17.193-38.4-38.4v-332.8h-332.8c-21.207 0-38.4-17.193-38.4-38.4s17.193-38.4 38.4-38.4h332.8v-332.8c0-21.207 17.193-38.4 38.4-38.4s38.4 17.193 38.4 38.4v332.8h332.8c21.207 0 38.4 17.193 38.4 38.4s-17.193 38.4-38.4 38.4h-332.8z" />
+        </svg>
+      </button>
+      {open && (
+        <div className="absolute bottom-full left-0 z-20 mb-2 w-[200px] overflow-hidden rounded-[10px] border border-line bg-surface shadow-[0_8px_24px_rgba(0,0,0,0.12)]">
+          {onPickElement && (
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                onPickElement();
+              }}
+              className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-[12px] hover:bg-field ${pickerActive ? "text-accent" : "text-fg-1"}`}
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 1024 1024"
+                fill="currentColor"
+                aria-hidden="true"
+                className="flex-shrink-0"
+              >
+                <path d="M870.4 204.8c-18.6368 0-36.1472 5.0176-51.2 13.7728l0-64.9728c0-56.4736-45.9264-102.4-102.4-102.4-21.0944 0-40.6528 6.4-56.9856 17.3568-14.0288-39.8848-52.0192-68.5568-96.6144-68.5568s-82.6368 28.672-96.6144 68.5568c-16.2816-10.9568-35.8912-17.3568-56.9856-17.3568-56.4736 0-102.4 45.9264-102.4 102.4l0 377.4976-68.9152-119.4496c-13.3632-24.32-35.1744-41.6256-61.3888-48.7936-25.5488-6.9632-52.1216-3.2768-74.8544 10.3424-46.4384 27.8528-64.1536 90.8288-39.424 140.3904 1.536 3.1232 34.2016 70.0416 136.192 273.92 48.0256 96 100.7104 164.6592 156.6208 203.9808 43.8784 30.8736 74.1888 32.4608 79.8208 32.4608l256 0c43.5712 0 84.0704-14.1824 120.4224-42.0864 34.1504-26.2656 63.7952-64.256 88.064-112.8448 47.8208-95.6416 73.1136-227.9424 73.1136-382.6688l0-179.2c0-56.4736-45.9264-102.4-102.4-102.4zM921.6 486.4c0 146.7904-23.3984 271.1552-67.6864 359.7312-28.8768 57.7536-80.5888 126.6688-162.7136 126.6688l-255.488 0c-1.9968-0.1536-23.552-2.56-56.064-26.88-32.4096-24.2688-82.176-75.3664-135.0656-181.248-103.7824-207.5648-135.68-272.9472-135.9872-273.5616-0.0512-0.1024-0.0512-0.1536-0.1024-0.2048-12.8512-25.7536-3.7376-59.4944 19.9168-73.6768 10.6496-6.4 23.0912-8.0896 35.072-4.864 12.7488 3.4816 23.4496 12.0832 30.0544 24.1664 0.1024 0.1536 0.2048 0.3584 0.3072 0.512l79.9232 138.496c16.3328 29.8496 34.7136 42.3936 54.6304 37.3248 19.968-5.0688 30.0544-25.0368 30.0544-59.2384l0-400.0256c0-28.2112 22.9888-51.2 51.2-51.2s51.2 22.9888 51.2 51.2l0 332.8c0 14.1312 11.4688 25.6 25.6 25.6s25.6-11.4688 25.6-25.6l0-384c0-28.2112 22.9888-51.2 51.2-51.2s51.2 22.9888 51.2 51.2l0 384c0 14.1312 11.4688 25.6 25.6 25.6s25.6-11.4688 25.6-25.6l0-332.8c0-28.2112 22.9888-51.2 51.2-51.2s51.2 22.9888 51.2 51.2l0 384c0 14.1312 11.4688 25.6 25.6 25.6s25.6-11.4688 25.6-25.6l0-230.4c0-28.2112 22.9888-51.2 51.2-51.2s51.2 22.9888 51.2 51.2l0 179.2z" />
+              </svg>
+              <span>{pickerActive ? t("chat.elementPicker.active") : t("chat.elementPicker.idle")}</span>
+            </button>
+          )}
+          <button
+            type="button"
+            aria-label={t("chat.attachment.attachImage")}
+            onClick={() => {
+              if (attachDisabled) return;
+              setOpen(false);
+              onAttachClick();
+            }}
+            disabled={attachDisabled}
+            title={attachTitle}
+            className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[12px] text-fg-1 hover:bg-field disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+              className="flex-shrink-0"
+            >
+              <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+            </svg>
+            <span>{t("chat.attachment.attachImage")}</span>
+          </button>
+          {onStartRecording && (
+            <button
+              type="button"
+              aria-label={t("chat.startRecording")}
+              onClick={() => {
+                if (recordingDisabled) return;
+                setOpen(false);
+                onStartRecording();
+              }}
+              disabled={recordingDisabled}
+              title={t("chat.recordTitle")}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[12px] text-fg-1 hover:bg-field disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <span
+                className="inline-block h-2 w-2 flex-shrink-0 rounded-full bg-pending"
+                aria-hidden="true"
+              />
+              <span>{t("chat.startRecording")}</span>
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PieSendButton({
+  onClick,
+  disabled,
+}: {
+  onClick: () => void;
+  disabled: boolean;
+}) {
+  const t = useT();
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={t("chat.sendMessage")}
+      title={t("chat.sendMessage")}
+      className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded text-fg-1 transition-opacity hover:opacity-70 disabled:cursor-not-allowed disabled:opacity-40"
+    >
+      <svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor" aria-hidden="true">
+        <path d="M557.397333 167.204571l293.059048 293.059048L902.192762 512l-51.712 51.712-293.059048 293.083429-51.736381-51.712L762.148571 548.571429H121.904762v-73.142858h640.243809L505.660952 218.940952l51.736381-51.736381z" />
+      </svg>
+    </button>
   );
 }
 

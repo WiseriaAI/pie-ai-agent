@@ -142,8 +142,8 @@ export const enDict = {
     recordTitle: "Record DOM actions on this tab",
     startRecording: "Start recording",
     rec: "REC",
-    skillsHint: "/ skills",
-    shiftNewline: "SHIFT ↵ NEWLINE",
+    toolsMenu: "More tools",
+    sendMessage: "Send message",
   },
   modelDropdown: {
     selectModelPlaceholder: "(select model)",

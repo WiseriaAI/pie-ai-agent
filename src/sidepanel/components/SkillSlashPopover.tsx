@@ -40,7 +40,7 @@ export default function SkillSlashPopover({
 
   if (skills.length === 0) {
     return (
-      <div className="absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-[10px] border border-line bg-surface shadow-lg">
+      <div className="absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-[10px] border border-line bg-surface shadow-[0_8px_24px_rgba(0,0,0,0.12)]">
         <div className="flex items-center gap-2 border-b border-line px-3.5 py-2.5">
           <code className="font-mono text-[11px] text-accent">/{query}</code>
           <span className="text-[11px] text-fg-3">{t("skillSlashPopover.noMatches")}</span>
@@ -56,7 +56,7 @@ export default function SkillSlashPopover({
   const overflow = skills.length - visible.length;
 
   return (
-    <div className="absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-[10px] border border-line bg-surface shadow-lg">
+    <div className="absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-[10px] border border-line bg-surface shadow-[0_8px_24px_rgba(0,0,0,0.12)]">
       <div className="flex items-center gap-2 border-b border-line px-3.5 py-2.5">
         <code className="font-mono text-[11px] text-accent">/{query}</code>
         <span className="text-[11px] text-fg-3">{skills.length} skills</span>

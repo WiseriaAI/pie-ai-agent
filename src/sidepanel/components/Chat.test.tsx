@@ -156,8 +156,12 @@ describe("Chat — image upload UI (Phase 5)", () => {
       />,
     );
 
-    // The button should appear once checkConfig resolves (async).
-    // waitFor is not available in this setup; use findByRole which retries.
+    // The tools button appears once checkConfig resolves; clicking it opens
+    // the popover where the attach item lives.
+    const toolsBtn = await screen.findByRole("button", { name: /more tools/i });
+    await act(async () => {
+      fireEvent.click(toolsBtn);
+    });
     const btn = await screen.findByRole("button", { name: /attach image/i });
     expect(btn).toBeTruthy();
     expect(btn.hasAttribute("disabled") && btn.getAttribute("disabled") !== null).toBe(false);
@@ -173,8 +177,11 @@ describe("Chat — image upload UI (Phase 5)", () => {
       />,
     );
 
+    const toolsBtn = await screen.findByRole("button", { name: /more tools/i });
+    await act(async () => {
+      fireEvent.click(toolsBtn);
+    });
     const btn = await screen.findByRole("button", { name: /attach image/i });
-    // The button should be present but disabled
     expect(btn).toBeTruthy();
     expect((btn as HTMLButtonElement).disabled).toBe(true);
   });
@@ -190,7 +197,7 @@ describe("Chat — image upload UI (Phase 5)", () => {
     );
 
     // Wait for render to settle
-    await screen.findByRole("button", { name: /attach image/i });
+    await screen.findByRole("button", { name: /more tools/i });
 
     // No thumbnail list should be present
     expect(screen.queryByRole("list", { name: /image attachments/i })).toBeNull();
@@ -206,6 +213,10 @@ describe("Chat — image upload UI (Phase 5)", () => {
       />,
     );
 
+    const toolsBtn = await screen.findByRole("button", { name: /more tools/i });
+    await act(async () => {
+      fireEvent.click(toolsBtn);
+    });
     const btn = await screen.findByRole("button", { name: /attach image/i });
 
     // Spy on the hidden file input's click method
@@ -228,6 +239,10 @@ describe("Chat — image upload UI (Phase 5)", () => {
       />,
     );
 
+    const toolsBtn = await screen.findByRole("button", { name: /more tools/i });
+    await act(async () => {
+      fireEvent.click(toolsBtn);
+    });
     const btn = await screen.findByRole("button", { name: /attach image/i });
     expect(btn.getAttribute("aria-label")).toBe("attach image");
   });
@@ -242,7 +257,7 @@ describe("Chat — image upload UI (Phase 5)", () => {
       />,
     );
 
-    await screen.findByRole("button", { name: /attach image/i });
+    await screen.findByRole("button", { name: /more tools/i });
 
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
     expect(fileInput).toBeTruthy();
@@ -260,8 +275,12 @@ describe("Chat — image upload UI (Phase 5)", () => {
       />,
     );
 
-    // Wait for initial render
-    await screen.findByRole("button", { name: /attach image/i });
+    // Wait for initial render, then open the tools menu to expose the
+    // attach item (lives inside the + popover, not directly in the row).
+    const toolsBtn = await screen.findByRole("button", { name: /more tools/i });
+    await act(async () => {
+      fireEvent.click(toolsBtn);
+    });
 
     // When supportsVision=false, addFiles (if called directly) would show toast.
     // We can test by firing the file input's onChange with a mock file.
@@ -303,7 +322,7 @@ describe("Chat — image upload UI (Phase 5)", () => {
     );
 
     // Wait for vision=false state to settle
-    await screen.findByRole("button", { name: /attach image/i });
+    await screen.findByRole("button", { name: /more tools/i });
 
     // Simulate a drop on the textarea — supportsVision=false so addFiles
     // is a no-op (no toast for drop/paste when !supportsVision, they early return).
@@ -331,6 +350,10 @@ describe("Chat — attachment count cap", () => {
       />,
     );
 
+    const toolsBtn = await screen.findByRole("button", { name: /more tools/i });
+    await act(async () => {
+      fireEvent.click(toolsBtn);
+    });
     const btn = await screen.findByRole("button", { name: /attach image/i });
     // 0 attachments — not disabled
     expect((btn as HTMLButtonElement).disabled).toBe(false);
@@ -367,7 +390,7 @@ describe("Chat — ImagePlaceholder rendering (Task 14 / R10)", () => {
     );
 
     // Wait for render to settle (checkConfig is async).
-    await screen.findByRole("button", { name: /attach image/i });
+    await screen.findByRole("button", { name: /more tools/i });
 
     // The badge should be present with width×height.
     const badge = screen.getByText(/Image released/);
@@ -402,7 +425,7 @@ describe("Chat — ImagePlaceholder rendering (Task 14 / R10)", () => {
       />,
     );
 
-    await screen.findByRole("button", { name: /attach image/i });
+    await screen.findByRole("button", { name: /more tools/i });
 
     // <img> with correct src should be present.
     const img = screen.getByRole("img", { name: /image attachment/i });
@@ -442,7 +465,7 @@ describe("Chat — behavioral image flows (Phase 5)", () => {
       />,
     );
 
-    await screen.findByRole("button", { name: /attach image/i });
+    await screen.findByRole("button", { name: /more tools/i });
     const textarea = screen.getByPlaceholderText(/Tell the agent/i);
     const file = new File([new Uint8Array(100)], "p.png", { type: "image/png" });
 
@@ -464,7 +487,7 @@ describe("Chat — behavioral image flows (Phase 5)", () => {
       />,
     );
 
-    await screen.findByRole("button", { name: /attach image/i });
+    await screen.findByRole("button", { name: /more tools/i });
     const textarea = screen.getByPlaceholderText(/Tell the agent/i);
     const file = new File([new Uint8Array(100)], "d.png", { type: "image/png" });
     const dt = makeDropDT([file]);
@@ -488,7 +511,7 @@ describe("Chat — behavioral image flows (Phase 5)", () => {
       />,
     );
 
-    await screen.findByRole("button", { name: /attach image/i });
+    await screen.findByRole("button", { name: /more tools/i });
     const textarea = screen.getByPlaceholderText(/Tell the agent/i);
     const files = Array.from({ length: 4 }, (_, i) =>
       new File([new Uint8Array(100)], `p${i}.png`, { type: "image/png" }),
@@ -514,7 +537,7 @@ describe("Chat — behavioral image flows (Phase 5)", () => {
       />,
     );
 
-    await screen.findByRole("button", { name: /attach image/i });
+    await screen.findByRole("button", { name: /more tools/i });
     const textarea = screen.getByPlaceholderText(/Tell the agent/i);
     const file = new File([new Uint8Array(100)], "p.png", { type: "image/png" });
 
@@ -545,7 +568,7 @@ describe("Chat — behavioral image flows (Phase 5)", () => {
     );
 
     // Wait until provider load completes — supportsVision flips to false
-    await screen.findByRole("button", { name: /attach image/i });
+    await screen.findByRole("button", { name: /more tools/i });
     const textarea = screen.getByPlaceholderText(/Tell the agent/i);
     const file = new File([new Uint8Array(100)], "p.png", { type: "image/png" });
 
@@ -571,7 +594,7 @@ describe("Chat — behavioral image flows (Phase 5)", () => {
       />,
     );
 
-    await screen.findByRole("button", { name: /attach image/i });
+    await screen.findByRole("button", { name: /more tools/i });
     const textarea = screen.getByPlaceholderText(/Tell the agent/i);
 
     // Synthesize a clipboard whose only image item has kind="string" (web
@@ -611,7 +634,7 @@ describe("Chat — send clears attachments", () => {
     );
 
     // Find and fill textarea
-    await screen.findByRole("button", { name: /attach image/i });
+    await screen.findByRole("button", { name: /more tools/i });
     const textarea = screen.getByPlaceholderText(/Tell the agent/i);
     await act(async () => {
       fireEvent.change(textarea, { target: { value: "Hello" } });

@@ -142,8 +142,8 @@ export const zhCNDict = {
     recordTitle: "录制此标签页的 DOM 操作",
     startRecording: "开始录制",
     rec: "录制",
-    skillsHint: "/ 技能",
-    shiftNewline: "Shift ↵ 换行",
+    toolsMenu: "更多工具",
+    sendMessage: "发送消息",
   },
   modelDropdown: {
     selectModelPlaceholder: "(选择模型)",

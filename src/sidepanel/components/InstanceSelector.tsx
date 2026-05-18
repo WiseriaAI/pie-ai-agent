@@ -58,8 +58,7 @@ export default function InstanceSelector(props: Props) {
       {open && (
         <div
           role="dialog"
-          className="absolute bottom-full left-0 mb-2 w-[280px] rounded-lg border border-line bg-surface shadow-2xl"
-          style={{ boxShadow: "0 16px 40px rgba(0,0,0,0.7), 0 4px 12px rgba(0,0,0,0.5)" }}
+          className="absolute bottom-full left-0 mb-2 w-[280px] rounded-lg border border-line bg-surface shadow-[0_8px_24px_rgba(0,0,0,0.12)]"
         >
           <div className="flex items-baseline justify-between px-3.5 pt-2.5 pb-1.5">
             <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-fg-3">{t("instanceSelector.switchConfig")}</span>
