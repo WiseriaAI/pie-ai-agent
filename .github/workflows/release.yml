@@ -1,0 +1,85 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing release tag to (re)build and attach zip to'
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-upload:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          echo "ref=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.tag.outputs.ref }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Verify manifest references compiled assets
+        run: |
+          node -e "
+            const m = require('./dist/manifest.json');
+            const sw = m.background.service_worker;
+            const cs = m.content_scripts[0].js[0];
+            if (sw.endsWith('.ts') || cs.endsWith('.ts')) {
+              console.error('FAIL: manifest still references .ts files', { sw, cs });
+              process.exit(1);
+            }
+            if (m.version !== '${{ steps.tag.outputs.version }}') {
+              console.error('FAIL: manifest version', m.version, '!= tag version ${{ steps.tag.outputs.version }}');
+              process.exit(1);
+            }
+            console.log('OK', { version: m.version, sw, cs });
+          "
+
+      - name: Package zip
+        run: |
+          find dist -name '.DS_Store' -delete || true
+          (cd dist && zip -rq "../pie-${{ steps.tag.outputs.version }}.zip" .)
+          ls -la pie-${{ steps.tag.outputs.version }}.zip
+
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ steps.tag.outputs.ref }}" \
+            "pie-${{ steps.tag.outputs.version }}.zip" \
+            --clobber
