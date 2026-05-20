@@ -24,6 +24,8 @@ import {
   detectLoop,
   recordStep,
   stepSignature,
+  DEFAULT_OSCILLATION_MAX_PERIOD,
+  DEFAULT_OSCILLATION_MIN_CYCLES,
   type LoopVerdict,
   type StepSignature,
 } from "./loop-detection";
@@ -730,6 +732,18 @@ function redactArgsForPanel(toolName: string, args: unknown): unknown {
  *  Invariant: keep cap ≥ oscillationMaxPeriod × oscillationMinCycles − 1, else
  *  period-k detection silently degrades. */
 const RECENT_STEPS_CAP = 6;
+// Build-time invariant (throws at module load, matching the repo's invariant
+// style): the ring buffer + current step must hold a full oscillation window,
+// i.e. RECENT_STEPS_CAP + 1 ≥ MAX_PERIOD × MIN_CYCLES. Without this guard, a
+// future change to the detector defaults would silently degrade period-k
+// detection (the failure the comment above warns about) with no signal.
+if (RECENT_STEPS_CAP + 1 < DEFAULT_OSCILLATION_MAX_PERIOD * DEFAULT_OSCILLATION_MIN_CYCLES) {
+  throw new Error(
+    `RECENT_STEPS_CAP (${RECENT_STEPS_CAP}) too small for oscillation detection: ` +
+      `needs ≥ ${DEFAULT_OSCILLATION_MAX_PERIOD * DEFAULT_OSCILLATION_MIN_CYCLES - 1} ` +
+      `(MAX_PERIOD ${DEFAULT_OSCILLATION_MAX_PERIOD} × MIN_CYCLES ${DEFAULT_OSCILLATION_MIN_CYCLES} − 1).`,
+  );
+}
 /** Max intra-episode reflections before the loop hard-fails. Prevents a
  *  secondary "reflect → loop again → reflect" cycle. */
 const MAX_REFLECTIONS = 2;

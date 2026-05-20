@@ -48,6 +48,13 @@ export interface DetectLoopOptions {
   oscillationMinCycles?: number;
 }
 
+/** Default largest oscillation period scanned by detectLoop (C). Exported so
+ *  callers sizing the recent-steps ring buffer can derive the minimum capacity
+ *  (see DEFAULT_OSCILLATION_MIN_CYCLES). */
+export const DEFAULT_OSCILLATION_MAX_PERIOD = 3;
+/** Default minimum full cycles required to call it an oscillation (C). */
+export const DEFAULT_OSCILLATION_MIN_CYCLES = 2;
+
 /**
  * Deterministic JSON with sorted object keys, so {a:1,b:2} and {b:2,a:1}
  * fingerprint identically. null / undefined / functions collapse to "null".
@@ -134,8 +141,8 @@ export function detectLoop(
 ): LoopVerdict {
   const exactRepeatThreshold = options.exactRepeatThreshold ?? 3;
   const repeatErrorThreshold = options.repeatErrorThreshold ?? 2;
-  const oscillationMaxPeriod = options.oscillationMaxPeriod ?? 3;
-  const oscillationMinCycles = options.oscillationMinCycles ?? 2;
+  const oscillationMaxPeriod = options.oscillationMaxPeriod ?? DEFAULT_OSCILLATION_MAX_PERIOD;
+  const oscillationMinCycles = options.oscillationMinCycles ?? DEFAULT_OSCILLATION_MIN_CYCLES;
 
   let run = 0;
   let runAllErrored = true;
