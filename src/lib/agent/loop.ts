@@ -743,6 +743,16 @@ const REFLECTION_SKIP_RESULT =
   "observation, then choose a different approach or call `fail` if the task " +
   "cannot proceed.";
 
+/** Trusted tool_result content used on the hard-stop (reflection budget
+ *  exhausted) path. Unlike REFLECTION_SKIP_RESULT it does NOT invite another
+ *  attempt — the next turn has NO tools — it asks the model for a final
+ *  failure summary. NOT wrapped in <untrusted_*> (runtime-authored). */
+const REFLECTION_GIVEUP_RESULT =
+  "You are being stopped: you repeated the same action too many times without " +
+  "progress and will not be allowed to act further. Reply with a brief final " +
+  "summary (1–3 sentences) of what you were trying to do, what you attempted, " +
+  "and why it could not be completed. Do not attempt any tool calls.";
+
 /** Build the trusted reflection note appended to <reflections>. */
 function buildReflectionNote(verdict: LoopVerdict, attempt: number): string {
   const why =
@@ -761,6 +771,38 @@ function buildReflectionNote(verdict: LoopVerdict, attempt: number): string {
     "element, a different tool, or scroll to reveal new state. (3) If the task genuinely " +
     "cannot proceed, call `fail` with a clear explanation. Do NOT repeat the same action."
   );
+}
+
+/**
+ * #65 — final, tools-disabled LLM turn that asks the stuck model to author its
+ * own failure summary. Passing an empty tool list means the model cannot emit
+ * a tool call to resume the loop; we only collect its text. Returns the trimmed
+ * text, or null on abort / stream error / empty output (caller falls back to a
+ * deterministic summary). Costs one LLM call, only on the rare hard-stop path.
+ */
+async function generateStuckSummary(
+  modelConfig: ModelConfig,
+  history: AgentMessage[],
+  signal: AbortSignal,
+): Promise<string | null> {
+  if (signal.aborted) return null;
+  const slid = applySlidingWindow(history);
+  const elided = elideStaleObservations(slid);
+  const budgeted = await applyTokenBudget(elided, modelConfig.provider);
+  const { repaired } = validateAndRepairAdjacentRoles(budgeted);
+  let text = "";
+  try {
+    for await (const event of streamChat(modelConfig, repaired, signal, [])) {
+      if (signal.aborted) return null;
+      if (event.type === "text-delta") text += event.text;
+      else if (event.type === "error") return null;
+      // tool-call-* events are ignored — no tools were offered.
+    }
+  } catch {
+    return null;
+  }
+  const trimmed = text.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 // ── Main loop ─────────────────────────────────────────────────────────────────
@@ -1446,9 +1488,18 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         }));
 
         if (reflectionCount >= MAX_REFLECTIONS) {
-          // Reflection budget exhausted — hard terminate.
+          // Reflection budget exhausted — hard terminate (#61). #65: give the
+          // model ONE final tools-disabled turn to author its own failure
+          // summary, falling back to a deterministic string. Termination is
+          // still guaranteed — we emitDone(success:false) regardless.
+          const giveupResults: ContentBlock[] = completedToolCalls.map((tc) => ({
+            type: "tool_result",
+            toolUseId: tc.id,
+            content: REFLECTION_GIVEUP_RESULT,
+            isError: true,
+          }));
           history.push({ role: "assistant", content: assistantBlocks });
-          history.push({ role: "user", content: skipResults });
+          history.push({ role: "user", content: giveupResults });
           if (ctx.onStepSnapshot) {
             const snap = buildSessionAgentSnapshot(history, stepIndex, hasImageContent);
             ctx.onStepSnapshot(snap).catch((e) => {
@@ -1458,11 +1509,15 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
               );
             });
           }
+          const llmSummary = await generateStuckSummary(modelConfig, history, signal);
+          if (signal.aborted) return; // → finally emits an abort done
+          const summary =
+            llmSummary ?? "Agent got stuck repeating the same action and stopped.";
           await emitDone(
             {
               type: "agent-done-task",
               success: false,
-              summary: "Agent got stuck repeating the same action and stopped.",
+              summary,
               stepCount: stepIndex,
             },
             "fail",
