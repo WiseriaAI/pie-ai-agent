@@ -722,11 +722,14 @@ function redactArgsForPanel(toolName: string, args: unknown): unknown {
 
 // ── #61(a)(b) — loop detection + intra-episode reflection ─────────────────
 
-/** Max consecutive recent step signatures kept for loop detection. Chosen
- *  larger than the max detection threshold (exactRepeatThreshold = 3) so a
- *  trailing run of identical steps is never truncated out of the ring buffer
- *  before it can trip the detector. */
-const RECENT_STEPS_CAP = 5;
+/** Max recent step signatures kept for loop detection. Chosen to hold at least
+ *  oscillationMaxPeriod × oscillationMinCycles (= 3 × 2 = 6) signatures including
+ *  the current step (so `recent` holds ≥ 5), making a period-3 oscillation
+ *  (a→b→c→a→b→c) detectable; also comfortably exceeds exactRepeatThreshold (3)
+ *  so a trailing identical run is never truncated before tripping the A-detector.
+ *  Invariant: keep cap ≥ oscillationMaxPeriod × oscillationMinCycles − 1, else
+ *  period-k detection silently degrades. */
+const RECENT_STEPS_CAP = 6;
 /** Max intra-episode reflections before the loop hard-fails. Prevents a
  *  secondary "reflect → loop again → reflect" cycle. */
 const MAX_REFLECTIONS = 2;
@@ -747,8 +750,10 @@ function buildReflectionNote(verdict: LoopVerdict, attempt: number): string {
       ? `your last ${verdict.count} attempts at the same action all failed`
       : verdict.kind === "exact-repeat"
         ? `you have issued the same action ${verdict.count} times in a row with no apparent progress`
-        : // unreachable defensive default (LoopVerdict has no other kind that reaches here)
-          "you appear to be repeating an action without progress";
+        : verdict.kind === "oscillation"
+          ? `you are cycling between the same ${verdict.period} actions (a ${verdict.period}-step loop) without making progress`
+          : // unreachable defensive default (LoopVerdict has no other kind that reaches here)
+            "you appear to be repeating an action without progress";
   return (
     `Self-correction (intervention ${attempt}): ${why}. You are stuck in a loop. ` +
     "Before acting again: (1) re-read the latest page snapshot above — did the previous " +
