@@ -47,6 +47,7 @@ export const UNTRUSTED_WRAPPER_TAGS = [
   "untrusted_continuity_marker",
   "untrusted_page_quote",
   "untrusted_page_element",
+  "untrusted_skill_content",
 ] as const;
 
 // Zero-width / invisible chars that an attacker might hide inside a tag literal.
