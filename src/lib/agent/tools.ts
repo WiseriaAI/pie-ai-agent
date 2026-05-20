@@ -7,6 +7,7 @@ import type { ActionResult } from "../dom-actions/types";
 import type { Tool, ToolHandlerContext } from "./types";
 import { buildKeyboardTools, type KeyboardToolDeps } from "./tools/keyboard";
 import { SKILL_META_TOOLS } from "./tools/skill-meta";
+import { SKILL_ACCESS_TOOLS } from "./tools/skill-access";
 import { TAB_TOOLS } from "./tools/tabs";
 import { withActionSettle } from "./wait-for-settle";
 
@@ -253,6 +254,9 @@ export const BUILT_IN_TOOLS: Tool[] = [
 
   // Phase 2.6 — Skill autonomous CRUD meta tools (see tools/skill-meta.ts)
   ...SKILL_META_TOOLS,
+
+  // SP-1 — Skill access tools: use_skill + read_skill_file (see tools/skill-access.ts)
+  ...SKILL_ACCESS_TOOLS,
 
   // Phase 3 — Cross-tab tools (see tools/tabs.ts)
   ...TAB_TOOLS,
