@@ -30,6 +30,7 @@ import {
   generateSkillId,
   setSkillEnabled,
 } from "../../skills/storage";
+import { buildSkillMd, isSingleLineSafe } from "../../skills/skill-md";
 
 // ── Configuration / limits ───────────────────────────────────────────────────
 
@@ -44,19 +45,6 @@ function err(reason: string): ActionResult {
 
 function isNonEmptyString(v: unknown): v is string {
   return typeof v === "string" && v.trim().length > 0;
-}
-
-/**
- * Frontmatter-injection guard: `name` / `description` are interpolated raw into
- * the YAML frontmatter of SKILL.md. A value containing a newline could inject
- * arbitrary frontmatter keys (e.g. `capabilities:`), and an embedded `---`
- * fence could close the frontmatter early (dropping `author: agent` and
- * bypassing the P0-C author taint). Legitimate names/descriptions are
- * single-line, so reject newlines and the literal `---` fence — fail loud
- * rather than silently strip.
- */
-function isSingleLineSafe(v: string): boolean {
-  return !/[\r\n]/.test(v) && !v.includes("---");
 }
 
 /**
@@ -75,19 +63,6 @@ function estimatePackageBytes(pkg: SkillPackage): number {
 async function getPackageStorageBytes(): Promise<number> {
   const pkgs = await getAllSkillPackages();
   return pkgs.reduce((sum, p) => sum + estimatePackageBytes(p), 0);
-}
-
-/**
- * Build a SKILL.md string with YAML frontmatter from the given fields and body.
- */
-function buildSkillMd(
-  name: string,
-  description: string,
-  version: string,
-  author: string,
-  instructions: string,
-): string {
-  return `---\nname: ${name}\ndescription: ${description}\nversion: ${version}\nauthor: ${author}\n---\n${instructions}`;
 }
 
 // ── Tool definitions ─────────────────────────────────────────────────────────
@@ -328,78 +303,6 @@ const listSkillsTool: Tool = {
     return { success: true, observation: JSON.stringify(summary) };
   },
 };
-
-// ── Confirm-card preview helper ──────────────────────────────────────────────
-//
-// Used by the loop dispatcher to pre-compute the effective skill that
-// create_skill / update_skill will persist. Best-effort: if args fail
-// validation here, the handler will reject, which is fine —
-// the preview is for review only, not authority.
-
-export async function previewMetaSkillCall(
-  toolName: string,
-  args: unknown,
-): Promise<{ existing: SkillPackage | null; effective: SkillPackage } | null> {
-  if (toolName === "create_skill") {
-    const a = (
-      args && typeof args === "object"
-        ? { ...(args as Record<string, unknown>) }
-        : {}
-    ) as Record<string, unknown>;
-    delete a.id;
-    if (
-      typeof a.name !== "string" ||
-      typeof a.description !== "string" ||
-      typeof a.instructions !== "string"
-    )
-      return null;
-    const name = (a.name as string).trim();
-    const description = (a.description as string).trim();
-    const instructions = a.instructions as string;
-    const md = buildSkillMd(name, description, "1.0.0", "agent", instructions);
-    const effective: SkillPackage = {
-      id: "(auto-generated on save)",
-      frontmatter: { name, description, version: "1.0.0", author: "agent" },
-      files: { "SKILL.md": md },
-      builtIn: false,
-      createdAt: Date.now(),
-    };
-    return { existing: null, effective };
-  }
-  if (toolName === "update_skill") {
-    const a = (args && typeof args === "object" ? args : {}) as {
-      id?: unknown;
-      name?: unknown;
-      description?: unknown;
-      instructions?: unknown;
-    };
-    if (typeof a.id !== "string") return null;
-    const existing = await getPackage(a.id);
-    if (!existing) return null;
-
-    let name = existing.frontmatter.name;
-    let description = existing.frontmatter.description;
-    const currentMd = existing.files["SKILL.md"] ?? "";
-    const fenceEnd = currentMd.indexOf("\n---\n");
-    let instructions =
-      fenceEnd >= 0 ? currentMd.slice(fenceEnd + 5) : currentMd;
-
-    if (typeof a.name === "string" && a.name.trim()) name = a.name.trim();
-    if (typeof a.description === "string" && a.description.trim())
-      description = a.description.trim();
-    if (typeof a.instructions === "string" && a.instructions.trim())
-      instructions = a.instructions;
-
-    const md = buildSkillMd(name, description, "1.0.0", "agent", instructions);
-    const effective: SkillPackage = {
-      ...existing,
-      frontmatter: { ...existing.frontmatter, name, description, author: "agent" },
-      files: { ...existing.files, "SKILL.md": md },
-    };
-    return { existing, effective };
-  }
-  return null;
-}
 
 // ── Public exports ───────────────────────────────────────────────────────────
 

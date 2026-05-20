@@ -10,6 +10,7 @@ import {
   generateUserSkillId,
   parseSkillMarkdown,
 } from "@/lib/skills";
+import { buildSkillMd, isSingleLineSafe } from "@/lib/skills/skill-md";
 import { useT } from "@/lib/i18n";
 
 interface SkillsListProps {
@@ -56,17 +57,6 @@ function formFromSkill(skill: SkillPackage): SkillFormState {
   };
 }
 
-/** Build a SKILL.md string with YAML frontmatter (mirrors skill-meta.ts). */
-function buildSkillMd(
-  name: string,
-  description: string,
-  version: string,
-  author: string,
-  instructions: string,
-): string {
-  return `---\nname: ${name}\ndescription: ${description}\nversion: ${version}\nauthor: ${author}\n---\n${instructions}`;
-}
-
 /** Approximate IndexedDB bytes a package consumes (matches skill-meta.ts). */
 function estimatePackageBytes(pkg: SkillPackage): number {
   return JSON.stringify(pkg).length + pkg.id.length;
@@ -90,10 +80,8 @@ function validateAndBuild(
       error: `Instructions too long (${form.instructions.length}/${INSTRUCTIONS_MAX} bytes)`,
     };
   }
-  // Frontmatter-injection guard: name/description are interpolated raw into
-  // the SKILL.md YAML frontmatter (mirrors skill-meta.ts isSingleLineSafe).
-  const single = (v: string) => !/[\r\n]/.test(v) && !v.includes("---");
-  if (!single(form.name) || !single(form.description)) {
+  // Frontmatter-injection guard (shared with skill-meta.ts via skill-md.ts).
+  if (!isSingleLineSafe(form.name) || !isSingleLineSafe(form.description)) {
     return { ok: false, error: "Name/description must be single-line (no newlines or '---')" };
   }
 

@@ -10,14 +10,11 @@ export {
 } from "./skill-store";
 export {
   getEnabledSkillIds, setSkillEnabled, generateSkillId, generateUserSkillId,
-  getSkillStorageBytes,
-  listUserSkills, getSkill, saveSkill, deleteSkill, withSkillDefaults,
 } from "./storage";
 export { BUILT_IN_SKILL_PACKAGES } from "./builtin";
 
-// Re-export legacy SkillDefinition types and slash utilities so existing
-// consumers (Chat.tsx, SkillsList.tsx, App.tsx, loop.ts, slash popover) don't
-// break beyond the already-known removals. Tasks 7-13 will migrate them.
+// SkillId / SkillAuthor are still used by package-types.ts and external consumers.
+// SkillDefinition is kept for historical migration code and back-compat deserialization.
 export type { SkillDefinition, SkillId, SkillAuthor } from "./types";
 export {
   normalizeSkillSlashKey,

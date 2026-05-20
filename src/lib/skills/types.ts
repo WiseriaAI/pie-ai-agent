@@ -2,42 +2,33 @@ export type SkillId = string;
 
 export type SkillAuthor = "user" | "agent";
 
+/**
+ * @deprecated since SP-1 (2026-05-21). The old chrome.storage SkillDefinition
+ * model has been superseded by SkillPackage (IndexedDB). This interface is
+ * kept only so that historical migration code (migration-packages.ts) and
+ * back-compat deserialization paths can reference the shape without a local
+ * re-definition. No new code should use SkillDefinition.
+ */
 export interface SkillDefinition {
   id: SkillId;
   name: string;
   description: string;
-  /** JSON Schema for the tool's parameters object */
-  toolSchema: {
+  /** @deprecated tool parameters schema — superseded by SKILL.md free-form instructions. */
+  toolSchema?: {
     parameters: Record<string, unknown>;
   };
-  /**
-   * Handlebars-style template: {{key}} is replaced with JSON.stringify(args[key]).
-   * The rendered result is wrapped in <untrusted_skill_params> before being
-   * returned as an observation, so the LLM sees it as untrusted injected context.
-   */
-  promptTemplate: string;
-  /** Whether this skill is currently enabled. For built-in skills this is the
-   *  default; user choice stored in enabled_skills array overrides. */
-  enabled: boolean;
+  /** @deprecated Handlebars prompt template — superseded by SKILL.md body. */
+  promptTemplate?: string;
+  /** Whether this skill is currently enabled (legacy; now tracked via enabled_skills key). */
+  enabled?: boolean;
   /** true = shipped with extension, cannot be deleted */
-  builtIn: boolean;
-  /** Origin of this skill. 'user' = manually created via SkillsList;
-   *  'agent' = created or last-modified via meta tools (taint propagation, P0-C).
-   *  Optional for back-compat with pre-Phase-2.6 storage; defaults to 'user'
-   *  when missing. */
+  builtIn?: boolean;
+  /** Origin: 'user' | 'agent'. Optional for back-compat. */
   author?: SkillAuthor;
-  /** ms timestamp of creation. Used for SkillsList sort.
-   *  Built-in skills use 0 (sorts to bottom). Optional for back-compat. */
+  /** ms timestamp of creation. */
   createdAt?: number;
-  /**
-   * @deprecated since 2026-05-06 (issue #26). Field kept for back-compat
-   * deserialization of pre-#26 storage data; new code paths neither read
-   * nor write it. R2 enforcement was removed alongside the field.
-   */
+  /** @deprecated since 2026-05-06 (issue #26). Back-compat only. */
   allowedTools?: string[] | null;
-  /**
-   * @deprecated since 2026-05-06 (issue #26). R10 first-run-confirm was
-   * removed; field kept for back-compat deserialization only.
-   */
+  /** @deprecated since 2026-05-06 (issue #26). Back-compat only. */
   firstRunConfirmedAt?: number;
 }
