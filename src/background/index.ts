@@ -78,6 +78,7 @@ import { cleanupLegacySkipPermissions } from "./cleanup-migration";
 import { reinjectAllTabs } from "./content-reinject";
 import { dispatchQuoteAdded, drainPendingQuotesToPort } from "./quote-dispatch";
 import { cleanupThinShellSkills } from "@/lib/skills/migration-cleanup-thinshell";
+import { migrateSkillsToPackages } from "@/lib/skills/migration-packages";
 import {
   handleQuoteTextCaptured,
   handleQuoteElementCaptured,
@@ -92,6 +93,11 @@ cleanupLegacySkipPermissions().catch((e) =>
 );
 cleanupThinShellSkills().catch((e) =>
   console.error("thin-shell skills cleanup failed", e),
+);
+// Migrate legacy `skill_*` SkillDefinition records → IndexedDB SkillPackages
+// (idempotent: removes legacy keys after a successful put, so re-runs no-op).
+migrateSkillsToPackages().catch((e) =>
+  console.error("skill→package migration failed", e),
 );
 
 // Recording v1 — per-sessionId → port registry. Used by the chrome.runtime.onMessage

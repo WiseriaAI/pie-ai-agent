@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import type { SkillDefinition } from "@/lib/skills";
+import type { SkillPackage } from "@/lib/skills";
 import {
-  getEnabledSkills,
+  getEnabledSkillPackages,
   resolveSlashCommand,
   expandSlashCommand,
   normalizeSkillSlashKey,
@@ -98,12 +98,12 @@ interface ChatProps {
 
 function filterAndSortSkillsForSlash(
   query: string,
-  skills: SkillDefinition[],
-): SkillDefinition[] {
+  skills: SkillPackage[],
+): SkillPackage[] {
   const q = normalizeSkillSlashKey(query);
-  const scored: Array<{ skill: SkillDefinition; score: number }> = [];
+  const scored: Array<{ skill: SkillPackage; score: number }> = [];
   for (const s of skills) {
-    const slug = normalizeSkillSlashKey(s.name);
+    const slug = normalizeSkillSlashKey(s.frontmatter.name);
     const id = s.id.toLowerCase();
     let score = 0;
     if (q === "") {
@@ -123,7 +123,7 @@ function filterAndSortSkillsForSlash(
   }
   scored.sort((a, b) => {
     if (b.score !== a.score) return b.score - a.score;
-    return (b.skill.createdAt ?? 0) - (a.skill.createdAt ?? 0);
+    return (b.skill.createdAt ?? 0) - (a.skill.createdAt ?? 0); // SkillPackage.createdAt is always set
   });
   return scored.map((x) => x.skill);
 }
@@ -172,7 +172,7 @@ export default function Chat({
   // itself) because the dropdown's anchor is the PINNED row in the info bar.
   const [pinDropdownOpen, setPinDropdownOpen] = useState(false);
   const [pickerActive, setPickerActive] = useState(false);
-  const [enabledSkills, setEnabledSkills] = useState<SkillDefinition[]>([]);
+  const [enabledSkills, setEnabledSkills] = useState<SkillPackage[]>([]);
   const [popoverSelected, setPopoverSelected] = useState(0);
   const [dismissedInput, setDismissedInput] = useState<string | null>(null);
   // Live preview of the user's currently-active tab origin + title. Only
@@ -277,7 +277,7 @@ export default function Chat({
 
   useEffect(() => {
     function reload() {
-      getEnabledSkills()
+      getEnabledSkillPackages()
         .then(setEnabledSkills)
         .catch(() => setEnabledSkills([]));
     }
@@ -614,8 +614,8 @@ export default function Chat({
     }
   }, [quotes, pickerActive]);
 
-  function pickSlashSkill(skill: SkillDefinition) {
-    const slug = normalizeSkillSlashKey(skill.name) || skill.id;
+  function pickSlashSkill(skill: SkillPackage) {
+    const slug = normalizeSkillSlashKey(skill.frontmatter.name) || skill.id;
     setInput(`/${slug} `);
     setPopoverSelected(0);
     setDismissedInput(null);
@@ -658,7 +658,7 @@ After the skill completes, briefly summarize what was created (the user will see
       if (onPendingRecordingConsumed) onPendingRecordingConsumed();
     } else if (content.startsWith("/")) {
       try {
-        const skills = await getEnabledSkills();
+        const skills = await getEnabledSkillPackages();
         const match = resolveSlashCommand(content, skills);
         if (match) {
           expandedForLLM = expandSlashCommand(match);
@@ -1406,13 +1406,13 @@ function Composer({
   input: string;
   streaming: boolean;
   popoverOpen: boolean;
-  slashState: { query: string; results: SkillDefinition[] } | null;
+  slashState: { query: string; results: SkillPackage[] } | null;
   popoverSelected: number;
   supportsVision: boolean;
   attachmentCount: number;
   onChange: (v: string) => void;
   onSelectPopover: (i: number) => void;
-  onPickSkill: (skill: SkillDefinition) => void;
+  onPickSkill: (skill: SkillPackage) => void;
   onKeyDown: (e: React.KeyboardEvent) => void;
   onSend: () => void;
   onStop: () => void;

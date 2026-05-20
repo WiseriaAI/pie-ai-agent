@@ -32,6 +32,26 @@ describe("getEnabledSkillPackages", () => {
     expect(found?.frontmatter.name).toBe("Custom Extract");
   });
 
+  it("新建 user 包必须显式 setSkillEnabled(true) 才出现在 enabled 列表中", async () => {
+    const pkg = {
+      id: "skill_user_new",
+      frontmatter: { name: "My New Skill", description: "d" },
+      files: { "SKILL.md": "---\nname: My New Skill\ndescription: d\n---\nbody" },
+      builtIn: false,
+      createdAt: 9,
+    };
+    // Without an enabled marker, a brand-new user package is excluded
+    // (getEnabledSkillPackages only defaults built-ins on).
+    await putPackage(pkg);
+    const before = (await getEnabledSkillPackages()).map((p) => p.id);
+    expect(before).not.toContain("skill_user_new");
+
+    // The SkillsList create path writes the marker — then it appears.
+    await setSkillEnabled("skill_user_new", true);
+    const after = (await getEnabledSkillPackages()).map((p) => p.id);
+    expect(after).toContain("skill_user_new");
+  });
+
   it("resolveSkillToTools 不再导出", async () => {
     const mod = await import("./index");
     expect(mod).not.toHaveProperty("resolveSkillToTools");
