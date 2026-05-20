@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { SKILL_META_TOOLS } from "./skill-meta";
 import { listPackages, deletePackage, putPackage } from "../../skills/skill-store";
+import { getEnabledSkillPackages } from "../../skills";
 
 const ctx = {} as never; // handler does not use ctx
 
@@ -156,6 +157,20 @@ describe("skill-meta CRUD tools (SkillPackage model)", () => {
     expect(md).toContain("description: check frontmatter");
     expect(md).toContain("author: agent");
     expect(md).toContain("body text here");
+  });
+
+  it("create_skill 自动启用新建技能 (enabled-on-create)", async () => {
+    const r = await create.handler(
+      { name: "EnabledSkill", description: "should be enabled", instructions: "step 1. do it." },
+      ctx,
+    );
+    expect(r.success).toBe(true);
+    const pkgs = await listPackages();
+    const created = pkgs.find((p) => p.frontmatter.name === "EnabledSkill");
+    expect(created).toBeTruthy();
+    const enabled = await getEnabledSkillPackages();
+    const foundEnabled = enabled.find((p) => p.id === created!.id);
+    expect(foundEnabled).toBeTruthy();
   });
 
   // ── update_skill ────────────────────────────────────────────────────────────

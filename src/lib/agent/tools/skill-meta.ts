@@ -146,6 +146,7 @@ const createSkillTool: Tool = {
     }
 
     await putPackage(pkg);
+    await setSkillEnabled(id, true);
     return {
       success: true,
       observation: `skill created: id=${id} name="${name}". Callable on subsequent turns via use_skill.`,

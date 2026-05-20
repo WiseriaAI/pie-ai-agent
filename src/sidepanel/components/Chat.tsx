@@ -646,15 +646,17 @@ export default function Chat({
         : t("chat.recording.createSkillFromRecordingWithStep", { stepCount: pendingRecording.stepCount });
       expandedForLLM = `Run the "Create Skill from Recording" skill (id: create_skill_from_recording).
 
-Pass these parameters when invoking the tool:
-- recordingTrace: the verbatim text below between <recordingTrace> tags
-- userPrompt: ${JSON.stringify(userPromptText)}
+The recording trace and user goal are provided below. Follow the skill's
+instructions to distill them into a reusable skill and call create_skill
+with { name, description, instructions }.
+
+User goal: ${JSON.stringify(userPromptText)}
 
 <recordingTrace>
 ${pendingRecording.trace}
 </recordingTrace>
 
-After the skill completes, briefly summarize what was created (the user will see an R10 confirm card before the new skill is persisted).`;
+After the skill completes, briefly summarize what was created (the user will see a confirm card before the new skill is persisted).`;
       if (onPendingRecordingConsumed) onPendingRecordingConsumed();
     } else if (content.startsWith("/")) {
       try {
