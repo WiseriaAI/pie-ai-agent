@@ -457,6 +457,18 @@ describe("buildObservationMessage — iframe multi-frame rendering (spec §4 + �
   });
 });
 
+describe("STATIC_AGENT_SYSTEM_PROMPT — self-correction + stale-snapshot (#61)", () => {
+  it("declares <reflections> as trusted self-correction guidance", () => {
+    const prompt = buildAgentSystemPrompt("t");
+    expect(prompt).toContain("<reflections>");
+    expect(prompt).toContain("trusted self-correction guidance");
+  });
+  it("explains that only the most recent snapshot is shown in full", () => {
+    const prompt = buildAgentSystemPrompt("t");
+    expect(prompt).toContain("Only the most recent page snapshot");
+  });
+});
+
 describe("STATIC_AGENT_SYSTEM_PROMPT — iframe frame-awareness (spec §7)", () => {
   it("describes frame_id semantics and cross_origin attribute", () => {
     const prompt = buildAgentSystemPrompt("test task");
