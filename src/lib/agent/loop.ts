@@ -23,6 +23,7 @@ import { getToolClass } from "./tool-names";
 import { escapeUntrustedWrappers } from "./untrusted-wrappers";
 import { buildAgentSystemPrompt, buildObservationMessage } from "./prompt";
 import { applySlidingWindow } from "./window";
+import { elideStaleObservations } from "./elide-stale-observations";
 import { applyTokenBudget } from "./window-token-budget";
 import {
   validateAndRepairAdjacentRoles,
@@ -1166,11 +1167,21 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // Apply sliding window
       const windowedHistorySlid = applySlidingWindow(history);
 
+      // #61(c) — stale-snapshot elision. Replace the bulky interactive-element
+      // list of every observation EXCEPT the most recent with a short marker
+      // (semantic header kept). Runs on the windowed COPY only — at-rest
+      // history.agentMessages stay RAW (R28 v2). Placed BEFORE applyTokenBudget
+      // so the budget sees the post-elision (true) size and rarely needs to
+      // drop head pairs (#61 注意/联动). Elision is unconditional, so order vs
+      // budget does not change the final content sent to the LLM — only the
+      // budget's drop decision becomes more accurate.
+      const windowedHistoryElided = elideStaleObservations(windowedHistorySlid);
+
       // U5 — Token budget guard: drop oldest head pairs if estimated token
       // count exceeds 80% of the provider's context window. CJK-aware divisor
       // prevents 4× undercount for Chinese/Japanese/Korean conversations.
       const windowedHistoryRaw = await applyTokenBudget(
-        windowedHistorySlid,
+        windowedHistoryElided,
         modelConfig.provider,
       );
 
