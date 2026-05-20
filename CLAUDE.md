@@ -15,7 +15,7 @@ BYOK (Bring Your Own Key) Chrome Extension — 用户插入自己的 API key 获
 - `src/sidepanel/` — Sidebar UI: Chat (Agent UI) / Settings / SkillsList / SessionDrawer
 - `src/lib/model-router/` — Unified LLM interface + tool calling; `providers/` 8 providers + `_shared/openai-compat-core.ts` + `registry.ts` 元数据 + id-keyed `providers/index.ts` dispatch
 - `src/lib/dom-actions/` — Self-contained DOM action functions injected via executeScript
-- `src/lib/agent/` — ReAct loop, tool registry, risk classifier, prompt builder, sliding window, `untrusted-wrappers.ts`, `tool-names.ts`
+- `src/lib/agent/` — ReAct loop, tool registry, prompt builder, sliding window, `untrusted-wrappers.ts`, `tool-names.ts`(read/write tool 分类)
 - `src/lib/agent/tools/` — `keyboard.ts` (CDP) / `skill-meta.ts` (skill CRUD) / `tabs.ts` (cross-tab)
 - `src/lib/skills/` — Skill framework: types, storage, builtin, resolveSkillToTools
 - `src/lib/sessions/` — Multi-session persistence: state-machine, lifecycle (archive/delete), pinned-tab-registry, title
@@ -36,7 +36,7 @@ Anthropic (native), OpenAI, OpenRouter, MiniMax, ZhiPu (智谱), Bailian (百炼
 - `pnpm dev` — Dev server with HMR
 - `pnpm build` — Production build
 - `pnpm test` / `pnpm test:watch` — vitest run
-- 提交前跑 `pnpm test` 与 `pnpm build`（build-time invariants 在 `risk.ts` / `tool-names.ts` 会 throw）
+- 提交前跑 `pnpm test` 与 `pnpm build`（build-time invariants 在 `tool-names.ts`（每个 tool 必须声明 read/write class）/ `tools.ts`（R-iframe-1 write tool 必须 require frameId）会 throw）
 - 远端 GH 操作前先 `gh auth switch --user WiseriaAI`；默认 active 账号 `wenkang-xie` 在 org 仓库无 admin scope（Pages API / repo settings 会 404）
 
 ## Development
@@ -81,7 +81,7 @@ Workflow 内置 invariant（任一失败则 CI fail，不会上传）：
 - Injected functions 必须 self-contained（无闭包，args 通过 `executeScript`）
 - ChatMessage 始终 string-only（wire format）；AgentMessage IR (`string | ContentBlock[]`) 仅 SW 内部
 - Agent Loop: tabId+origin pinning at task start，每轮 origin 重检
-- Risk classifier: 默认 low + 结构化升级（submit / 敏感字段 / 关键字 / cross-origin args）；CDP keyboard tools 永远 high
+- Tool 执行: 无 confirm 层，tool call 直接执行（旧的 risk classifier / `risk.ts` / `sendConfirmRequest` 已移除，见 `src/__tests__/cross-layer/no-confirm-*.test.ts`）；`tool-names.ts` 仅保留 read/write 分类，供 R7 跨 session 锁判定 write-class tool
 - Prompt injection 防御: 页面 snapshot 在 user role 用 `<untrusted_*>` wrapper（`untrusted_page_content` / `untrusted_tab_metadata` / `untrusted_user_message`），**never** 进 system role；`untrusted-wrappers.ts` 是唯一 escape 入口
 - Per-session sandbox: per-session port (`chat-stream-${sessionId}`) + per-session `pinnedTabs[]` + `currentFocusTabId` (v1.5 multi-pin) + CDP `ownerToken={sessionId,tabId}` + 跨 session R7 lock
 - Session 持久化: storage at-rest 持 raw `agentMessages`（LLM resume 需要原始 context），panel render 才走 `redactArgsForPanel`；archive/restore 走 `writeAtomic` 单调用
