@@ -24,6 +24,7 @@ import {
   putPackage,
   getPackage,
   deletePackage,
+  parseSkillMarkdown,
 } from "../../skills";
 import {
   generateSkillId,
@@ -43,6 +44,19 @@ function err(reason: string): ActionResult {
 
 function isNonEmptyString(v: unknown): v is string {
   return typeof v === "string" && v.trim().length > 0;
+}
+
+/**
+ * Frontmatter-injection guard: `name` / `description` are interpolated raw into
+ * the YAML frontmatter of SKILL.md. A value containing a newline could inject
+ * arbitrary frontmatter keys (e.g. `capabilities:`), and an embedded `---`
+ * fence could close the frontmatter early (dropping `author: agent` and
+ * bypassing the P0-C author taint). Legitimate names/descriptions are
+ * single-line, so reject newlines and the literal `---` fence — fail loud
+ * rather than silently strip.
+ */
+function isSingleLineSafe(v: string): boolean {
+  return !/[\r\n]/.test(v) && !v.includes("---");
 }
 
 /**
@@ -119,6 +133,11 @@ const createSkillTool: Tool = {
     if (!isNonEmptyString(a.instructions))
       return err("instructions is required and must be a non-empty string");
 
+    // Frontmatter-injection guard
+    if (!isSingleLineSafe(a.name as string) || !isSingleLineSafe(a.description as string)) {
+      return err("name/description must be single-line (no newlines or '---')");
+    }
+
     const instructions = a.instructions as string;
 
     // P0-D — instructions length cap
@@ -194,11 +213,15 @@ const updateSkillTool: Tool = {
     let name = existing.frontmatter.name;
     let description = existing.frontmatter.description;
 
-    // Extract current instructions from SKILL.md body
+    // Extract current instructions from SKILL.md body via the shared parser
     const currentMd = existing.files["SKILL.md"] ?? "";
-    const fenceEnd = currentMd.indexOf("\n---\n");
-    let instructions =
-      fenceEnd >= 0 ? currentMd.slice(fenceEnd + 5) : currentMd;
+    let instructions = currentMd;
+    try {
+      instructions = parseSkillMarkdown(currentMd).body;
+    } catch {
+      // Malformed/missing frontmatter — fall back to the raw file content.
+      instructions = currentMd;
+    }
 
     if ("name" in (a as Record<string, unknown>)) {
       if (!isNonEmptyString(a.name)) return err("name must be a non-empty string");
@@ -213,6 +236,11 @@ const updateSkillTool: Tool = {
       if (!isNonEmptyString(a.instructions))
         return err("instructions must be a non-empty string");
       instructions = a.instructions as string;
+    }
+
+    // Frontmatter-injection guard
+    if (!isSingleLineSafe(name) || !isSingleLineSafe(description)) {
+      return err("name/description must be single-line (no newlines or '---')");
     }
 
     // P0-D — instructions length cap
