@@ -102,3 +102,54 @@ describe("recordStep", () => {
     expect(buf.map((e) => e.sig)).toEqual(["s2", "s3", "s4", "s5", "s6"]);
   });
 });
+
+describe("detectLoop — oscillation (period-k)", () => {
+  const ok = (s: string): StepSignature => ({ sig: s, allErrored: false });
+
+  it("fires oscillation on a→b→a→b (period 2, 2 cycles)", () => {
+    expect(detectLoop([ok("a"), ok("b"), ok("a")], "b")).toEqual({
+      kind: "oscillation",
+      period: 2,
+      cycles: 2,
+    });
+  });
+
+  it("does NOT fire on a→b→a (only 1.5 cycles)", () => {
+    expect(detectLoop([ok("a"), ok("b")], "a")).toEqual({ kind: "none" });
+  });
+
+  it("fires oscillation on a→b→c→a→b→c (period 3, 2 cycles)", () => {
+    expect(
+      detectLoop([ok("a"), ok("b"), ok("c"), ok("a"), ok("b")], "c"),
+    ).toEqual({ kind: "oscillation", period: 3, cycles: 2 });
+  });
+
+  it("prefers exact-repeat over oscillation for identical runs", () => {
+    expect(detectLoop([ok("a"), ok("a")], "a")).toEqual({
+      kind: "exact-repeat",
+      count: 3,
+    });
+  });
+
+  it("does not treat a period whose block is all-identical as oscillation", () => {
+    expect(detectLoop([ok("a"), ok("a"), ok("a")], "a")).toEqual({
+      kind: "exact-repeat",
+      count: 4,
+    });
+  });
+
+  it("respects oscillationMinCycles override", () => {
+    expect(
+      detectLoop([ok("a"), ok("b"), ok("a")], "b", { oscillationMinCycles: 3 }),
+    ).toEqual({ kind: "none" });
+  });
+
+  it("reports cycles as a lower bound (minCycles), not the exact count", () => {
+    // a→b→a→b→a→b is 3 full period-2 cycles, but cycles is clamped to minCycles (2)
+    expect(detectLoop([ok("a"), ok("b"), ok("a"), ok("b"), ok("a")], "b")).toEqual({
+      kind: "oscillation",
+      period: 2,
+      cycles: 2,
+    });
+  });
+});
