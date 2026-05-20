@@ -1,17 +1,24 @@
-export type { SkillDefinition, SkillId, SkillAuthor } from "./types";
+import type { SkillPackage } from "./package-types";
+import { BUILT_IN_SKILL_PACKAGES } from "./builtin";
+import { listPackages } from "./skill-store";
+import { getEnabledSkillIds } from "./storage";
+
+export type { SkillPackage, SkillFrontmatter } from "./package-types";
+export { parseSkillMarkdown } from "./frontmatter";
 export {
-  listUserSkills,
-  getSkill,
-  saveSkill,
-  deleteSkill,
-  getEnabledSkillIds,
-  setSkillEnabled,
-  withSkillDefaults,
-  generateSkillId,
-  generateUserSkillId,
+  putPackage, getPackage, listPackages, deletePackage, getPackageFile,
+} from "./skill-store";
+export {
+  getEnabledSkillIds, setSkillEnabled, generateSkillId, generateUserSkillId,
   getSkillStorageBytes,
+  listUserSkills, getSkill, saveSkill, deleteSkill, withSkillDefaults,
 } from "./storage";
-export { BUILT_IN_SKILLS } from "./builtin";
+export { BUILT_IN_SKILL_PACKAGES } from "./builtin";
+
+// Re-export legacy SkillDefinition types and slash utilities so existing
+// consumers (Chat.tsx, SkillsList.tsx, App.tsx, loop.ts, slash popover) don't
+// break beyond the already-known removals. Tasks 7-13 will migrate them.
+export type { SkillDefinition, SkillId, SkillAuthor } from "./types";
 export {
   normalizeSkillSlashKey,
   findSkillBySlashKey,
@@ -20,103 +27,27 @@ export {
   type SlashCommandMatch,
 } from "./slash";
 
-import type { SkillDefinition } from "./types";
-import type { Tool } from "@/lib/agent/types";
-import type { ActionResult } from "@/lib/dom-actions/types";
-import { escapeUntrustedWrappers } from "@/lib/agent/untrusted-wrappers";
-import { BUILT_IN_SKILLS } from "./builtin";
-import { listUserSkills, getEnabledSkillIds } from "./storage";
-
-const MAX_TEMPLATE_VALUE_LEN = 500;
-
-/** Merge BUILT_IN_SKILLS with user-defined skills.
- *  User skills with the same id override the built-in version. */
-export async function getAllSkills(): Promise<SkillDefinition[]> {
-  const userSkills = await listUserSkills();
-  const userById = new Map(userSkills.map((s) => [s.id, s]));
-
-  const merged: SkillDefinition[] = BUILT_IN_SKILLS.map((builtin) =>
-    userById.has(builtin.id) ? userById.get(builtin.id)! : builtin,
-  );
-
-  // Append user skills that don't shadow any built-in
-  const builtinIds = new Set(BUILT_IN_SKILLS.map((s) => s.id));
-  for (const us of userSkills) {
-    if (!builtinIds.has(us.id)) {
-      merged.push(us);
-    }
-  }
-
+/** 合并内置包与 IndexedDB 用户包;同 id 用户包覆盖内置。 */
+export async function getAllSkillPackages(): Promise<SkillPackage[]> {
+  const userPkgs = await listPackages();
+  const userById = new Map(userPkgs.map((p) => [p.id, p]));
+  const merged = BUILT_IN_SKILL_PACKAGES.map((b) => userById.get(b.id) ?? b);
+  const builtinIds = new Set(BUILT_IN_SKILL_PACKAGES.map((b) => b.id));
+  for (const u of userPkgs) if (!builtinIds.has(u.id)) merged.push(u);
   return merged;
 }
 
-/** Return all skills that are currently enabled.
- *
- *  Enabled-ids array semantics (see storage.ts):
- *  - plain id  → explicitly enabled
- *  - "!<id>"   → explicitly disabled
- *  - absent    → fall back to SkillDefinition.enabled (default)
- */
-export async function getEnabledSkills(): Promise<SkillDefinition[]> {
-  const [all, enabledIds] = await Promise.all([
-    getAllSkills(),
-    getEnabledSkillIds(),
-  ]);
+const BUILT_IN_IDS = new Set(BUILT_IN_SKILL_PACKAGES.map((b) => b.id));
 
-  const explicitEnabled = new Set(enabledIds.filter((id) => !id.startsWith("!")));
-  const explicitDisabled = new Set(
-    enabledIds.filter((id) => id.startsWith("!")).map((id) => id.slice(1)),
-  );
-
-  return all.filter((skill) => {
-    if (explicitDisabled.has(skill.id)) return false;
-    if (explicitEnabled.has(skill.id)) return true;
-    return skill.enabled; // built-in default
+/** enabled-ids 语义沿用 storage.ts:plain=启用, "!id"=禁用, 缺省=内置默认启用。
+ *  用户包覆盖同名内置包时,该 id 仍视为"内置默认开"。 */
+export async function getEnabledSkillPackages(): Promise<SkillPackage[]> {
+  const [all, enabledIds] = await Promise.all([getAllSkillPackages(), getEnabledSkillIds()]);
+  const on = new Set(enabledIds.filter((i) => !i.startsWith("!")));
+  const off = new Set(enabledIds.filter((i) => i.startsWith("!")).map((i) => i.slice(1)));
+  return all.filter((p) => {
+    if (off.has(p.id)) return false;
+    if (on.has(p.id)) return true;
+    return p.builtIn || BUILT_IN_IDS.has(p.id); // 内置默认开;用户覆盖同名内置也默认开
   });
-}
-
-/** Render a promptTemplate by replacing {{key}} placeholders.
- *  Each value is JSON-stringified, capped at MAX_TEMPLATE_VALUE_LEN chars,
- *  and run through escapeUntrustedWrappers (closes ADV-1).
- *
- *  After substitution, the FULL rendered string (template body + every
- *  substituted value) is run through escapeUntrustedWrappers a second time
- *  so an agent-authored promptTemplate cannot embed a literal
- *  `</untrusted_skill_params>` in the template body itself (adversarial
- *  re-review finding — wrapper escape was only applied to substitutions,
- *  not the template body). escapeUntrustedWrappers is idempotent: HTML
- *  entities produced by the first pass are not re-escaped by the second.
- */
-function renderTemplate(template: string, args: Record<string, unknown>): string {
-  const rendered = template.replace(/\{\{(\w+)\}\}/g, (_match, key: string) => {
-    if (!(key in args)) return "";
-    const raw = JSON.stringify(args[key]) ?? "";
-    const capped = raw.length > MAX_TEMPLATE_VALUE_LEN
-      ? raw.slice(0, MAX_TEMPLATE_VALUE_LEN)
-      : raw;
-    return escapeUntrustedWrappers(capped);
-  });
-  const safeRendered = escapeUntrustedWrappers(rendered);
-  return `<untrusted_skill_params>${safeRendered}</untrusted_skill_params>`;
-}
-
-/** Convert a list of SkillDefinitions into Tool objects.
- *
- *  Each skill becomes a tool whose handler renders the promptTemplate and
- *  returns it as an observation. The LLM then uses other tools (snapshot,
- *  click, etc.) to actually perform the work guided by the rendered prompt.
- *  Risk is "low" because the handler only produces text — no side effects.
- */
-export function resolveSkillToTools(skills: SkillDefinition[]): Tool[] {
-  return skills.map((skill): Tool => ({
-    name: skill.id,
-    description: skill.description,
-    parameters: skill.toolSchema.parameters,
-    // low: handler produces only text, actual side-effecting tools are separate
-    handler: async (args): Promise<ActionResult> => {
-      const safeArgs = (args && typeof args === "object") ? (args as Record<string, unknown>) : {};
-      const observation = renderTemplate(skill.promptTemplate, safeArgs);
-      return { success: true, observation };
-    },
-  }));
 }

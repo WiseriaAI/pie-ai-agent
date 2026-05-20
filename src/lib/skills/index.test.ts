@@ -1,0 +1,39 @@
+import { describe, it, expect, beforeEach } from "vitest";
+import { getEnabledSkillPackages } from "./index";
+import { putPackage, listPackages, deletePackage } from "./skill-store";
+import { setSkillEnabled } from "./storage";
+
+describe("getEnabledSkillPackages", () => {
+  beforeEach(async () => {
+    // Clear storage state first to prevent enabled-state leaks across tests
+    await chrome.storage.local.clear();
+    // Then clean up any user packages in IndexedDB
+    for (const p of await listPackages()) await deletePackage(p.id);
+  });
+
+  it("内置包默认启用,显式禁用后排除", async () => {
+    const ids = (await getEnabledSkillPackages()).map((p) => p.id);
+    expect(ids).toContain("extract_structured_data");
+
+    await setSkillEnabled("extract_structured_data", false);
+    const after = (await getEnabledSkillPackages()).map((p) => p.id);
+    expect(after).not.toContain("extract_structured_data");
+  });
+
+  it("user 包 id 覆盖同名内置包", async () => {
+    await putPackage({
+      id: "extract_structured_data",
+      frontmatter: { name: "Custom Extract", description: "x" },
+      files: { "SKILL.md": "---\nname: Custom Extract\ndescription: x\n---\nbody" },
+      builtIn: false,
+      createdAt: 5,
+    });
+    const found = (await getEnabledSkillPackages()).find((p) => p.id === "extract_structured_data");
+    expect(found?.frontmatter.name).toBe("Custom Extract");
+  });
+
+  it("resolveSkillToTools 不再导出", async () => {
+    const mod = await import("./index");
+    expect(mod).not.toHaveProperty("resolveSkillToTools");
+  });
+});
