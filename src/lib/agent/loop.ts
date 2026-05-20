@@ -16,7 +16,6 @@ import {
   BUILT_IN_TOOLS,
   getKeyboardTools,
   isKeyboardToolName,
-  isSkillMetaToolName,
 } from "./tools";
 import type { Tool } from "./types";
 import { getToolClass } from "./tool-names";
@@ -37,7 +36,7 @@ import {
   type RoleViolation,
 } from "./history-validation";
 import { isKeyboardSimulationEnabled } from "../keyboard-simulation";
-import { getEnabledSkills, type SkillDefinition } from "../skills";
+import { getEnabledSkillPackages } from "../skills";
 import {
   acquireCdpSession,
   type CdpSession,
@@ -63,28 +62,11 @@ import { waitForUrlSettle, type UrlSettleResult } from "./wait-for-url-settle";
 
 const MAX_STEPS = 30;
 
-/**
- * Phase 2.6 — Skill scope.
- *
- * Active scope when the agent has invoked a skill-resolved tool. While active:
- *   - R3 anti-nest: any further skill-resolved tool_call is rejected.
- *   - R2 enforce: when allowedTools is non-null, any tool_call whose name is
- *     not in the whitelist is rejected with an observation describing the
- *     allowed set. allowedTools=null (legacy skills) keeps scope active for
- *     R3 enforcement but does not gate other tool calls.
- *
- * Lifecycle: in-memory only, task-scoped. Discarded when runAgentLoop returns
- * (done / fail / abort / max-steps). Replaced — not stacked — when a new
- * skill tool_call succeeds; in practice unreachable because R3 already
- * rejects nesting attempts.
- */
-
 export interface AgentLoopContext {
   port: chrome.runtime.Port;
   task: string;
   modelConfig: ModelConfig;
   signal: AbortSignal;
-  getEnabledSkillTools?: () => Promise<Tool[]>;
   /**
    * M1-U3 — session this task is bound to. Required so step-boundary
    * snapshots can write to `session_${id}_agent`. Decoupled from
@@ -761,7 +743,7 @@ function buildReflectionNote(verdict: LoopVerdict, attempt: number): string {
 // ── Main loop ─────────────────────────────────────────────────────────────────
 
 export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
-  const { port, task, modelConfig, getEnabledSkillTools } = ctx;
+  const { port, task, modelConfig } = ctx;
   const sessionId = ctx.sessionId;
 
   // Phase 2.5 lifecycle plumbing.
@@ -1004,6 +986,17 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
   // with escapeUntrustedWrappers applied first (D7 idempotent).
   // Assistant messages pass through verbatim (lastTaskSynth-injected
   // turns are already wrapped by U3 in <untrusted_prior_task_summary>).
+  //
+  // Skill catalog — advertise enabled skill packages in the system prompt.
+  // Fetched once at task start; the agent discovers + reads skills at runtime
+  // via the built-in use_skill / read_skill_file mediation tools.
+  const enabledPkgs = await getEnabledSkillPackages();
+  const skillCatalog = enabledPkgs.map((p) => ({
+    id: p.id,
+    name: p.frontmatter.name,
+    description: p.frontmatter.description,
+  }));
+
   const systemMsg: AgentMessage = {
     role: "system",
     content: buildAgentSystemPrompt(
@@ -1019,6 +1012,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // handler for per-iteration refresh semantics).
       ctx.pinnedTabs ?? [],
       pinnedTabId,
+      skillCatalog,
     ),
   };
 
@@ -1259,7 +1253,9 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // Resolve tools — re-read keyboard sim flag every iteration so
       // mid-task ON adds tools next round (mid-task OFF is handled by
       // the kill-switch in background/index.ts which detaches + aborts).
-      const skillTools = getEnabledSkillTools ? await getEnabledSkillTools() : [];
+      // Skills are NOT tools: they live in IndexedDB and are reached via the
+      // built-in use_skill / read_skill_file mediation tools (already in
+      // BUILT_IN_TOOLS), advertised through the system-prompt skill catalog.
       const currentKeyboardEnabled = await isKeyboardSimulationEnabled();
       const keyboardTools = currentKeyboardEnabled
         ? getKeyboardTools({
@@ -1267,20 +1263,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             pinnedOrigin,
           })
         : [];
-      const allTools = [...BUILT_IN_TOOLS, ...skillTools, ...keyboardTools];
-      // Phase 2.6 — skill-resolved tool name set, used by R3 anti-nest and
-      // by scope-transition recognition. Rebuilt each iteration because
-      // enabled skills can change mid-task (CRUD via meta tools).
-      const skillResolvedNames = new Set(skillTools.map((t) => t.name));
-      // Phase 2.6 — fetch SkillDefinition metadata for the same iteration so
-      // we can sync-lookup author / allowedTools / firstRunConfirmedAt during
-      // dispatch (R10 first-run gate, scope transition, agent-step skillAuthor).
-      // Mutable: in-step updates (e.g. firstRunConfirmedAt after gate approval)
-      // patch this map so a re-call within the same step doesn't re-gate.
-      const enabledSkillDefs = await getEnabledSkills();
-      const skillDefByName = new Map<string, SkillDefinition>(
-        enabledSkillDefs.map((s) => [s.id, s]),
-      );
+      const allTools = [...BUILT_IN_TOOLS, ...keyboardTools];
       const toolDefinitions = toolsToDefinitions(allTools);
 
       // Stream from LLM
@@ -1532,17 +1515,6 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           continue;
         }
 
-        // Phase 2.6 — derive skillAuthor metadata for this step's agent-step
-        // events. Sync lookup against the per-iteration skill-def cache.
-        // undefined for non-skill tools (BUILT_IN_TOOLS, keyboard, meta tools).
-        const skillDefForStep = skillDefByName.get(tc.name);
-        const skillAuthorForStep: "user" | "agent" | "builtIn" | undefined =
-          skillDefForStep
-            ? skillDefForStep.builtIn
-              ? "builtIn"
-              : skillDefForStep.author ?? "user"
-            : undefined;
-
         // M3-U4 — R7 lock: cross-session pinned-tab conflict guard.
         //
         // For write-class tools we collect the tab ids the call would
@@ -1608,7 +1580,6 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             args: redactArgsForPanel(tc.name, tc.args),
             status: "error",
             observation: lockMsg,
-            skillAuthor: skillAuthorForStep,
           });
           continue;
         }
@@ -1624,7 +1595,6 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           args: redactArgsForPanel(tc.name, tc.args),
           resolvedElement,
           status: "pending",
-          skillAuthor: skillAuthorForStep,
         });
 
         // Screenshot tool dispatch (R5/R6) — direct capture without confirm.
@@ -1648,7 +1618,6 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
               resolvedElement,
               status: "error",
               observation: noVisionObs,
-              skillAuthor: skillAuthorForStep,
             });
             continue;
           }
@@ -1676,7 +1645,6 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
               resolvedElement,
               status: "error",
               observation: rejectObs,
-              skillAuthor: skillAuthorForStep,
             });
             continue;
           }
@@ -1716,7 +1684,6 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             resolvedElement,
             status: "ok",
             observation: screenshotObs,
-            skillAuthor: skillAuthorForStep,
           });
           continue;
         }
@@ -1787,32 +1754,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           resolvedElement,
           status: result.success ? "ok" : "error",
           observation,
-          skillAuthor: skillAuthorForStep,
         });
-
-        // Phase 2.6 — Skill cache invalidation after a successful meta-tool
-        // mutation, so a within-step sequence like [update_skill X, X] sees
-        // the post-update skill state on the second tc (R10 first-run gate
-        // and the resolveSkillToTools observation both depend on a fresh
-        // skillDefByName / skillResolvedNames). Without this, a stale cache
-        // would silently bypass R10 even though chrome.storage holds the new
-        // state — adversarial review adv-2.
-        if (isSkillMetaToolName(tc.name) && result.success) {
-          const refreshedSkills = await getEnabledSkills();
-          skillDefByName.clear();
-          for (const s of refreshedSkills) skillDefByName.set(s.id, s);
-          // skillResolvedNames is `const`-bound to this iteration's skillTools
-          // and `allTools` is also fixed for the iteration; we cannot resolve
-          // a brand-new skill into a callable Tool mid-iteration without
-          // re-running getEnabledSkillTools. That's deliberate — the agent
-          // will see the new skill in the NEXT iteration's tool list, after
-          // observation is digested. The cache invalidation here only
-          // ensures R10 / scope transition see fresh metadata for skills
-          // that already existed (i.e. the update_skill / delete_skill
-          // paths); brand-new create_skill outputs become callable next
-          // turn, which is the correct UX (one round-trip lets the user
-          // see the result).
-        }
 
         // Check for terminal tools
         if (tc.name === "done" && result.success) {
