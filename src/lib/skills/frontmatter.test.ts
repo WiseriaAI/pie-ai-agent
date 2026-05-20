@@ -27,6 +27,39 @@ describe("parseSkillMarkdown", () => {
     expect(body.trim()).toBe("Extract the fields the user asked for.");
   });
 
+  it("解析 capabilities 下的块状列表", () => {
+    const md = [
+      "---",
+      "name: Block List",
+      "description: 块状列表能力",
+      "capabilities:",
+      "  tools:",
+      "    - get_tab_content",
+      "    - click",
+      "---",
+      "body",
+    ].join("\n");
+
+    const { frontmatter } = parseSkillMarkdown(md);
+    expect(frontmatter.capabilities?.tools).toEqual(["get_tab_content", "click"]);
+  });
+
+  it("处理 CRLF 行尾", () => {
+    const md = [
+      "---",
+      "name: CRLF Skill",
+      "description: 带回车换行",
+      "---",
+      "",
+      "Body line.",
+    ].join("\r\n");
+
+    const { frontmatter, body } = parseSkillMarkdown(md);
+    expect(frontmatter.name).toBe("CRLF Skill");
+    expect(frontmatter.description).toBe("带回车换行");
+    expect(body.trim()).toBe("Body line.");
+  });
+
   it("无 frontmatter 时抛错(name/description 必填)", () => {
     expect(() => parseSkillMarkdown("just body, no fence")).toThrow(/frontmatter/i);
   });
@@ -34,5 +67,9 @@ describe("parseSkillMarkdown", () => {
   it("缺 name 抛错", () => {
     const md = "---\ndescription: x\n---\nbody";
     expect(() => parseSkillMarkdown(md)).toThrow(/name/i);
+  });
+
+  it("缺 description 抛错", () => {
+    expect(() => parseSkillMarkdown("---\nname: foo\n---\nbody")).toThrow(/description/i);
   });
 });

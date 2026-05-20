@@ -1,11 +1,12 @@
 import type { SkillFrontmatter } from "./package-types";
 
-const FENCE = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
+const FENCE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
 
 /**
  * 极简 YAML 子集解析：够 frontmatter 用，不引第三方 YAML 库（避免给 SW 增包）。
  * 支持：`key: value`、`key:` 后跟 `  - item` 列表、`[a, b]` 内联数组、
  * `capabilities:` 一层嵌套。不支持多层嵌套/锚点等完整 YAML。
+ * 限制：key 仅匹配 `[\w]+`，不支持带连字符的 key（如 `some-key`）。
  */
 export function parseSkillMarkdown(md: string): {
   frontmatter: SkillFrontmatter;
@@ -16,7 +17,7 @@ export function parseSkillMarkdown(md: string): {
   const [, yaml, body] = m;
 
   const root: Record<string, unknown> = {};
-  const lines = yaml.split("\n");
+  const lines = yaml.split(/\r?\n/);
   let listKey: string | null = null;
   let listTarget: Record<string, unknown> = root;
   let nestKey: string | null = null;
@@ -35,7 +36,9 @@ export function parseSkillMarkdown(md: string): {
 
     if (indent && nestKey) {
       const nest = (root[nestKey] as Record<string, unknown>) ?? {};
-      nest[key] = parseScalar(val);
+      // 空值可能是块状列表头(`tools:` 后跟 `- item`)——初始化成数组，
+      // 否则下面的 list-push `??=` 不会替换 "" 字符串，.push 会抛错。
+      nest[key] = val === "" ? [] : parseScalar(val);
       root[nestKey] = nest;
       listKey = val === "" ? key : null;
       listTarget = nest;
