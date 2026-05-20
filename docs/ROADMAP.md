@@ -231,7 +231,7 @@ GitHub `state:open` 的 3 条 feat 性 issue（虽未打 label，但标题均为
 
 1. **reject-3-strikes 软化（§13 P2 #45-6）** — ✅ **SHIPPED 2026-05-08**：升级为彻底删除 confirm 层（risk classifier / informed-approval / skip-permissions / K-10），详见 [v0.8.0 release notes](docs/release-notes/v0.8.0.md)
 2. **Page snapshot 加 semantic 层（§13 P2 #44-3 / #45-3）** — interactive-only snapshot 让 LLM 在复杂页面"看不见报错/状态文案/表单 label"，是好用阶段最显眼失败模式。需 brainstorm 4 层观察（lightweight / semantic / fulltext / screenshot）默认值 + 每轮 token 成本 + R15 untrusted 边界协作
-3. **Anthropic `cache_control: ephemeral` on image content blocks（§8 / §11）** — 一张图 × 6 轮 task ≈ 9.4K 重复 vision token；BYOK 成本痛点 #1，改动局部（content block 加字段），ROI 极高
+3. **Prompt caching（[#57](https://github.com/WiseriaAI/Pie/issues/57)）** — 🟡 **Step 1 SHIPPED 2026-05-20**：native Anthropic provider 给稳定前缀（tool defs + 静态 system）打 `cache_control: ephemeral` 断点，任务内 30 步跨步命中。Trace → `docs/solutions/2026-05-20-prompt-caching-anthropic.md`。**残余**：Step 2（`<user_task>` 移出 system 解锁跨任务缓存）/ OpenRouter→Anthropic 透传 / image content block 缓存（§8 / §11，一张图 × 6 轮 ≈ 9.4K 重复 vision token）/ cache usage 可视化（[#59](https://github.com/WiseriaAI/Pie/issues/59)）
 4. **凭证场景 pause/resume（§13 P2 #45-7）** — 登录墙日常常见场景，当前只能 `fail`。M3 sandbox / lifecycle 基础设施可复用；scope 收得住
 
 ### 第二梯队 — 信任 / informed-approval 修复

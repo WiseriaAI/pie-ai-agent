@@ -53,6 +53,60 @@ function toWireMessages(messages: AgentMessage[]): {
 // Test-only export — Phase 5 wire shape validation
 export const _toWireMessagesForTest = toWireMessages;
 
+// Build the Anthropic /v1/messages request body, including prompt-caching
+// breakpoints (#57). Within a single ReAct task the system prompt and the tool
+// definitions are constant across all (up to 30) steps, so a `cache_control:
+// ephemeral` breakpoint at the end of each lets Anthropic serve them from cache
+// instead of re-billing them every step. Caching is prefix-cumulative (tools
+// precede system precede messages), so the breakpoints sit on the *last* tool
+// and on the system block. Anthropic ignores breakpoints below the minimum
+// cacheable length, so this is always safe to set.
+//
+// The volatile per-step observation lives in the trailing user message and is
+// intentionally left uncached — that is the suffix in the "stable prefix +
+// volatile suffix" structure described in the issue.
+const CACHE_CONTROL_EPHEMERAL = { type: "ephemeral" } as const;
+
+function buildRequestBody(
+  config: ModelConfig,
+  messages: AgentMessage[],
+  tools?: ToolDefinition[],
+): Record<string, unknown> {
+  const { system, messages: wireMessages } = toWireMessages(messages);
+
+  const body: Record<string, unknown> = {
+    model: config.model,
+    messages: wireMessages,
+    stream: true,
+    max_tokens: config.maxTokens ?? 4096,
+  };
+
+  if (system) {
+    // Hoist the string into a single text block carrying the cache breakpoint.
+    body.system = [
+      { type: "text", text: system, cache_control: CACHE_CONTROL_EPHEMERAL },
+    ];
+  }
+
+  if (tools && tools.length > 0) {
+    const wireTools = tools.map((t) => ({
+      name: t.name,
+      description: t.description,
+      input_schema: t.parameters,
+    }));
+    // Breakpoint on the last tool caches the entire tools prefix.
+    (wireTools[wireTools.length - 1] as Record<string, unknown>).cache_control =
+      CACHE_CONTROL_EPHEMERAL;
+    body.tools = wireTools;
+    body.tool_choice = { type: "auto" };
+  }
+
+  return body;
+}
+
+// Test-only export — #57 prompt-caching wire shape validation
+export const _buildRequestBodyForTest = buildRequestBody;
+
 // Map Anthropic stop_reason to our normalized stopReason
 function mapStopReason(
   reason: string | null | undefined,
@@ -71,27 +125,7 @@ export async function* streamChat(
 ): AsyncGenerator<StreamEvent> {
   const baseUrl = config.baseUrl!.replace(/\/$/, "");
 
-  const { system, messages: wireMessages } = toWireMessages(messages);
-
-  const body: Record<string, unknown> = {
-    model: config.model,
-    messages: wireMessages,
-    stream: true,
-    max_tokens: config.maxTokens ?? 4096,
-  };
-
-  if (system) {
-    body.system = system;
-  }
-
-  if (tools && tools.length > 0) {
-    body.tools = tools.map((t) => ({
-      name: t.name,
-      description: t.description,
-      input_schema: t.parameters,
-    }));
-    body.tool_choice = { type: "auto" };
-  }
+  const body = buildRequestBody(config, messages, tools);
 
   let response: Response;
   try {
