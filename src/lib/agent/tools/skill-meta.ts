@@ -1,39 +1,39 @@
-// Phase 2.6 — Skill autonomous CRUD meta tools.
+// Phase 2.6 — Skill autonomous CRUD meta tools (SP-1 rewrite).
 //
 // 4 tools registered into BUILT_IN_TOOLS:
-//   create_skill / update_skill — persist new capabilities
+//   create_skill / update_skill — persist new capabilities as SkillPackages
 //   delete_skill / list_skills  — read / reduce capabilities
 //
-// Each handler enforces 8 capability-grant invariants from the plan
-// (docs/plans/2026-05-01-001-feat-skill-autonomous-crud-plan.md):
+// Security defenses preserved from the original implementation:
 //
-//   P0-A  update_skill rejects builtIn=true targets
-//   P0-B  parameters JSON Schema string fields total length ≤ 2 KB
-//   P0-C  update_skill taint: author='agent'
-//   P0-D  promptTemplate length ≤ 8 KB
+//   P0-A  update_skill / delete_skill reject builtIn=true packages
+//   P0-C  update_skill taint: author='agent' (stored in SKILL.md frontmatter)
+//   P0-D  instructions (SKILL.md body) length ≤ 8 KB  [formerly promptTemplate cap]
 //   P1-E  schema additionalProperties:false + handler strips args.id explicitly
-//   P1-F  removed (#26 — allowedTools / R2 deleted)
-//   P1-G  removed (#26 — allowedTools / R2 deleted)
-//   P1-H  total skill_* storage ≤ 1 MB
+//   P1-H  total IndexedDB package bytes ≤ 1 MB  [quota gate re-implemented over listPackages()]
+//
+// P0-B (parameters schema strings ≤ 2 KB) was removed: the new model has no
+// typed parameters / JSON Schema field — instructions are free-form markdown
+// in SKILL.md. The instructions cap (P0-D, 8 KB) is the effective content guard.
 
 import type { ActionResult } from "../../dom-actions/types";
 import type { Tool } from "../types";
-import type { SkillDefinition } from "../../skills/types";
+import type { SkillPackage } from "../../skills/package-types";
 import {
-  saveSkill,
-  deleteSkill,
-  getSkill,
+  getAllSkillPackages,
+  putPackage,
+  getPackage,
+  deletePackage,
+} from "../../skills";
+import {
   generateSkillId,
-  getSkillStorageBytes,
+  setSkillEnabled,
 } from "../../skills/storage";
-import { getAllSkills } from "../../skills";
 
 // ── Configuration / limits ───────────────────────────────────────────────────
 
-const PROMPT_TEMPLATE_MAX_BYTES = 8 * 1024; // P0-D
-const SCHEMA_STRINGS_MAX_BYTES = 2 * 1024;  // P0-B
-const SKILL_STORAGE_QUOTA_BYTES = 1 * 1024 * 1024; // P1-H — 1 MB; chrome.storage.local total is 5 MB,
-                                                   // leaving 4 MB for provider configs / agent state / future checkpoints.
+const INSTRUCTIONS_MAX_BYTES = 8 * 1024; // P0-D — SKILL.md body (instructions)
+const SKILL_STORAGE_QUOTA_BYTES = 1 * 1024 * 1024; // P1-H — 1 MB total IndexedDB packages
 
 // ── Validation helpers ───────────────────────────────────────────────────────
 
@@ -46,55 +46,34 @@ function isNonEmptyString(v: unknown): v is string {
 }
 
 /**
- * Recursively count the total character length of every string nested anywhere
- * within a JSON-Schema-like object. Used by P0-B schema-string trust-boundary
- * cap. Counts everything including schema keywords ('object', 'array', etc.)
- * for safety — these are short and don't materially shrink the budget.
+ * Approximate the bytes a SkillPackage will consume in IndexedDB.
+ * Uses JSON.stringify length + key length as a consistent estimator. Used by
+ * the P1-H quota gate.
  */
-function countAllStringChars(value: unknown): number {
-  if (typeof value === "string") return value.length;
-  if (Array.isArray(value)) {
-    return value.reduce<number>((sum, item) => sum + countAllStringChars(item), 0);
-  }
-  if (typeof value === "object" && value !== null) {
-    let total = 0;
-    for (const v of Object.values(value as Record<string, unknown>)) {
-      total += countAllStringChars(v);
-    }
-    return total;
-  }
-  return 0;
+function estimatePackageBytes(pkg: SkillPackage): number {
+  return JSON.stringify(pkg).length + pkg.id.length;
 }
 
 /**
- * Approximate the bytes a skill will consume in chrome.storage.local. Matches
- * the accounting used by getSkillStorageBytes (JSON.stringify length + key
- * length). Used by the P1-H quota gate.
+ * Compute total bytes currently used by all packages in IndexedDB.
+ * P1-H quota gate implementation for the new SkillPackage storage model.
  */
-function estimateSkillBytes(skill: SkillDefinition): number {
-  return JSON.stringify(skill).length + `skill_${skill.id}`.length;
+async function getPackageStorageBytes(): Promise<number> {
+  const pkgs = await getAllSkillPackages();
+  return pkgs.reduce((sum, p) => sum + estimatePackageBytes(p), 0);
 }
 
-/** Run all P0-B / P0-D content validations. Returns null when ok,
- *  or an error reason. */
-function validateSkillContent(args: {
-  promptTemplate: string;
-  parameters: unknown;
-}): string | null {
-  // P0-D
-  if (args.promptTemplate.length > PROMPT_TEMPLATE_MAX_BYTES) {
-    return `promptTemplate too long (max ${PROMPT_TEMPLATE_MAX_BYTES} bytes, got ${args.promptTemplate.length})`;
-  }
-  // parameters must be object
-  if (typeof args.parameters !== "object" || args.parameters === null || Array.isArray(args.parameters)) {
-    return "parameters must be a JSON Schema object";
-  }
-  // P0-B
-  const schemaChars = countAllStringChars(args.parameters);
-  if (schemaChars > SCHEMA_STRINGS_MAX_BYTES) {
-    return `parameters schema strings too long (max ${SCHEMA_STRINGS_MAX_BYTES} bytes, got ${schemaChars})`;
-  }
-  return null;
+/**
+ * Build a SKILL.md string with YAML frontmatter from the given fields and body.
+ */
+function buildSkillMd(
+  name: string,
+  description: string,
+  version: string,
+  author: string,
+  instructions: string,
+): string {
+  return `---\nname: ${name}\ndescription: ${description}\nversion: ${version}\nauthor: ${author}\n---\n${instructions}`;
 }
 
 // ── Tool definitions ─────────────────────────────────────────────────────────
@@ -102,11 +81,11 @@ function validateSkillContent(args: {
 const createSkillTool: Tool = {
   name: "create_skill",
   description:
-    "Persist a new reusable workflow as a callable Skill. The skill becomes a tool the agent can later invoke. Use sparingly — only when you recognize the user repeatedly performs a similar workflow.",
+    "Persist a new reusable workflow as a callable Skill. The skill becomes available to invoke via use_skill. Use sparingly — only when you recognize the user repeatedly performs a similar workflow.",
   parameters: {
     type: "object",
     additionalProperties: false,
-    required: ["name", "description", "promptTemplate", "parameters"],
+    required: ["name", "description", "instructions"],
     properties: {
       name: {
         type: "string",
@@ -114,60 +93,68 @@ const createSkillTool: Tool = {
       },
       description: {
         type: "string",
-        description: "What this skill does and when to use it. Surfaces to the LLM as part of the tool definition.",
+        description:
+          "What this skill does and when to use it. Surfaces to the LLM as part of the skill listing.",
       },
-      promptTemplate: {
+      instructions: {
         type: "string",
         description:
-          "Handlebars-style template with {{key}} placeholders matching parameters keys. Rendered on each invocation and appended to LLM context as the skill's observation.",
-      },
-      parameters: {
-        type: "object",
-        description:
-          "JSON Schema for skill invocation parameters: { type: 'object', properties: {...}, required: [...] }.",
+          "Free-form step-by-step instructions that become the SKILL.md body. Max 8 KB. Written in plain text or markdown.",
       },
     },
   },
   handler: async (args: unknown): Promise<ActionResult> => {
-    const a = (args && typeof args === "object" ? { ...(args as Record<string, unknown>) } : {}) as Record<string, unknown>;
+    const a = (
+      args && typeof args === "object"
+        ? { ...(args as Record<string, unknown>) }
+        : {}
+    ) as Record<string, unknown>;
     // P1-E layer 2: even if schema bypass somehow allowed args.id through, strip it.
     delete a.id;
 
-    if (!isNonEmptyString(a.name)) return err("name is required and must be a non-empty string");
-    if (!isNonEmptyString(a.description)) return err("description is required and must be a non-empty string");
-    if (!isNonEmptyString(a.promptTemplate)) return err("promptTemplate is required and must be a non-empty string");
+    if (!isNonEmptyString(a.name))
+      return err("name is required and must be a non-empty string");
+    if (!isNonEmptyString(a.description))
+      return err("description is required and must be a non-empty string");
+    if (!isNonEmptyString(a.instructions))
+      return err("instructions is required and must be a non-empty string");
 
-    const validationErr = validateSkillContent({
-      promptTemplate: a.promptTemplate as string,
-      parameters: a.parameters,
-    });
-    if (validationErr) return err(validationErr);
+    const instructions = a.instructions as string;
 
-    const skill: SkillDefinition = {
-      id: generateSkillId(),
-      name: (a.name as string).trim(),
-      description: (a.description as string).trim(),
-      toolSchema: { parameters: a.parameters as Record<string, unknown> },
-      promptTemplate: a.promptTemplate as string,
-      enabled: true,
+    // P0-D — instructions length cap
+    if (instructions.length > INSTRUCTIONS_MAX_BYTES) {
+      return err(
+        `instructions too long (max ${INSTRUCTIONS_MAX_BYTES} bytes, got ${instructions.length})`,
+      );
+    }
+
+    const name = (a.name as string).trim();
+    const description = (a.description as string).trim();
+    const id = generateSkillId(); // P1-E: always server-generated, agent cannot pass its own id
+
+    const md = buildSkillMd(name, description, "1.0.0", "agent", instructions);
+
+    const pkg: SkillPackage = {
+      id,
+      frontmatter: { name, description, version: "1.0.0", author: "agent" },
+      files: { "SKILL.md": md },
       builtIn: false,
-      author: "agent",
       createdAt: Date.now(),
     };
 
-    // P1-H quota
-    const currentBytes = await getSkillStorageBytes();
-    const additional = estimateSkillBytes(skill);
+    // P1-H quota — check before writing
+    const currentBytes = await getPackageStorageBytes();
+    const additional = estimatePackageBytes(pkg);
     if (currentBytes + additional > SKILL_STORAGE_QUOTA_BYTES) {
       return err(
         `skill storage quota exceeded (${currentBytes + additional}/${SKILL_STORAGE_QUOTA_BYTES} bytes). Delete unused skills via delete_skill.`,
       );
     }
 
-    await saveSkill(skill);
+    await putPackage(pkg);
     return {
       success: true,
-      observation: `skill created: id=${skill.id} name="${skill.name}". Callable on subsequent turns.`,
+      observation: `skill created: id=${id} name="${name}". Callable on subsequent turns via use_skill.`,
     };
   },
 };
@@ -175,72 +162,84 @@ const createSkillTool: Tool = {
 const updateSkillTool: Tool = {
   name: "update_skill",
   description:
-    "Modify an existing non-built-in Skill. Only description / promptTemplate / parameters can change. Built-in skills are immutable. Updating any field re-marks the skill as agent-authored.",
+    "Modify an existing non-built-in Skill. Only name, description, and instructions can change. Built-in skills are immutable. Updating any field re-marks the skill as agent-authored.",
   parameters: {
     type: "object",
     additionalProperties: false,
-    required: ["id", "patch"],
+    required: ["id"],
     properties: {
       id: { type: "string", description: "Id of the skill to update." },
-      patch: {
-        type: "object",
-        additionalProperties: false,
-        description: "Subset of fields to update. Forbidden fields (id / author / builtIn / createdAt / enabled / firstRunConfirmedAt) are silently ignored if included.",
-        properties: {
-          description: { type: "string" },
-          promptTemplate: { type: "string" },
-          parameters: { type: "object" },
-        },
+      name: { type: "string", description: "New name for the skill." },
+      description: { type: "string", description: "New description for the skill." },
+      instructions: {
+        type: "string",
+        description: "New instructions (SKILL.md body). Max 8 KB.",
       },
     },
   },
   handler: async (args: unknown): Promise<ActionResult> => {
-    const a = (args && typeof args === "object" ? args : {}) as { id?: unknown; patch?: unknown };
-    if (!isNonEmptyString(a.id)) return err("id is required");
-    if (typeof a.patch !== "object" || a.patch === null || Array.isArray(a.patch)) {
-      return err("patch must be an object");
-    }
-    const patch = a.patch as Record<string, unknown>;
+    const a = (
+      args && typeof args === "object" ? args : {}
+    ) as { id?: unknown; name?: unknown; description?: unknown; instructions?: unknown };
 
-    const existing = await getSkill(a.id);
+    if (!isNonEmptyString(a.id)) return err("id is required");
+
+    const existing = await getPackage(a.id as string);
     if (!existing) return err("skill not found");
 
-    // P0-A
+    // P0-A — builtIn guard
     if (existing.builtIn) return err("cannot edit built-in skill");
 
-    // Apply allowed patch fields; silently ignore forbidden (id/author/builtIn/createdAt/enabled/firstRunConfirmedAt)
-    const merged: SkillDefinition = { ...existing };
-    if ("description" in patch) {
-      if (!isNonEmptyString(patch.description)) return err("description must be a non-empty string");
-      merged.description = (patch.description as string).trim();
+    // Apply optional patch fields
+    let name = existing.frontmatter.name;
+    let description = existing.frontmatter.description;
+
+    // Extract current instructions from SKILL.md body
+    const currentMd = existing.files["SKILL.md"] ?? "";
+    const fenceEnd = currentMd.indexOf("\n---\n");
+    let instructions =
+      fenceEnd >= 0 ? currentMd.slice(fenceEnd + 5) : currentMd;
+
+    if ("name" in (a as Record<string, unknown>)) {
+      if (!isNonEmptyString(a.name)) return err("name must be a non-empty string");
+      name = (a.name as string).trim();
     }
-    if ("promptTemplate" in patch) {
-      if (!isNonEmptyString(patch.promptTemplate)) return err("promptTemplate must be a non-empty string");
-      merged.promptTemplate = patch.promptTemplate as string;
+    if ("description" in (a as Record<string, unknown>)) {
+      if (!isNonEmptyString(a.description))
+        return err("description must be a non-empty string");
+      description = (a.description as string).trim();
     }
-    if ("parameters" in patch) {
-      merged.toolSchema = { parameters: patch.parameters as Record<string, unknown> };
+    if ("instructions" in (a as Record<string, unknown>)) {
+      if (!isNonEmptyString(a.instructions))
+        return err("instructions must be a non-empty string");
+      instructions = a.instructions as string;
     }
 
-    // Re-validate full content
-    const validationErr = validateSkillContent({
-      promptTemplate: merged.promptTemplate,
-      parameters: merged.toolSchema.parameters,
-    });
-    if (validationErr) return err(validationErr);
+    // P0-D — instructions length cap
+    if (instructions.length > INSTRUCTIONS_MAX_BYTES) {
+      return err(
+        `instructions too long (max ${INSTRUCTIONS_MAX_BYTES} bytes, got ${instructions.length})`,
+      );
+    }
 
     // P0-C taint propagation
-    merged.author = "agent";
+    const md = buildSkillMd(name, description, "1.0.0", "agent", instructions);
 
-    // P1-H quota — net change, since we're replacing
-    const currentBytes = await getSkillStorageBytes();
-    const oldBytes = estimateSkillBytes(existing);
-    const newBytes = estimateSkillBytes(merged);
+    const merged: SkillPackage = {
+      ...existing,
+      frontmatter: { ...existing.frontmatter, name, description, author: "agent" },
+      files: { ...existing.files, "SKILL.md": md },
+    };
+
+    // P1-H quota — net change (replacing existing, so subtract old size)
+    const currentBytes = await getPackageStorageBytes();
+    const oldBytes = estimatePackageBytes(existing);
+    const newBytes = estimatePackageBytes(merged);
     if (currentBytes - oldBytes + newBytes > SKILL_STORAGE_QUOTA_BYTES) {
-      return err(`skill storage quota exceeded`);
+      return err("skill storage quota exceeded");
     }
 
-    await saveSkill(merged);
+    await putPackage(merged);
     return {
       success: true,
       observation: `skill updated: id=${merged.id}. author marked 'agent'.`,
@@ -261,12 +260,21 @@ const deleteSkillTool: Tool = {
     },
   },
   handler: async (args: unknown): Promise<ActionResult> => {
-    const a = (args && typeof args === "object" ? args : {}) as { id?: unknown };
+    const a = (args && typeof args === "object" ? args : {}) as {
+      id?: unknown;
+    };
     if (!isNonEmptyString(a.id)) return err("id is required");
-    const existing = await getSkill(a.id);
+
+    const existing = await getPackage(a.id as string);
     if (!existing) return err("skill not found");
+
+    // P0-A — builtIn guard
     if (existing.builtIn) return err("cannot delete built-in skill");
-    await deleteSkill(a.id);
+
+    await deletePackage(a.id as string);
+    // Clean up enabled-list entry so the deleted skill doesn't linger in state
+    await setSkillEnabled(a.id as string, false);
+
     return { success: true, observation: `skill deleted: ${a.id}` };
   },
 };
@@ -274,21 +282,20 @@ const deleteSkillTool: Tool = {
 const listSkillsTool: Tool = {
   name: "list_skills",
   description:
-    "List all available skills with their id, name, description, author (user/agent), and enabled state. Use this before proposing create_skill to check for existing reusable workflows. Does NOT return promptTemplate or parameters (use the returned id with subsequent flows if you need full content).",
+    "List all available skills with their id, name, description, author, and builtIn flag. Use this before proposing create_skill to check for existing reusable workflows.",
   parameters: {
     type: "object",
     additionalProperties: false,
     properties: {},
   },
   handler: async (): Promise<ActionResult> => {
-    const all = await getAllSkills();
-    const summary = all.map((s) => ({
-      id: s.id,
-      name: s.name,
-      description: s.description,
-      author: s.author ?? "user",
-      builtIn: s.builtIn,
-      enabled: s.enabled,
+    const all = await getAllSkillPackages();
+    const summary = all.map((p) => ({
+      id: p.id,
+      name: p.frontmatter.name,
+      description: p.frontmatter.description,
+      author: p.frontmatter.author ?? "user",
+      builtIn: p.builtIn,
     }));
     return { success: true, observation: JSON.stringify(summary) };
   },
@@ -304,48 +311,64 @@ const listSkillsTool: Tool = {
 export async function previewMetaSkillCall(
   toolName: string,
   args: unknown,
-): Promise<{ existing: SkillDefinition | null; effective: SkillDefinition } | null> {
+): Promise<{ existing: SkillPackage | null; effective: SkillPackage } | null> {
   if (toolName === "create_skill") {
-    const a = (args && typeof args === "object" ? { ...(args as Record<string, unknown>) } : {}) as Record<string, unknown>;
+    const a = (
+      args && typeof args === "object"
+        ? { ...(args as Record<string, unknown>) }
+        : {}
+    ) as Record<string, unknown>;
     delete a.id;
-    if (typeof a.name !== "string" || typeof a.description !== "string" || typeof a.promptTemplate !== "string") return null;
-    if (typeof a.parameters !== "object" || a.parameters === null || Array.isArray(a.parameters)) return null;
-    const effective: SkillDefinition = {
-      // Real id is generated on save; render placeholder to make this explicit.
+    if (
+      typeof a.name !== "string" ||
+      typeof a.description !== "string" ||
+      typeof a.instructions !== "string"
+    )
+      return null;
+    const name = (a.name as string).trim();
+    const description = (a.description as string).trim();
+    const instructions = a.instructions as string;
+    const md = buildSkillMd(name, description, "1.0.0", "agent", instructions);
+    const effective: SkillPackage = {
       id: "(auto-generated on save)",
-      name: a.name,
-      description: a.description,
-      toolSchema: { parameters: a.parameters as Record<string, unknown> },
-      promptTemplate: a.promptTemplate,
-      enabled: true,
+      frontmatter: { name, description, version: "1.0.0", author: "agent" },
+      files: { "SKILL.md": md },
       builtIn: false,
-      author: "agent",
       createdAt: Date.now(),
     };
     return { existing: null, effective };
   }
   if (toolName === "update_skill") {
-    const a = (args && typeof args === "object" ? args : {}) as { id?: unknown; patch?: unknown };
+    const a = (args && typeof args === "object" ? args : {}) as {
+      id?: unknown;
+      name?: unknown;
+      description?: unknown;
+      instructions?: unknown;
+    };
     if (typeof a.id !== "string") return null;
-    const existing = await getSkill(a.id);
+    const existing = await getPackage(a.id);
     if (!existing) return null;
-    const patch = (a.patch && typeof a.patch === "object" && !Array.isArray(a.patch)
-      ? (a.patch as Record<string, unknown>)
-      : {});
-    const merged: SkillDefinition = { ...existing };
-    if (typeof patch.description === "string") merged.description = patch.description;
-    if (typeof patch.promptTemplate === "string") merged.promptTemplate = patch.promptTemplate;
-    if (
-      typeof patch.parameters === "object" &&
-      patch.parameters !== null &&
-      !Array.isArray(patch.parameters)
-    ) {
-      merged.toolSchema = { parameters: patch.parameters as Record<string, unknown> };
-    }
-    // Mirror the taint applied by the actual handler so the user sees what
-    // will REALLY be persisted (author=agent).
-    merged.author = "agent";
-    return { existing, effective: merged };
+
+    let name = existing.frontmatter.name;
+    let description = existing.frontmatter.description;
+    const currentMd = existing.files["SKILL.md"] ?? "";
+    const fenceEnd = currentMd.indexOf("\n---\n");
+    let instructions =
+      fenceEnd >= 0 ? currentMd.slice(fenceEnd + 5) : currentMd;
+
+    if (typeof a.name === "string" && a.name.trim()) name = a.name.trim();
+    if (typeof a.description === "string" && a.description.trim())
+      description = a.description.trim();
+    if (typeof a.instructions === "string" && a.instructions.trim())
+      instructions = a.instructions;
+
+    const md = buildSkillMd(name, description, "1.0.0", "agent", instructions);
+    const effective: SkillPackage = {
+      ...existing,
+      frontmatter: { ...existing.frontmatter, name, description, author: "agent" },
+      files: { ...existing.files, "SKILL.md": md },
+    };
+    return { existing, effective };
   }
   return null;
 }
