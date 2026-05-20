@@ -20,6 +20,13 @@ import {
 } from "./tools";
 import type { Tool } from "./types";
 import { getToolClass } from "./tool-names";
+import {
+  detectLoop,
+  recordStep,
+  stepSignature,
+  type LoopVerdict,
+  type StepSignature,
+} from "./loop-detection";
 import { escapeUntrustedWrappers } from "./untrusted-wrappers";
 import { buildAgentSystemPrompt, buildObservationMessage } from "./prompt";
 import { applySlidingWindow } from "./window";
@@ -713,6 +720,44 @@ function redactArgsForPanel(toolName: string, args: unknown): unknown {
   };
 }
 
+// ── #61(a)(b) — loop detection + intra-episode reflection ─────────────────
+
+/** Max consecutive recent step signatures kept for loop detection. Chosen
+ *  larger than the max detection threshold (exactRepeatThreshold = 3) so a
+ *  trailing run of identical steps is never truncated out of the ring buffer
+ *  before it can trip the detector. */
+const RECENT_STEPS_CAP = 5;
+/** Max intra-episode reflections before the loop hard-fails. Prevents a
+ *  secondary "reflect → loop again → reflect" cycle. */
+const MAX_REFLECTIONS = 2;
+
+/** Trusted tool_result content for tool_use blocks whose execution was
+ *  skipped because a loop was detected. NOT wrapped in <untrusted_*> — this
+ *  is runtime-authored guidance, not page data. */
+const REFLECTION_SKIP_RESULT =
+  "This action was not executed: it repeats a recent action that did not make " +
+  "progress (loop detected). See the <reflections> guidance in the latest page " +
+  "observation, then choose a different approach or call `fail` if the task " +
+  "cannot proceed.";
+
+/** Build the trusted reflection note appended to <reflections>. */
+function buildReflectionNote(verdict: LoopVerdict, attempt: number): string {
+  const why =
+    verdict.kind === "repeat-error"
+      ? `your last ${verdict.count} attempts at the same action all failed`
+      : verdict.kind === "exact-repeat"
+        ? `you have issued the same action ${verdict.count} times in a row with no apparent progress`
+        : // unreachable defensive default (LoopVerdict has no other kind that reaches here)
+          "you appear to be repeating an action without progress";
+  return (
+    `Self-correction (intervention ${attempt}): ${why}. You are stuck in a loop. ` +
+    "Before acting again: (1) re-read the latest page snapshot above — did the previous " +
+    "action have the effect you expected? (2) If an element is unresponsive, try a different " +
+    "element, a different tool, or scroll to reveal new state. (3) If the task genuinely " +
+    "cannot proceed, call `fail` with a clear explanation. Do NOT repeat the same action."
+  );
+}
+
 // ── Main loop ─────────────────────────────────────────────────────────────────
 
 export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
@@ -753,6 +798,12 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
   // `history = ctx.resumedAgentMessages…` assignment) read an empty array
   // instead of hitting a TDZ ReferenceError (Fix 1 / C1).
   let history: AgentMessage[] = [];
+
+  // #61(a)(b) — in-memory loop-detection + reflection state. Reset on SW
+  // restart (resume path accepts the reset — SW death already broke any loop).
+  const recentSteps: StepSignature[] = [];
+  const reflectionMemory: string[] = [];
+  let reflectionCount = 0;
 
   // Idempotent done emit — every runAgentLoop exit path (success, abort,
   // error, finally) calls this; first one wins, the rest are no-ops.
@@ -1122,7 +1173,15 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       }
 
       // Build observation text
-      const observationText = buildObservationMessage(snapshot, currentUrl);
+      let observationText = buildObservationMessage(snapshot, currentUrl);
+      // #61(b) — tail-inject accumulated reflections (trusted; NOT wrapped in
+      // <untrusted_*>). Always re-appended to the NEWEST observation so it
+      // survives sliding-window / token-budget pressure and stale-elision
+      // (which cuts at the first <untrusted_page_content>, dropping any stale
+      // reflections tail — fine, the latest turn always re-carries them).
+      if (reflectionMemory.length > 0) {
+        observationText += `\n\n<reflections>\n${reflectionMemory.join("\n\n")}\n</reflections>`;
+      }
       const observationBlock: ContentBlock = { type: "text", text: observationText };
 
       // Merge the observation into the last user message to avoid adjacent same-role messages.
@@ -1362,6 +1421,86 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           name: tc.name,
           input: tc.args,
         });
+      }
+
+      // #61(a)(b) — loop detection BEFORE executing this step's tools. The
+      // signature fingerprints all tool calls (name + stable args). detectLoop
+      // compares it against the ring buffer of past executed steps; B-detector
+      // (repeat+error) uses the past steps' error bits. On a hit we do NOT
+      // execute the tools — we close the assistant turn with paired skip
+      // tool_results (Anthropic requires tool_use↔tool_result pairing) and push
+      // a reflection that lands in the NEXT observation's <reflections> tail.
+      const currentSig = stepSignature(completedToolCalls);
+      const verdict = detectLoop(recentSteps, currentSig);
+      if (verdict.kind !== "none") {
+        const skipResults: ContentBlock[] = completedToolCalls.map((tc) => ({
+          type: "tool_result",
+          toolUseId: tc.id,
+          content: REFLECTION_SKIP_RESULT,
+          isError: true,
+        }));
+
+        if (reflectionCount >= MAX_REFLECTIONS) {
+          // Reflection budget exhausted — hard terminate.
+          history.push({ role: "assistant", content: assistantBlocks });
+          history.push({ role: "user", content: skipResults });
+          if (ctx.onStepSnapshot) {
+            const snap = buildSessionAgentSnapshot(history, stepIndex, hasImageContent);
+            ctx.onStepSnapshot(snap).catch((e) => {
+              console.warn(
+                `[agent] snapshot (reflection-giveup) failed for session=${ctx.sessionId} step=${stepIndex}:`,
+                e,
+              );
+            });
+          }
+          await emitDone(
+            {
+              type: "agent-done-task",
+              success: false,
+              summary: "Agent got stuck repeating the same action and stopped.",
+              stepCount: stepIndex,
+            },
+            "fail",
+          );
+          return;
+        }
+
+        reflectionCount++;
+        const note = buildReflectionNote(verdict, reflectionCount);
+        reflectionMemory.push(note);
+
+        // Surface the reflection as a distinct step so the user sees the agent
+        // "thinking". args:{} passes through redactArgsForPanel unchanged.
+        // Deliberate status split: the reflect STEP is status:"ok" (the
+        // reflection itself succeeded → green check in the panel), whereas the
+        // paired skip tool_results above are isError:true (the skipped actions
+        // are failures to the model). Two audiences, two truths.
+        emitStep({
+          type: "agent-step",
+          stepIndex,
+          tool: "reflect",
+          args: {},
+          status: "ok",
+          observation: note,
+        });
+
+        history.push({ role: "assistant", content: assistantBlocks });
+        history.push({ role: "user", content: skipResults });
+
+        if (ctx.onStepSnapshot) {
+          const snap = buildSessionAgentSnapshot(history, stepIndex, hasImageContent);
+          ctx.onStepSnapshot(snap).catch((e) => {
+            console.warn(
+              `[agent] snapshot (reflection) failed for session=${ctx.sessionId} step=${stepIndex}:`,
+              e,
+            );
+          });
+        }
+
+        // Record the skipped step so a repeat next round still trips the
+        // detector (reflectionCount, not the ring buffer, is the real cap).
+        recordStep(recentSteps, { sig: currentSig, allErrored: true }, RECENT_STEPS_CAP);
+        continue; // → next iteration re-snapshots; observation carries <reflections>
       }
 
       // Collect tool_result blocks for the user turn
@@ -1683,6 +1822,18 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           shouldTerminate = true;
           terminationResult = { success: false, summary: result.error ?? observation };
         }
+      }
+
+      // #61(a) — record this executed step in the loop-detection ring buffer.
+      // allErrored drives the B-detector: a step counts as errored only when
+      // EVERY tool_result it produced was an error (screenshot image blocks are
+      // not tool_result and are ignored).
+      {
+        const trResults = toolResultBlocks.filter(
+          (b): b is Extract<ContentBlock, { type: "tool_result" }> => b.type === "tool_result",
+        );
+        const allErrored = trResults.length > 0 && trResults.every((b) => b.isError === true);
+        recordStep(recentSteps, { sig: currentSig, allErrored }, RECENT_STEPS_CAP);
       }
 
       // Push assistant message + user tool_result message into history.
