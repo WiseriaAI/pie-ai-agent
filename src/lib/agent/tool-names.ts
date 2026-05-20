@@ -25,6 +25,14 @@ const SKILL_META_TOOL_NAMES_FOR_REGISTRY = [
   "list_skills",
 ] as const;
 
+// Standard skill mediation tools — use_skill invokes a skill by name;
+// read_skill_file reads a file from a skill's bundle. Both are pure text
+// producers (no tab/page side effects) → class=read.
+const SKILL_MEDIATION_TOOL_NAMES = [
+  "use_skill",
+  "read_skill_file",
+] as const;
+
 // Phase 3 cross-tab tools (always present in BUILT_IN_TOOLS).
 //
 // list_tabs is an example where behavior depends on args (currentWindow vs
@@ -53,6 +61,7 @@ export const SCREENSHOT_TOOL_NAMES = [
 export const KNOWN_BUILT_IN_TOOL_NAMES = [
   ...PHASE_2_TOOL_NAMES,
   ...SKILL_META_TOOL_NAMES_FOR_REGISTRY,
+  ...SKILL_MEDIATION_TOOL_NAMES,
   ...TAB_TOOL_NAMES,
   ...SCREENSHOT_TOOL_NAMES,
 ] as const;
@@ -86,9 +95,8 @@ export const KNOWN_KEYBOARD_TOOL_NAMES = [
 //       not its content).
 //   - close_tabs / group_tabs / ungroup_tabs / move_tabs — write (mutates
 //       tab existence / containment / order).
-//
-// Skill-resolved tools (resolveSkillToTools) are pure text producers and
-// are treated as `read` by default (loop.ts uses `tool.class ?? "read"`).
+//   - use_skill / read_skill_file — read (pure text producers; invoke a
+//       skill or read a skill file; no tab/page side effects).
 //
 // Build-time check below ensures every name in KNOWN_BUILT_IN_TOOL_NAMES
 // or KNOWN_KEYBOARD_TOOL_NAMES has a matching entry. A new tool that
@@ -110,6 +118,9 @@ export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
   update_skill: "write",
   delete_skill: "write",
   list_skills: "read",
+  // Standard skill mediation tools — pure text producers, no tab/page side effects
+  use_skill: "read",
+  read_skill_file: "read",
   // Phase 3 cross-tab tools
   list_tabs: "read",
   get_tab_content: "read",
@@ -155,8 +166,7 @@ for (const name of [
 }
 
 export function getToolClass(name: string): ToolClass {
-  // Skill-resolved tools (resolveSkillToTools) are pure text producers and
-  // not in the registry. Default to read; their downstream tool calls
+  // Unknown tool names default to read. Downstream tool calls
   // (click / type / etc.) carry their own class.
   return TOOL_CLASSES[name] ?? "read";
 }
