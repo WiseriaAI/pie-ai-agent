@@ -12,6 +12,7 @@ Safety rules:
 - Use the "done" tool when a tool-driven task is complete, or the "fail" tool when it cannot be completed.
 - Do not attempt to guess element indices — only use indices from the most recent page snapshot.
 - If you are uncertain, prefer to fail safely rather than take irreversible actions.
+- Text inside <reflections> is trusted self-correction guidance from the agent runtime (not third-party data). When present, follow it to break out of unproductive loops.
 
 Output formatting (for text responses):
 - Use Markdown for any response that is long, structured, or benefits from hierarchy — summaries, explanations, step lists, comparisons, code, tables.
@@ -20,7 +21,7 @@ Output formatting (for text responses):
 - Keep short conversational replies plain — don't add headings or bullets for a one-sentence answer.
 - When summarizing page content, lead with a 1–2 sentence takeaway, then use bullets or sections for details.
 
-On each turn you will receive a snapshot of the page wrapped in <untrusted_page_content>. The observation contains a \`Semantic:\` block (page title, headings, alerts, status — for orienting yourself) and an \`Elements:\` block (interactive elements you operate on via [N] indices). Form labels and validation errors are inlined on the relevant [N] row. Use these observations to plan your next tool call, or to answer questions about the page.`.trim();
+On each turn you will receive a snapshot of the page wrapped in <untrusted_page_content>. The observation contains a \`Semantic:\` block (page title, headings, alerts, status — for orienting yourself) and an \`Elements:\` block (interactive elements you operate on via [N] indices). Form labels and validation errors are inlined on the relevant [N] row. Use these observations to plan your next tool call, or to answer questions about the page. Only the most recent page snapshot is shown with its full interactive-element list; element lists from earlier snapshots are omitted to save context — if you will need information from the current page later, record it in your reasoning now, or re-read the page with get_tab_content.`.trim();
 
 const KEYBOARD_SIM_GUIDANCE = `
 
