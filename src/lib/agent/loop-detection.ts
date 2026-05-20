@@ -27,13 +27,25 @@ export type LoopVerdict =
   /** A — the same signature is about to run for the Nth consecutive time. */
   | { kind: "exact-repeat"; count: number }
   /** B — the same signature repeated and the prior occurrences all errored. */
-  | { kind: "repeat-error"; count: number };
+  | { kind: "repeat-error"; count: number }
+  /** C — the agent is cycling between the same `period` distinct actions
+   *  (e.g. a→b→a→b), with no progress. `cycles` is at least this many full
+   *  cycles (lower bound, == oscillationMinCycles); the actual count may be
+   *  higher — the detector stops counting once the threshold is met. */
+  | { kind: "oscillation"; period: number; cycles: number };
 
 export interface DetectLoopOptions {
   /** Consecutive identical steps (incl. the current one) that trip A. Default 3. */
   exactRepeatThreshold?: number;
   /** Consecutive identical errored steps (incl. current) that trip B. Default 2. */
   repeatErrorThreshold?: number;
+  /** Largest cycle period to scan for (C). Default 3. Period 1 == exact-repeat.
+   *  Tradeoff: periods larger than this go undetected — raise it if longer
+   *  cycles are suspected, at the cost of a larger ring buffer + more CPU. */
+  oscillationMaxPeriod?: number;
+  /** Minimum number of full cycles required to call it an oscillation (C).
+   *  Default 2 (i.e. the block must appear at least twice: a→b→a→b). */
+  oscillationMinCycles?: number;
 }
 
 /**
@@ -64,6 +76,38 @@ export function stepSignature(calls: ReadonlyArray<ToolCallLike>): string {
 }
 
 /**
+ * #64(C) — detect a period-p oscillation in the signature sequence
+ * `seq` (oldest→newest, current step last). Returns the smallest qualifying
+ * period in [2, maxPeriod] whose last `minCycles` blocks are all identical,
+ * or null. A block whose entries are all identical is NOT an oscillation
+ * (that is exact-repeat / period 1, handled separately).
+ */
+function detectOscillation(
+  seq: ReadonlyArray<string>,
+  maxPeriod: number,
+  minCycles: number,
+): { period: number; cycles: number } | null {
+  for (let p = 2; p <= maxPeriod; p++) {
+    const need = p * minCycles;
+    if (seq.length < need) continue;
+    const tail = seq.slice(seq.length - need);
+    const pattern = tail.slice(tail.length - p); // last p entries define the block
+    // The block must contain at least two distinct sigs, else it's a pure repeat.
+    if (new Set(pattern).size < 2) continue;
+    let matches = true;
+    for (let i = 0; i < need; i++) {
+      if (tail[i] !== pattern[i % p]) {
+        matches = false;
+        break;
+      }
+    }
+    // Reports the confirmed lower bound (minCycles), not the exact cycle count.
+    if (matches) return { period: p, cycles: minCycles };
+  }
+  return null;
+}
+
+/**
  * Decide whether the current step (identified by `currentSig`) continues a
  * run of identical recent steps long enough to count as a loop.
  *
@@ -75,6 +119,8 @@ export function stepSignature(calls: ReadonlyArray<ToolCallLike>): string {
  *   - B (repeat-error): the trailing run is non-empty, all errored, and the
  *     effective count (run + current) ≥ repeatErrorThreshold. Checked first.
  *   - A (exact-repeat): effective count ≥ exactRepeatThreshold.
+ *   - C (oscillation): the sequence cycles through a repeating pattern of
+ *     period ≥ 2 for at least oscillationMinCycles full cycles.
  *
  * Timing note: detectLoop runs BEFORE the current step executes, so only the
  * PAST run's error bits are known — the current step's error status is
@@ -88,6 +134,8 @@ export function detectLoop(
 ): LoopVerdict {
   const exactRepeatThreshold = options.exactRepeatThreshold ?? 3;
   const repeatErrorThreshold = options.repeatErrorThreshold ?? 2;
+  const oscillationMaxPeriod = options.oscillationMaxPeriod ?? 3;
+  const oscillationMinCycles = options.oscillationMinCycles ?? 2;
 
   let run = 0;
   let runAllErrored = true;
@@ -104,6 +152,15 @@ export function detectLoop(
   if (effective >= exactRepeatThreshold) {
     return { kind: "exact-repeat", count: effective };
   }
+
+  // C — oscillation (period ≥ 2). Checked after the period-1 detectors so a
+  // pure repeat is always reported as exact-repeat, not oscillation.
+  const seq = [...recent.map((r) => r.sig), currentSig];
+  const osc = detectOscillation(seq, oscillationMaxPeriod, oscillationMinCycles);
+  if (osc) {
+    return { kind: "oscillation", period: osc.period, cycles: osc.cycles };
+  }
+
   return { kind: "none" };
 }
 
