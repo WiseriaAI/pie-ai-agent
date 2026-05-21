@@ -5,6 +5,7 @@ import {
   setActiveInstance, getActiveInstance, resolveActiveInstanceModelConfig,
   updateInstance,
 } from "./instances";
+import { saveCustomProvider } from "./custom-providers";
 
 beforeEach(() => {
   chromeMock.storage.local.__store = {};
@@ -154,6 +155,66 @@ describe("instances CRUD", () => {
       await setActiveInstance(id);
       const cfg = await resolveActiveInstanceModelConfig();
       expect(cfg!.vision).toBeUndefined();
+    });
+
+    // #62 follow-up — custom provider models carry a user-annotated
+    // CustomModelMeta.vision; wire it into ModelConfig.vision so the
+    // fail-closed tool-table filter (loop.ts) can act on it.
+    describe("custom provider vision wired from CustomModelMeta (#62)", () => {
+      it("custom vision-capable model: ModelConfig.vision === true", async () => {
+        const cpId = await saveCustomProvider({
+          name: "MyLLM",
+          baseUrl: "https://api.myllm.test/v1",
+          models: [
+            { id: "vlm-1", vision: true, tools: true, maxContextTokens: 128_000 },
+            { id: "text-1", vision: false, tools: true, maxContextTokens: 128_000 },
+          ],
+        });
+        const id = await createInstance({
+          provider: `custom:${cpId}`,
+          nickname: "Custom",
+          apiKey: "k",
+          model: "vlm-1",
+        });
+        await setActiveInstance(id);
+        const cfg = await resolveActiveInstanceModelConfig();
+        expect(cfg!.vision).toBe(true);
+      });
+
+      it("custom text-only model: ModelConfig.vision === false (gets fail-closed filtered)", async () => {
+        const cpId = await saveCustomProvider({
+          name: "MyLLM",
+          baseUrl: "https://api.myllm.test/v1",
+          models: [{ id: "text-1", vision: false, tools: true, maxContextTokens: 128_000 }],
+        });
+        const id = await createInstance({
+          provider: `custom:${cpId}`,
+          nickname: "Custom",
+          apiKey: "k",
+          model: "text-1",
+        });
+        await setActiveInstance(id);
+        const cfg = await resolveActiveInstanceModelConfig();
+        expect(cfg!.vision).toBe(false);
+      });
+
+      it("custom model id not in provider's model list: ModelConfig.vision undefined (fail-closed)", async () => {
+        const cpId = await saveCustomProvider({
+          name: "MyLLM",
+          baseUrl: "https://api.myllm.test/v1",
+          models: [{ id: "text-1", vision: false, tools: true, maxContextTokens: 128_000 }],
+        });
+        const id = await createInstance({
+          provider: `custom:${cpId}`,
+          nickname: "Custom",
+          apiKey: "k",
+          model: "ghost-model",
+          customModels: ["ghost-model"],
+        });
+        await setActiveInstance(id);
+        const cfg = await resolveActiveInstanceModelConfig();
+        expect(cfg!.vision).toBeUndefined();
+      });
     });
   });
 });

@@ -2,6 +2,7 @@ import type { ProviderRef, BuiltinProvider, ModelConfig } from "@/lib/model-rout
 import { resolveProviderMeta, getProviderMeta } from "@/lib/model-router/providers/registry";
 import { resolveModelVision } from "@/lib/model-router/providers/registry";
 import { getOrCreateEncryptionKey, encrypt, decrypt } from "@/lib/crypto";
+import { getCustomProvider, providerRefToId } from "@/lib/custom-providers";
 
 export interface StoredInstance {
   id: string;
@@ -104,16 +105,32 @@ export async function getActiveInstance(): Promise<string | null> {
   return (r[ACTIVE_KEY] as string) ?? null;
 }
 
+// #62 — resolve a custom provider model's vision capability from its stored
+// CustomModelMeta. Returns `true`/`false` when the model is found in the
+// provider's model list; `undefined` when the provider entity or the model
+// id is missing (both treated as fail-closed downstream).
+async function resolveCustomModelVision(
+  provider: ProviderRef,
+  model: string,
+): Promise<boolean | undefined> {
+  const id = providerRefToId(provider);
+  if (!id) return undefined;
+  const cp = await getCustomProvider(id);
+  return cp?.models.find((m) => m.id === model)?.vision;
+}
+
 export async function resolveInstanceToModelConfig(id: string): Promise<ModelConfig | null> {
   const inst = await getInstance(id);
   if (!inst) return null;
   const meta = await resolveProviderMeta(inst.provider);
   if (!meta) return null;
   // For custom providers, resolveModelVision is a no-op (sync BuiltinProvider-only).
-  // vision/tools flags come from CustomModelMeta but are consumed downstream
-  // via config.vision — undefined means fail-open, which is safe.
+  // #62 — read the user-annotated CustomModelMeta.vision so non-vision custom
+  // models resolve to `false` (and get fail-closed filtered out of the tool
+  // table) instead of `undefined`. Falls back to `undefined` when the model
+  // isn't found in the provider's model list (unknown id → fail-closed too).
   const vision = inst.provider.startsWith("custom:")
-    ? undefined
+    ? await resolveCustomModelVision(inst.provider, inst.model)
     : resolveModelVision(inst.provider as BuiltinProvider, inst.model, inst.fetchedModels);
   return {
     provider: inst.provider,
