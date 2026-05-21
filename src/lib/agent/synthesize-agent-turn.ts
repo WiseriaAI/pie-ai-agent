@@ -130,19 +130,24 @@ export function synthesizeAgentTurnText(
     return null;
   }
 
+  // #58(a) — the recent step list is included on ALL non-abort paths,
+  // not just fail/max-steps. The one-line summary alone loses what the
+  // prior task actually did; carrying the steps lets the next task recall
+  // concrete actions (e.g. "read 5 flight prices"). Reuses the same
+  // escape + meta-tool blacklist + arg truncation as the fail path.
+  const steps = formatSteps(history);
+  const stepListPart = steps.length > 0
+    ? `\n步骤: ${steps}`
+    : "";
+
   let body: string;
 
   if (terminationReason === "success") {
     // success path: most information-dense — done observation as summary
     const safeSummary = escapeUntrustedWrappers(summary);
-    body = `已完成: ${safeSummary}`;
+    body = `已完成: ${safeSummary}${stepListPart}`;
   } else {
     // fail / max-steps / abort — include step list + reason
-    const steps = formatSteps(history);
-    const stepListPart = steps.length > 0
-      ? `\n步骤: ${steps}`
-      : "";
-
     if (terminationReason === "fail") {
       const safeSummary = escapeUntrustedWrappers(summary);
       body = `[任务失败] ${safeSummary}\n已执行 ${stepCount} 步${stepListPart}`;
