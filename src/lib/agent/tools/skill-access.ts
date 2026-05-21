@@ -1,6 +1,6 @@
 import type { Tool, ToolHandlerContext } from "../types";
 import type { ActionResult } from "../../dom-actions/types";
-import { getPackage, getPackageFile } from "../../skills/skill-store";
+import { resolveSkillPackage } from "../../skills";
 import { parseSkillMarkdown } from "../../skills/frontmatter";
 import { escapeUntrustedWrappers } from "../untrusted-wrappers";
 
@@ -28,7 +28,7 @@ export const SKILL_ACCESS_TOOLS: Tool[] = [
     handler: async (args: unknown, _ctx: ToolHandlerContext): Promise<ActionResult> => {
       const { skillId } = (args ?? {}) as { skillId?: string };
       if (!skillId) return { success: false, error: "use_skill requires skillId" };
-      const pkg = await getPackage(skillId);
+      const pkg = await resolveSkillPackage(skillId);
       if (!pkg) return { success: false, error: `Unknown skill: ${skillId}` };
       const { body } = parseSkillMarkdown(pkg.files["SKILL.md"]);
       const refs = Object.keys(pkg.files).filter((p) => p !== "SKILL.md");
@@ -65,7 +65,9 @@ export const SKILL_ACCESS_TOOLS: Tool[] = [
       };
       if (!skillId || !path)
         return { success: false, error: "read_skill_file requires skillId and path" };
-      const content = await getPackageFile(skillId, path);
+      const pkg = await resolveSkillPackage(skillId);
+      if (!pkg) return { success: false, error: `Unknown skill: ${skillId}` };
+      const content = pkg.files[path] ?? null;
       if (content === null)
         return { success: false, error: `No such file: ${skillId}/${path}` };
       return { success: true, observation: wrap(content) };

@@ -34,6 +34,15 @@ export async function getAllSkillPackages(): Promise<SkillPackage[]> {
   return merged;
 }
 
+/** Resolve ONE skill package by id from the merged set (builtin + user packages).
+ *  `use_skill` / `read_skill_file` MUST use this — NOT the store-only `getPackage` —
+ *  because BUILT_IN_SKILL_PACKAGES live in code and are never persisted to IndexedDB,
+ *  so `getPackage(builtinId)` returns null and use_skill reports "Unknown skill". */
+export async function resolveSkillPackage(id: string): Promise<SkillPackage | null> {
+  const all = await getAllSkillPackages();
+  return all.find((p) => p.id === id) ?? null;
+}
+
 const BUILT_IN_IDS = new Set(BUILT_IN_SKILL_PACKAGES.map((b) => b.id));
 
 /** enabled-ids 语义沿用 storage.ts:plain=启用, "!id"=禁用, 缺省=内置默认启用。
