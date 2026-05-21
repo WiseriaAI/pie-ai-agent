@@ -74,9 +74,12 @@ compactReactWindow(messages, provider, summarizer, signal):
 ```
 
 **常量(初值,plan 阶段可调)**:
-- `KEEP_RECENT = 4` 对(保鲜区下限)
-- `BIG_CAP`:`applySlidingWindow` 放宽后的兜底,如 60 对(防御性,正常由 token 阈值先生效)
-- 阈值复用 `applyTokenBudget` 的 `0.8 × maxContextTokens`,`FALLBACK_MAX_CONTEXT_TOKENS = 32_000`
+
+- `KEEP_RECENT = 4` 对 —— **保鲜区下限(压缩的刹车)**。摘要必然有损(`navigate→click→type` 被压成"填了表单",丢掉 elementIndex、刚读到的页面状态),而 agent 的下一步决策最依赖最近几步的完整细节。所以无论 token 多紧张,最近 4 对原始步骤**永不压缩**:`compactReactWindow` 累积 victim 时,累到只剩最后 4 对就停手,哪怕还没降到阈值下(剩余交给 `applyTokenBudget` / provider 截断)。保证 agent 眼前永远有 4 步未失真的近期记忆,避免"近视"导致重复操作或误判。
+- `BIG_CAP = 60` 对 —— **`applySlidingWindow` 放宽后的兜底上限(增长的刹车)**。本设计让 token 阈值(而非固定步数)决定 react 段保留多少,故放宽现有的 12;但不能完全去掉上限——万一单步 observation 异常巨大、token 估算出 bug、或 summarizer 持续失败回退,react 段可能无界堆积。`BIG_CAP` 是安全网:**正常路径下 token 阈值会在 60 对之前先触发 compaction,这个数永远轮不到**,只在异常时防止 react 段撑爆。
+- 阈值复用 `applyTokenBudget` 的 `0.8 × maxContextTokens`,`FALLBACK_MAX_CONTEXT_TOKENS = 32_000`。
+
+> 正常工况下真正的调节阀是 token 阈值,`KEEP_RECENT`(下限)与 `BIG_CAP`(上限)都是边界保护,两个初值均为经验值,实现时可据实际 token 分布再调。
 
 ## 5. 摘要产物的消息结构(安全 + 交替不变式)
 
