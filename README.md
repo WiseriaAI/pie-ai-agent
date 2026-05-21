@@ -3,6 +3,9 @@
   <h1>Pie</h1>
   <p><strong>Browser-automation agent for Chrome — natural-language tasks executed through native tool calling, scoped Skills, CDP keyboard control, and a confirm-before-act security model.</strong></p>
   <p>
+    <a href="https://chromewebstore.google.com/detail/pie-%C2%B7-open-source-ai-agen/gpccjhdgjkmalnepmeclooflliiocfed"><img src="https://img.shields.io/chrome-web-store/v/gpccjhdgjkmalnepmeclooflliiocfed?label=Chrome%20Web%20Store&logo=googlechrome&logoColor=white" alt="Available in the Chrome Web Store" /></a>
+  </p>
+  <p>
     <strong>English</strong> ·
     <a href="README.zh-CN.md">简体中文</a>
   </p>
@@ -150,15 +153,12 @@ Edge, Brave, Arc, etc.
 
 ### Option 1 — Chrome Web Store (recommended)
 
-> *Pending review.* The CWS listing will appear here once Google's
-> review completes; until then, use Option 2 for a one-click install.
-
-Click **Add to Chrome**, then pin Pie to the toolbar.
+Install from the **[Chrome Web Store](https://chromewebstore.google.com/detail/pie-%C2%B7-open-source-ai-agen/gpccjhdgjkmalnepmeclooflliiocfed)** — click **Add to Chrome**, then pin Pie to the toolbar. Chrome keeps it up to date automatically.
 
 ### Option 2 — GitHub Release zip (unpacked install)
 
-For users who want to install the same artifact without the Web Store,
-or while the listing is still under review:
+For users who prefer to install the same artifact without the Web Store
+(e.g. an offline, self-managed, or policy-restricted setup):
 
 1. Download the latest `pie-x.y.z.zip` from the
    [Releases page](https://github.com/WiseriaAI/pie-ai-agent/releases)
@@ -187,8 +187,8 @@ place** — don't unzip the new release to a different folder.
 > and chat history. If you already removed it, re-add provider keys
 > from Settings; chat history can't be recovered.
 
-Web Store users (Option 1, once available) skip this section — Chrome
-auto-updates the extension and storage carries over automatically.
+Web Store users (Option 1) skip this section — Chrome auto-updates the
+extension and storage carries over automatically.
 
 ### Option 3 — Build from source (contributors)
 
