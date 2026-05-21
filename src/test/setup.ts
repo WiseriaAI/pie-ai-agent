@@ -1,3 +1,4 @@
+import "fake-indexeddb/auto";
 import { beforeEach, vi } from "vitest";
 
 // chrome.storage.local mock — backed by a single in-memory record reset

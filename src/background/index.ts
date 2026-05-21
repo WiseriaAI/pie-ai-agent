@@ -23,7 +23,6 @@ import {
 } from "@/lib/agent/loop";
 import type { RoleViolation } from "@/lib/agent/history-validation";
 import { logHistoryRepaired } from "@/lib/agent/history-validation-telemetry";
-import { getEnabledSkills, resolveSkillToTools } from "@/lib/skills";
 import {
   setSessionAgent,
   setPendingConfirm,
@@ -79,6 +78,7 @@ import { cleanupLegacySkipPermissions } from "./cleanup-migration";
 import { reinjectAllTabs } from "./content-reinject";
 import { dispatchQuoteAdded, drainPendingQuotesToPort } from "./quote-dispatch";
 import { cleanupThinShellSkills } from "@/lib/skills/migration-cleanup-thinshell";
+import { migrateSkillsToPackages } from "@/lib/skills/migration-packages";
 import {
   handleQuoteTextCaptured,
   handleQuoteElementCaptured,
@@ -93,6 +93,11 @@ cleanupLegacySkipPermissions().catch((e) =>
 );
 cleanupThinShellSkills().catch((e) =>
   console.error("thin-shell skills cleanup failed", e),
+);
+// Migrate legacy `skill_*` SkillDefinition records → IndexedDB SkillPackages
+// (idempotent: removes legacy keys after a successful put, so re-runs no-op).
+migrateSkillsToPackages().catch((e) =>
+  console.error("skill→package migration failed", e),
 );
 
 // Recording v1 — per-sessionId → port registry. Used by the chrome.runtime.onMessage
@@ -777,10 +782,6 @@ async function handleResumeRequest(
     task: taskForPrompt,
     modelConfig,
     signal,
-    getEnabledSkillTools: async () => {
-      const skills = await getEnabledSkills();
-      return resolveSkillToTools(skills);
-    },
     sessionId,
     // M2-U1: shared handler that also throttles lastAccessedAt bumps.
     onStepSnapshot: makeStepSnapshotHandler(sessionId),
@@ -1123,10 +1124,6 @@ async function handleChatStream(
       task,
       modelConfig,
       signal,
-      getEnabledSkillTools: async () => {
-        const skills = await getEnabledSkills();
-        return resolveSkillToTools(skills);
-      },
       sessionId,
       // M1-U3 — persist agent state at every step boundary. M2-U1
       // upgrade: also bumps lastAccessedAt every 5 steps + on tombstone

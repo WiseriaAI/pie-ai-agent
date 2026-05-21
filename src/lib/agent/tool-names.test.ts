@@ -31,6 +31,18 @@ describe("M3-U4 — TOOL_CLASSES registry", () => {
     expect(TOOL_CLASSES.list_skills).toBe("read");
   });
 
+  it("classifies skill mediation tools use_skill and read_skill_file as read", () => {
+    expect(TOOL_CLASSES.use_skill).toBe("read");
+    expect(TOOL_CLASSES.read_skill_file).toBe("read");
+    expect(getToolClass("use_skill")).toBe("read");
+    expect(getToolClass("read_skill_file")).toBe("read");
+  });
+
+  it("use_skill and read_skill_file are in KNOWN_BUILT_IN_TOOL_NAMES", () => {
+    expect(KNOWN_BUILT_IN_TOOL_NAMES).toContain("use_skill");
+    expect(KNOWN_BUILT_IN_TOOL_NAMES).toContain("read_skill_file");
+  });
+
   it("classifies Phase 3 cross-tab tools per the R7 split", () => {
     // Reads
     expect(TOOL_CLASSES.list_tabs).toBe("read");
@@ -43,9 +55,9 @@ describe("M3-U4 — TOOL_CLASSES registry", () => {
     expect(TOOL_CLASSES.move_tabs).toBe("write");
   });
 
-  it("getToolClass defaults unknown names (skill-resolved tools) to read", () => {
-    expect(getToolClass("foo_skill_id")).toBe("read");
-    expect(getToolClass("user-defined-skill-uuid")).toBe("read");
+  it("getToolClass defaults unknown names to read", () => {
+    expect(getToolClass("foo_unknown_tool")).toBe("read");
+    expect(getToolClass("some-arbitrary-name")).toBe("read");
   });
 
   it("getToolClass returns the registered class for known names", () => {

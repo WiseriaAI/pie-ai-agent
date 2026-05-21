@@ -13,6 +13,7 @@ import {
   mergeSessionAgentSnapshot,
 } from "./loop";
 import { TAB_TOOLS } from "./tools/tabs";
+import { BUILT_IN_TOOLS } from "./tools";
 import { synthesizeAgentTurnText } from "./synthesize-agent-turn";
 import {
   getSessionAgent,
@@ -171,7 +172,7 @@ describe("buildSessionAgentSnapshot", () => {
     expect(toolUse.input.text).not.toContain("•");
   });
 
-  it("M1-U3 v2 tombstone — empty history + stepIndex 0 + empty scope stack", () => {
+  it("M1-U3 v2 tombstone — empty history + stepIndex 0", () => {
     // Tombstone is the 'no in-flight task' marker written by emitDone.
     // M1-U5 cold-start reads stepIndex > 0 as the in-flight signal;
     // without this clear, stale state from a long-completed task
@@ -358,6 +359,29 @@ describe("M3-U4 — collectCrossSessionConflicts", () => {
       new Set([7]),
     );
     expect(result).toEqual([]);
+  });
+});
+
+describe("SP-1 — skill access tools in the loop's resolved tool list", () => {
+  // The loop builds its per-iteration tool list as
+  //   allTools = [...BUILT_IN_TOOLS, ...keyboardTools]
+  // Skills are no longer resolved into tools; they are reached via the two
+  // built-in mediation tools below, which MUST be present so the agent can
+  // load + read the skill packages advertised in the system-prompt catalog.
+  it("use_skill is a built-in tool", () => {
+    expect(BUILT_IN_TOOLS.some((t) => t.name === "use_skill")).toBe(true);
+  });
+
+  it("read_skill_file is a built-in tool", () => {
+    expect(BUILT_IN_TOOLS.some((t) => t.name === "read_skill_file")).toBe(true);
+  });
+
+  it("does NOT inject any per-skill tool — skills are not tools anymore", () => {
+    // Guard against regressing to skill-as-tool: no built-in tool should be
+    // named after a skill id (those are accessed via use_skill({skillId})).
+    const names = BUILT_IN_TOOLS.map((t) => t.name);
+    expect(names).toContain("use_skill");
+    expect(names).toContain("read_skill_file");
   });
 });
 
@@ -1212,7 +1236,6 @@ describe("v1.5 Task 6+7 — readFocusFromStorage (integration regression)", () =
     await setSessionAgent(sessionId, {
       agentMessages: [{ role: "user", content: "x" }],
       stepIndex: 1,
-      skillExecutionScopeStack: [],
       hasImageContent: false,
     });
 

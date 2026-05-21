@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildAgentSystemPrompt, buildObservationMessage } from "./prompt";
+import { buildAgentSystemPrompt, buildObservationMessage, buildSkillCatalogBlock } from "./prompt";
 import type { PageSnapshot, ElementInfo, PageSemantic } from "../dom-actions/types";
 
 function baseSnapshot(): PageSnapshot {
@@ -153,12 +153,12 @@ describe("buildAgentSystemPrompt — v1.5 multi-pin block", () => {
 
   it("meta tools guidance is appended when hasMetaTools=true", () => {
     const prompt = buildAgentSystemPrompt("task", false, true);
-    expect(prompt).toContain("Skill meta tools (list_skills, create_skill");
+    expect(prompt).toContain("Skill authoring tools (list_skills, create_skill");
   });
 
   it("meta tools guidance is omitted when hasMetaTools=false", () => {
     const prompt = buildAgentSystemPrompt("task", false, false);
-    expect(prompt).not.toContain("Skill meta tools");
+    expect(prompt).not.toContain("Skill authoring tools");
   });
 
   it("keyboard simulation guidance is appended when hasKeyboardTools=true", () => {
@@ -475,5 +475,21 @@ describe("STATIC_AGENT_SYSTEM_PROMPT — iframe frame-awareness (spec §7)", () 
     expect(prompt).toMatch(/frame_id/);
     expect(prompt).toMatch(/cross_origin/);
     expect(prompt).toMatch(/no automatic confirmation step/i);
+  });
+});
+
+describe("buildSkillCatalogBlock", () => {
+  it("列出启用 skill 的 id/name/description,提示用 use_skill", () => {
+    const block = buildSkillCatalogBlock([
+      { id: "extract_structured_data", name: "Extract Data", description: "抽取字段" },
+    ]);
+    expect(block).toContain("extract_structured_data");
+    expect(block).toContain("Extract Data");
+    expect(block).toContain("抽取字段");
+    expect(block).toContain("use_skill");
+  });
+
+  it("空列表返回空串", () => {
+    expect(buildSkillCatalogBlock([])).toBe("");
   });
 });

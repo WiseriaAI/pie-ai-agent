@@ -1,75 +1,71 @@
 import { useState, useEffect } from "react";
-import type { SkillDefinition } from "@/lib/skills";
+import type { SkillPackage } from "@/lib/skills";
 import {
-  getAllSkills,
+  getAllSkillPackages,
   getEnabledSkillIds,
   setSkillEnabled,
-  saveSkill,
-  deleteSkill,
+  putPackage,
+  resolveSkillPackage,
+  deletePackage,
   generateUserSkillId,
-  getSkillStorageBytes,
+  parseSkillMarkdown,
 } from "@/lib/skills";
+import { buildSkillMd, isSingleLineSafe } from "@/lib/skills/skill-md";
 import { useT } from "@/lib/i18n";
 
 interface SkillsListProps {
   onRunSkill: (skillId: string, skillName: string) => void;
 }
 
-const PROMPT_TEMPLATE_MAX = 8 * 1024;
-const SCHEMA_STRINGS_MAX = 2 * 1024;
+const INSTRUCTIONS_MAX = 8 * 1024;
 const STORAGE_QUOTA_BYTES = 1 * 1024 * 1024;
 
 interface SkillFormState {
   editingId?: string;
   editingCreatedAt?: number;
-  editingEnabled?: boolean;
   name: string;
   description: string;
-  promptTemplate: string;
-  parametersText: string;
+  instructions: string;
 }
 
 function emptyForm(): SkillFormState {
   return {
     name: "",
     description: "",
-    promptTemplate: "",
-    parametersText: '{\n  "type": "object",\n  "properties": {},\n  "required": []\n}',
+    instructions: "",
   };
 }
 
-function formFromSkill(skill: SkillDefinition): SkillFormState {
+/** Extract the SKILL.md body (instructions) from a package, tolerating
+ *  malformed frontmatter by falling back to the raw file. */
+function instructionsOf(pkg: SkillPackage): string {
+  const md = pkg.files["SKILL.md"] ?? "";
+  try {
+    return parseSkillMarkdown(md).body;
+  } catch {
+    return md;
+  }
+}
+
+function formFromSkill(skill: SkillPackage): SkillFormState {
   return {
     editingId: skill.id,
     editingCreatedAt: skill.createdAt ?? 0,
-    editingEnabled: skill.enabled,
-    name: skill.name,
-    description: skill.description,
-    promptTemplate: skill.promptTemplate,
-    parametersText: JSON.stringify(skill.toolSchema.parameters, null, 2),
+    name: skill.frontmatter.name,
+    description: skill.frontmatter.description,
+    instructions: instructionsOf(skill),
   };
 }
 
-function countAllStringChars(value: unknown): number {
-  if (typeof value === "string") return value.length;
-  if (Array.isArray(value)) {
-    return value.reduce<number>((sum, item) => sum + countAllStringChars(item), 0);
-  }
-  if (typeof value === "object" && value !== null) {
-    let total = 0;
-    for (const v of Object.values(value as Record<string, unknown>)) {
-      total += countAllStringChars(v);
-    }
-    return total;
-  }
-  return 0;
+/** Approximate IndexedDB bytes a package consumes (matches skill-meta.ts). */
+function estimatePackageBytes(pkg: SkillPackage): number {
+  return JSON.stringify(pkg).length + pkg.id.length;
 }
 
 interface BuiltSkillFields {
   name: string;
   description: string;
-  promptTemplate: string;
-  parameters: Record<string, unknown>;
+  instructions: string;
 }
 
 function validateAndBuild(
@@ -77,29 +73,16 @@ function validateAndBuild(
 ): { ok: true; built: BuiltSkillFields } | { ok: false; error: string } {
   if (!form.name.trim()) return { ok: false, error: "Name is required" };
   if (!form.description.trim()) return { ok: false, error: "Description is required" };
-  if (!form.promptTemplate.trim()) return { ok: false, error: "Prompt template is required" };
-  if (form.promptTemplate.length > PROMPT_TEMPLATE_MAX) {
+  if (!form.instructions.trim()) return { ok: false, error: "Instructions are required" };
+  if (form.instructions.length > INSTRUCTIONS_MAX) {
     return {
       ok: false,
-      error: `Prompt template too long (${form.promptTemplate.length}/${PROMPT_TEMPLATE_MAX} bytes)`,
+      error: `Instructions too long (${form.instructions.length}/${INSTRUCTIONS_MAX} bytes)`,
     };
   }
-
-  let parameters: unknown;
-  try {
-    parameters = JSON.parse(form.parametersText);
-  } catch (e) {
-    return { ok: false, error: `Parameters JSON parse error: ${e instanceof Error ? e.message : String(e)}` };
-  }
-  if (!parameters || typeof parameters !== "object" || Array.isArray(parameters)) {
-    return { ok: false, error: 'Parameters must be a JSON object (e.g. { "type": "object", ... })' };
-  }
-  const schemaChars = countAllStringChars(parameters);
-  if (schemaChars > SCHEMA_STRINGS_MAX) {
-    return {
-      ok: false,
-      error: `Parameters schema strings too long (${schemaChars}/${SCHEMA_STRINGS_MAX} bytes)`,
-    };
+  // Frontmatter-injection guard (shared with skill-meta.ts via skill-md.ts).
+  if (!isSingleLineSafe(form.name) || !isSingleLineSafe(form.description)) {
+    return { ok: false, error: "Name/description must be single-line (no newlines or '---')" };
   }
 
   return {
@@ -107,8 +90,7 @@ function validateAndBuild(
     built: {
       name: form.name.trim(),
       description: form.description.trim(),
-      promptTemplate: form.promptTemplate,
-      parameters: parameters as Record<string, unknown>,
+      instructions: form.instructions,
     },
   };
 }
@@ -128,7 +110,7 @@ function normalizeSlug(name: string): string {
 
 export default function SkillsList({ onRunSkill }: SkillsListProps) {
   const t = useT();
-  const [skills, setSkills] = useState<SkillDefinition[]>([]);
+  const [skills, setSkills] = useState<SkillPackage[]>([]);
   const [enabledIds, setEnabledIds] = useState<Set<string>>(new Set());
   const [explicitDisabledIds, setExplicitDisabledIds] = useState<Set<string>>(new Set());
   const [storageBytes, setStorageBytes] = useState<number>(0);
@@ -142,27 +124,36 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
   }, []);
 
   async function loadSkills() {
-    const [all, ids, bytes] = await Promise.all([
-      getAllSkills(),
+    const [all, ids] = await Promise.all([
+      getAllSkillPackages(),
       getEnabledSkillIds(),
-      getSkillStorageBytes(),
     ]);
     const sorted = [...all].sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
     setSkills(sorted);
+    // Storage budget only accounts for user (non-built-in) packages — built-ins
+    // ship with the extension and don't consume the user's IndexedDB quota.
+    const bytes = sorted
+      .filter((p) => !p.builtIn)
+      .reduce((sum, p) => sum + estimatePackageBytes(p), 0);
+    setStorageBytes(bytes);
     const enabled = new Set(ids.filter((id) => !id.startsWith("!")));
     const disabled = new Set(ids.filter((id) => id.startsWith("!")).map((id) => id.slice(1)));
     setEnabledIds(enabled);
     setExplicitDisabledIds(disabled);
-    setStorageBytes(bytes);
   }
 
-  function isEffectivelyEnabled(skill: SkillDefinition): boolean {
+  function isEffectivelyEnabled(skill: SkillPackage): boolean {
     if (explicitDisabledIds.has(skill.id)) return false;
     if (enabledIds.has(skill.id)) return true;
-    return skill.enabled;
+    // Absent marker: built-ins default ON (mirrors getEnabledSkillPackages).
+    // User packages require an explicit enabled marker — which the create path
+    // writes via setSkillEnabled(id, true) — so an absent marker on a user
+    // package means OFF. (In practice every persisted user package has a
+    // marker; this fallback just keeps display parity with the loop's view.)
+    return skill.builtIn;
   }
 
-  async function handleToggle(skill: SkillDefinition) {
+  async function handleToggle(skill: SkillPackage) {
     const current = isEffectivelyEnabled(skill);
     await setSkillEnabled(skill.id, !current);
     await loadSkills();
@@ -174,7 +165,7 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
     setShowForm(true);
   }
 
-  function openEditForm(skill: SkillDefinition) {
+  function openEditForm(skill: SkillPackage) {
     setForm(formFromSkill(skill));
     setFormError(null);
     setShowForm(true);
@@ -194,22 +185,41 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
     }
 
     const isEdit = !!form.editingId;
-    const newSkill: SkillDefinition = {
-      id: form.editingId ?? generateUserSkillId(),
-      name: v.built.name,
-      description: v.built.description,
-      toolSchema: { parameters: v.built.parameters },
-      promptTemplate: v.built.promptTemplate,
-      enabled: form.editingEnabled ?? true,
-      builtIn: false,
-      author: "user",
-      createdAt: form.editingCreatedAt ?? Date.now(),
-    };
-    const newBytes = JSON.stringify(newSkill).length + `skill_${newSkill.id}`.length;
+
+    let pkg: SkillPackage;
+    if (isEdit) {
+      // resolveSkillPackage (merged set) so editing a builtin id resolves to the
+      // builtin and is correctly blocked — store-only getPackage returned null
+      // for un-overridden builtins, silently bypassing this guard.
+      const existing = await resolveSkillPackage(form.editingId!);
+      if (existing && existing.builtIn) {
+        setFormError("Built-in skills cannot be edited.");
+        return;
+      }
+      const md = buildSkillMd(v.built.name, v.built.description, "1.0.0", "user", v.built.instructions);
+      pkg = {
+        id: form.editingId!,
+        frontmatter: { ...(existing?.frontmatter ?? {}), name: v.built.name, description: v.built.description, version: "1.0.0", author: "user" },
+        files: { ...(existing?.files ?? {}), "SKILL.md": md },
+        builtIn: false,
+        createdAt: existing?.createdAt ?? form.editingCreatedAt ?? Date.now(),
+      };
+    } else {
+      const md = buildSkillMd(v.built.name, v.built.description, "1.0.0", "user", v.built.instructions);
+      pkg = {
+        id: generateUserSkillId(),
+        frontmatter: { name: v.built.name, description: v.built.description, version: "1.0.0", author: "user" },
+        files: { "SKILL.md": md },
+        builtIn: false,
+        createdAt: Date.now(),
+      };
+    }
+
+    const newBytes = estimatePackageBytes(pkg);
     const oldBytes = isEdit
       ? (() => {
           const existing = skills.find((s) => s.id === form.editingId);
-          return existing ? JSON.stringify(existing).length + `skill_${existing.id}`.length : 0;
+          return existing && !existing.builtIn ? estimatePackageBytes(existing) : 0;
         })()
       : 0;
     if (storageBytes - oldBytes + newBytes > STORAGE_QUOTA_BYTES) {
@@ -220,7 +230,12 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
     }
 
     try {
-      await saveSkill(newSkill);
+      await putPackage(pkg);
+      // New user packages need an explicit enabled marker — getEnabledSkillPackages
+      // only defaults BUILT-IN packages on, so without this a freshly created
+      // skill would be excluded from the agent loop + slash popover. Only on
+      // create: editing must not resurrect a skill the user had explicitly disabled.
+      if (!isEdit) await setSkillEnabled(pkg.id, true);
       await loadSkills();
       setShowForm(false);
     } catch (e) {
@@ -228,14 +243,15 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
     }
   }
 
-  async function handleDelete(skill: SkillDefinition) {
+  async function handleDelete(skill: SkillPackage) {
     if (skill.builtIn) return;
     try {
-      await deleteSkill(skill.id);
+      await deletePackage(skill.id);
+      await setSkillEnabled(skill.id, false);
       await loadSkills();
       setConfirmDeleteId(null);
     } catch (e) {
-      console.error("deleteSkill failed:", e);
+      console.error("deletePackage failed:", e);
     }
   }
 
@@ -286,7 +302,7 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
               skill={skill}
               enabled={isEffectivelyEnabled(skill)}
               onToggle={() => handleToggle(skill)}
-              onRun={() => onRunSkill(skill.id, skill.name)}
+              onRun={() => onRunSkill(skill.id, skill.frontmatter.name)}
               onEdit={() => openEditForm(skill)}
               confirmDelete={confirmDeleteId === skill.id}
               onAskDelete={() => setConfirmDeleteId(skill.id)}
@@ -383,7 +399,7 @@ function SkillRow({
   onCancelDelete,
   onDelete,
 }: {
-  skill: SkillDefinition;
+  skill: SkillPackage;
   enabled: boolean;
   onToggle: () => void;
   onRun: () => void;
@@ -396,10 +412,10 @@ function SkillRow({
   const t = useT();
   const tag = skill.builtIn
     ? t("skills.authorTag.builtIn")
-    : skill.author === "agent"
+    : skill.frontmatter.author === "agent"
       ? t("skills.authorTag.agent")
       : t("skills.authorTag.user");
-  const slug = normalizeSlug(skill.name) || skill.id;
+  const slug = normalizeSlug(skill.frontmatter.name) || skill.id;
 
   return (
     <div
@@ -415,8 +431,8 @@ function SkillRow({
           }`}
           aria-label={
             enabled
-              ? t("skills.toggleAria.disable", { name: skill.name })
-              : t("skills.toggleAria.enable", { name: skill.name })
+              ? t("skills.toggleAria.disable", { name: skill.frontmatter.name })
+              : t("skills.toggleAria.enable", { name: skill.frontmatter.name })
           }
         />
         <code className="font-mono text-[12px] text-accent">/{slug}</code>
@@ -425,12 +441,12 @@ function SkillRow({
         </span>
       </div>
 
-      <p className="text-[12px] leading-[18px] text-fg-2">{skill.description}</p>
+      <p className="text-[12px] leading-[18px] text-fg-2">{skill.frontmatter.description}</p>
 
       <div className="flex items-center gap-2 pt-1.5">
         <span className="font-mono text-[10px] text-fg-3">
           {skill.createdAt && skill.createdAt > 0
-            ? formatBytes(JSON.stringify(skill).length)
+            ? formatBytes(estimatePackageBytes(skill))
             : ""}
         </span>
         <div className="flex-1" />
@@ -532,24 +548,15 @@ function SkillForm({
       </FormField>
 
       <FormField
-        label={t("skills.form.promptTemplate")}
-        hint={`${form.promptTemplate.length}/${PROMPT_TEMPLATE_MAX} chars`}
+        label={t("skills.form.instructions")}
+        hint={`${form.instructions.length}/${INSTRUCTIONS_MAX} chars`}
       >
         <textarea
-          value={form.promptTemplate}
-          onChange={(e) => onChange((p) => ({ ...p, promptTemplate: e.target.value }))}
-          rows={6}
+          value={form.instructions}
+          onChange={(e) => onChange((p) => ({ ...p, instructions: e.target.value }))}
+          rows={8}
           className="w-full rounded border border-line bg-field px-3 py-2 font-mono text-[11px] leading-4 text-fg-1 placeholder:text-fg-3 focus:border-accent-line"
-          placeholder={t("skills.form.promptPlaceholder")}
-        />
-      </FormField>
-
-      <FormField label={t("skills.form.parameters")} hint={t("skills.form.jsonSchema")}>
-        <textarea
-          value={form.parametersText}
-          onChange={(e) => onChange((p) => ({ ...p, parametersText: e.target.value }))}
-          rows={6}
-          className="w-full rounded border border-line bg-field px-3 py-2 font-mono text-[11px] leading-4 text-fg-1 focus:border-accent-line"
+          placeholder={t("skills.form.instructionsPlaceholder")}
         />
       </FormField>
 
