@@ -23,6 +23,8 @@ import {
   detectLoop,
   recordStep,
   stepSignature,
+  DEFAULT_OSCILLATION_MAX_PERIOD,
+  DEFAULT_OSCILLATION_MIN_CYCLES,
   type LoopVerdict,
   type StepSignature,
 } from "./loop-detection";
@@ -704,11 +706,26 @@ function redactArgsForPanel(toolName: string, args: unknown): unknown {
 
 // ── #61(a)(b) — loop detection + intra-episode reflection ─────────────────
 
-/** Max consecutive recent step signatures kept for loop detection. Chosen
- *  larger than the max detection threshold (exactRepeatThreshold = 3) so a
- *  trailing run of identical steps is never truncated out of the ring buffer
- *  before it can trip the detector. */
-const RECENT_STEPS_CAP = 5;
+/** Max recent step signatures kept for loop detection. Chosen to hold at least
+ *  oscillationMaxPeriod × oscillationMinCycles (= 3 × 2 = 6) signatures including
+ *  the current step (so `recent` holds ≥ 5), making a period-3 oscillation
+ *  (a→b→c→a→b→c) detectable; also comfortably exceeds exactRepeatThreshold (3)
+ *  so a trailing identical run is never truncated before tripping the A-detector.
+ *  Invariant: keep cap ≥ oscillationMaxPeriod × oscillationMinCycles − 1, else
+ *  period-k detection silently degrades. */
+const RECENT_STEPS_CAP = 6;
+// Build-time invariant (throws at module load, matching the repo's invariant
+// style): the ring buffer + current step must hold a full oscillation window,
+// i.e. RECENT_STEPS_CAP + 1 ≥ MAX_PERIOD × MIN_CYCLES. Without this guard, a
+// future change to the detector defaults would silently degrade period-k
+// detection (the failure the comment above warns about) with no signal.
+if (RECENT_STEPS_CAP + 1 < DEFAULT_OSCILLATION_MAX_PERIOD * DEFAULT_OSCILLATION_MIN_CYCLES) {
+  throw new Error(
+    `RECENT_STEPS_CAP (${RECENT_STEPS_CAP}) too small for oscillation detection: ` +
+      `needs ≥ ${DEFAULT_OSCILLATION_MAX_PERIOD * DEFAULT_OSCILLATION_MIN_CYCLES - 1} ` +
+      `(MAX_PERIOD ${DEFAULT_OSCILLATION_MAX_PERIOD} × MIN_CYCLES ${DEFAULT_OSCILLATION_MIN_CYCLES} − 1).`,
+  );
+}
 /** Max intra-episode reflections before the loop hard-fails. Prevents a
  *  secondary "reflect → loop again → reflect" cycle. */
 const MAX_REFLECTIONS = 2;
@@ -722,6 +739,16 @@ const REFLECTION_SKIP_RESULT =
   "observation, then choose a different approach or call `fail` if the task " +
   "cannot proceed.";
 
+/** Trusted tool_result content used on the hard-stop (reflection budget
+ *  exhausted) path. Unlike REFLECTION_SKIP_RESULT it does NOT invite another
+ *  attempt — the next turn has NO tools — it asks the model for a final
+ *  failure summary. NOT wrapped in <untrusted_*> (runtime-authored). */
+const REFLECTION_GIVEUP_RESULT =
+  "You are being stopped: you repeated the same action too many times without " +
+  "progress and will not be allowed to act further. Reply with a brief final " +
+  "summary (1–3 sentences) of what you were trying to do, what you attempted, " +
+  "and why it could not be completed. Do not attempt any tool calls.";
+
 /** Build the trusted reflection note appended to <reflections>. */
 function buildReflectionNote(verdict: LoopVerdict, attempt: number): string {
   const why =
@@ -729,8 +756,10 @@ function buildReflectionNote(verdict: LoopVerdict, attempt: number): string {
       ? `your last ${verdict.count} attempts at the same action all failed`
       : verdict.kind === "exact-repeat"
         ? `you have issued the same action ${verdict.count} times in a row with no apparent progress`
-        : // unreachable defensive default (LoopVerdict has no other kind that reaches here)
-          "you appear to be repeating an action without progress";
+        : verdict.kind === "oscillation"
+          ? `you are cycling between the same ${verdict.period} actions (a ${verdict.period}-step loop) without making progress`
+          : // unreachable defensive default (LoopVerdict has no other kind that reaches here)
+            "you appear to be repeating an action without progress";
   return (
     `Self-correction (intervention ${attempt}): ${why}. You are stuck in a loop. ` +
     "Before acting again: (1) re-read the latest page snapshot above — did the previous " +
@@ -738,6 +767,38 @@ function buildReflectionNote(verdict: LoopVerdict, attempt: number): string {
     "element, a different tool, or scroll to reveal new state. (3) If the task genuinely " +
     "cannot proceed, call `fail` with a clear explanation. Do NOT repeat the same action."
   );
+}
+
+/**
+ * #65 — final, tools-disabled LLM turn that asks the stuck model to author its
+ * own failure summary. Passing an empty tool list means the model cannot emit
+ * a tool call to resume the loop; we only collect its text. Returns the trimmed
+ * text, or null on abort / stream error / empty output (caller falls back to a
+ * deterministic summary). Costs one LLM call, only on the rare hard-stop path.
+ */
+async function generateStuckSummary(
+  modelConfig: ModelConfig,
+  history: AgentMessage[],
+  signal: AbortSignal,
+): Promise<string | null> {
+  if (signal.aborted) return null;
+  const slid = applySlidingWindow(history);
+  const elided = elideStaleObservations(slid);
+  const budgeted = await applyTokenBudget(elided, modelConfig.provider);
+  const { repaired } = validateAndRepairAdjacentRoles(budgeted);
+  let text = "";
+  try {
+    for await (const event of streamChat(modelConfig, repaired, signal, [])) {
+      if (signal.aborted) return null;
+      if (event.type === "text-delta") text += event.text;
+      else if (event.type === "error") return null;
+      // tool-call-* events are ignored — no tools were offered.
+    }
+  } catch {
+    return null;
+  }
+  const trimmed = text.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 // ── Main loop ─────────────────────────────────────────────────────────────────
@@ -1424,9 +1485,18 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         }));
 
         if (reflectionCount >= MAX_REFLECTIONS) {
-          // Reflection budget exhausted — hard terminate.
+          // Reflection budget exhausted — hard terminate (#61). #65: give the
+          // model ONE final tools-disabled turn to author its own failure
+          // summary, falling back to a deterministic string. Termination is
+          // still guaranteed — we emitDone(success:false) regardless.
+          const giveupResults: ContentBlock[] = completedToolCalls.map((tc) => ({
+            type: "tool_result",
+            toolUseId: tc.id,
+            content: REFLECTION_GIVEUP_RESULT,
+            isError: true,
+          }));
           history.push({ role: "assistant", content: assistantBlocks });
-          history.push({ role: "user", content: skipResults });
+          history.push({ role: "user", content: giveupResults });
           if (ctx.onStepSnapshot) {
             const snap = buildSessionAgentSnapshot(history, stepIndex, hasImageContent);
             ctx.onStepSnapshot(snap).catch((e) => {
@@ -1436,11 +1506,15 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
               );
             });
           }
+          const llmSummary = await generateStuckSummary(modelConfig, history, signal);
+          if (signal.aborted) return; // → finally emits an abort done
+          const summary =
+            llmSummary ?? "Agent got stuck repeating the same action and stopped.";
           await emitDone(
             {
               type: "agent-done-task",
               success: false,
-              summary: "Agent got stuck repeating the same action and stopped.",
+              summary,
               stepCount: stepIndex,
             },
             "fail",
