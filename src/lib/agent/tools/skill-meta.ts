@@ -22,7 +22,7 @@ import type { SkillPackage } from "../../skills/package-types";
 import {
   getAllSkillPackages,
   putPackage,
-  getPackage,
+  resolveSkillPackage,
   deletePackage,
   parseSkillMarkdown,
 } from "../../skills";
@@ -179,10 +179,12 @@ const updateSkillTool: Tool = {
 
     if (!isNonEmptyString(a.id)) return err("id is required");
 
-    const existing = await getPackage(a.id as string);
+    const existing = await resolveSkillPackage(a.id as string);
     if (!existing) return err("skill not found");
 
-    // P0-A — builtIn guard
+    // P0-A — builtIn guard. resolveSkillPackage (merged set) is required here so
+    // a builtin id resolves to its package and this guard fires, rather than
+    // store-only getPackage returning null → misleading "skill not found".
     if (existing.builtIn) return err("cannot edit built-in skill");
 
     // Apply optional patch fields
@@ -269,10 +271,10 @@ const deleteSkillTool: Tool = {
     };
     if (!isNonEmptyString(a.id)) return err("id is required");
 
-    const existing = await getPackage(a.id as string);
+    const existing = await resolveSkillPackage(a.id as string);
     if (!existing) return err("skill not found");
 
-    // P0-A — builtIn guard
+    // P0-A — builtIn guard (merged-set resolve so builtin ids hit this guard)
     if (existing.builtIn) return err("cannot delete built-in skill");
 
     await deletePackage(a.id as string);

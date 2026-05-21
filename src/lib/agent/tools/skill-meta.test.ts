@@ -218,6 +218,15 @@ describe("skill-meta CRUD tools (SkillPackage model)", () => {
     expect(r.error).toContain("built-in");
   });
 
+  it("update_skill 拒绝代码内置 id(不在 store,经 resolveSkillPackage 命中守卫)", async () => {
+    // 回归:auto_group_tabs 只在 BUILT_IN_SKILL_PACKAGES,从不 putPackage 进 store。
+    // 旧的 store-only getPackage 会返回 null → 误报 "skill not found";
+    // 现在应解析到内置包并报 "cannot edit built-in skill"。
+    const r = await update.handler({ id: "auto_group_tabs", name: "Hacked" }, ctx);
+    expect(r.success).toBe(false);
+    expect(r.error).toContain("built-in");
+  });
+
   it("update_skill 拒绝超长 instructions (P0-D)", async () => {
     await create.handler(
       { name: "TooBig", description: "d", instructions: "ok" },
@@ -259,6 +268,12 @@ describe("skill-meta CRUD tools (SkillPackage model)", () => {
       createdAt: 0,
     });
     const r = await del.handler({ id: "builtin_nodelete" }, ctx);
+    expect(r.success).toBe(false);
+    expect(r.error).toContain("built-in");
+  });
+
+  it("delete_skill 拒绝代码内置 id(不在 store,经 resolveSkillPackage 命中守卫)", async () => {
+    const r = await del.handler({ id: "auto_group_tabs" }, ctx);
     expect(r.success).toBe(false);
     expect(r.error).toContain("built-in");
   });

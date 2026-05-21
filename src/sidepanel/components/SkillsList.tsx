@@ -5,7 +5,7 @@ import {
   getEnabledSkillIds,
   setSkillEnabled,
   putPackage,
-  getPackage,
+  resolveSkillPackage,
   deletePackage,
   generateUserSkillId,
   parseSkillMarkdown,
@@ -188,7 +188,10 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
 
     let pkg: SkillPackage;
     if (isEdit) {
-      const existing = await getPackage(form.editingId!);
+      // resolveSkillPackage (merged set) so editing a builtin id resolves to the
+      // builtin and is correctly blocked — store-only getPackage returned null
+      // for un-overridden builtins, silently bypassing this guard.
+      const existing = await resolveSkillPackage(form.editingId!);
       if (existing && existing.builtIn) {
         setFormError("Built-in skills cannot be edited.");
         return;
