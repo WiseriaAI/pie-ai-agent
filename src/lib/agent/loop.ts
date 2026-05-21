@@ -18,7 +18,7 @@ import {
   isKeyboardToolName,
 } from "./tools";
 import type { Tool } from "./types";
-import { getToolClass } from "./tool-names";
+import { getToolClass, SCREENSHOT_TOOL_NAMES } from "./tool-names";
 import {
   detectLoop,
   recordStep,
@@ -276,6 +276,25 @@ function toolsToDefinitions(tools: Tool[]): ToolDefinition[] {
     description: t.description,
     parameters: t.parameters,
   }));
+}
+
+const SCREENSHOT_TOOL_NAME_SET = new Set<string>(SCREENSHOT_TOOL_NAMES);
+
+// #62 — fail-closed vision gating for the tool table offered to the LLM.
+// Screenshot tools attach an image block to the next turn; a model that
+// can't ingest images either wastes a step on the runtime guard
+// (`vision === false`) or makes the provider API hard-reject the request
+// (`vision === undefined`, e.g. custom provider / unknown OpenRouter id).
+// So only models KNOWN to support vision (`vision === true`) get them
+// offered; both `false` and `undefined` are excluded. "Can't see the
+// tool" beats "calls it then errors". The runtime guard at the screenshot
+// dispatch stays as defense-in-depth against mid-task model switches.
+export function filterToolsByVision<T extends { name: string }>(
+  tools: T[],
+  vision: boolean | undefined,
+): T[] {
+  if (vision === true) return tools;
+  return tools.filter((t) => !SCREENSHOT_TOOL_NAME_SET.has(t.name));
 }
 
 function resolveElement(
@@ -1324,7 +1343,13 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             pinnedOrigin,
           })
         : [];
-      const allTools = [...BUILT_IN_TOOLS, ...keyboardTools];
+      // #62 — fail-closed vision gating (see filterToolsByVision). Screenshot
+      // tools are only offered to models KNOWN to support vision; non-vision
+      // and unknown-vision models never see them.
+      const allTools = filterToolsByVision(
+        [...BUILT_IN_TOOLS, ...keyboardTools],
+        modelConfig.vision,
+      );
       const toolDefinitions = toolsToDefinitions(allTools);
 
       // Stream from LLM
