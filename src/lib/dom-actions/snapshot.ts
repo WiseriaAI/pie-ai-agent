@@ -34,7 +34,8 @@ export function snapshotInteractiveElements(): FrameInjectionResult {
       .replace(/<\/?untrusted_continuity_marker>/gi, "[filtered]")
       .replace(/<\/?untrusted_page_quote>/gi, "[filtered]")
       .replace(/<\/?untrusted_page_element>/gi, "[filtered]")
-      .replace(/<\/?untrusted_skill_content>/gi, "[filtered]");
+      .replace(/<\/?untrusted_skill_content>/gi, "[filtered]")
+      .replace(/<\/?untrusted_compacted_steps>/gi, "[filtered]");
     if (cleaned.length > maxLen) {
       cleaned = cleaned.slice(0, maxLen) + "...";
     }
