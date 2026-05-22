@@ -34,7 +34,7 @@ import { applySlidingWindow } from "./window";
 import { elideStaleObservations } from "./elide-stale-observations";
 import { applyTokenBudget } from "./window-token-budget";
 import { compactReactWindow, createDefaultSummarizer } from "./compact-react-window";
-import { resolveProviderMeta } from "../model-router/providers/registry";
+import { resolveModelMeta } from "../model-router/providers/registry";
 import {
   validateAndRepairAdjacentRoles,
   type RoleViolation,
@@ -1137,8 +1137,8 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
     ctx.pinnedTabs ?? [];
 
   // #58 — provider 在整个 loop 期间不变(task-start snapshot),故 maxContextTokens 与 summarizer 在循环外解析一次。
-  const compactionMeta = await resolveProviderMeta(modelConfig.provider);
-  const compactionMaxTokens = compactionMeta?.maxContextTokens ?? COMPACTION_FALLBACK_MAX_TOKENS;
+  const compactionModelMeta = await resolveModelMeta(modelConfig.provider, modelConfig.model);
+  const compactionMaxTokens = compactionModelMeta?.maxContextTokens ?? COMPACTION_FALLBACK_MAX_TOKENS;
   const compactionSummarizer = createDefaultSummarizer(modelConfig);
 
   try {
