@@ -10,6 +10,8 @@
  * 每轮重算会贵且非确定,故 in-place 持久化、压一次缓存住。
  */
 import type { AgentMessage, ContentBlock } from "../model-router/types";
+import type { ModelConfig } from "../model-router/types";
+import { streamChat } from "../model-router";
 import { findReactStartIdx } from "./window";
 import { estimateTokens } from "./window-token-budget";
 import { elideStaleObservations } from "./elide-stale-observations";
@@ -102,4 +104,51 @@ function buildSyntheticPair(summary: string, pairs: number): AgentMessage[] {
       content: [{ type: "text", text: `<${COMPACTED_TAG}>\n${safe}\n</${COMPACTED_TAG}>` }],
     },
   ];
+}
+
+/** 把一条步骤 message 转成可读 transcript 行(只取 text / tool_use 名/args / tool_result 文本,丢弃 image)。 */
+function serializeStepMsg(msg: AgentMessage): string {
+  if (typeof msg.content === "string") return msg.content;
+  const parts: string[] = [];
+  for (const b of msg.content as ContentBlock[]) {
+    if (b.type === "text") parts.push(b.text);
+    else if (b.type === "tool_use") parts.push(`Action: ${b.name}(${JSON.stringify(b.input)})`);
+    else if (b.type === "tool_result") parts.push(`Result: ${b.content}`);
+  }
+  return parts.join("\n");
+}
+
+const COMPACTION_SYSTEM =
+  "你在压缩一个网页 AI agent 的早期步骤。用两个带标签的部分简洁总结,不要别的内容:\n" +
+  "动作: 依次执行了哪些动作;\n" +
+  "发现: 页面上观察到的关键数据/数值/进度(保留具体数字、价格、ID、表单进度)。\n" +
+  "省略 DOM 元素列表。尽量简短。";
+
+/** 纯函数:把待压步骤对拼成 compaction 用的 LLM 消息序列。 */
+export function buildCompactionMessages(pairs: AgentMessage[]): AgentMessage[] {
+  const transcript = pairs.map(serializeStepMsg).join("\n");
+  return [
+    { role: "system", content: COMPACTION_SYSTEM },
+    { role: "user", content: `以下是早期步骤记录,请按两部分格式压缩总结:\n\n${transcript}` },
+  ];
+}
+
+/** 默认 summarizer:用当前 model 跑无 tool streamChat,收集纯文本(模式同 generateStuckSummary)。 */
+export function createDefaultSummarizer(modelConfig: ModelConfig): ReactSummarizer {
+  return async (pairs, signal) => {
+    if (signal.aborted) return null;
+    const msgs = buildCompactionMessages(pairs);
+    let text = "";
+    try {
+      for await (const ev of streamChat(modelConfig, msgs, signal, [])) {
+        if (signal.aborted) return null;
+        if (ev.type === "text-delta") text += ev.text;
+        else if (ev.type === "error") return null;
+      }
+    } catch {
+      return null;
+    }
+    const t = text.trim();
+    return t.length > 0 ? t : null;
+  };
 }

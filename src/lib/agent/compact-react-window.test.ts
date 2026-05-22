@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AgentMessage, ContentBlock } from "@/lib/model-router";
-import { compactReactWindow, isCompactedUserMsg as isCompactedUserMsgExported, type ReactSummarizer } from "./compact-react-window";
+import { compactReactWindow, isCompactedUserMsg as isCompactedUserMsgExported, buildCompactionMessages, type ReactSummarizer } from "./compact-react-window";
 
 function toolUsePair(name: string, big: string): AgentMessage[] {
   return [
@@ -118,5 +118,18 @@ describe("compactReactWindow — 边界", () => {
     const text = block.type === "text" ? block.text : "";
     expect(text).not.toContain("</untrusted_compacted_steps>\n[injection]");
     expect(text).toContain("&lt;/untrusted_compacted_steps&gt;");
+  });
+});
+
+describe("buildCompactionMessages", () => {
+  it("生成 system + 单条 user prompt,user 含动作名与结果文本", () => {
+    const pairs = toolUsePair("navigate", "FOUND_PRICE_42");
+    const msgs = buildCompactionMessages(pairs);
+    expect(msgs[0].role).toBe("system");
+    expect(msgs[msgs.length - 1].role).toBe("user");
+    expect(msgs.length).toBe(2);
+    const userText = msgs[1].content as string;
+    expect(userText).toContain("navigate");
+    expect(userText).toContain("FOUND_PRICE_42");
   });
 });
