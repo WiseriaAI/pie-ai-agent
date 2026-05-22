@@ -1136,6 +1136,11 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
   let currentPinnedTabs: ReadonlyArray<{ tabId: number; origin: string }> =
     ctx.pinnedTabs ?? [];
 
+  // #58 — provider 在整个 loop 期间不变(task-start snapshot),故 maxContextTokens 与 summarizer 在循环外解析一次。
+  const compactionMeta = await resolveProviderMeta(modelConfig.provider);
+  const compactionMaxTokens = compactionMeta?.maxContextTokens ?? COMPACTION_FALLBACK_MAX_TOKENS;
+  const compactionSummarizer = createDefaultSummarizer(modelConfig);
+
   try {
     // M1-U5 — resume path starts the counter at the next step beyond
     // what was persisted. The MAX_STEPS bound still applies as the
@@ -1306,14 +1311,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
 
       // #58 — 任务内 react 段 LLM compaction(IN-PLACE 改 history,持久化随 onStepSnapshot)。
       // 在 wire-time 整形之前:超 provider token 阈值时把最旧步骤摘成合成对,保住早期发现。
-      const compactionMeta = await resolveProviderMeta(modelConfig.provider);
-      const compactionMaxTokens = compactionMeta?.maxContextTokens ?? COMPACTION_FALLBACK_MAX_TOKENS;
-      await compactReactWindow(
-        history,
-        compactionMaxTokens,
-        createDefaultSummarizer(modelConfig),
-        signal,
-      );
+      await compactReactWindow(history, compactionMaxTokens, compactionSummarizer, signal);
 
       // Apply sliding window（react cap 放宽为 BIG_CAP，react 段长度主要由 compaction 控制）
       const windowedHistorySlid = applySlidingWindow(history, REACT_BIG_CAP);
