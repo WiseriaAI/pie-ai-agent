@@ -77,3 +77,35 @@ describe("compactReactWindow — 触发压缩", () => {
     expect(victim).not.toContain("发现: 旧");
   });
 });
+
+function noAdjacentSameRole(h: AgentMessage[]): boolean {
+  for (let i = 1; i < h.length; i++) {
+    if (h[i].role === h[i - 1].role && h[i].role !== "system") return false;
+  }
+  return true;
+}
+
+describe("compactReactWindow — 边界", () => {
+  it("summarizer 返回 null → history 不变", async () => {
+    const h = baseHistory(6, 100);
+    const before = structuredClone(h);
+    const summarizer = vi.fn<ReactSummarizer>(async () => null);
+    await compactReactWindow(h, 300, summarizer, new AbortController().signal);
+    expect(h).toEqual(before);
+  });
+
+  it("signal.aborted → history 不变(即使超阈值)", async () => {
+    const h = baseHistory(6, 100);
+    const before = structuredClone(h);
+    const ac = new AbortController();
+    ac.abort();
+    await compactReactWindow(h, 300, vi.fn(async () => "x"), ac.signal);
+    expect(h).toEqual(before);
+  });
+
+  it("压缩后维持 user/assistant 严格交替", async () => {
+    const h = baseHistory(6, 100);
+    await compactReactWindow(h, 300, vi.fn<ReactSummarizer>(async () => "动作: a\n发现: b"), new AbortController().signal);
+    expect(noAdjacentSameRole(h)).toBe(true);
+  });
+});
