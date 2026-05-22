@@ -33,6 +33,8 @@ import { buildAgentSystemPrompt, buildObservationMessage } from "./prompt";
 import { applySlidingWindow } from "./window";
 import { elideStaleObservations } from "./elide-stale-observations";
 import { applyTokenBudget } from "./window-token-budget";
+import { compactReactWindow, createDefaultSummarizer } from "./compact-react-window";
+import { resolveProviderMeta } from "../model-router/providers/registry";
 import {
   validateAndRepairAdjacentRoles,
   type RoleViolation,
@@ -63,6 +65,11 @@ import { waitForUrlSettle, type UrlSettleResult } from "./wait-for-url-settle";
 // two-write race on the agent key (AD1 fix). No import needed.
 
 const MAX_STEPS = 30;
+
+/** #58 — react 段 sliding-window 放宽后的兜底上限。正常由 token 阈值先触发 compaction。 */
+const REACT_BIG_CAP = 60;
+/** #58 — provider 元数据缺失时的回退上下文窗口(与 window-token-budget 一致)。 */
+const COMPACTION_FALLBACK_MAX_TOKENS = 32_000;
 
 export interface AgentLoopContext {
   port: chrome.runtime.Port;
@@ -1297,8 +1304,19 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         }
       }
 
-      // Apply sliding window
-      const windowedHistorySlid = applySlidingWindow(history);
+      // #58 — 任务内 react 段 LLM compaction(IN-PLACE 改 history,持久化随 onStepSnapshot)。
+      // 在 wire-time 整形之前:超 provider token 阈值时把最旧步骤摘成合成对,保住早期发现。
+      const compactionMeta = await resolveProviderMeta(modelConfig.provider);
+      const compactionMaxTokens = compactionMeta?.maxContextTokens ?? COMPACTION_FALLBACK_MAX_TOKENS;
+      await compactReactWindow(
+        history,
+        compactionMaxTokens,
+        createDefaultSummarizer(modelConfig),
+        signal,
+      );
+
+      // Apply sliding window（react cap 放宽为 BIG_CAP，react 段长度主要由 compaction 控制）
+      const windowedHistorySlid = applySlidingWindow(history, REACT_BIG_CAP);
 
       // #61(c) — stale-snapshot elision. Replace the bulky interactive-element
       // list of every observation EXCEPT the most recent with a short marker
