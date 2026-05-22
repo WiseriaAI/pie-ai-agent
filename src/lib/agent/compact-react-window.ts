@@ -46,5 +46,59 @@ export async function compactReactWindow(
   const threshold = maxContextTokens * THRESHOLD_RATIO;
   // 用 elide 后的等效大小判定,与最终实际发送量一致。
   if (estimateTokens(elideStaleObservations(history)) <= threshold) return;
-  // 触发逻辑在循环 B 实现。
+  const reactStartIdx = findReactStartIdx(history);
+  if (reactStartIdx === -1) return;
+
+  // react 段按 2 条一对(交替不变式保证;尾部奇数条不参与)。
+  const reactLen = history.length - reactStartIdx;
+  const pairCount = Math.floor(reactLen / 2);
+  if (pairCount === 0) return;
+
+  // 已压缩区:开头连续的合成对(user 含 tag)。
+  let compactedCount = 0;
+  while (
+    compactedCount < pairCount &&
+    isCompactedUserMsg(history[reactStartIdx + compactedCount * 2 + 1])
+  ) {
+    compactedCount++;
+  }
+
+  // 可压原始对数 = 总对 - 已压缩 - 保鲜。
+  const maxCompactable = pairCount - compactedCount - KEEP_RECENT;
+  if (maxCompactable <= 0) return;
+
+  const victimStart = reactStartIdx + compactedCount * 2;
+
+  // 逐对累积 victim,直到「移除后」elide 估算达标,或可压对耗尽。
+  let victimPairs = 0;
+  while (victimPairs < maxCompactable) {
+    victimPairs++;
+    const candidate = [
+      ...history.slice(0, victimStart),
+      ...history.slice(victimStart + victimPairs * 2),
+    ];
+    if (estimateTokens(elideStaleObservations(candidate)) <= threshold) break;
+  }
+
+  const victimMsgs = history.slice(victimStart, victimStart + victimPairs * 2);
+  const summary = await summarizer(victimMsgs, signal);
+  if (signal.aborted || summary === null) return; // 本步跳过,history 不变
+
+  const synthetic = buildSyntheticPair(summary, victimPairs);
+  history.splice(victimStart, victimPairs * 2, ...synthetic);
+}
+
+/** 构造一个合成对:可信 assistant 占位 + untrusted user 摘要(含 tag、已 escape)。 */
+function buildSyntheticPair(summary: string, pairs: number): AgentMessage[] {
+  const safe = escapeUntrustedWrappers(summary);
+  return [
+    {
+      role: "assistant",
+      content: [{ type: "text", text: `[早期 ${pairs} 对步骤已压缩为摘要]` }],
+    },
+    {
+      role: "user",
+      content: [{ type: "text", text: `<${COMPACTED_TAG}>\n${safe}\n</${COMPACTED_TAG}>` }],
+    },
+  ];
 }

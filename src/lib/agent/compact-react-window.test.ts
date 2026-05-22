@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AgentMessage, ContentBlock } from "@/lib/model-router";
-import { compactReactWindow, type ReactSummarizer } from "./compact-react-window";
+import { compactReactWindow, isCompactedUserMsg as isCompactedUserMsgExported, type ReactSummarizer } from "./compact-react-window";
 
 function toolUsePair(name: string, big: string): AgentMessage[] {
   return [
@@ -25,5 +25,55 @@ describe("compactReactWindow — fast path", () => {
     const before = structuredClone(h);
     await compactReactWindow(h, 1_000_000, okSummarizer, abortSignal());
     expect(h).toEqual(before);
+  });
+});
+
+function compactedPair(): AgentMessage[] {
+  return [
+    { role: "assistant", content: [{ type: "text", text: "[早期 N 步已压缩为摘要]" }] },
+    { role: "user", content: [{ type: "text", text: `<${"untrusted_compacted_steps"}>\n动作: 旧\n发现: 旧\n</${"untrusted_compacted_steps"}>` }] },
+  ];
+}
+
+describe("compactReactWindow — 触发压缩", () => {
+  it("超阈值:最旧可压对被替换为合成对,保鲜区保留", async () => {
+    const h = baseHistory(6, 100);
+    const summarizer = vi.fn<ReactSummarizer>(async () => "动作: t0 → t1\n发现: 价格 42");
+    await compactReactWindow(h, 300, summarizer, new AbortController().signal);
+
+    expect(summarizer).toHaveBeenCalledTimes(1);
+    const victim = summarizer.mock.calls[0][0];
+    expect(victim.length % 2).toBe(0);
+    expect((victim[0].content as ContentBlock[])[0].type).toBe("tool_use");
+
+    const synthUser = h.find((m) => isCompactedUserMsgExported(m));
+    expect(synthUser).toBeDefined();
+    const synthIdx = h.indexOf(synthUser!);
+    expect(h[synthIdx - 1].role).toBe("assistant");
+    expect(Array.isArray(h[synthIdx - 1].content)).toBe(true);
+
+    const text = JSON.stringify(h);
+    expect(text).toContain("t5");
+    expect(text).toContain("t2");
+    expect(text).toContain("价格 42");
+  });
+
+  it("append-only:已有合成对不重压,新对追加其后", async () => {
+    const h: AgentMessage[] = [
+      { role: "system", content: "sys" },
+      { role: "user", content: "task" },
+      ...compactedPair(),
+    ];
+    for (let i = 0; i < 6; i++) h.push(...toolUsePair(`t${i}`, "y".repeat(100)));
+
+    const summarizer = vi.fn<ReactSummarizer>(async () => "动作: 新\n发现: 新数据");
+    await compactReactWindow(h, 300, summarizer, new AbortController().signal);
+
+    const s = JSON.stringify(h);
+    expect(s).toContain("发现: 旧");
+    expect(s).toContain("发现: 新数据");
+    expect(s.indexOf("发现: 旧")).toBeLessThan(s.indexOf("发现: 新数据"));
+    const victim = JSON.stringify(summarizer.mock.calls[0][0]);
+    expect(victim).not.toContain("发现: 旧");
   });
 });
