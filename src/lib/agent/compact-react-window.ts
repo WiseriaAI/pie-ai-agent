@@ -81,6 +81,7 @@ export async function compactReactWindow(
   }
 
   const victimMsgs = history.slice(victimStart, victimStart + victimPairs * 2);
+  if (signal.aborted) return;
   const summary = await summarizer(victimMsgs, signal);
   if (signal.aborted || summary === null) return; // 本步跳过,history 不变
 
