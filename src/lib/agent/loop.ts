@@ -1416,6 +1416,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         toolCount: toolDefinitions.length,
       });
       let __sawAnyEvent = false;
+      let lastStepUsage: { inputTokens: number; outputTokens: number } | null = null;
       for await (const event of streamChat(modelConfig, windowedHistory, signal, toolDefinitions)) {
         if (!__sawAnyEvent) {
           __sawAnyEvent = true;
@@ -1454,6 +1455,13 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             });
             openToolCalls.delete(event.index);
           }
+        } else if (event.type === "done") {
+          // Issue #59 — capture real provider-reported usage for the ring.
+          // Stored to a local and applied after the stream finishes; abort
+          // and error paths skip the apply.
+          if (event.usage && event.usage.inputTokens > 0) {
+            lastStepUsage = event.usage;
+          }
         } else if (event.type === "error") {
           port.postMessage(withSession({ type: "chat-error", error: event.error }, sessionId));
           await emitDone({
@@ -1472,6 +1480,52 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         accumulatedTextLen: accumulatedText.length,
         toolCallCount: completedToolCalls.length,
       });
+
+      // Issue #59 — persist & announce step usage. Done before the abort
+      // check intentionally: if the provider emitted done with usage,
+      // the LLM round-trip really happened and the tokens were really
+      // spent; we should account for them even if the user aborted right
+      // after. Storage failure is non-fatal (warn-only) — the loop must
+      // not die over a metric write; the panel will catch up on the next
+      // successful step.
+      if (lastStepUsage) {
+        try {
+          const cur = await getSessionAgent(sessionId);
+          const nextUsage = mergeContextUsage(cur?.contextUsage, lastStepUsage);
+          const base: SessionAgentState = cur ?? {
+            agentMessages: [],
+            stepIndex: 0,
+            hasImageContent: false,
+          };
+          await setSessionAgent(sessionId, { ...base, contextUsage: nextUsage });
+          try {
+            port.postMessage(
+              withSession(
+                {
+                  type: "agent-usage",
+                  lastInputTokens: nextUsage.lastInputTokens,
+                  lastOutputTokens: nextUsage.lastOutputTokens,
+                  totalInputTokens: nextUsage.totalInputTokens,
+                  totalOutputTokens: nextUsage.totalOutputTokens,
+                },
+                sessionId,
+              ),
+            );
+          } catch (e) {
+            // Port disconnected mid-step — panel will rehydrate from
+            // SessionAgentState on next mount via useSession.setActive.
+            console.warn(
+              `[agent] post agent-usage failed for session=${sessionId}:`,
+              e,
+            );
+          }
+        } catch (e) {
+          console.warn(
+            `[agent] persist contextUsage failed for session=${sessionId}:`,
+            e,
+          );
+        }
+      }
 
       // If abort fired during streaming, providers silently return from
       // the generator (no throw). Detect that here BEFORE treating an
