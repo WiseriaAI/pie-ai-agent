@@ -150,7 +150,7 @@ export const zhCNDict = {
       input: "输入",
       output: "输出",
       total: "合计",
-      lastCall: "上次调用 {used} / {max}（{pct}%）",
+      lastCall: "上下文用量 {used} / {max}（{pct}%）",
     },
   },
   modelDropdown: {

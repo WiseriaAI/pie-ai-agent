@@ -150,7 +150,7 @@ export const enDict = {
       input: "input",
       output: "output",
       total: "total",
-      lastCall: "Last call {used} / {max} ({pct}%)",
+      lastCall: "Context used {used} / {max} ({pct}%)",
     },
   },
   modelDropdown: {
