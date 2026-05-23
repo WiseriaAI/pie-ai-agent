@@ -1,4 +1,5 @@
 import type { DisplayMessage, Quote } from "@/types";
+import type { SessionAgentState } from "@/lib/sessions/types";
 
 /**
  * Per-session task runtime state. One Map<sessionId, SessionRuntimeSlot>
@@ -22,6 +23,11 @@ export type SessionRuntimeSlot = {
   streamFinished: boolean;
   /** Issue #38 v1 — per-session page content references (not persisted). */
   quotes: Quote[];
+  /** Issue #59 — most recent contextUsage snapshot, sourced from
+   *  agent-usage wire events (mid-task) or getSessionAgent on session
+   *  switch (mount/setActive). undefined when no LLM call has returned
+   *  yet for this session — the composer hides the ring in that state. */
+  usage?: SessionAgentState["contextUsage"];
 };
 
 export const EMPTY_SLOT: SessionRuntimeSlot = {
