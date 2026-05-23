@@ -83,4 +83,43 @@ describe("SearchProviderSection", () => {
     await waitFor(() => expect(screen.getByText(/not set/i)).toBeTruthy());
     expect(memStore.has("search_provider_tavily")).toBe(false);
   });
+
+  it("disables Save & test button while save is in flight", async () => {
+    let resolveTest!: (v: { ok: boolean }) => void;
+    vi.spyOn(searchProvider, "getSearchProvider").mockReturnValue({
+      id: "tavily",
+      search: async () => ({ query: "x", resultCount: 0, results: [] }),
+      test: () => new Promise((r) => { resolveTest = r; }),
+    });
+    render(<SearchProviderSection />);
+    fireEvent.click(await screen.findByRole("button", { name: /add key/i }));
+    fireEvent.change(screen.getByPlaceholderText("tvly-..."), {
+      target: { value: "tvly-key-A1B2C3" },
+    });
+    const saveBtn = screen.getByRole("button", { name: /save & test/i }) as HTMLButtonElement;
+    fireEvent.click(saveBtn);
+    // While the test promise is pending, the button must be disabled.
+    await waitFor(() => expect(saveBtn.disabled).toBe(true));
+    // Resolve the test → button becomes re-enabled (after transitioning out of editing mode)
+    resolveTest({ ok: true });
+    await waitFor(() => expect(screen.getByText(/verified/i)).toBeTruthy());
+  });
+
+  it("shows neutral 'not set' status after rejected save (no verified pill)", async () => {
+    vi.spyOn(searchProvider, "getSearchProvider").mockReturnValue({
+      id: "tavily",
+      search: async () => ({ query: "x", resultCount: 0, results: [] }),
+      test: async () => ({ ok: false, reason: "Key rejected." }),
+    });
+    render(<SearchProviderSection />);
+    fireEvent.click(await screen.findByRole("button", { name: /add key/i }));
+    fireEvent.change(screen.getByPlaceholderText("tvly-..."), {
+      target: { value: "tvly-bad-key" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /save & test/i }));
+    // Immediately: testResult = rejected
+    await waitFor(() => expect(screen.getByText(/verification failed/i)).toBeTruthy());
+    // Confirm the verified pill is NOT shown (the bug we're fixing)
+    expect(screen.queryByText(/✓ verified/i)).toBeFalsy();
+  });
 });

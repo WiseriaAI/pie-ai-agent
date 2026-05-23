@@ -27,6 +27,7 @@ export default function SearchProviderSection() {
   const [testResult, setTestResult] = useState<
     null | { ok: true } | { ok: false; reason: string }
   >(null);
+  const [busy, setBusy] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const reload = useCallback(async () => {
@@ -46,17 +47,22 @@ export default function SearchProviderSection() {
   async function handleSaveAndTest() {
     const k = draft.trim();
     if (!k) return;
-    await setSearchProviderKey(ACTIVE_SEARCH_PROVIDER, k);
-    const provider = getSearchProvider(ACTIVE_SEARCH_PROVIDER);
-    const r = await provider.test(k);
-    if (r.ok) {
-      await markVerified(ACTIVE_SEARCH_PROVIDER);
-      setTestResult({ ok: true });
-    } else {
-      setTestResult({ ok: false, reason: r.reason ?? "Unknown" });
+    try {
+      setBusy(true);
+      await setSearchProviderKey(ACTIVE_SEARCH_PROVIDER, k);
+      const provider = getSearchProvider(ACTIVE_SEARCH_PROVIDER);
+      const r = await provider.test(k);
+      if (r.ok) {
+        await markVerified(ACTIVE_SEARCH_PROVIDER);
+        setTestResult({ ok: true });
+      } else {
+        setTestResult({ ok: false, reason: r.reason ?? "Unknown" });
+      }
+      setDraft("");
+      await reload();
+    } finally {
+      setBusy(false);
     }
-    setDraft("");
-    await reload();
   }
 
   async function handleForget() {
@@ -67,13 +73,18 @@ export default function SearchProviderSection() {
   }
 
   async function handleReTest() {
-    const provider = getSearchProvider(ACTIVE_SEARCH_PROVIDER);
-    const plain = await getSearchProviderKey(ACTIVE_SEARCH_PROVIDER);
-    if (!plain) return;
-    const r = await provider.test(plain);
-    if (r.ok) await markVerified(ACTIVE_SEARCH_PROVIDER);
-    setTestResult(r.ok ? { ok: true } : { ok: false, reason: r.reason ?? "Unknown" });
-    await reload();
+    try {
+      setBusy(true);
+      const provider = getSearchProvider(ACTIVE_SEARCH_PROVIDER);
+      const plain = await getSearchProviderKey(ACTIVE_SEARCH_PROVIDER);
+      if (!plain) return;
+      const r = await provider.test(plain);
+      if (r.ok) await markVerified(ACTIVE_SEARCH_PROVIDER);
+      setTestResult(r.ok ? { ok: true } : { ok: false, reason: r.reason ?? "Unknown" });
+      await reload();
+    } finally {
+      setBusy(false);
+    }
   }
 
   // ---------- Caps + Title (shared) ----------
@@ -124,7 +135,8 @@ export default function SearchProviderSection() {
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setMode("editing")}
-                className="inline-flex items-center gap-1.5 rounded-[6px] border border-line bg-field px-3.5 py-2 text-[13px] font-medium text-fg-1"
+                disabled={busy}
+                className="inline-flex items-center gap-1.5 rounded-[6px] border border-line bg-field px-3.5 py-2 text-[13px] font-medium text-fg-1 disabled:opacity-50"
               >
                 <span>+</span>
                 {t("settings.searchProvider.addKey")}
@@ -141,19 +153,24 @@ export default function SearchProviderSection() {
                 <span className="text-warning">
                   ✗ {t("settings.searchProvider.rejected")}
                 </span>
-              ) : (
+              ) : status.lastVerifiedAt ? (
                 <span className="text-accent">
                   ✓ {t("settings.searchProvider.verified")}
+                </span>
+              ) : (
+                <span className="text-fg-3">
+                  — {t("settings.searchProvider.statusNotSet")}
                 </span>
               )}
               <span className="text-fg-3">·</span>
               <span className="text-fg-2">
-                {status.lastVerifiedAt ? formatRelative(status.lastVerifiedAt) : "—"}
+                {status.lastVerifiedAt ? formatRelative(status.lastVerifiedAt) : t("settings.searchProvider.statusNotSet")}
               </span>
               <div className="flex-1" />
               <button
                 onClick={handleReTest}
-                className="text-fg-2 underline decoration-line underline-offset-[3px]"
+                disabled={busy}
+                className="text-fg-2 underline decoration-line underline-offset-[3px] disabled:opacity-50"
               >
                 {t("settings.searchProvider.reTest")}
               </button>
@@ -164,13 +181,15 @@ export default function SearchProviderSection() {
                   setMode("editing");
                   setDraft("");
                 }}
-                className="inline-flex items-center rounded-[6px] border border-line bg-field px-3.5 py-2 text-[13px] font-medium text-fg-1"
+                disabled={busy}
+                className="inline-flex items-center rounded-[6px] border border-line bg-field px-3.5 py-2 text-[13px] font-medium text-fg-1 disabled:opacity-50"
               >
                 {t("settings.searchProvider.replaceKey")}
               </button>
               <button
                 onClick={handleForget}
-                className="inline-flex items-center rounded-[6px] border border-warning bg-transparent px-3.5 py-2 text-[13px] font-medium text-warning"
+                disabled={busy}
+                className="inline-flex items-center rounded-[6px] border border-warning bg-transparent px-3.5 py-2 text-[13px] font-medium text-warning disabled:opacity-50"
               >
                 {t("settings.searchProvider.forget")}
               </button>
@@ -204,7 +223,7 @@ export default function SearchProviderSection() {
             <div className="flex items-center gap-2 pt-1">
               <button
                 onClick={handleSaveAndTest}
-                disabled={!draft.trim()}
+                disabled={!draft.trim() || busy}
                 className="inline-flex items-center rounded-[6px] border border-accent bg-accent px-4 py-2 text-[13px] font-semibold text-bg disabled:opacity-50"
               >
                 {t("settings.searchProvider.saveAndTest")}
