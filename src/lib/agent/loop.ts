@@ -589,6 +589,28 @@ export function mergeSessionAgentSnapshot(
 }
 
 /**
+ * Issue #59 — fold one step's real LLM usage into a session's running totals.
+ * Pure function — no I/O. Caller persists the result via setSessionAgent.
+ *
+ * If `prev` is undefined, treats the step as the first LLM call for this
+ * session (zeros baseline). `lastInputTokens` / `lastOutputTokens` always
+ * reflect just-this-step (the ring's numerator + popover's "most recent").
+ *
+ * Exported for unit testing.
+ */
+export function mergeContextUsage(
+  prev: SessionAgentState["contextUsage"] | undefined,
+  step: { inputTokens: number; outputTokens: number },
+): NonNullable<SessionAgentState["contextUsage"]> {
+  return {
+    totalInputTokens: (prev?.totalInputTokens ?? 0) + step.inputTokens,
+    totalOutputTokens: (prev?.totalOutputTokens ?? 0) + step.outputTokens,
+    lastInputTokens: step.inputTokens,
+    lastOutputTokens: step.outputTokens,
+  };
+}
+
+/**
  * v1.5 — pure helper: given pinnedTabs[] and a currentFocusTabId, resolve
  * which tab the loop should snapshot and operate on this iteration.
  *
