@@ -39,7 +39,7 @@ export default function InstanceSelector(props: Props) {
       <button
         onClick={() => !props.locked && setOpen(!open)}
         disabled={props.locked}
-        className="flex items-center gap-1 px-1.5 py-1 text-[12px] text-fg-1 disabled:opacity-50"
+        className="flex items-center gap-1 px-1.5 py-1 text-[12px] text-fg-2 disabled:opacity-50"
         aria-label={current ? `${current.nickname} ${current.model}` : t("instanceSelector.selectConfig")}
       >
         <span>
