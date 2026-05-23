@@ -63,6 +63,67 @@ describe("synthesizeAgentTurnText", () => {
     expect(result!).toMatch(/<\/untrusted_prior_task_summary>$/);
   });
 
+  // ── Test 1b: success path carries step list (#58 子点 a) ──────────────────────
+
+  it("success path — also includes step list for cross-task recall", () => {
+    const history: AgentMessage[] = [
+      { role: "system", content: "system" },
+      { role: "user", content: "查机票" },
+      ...makePair("navigate", { url: "https://flights.example" }),
+      ...makePair("read_page", {}),
+    ];
+    const result = synthesizeAgentTurnText({
+      terminationReason: "success",
+      summary: "已查到 5 个航班",
+      stepCount: 2,
+      history,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!).toContain("已完成: 已查到 5 个航班");
+    // (a) — success synth now also carries the recent step list,
+    // mirroring the fail/max-steps paths, so the next task can recall
+    // what the prior task actually did (not just its one-line summary).
+    expect(result!).toContain("步骤:");
+    expect(result!).toMatch(/navigate|read_page/);
+  });
+
+  it("success path — only last 5 tool_use blocks shown in step list", () => {
+    const pairs: AgentMessage[] = [];
+    for (let i = 0; i < 8; i++) {
+      pairs.push(...makePair(`tool_${i}`, {}));
+    }
+    const result = synthesizeAgentTurnText({
+      terminationReason: "success",
+      summary: "完成",
+      stepCount: 8,
+      history: [
+        { role: "system", content: "system" },
+        { role: "user", content: "task" },
+        ...pairs,
+      ],
+    });
+    expect(result).not.toBeNull();
+    expect(result!).not.toContain("tool_2");
+    expect(result!).toContain("tool_3");
+    expect(result!).toContain("tool_7");
+  });
+
+  it("success path — no '步骤:' label when history has no tool_use steps", () => {
+    const result = synthesizeAgentTurnText({
+      terminationReason: "success",
+      summary: "已回答",
+      stepCount: 0,
+      history: [
+        { role: "system", content: "system" },
+        { role: "user", content: "what is 2+2?" },
+      ],
+    });
+    expect(result).not.toBeNull();
+    expect(result!).toContain("已完成: 已回答");
+    expect(result!).not.toContain("步骤:");
+  });
+
   // ── Test 2: fail path ───────────────────────────────────────────────────────
 
   it("fail path — contains [任务失败] + summary + step count + step list", () => {
