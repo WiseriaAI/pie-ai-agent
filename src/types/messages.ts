@@ -74,6 +74,31 @@ export interface ChatErrorMessage {
   sessionId: string;
 }
 
+/**
+ * Issue #59 — SW → Panel: emitted after each agent step whose stream produced
+ * a real `done.usage`. Panel mirrors into `slot.usage` for ring rendering.
+ * SW is the sole accumulator (`totalInputTokens`/`totalOutputTokens` are
+ * pre-summed); panel replaces slot value, never `+=`, to avoid double-counting.
+ *
+ * Not emitted when:
+ *   - provider doesn't surface `done.usage` (no fallback estimate)
+ *   - `done.usage.inputTokens <= 0`
+ *   - stream aborted before `done`
+ */
+export interface AgentUsageMessage {
+  type: "agent-usage";
+  /** M2-U2 — session routing. See ChatChunkMessage.sessionId. */
+  sessionId: string;
+  /** Most recent step's real input usage (provider `done.usage.inputTokens`). */
+  lastInputTokens: number;
+  /** Most recent step's real output usage. */
+  lastOutputTokens: number;
+  /** SW-cumulative running total of input tokens for this session. */
+  totalInputTokens: number;
+  /** SW-cumulative running total of output tokens for this session. */
+  totalOutputTokens: number;
+}
+
 // --- Side Panel → Service Worker (via sendMessage) ---
 
 export interface ExtractPageMessage {
@@ -416,6 +441,7 @@ export type PortMessageToPanel =
   | ChatChunkMessage
   | ChatDoneMessage
   | ChatErrorMessage
+  | AgentUsageMessage
   | AgentStepMessage
   | AgentDoneTaskMessage
   | SessionConfirmRequestMessage

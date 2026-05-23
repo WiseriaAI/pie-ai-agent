@@ -214,6 +214,18 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
       return;
     }
 
+    if (msg.type === "agent-usage") {
+      patchSlot(id, {
+        usage: {
+          lastInputTokens: msg.lastInputTokens,
+          lastOutputTokens: msg.lastOutputTokens,
+          totalInputTokens: msg.totalInputTokens,
+          totalOutputTokens: msg.totalOutputTokens,
+        },
+      });
+      return;
+    }
+
     // Subsequent branches added in Tasks 2c–2g.
   };
 

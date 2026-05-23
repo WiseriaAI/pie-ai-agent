@@ -39,19 +39,28 @@ export default function InstanceSelector(props: Props) {
       <button
         onClick={() => !props.locked && setOpen(!open)}
         disabled={props.locked}
-        className="flex items-center gap-1.5 px-1.5 py-1 text-[10px] disabled:opacity-50"
+        className="flex items-center gap-1 px-1.5 py-1 text-[12px] text-fg-2 disabled:opacity-50"
         aria-label={current ? `${current.nickname} ${current.model}` : t("instanceSelector.selectConfig")}
       >
-        <span className={`h-1.5 w-1.5 rounded-full ${props.locked ? "bg-fg-3" : "bg-accent"}`} />
-        <span className="font-mono tracking-[0.04em] text-fg-1">
+        <span>
           {current ? `${current.nickname} · ${shortModel(current.model)}` : t("instanceSelector.none")}
         </span>
         {props.locked ? (
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
-            <path d="M3 5V3.5C3 2.4 3.9 1.5 5 1.5C6.1 1.5 7 2.4 7 3.5V5M2.5 5H7.5V8.5H2.5V5Z" stroke="#525965" strokeWidth="0.9" strokeLinecap="round" />
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true" className="text-fg-3">
+            <path d="M3 5V3.5C3 2.4 3.9 1.5 5 1.5C6.1 1.5 7 2.4 7 3.5V5M2.5 5H7.5V8.5H2.5V5Z" stroke="currentColor" strokeWidth="0.9" strokeLinecap="round" />
           </svg>
         ) : (
-          <span className="text-accent">{open ? "▾" : "▴"}</span>
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 14 14"
+            fill="none"
+            aria-hidden="true"
+            className="text-fg-2"
+            style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}
+          >
+            <path d="M3.5 5.5L7 9L10.5 5.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
         )}
       </button>
 

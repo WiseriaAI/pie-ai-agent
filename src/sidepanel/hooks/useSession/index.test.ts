@@ -894,6 +894,79 @@ describe("setActive — multi-session port lifecycle (#30)", () => {
     expect(switched).not.toBeNull();
     expect(switched).toBe(idB);
   });
+
+  it("setActive rehydrates slot.usage from SessionAgentState.contextUsage (#59)", async () => {
+    const id = "sess-rehydrate";
+    await chrome.storage.local.set({
+      [`session_${id}_meta`]: {
+        id,
+        createdAt: 1,
+        lastAccessedAt: 1,
+        status: "active",
+        messages: [],
+      },
+      [`session_${id}_agent`]: {
+        agentMessages: [],
+        stepIndex: 0,
+        hasImageContent: false,
+        contextUsage: {
+          totalInputTokens: 5000,
+          totalOutputTokens: 200,
+          lastInputTokens: 1000,
+          lastOutputTokens: 50,
+        },
+      },
+      session_index: [
+        { id, lastAccessedAt: 1, status: "active", messageCount: 0 },
+      ],
+    });
+
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    await act(async () => {
+      await result.current.setActive(id);
+    });
+
+    await waitFor(() => {
+      expect(result.current.usage).toEqual({
+        totalInputTokens: 5000,
+        totalOutputTokens: 200,
+        lastInputTokens: 1000,
+        lastOutputTokens: 50,
+      });
+    });
+  });
+
+  it("setActive on a session with no prior usage returns undefined usage (#59)", async () => {
+    const id = "sess-no-usage";
+    await chrome.storage.local.set({
+      [`session_${id}_meta`]: {
+        id,
+        createdAt: 1,
+        lastAccessedAt: 1,
+        status: "active",
+        messages: [],
+      },
+      // Intentionally NO session_${id}_agent key — simulates a session
+      // that exists but never had an LLM call complete.
+      session_index: [
+        { id, lastAccessedAt: 1, status: "active", messageCount: 0 },
+      ],
+    });
+
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    await act(async () => {
+      await result.current.setActive(id);
+    });
+
+    await waitFor(() => {
+      expect(result.current.sessionId).toBe(id);
+    });
+    expect(result.current.usage).toBeUndefined();
+  });
 });
 
 describe("unmount lifecycle (#30)", () => {

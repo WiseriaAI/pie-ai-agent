@@ -10,13 +10,14 @@ import type {
 } from "@/types";
 import {
   createSession,
+  getSessionAgent,
   getSessionMeta,
   listSessionIndex,
   setSessionMeta,
   updateLastAccessed,
 } from "@/lib/sessions/storage";
 import { hardDeleteSession } from "@/lib/sessions/lifecycle";
-import type { SessionMeta, SessionStatus } from "@/lib/sessions/types";
+import type { SessionAgentState, SessionMeta, SessionStatus } from "@/lib/sessions/types";
 import { deriveTitleFromMessages } from "@/lib/sessions/title";
 import { togglePinTabUserMode } from "@/lib/sessions/pin-state";
 import {
@@ -167,6 +168,11 @@ export interface UseSession {
   toast: { level: "warn" | "error" | "info"; text: string } | null;
   /** Issue #38 v1 — per-session page content reference chips (not persisted). */
   quotes: ReadonlyArray<Quote>;
+  /** Issue #59 — most recent context usage snapshot for the active session.
+   *  Undefined until the first LLM call completes (ring is hidden in that
+   *  state). Populated on setActive (cold path) and agent-usage wire events
+   *  (hot path). */
+  usage?: SessionAgentState["contextUsage"];
   sendMessage: (input: SendMessageInput) => void;
   /** Sends a chat-abort message to the SW. Caller is responsible for
    *  guarding against rapid-fire aborts. */
@@ -759,6 +765,12 @@ export function useSession(): UseSession {
     if (!meta) return null;
     if (sessionIdRef.current === id) return id;
 
+    // Issue #59 — read the agent state so we can rehydrate slot.usage for the
+    // cold-path (session switch or panel mount on an existing session). The SW
+    // pushes agent-usage events live during a streaming task; setActive handles
+    // the non-streaming case so the context ring shows immediately on switch.
+    const agent = await getSessionAgent(id);
+
     // Legacy-pin migration (M3-U2 post-acceptance) — preserved verbatim.
     let metaForActivate = meta;
     let didMigrate = false;
@@ -800,6 +812,7 @@ export function useSession(): UseSession {
         streamingText: "",
         streaming: false,
         streamFinished: true,
+        usage: agent?.contextUsage, // Issue #59 — rehydrate context ring data
       };
     });
 
@@ -910,6 +923,7 @@ export function useSession(): UseSession {
     error: active.error,
     toast: active.toast,
     quotes: active.quotes,
+    usage: active.usage, // Issue #59
     sendMessage,
     abort,
     resumeTask,

@@ -496,6 +496,11 @@ export async function interpretPinnedTabUrl(
  *      surf protection on the visible step bubble; the LLM resume path
  *      (M1-U5) needs the raw tool_use args to plan the next step. Two
  *      different consumers, two different shapes.
+ *
+ * Issue #59 invariant: this snapshot MUST NOT include `contextUsage`.
+ * The per-step merge (`mergeSessionAgentSnapshot`) is a spread, so any
+ * field present in the snapshot wins; including `contextUsage` here
+ * would clobber the value the usage block (~loop.ts:1491) just wrote.
  */
 export function buildSessionAgentSnapshot(
   history: AgentMessage[],
@@ -531,7 +536,10 @@ export function buildSessionAgentSnapshot(
  * returned state; when absent / undefined the field is omitted entirely
  * (no `undefined` property in the persisted object).
  */
-export function buildSessionAgentTombstone(lastTaskSynth?: string | null): SessionAgentState {
+export function buildSessionAgentTombstone(
+  lastTaskSynth?: string | null,
+  carryUsage?: SessionAgentState["contextUsage"],
+): SessionAgentState {
   const base: SessionAgentState = {
     agentMessages: [],
     stepIndex: 0,
@@ -539,6 +547,9 @@ export function buildSessionAgentTombstone(lastTaskSynth?: string | null): Sessi
   };
   if (lastTaskSynth != null) {
     base.lastTaskSynth = lastTaskSynth;
+  }
+  if (carryUsage != null) {
+    base.contextUsage = carryUsage;
   }
   return base;
 }
@@ -580,6 +591,28 @@ export function mergeSessionAgentSnapshot(
   const isTombstone = snapshot.stepIndex === 0 && snapshot.agentMessages.length === 0;
   if (isTombstone) return snapshot;
   return { ...existing, ...snapshot };
+}
+
+/**
+ * Issue #59 — fold one step's real LLM usage into a session's running totals.
+ * Pure function — no I/O. Caller persists the result via setSessionAgent.
+ *
+ * If `prev` is undefined, treats the step as the first LLM call for this
+ * session (zeros baseline). `lastInputTokens` / `lastOutputTokens` always
+ * reflect just-this-step (the ring's numerator + popover's "most recent").
+ *
+ * Exported for unit testing.
+ */
+export function mergeContextUsage(
+  prev: SessionAgentState["contextUsage"] | undefined,
+  step: { inputTokens: number; outputTokens: number },
+): NonNullable<SessionAgentState["contextUsage"]> {
+  return {
+    totalInputTokens: (prev?.totalInputTokens ?? 0) + step.inputTokens,
+    totalOutputTokens: (prev?.totalOutputTokens ?? 0) + step.outputTokens,
+    lastInputTokens: step.inputTokens,
+    lastOutputTokens: step.outputTokens,
+  };
 }
 
 /**
@@ -943,7 +976,10 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // Pass the synth (may be null) into the tombstone builder.
       // buildSessionAgentTombstone omits the field when null, ensuring the
       // next chat-start's "is lastTaskSynth present?" check is unambiguous.
-      ctx.onStepSnapshot(buildSessionAgentTombstone(synth)).catch((e) => {
+      // Issue #59 — carry over contextUsage to the tombstone so token counts
+      // survive across tasks.
+      const prev = await getSessionAgent(sessionId);
+      ctx.onStepSnapshot(buildSessionAgentTombstone(synth, prev?.contextUsage)).catch((e) => {
         console.warn(
           `[agent] tombstone snapshot failed for session=${ctx.sessionId}:`,
           e,
@@ -1385,6 +1421,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         toolCount: toolDefinitions.length,
       });
       let __sawAnyEvent = false;
+      let lastStepUsage: { inputTokens: number; outputTokens: number } | null = null;
       for await (const event of streamChat(modelConfig, windowedHistory, signal, toolDefinitions)) {
         if (!__sawAnyEvent) {
           __sawAnyEvent = true;
@@ -1423,6 +1460,13 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             });
             openToolCalls.delete(event.index);
           }
+        } else if (event.type === "done") {
+          // Issue #59 — capture real provider-reported usage for the ring.
+          // Stored to a local and applied after the stream finishes; abort
+          // and error paths skip the apply.
+          if (event.usage && event.usage.inputTokens > 0) {
+            lastStepUsage = event.usage;
+          }
         } else if (event.type === "error") {
           port.postMessage(withSession({ type: "chat-error", error: event.error }, sessionId));
           await emitDone({
@@ -1441,6 +1485,52 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         accumulatedTextLen: accumulatedText.length,
         toolCallCount: completedToolCalls.length,
       });
+
+      // Issue #59 — persist & announce step usage. Done before the abort
+      // check intentionally: if the provider emitted done with usage,
+      // the LLM round-trip really happened and the tokens were really
+      // spent; we should account for them even if the user aborted right
+      // after. Storage failure is non-fatal (warn-only) — the loop must
+      // not die over a metric write; the panel will catch up on the next
+      // successful step.
+      if (lastStepUsage) {
+        try {
+          const cur = await getSessionAgent(sessionId);
+          const nextUsage = mergeContextUsage(cur?.contextUsage, lastStepUsage);
+          const base: SessionAgentState = cur ?? {
+            agentMessages: [],
+            stepIndex: 0,
+            hasImageContent: false,
+          };
+          await setSessionAgent(sessionId, { ...base, contextUsage: nextUsage });
+          try {
+            port.postMessage(
+              withSession(
+                {
+                  type: "agent-usage",
+                  lastInputTokens: nextUsage.lastInputTokens,
+                  lastOutputTokens: nextUsage.lastOutputTokens,
+                  totalInputTokens: nextUsage.totalInputTokens,
+                  totalOutputTokens: nextUsage.totalOutputTokens,
+                },
+                sessionId,
+              ),
+            );
+          } catch (e) {
+            // Port disconnected mid-step — panel will rehydrate from
+            // SessionAgentState on next mount via useSession.setActive.
+            console.warn(
+              `[agent] post agent-usage failed for session=${sessionId}:`,
+              e,
+            );
+          }
+        } catch (e) {
+          console.warn(
+            `[agent] persist contextUsage failed for session=${sessionId}:`,
+            e,
+          );
+        }
+      }
 
       // If abort fired during streaming, providers silently return from
       // the generator (no throw). Detect that here BEFORE treating an
@@ -1483,8 +1573,10 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         // stale (stepIndex > 0) snapshot might still be in storage.
         // Write a tombstone here so a chat-only round following a
         // completed agent task also clears in-flight markers.
+        // Issue #59 — carry over contextUsage to preserve token counts.
         if (ctx.onStepSnapshot) {
-          ctx.onStepSnapshot(buildSessionAgentTombstone()).catch((e) => {
+          const prev = await getSessionAgent(sessionId);
+          ctx.onStepSnapshot(buildSessionAgentTombstone(undefined, prev?.contextUsage)).catch((e) => {
             console.warn(
               `[agent] tombstone (pure-text) failed for session=${ctx.sessionId}:`,
               e,

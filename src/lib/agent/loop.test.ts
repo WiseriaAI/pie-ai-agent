@@ -11,6 +11,7 @@ import {
   resolveFocusedPin,
   readFocusFromStorage,
   mergeSessionAgentSnapshot,
+  mergeContextUsage,
 } from "./loop";
 import { TAB_TOOLS } from "./tools/tabs";
 import { BUILT_IN_TOOLS } from "./tools";
@@ -1457,6 +1458,137 @@ describe("interpretPinnedTabUrl (Issue #50 — navigation transient tolerance)",
       signal: ac.signal,
     });
     expect(settle).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("issue #59 — buildSessionAgentTombstone with carryUsage", () => {
+  it("omits contextUsage when carryUsage not provided", () => {
+    const tomb = buildSessionAgentTombstone();
+    expect(tomb.contextUsage).toBeUndefined();
+    expect(tomb.agentMessages).toEqual([]);
+    expect(tomb.stepIndex).toBe(0);
+    expect(tomb.hasImageContent).toBe(false);
+  });
+
+  it("carries contextUsage when provided", () => {
+    const carry = {
+      totalInputTokens: 5000,
+      totalOutputTokens: 200,
+      lastInputTokens: 1000,
+      lastOutputTokens: 50,
+    };
+    const tomb = buildSessionAgentTombstone(undefined, carry);
+    expect(tomb.contextUsage).toEqual(carry);
+  });
+
+  it("coexists with lastTaskSynth", () => {
+    const tomb = buildSessionAgentTombstone("synth text", {
+      totalInputTokens: 1,
+      totalOutputTokens: 2,
+      lastInputTokens: 3,
+      lastOutputTokens: 4,
+    });
+    expect(tomb.lastTaskSynth).toBe("synth text");
+    expect(tomb.contextUsage?.totalInputTokens).toBe(1);
+  });
+
+  it("treats null carryUsage same as undefined (omit field)", () => {
+    const tomb = buildSessionAgentTombstone(undefined, undefined);
+    expect("contextUsage" in tomb).toBe(false);
+  });
+});
+
+describe("issue #59 — mergeContextUsage", () => {
+  it("initializes from undefined prev", () => {
+    const next = mergeContextUsage(undefined, { inputTokens: 1200, outputTokens: 80 });
+    expect(next).toEqual({
+      totalInputTokens: 1200,
+      totalOutputTokens: 80,
+      lastInputTokens: 1200,
+      lastOutputTokens: 80,
+    });
+  });
+
+  it("accumulates over prior contextUsage", () => {
+    const prev = {
+      totalInputTokens: 5000,
+      totalOutputTokens: 200,
+      lastInputTokens: 900,
+      lastOutputTokens: 40,
+    };
+    const next = mergeContextUsage(prev, { inputTokens: 300, outputTokens: 20 });
+    expect(next).toEqual({
+      totalInputTokens: 5300,
+      totalOutputTokens: 220,
+      lastInputTokens: 300,
+      lastOutputTokens: 20,
+    });
+  });
+
+  it("treats prev as new-shape baseline (no field omitted)", () => {
+    const next = mergeContextUsage(undefined, { inputTokens: 1, outputTokens: 0 });
+    expect(next).toHaveProperty("totalOutputTokens", 0);
+    expect(next).toHaveProperty("lastOutputTokens", 0);
+  });
+});
+
+describe("issue #59 — mergeSessionAgentSnapshot preserves contextUsage", () => {
+  it("non-tombstone spread keeps existing.contextUsage when snapshot omits it", () => {
+    const existing: SessionAgentState = {
+      agentMessages: [{ role: "user", content: "hi" }],
+      stepIndex: 3,
+      hasImageContent: false,
+      currentFocusTabId: 99,
+      contextUsage: {
+        totalInputTokens: 5000,
+        totalOutputTokens: 200,
+        lastInputTokens: 1000,
+        lastOutputTokens: 50,
+      },
+    };
+    const snapshot: SessionAgentState = {
+      agentMessages: [{ role: "user", content: "hi" }, { role: "assistant", content: "ok" }],
+      stepIndex: 4,
+      hasImageContent: false,
+    };
+    const merged = mergeSessionAgentSnapshot(existing, snapshot);
+    expect(merged.contextUsage).toEqual(existing.contextUsage);
+    expect(merged.currentFocusTabId).toBe(99);
+    expect(merged.stepIndex).toBe(4);
+  });
+
+  it("tombstone full-replace drops existing.contextUsage IF tombstone doesn't carry it", () => {
+    const existing: SessionAgentState = {
+      agentMessages: [{ role: "user", content: "x" }],
+      stepIndex: 5,
+      hasImageContent: false,
+      contextUsage: {
+        totalInputTokens: 5000,
+        totalOutputTokens: 200,
+        lastInputTokens: 1000,
+        lastOutputTokens: 50,
+      },
+    };
+    const tombstoneWithoutCarry = buildSessionAgentTombstone();
+    const merged = mergeSessionAgentSnapshot(existing, tombstoneWithoutCarry);
+    expect(merged.contextUsage).toBeUndefined();
+  });
+
+  it("tombstone full-replace keeps carryUsage when caller passed it", () => {
+    const existing: SessionAgentState = {
+      agentMessages: [{ role: "user", content: "x" }],
+      stepIndex: 5,
+      hasImageContent: false,
+      contextUsage: {
+        totalInputTokens: 5000,
+        totalOutputTokens: 200,
+        lastInputTokens: 1000,
+        lastOutputTokens: 50,
+      },
+    };
+    const tombstoneWithCarry = buildSessionAgentTombstone(undefined, existing.contextUsage);
+    const merged = mergeSessionAgentSnapshot(existing, tombstoneWithCarry);
+    expect(merged.contextUsage).toEqual(existing.contextUsage);
   });
 });
 
