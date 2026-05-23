@@ -493,3 +493,20 @@ describe("buildSkillCatalogBlock", () => {
     expect(buildSkillCatalogBlock([])).toBe("");
   });
 });
+
+describe("SEARCH_TOOL_GUIDANCE", () => {
+  it("system prompt includes web-search guidance", () => {
+    const prompt = buildAgentSystemPrompt(
+      "test task",
+      /* hasKeyboardTools */ false,
+      /* hasMetaTools */ true,
+      [],
+      undefined,
+    );
+    expect(prompt).toContain("search_web");
+    expect(prompt).toContain("Tavily");
+    expect(prompt).toContain("Drill-down protocol");
+    expect(prompt).toContain("<untrusted_search_result>");
+    expect(prompt).toContain("Settings → Search");
+  });
+});
