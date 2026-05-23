@@ -85,7 +85,7 @@ describe("SearchProviderSection", () => {
   });
 
   it("disables Save & test button while save is in flight", async () => {
-    let resolveTest!: (v: { ok: boolean }) => void;
+    let resolveTest: ((v: { ok: boolean }) => void) | undefined;
     vi.spyOn(searchProvider, "getSearchProvider").mockReturnValue({
       id: "tavily",
       search: async () => ({ query: "x", resultCount: 0, results: [] }),
@@ -98,10 +98,16 @@ describe("SearchProviderSection", () => {
     });
     const saveBtn = screen.getByRole("button", { name: /save & test/i }) as HTMLButtonElement;
     fireEvent.click(saveBtn);
-    // While the test promise is pending, the button must be disabled.
-    await waitFor(() => expect(saveBtn.disabled).toBe(true));
+    // Wait for BOTH: button disabled AND the test mock has been called (so
+    // resolveTest is assigned). The handler awaits setSearchProviderKey before
+    // calling provider.test(), so these two conditions become true at slightly
+    // different times — polling on both avoids the race.
+    await waitFor(() => {
+      expect(saveBtn.disabled).toBe(true);
+      expect(resolveTest).toBeDefined();
+    });
     // Resolve the test → button becomes re-enabled (after transitioning out of editing mode)
-    resolveTest({ ok: true });
+    resolveTest!({ ok: true });
     await waitFor(() => expect(screen.getByText(/verified/i)).toBeTruthy());
   });
 
