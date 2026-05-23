@@ -531,7 +531,10 @@ export function buildSessionAgentSnapshot(
  * returned state; when absent / undefined the field is omitted entirely
  * (no `undefined` property in the persisted object).
  */
-export function buildSessionAgentTombstone(lastTaskSynth?: string | null): SessionAgentState {
+export function buildSessionAgentTombstone(
+  lastTaskSynth?: string | null,
+  carryUsage?: SessionAgentState["contextUsage"],
+): SessionAgentState {
   const base: SessionAgentState = {
     agentMessages: [],
     stepIndex: 0,
@@ -539,6 +542,9 @@ export function buildSessionAgentTombstone(lastTaskSynth?: string | null): Sessi
   };
   if (lastTaskSynth != null) {
     base.lastTaskSynth = lastTaskSynth;
+  }
+  if (carryUsage != null) {
+    base.contextUsage = carryUsage;
   }
   return base;
 }
@@ -943,7 +949,10 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // Pass the synth (may be null) into the tombstone builder.
       // buildSessionAgentTombstone omits the field when null, ensuring the
       // next chat-start's "is lastTaskSynth present?" check is unambiguous.
-      ctx.onStepSnapshot(buildSessionAgentTombstone(synth)).catch((e) => {
+      // Issue #59 — carry over contextUsage to the tombstone so token counts
+      // survive across tasks.
+      const prev = await getSessionAgent(sessionId);
+      ctx.onStepSnapshot(buildSessionAgentTombstone(synth, prev?.contextUsage)).catch((e) => {
         console.warn(
           `[agent] tombstone snapshot failed for session=${ctx.sessionId}:`,
           e,
@@ -1483,8 +1492,10 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         // stale (stepIndex > 0) snapshot might still be in storage.
         // Write a tombstone here so a chat-only round following a
         // completed agent task also clears in-flight markers.
+        // Issue #59 — carry over contextUsage to preserve token counts.
         if (ctx.onStepSnapshot) {
-          ctx.onStepSnapshot(buildSessionAgentTombstone()).catch((e) => {
+          const prev = await getSessionAgent(sessionId);
+          ctx.onStepSnapshot(buildSessionAgentTombstone(undefined, prev?.contextUsage)).catch((e) => {
             console.warn(
               `[agent] tombstone (pure-text) failed for session=${ctx.sessionId}:`,
               e,

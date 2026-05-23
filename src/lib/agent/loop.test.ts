@@ -1460,3 +1460,40 @@ describe("interpretPinnedTabUrl (Issue #50 — navigation transient tolerance)",
   });
 });
 
+describe("issue #59 — buildSessionAgentTombstone with carryUsage", () => {
+  it("omits contextUsage when carryUsage not provided", () => {
+    const tomb = buildSessionAgentTombstone();
+    expect(tomb.contextUsage).toBeUndefined();
+    expect(tomb.agentMessages).toEqual([]);
+    expect(tomb.stepIndex).toBe(0);
+    expect(tomb.hasImageContent).toBe(false);
+  });
+
+  it("carries contextUsage when provided", () => {
+    const carry = {
+      totalInputTokens: 5000,
+      totalOutputTokens: 200,
+      lastInputTokens: 1000,
+      lastOutputTokens: 50,
+    };
+    const tomb = buildSessionAgentTombstone(undefined, carry);
+    expect(tomb.contextUsage).toEqual(carry);
+  });
+
+  it("coexists with lastTaskSynth", () => {
+    const tomb = buildSessionAgentTombstone("synth text", {
+      totalInputTokens: 1,
+      totalOutputTokens: 2,
+      lastInputTokens: 3,
+      lastOutputTokens: 4,
+    });
+    expect(tomb.lastTaskSynth).toBe("synth text");
+    expect(tomb.contextUsage?.totalInputTokens).toBe(1);
+  });
+
+  it("treats null carryUsage same as undefined (omit field)", () => {
+    const tomb = buildSessionAgentTombstone(undefined, undefined);
+    expect("contextUsage" in tomb).toBe(false);
+  });
+});
+
