@@ -496,6 +496,11 @@ export async function interpretPinnedTabUrl(
  *      surf protection on the visible step bubble; the LLM resume path
  *      (M1-U5) needs the raw tool_use args to plan the next step. Two
  *      different consumers, two different shapes.
+ *
+ * Issue #59 invariant: this snapshot MUST NOT include `contextUsage`.
+ * The per-step merge (`mergeSessionAgentSnapshot`) is a spread, so any
+ * field present in the snapshot wins; including `contextUsage` here
+ * would clobber the value the usage block (~loop.ts:1491) just wrote.
  */
 export function buildSessionAgentSnapshot(
   history: AgentMessage[],
