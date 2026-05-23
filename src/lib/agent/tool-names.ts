@@ -58,12 +58,20 @@ export const SCREENSHOT_TOOL_NAMES = [
   "capture_fullpage_tab",
 ] as const;
 
+// Web search tool (always present in BUILT_IN_TOOLS).
+//
+// class=read: reads external data; no browser tab mutation.
+export const SEARCH_TOOL_NAMES = [
+  "search_web",
+] as const;
+
 export const KNOWN_BUILT_IN_TOOL_NAMES = [
   ...PHASE_2_TOOL_NAMES,
   ...SKILL_META_TOOL_NAMES_FOR_REGISTRY,
   ...SKILL_MEDIATION_TOOL_NAMES,
   ...TAB_TOOL_NAMES,
   ...SCREENSHOT_TOOL_NAMES,
+  ...SEARCH_TOOL_NAMES,
 ] as const;
 
 export const KNOWN_KEYBOARD_TOOL_NAMES = [
@@ -137,6 +145,8 @@ export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
   // Phase 5 screenshot tools
   capture_visible_tab: "read",
   capture_fullpage_tab: "read",
+  // Web search tool — reads external data, no browser tab mutation
+  search_web: "read",
 };
 
 // Build-time exhaustive check — every known tool name MUST have a class

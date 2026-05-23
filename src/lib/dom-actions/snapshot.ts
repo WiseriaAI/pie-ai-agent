@@ -35,7 +35,9 @@ export function snapshotInteractiveElements(): FrameInjectionResult {
       .replace(/<\/?untrusted_page_quote>/gi, "[filtered]")
       .replace(/<\/?untrusted_page_element>/gi, "[filtered]")
       .replace(/<\/?untrusted_skill_content>/gi, "[filtered]")
-      .replace(/<\/?untrusted_compacted_steps>/gi, "[filtered]");
+      .replace(/<\/?untrusted_compacted_steps>/gi, "[filtered]")
+      // Task 5 (web search): added untrusted_search_result
+      .replace(/<\/?untrusted_search_result>/gi, "[filtered]");
     if (cleaned.length > maxLen) {
       cleaned = cleaned.slice(0, maxLen) + "...";
     }

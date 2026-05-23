@@ -20,6 +20,7 @@ import {
   type StoredCustomProvider, CUSTOM_PREFIX, providerRefToId,
 } from "@/lib/custom-providers";
 import SkillsList from "./SkillsList";
+import SearchProviderSection from "./SearchProviderSection";
 import InstanceForm, { type InstanceFormPayload } from "./InstanceForm";
 import InstancesList from "./InstancesList";
 import NewConfigWizard from "./NewConfigWizard";
@@ -31,7 +32,7 @@ interface Props {
   onRunSkill?: (skillId: string, skillName: string) => void;
 }
 
-type Tab = "configs" | "skills";
+type Tab = "configs" | "skills" | "search";
 
 export default function Settings({ onBack, onRunSkill }: Props) {
   const t = useT();
@@ -353,8 +354,10 @@ export default function Settings({ onBack, onRunSkill }: Props) {
               </label>
             </section>
           </div>
-        ) : (
+        ) : tab === "skills" ? (
           <SkillsList onRunSkill={onRunSkill ?? (() => {})} />
+        ) : (
+          <SearchProviderSection />
         )}
       </div>
     </div>
@@ -399,6 +402,7 @@ function SegmentedTabs({
   const tabs: { id: Tab; label: string }[] = [
     { id: "configs", label: t("settings.tabs.configs") },
     { id: "skills", label: t("settings.tabs.skills") },
+    { id: "search", label: t("settings.tabs.search") },
   ];
   return (
     <div className="flex">
@@ -409,7 +413,11 @@ function SegmentedTabs({
             key={tab.id}
             onClick={() => onChange(tab.id)}
             className={`border border-line px-3 py-1 text-[11px] ${
-              i === 0 ? "rounded-l-md" : "-ml-px rounded-r-md"
+              i === 0
+                ? "rounded-l-md"
+                : i === tabs.length - 1
+                ? "-ml-px rounded-r-md"
+                : "-ml-px"
             } ${
               active
                 ? "bg-field font-medium text-fg-1"
