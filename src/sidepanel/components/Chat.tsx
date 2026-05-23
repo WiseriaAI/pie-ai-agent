@@ -6,7 +6,8 @@ import {
   expandSlashCommand,
   normalizeSkillSlashKey,
 } from "@/lib/skills";
-import { resolveModelVision } from "@/lib/model-router/providers/registry";
+import { resolveModelVision, resolveModelMeta } from "@/lib/model-router/providers/registry";
+import ContextRing from "./ContextRing";
 import type { BuiltinProvider } from "@/lib/model-router";
 import { listInstances, getActiveInstance, getInstance, type DecryptedInstance } from "@/lib/instances";
 import { resizePanel } from "@/lib/images/resize-panel";
@@ -159,6 +160,7 @@ export default function Chat({
     removeQuote,
     clearQuotes,
     port,
+    usage,
   } = session;
   // Derive convenience aliases from pinnedTabs[] for the locked-pin display.
   // Primary pin is the first entry (oldest / chat-start anchor).
@@ -193,6 +195,7 @@ export default function Chat({
   const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
   const [resizing, setResizing] = useState<Set<string>>(new Set());
   const [supportsVision, setSupportsVision] = useState<boolean>(false);
+  const [maxContextTokens, setMaxContextTokens] = useState<number | undefined>(undefined);
   const [attachLocalToast, setAttachLocalToast] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -496,6 +499,7 @@ export default function Chat({
       if (all.length === 0) {
         setHasConfig(false);
         setSupportsVision(false);
+        setMaxContextTokens(undefined);
         return;
       }
       setHasConfig(true);
@@ -510,13 +514,17 @@ export default function Chat({
           // loop's screenshot guard (fail-open) because the disabled button
           // is a visible UX cue, while a silent screenshot-tool block is not.
           setSupportsVision(resolveModelVision(inst.provider as BuiltinProvider, inst.model, inst.fetchedModels) ?? false);
+          const meta = await resolveModelMeta(inst.provider, inst.model);
+          setMaxContextTokens(meta?.maxContextTokens);
           return;
         }
       }
       setSupportsVision(false);
+      setMaxContextTokens(undefined);
     } catch {
       setHasConfig(false);
       setSupportsVision(false);
+      setMaxContextTokens(undefined);
     }
   }
 
@@ -1214,6 +1222,8 @@ After the skill completes, briefly summarize what was created (the user will see
           if (sessionId) await persistSessionInstanceId(sessionId, id);
         }}
         onManageInstances={onOpenSettings}
+        usage={usage}
+        maxContextTokens={maxContextTokens}
       />
     </div>
   );
@@ -1404,6 +1414,8 @@ function Composer({
   currentInstanceId,
   onInstanceChange,
   onManageInstances,
+  usage,
+  maxContextTokens,
 }: {
   input: string;
   streaming: boolean;
@@ -1435,6 +1447,8 @@ function Composer({
   currentInstanceId: string | null;
   onInstanceChange: (id: string) => void;
   onManageInstances: () => void;
+  usage?: import("@/lib/sessions/types").SessionAgentState["contextUsage"];
+  maxContextTokens?: number;
 }) {
   const t = useT();
   return (
@@ -1516,6 +1530,13 @@ function Composer({
               locked={streaming}
               onChange={onInstanceChange}
               onManage={onManageInstances}
+            />
+            <ContextRing
+              lastInputTokens={usage?.lastInputTokens}
+              lastOutputTokens={usage?.lastOutputTokens}
+              totalInputTokens={usage?.totalInputTokens ?? 0}
+              totalOutputTokens={usage?.totalOutputTokens ?? 0}
+              maxContextTokens={maxContextTokens}
             />
             {streaming ? (
               <button
