@@ -207,6 +207,23 @@ export interface SessionAgentState {
    * last chat-start, or when the prior round was a pure-text reply.
    */
   lastTaskSynth?: string;
+  /**
+   * Issue #59 — per-session token usage. SW single-writer (loop.ts done
+   * branch RMW). Tombstone carries over via `buildSessionAgentTombstone`,
+   * so totals survive across tasks. Absent on old sessions / sessions
+   * whose first LLM call hasn't returned yet — panel treats absence as
+   * "don't render ring".
+   */
+  contextUsage?: {
+    /** Cross-task cumulative input tokens across all LLM calls in this session. */
+    totalInputTokens: number;
+    /** Cross-task cumulative output tokens. */
+    totalOutputTokens: number;
+    /** Most recent step's real input usage. Numerator for ring percentage. */
+    lastInputTokens: number;
+    /** Most recent step's real output usage. Shown in popover total row. */
+    lastOutputTokens: number;
+  };
 }
 
 /**
