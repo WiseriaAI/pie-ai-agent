@@ -144,6 +144,14 @@ export const zhCNDict = {
     rec: "录制",
     toolsMenu: "更多工具",
     sendMessage: "发送消息",
+    contextRing: {
+      ariaLabel: "上下文窗口用量",
+      sessionUsage: "本轮会话用量",
+      input: "输入",
+      output: "输出",
+      total: "合计",
+      lastCall: "上次调用 {used} / {max}（{pct}%）",
+    },
   },
   modelDropdown: {
     selectModelPlaceholder: "(选择模型)",

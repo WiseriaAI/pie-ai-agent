@@ -144,6 +144,14 @@ export const enDict = {
     rec: "REC",
     toolsMenu: "More tools",
     sendMessage: "Send message",
+    contextRing: {
+      ariaLabel: "Context window usage",
+      sessionUsage: "Session usage",
+      input: "input",
+      output: "output",
+      total: "total",
+      lastCall: "Last call {used} / {max} ({pct}%)",
+    },
   },
   modelDropdown: {
     selectModelPlaceholder: "(select model)",

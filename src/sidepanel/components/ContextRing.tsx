@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useT } from "@/lib/i18n";
 
 export interface ContextRingProps {
   lastInputTokens: number | undefined;
@@ -8,9 +9,17 @@ export interface ContextRingProps {
   maxContextTokens: number | undefined;
 }
 
-const RING_RADIUS = 9;
+// Ring geometry — 16x16 outer, 2px stroke. Matches neighboring composer icons
+// (Send svg 16x16, REC dot, attachment +). Center is left empty intentionally:
+// the arc IS the visual indicator; exact numbers live in tooltip + popover.
+const RING_SIZE = 16;
+const RING_RADIUS = 6;
+const RING_STROKE = 2;
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
-const TRACK_COLOR = "#26262C";
+const RING_CENTER = RING_SIZE / 2;
+
+// Semantic threshold colors — same hex on both light and dark themes
+// (verified visible on canvas #FAFBFC and #0B0D10).
 const COLOR_LOW = "#6E767D";
 const COLOR_MID = "#E07A4A";
 const COLOR_HIGH = "#D9544A";
@@ -26,12 +35,14 @@ const numberFormat = new Intl.NumberFormat("en");
 export default function ContextRing(props: ContextRingProps) {
   const {
     lastInputTokens,
-    lastOutputTokens,
+    lastOutputTokens: _lastOutputTokens, // reserved for future use; silence unused warning
     totalInputTokens,
     totalOutputTokens,
     maxContextTokens,
   } = props;
+  void _lastOutputTokens;
 
+  const t = useT();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -41,17 +52,12 @@ export default function ContextRing(props: ContextRingProps) {
     maxContextTokens != null &&
     maxContextTokens > 0;
 
-  const pct = useMemo(() => {
-    if (!shouldRender) return 0;
-    return Math.min(
-      100,
-      Math.round((lastInputTokens! / maxContextTokens!) * 100),
-    );
-  }, [shouldRender, lastInputTokens, maxContextTokens]);
+  // Compute pct unconditionally so hook order is stable across renders.
+  const pct = shouldRender
+    ? Math.min(100, Math.round((lastInputTokens! / maxContextTokens!) * 100))
+    : 0;
 
-  const stroke = colorForPercent(pct);
-  const dashLen = (RING_CIRCUMFERENCE * pct) / 100;
-
+  // ESC closes popover.
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -61,25 +67,26 @@ export default function ContextRing(props: ContextRingProps) {
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
-  // Click-outside to close
+  // Click-outside closes popover. Deferred listener registration so the
+  // open-click doesn't immediately close (same pattern as PinnedTabDropdown).
   useEffect(() => {
     if (!open) return;
-    const onDoc = (e: MouseEvent) => {
-      if (
-        containerRef.current &&
-        !containerRef.current.contains(e.target as Node)
-      ) {
-        setOpen(false);
-      }
-    };
-    // Defer registration so the click that opened the popover doesn't
-    // immediately close it (same pattern as PinnedTabDropdown).
-    const t = setTimeout(() => {
+    let cleanup: (() => void) | null = null;
+    const timer = setTimeout(() => {
+      const onDoc = (e: MouseEvent) => {
+        if (
+          containerRef.current &&
+          !containerRef.current.contains(e.target as Node)
+        ) {
+          setOpen(false);
+        }
+      };
       document.addEventListener("mousedown", onDoc);
+      cleanup = () => document.removeEventListener("mousedown", onDoc);
     }, 0);
     return () => {
-      clearTimeout(t);
-      document.removeEventListener("mousedown", onDoc);
+      clearTimeout(timer);
+      if (cleanup) cleanup();
     };
   }, [open]);
 
@@ -87,22 +94,27 @@ export default function ContextRing(props: ContextRingProps) {
 
   if (!shouldRender) return null;
 
+  const stroke = colorForPercent(pct);
+  const dashLen = (RING_CIRCUMFERENCE * pct) / 100;
   const totalSum = totalInputTokens + totalOutputTokens;
-  const isHigh = pct >= 80;
-  const tooltipText =
-    `Last call ${numberFormat.format(lastInputTokens!)} / ` +
-    `${numberFormat.format(maxContextTokens!)} (${pct}%)`;
+  const tooltipText = t("chat.contextRing.lastCall", {
+    used: numberFormat.format(lastInputTokens!),
+    max: numberFormat.format(maxContextTokens!),
+    pct,
+  });
 
   return (
     <div
       ref={containerRef}
       data-testid="context-ring"
+      role="button"
+      aria-label={t("chat.contextRing.ariaLabel")}
       onClick={onClickRing}
       title={tooltipText}
       style={{
         position: "relative",
-        width: 22,
-        height: 22,
+        width: RING_SIZE,
+        height: RING_SIZE,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -111,57 +123,44 @@ export default function ContextRing(props: ContextRingProps) {
       }}
     >
       <svg
-        width={22}
-        height={22}
-        viewBox="0 0 22 22"
-        style={{ position: "absolute", top: 0, left: 0 }}
+        width={RING_SIZE}
+        height={RING_SIZE}
+        viewBox={`0 0 ${RING_SIZE} ${RING_SIZE}`}
+        style={{ display: "block" }}
       >
         <circle
-          cx={11}
-          cy={11}
+          cx={RING_CENTER}
+          cy={RING_CENTER}
           r={RING_RADIUS}
           fill="none"
-          stroke={TRACK_COLOR}
-          strokeWidth={2}
+          stroke="var(--c-line)"
+          strokeWidth={RING_STROKE}
         />
         <circle
-          cx={11}
-          cy={11}
+          cx={RING_CENTER}
+          cy={RING_CENTER}
           r={RING_RADIUS}
           fill="none"
           stroke={stroke}
-          strokeWidth={2}
+          strokeWidth={RING_STROKE}
           strokeLinecap="round"
           strokeDasharray={`${dashLen} ${RING_CIRCUMFERENCE}`}
-          transform="rotate(-90 11 11)"
+          transform={`rotate(-90 ${RING_CENTER} ${RING_CENTER})`}
         />
       </svg>
-      <span
-        style={{
-          fontFamily: "'JetBrains Mono', monospace",
-          fontWeight: isHigh ? 600 : 500,
-          fontSize: 9,
-          color: isHigh ? COLOR_HIGH : pct >= 60 ? "#E6E6E8" : "#B0B0B6",
-          lineHeight: 1,
-          position: "relative",
-          zIndex: 1,
-        }}
-      >
-        {pct}
-      </span>
       {open && (
         <div
           data-testid="context-ring-popover"
           onClick={(e) => e.stopPropagation()}
           style={{
             position: "absolute",
-            bottom: 30,
+            bottom: RING_SIZE + 8,
             right: -8,
             minWidth: 200,
-            background: "#1A1A1F",
-            border: "1px solid #2E2E34",
+            background: "var(--c-canvas)",
+            border: "1px solid var(--c-line)",
             borderRadius: 8,
-            boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
+            boxShadow: "0 8px 24px rgba(0, 0, 0, 0.18)",
             padding: 0,
             zIndex: 50,
             cursor: "default",
@@ -170,26 +169,32 @@ export default function ContextRing(props: ContextRingProps) {
           <div
             style={{
               padding: "10px 14px 8px",
-              borderBottom: "1px solid #26262C",
+              borderBottom: "1px solid var(--c-line)",
               fontFamily: "'JetBrains Mono', monospace",
               fontWeight: 500,
               fontSize: 10,
               letterSpacing: "0.14em",
-              color: "#5A5A60",
+              color: "var(--c-fg-3)",
               textTransform: "uppercase",
             }}
           >
-            session usage
+            {t("chat.contextRing.sessionUsage")}
           </div>
-          <PopoverRow label="input" value={totalInputTokens} />
-          <PopoverRow label="output" value={totalOutputTokens} />
+          <PopoverRow
+            label={t("chat.contextRing.input")}
+            value={totalInputTokens}
+          />
+          <PopoverRow
+            label={t("chat.contextRing.output")}
+            value={totalOutputTokens}
+          />
           <div
             style={{
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
               padding: "8px 14px 10px",
-              borderTop: "1px solid #26262C",
+              borderTop: "1px solid var(--c-line)",
             }}
           >
             <span
@@ -197,18 +202,18 @@ export default function ContextRing(props: ContextRingProps) {
                 fontFamily: "'JetBrains Mono', monospace",
                 fontSize: 10,
                 letterSpacing: "0.1em",
-                color: "#6E767D",
+                color: "var(--c-fg-3)",
                 textTransform: "uppercase",
               }}
             >
-              total
+              {t("chat.contextRing.total")}
             </span>
             <span
               style={{
                 fontFamily: "Inter, sans-serif",
                 fontWeight: 600,
                 fontSize: 13,
-                color: "#E6E6E8",
+                color: "var(--c-fg-1)",
                 fontVariantNumeric: "tabular-nums",
               }}
             >
@@ -235,7 +240,7 @@ function PopoverRow({ label, value }: { label: string; value: number }) {
         style={{
           fontFamily: "Inter, sans-serif",
           fontSize: 12,
-          color: "#8A8A92",
+          color: "var(--c-fg-2)",
         }}
       >
         {label}
@@ -245,7 +250,7 @@ function PopoverRow({ label, value }: { label: string; value: number }) {
           fontFamily: "Inter, sans-serif",
           fontWeight: 500,
           fontSize: 12,
-          color: "#E6E6E8",
+          color: "var(--c-fg-1)",
           fontVariantNumeric: "tabular-nums",
         }}
       >
