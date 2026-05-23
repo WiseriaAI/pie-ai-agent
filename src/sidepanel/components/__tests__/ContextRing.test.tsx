@@ -146,4 +146,25 @@ describe("ContextRing — popover interaction", () => {
     fireEvent.click(screen.getByTestId("context-ring"));
     expect(screen.queryByTestId("context-ring-popover")).toBeNull();
   });
+
+  it("click outside closes the popover", async () => {
+    const { container } = render(
+      <div>
+        <button data-testid="outside-button">outside</button>
+        <ContextRing
+          lastInputTokens={124_000}
+          lastOutputTokens={1400}
+          totalInputTokens={8_243}
+          totalOutputTokens={1_402}
+          maxContextTokens={200_000}
+        />
+      </div>,
+    );
+    fireEvent.click(screen.getByTestId("context-ring"));
+    expect(screen.queryByTestId("context-ring-popover")).not.toBeNull();
+    // Wait a tick so the deferred listener registration happens.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    fireEvent.mouseDown(screen.getByTestId("outside-button"));
+    expect(screen.queryByTestId("context-ring-popover")).toBeNull();
+  });
 });

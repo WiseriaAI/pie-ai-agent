@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 export interface ContextRingProps {
   lastInputTokens: number | undefined;
@@ -33,6 +33,7 @@ export default function ContextRing(props: ContextRingProps) {
   } = props;
 
   const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const shouldRender =
     lastInputTokens != null &&
@@ -60,6 +61,28 @@ export default function ContextRing(props: ContextRingProps) {
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
+  // Click-outside to close
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(e.target as Node)
+      ) {
+        setOpen(false);
+      }
+    };
+    // Defer registration so the click that opened the popover doesn't
+    // immediately close it (same pattern as PinnedTabDropdown).
+    const t = setTimeout(() => {
+      document.addEventListener("mousedown", onDoc);
+    }, 0);
+    return () => {
+      clearTimeout(t);
+      document.removeEventListener("mousedown", onDoc);
+    };
+  }, [open]);
+
   const onClickRing = useCallback(() => setOpen((v) => !v), []);
 
   if (!shouldRender) return null;
@@ -72,6 +95,7 @@ export default function ContextRing(props: ContextRingProps) {
 
   return (
     <div
+      ref={containerRef}
       data-testid="context-ring"
       onClick={onClickRing}
       title={tooltipText}
