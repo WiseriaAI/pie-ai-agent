@@ -308,3 +308,85 @@ describe("makeDisconnectHandler", () => {
     expect(deps.slotsRef.current.get("s2")?.streaming).toBe(true);
   });
 });
+
+describe("agent-usage", () => {
+  it("writes payload fields onto slot.usage for the matching sessionId", () => {
+    const deps = makeDeps();
+    const { handleMessage } = createPortHandlers(deps);
+    handleMessage({
+      type: "agent-usage",
+      sessionId: "s1",
+      lastInputTokens: 1200,
+      lastOutputTokens: 80,
+      totalInputTokens: 5200,
+      totalOutputTokens: 320,
+    } as PortMessageToPanel);
+    expect(deps.slotsRef.current.get("s1")?.usage).toEqual({
+      lastInputTokens: 1200,
+      lastOutputTokens: 80,
+      totalInputTokens: 5200,
+      totalOutputTokens: 320,
+    });
+  });
+
+  it("does not call persistMessages (no storage write from panel side)", () => {
+    const deps = makeDeps();
+    const { handleMessage } = createPortHandlers(deps);
+    handleMessage({
+      type: "agent-usage",
+      sessionId: "s1",
+      lastInputTokens: 100,
+      lastOutputTokens: 5,
+      totalInputTokens: 100,
+      totalOutputTokens: 5,
+    } as PortMessageToPanel);
+    expect(deps.persistMessages).not.toHaveBeenCalled();
+  });
+
+  it("does not touch other sessions' slots", () => {
+    const deps = makeDeps();
+    deps.slotsRef.current.set("s2", {
+      ...EMPTY_SLOT,
+      usage: {
+        totalInputTokens: 999,
+        totalOutputTokens: 99,
+        lastInputTokens: 99,
+        lastOutputTokens: 9,
+      },
+    });
+    const { handleMessage } = createPortHandlers(deps);
+    handleMessage({
+      type: "agent-usage",
+      sessionId: "s1",
+      lastInputTokens: 1,
+      lastOutputTokens: 1,
+      totalInputTokens: 1,
+      totalOutputTokens: 1,
+    } as PortMessageToPanel);
+    expect(deps.slotsRef.current.get("s2")?.usage?.totalInputTokens).toBe(999);
+  });
+
+  it("replaces (does not merge) the slot.usage object — SW pre-summed totals are authoritative", () => {
+    const deps = makeDeps();
+    deps.slotsRef.current.set("s1", {
+      ...EMPTY_SLOT,
+      usage: {
+        totalInputTokens: 9999,
+        totalOutputTokens: 999,
+        lastInputTokens: 500,
+        lastOutputTokens: 30,
+      },
+    });
+    const { handleMessage } = createPortHandlers(deps);
+    handleMessage({
+      type: "agent-usage",
+      sessionId: "s1",
+      lastInputTokens: 200,
+      lastOutputTokens: 10,
+      totalInputTokens: 10199,
+      totalOutputTokens: 1009,
+    } as PortMessageToPanel);
+    expect(deps.slotsRef.current.get("s1")?.usage?.totalInputTokens).toBe(10199);
+    expect(deps.slotsRef.current.get("s1")?.usage?.lastInputTokens).toBe(200);
+  });
+});
