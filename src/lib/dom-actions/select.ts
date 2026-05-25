@@ -4,11 +4,11 @@ import type { ActionResult } from "./types";
  * Self-contained function injected via chrome.scripting.executeScript.
  * Selects an option in a <select> element by value.
  *
- * @param index - The index assigned by snapshotInteractiveElements
+ * @param index - The index stamped by read_page (pageSnapshotInjected)
  * @param value - The option value to select
  */
 export function selectByIndex(index: number, value: string): ActionResult {
-  const el = document.querySelector(`[data-chrome-ai-agent-idx="${index}"]`);
+  const el = document.querySelector(`[data-pie-idx="${index}"]`);
 
   if (!el) {
     return {
