@@ -212,6 +212,19 @@ export function pageSnapshotInjected(): PageSnapshotResult {
   // Stamp on LIVE DOM (so click/type handlers can find elements by idx) AND
   // mirror to corresponding clone elements (so serialized HTML carries the attr).
   // Clear prior stamps first.
+  //
+  // ⚠ Pause MutationObserver around live-DOM writes. Without this, the stamp
+  // mutations get observed → debounced bump → window.__pieFrameVersion__++ →
+  // SW registry gets bumped to N+1 → next write tool fails frameVersionMismatch
+  // because the LLM saw version N from this read. Per DOM spec
+  // MutationObserver.disconnect() clears the pending record queue, so stamp
+  // mutations queued during the synchronous task are dropped, not delivered
+  // on the next microtask. Real page mutations queued BEFORE we entered this
+  // function (already processed into a debounce timer) still fire — that's
+  // correct, they reflect actual page change.
+  const liveObserver = (window as Window & { __pieFrameObserver__?: MutationObserver }).__pieFrameObserver__;
+  if (liveObserver) liveObserver.disconnect();
+
   for (const el of liveBodyElements) {
     if (el.hasAttribute("data-pie-idx")) el.removeAttribute("data-pie-idx");
   }
@@ -229,6 +242,15 @@ export function pageSnapshotInjected(): PageSnapshotResult {
       const cloneEl = liveToCloneMap.get(el);
       if (cloneEl) cloneEl.setAttribute("data-pie-idx", idxStr);
     }
+  }
+
+  if (liveObserver) {
+    liveObserver.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      characterData: true,
+    });
   }
 
   // ── Step D: strip clone (4-pass, mirrors html-strip.ts stripToWhitelist) ──
