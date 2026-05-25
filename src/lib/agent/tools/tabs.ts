@@ -558,8 +558,9 @@ function sanitizeGroupName(raw: string | undefined): string {
 /** Filter tabIds whose tab.url is a restricted scheme — chrome:// tabs
  *  can't be grouped (chrome.tabs.group rejects). The K-8 verify step
  *  has already confirmed origin equality with what the user saw, so the
- *  origin is real; we only need to reject the special schemes here. */
-function isRestrictedSchemeForGrouping(url: string): boolean {
+ *  origin is real; we only need to reject the special schemes here.
+ *  Exported so read_page can reuse the same scheme-restriction logic. */
+export function isRestrictedSchemeForGrouping(url: string): boolean {
   return RESTRICTED_URL_PREFIXES.some((p) => url.startsWith(p));
 }
 

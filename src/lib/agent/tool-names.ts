@@ -65,6 +65,13 @@ export const SEARCH_TOOL_NAMES = [
   "search_web",
 ] as const;
 
+// Page snapshot tool (always present in BUILT_IN_TOOLS).
+//
+// class=read: reads page DOM structure; no tab/page state mutation.
+export const PAGE_SNAPSHOT_TOOL_NAMES = [
+  "read_page",
+] as const;
+
 export const KNOWN_BUILT_IN_TOOL_NAMES = [
   ...PHASE_2_TOOL_NAMES,
   ...SKILL_META_TOOL_NAMES_FOR_REGISTRY,
@@ -72,6 +79,7 @@ export const KNOWN_BUILT_IN_TOOL_NAMES = [
   ...TAB_TOOL_NAMES,
   ...SCREENSHOT_TOOL_NAMES,
   ...SEARCH_TOOL_NAMES,
+  ...PAGE_SNAPSHOT_TOOL_NAMES,
 ] as const;
 
 export const KNOWN_KEYBOARD_TOOL_NAMES = [
@@ -147,6 +155,8 @@ export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
   capture_fullpage_tab: "read",
   // Web search tool — reads external data, no browser tab mutation
   search_web: "read",
+  // Page snapshot tool — reads page DOM structure, no tab/page state mutation
+  read_page: "read",
 };
 
 // Build-time exhaustive check — every known tool name MUST have a class

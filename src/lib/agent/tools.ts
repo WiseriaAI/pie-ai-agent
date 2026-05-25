@@ -10,6 +10,7 @@ import { SKILL_META_TOOLS } from "./tools/skill-meta";
 import { SKILL_ACCESS_TOOLS } from "./tools/skill-access";
 import { TAB_TOOLS } from "./tools/tabs";
 import { searchWebTool } from "./tools/search";
+import { readPageTool } from "./tools/read-page";
 import { withActionSettle } from "./wait-for-settle";
 
 export {
@@ -304,6 +305,7 @@ export const BUILT_IN_TOOLS: Tool[] = [
     },
   },
   searchWebTool,
+  readPageTool,
 ];
 
 // iframe spec R-iframe-1 — build-time assertion: writes target a specific
