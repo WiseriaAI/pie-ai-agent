@@ -12,6 +12,7 @@ import {
   readFocusFromStorage,
   mergeSessionAgentSnapshot,
   mergeContextUsage,
+  buildFirstTurnReadPageHint,
 } from "./loop";
 import { TAB_TOOLS } from "./tools/tabs";
 import { BUILT_IN_TOOLS } from "./tools";
@@ -1589,6 +1590,41 @@ describe("issue #59 — mergeSessionAgentSnapshot preserves contextUsage", () =>
     const tombstoneWithCarry = buildSessionAgentTombstone(undefined, existing.contextUsage);
     const merged = mergeSessionAgentSnapshot(existing, tombstoneWithCarry);
     expect(merged.contextUsage).toEqual(existing.contextUsage);
+  });
+});
+
+// ── Task 3.3 — buildFirstTurnReadPageHint ─────────────────────────────────────
+//
+// Pure-helper tests for the first-iteration read_page nudge. The full
+// runAgentLoop injection is too Chrome-coupled to test end-to-end; the
+// pure helper carries the correctness obligation.
+//
+// Invariants:
+//   1. Returns a non-empty string containing the tabId and "read_page".
+//   2. Different tabIds produce different hint strings (not a fixed constant).
+//   3. The text is NOT wrapped in any <untrusted_*> tag (it's system-generated).
+
+describe("Task 3.3 — buildFirstTurnReadPageHint", () => {
+  it("returns a string mentioning read_page and the pinned tabId", () => {
+    const hint = buildFirstTurnReadPageHint(42);
+    expect(hint).toContain("read_page");
+    expect(hint).toContain("42");
+  });
+
+  it("embeds the tabId into the call site so the LLM sees the concrete argument", () => {
+    const hint7 = buildFirstTurnReadPageHint(7);
+    const hint99 = buildFirstTurnReadPageHint(99);
+    // Each hint must reference its specific tabId
+    expect(hint7).toContain("7");
+    expect(hint99).toContain("99");
+    // And the two hints must differ (not a fixed constant)
+    expect(hint7).not.toBe(hint99);
+  });
+
+  it("does NOT wrap the hint in any untrusted_* XML tag (it is system-generated, not page content)", () => {
+    const hint = buildFirstTurnReadPageHint(1);
+    expect(hint).not.toContain("<untrusted_");
+    expect(hint).not.toContain("</untrusted_");
   });
 });
 

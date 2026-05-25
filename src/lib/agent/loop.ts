@@ -639,6 +639,25 @@ export function resolveFocusedPin(
 }
 
 /**
+ * Task 3.3 — first-turn read_page nudge.
+ *
+ * Returns a short reminder string to append to the iteration-0 observation
+ * when a pinned tab is present. The system prompt's READ_PAGE_GUIDANCE
+ * already contains this instruction, but a per-turn nudge placed right
+ * before the LLM's first decision ensures it isn't lost when the context
+ * window is nearly full and the system prompt is implicitly compressed.
+ *
+ * Exported as a pure helper so unit tests can verify the text without
+ * exercising the full Chrome-coupled runAgentLoop.
+ *
+ * Callers MUST only emit this on the first iteration of a fresh task (not
+ * on resume and not on iterations > startStepIndex).
+ */
+export function buildFirstTurnReadPageHint(pinnedTabId: number): string {
+  return `You haven't called read_page yet. If the task involves the active page, call read_page({tabId: ${pinnedTabId}}) first to get element indices and frame versions.`;
+}
+
+/**
  * v1.5 Task 6+7 — per-iteration focus refresh helper.
  *
  * Re-reads storage so that:
@@ -1303,6 +1322,14 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // reflections tail — fine, the latest turn always re-carries them).
       if (reflectionMemory.length > 0) {
         observationText += `\n\n<reflections>\n${reflectionMemory.join("\n\n")}\n</reflections>`;
+      }
+      // Task 3.3 — first-turn read_page nudge. Appended to the iteration-0
+      // observation only when a pinned tab is present and this is NOT a
+      // resumed loop (resumed loops already have context from prior steps).
+      // The hint reinforces READ_PAGE_GUIDANCE at the natural decision point
+      // so the LLM doesn't miss it when the context window is filling up.
+      if (stepIndex === startStepIndex && !isResumedFirstIteration && currentPinnedTabs.length > 0) {
+        observationText += `\n\n${buildFirstTurnReadPageHint(pinnedTabId)}`;
       }
       const observationBlock: ContentBlock = { type: "text", text: observationText };
 
