@@ -50,17 +50,19 @@ describe("buildAgentSystemPrompt — M3-U2 pinned-context block (single-pin back
     );
   });
 
-  it("does not over-claim — pinned context says interactive elements only, not body text", () => {
+  it("Phase 3: pinned context describes pull-mode (URL+title only, read_page for elements)", () => {
     const prompt = buildAgentSystemPrompt(
       "task",
       false,
       true,
       [{ tabId: 1, origin: "https://example.com" }],
     );
-    expect(prompt).toContain(
-      "only interactive elements on the pinned tab",
-    );
-    expect(prompt).toContain("NOT the page body text");
+    expect(prompt).toContain("only the current URL and page title");
+    expect(prompt).toContain("read_page({tabId: 1})");
+    // Stale push-model phrasings must be gone.
+    expect(prompt).not.toContain("only interactive elements on the pinned tab");
+    expect(prompt).not.toContain("NOT the page body text");
+    expect(prompt).not.toContain("per-iteration <untrusted_page_content>");
   });
 
   it("tab guidance text no longer says get_tab_content is for OTHER tabs only", () => {
@@ -88,6 +90,21 @@ describe("buildAgentSystemPrompt — v1.5 multi-pin block", () => {
     expect(prompt).toContain("tab 30 (https://c.example.com)");
     expect(prompt).toContain("focus_tab({tabId:");
     expect(prompt).toContain("do NOT batch click/type/scroll against the new tab");
+  });
+
+  it("Phase 3: multi-pin block uses pull-mode language (no per-iteration push)", () => {
+    const prompt = buildAgentSystemPrompt(
+      "task",
+      false,
+      true,
+      [
+        { tabId: 10, origin: "https://a.example.com" },
+        { tabId: 20, origin: "https://b.example.com" },
+      ],
+    );
+    expect(prompt).toContain("read_page({tabId: N})");
+    expect(prompt).not.toContain("shows interactive elements on the currently focused tab");
+    expect(prompt).not.toContain("per-iteration <untrusted_page_content>");
   });
 
   it("multi-pin: defaults to pinnedTabs[0] when currentFocusTabId is omitted", () => {

@@ -97,10 +97,10 @@ Credential safety:
  * tab id(s) and origin(s) this session is anchored to, plus shortcut
  * guidance.
  *
- *   - Per-iteration <untrusted_page_content> only carries interactive
- *     elements (buttons, inputs, links), NOT the page body text. Without
- *     this block the LLM would call list_tabs to find its own tab id,
-   *     wasting a round-trip AND risking phantom -1 tab ids
+ *   - Per-iteration observations carry only URL + page title (Phase 3
+ *     pull mode); the LLM calls read_page / get_tab_content to inspect
+ *     contents. Without this block the LLM would call list_tabs to find
+ *     its own tab id, wasting a round-trip AND risking phantom -1 tab ids
  *     (Chrome surfaces DevTools / session-restore / detached tabs with
  *     TAB_ID_NONE = -1; the filter in tabs.ts blocks them but the LLM
  *     shouldn't need list_tabs at all).
@@ -116,8 +116,8 @@ Credential safety:
  *   NOTE: the "← current focus" marker reflects the focus at system-prompt-
  *   build time (beginning of the agentic task). The agent may call focus_tab
  *   mid-task; the marker does NOT update per-iteration (the system prompt is
- *   static per task). The current snapshot target is always the tab whose
- *   <untrusted_page_content> appears in the most recent user-role message.
+ *   static per task). The current focus target is reflected in the URL/title
+ *   header of the most recent observation message.
  */
 function buildPinnedContextBlock(
   pinnedTabs: ReadonlyArray<{ tabId: number; origin: string }>,
@@ -131,7 +131,7 @@ function buildPinnedContextBlock(
 - Pinned tab id: ${pin.tabId}
 - Pinned origin: ${pin.origin}
 
-The per-iteration <untrusted_page_content> below shows only interactive elements on the pinned tab (buttons, inputs, links), NOT the page body text. When the user asks you to summarize, read, extract from, or answer questions about the current page, call get_tab_content({tabId: ${pin.tabId}}) DIRECTLY — do NOT call list_tabs first to look up the id (it's right above). list_tabs is for discovering OTHER tabs the user might want to act on.`;
+Each iteration's observation gives you only the current URL and page title of the pinned tab. To see interactive elements or inspect page content, call \`read_page({tabId: ${pin.tabId}})\`. When the user asks you to summarize, read, extract from, or answer questions about the current page, call get_tab_content({tabId: ${pin.tabId}}) DIRECTLY — do NOT call list_tabs first to look up the id (it's right above). list_tabs is for discovering OTHER tabs the user might want to act on.`;
   }
 
   // Multi-pin: list all tabs, marking the current focus.
@@ -146,9 +146,9 @@ The per-iteration <untrusted_page_content> below shows only interactive elements
   return `\n\nYou are anchored to ${pinnedTabs.length} browser tabs for this conversation:
 ${tabLines}
 
-The per-iteration <untrusted_page_content> shows interactive elements on the currently focused tab. When you need content from a tab, call get_tab_content({tabId: N}) directly — do NOT call list_tabs first (ids are above).
+Each iteration's observation carries only the URL and page title for the currently focused tab. To inspect or operate on a tab's interactive elements, call \`read_page({tabId: N})\` with the desired tabId. When you need readable page content, call get_tab_content({tabId: N}) directly — do NOT call list_tabs first (ids are above).
 
-To switch which tab you operate on, call focus_tab({tabId: N}) where N is one of the pinned tab ids above. The new tab's snapshot will be available on the NEXT iteration — do NOT batch click/type/scroll against the new tab in the same response as focus_tab.`;
+To switch which tab you operate on, call focus_tab({tabId: N}) where N is one of the pinned tab ids above. The new tab becomes the focus on the NEXT iteration — do NOT batch click/type/scroll against the new tab in the same response as focus_tab; instead call read_page on it next turn before writing.`;
 }
 
 /**
