@@ -1,13 +1,5 @@
 // Types
 export type {
-  ElementRegion,
-  ElementInfo,
-  PageSnapshot,
-  FrameSnapshot,
-  ReachableFrameSnapshot,
-  UnreachableFrameSnapshot,
-  PageSemantic,
-  FrameInjectionResult,
   ActionResult,
 } from "./types";
 
