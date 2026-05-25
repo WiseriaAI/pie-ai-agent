@@ -86,6 +86,12 @@ describe("stripToWhitelist", () => {
     expect(out).not.toContain("untrusted_page_content");
   });
 
+  it("保留 <option> 标签（select 值的语义载体）", () => {
+    const out = strip(`<select><option value="a">A</option><option value="b">B</option></select>`);
+    expect(out).toContain('<option value="a">A</option>');
+    expect(out).toContain('<option value="b">B</option>');
+  });
+
   it("控制字符过滤", () => {
     // U+200B zero-width space, U+200C zero-width non-joiner
     const html = "<p>a​b‌c</p>";

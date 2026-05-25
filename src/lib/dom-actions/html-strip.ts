@@ -7,7 +7,7 @@ const ATTR_WHITELIST = new Set([
 ]);
 
 const TAG_WHITELIST = new Set([
-  "a", "button", "input", "select", "textarea", "label", "form",
+  "a", "button", "input", "select", "option", "textarea", "label", "form",
   "h1", "h2", "h3", "h4", "h5", "h6", "p", "ul", "ol", "li", "dl", "dt", "dd",
   "table", "thead", "tbody", "tr", "td", "th",
   "nav", "main", "header", "footer", "aside", "section", "article",

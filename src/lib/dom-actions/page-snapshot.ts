@@ -154,24 +154,17 @@ export function pageSnapshotInjected(): PageSnapshotResult {
     for (let i = 0; i < liveForShadow.length && i < cloneForShadow.length; i++) {
       const livEl = liveForShadow[i];
       if (livEl.shadowRoot && livEl.shadowRoot.mode === "open") {
-        // Serialize shadow root content and inject into clone host.
-        // Use a temporary container to clone the shadow DOM tree.
-        const tmpHost = document.createElement("div");
-        const shadowClone = livEl.shadowRoot.cloneNode(true) as ShadowRoot;
-        // ShadowRoot.cloneNode may not work in all environments (spec says not to);
-        // fall back to innerHTML serialization via a temp fragment.
+        // Overwrites clone host's light-DOM children; shadow content takes
+        // precedence since that's what the user actually sees (slotted light
+        // children render inside the shadow tree).
         try {
-          // Try cloneNode first (works in some environments).
-          if (shadowClone && shadowClone.childNodes.length > 0) {
-            while (shadowClone.firstChild) tmpHost.appendChild(shadowClone.firstChild);
-          } else {
-            tmpHost.innerHTML = livEl.shadowRoot.innerHTML;
-          }
+          // ShadowRoot.innerHTML serialization is the portable approach —
+          // ShadowRoot.cloneNode() is required to throw NotSupportedError per
+          // spec (Chrome currently returns empty fragment but may tighten).
+          cloneForShadow[i].innerHTML = livEl.shadowRoot.innerHTML;
         } catch {
-          tmpHost.innerHTML = livEl.shadowRoot.innerHTML;
+          // shadow content not serializable — leave clone host empty
         }
-        // Replace clone host's children with shadow content.
-        cloneForShadow[i].innerHTML = tmpHost.innerHTML;
       }
     }
   }
