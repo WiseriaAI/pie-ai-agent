@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach } from "vitest";
 import {
   recordFrameVersion,
   getFrameVersion,
-  markObserverDead,
   clearFrame,
   clearTab,
   resetRegistry,
@@ -14,7 +13,7 @@ describe("page-version-registry", () => {
 
   it("记录与读取 version", () => {
     recordFrameVersion(1, 0, 42);
-    expect(getFrameVersion(1, 0)).toEqual({ version: 42, observerAlive: true });
+    expect(getFrameVersion(1, 0)).toEqual({ version: 42 });
   });
 
   it("读取未记录的 frame 返回 undefined", () => {
@@ -35,28 +34,20 @@ describe("page-version-registry", () => {
     expect(getFrameVersion(1, 3)).toBeUndefined();
   });
 
-  it("markObserverDead 设 observerAlive=false 保留 version", () => {
+  it("recordFrameVersion 覆盖时更新 version", () => {
     recordFrameVersion(1, 0, 42);
-    markObserverDead(1, 0);
-    expect(getFrameVersion(1, 0)).toEqual({ version: 42, observerAlive: false });
-  });
-
-  it("recordFrameVersion 覆盖时重置 observerAlive=true", () => {
-    recordFrameVersion(1, 0, 42);
-    markObserverDead(1, 0);
     recordFrameVersion(1, 0, 43);
-    expect(getFrameVersion(1, 0)).toEqual({ version: 43, observerAlive: true });
+    expect(getFrameVersion(1, 0)).toEqual({ version: 43 });
   });
 
   it("setVersionFromBump 创建 entry if not present", () => {
     setVersionFromBump(2, 5, 30);
-    expect(getFrameVersion(2, 5)).toEqual({ version: 30, observerAlive: true });
+    expect(getFrameVersion(2, 5)).toEqual({ version: 30 });
   });
 
-  it("setVersionFromBump 更新已有 entry 且保 observerAlive=true", () => {
+  it("setVersionFromBump 更新已有 entry", () => {
     recordFrameVersion(2, 5, 30);
-    markObserverDead(2, 5);
     setVersionFromBump(2, 5, 31);
-    expect(getFrameVersion(2, 5)).toEqual({ version: 31, observerAlive: true });
+    expect(getFrameVersion(2, 5)).toEqual({ version: 31 });
   });
 });

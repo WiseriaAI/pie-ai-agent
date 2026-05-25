@@ -62,7 +62,7 @@ describe("read_page tool", () => {
       },
     });
     await readPageTool.handler({ tabId: 7 }, {} as any);
-    expect(getFrameVersion(7, 0)).toEqual({ version: 99, observerAlive: true });
+    expect(getFrameVersion(7, 0)).toEqual({ version: 99 });
   });
 
   it("cross-origin frame 加 cross_origin=true 标记", async () => {

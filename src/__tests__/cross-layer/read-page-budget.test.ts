@@ -66,8 +66,8 @@ describe("read_page budget enforcement", () => {
     );
 
     // Both versions should be registered even though frame 1 wasn't fully read
-    expect(getFrameVersion(1, 0)).toEqual({ version: 1, observerAlive: true });
-    expect(getFrameVersion(1, 1)).toEqual({ version: 99, observerAlive: true });
+    expect(getFrameVersion(1, 0)).toEqual({ version: 1 });
+    expect(getFrameVersion(1, 1)).toEqual({ version: 99 });
 
     // Frame 0 should have HTML content (truncated)
     expect(r.observation).toMatch(/<untrusted_page_content frame_id="0" frame_version="1" truncated="true">/);

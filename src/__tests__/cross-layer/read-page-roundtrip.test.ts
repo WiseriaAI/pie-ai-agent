@@ -52,8 +52,8 @@ describe("read_page cross-layer roundtrip", () => {
     expect(r.observation).toContain("main: 12 visible, estimated 50 total");
     expect(r.observation).toMatch(/<untrusted_page_content frame_id="0" frame_version="42">/);
     expect(r.observation).toMatch(/<untrusted_page_content frame_id="3" frame_version="7" cross_origin="true">/);
-    expect(getFrameVersion(11, 0)).toEqual({ version: 42, observerAlive: true });
-    expect(getFrameVersion(11, 3)).toEqual({ version: 7, observerAlive: true });
+    expect(getFrameVersion(11, 0)).toEqual({ version: 42 });
+    expect(getFrameVersion(11, 3)).toEqual({ version: 7 });
   });
 
   it("wrapper-escape 防护：injected content 中的 </untrusted_page_content> 被中和", async () => {

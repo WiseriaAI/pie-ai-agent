@@ -3,7 +3,6 @@ import { BUILT_IN_TOOLS } from "../../lib/agent/tools";
 import {
   recordFrameVersion,
   resetRegistry,
-  markObserverDead,
 } from "../../lib/agent/tools/page-version-registry";
 
 const clickTool = BUILT_IN_TOOLS.find((t) => t.name === "click")!;
@@ -33,18 +32,6 @@ describe("write-tool stale detection", () => {
     );
     expect(r.success).toBe(false);
     expect(r.error).toMatch(/frameGone/);
-  });
-
-  it("observerAlive=false 返回 frameStale", async () => {
-    recordFrameVersion(7, 0, 50);
-    markObserverDead(7, 0);
-    const ctx = { tabId: 7 } as any;
-    const r = await clickTool.handler(
-      { frameId: 0, elementIndex: 0, expectedFrameVersion: 50 },
-      ctx,
-    );
-    expect(r.success).toBe(false);
-    expect(r.error).toMatch(/frameStale/);
   });
 
   it("缺 expectedFrameVersion 参数被 JSON schema 拒（required）", () => {

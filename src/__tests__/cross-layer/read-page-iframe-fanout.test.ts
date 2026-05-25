@@ -69,9 +69,9 @@ describe("read_page iframe fanout cross-layer", () => {
     expect(frame2Section?.[0]).not.toMatch(/cross_origin/);
 
     // Registry should have all three versions
-    expect(getFrameVersion(1, 0)).toEqual({ version: 1, observerAlive: true });
-    expect(getFrameVersion(1, 2)).toEqual({ version: 5, observerAlive: true });
-    expect(getFrameVersion(1, 3)).toEqual({ version: 8, observerAlive: true });
+    expect(getFrameVersion(1, 0)).toEqual({ version: 1 });
+    expect(getFrameVersion(1, 2)).toEqual({ version: 5 });
+    expect(getFrameVersion(1, 3)).toEqual({ version: 8 });
 
     // All three frames should appear as HTML blocks
     expect(r.observation).toMatch(/<untrusted_page_content frame_id="0" frame_version="1">/);

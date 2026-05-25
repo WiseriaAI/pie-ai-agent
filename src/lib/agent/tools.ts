@@ -77,8 +77,7 @@ async function execInTab<T extends unknown[]>(
  * with the appropriate error code for the LLM to retry.
  *
  * Error codes:
- *   frameGone    — frame not in registry; LLM must call read_page first.
- *   frameStale   — observer dead (page navigated); LLM must refresh.
+ *   frameGone            — frame not in registry; LLM must call read_page first.
  *   frameVersionMismatch — DOM mutated since last snapshot; indices shifted.
  */
 function verifyFrameVersion(
@@ -93,15 +92,6 @@ function verifyFrameVersion(
       result: {
         success: false,
         error: "frameGone: Frame not in registry. Call read_page first.",
-      },
-    };
-  }
-  if (!entry.observerAlive) {
-    return {
-      ok: false,
-      result: {
-        success: false,
-        error: "frameStale: Observer dead. Re-call read_page to refresh.",
       },
     };
   }
