@@ -33,8 +33,8 @@ export const BUILT_IN_SKILL_PACKAGES: SkillPackage[] = [
     "extract_structured_data",
     "Extract Structured Data",
     "Extract structured information from the current page into JSON based on user-described fields.",
-    `Extract the fields the user asked for from the page. Use the page snapshot and call extractData / done tools as needed. Output in the format they requested (default json).`,
-    { tools: ["get_tab_content"] },
+    `Extract the fields the user asked for from the page. Call read_page to get the page HTML, locate the requested fields by their data-pie-idx or surrounding context, then output in the format the user requested (default json).`,
+    { tools: ["read_page"] },
   ),
 
   pkg(
