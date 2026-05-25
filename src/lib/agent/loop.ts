@@ -843,7 +843,7 @@ async function generateStuckSummary(
   if (signal.aborted) return null;
   const slid = applySlidingWindow(history);
   const elided = elideStaleObservations(slid);
-  const budgeted = await applyTokenBudget(elided, modelConfig.provider);
+  const budgeted = await applyTokenBudget(elided, modelConfig.provider, modelConfig.model);
   const { repaired } = validateAndRepairAdjacentRoles(budgeted);
   let text = "";
   try {
@@ -1368,6 +1368,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       const windowedHistoryRaw = await applyTokenBudget(
         windowedHistoryElided,
         modelConfig.provider,
+        modelConfig.model,
       );
 
       // U4 — Defense-in-depth: validate role alternation and auto-repair

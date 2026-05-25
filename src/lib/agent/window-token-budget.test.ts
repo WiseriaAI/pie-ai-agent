@@ -55,7 +55,7 @@ describe("U5 — applyTokenBudget", () => {
       // ~1000 chars total, 0% CJK → divisor 4 → ~250 tokens
       // Anthropic threshold = 200_000 × 0.8 = 160_000 tokens — far below
       const history = buildChatHistory(5, 20, 0); // 5 rounds × 2 × 20 = 200 chars
-      const result = await applyTokenBudget(history, "anthropic");
+      const result = await applyTokenBudget(history, "anthropic", "claude-opus-4-7");
       expect(result).toEqual(history);
     });
   });
@@ -71,7 +71,7 @@ describe("U5 — applyTokenBudget", () => {
       const history = buildChatHistory(50, 7_000, 0);
       const original = history.length;
 
-      const result = await applyTokenBudget(history, "anthropic");
+      const result = await applyTokenBudget(history, "anthropic", "claude-opus-4-7");
 
       // Must have dropped some messages
       expect(result.length).toBeLessThan(original);
@@ -95,7 +95,7 @@ describe("U5 — applyTokenBudget", () => {
       // With CJK 90%: est ≈ ceil(62000 / 1.5) ≈ 41_334 tokens
       // openrouter threshold = 32_000 × 0.8 = 25_600 tokens → OVER, should drop
       const cjkHistory = buildChatHistory(30, 1_000, 0.9);
-      const cjkResult = await applyTokenBudget(cjkHistory, "openrouter");
+      const cjkResult = await applyTokenBudget(cjkHistory, "openrouter", "any-model");
       expect(cjkResult.length).toBeLessThan(cjkHistory.length);
       const cjkEstimate = estimateTokens(cjkResult);
       expect(cjkEstimate).toBeLessThanOrEqual(32_000 * 0.8);
@@ -103,7 +103,7 @@ describe("U5 — applyTokenBudget", () => {
       // Same char count, 0% CJK: est ≈ ceil(62000 / 4) = 15_500 tokens
       // openrouter threshold = 25_600 tokens → UNDER, should NOT drop
       const englishHistory = buildChatHistory(30, 1_000, 0);
-      const englishResult = await applyTokenBudget(englishHistory, "openrouter");
+      const englishResult = await applyTokenBudget(englishHistory, "openrouter", "any-model");
       expect(englishResult.length).toBe(englishHistory.length);
     });
   });
@@ -124,7 +124,7 @@ describe("U5 — applyTokenBudget", () => {
       ];
 
       const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-      const result = await applyTokenBudget(history, "openrouter");
+      const result = await applyTokenBudget(history, "openrouter", "any-model");
       warnSpy.mockRestore();
 
       // Should return with original content (no drop)
@@ -139,7 +139,7 @@ describe("U5 — applyTokenBudget", () => {
       ];
 
       const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-      await applyTokenBudget(history, "openrouter");
+      await applyTokenBudget(history, "openrouter", "any-model");
       expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Cannot reduce token count further"));
       warnSpy.mockRestore();
     });
@@ -157,7 +157,7 @@ describe("U5 — applyTokenBudget", () => {
       ];
 
       const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-      const result = await applyTokenBudget(history, "openrouter");
+      const result = await applyTokenBudget(history, "openrouter", "any-model");
       warnSpy.mockRestore();
 
       expect(result).toHaveLength(2);
@@ -174,8 +174,8 @@ describe("U5 — applyTokenBudget", () => {
     it("uses 32k fallback context window for unrecognized provider IDs", async () => {
       // history with 30 rounds × 1000 chars CJK 90% would exceed 32k × 0.8 = 25.6k threshold
       const history = buildChatHistory(30, 1_000, 0.9);
-      const resultKnown = await applyTokenBudget(history, "openrouter");   // known, 32k
-      const resultUnknown = await applyTokenBudget(history, "unknown_provider_xyz"); // fallback 32k
+      const resultKnown = await applyTokenBudget(history, "openrouter", "any-model");   // known provider, empty static catalog → fallback 32k
+      const resultUnknown = await applyTokenBudget(history, "unknown_provider_xyz", "any-model"); // unknown provider → fallback 32k
 
       // Both should drop the same amount (same effective threshold)
       expect(resultUnknown.length).toBe(resultKnown.length);
@@ -183,7 +183,7 @@ describe("U5 — applyTokenBudget", () => {
 
     it("fallback drops are applied just as with an explicit 32k provider", async () => {
       const history = buildChatHistory(30, 1_000, 0.9);
-      const result = await applyTokenBudget(history, "some_future_provider");
+      const result = await applyTokenBudget(history, "some_future_provider", "any-model");
       // Must still be under budget with the 32k fallback
       expect(estimateTokens(result)).toBeLessThanOrEqual(32_000 * 0.8);
     });
@@ -221,7 +221,7 @@ describe("U5 — applyTokenBudget", () => {
 
     it("returns history unchanged when total chars is 0", async () => {
       const msgs: AgentMessage[] = [makeMsg("system", ""), makeMsg("user", "")];
-      const result = await applyTokenBudget(msgs, "openrouter");
+      const result = await applyTokenBudget(msgs, "openrouter", "any-model");
       expect(result).toEqual(msgs);
     });
   });
@@ -269,7 +269,7 @@ describe("U5 — applyTokenBudget", () => {
       const bigHistory = [...bigHead, ...react];
       // chars ≈ 20 × 2 × 10_000 = 400_000 chars / 4 = 100_000 tokens >> 25_600
 
-      const result = await applyTokenBudget(bigHistory, "openrouter");
+      const result = await applyTokenBudget(bigHistory, "openrouter", "any-model");
 
       // React segment should be intact at the end
       const reactInResult = result.filter((m) => Array.isArray(m.content));
@@ -291,6 +291,36 @@ describe("U5 — applyTokenBudget", () => {
       // Token estimate should be under threshold
       expect(estimateTokens(result)).toBeLessThanOrEqual(32_000 * 0.8);
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Issue #76 — provider-aware maxContextTokens (was: bug-fix regression guard)
+// ---------------------------------------------------------------------------
+
+describe("Issue #76: maxContextTokens must come from per-model ModelMeta", () => {
+  it("Anthropic 200k model does NOT drop a 80k-token history (>25.6k bug threshold, <160k real threshold)", async () => {
+    // 320_000 ASCII chars / 4 = 80_000 tokens.
+    //   - Buggy 32k fallback → threshold 25.6k → must drop many pairs.
+    //   - Correct 200k window → threshold 160k → must NOT drop anything.
+    // 40 rounds × 2 × 4_000 chars = 320_000 chars.
+    const history = buildChatHistory(40, 4_000, 0);
+    expect(estimateTokens(history)).toBeGreaterThan(32_000 * 0.8);
+    expect(estimateTokens(history)).toBeLessThan(200_000 * 0.8);
+
+    const result = await applyTokenBudget(history, "anthropic", "claude-opus-4-7");
+
+    // No drop expected when provider-aware lookup works.
+    expect(result).toEqual(history);
+  });
+
+  it("unknown model id under known provider falls back to 32k (preserves drop behavior)", async () => {
+    // Same shape as Scenario 6 but with explicit unknown model id under Anthropic.
+    // resolveModelMeta returns null → fallback 32k → drops should occur.
+    const history = buildChatHistory(30, 1_000, 0.9);
+    const result = await applyTokenBudget(history, "anthropic", "model-that-does-not-exist");
+    expect(result.length).toBeLessThan(history.length);
+    expect(estimateTokens(result)).toBeLessThanOrEqual(32_000 * 0.8);
   });
 });
 
@@ -390,7 +420,7 @@ describe("applyTokenBudget — image-bearing turn drop semantics unchanged", () 
       { role: "user", content: "current" },
     ];
     // Within budget — no drops expected
-    const result = await applyTokenBudget(msgs, "openai");
+    const result = await applyTokenBudget(msgs, "openai", "gpt-4o");
     expect(result.length).toBe(6);
   });
 });
