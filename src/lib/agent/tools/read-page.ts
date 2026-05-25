@@ -69,8 +69,13 @@ export const readPageTool: Tool = {
 
     function rewriteIframePlaceholders(parentFrameId: number, html: string): string {
       const childFrames = frames!
-        .filter((f) => (f as any).parentFrameId === parentFrameId)
+        .filter((f) => f.parentFrameId === parentFrameId)
+        // Assumes child frame IDs increase in DOM iframe-position order. Chrome
+        // assigns frameIds sequentially on first parse — holds in practice; may
+        // drift if a child navigates and gets a new frameId.
         .sort((x, y) => x.frameId - y.frameId);
+      // Regex depends on page-snapshot.ts stripping all non-whitelisted iframe
+      // attributes — only data-pie-iframe-position survives, so [^>]* is safe.
       return html.replace(
         /<iframe([^>]*)data-pie-iframe-position="(\d+)"([^>]*)>([\s\S]*?)<\/iframe>/g,
         (_match, before, pos, after, _inner) => {
@@ -105,7 +110,7 @@ export const readPageTool: Tool = {
       const crossOrigin = topOrigin !== null && origin !== null && origin !== topOrigin;
 
       if (!data) {
-        const reason = classifyUnreachable(f.url, (f as any).errorOccurred);
+        const reason = classifyUnreachable(f.url, f.errorOccurred);
         frameMapLines.push(
           `  frame_id="${f.frameId}" url="${escapeWrapperAttribute(f.url)}" unreachable="true" reason="${reason}"`,
         );
@@ -152,6 +157,8 @@ export const readPageTool: Tool = {
       const remaining = TOTAL_BUDGET_BYTES - used;
       let truncated = false;
       if (body.length > remaining) {
+        // May cut mid-tag — LLM tolerates malformed HTML; truncation tradeoff
+        // is documented in the spec.
         body = remaining > 0 ? body.slice(0, remaining) : "";
         truncated = true;
         budgetExhausted = true;
