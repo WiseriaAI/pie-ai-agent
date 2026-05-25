@@ -154,8 +154,9 @@ export function stripToWhitelist(root: Element): string {
     if (el === root) continue;
     if (!el.parentNode) continue; // already removed
     const tag = el.tagName.toLowerCase();
-    // Always keep void / embed elements even when "empty".
-    if (tag === "img" || tag === "input" || tag === "br" || tag === "hr" || tag === "iframe") continue;
+    // Always keep void / embed elements even when "empty". svg is exempt because
+    // Pass 1 deliberately clears its children — the shell must survive without title.
+    if (tag === "img" || tag === "input" || tag === "br" || tag === "hr" || tag === "iframe" || tag === "svg") continue;
     const hasText = (el.textContent?.trim() ?? "") !== "";
     const hasAttrs = el.attributes.length > 0;
     const hasChildren = el.children.length > 0;

@@ -63,6 +63,13 @@ describe("stripToWhitelist", () => {
     expect(out).not.toContain("path");
   });
 
+  it("bare svg without title is still preserved (shell-only)", () => {
+    const out = strip(`<svg viewBox="0 0 24 24"><path d="M0 0L1 1"/></svg>`);
+    expect(out).toContain("<svg>");
+    expect(out).toContain("</svg>");
+    expect(out).not.toContain("path");
+  });
+
   it("空 element 删除（无 text / attr / child）", () => {
     const out = strip(`<div><div></div><span></span><p>X</p></div>`);
     expect(out).not.toMatch(/<div><\/div>/);
