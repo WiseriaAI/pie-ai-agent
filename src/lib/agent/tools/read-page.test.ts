@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { readPageTool } from "./read-page";
 import { resetRegistry, getFrameVersion } from "./page-version-registry";
+import { versionBootstrapInjected } from "../../dom-actions/version-bootstrap";
+import { pageSnapshotInjected } from "../../dom-actions/page-snapshot";
 
 describe("read_page tool", () => {
   beforeEach(() => {
@@ -10,13 +12,19 @@ describe("read_page tool", () => {
 
   it("返回 success + observation 含 frame_map + per-frame HTML", async () => {
     const fakeTab = { id: 7, url: "https://example.com/", discarded: false };
+    let scriptCallCount = 0;
+    const executeScript = vi.fn().mockImplementation(() => {
+      scriptCallCount++;
+      if (scriptCallCount === 1) {
+        return Promise.resolve([{ frameId: 0, result: { installed: true } }]);
+      }
+      return Promise.resolve([
+        { frameId: 0, result: { html: "<h1>Hi</h1>", version: 12, scrollableHints: [] } },
+      ]);
+    });
     vi.stubGlobal("chrome", {
       tabs: { get: vi.fn().mockResolvedValue(fakeTab) },
-      scripting: {
-        executeScript: vi.fn().mockResolvedValue([
-          { frameId: 0, result: { html: "<h1>Hi</h1>", version: 12, scrollableHints: [] } },
-        ]),
-      },
+      scripting: { executeScript },
       webNavigation: {
         getAllFrames: vi.fn().mockResolvedValue([
           { frameId: 0, url: "https://example.com/" },
@@ -32,15 +40,22 @@ describe("read_page tool", () => {
     expect(result.observation).toContain('frame_version="12"');
     expect(result.observation).toContain('<untrusted_page_content frame_id="0" frame_version="12">');
     expect(result.observation).toContain('<h1>Hi</h1>');
+    const calls = (executeScript as any).mock.calls;
+    expect(calls.length).toBe(2);
+    expect(calls[0][0].func).toBe(versionBootstrapInjected);
+    expect(calls[1][0].func).toBe(pageSnapshotInjected);
   });
 
   it("写入 page-version-registry", async () => {
+    let callCount = 0;
     vi.stubGlobal("chrome", {
       tabs: { get: vi.fn().mockResolvedValue({ id: 7, url: "https://x.com/", discarded: false }) },
       scripting: {
-        executeScript: vi.fn().mockResolvedValue([
-          { frameId: 0, result: { html: "", version: 99, scrollableHints: [] } },
-        ]),
+        executeScript: vi.fn().mockImplementation(() => {
+          callCount++;
+          if (callCount === 1) return Promise.resolve([{ frameId: 0, result: { installed: true } }]);
+          return Promise.resolve([{ frameId: 0, result: { html: "", version: 99, scrollableHints: [] } }]);
+        }),
       },
       webNavigation: {
         getAllFrames: vi.fn().mockResolvedValue([{ frameId: 0, url: "https://x.com/" }]),
@@ -51,13 +66,18 @@ describe("read_page tool", () => {
   });
 
   it("cross-origin frame 加 cross_origin=true 标记", async () => {
+    let callCount = 0;
     vi.stubGlobal("chrome", {
       tabs: { get: vi.fn().mockResolvedValue({ id: 7, url: "https://parent.com/", discarded: false }) },
       scripting: {
-        executeScript: vi.fn().mockResolvedValue([
-          { frameId: 0, result: { html: "<h1>P</h1>", version: 1, scrollableHints: [] } },
-          { frameId: 3, result: { html: "<h2>C</h2>", version: 2, scrollableHints: [] } },
-        ]),
+        executeScript: vi.fn().mockImplementation(() => {
+          callCount++;
+          if (callCount === 1) return Promise.resolve([{ frameId: 0, result: { installed: true } }]);
+          return Promise.resolve([
+            { frameId: 0, result: { html: "<h1>P</h1>", version: 1, scrollableHints: [] } },
+            { frameId: 3, result: { html: "<h2>C</h2>", version: 2, scrollableHints: [] } },
+          ]);
+        }),
       },
       webNavigation: {
         getAllFrames: vi.fn().mockResolvedValue([
@@ -71,12 +91,15 @@ describe("read_page tool", () => {
   });
 
   it("unreachable frame 输出 unreachable 块", async () => {
+    let callCount = 0;
     vi.stubGlobal("chrome", {
       tabs: { get: vi.fn().mockResolvedValue({ id: 7, url: "https://x.com/", discarded: false }) },
       scripting: {
-        executeScript: vi.fn().mockResolvedValue([
-          { frameId: 0, result: { html: "", version: 1, scrollableHints: [] } },
-        ]),
+        executeScript: vi.fn().mockImplementation(() => {
+          callCount++;
+          if (callCount === 1) return Promise.resolve([{ frameId: 0, result: { installed: true } }]);
+          return Promise.resolve([{ frameId: 0, result: { html: "", version: 1, scrollableHints: [] } }]);
+        }),
       },
       webNavigation: {
         getAllFrames: vi.fn().mockResolvedValue([
@@ -99,13 +122,18 @@ describe("read_page tool", () => {
   });
 
   it("iframe data-pie-iframe-position 在父 frame HTML 中被改写为 data-frame-id + 占位文本", async () => {
+    let callCount = 0;
     vi.stubGlobal("chrome", {
       tabs: { get: vi.fn().mockResolvedValue({ id: 7, url: "https://parent.com/", title: "P", discarded: false }) },
       scripting: {
-        executeScript: vi.fn().mockResolvedValue([
-          { frameId: 0, result: { html: '<main><iframe data-pie-iframe-position="0">[iframe placeholder]</iframe></main>', version: 1, scrollableHints: [] } },
-          { frameId: 9, result: { html: "<p>child</p>", version: 2, scrollableHints: [] } },
-        ]),
+        executeScript: vi.fn().mockImplementation(() => {
+          callCount++;
+          if (callCount === 1) return Promise.resolve([{ frameId: 0, result: { installed: true } }]);
+          return Promise.resolve([
+            { frameId: 0, result: { html: '<main><iframe data-pie-iframe-position="0">[iframe placeholder]</iframe></main>', version: 1, scrollableHints: [] } },
+            { frameId: 9, result: { html: "<p>child</p>", version: 2, scrollableHints: [] } },
+          ]);
+        }),
       },
       webNavigation: {
         getAllFrames: vi.fn().mockResolvedValue([
@@ -121,13 +149,18 @@ describe("read_page tool", () => {
 
   it("超 50KB 总预算时按 frame 顺序截断后续 frame", async () => {
     const big = "x".repeat(60_000);
+    let callCount = 0;
     vi.stubGlobal("chrome", {
       tabs: { get: vi.fn().mockResolvedValue({ id: 7, url: "https://x.com/", discarded: false }) },
       scripting: {
-        executeScript: vi.fn().mockResolvedValue([
-          { frameId: 0, result: { html: big, version: 1, scrollableHints: [] } },
-          { frameId: 3, result: { html: "small", version: 2, scrollableHints: [] } },
-        ]),
+        executeScript: vi.fn().mockImplementation(() => {
+          callCount++;
+          if (callCount === 1) return Promise.resolve([{ frameId: 0, result: { installed: true } }]);
+          return Promise.resolve([
+            { frameId: 0, result: { html: big, version: 1, scrollableHints: [] } },
+            { frameId: 3, result: { html: "small", version: 2, scrollableHints: [] } },
+          ]);
+        }),
       },
       webNavigation: {
         getAllFrames: vi.fn().mockResolvedValue([

@@ -6,6 +6,7 @@ import {
   clearFrame,
   clearTab,
   resetRegistry,
+  setVersionFromBump,
 } from "./page-version-registry";
 
 describe("page-version-registry", () => {
@@ -45,5 +46,17 @@ describe("page-version-registry", () => {
     markObserverDead(1, 0);
     recordFrameVersion(1, 0, 43);
     expect(getFrameVersion(1, 0)).toEqual({ version: 43, observerAlive: true });
+  });
+
+  it("setVersionFromBump 创建 entry if not present", () => {
+    setVersionFromBump(2, 5, 30);
+    expect(getFrameVersion(2, 5)).toEqual({ version: 30, observerAlive: true });
+  });
+
+  it("setVersionFromBump 更新已有 entry 且保 observerAlive=true", () => {
+    recordFrameVersion(2, 5, 30);
+    markObserverDead(2, 5);
+    setVersionFromBump(2, 5, 31);
+    expect(getFrameVersion(2, 5)).toEqual({ version: 31, observerAlive: true });
   });
 });

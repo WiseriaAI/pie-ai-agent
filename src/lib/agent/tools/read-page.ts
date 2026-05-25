@@ -1,6 +1,7 @@
 import type { Tool, ToolHandlerContext } from "../types";
 import type { ActionResult } from "../../dom-actions/types";
 import { pageSnapshotInjected, type PageSnapshotResult } from "../../dom-actions/page-snapshot";
+import { versionBootstrapInjected } from "../../dom-actions/version-bootstrap";
 import { recordFrameVersion } from "./page-version-registry";
 import { escapeWrapperAttribute, escapeUntrustedWrappers } from "../untrusted-wrappers";
 import { isRestrictedSchemeForGrouping } from "./tabs";
@@ -49,6 +50,19 @@ export const readPageTool: Tool = {
     }
     if (tab.discarded) {
       return { success: false, error: "discardedTabRequiresActivation" };
+    }
+
+    // Install MutationObserver bootstrap in every frame before reading. Idempotent
+    // in the page so safe to call every time. Failure is non-fatal — page-snapshot
+    // returns version=-1 if observer not installed and the LLM falls back to
+    // not relying on stale detection for this read.
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: a.tabId, allFrames: true },
+        func: versionBootstrapInjected,
+      });
+    } catch {
+      // ignore — see comment above
     }
 
     let results: chrome.scripting.InjectionResult<PageSnapshotResult>[];

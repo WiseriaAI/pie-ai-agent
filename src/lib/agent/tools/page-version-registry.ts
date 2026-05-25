@@ -35,3 +35,16 @@ export function clearTab(tabId: number): void {
 export function resetRegistry(): void {
   registry.clear();
 }
+
+/**
+ * Apply a version value received from a content-script bump message.
+ * Differs from recordFrameVersion: never resets observerAlive (the bump itself
+ * is proof of life). If frame not yet registered, creates entry.
+ */
+export function setVersionFromBump(tabId: number, frameId: number, version: number): void {
+  let tabMap = registry.get(tabId);
+  if (!tabMap) { tabMap = new Map(); registry.set(tabId, tabMap); }
+  const cur = tabMap.get(frameId);
+  if (cur) { cur.version = version; cur.observerAlive = true; }
+  else { tabMap.set(frameId, { version, observerAlive: true }); }
+}
