@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { buildAgentSystemPrompt, buildObservationMessage, buildSkillCatalogBlock } from "./prompt";
-import type { PageSnapshot } from "../dom-actions/types";
 
 describe("buildAgentSystemPrompt — M3-U2 pinned-context block (single-pin back-compat)", () => {
   it("includes the pinned tab id and origin when a single pin is provided", () => {
@@ -248,23 +247,7 @@ describe("SEARCH_TOOL_GUIDANCE", () => {
 
 describe("buildObservationMessage Phase 3 simplification", () => {
   it("只输出 url + title 头部，不渲染 elements", () => {
-    const snap: PageSnapshot = {
-      title: "Hello",
-      frames: [
-        {
-          frameId: 0,
-          frameUrl: "https://x.com/",
-          origin: "https://x.com",
-          crossOrigin: false,
-          elements: [{
-            index: 0, tag: "button", text: "X", disabled: false,
-            region: "main", boundingBox: { x:0, y:0, width:10, height:10 },
-          }],
-          semantic: { headings: [], alerts: [], status: [] },
-        },
-      ],
-    } as any;
-    const msg = buildObservationMessage(snap, "https://x.com/");
+    const msg = buildObservationMessage("Hello", "https://x.com/");
     expect(msg).toContain("Current URL: https://x.com/");
     expect(msg).toContain("Page title: Hello");
     expect(msg).not.toContain("[0]");

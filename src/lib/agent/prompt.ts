@@ -1,4 +1,3 @@
-import type { PageSnapshot } from "../dom-actions/types";
 
 /**
  * Static agent system prompt — defines agent role, safety rules, and
@@ -251,8 +250,8 @@ export function buildAgentSystemPrompt(
  * list is no longer pushed; LLM reads pages explicitly via the read_page tool.
  */
 export function buildObservationMessage(
-  snapshot: PageSnapshot,
+  title: string,
   currentUrl: string,
 ): string {
-  return `Current URL: ${currentUrl}\nPage title: ${snapshot.title}`;
+  return `Current URL: ${currentUrl}\nPage title: ${title}`;
 }

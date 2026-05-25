@@ -1,4 +1,4 @@
-import type { PageSnapshot, ActionResult } from "../dom-actions/types";
+import type { ActionResult } from "../dom-actions/types";
 
 /**
  * Phase 3 — confirm-time TabTarget snapshot injected into the handler context
@@ -32,7 +32,6 @@ export interface PreFetchedTabContent {
 
 export interface ToolHandlerContext {
   tabId: number;
-  snapshot: PageSnapshot;
   confirmedTabTargets?: Map<number, ConfirmedTabTarget>;
   preFetchedContent?: Map<number, PreFetchedTabContent>;
   /**

@@ -1,49 +1,10 @@
 import { describe, it, expect } from "vitest";
 import "@/test/setup";
 import { buildObservationMessage } from "./prompt";
-import type { PageSnapshot } from "@/lib/dom-actions/types";
 
-describe("Cross-layer PageSnapshot → agentMessages (#44 / Phase 3)", () => {
-  function fakeSnapshot(): PageSnapshot {
-    return {
-      url: "https://example.com/issues/new",
-      title: "New Issue",
-      frames: [
-        {
-          frameId: 0,
-          frameUrl: "https://example.com/issues/new",
-          origin: "https://example.com",
-          crossOrigin: false,
-          parentFrameId: null,
-          elements: [
-            {
-              index: 0,
-              tag: "input",
-              text: "",
-              placeholder: "Title",
-              label: "Issue title",
-              error: "Title is required",
-              disabled: false,
-              region: "main",
-              boundingBox: { x: 0, y: 0, width: 200, height: 30 },
-            },
-          ],
-        },
-      ],
-      semantic: {
-        headings: [
-          { level: 1, text: "Open a new issue" },
-          { level: 2, text: "Add a description" },
-        ],
-        alerts: ["Title is required"],
-        status: ["Loading templates..."],
-      },
-    };
-  }
-
+describe("Cross-layer title + url → agentMessages (#44 / Phase 3)", () => {
   it("Phase 3: observation emits url + title only (no elements pushed)", () => {
-    const snap = fakeSnapshot();
-    const observation = buildObservationMessage(snap, snap.url);
+    const observation = buildObservationMessage("New Issue", "https://example.com/issues/new");
     const message = { role: "user" as const, content: observation };
     const cloned = structuredClone(message);
 
@@ -56,8 +17,7 @@ describe("Cross-layer PageSnapshot → agentMessages (#44 / Phase 3)", () => {
   });
 
   it("Phase 3: observation survives structuredClone (storage round-trip)", () => {
-    const snap = fakeSnapshot();
-    const observation = buildObservationMessage(snap, snap.url);
+    const observation = buildObservationMessage("New Issue", "https://example.com/issues/new");
     const message = { role: "user" as const, content: observation };
     const cloned = structuredClone(message);
 

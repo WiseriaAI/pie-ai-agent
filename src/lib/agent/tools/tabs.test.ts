@@ -37,7 +37,7 @@ describe("list_tabs — phantom-tabId filter (Chrome TAB_ID_NONE = -1)", () => {
 
     const result = await listTabsTool.handler(
       { scope: "currentWindow" },
-      { tabId: 100, snapshot: { url: "", title: "", elements: [] } },
+      { tabId: 100 },
     );
     expect(result.success).toBe(true);
     const obs = result.observation ?? "";
@@ -66,7 +66,7 @@ describe("list_tabs — phantom-tabId filter (Chrome TAB_ID_NONE = -1)", () => {
 
     const result = await listTabsTool.handler(
       { scope: "currentWindow" },
-      { tabId: 50, snapshot: { url: "", title: "", elements: [] } },
+      { tabId: 50 },
     );
     expect(result.success).toBe(true);
     expect(result.observation ?? "").not.toContain("NaN");
@@ -81,7 +81,6 @@ describe("close_tabs K-9 (M5/v1.5) — pinMode-aware pinned-tab protection", () 
       { tabIds: [42, 7] },
       {
         tabId: 42,
-        snapshot: { url: "", title: "", elements: [] },
         pinMode: "user",
         pinnedTabs: [{ tabId: 42, origin: "https://example.com" }],
       },
@@ -113,7 +112,6 @@ describe("close_tabs K-9 (M5/v1.5) — pinMode-aware pinned-tab protection", () 
       { tabIds: [42] },
       {
         tabId: 42,
-        snapshot: { url: "", title: "", elements: [] },
         pinMode: "task",
         confirmedTabTargets,
         pinnedTabs: [{ tabId: 42, origin: "https://example.com" }],
@@ -147,7 +145,6 @@ describe("close_tabs K-9 (M5/v1.5) — pinMode-aware pinned-tab protection", () 
       { tabIds: [99] },
       {
         tabId: 99,
-        snapshot: { url: "", title: "", elements: [] },
         pinMode: "auto",
         confirmedTabTargets,
       },
@@ -176,7 +173,6 @@ describe("close_tabs K-9 (M5/v1.5) — pinMode-aware pinned-tab protection", () 
       { tabIds: [11] },
       {
         tabId: 11,
-        snapshot: { url: "", title: "", elements: [] },
         // pinMode omitted — legacy path
         confirmedTabTargets,
       },
@@ -194,7 +190,6 @@ describe("close_tabs K-9 (M5/v1.5) — pinMode-aware pinned-tab protection", () 
       { tabIds: [42, 7, 99] },
       {
         tabId: 42,
-        snapshot: { url: "", title: "", elements: [] },
         pinMode: "user",
         pinnedTabs: [{ tabId: 42, origin: "https://example.com" }],
       },
@@ -221,7 +216,6 @@ describe("close_tabs K-9 (M5/v1.5) — pinMode-aware pinned-tab protection", () 
       { tabIds: [7] },
       {
         tabId: 42,
-        snapshot: { url: "", title: "", elements: [] },
         pinMode: "user",
         // pinnedTabs only has tab 42, not tab 7
         pinnedTabs: [{ tabId: 42, origin: "https://example.com" }],
@@ -240,7 +234,6 @@ describe("close_tabs K-9 (M5/v1.5) — pinMode-aware pinned-tab protection", () 
       { tabIds: [12, 13] },
       {
         tabId: 12,
-        snapshot: { url: "", title: "", elements: [] },
         pinMode: "user",
         pinnedTabs: [
           { tabId: 12, origin: "https://a.com" },
@@ -369,7 +362,7 @@ describe("open_url tool", () => {
     for (const url of cases) {
       const r = await openUrlTool.handler(
         { url },
-        { tabId: 12, snapshot: { url: "", title: "", elements: [] } },
+        { tabId: 12 },
       );
       expect(r.success).toBe(false);
       // Some of these throw in `new URL(input)` (e.g., "blob:https://x/abc"
@@ -383,7 +376,7 @@ describe("open_url tool", () => {
     for (const url of ["", null, undefined, 42, {}]) {
       const r = await openUrlTool.handler(
         { url } as unknown as { url: string },
-        { tabId: 12, snapshot: { url: "", title: "", elements: [] } },
+        { tabId: 12 },
       );
       expect(r.success).toBe(false);
     }
@@ -393,7 +386,7 @@ describe("open_url tool", () => {
     const url = "https://example.com/" + "a".repeat(5000);
     const r = await openUrlTool.handler(
       { url },
-      { tabId: 12, snapshot: { url: "", title: "", elements: [] } },
+      { tabId: 12 },
     );
     expect(r.success).toBe(false);
     expect(r.error).toMatch(/url-too-long/);
@@ -402,7 +395,7 @@ describe("open_url tool", () => {
   it("rejects relative URL (URL constructor throws)", async () => {
     const r = await openUrlTool.handler(
       { url: "/example.com" },
-      { tabId: 12, snapshot: { url: "", title: "", elements: [] } },
+      { tabId: 12 },
     );
     expect(r.success).toBe(false);
     expect(r.error).toMatch(/invalid URL/);
@@ -446,7 +439,6 @@ describe("open_url tool", () => {
       { url: "https://example.com/page" },
       {
         tabId: 12,
-        snapshot: { url: "", title: "", elements: [] },
         pinnedTabs: [{ tabId: 12, origin: "https://a.com" }],
         appendPinnedTab: append,
       },
@@ -479,7 +471,6 @@ describe("open_url tool", () => {
       { url: "https://example.com/", active: true },
       {
         tabId: 12,
-        snapshot: { url: "", title: "", elements: [] },
         appendPinnedTab: append,
       },
     );
@@ -503,7 +494,7 @@ describe("open_url tool", () => {
     });
     const handlerPromise = openUrlTool.handler(
       { url: "https://example.com/" },
-      { tabId: 12, snapshot: { url: "", title: "", elements: [] } },
+      { tabId: 12 },
     );
     await fireOnCommittedNext(999, 0);
     const r = await handlerPromise;
@@ -530,7 +521,6 @@ describe("open_url tool", () => {
       { url: "https://example.com/landing" },
       {
         tabId: 12,
-        snapshot: { url: "", title: "", elements: [] },
         appendPinnedTab: append,
       },
     );
@@ -559,7 +549,6 @@ describe("open_url tool", () => {
         { url: "https://example.com/page" },
         {
           tabId: 12,
-          snapshot: { url: "", title: "", elements: [] },
           appendPinnedTab: append,
         },
       );
@@ -595,7 +584,6 @@ describe("open_url tool", () => {
       { url: "https://example.com/page" },
       {
         tabId: 12,
-        snapshot: { url: "", title: "", elements: [] },
         appendPinnedTab: append,
       },
     );
@@ -615,7 +603,7 @@ describe("open_url tool", () => {
       chromeMock.webNavigation.__committedListeners.length;
     const r = await openUrlTool.handler(
       { url: "https://example.com/" },
-      { tabId: 12, snapshot: { url: "", title: "", elements: [] } },
+      { tabId: 12 },
     );
     expect(r.success).toBe(false);
     expect(r.error).toMatch(/chrome\.tabs\.create failed/);
