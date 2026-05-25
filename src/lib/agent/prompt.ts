@@ -1,5 +1,4 @@
-import type { PageSnapshot, FrameSnapshot } from "../dom-actions/types";
-import { escapeWrapperAttribute } from "./untrusted-wrappers";
+import type { PageSnapshot } from "../dom-actions/types";
 
 /**
  * Static agent system prompt — defines agent role, safety rules, and
@@ -21,7 +20,7 @@ Output formatting (for text responses):
 - Keep short conversational replies plain — don't add headings or bullets for a one-sentence answer.
 - When summarizing page content, lead with a 1–2 sentence takeaway, then use bullets or sections for details.
 
-On each turn you will receive a snapshot of the page wrapped in <untrusted_page_content>. The observation contains a \`Semantic:\` block (page title, headings, alerts, status — for orienting yourself) and an \`Elements:\` block (interactive elements you operate on via [N] indices). Form labels and validation errors are inlined on the relevant [N] row. Use these observations to plan your next tool call, or to answer questions about the page. Only the most recent page snapshot is shown with its full interactive-element list; element lists from earlier snapshots are omitted to save context — if you will need information from the current page later, record it in your reasoning now, or re-read the page with get_tab_content.`.trim();
+Each observation message shows the current URL and page title. To read the page structure and interactive elements, call \`read_page\`. Only the most recent page snapshot is shown with full detail; earlier snapshots are elided to save context — if you will need information from the current page later, record it in your reasoning now.`.trim();
 
 const KEYBOARD_SIM_GUIDANCE = `
 
@@ -189,6 +188,29 @@ const R15_IMAGE_UNTRUSTED =
  *   Defaults to pinnedTabs[0] when omitted. Has no effect when pinnedTabs
  *   is empty or single-entry.
  */
+const READ_PAGE_GUIDANCE = `
+
+## Reading the page
+
+Call \`read_page(tabId)\` to get the page's HTML structure. The response contains:
+- A \`<frame_map>\` listing all frames with their current \`version\`
+- Optional \`<scrollable_regions>\` hints if the page has scrollable lists
+- Per-frame \`<untrusted_page_content frame_id="N" frame_version="V">\` blocks containing
+  the stripped HTML. Interactive elements are stamped with \`data-pie-idx="N"\`.
+
+## Modifying the page
+
+\`click\`, \`type\`, and \`select\` all require:
+- \`frameId\` and \`elementIndex\` (from \`data-pie-idx\` in the most recent read_page output)
+- \`expectedFrameVersion\` (the \`frame_version\` from that same read_page)
+
+If the page changed between read and write, you'll get \`frameVersionMismatch\`. Re-call
+read_page and use the new version. Element indices may have shifted.
+
+If you haven't read the page yet but the user task requires interacting with it, call
+read_page first.
+`;
+
 const FRAME_AWARENESS_GUIDANCE = `
 
 iframe / multi-frame observation:
@@ -220,109 +242,17 @@ export function buildAgentSystemPrompt(
   const tabGuidance = TAB_TOOLS_GUIDANCE;
   const pinnedContext = buildPinnedContextBlock(pinnedTabs, currentFocusTabId);
   return (
-    `${STATIC_AGENT_SYSTEM_PROMPT}${FRAME_AWARENESS_GUIDANCE}${keyboardGuidance}${metaGuidance}${skillCatalogBlock}${tabGuidance}${SEARCH_TOOL_GUIDANCE}${pinnedContext}\n\n<user_task>${task}</user_task>\n\n${R15_IMAGE_UNTRUSTED}`
+    `${STATIC_AGENT_SYSTEM_PROMPT}${READ_PAGE_GUIDANCE}${FRAME_AWARENESS_GUIDANCE}${keyboardGuidance}${metaGuidance}${skillCatalogBlock}${tabGuidance}${SEARCH_TOOL_GUIDANCE}${pinnedContext}\n\n<user_task>${task}</user_task>\n\n${R15_IMAGE_UNTRUSTED}`
   );
 }
 
 /**
- * iframe spec §4 — per-frame untrusted_page_content wrapper.
- *
- * Reachable frame: <untrusted_page_content frame_id="N" frame_url="..."
- *                  frame_origin="..." [cross_origin="true"]>
- *                    Elements: [lines...]
- *                  </untrusted_page_content>
- *
- * Unreachable frame: <untrusted_page_content frame_id="N" frame_url="..."
- *                   unreachable="true" reason="..."></untrusted_page_content>
- *
- * All attribute values flow through escapeWrapperAttribute. Element text /
- * label / error already sanitized at snapshot.ts injection (inline
- * `[filtered]` replacement on wrapper-tag literals).
- */
-function renderFrameBlock(frame: FrameSnapshot): string {
-  const attrs: string[] = [
-    `frame_id="${escapeWrapperAttribute(String(frame.frameId))}"`,
-    `frame_url="${escapeWrapperAttribute(frame.frameUrl)}"`,
-  ];
-
-  if ("unreachable" in frame && frame.unreachable) {
-    attrs.push(`unreachable="true"`);
-    attrs.push(`reason="${escapeWrapperAttribute(frame.reason)}"`);
-    return `<untrusted_page_content ${attrs.join(" ")}></untrusted_page_content>`;
-  }
-
-  if (frame.origin) {
-    attrs.push(`frame_origin="${escapeWrapperAttribute(frame.origin)}"`);
-  }
-  if (frame.crossOrigin) {
-    attrs.push(`cross_origin="true"`);
-  }
-
-  const elementLines = frame.elements.map((el) => {
-    const parts: string[] = [`[${el.index}]`, el.tag];
-    if (el.type) parts[1] = `${el.tag}[${el.type}]`;
-    const primary = el.text || el.ariaLabel;
-    if (primary) parts.push(`"${primary}"`);
-    if (!primary && el.placeholder) parts.push(`placeholder="${el.placeholder}"`);
-    if (el.label) parts.push(`label="${el.label}"`);
-    if (el.error) parts.push(`error="${el.error}"`);
-    parts.push(`(region:${el.region})`);
-    if (el.disabled) parts.push("[disabled]");
-    return parts.join(" ");
-  });
-
-  const body = elementLines.length > 0
-    ? `Elements:\n${elementLines.join("\n")}`
-    : "Elements:\n(no interactive elements found)";
-
-  return `<untrusted_page_content ${attrs.join(" ")}>\n${body}\n</untrusted_page_content>`;
-}
-
-/**
- * iframe spec §4 — multi-frame observation rendering.
- *
- * Layout:
- *   Current URL: <top frame url>
- *   Page title: <top frame title>
- *   Semantic: [top-frame headings/alerts/status]   (only if non-empty)
- *
- *   <untrusted_page_content frame_id="0" ...>...</untrusted_page_content>
- *   <untrusted_page_content frame_id="3" cross_origin="true" ...>...</untrusted_page_content>
- *   <untrusted_page_content frame_id="7" unreachable="true" reason="...">
- *   </untrusted_page_content>
- *
- * Frame ordering = webNavigation tree order (top first, then children DOM
- * order). Each frame's elements use its own elementIndex (independent
- * counters); writes target (frameId, elementIndex).
+ * Phase 3 pull mode — observation only carries url + title. Element index
+ * list is no longer pushed; LLM reads pages explicitly via the read_page tool.
  */
 export function buildObservationMessage(
   snapshot: PageSnapshot,
   currentUrl: string,
 ): string {
-  const headerLines: string[] = [
-    `Current URL: ${currentUrl}`,
-    `Page title: ${snapshot.title}`,
-  ];
-
-  const { headings, alerts, status } = snapshot.semantic;
-  if (headings.length > 0 || alerts.length > 0 || status.length > 0) {
-    headerLines.push("");
-    headerLines.push("Semantic:");
-    if (headings.length > 0) {
-      headerLines.push("  Headings:");
-      for (const h of headings) headerLines.push(`    H${h.level}: ${h.text}`);
-    }
-    if (alerts.length > 0) {
-      headerLines.push("  Alerts:");
-      for (const a of alerts) headerLines.push(`    - "${a}"`);
-    }
-    if (status.length > 0) {
-      headerLines.push("  Status:");
-      for (const s of status) headerLines.push(`    - "${s}"`);
-    }
-  }
-
-  const frameBlocks = snapshot.frames.map(renderFrameBlock).join("\n");
-
-  return `${headerLines.join("\n")}\n\n${frameBlocks}`;
+  return `Current URL: ${currentUrl}\nPage title: ${snapshot.title}`;
 }

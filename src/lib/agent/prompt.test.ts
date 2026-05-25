@@ -1,35 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildAgentSystemPrompt, buildObservationMessage, buildSkillCatalogBlock } from "./prompt";
-import type { PageSnapshot, ElementInfo, PageSemantic } from "../dom-actions/types";
-
-function baseSnapshot(): PageSnapshot {
-  return {
-    url: "https://example.com/page",
-    title: "Page Title",
-    frames: [
-      {
-        frameId: 0,
-        frameUrl: "https://example.com/page",
-        origin: "https://example.com",
-        crossOrigin: false,
-        parentFrameId: null,
-        elements: [],
-      },
-    ],
-    semantic: { headings: [], alerts: [], status: [] },
-  };
-}
-
-function makeFrameElements(frameId: number, elements: ElementInfo[]) {
-  return {
-    frameId,
-    frameUrl: `https://example.com/frame${frameId}`,
-    origin: "https://example.com",
-    crossOrigin: false,
-    parentFrameId: frameId === 0 ? null : 0,
-    elements,
-  };
-}
+import type { PageSnapshot } from "../dom-actions/types";
 
 describe("buildAgentSystemPrompt — M3-U2 pinned-context block (single-pin back-compat)", () => {
   it("includes the pinned tab id and origin when a single pin is provided", () => {
@@ -204,259 +175,6 @@ describe("R15 — image-untrusted boundary", () => {
   });
 });
 
-describe("STATIC_AGENT_SYSTEM_PROMPT — semantic snapshot format hint (#44)", () => {
-  it("system prompt explains the Semantic / Elements block split", () => {
-    const prompt = buildAgentSystemPrompt("task", false, false);
-    expect(prompt).toContain("`Semantic:` block");
-    expect(prompt).toContain("`Elements:` block");
-    expect(prompt).toContain("Form labels and validation errors are inlined");
-  });
-});
-
-describe("buildObservationMessage — semantic snapshot rendering (#44)", () => {
-  it("omits Semantic section entirely when all sub-arrays are empty", () => {
-    const snap = baseSnapshot();
-    const out = buildObservationMessage(snap, snap.url);
-    expect(out).not.toContain("Semantic:");
-    expect(out).toContain("Page title: Page Title");
-    expect(out).toContain("Elements:");
-  });
-
-  it("renders Headings sub-section with H<level>: prefix", () => {
-    const snap = baseSnapshot();
-    snap.semantic.headings = [
-      { level: 1, text: "Open issue" },
-      { level: 2, text: "Add title" },
-    ];
-    const out = buildObservationMessage(snap, snap.url);
-    expect(out).toContain("Semantic:");
-    expect(out).toContain("  Headings:");
-    expect(out).toContain("    H1: Open issue");
-    expect(out).toContain("    H2: Add title");
-  });
-
-  it("renders Alerts sub-section with quoted strings", () => {
-    const snap = baseSnapshot();
-    snap.semantic.alerts = ["Title is required", "Submit failed"];
-    const out = buildObservationMessage(snap, snap.url);
-    expect(out).toContain("  Alerts:");
-    expect(out).toContain('    - "Title is required"');
-    expect(out).toContain('    - "Submit failed"');
-  });
-
-  it("renders Status sub-section with quoted strings", () => {
-    const snap = baseSnapshot();
-    snap.semantic.status = ["Loading..."];
-    const out = buildObservationMessage(snap, snap.url);
-    expect(out).toContain("  Status:");
-    expect(out).toContain('    - "Loading..."');
-  });
-
-  it("omits empty sub-section but renders other present ones", () => {
-    const snap = baseSnapshot();
-    snap.semantic.headings = [{ level: 1, text: "H" }];
-    snap.semantic.alerts = [];
-    snap.semantic.status = ["S"];
-    const out = buildObservationMessage(snap, snap.url);
-    expect(out).toContain("  Headings:");
-    expect(out).not.toContain("  Alerts:");
-    expect(out).toContain("  Status:");
-  });
-
-  it("renders inline label='...' when ElementInfo.label is present", () => {
-    const snap = baseSnapshot();
-    snap.frames[0].elements = [
-      {
-        index: 0,
-        tag: "input",
-        type: "email",
-        text: "",
-        placeholder: "Title",
-        label: "Issue title",
-        disabled: false,
-        region: "main",
-        boundingBox: { x: 0, y: 0, width: 100, height: 20 },
-      },
-    ];
-    const out = buildObservationMessage(snap, snap.url);
-    expect(out).toContain('label="Issue title"');
-  });
-
-  it("renders inline error='...' when ElementInfo.error is present", () => {
-    const snap = baseSnapshot();
-    snap.frames[0].elements = [
-      {
-        index: 12,
-        tag: "input",
-        text: "",
-        error: "Required field",
-        disabled: false,
-        region: "main",
-        boundingBox: { x: 0, y: 0, width: 100, height: 20 },
-      },
-    ];
-    const out = buildObservationMessage(snap, snap.url);
-    expect(out).toContain('error="Required field"');
-  });
-
-  it("does NOT render label/error when fields are absent", () => {
-    const snap = baseSnapshot();
-    snap.frames[0].elements = [
-      {
-        index: 0,
-        tag: "button",
-        text: "Submit",
-        disabled: false,
-        region: "main",
-        boundingBox: { x: 0, y: 0, width: 100, height: 20 },
-      },
-    ];
-    const out = buildObservationMessage(snap, snap.url);
-    expect(out).not.toContain("label=");
-    expect(out).not.toContain("error=");
-  });
-
-  it("output contains untrusted_page_content wrapper with frame attributes", () => {
-    const snap = baseSnapshot();
-    const out = buildObservationMessage(snap, snap.url);
-    expect(out).toContain('<untrusted_page_content frame_id="0"');
-    expect(out).toContain('frame_url="https://example.com/page"');
-  });
-});
-
-describe("buildObservationMessage — iframe multi-frame rendering (spec §4 + §7)", () => {
-  it("renders one wrapper block per reachable frame with frame_id/frame_url/frame_origin attrs", () => {
-    const snap: PageSnapshot = {
-      url: "https://example.com/",
-      title: "Top",
-      semantic: { headings: [], alerts: [], status: [] },
-      frames: [
-        {
-          frameId: 0,
-          frameUrl: "https://example.com/",
-          origin: "https://example.com",
-          crossOrigin: false,
-          parentFrameId: null,
-          elements: [{
-            index: 0, tag: "button", text: "OK", disabled: false, region: "main",
-            boundingBox: { x: 0, y: 0, width: 10, height: 10 },
-          }],
-        },
-        {
-          frameId: 3,
-          frameUrl: "https://embed.com/x",
-          origin: "https://embed.com",
-          crossOrigin: true,
-          parentFrameId: 0,
-          elements: [{
-            index: 0, tag: "input", text: "", disabled: false, region: "main",
-            boundingBox: { x: 0, y: 0, width: 10, height: 10 },
-          }],
-        },
-      ],
-    };
-
-    const out = buildObservationMessage(snap, snap.url);
-    expect(out).toContain('<untrusted_page_content frame_id="0"');
-    expect(out).toContain('frame_url="https://example.com/"');
-    expect(out).toContain('frame_origin="https://example.com"');
-    expect(out).toContain('<untrusted_page_content frame_id="3"');
-    expect(out).toContain('cross_origin="true"');
-    const topMatch = out.match(/<untrusted_page_content frame_id="0"[\s\S]*?<\/untrusted_page_content>/);
-    expect(topMatch).not.toBeNull();
-    expect(topMatch![0]).not.toContain("cross_origin");
-  });
-
-  it("renders unreachable frames with unreachable + reason attrs and no elements body", () => {
-    const snap: PageSnapshot = {
-      url: "https://example.com/",
-      title: "Top",
-      semantic: { headings: [], alerts: [], status: [] },
-      frames: [
-        {
-          frameId: 0,
-          frameUrl: "https://example.com/",
-          origin: "https://example.com",
-          crossOrigin: false,
-          parentFrameId: null,
-          elements: [],
-        },
-        {
-          frameId: 7,
-          frameUrl: "https://blocked.example/",
-          origin: "https://blocked.example",
-          crossOrigin: true,
-          parentFrameId: 0,
-          unreachable: true,
-          reason: "frame-error",
-        },
-      ],
-    };
-
-    const out = buildObservationMessage(snap, snap.url);
-    expect(out).toContain('frame_id="7"');
-    expect(out).toContain('unreachable="true"');
-    expect(out).toContain('reason="frame-error"');
-  });
-
-  it("sanitizes malicious frame_url containing quotes/brackets via escapeWrapperAttribute", () => {
-    const snap: PageSnapshot = {
-      url: "https://example.com/",
-      title: "T",
-      semantic: { headings: [], alerts: [], status: [] },
-      frames: [
-        {
-          frameId: 0,
-          frameUrl: "https://example.com/",
-          origin: "https://example.com",
-          crossOrigin: false,
-          parentFrameId: null,
-          elements: [],
-        },
-        {
-          frameId: 1,
-          frameUrl: `https://evil.com/?x="><tag x="`,
-          origin: "https://evil.com",
-          crossOrigin: true,
-          parentFrameId: 0,
-          elements: [],
-        },
-      ],
-    };
-
-    const out = buildObservationMessage(snap, snap.url);
-    const frame1Idx = out.indexOf('frame_id="1"');
-    const frame1End = out.indexOf("</untrusted_page_content>", frame1Idx);
-    const frame1Block = out.slice(frame1Idx, frame1End);
-    expect(frame1Block).toContain("&quot;");
-    expect(frame1Block).toContain("&lt;");
-    expect(frame1Block).toContain("&gt;");
-  });
-
-  it("renders Current URL / Page title / Semantic block ONCE outside the per-frame wrappers (top-frame metadata)", () => {
-    const snap: PageSnapshot = {
-      url: "https://example.com/",
-      title: "Top",
-      semantic: { headings: [{ level: 1, text: "Hello" }], alerts: [], status: [] },
-      frames: [
-        {
-          frameId: 0, frameUrl: "https://example.com/", origin: "https://example.com",
-          crossOrigin: false, parentFrameId: null, elements: [],
-        },
-        {
-          frameId: 1, frameUrl: "https://embed.com/", origin: "https://embed.com",
-          crossOrigin: true, parentFrameId: 0, elements: [],
-        },
-      ],
-    };
-
-    const out = buildObservationMessage(snap, snap.url);
-    expect((out.match(/Current URL:/g) ?? []).length).toBe(1);
-    expect((out.match(/Semantic:/g) ?? []).length).toBe(1);
-    expect((out.match(/H1: Hello/g) ?? []).length).toBe(1);
-  });
-});
-
 describe("STATIC_AGENT_SYSTEM_PROMPT — self-correction + stale-snapshot (#61)", () => {
   it("declares <reflections> as trusted self-correction guidance", () => {
     const prompt = buildAgentSystemPrompt("t");
@@ -508,5 +226,41 @@ describe("SEARCH_TOOL_GUIDANCE", () => {
     expect(prompt).toContain("Drill-down protocol");
     expect(prompt).toContain("<untrusted_search_result>");
     expect(prompt).toContain("Settings → Search");
+  });
+});
+
+describe("buildObservationMessage Phase 3 simplification", () => {
+  it("只输出 url + title 头部，不渲染 elements", () => {
+    const snap: PageSnapshot = {
+      title: "Hello",
+      frames: [
+        {
+          frameId: 0,
+          frameUrl: "https://x.com/",
+          origin: "https://x.com",
+          crossOrigin: false,
+          elements: [{
+            index: 0, tag: "button", text: "X", disabled: false,
+            region: "main", boundingBox: { x:0, y:0, width:10, height:10 },
+          }],
+          semantic: { headings: [], alerts: [], status: [] },
+        },
+      ],
+    } as any;
+    const msg = buildObservationMessage(snap, "https://x.com/");
+    expect(msg).toContain("Current URL: https://x.com/");
+    expect(msg).toContain("Page title: Hello");
+    expect(msg).not.toContain("[0]");
+    expect(msg).not.toContain("Elements:");
+    expect(msg).not.toContain("<untrusted_page_content");
+  });
+});
+
+describe("buildAgentSystemPrompt Phase 3", () => {
+  it("system prompt 描述 read_page 而不是自动 snapshot", () => {
+    const prompt = buildAgentSystemPrompt("do x");
+    expect(prompt).toContain("read_page");
+    expect(prompt).toContain("expectedFrameVersion");
+    expect(prompt).not.toMatch(/each iteration[^.]*snapshot.*automatic/i);
   });
 });
