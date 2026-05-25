@@ -17,7 +17,7 @@
  */
 
 import type { AgentMessage, ContentBlock } from "../model-router/types";
-import { resolveProviderMeta } from "../model-router/providers/registry";
+import { resolveModelMeta } from "../model-router/providers/registry";
 import { findReactStartIdx } from "./window";
 
 /** Fallback context window when provider metadata is missing. */
@@ -121,14 +121,20 @@ export function estimateTokens(messages: AgentMessage[], provider?: string): num
  *     big, emit a console.warn and return as-is (let provider truncate).
  *
  * @param messages  Full message history (output of applySlidingWindow).
- * @param provider  Provider ID string, used to look up maxContextTokens.
+ * @param provider  Provider ID string, used together with `model` to look up
+ *                  the per-model context window.
+ * @param model     Provider-native model id. Required because `maxContextTokens`
+ *                  lives on `ModelMeta`, not `ProviderMeta` (issue #76).
+ *                  Unknown ids (e.g. lazily-fetched OpenRouter models) fall
+ *                  back to {@link FALLBACK_MAX_CONTEXT_TOKENS}.
  */
 export async function applyTokenBudget(
   messages: AgentMessage[],
   provider: string,
+  model: string,
 ): Promise<AgentMessage[]> {
-  // Resolve context window limit.
-  const meta = await resolveProviderMeta(provider);
+  // Resolve per-model context window limit (issue #76).
+  const meta = await resolveModelMeta(provider, model);
   const maxContextTokens = meta?.maxContextTokens ?? FALLBACK_MAX_CONTEXT_TOKENS;
   const threshold = maxContextTokens * 0.8;
 
