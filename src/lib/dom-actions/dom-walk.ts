@@ -1,17 +1,24 @@
 /**
- * Shadow-DOM-aware DOM walker. Yields elements in document order, descending
- * into open shadow roots. closed shadow roots are not traversable by spec.
+ * Shadow-DOM-aware DOM walker. Yields elements descending into open shadow
+ * roots; closed shadow roots are not traversable by spec.
  *
- * The walker yields `root` itself when it is an Element. Then descends via
- * TreeWalker (light tree). Open shadow roots encountered during traversal are
- * queued and walked after the current light-tree pass completes, preserving a
- * breadth-first shadow-slot order (light-DOM siblings before shadow children).
+ * Traversal order: light-DOM traversal first (document order via TreeWalker),
+ * then queued shadow roots processed in encounter order with the same
+ * light-first-then-shadow rule applied recursively. This ensures
+ * `deepQuerySelectorAll` returns light-DOM matches before shadow-DOM matches.
+ *
+ * The walker yields `root` itself when it is an Element. If `root` is an
+ * Element that has its own open shadow root, that shadow root is also walked
+ * (queued before any shadow roots discovered during the light-tree pass).
  */
 export function* walkDeep(root: Node): IterableIterator<Element> {
   if (root instanceof Element) yield root;
   const doc = root.ownerDocument ?? document;
   const tw = doc.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
   const shadowRoots: ShadowRoot[] = [];
+  if (root instanceof Element && root.shadowRoot && root.shadowRoot.mode === "open") {
+    shadowRoots.push(root.shadowRoot);
+  }
   let node: Element | null;
   while ((node = tw.nextNode() as Element | null)) {
     yield node;

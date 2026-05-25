@@ -46,6 +46,15 @@ describe("walkDeep", () => {
     expect(tags).toContain("iframe");
     expect(tags).not.toContain("button");
   });
+
+  it("yields shadow content of root element itself", () => {
+    document.body.innerHTML = `<div id="host"></div>`;
+    const host = document.getElementById("host")!;
+    const sr = host.attachShadow({ mode: "open" });
+    sr.innerHTML = `<button>inside</button>`;
+    const tags = [...walkDeep(host)].map((e) => e.tagName.toLowerCase());
+    expect(tags).toContain("button");
+  });
 });
 
 describe("deepQuerySelectorAll", () => {
@@ -70,5 +79,11 @@ describe("isVisibleDeep", () => {
     document.body.innerHTML = `<input style="opacity:0;width:100px;height:20px">`;
     const inp = document.querySelector("input")!;
     expect(isVisibleDeep(inp)).toBe(false);
+  });
+
+  it("normal visible element returns true", () => {
+    document.body.innerHTML = `<button style="width:100px;height:30px">X</button>`;
+    const btn = document.querySelector("button")!;
+    expect(isVisibleDeep(btn)).toBe(true);
   });
 });
