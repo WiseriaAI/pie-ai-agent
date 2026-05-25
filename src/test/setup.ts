@@ -258,10 +258,9 @@ const chromeMock = {
 (globalThis as unknown as { chrome: typeof chromeMock }).chrome = chromeMock;
 
 // happy-dom does not compute CSS layout — getBoundingClientRect() returns all zeros
-// for every element. The snapshotInteractiveElements() self-contained function uses
-// isVisible() which checks rect.width > 0 && rect.height > 0 to filter hidden
-// elements. Without this stub, every element appears invisible and all snapshots
-// come back empty in unit tests.
+// for every element. Injected snapshot functions use isVisible() which checks
+// rect.width > 0 && rect.height > 0 to filter hidden elements. Without this stub,
+// every element appears invisible and all snapshots come back empty in unit tests.
 const _origGetBoundingClientRect = Element.prototype.getBoundingClientRect;
 Element.prototype.getBoundingClientRect = function () {
   const rect = _origGetBoundingClientRect.call(this);

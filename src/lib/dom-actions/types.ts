@@ -68,23 +68,6 @@ export interface PageSnapshot {
   semantic: PageSemantic;  // top-frame only
 }
 
-/**
- * iframe spec §3 — total element cap across all frames in a tab. Top frame
- * gets first slice of the budget; remaining frames consume in DOM order
- * until budget exhausted, after which frames are listed with elements: []
- * and truncated: true (visible to LLM as "frame has content but truncated",
- * not "frame is empty"). Top frame is never truncated even if it exceeds
- * MAX_ELEMENTS (kept ≤ MAX_ELEMENTS by snapshot.ts at injection time).
- */
-export const MAX_TOTAL_ELEMENTS = 600;
-
-/**
- * iframe spec §3 — per-frame visible-element cap. Enforced at INJECTION time
- * inside snapshot.ts (each frame's executeScript run is independent). Tab
- * total is enforced post-merge in SW (MAX_TOTAL_ELEMENTS).
- */
-export const MAX_ELEMENTS_PER_FRAME = 200;
-
 export interface ActionResult {
   success: boolean;
   observation?: string;
@@ -92,9 +75,8 @@ export interface ActionResult {
 }
 
 /**
- * Per-frame injection return shape — what snapshotInteractiveElements
- * actually returns (one InjectionResult.result per frame). SW-side helper
- * composes the FrameSnapshot array from this + getAllFrames result.
+ * Per-frame injection return shape used by frame-discovery.ts / getAllFramesAndDiff
+ * to compose FrameSnapshot[] from injection results + webNavigation frame tree.
  */
 export interface FrameInjectionResult {
   url: string;
