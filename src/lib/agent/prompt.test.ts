@@ -11,7 +11,7 @@ describe("buildAgentSystemPrompt — M3-U2 pinned-context block (single-pin back
     );
     expect(prompt).toContain("Pinned tab id: 42");
     expect(prompt).toContain("Pinned origin: https://docs.example.com");
-    expect(prompt).toContain("get_tab_content({tabId: 42})");
+    expect(prompt).toContain("read_page({tabId: 42})");
     expect(prompt).toContain("do NOT call list_tabs first");
   });
 
@@ -64,7 +64,7 @@ describe("buildAgentSystemPrompt — M3-U2 pinned-context block (single-pin back
     expect(prompt).not.toContain("per-iteration <untrusted_page_content>");
   });
 
-  it("tab guidance text no longer says get_tab_content is for OTHER tabs only", () => {
+  it("tab guidance text says tabs include the one this conversation started on", () => {
     const prompt = buildAgentSystemPrompt("task", false, true);
     expect(prompt).not.toContain("tabs other than the one this conversation started on");
     expect(prompt).toContain("including the one this conversation started on");

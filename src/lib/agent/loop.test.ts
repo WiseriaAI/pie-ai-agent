@@ -244,10 +244,10 @@ describe("M3-U4 — collectCrossSessionConflicts", () => {
   });
 
   it("returns empty for read-class tools regardless of conflicts", () => {
-    // get_tab_content is read; even if tabId is in cross-session set,
+    // read_page is read; even if tabId is in cross-session set,
     // read concurrency is allowed (K2 read/write split).
     const result = collectCrossSessionConflicts(
-      "get_tab_content",
+      "read_page",
       { tabId: 42 },
       99,
       new Set([42]),

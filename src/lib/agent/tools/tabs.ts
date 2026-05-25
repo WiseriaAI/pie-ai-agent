@@ -78,7 +78,6 @@ async function verifyConfirmedOrigin(
  *  - Unit 1 (this file's first version): list_tabs only
  *  - Unit 3 will add close_tabs, activate_tab
  *  - Unit 4 will add group_tabs, ungroup_tabs, move_tabs
- *  - Unit 5 will add get_tab_content
  *
  * All tools share the per-call cross-origin args introspection in risk.ts
  * (Phase 3 invariant P3-A) — each handler is responsible for its own stale
@@ -97,7 +96,7 @@ const DOMAIN_MAX_LEN = 50;
 // Keep in sync with isRestrictedUrl in src/lib/agent/loop.ts (which gates
 // task pinning at start + per-iteration origin re-check). Asymmetry between
 // the two lists is a real exploit vector — a scheme rejected by loop.ts
-// (e.g. file://) but accepted here would let get_tab_content / group_tabs
+// (e.g. file://) but accepted here would let group_tabs
 // operate on local-file pages or blob: pages that the agent should never
 // touch (correctness review finding).
 const RESTRICTED_URL_PREFIXES = [
@@ -276,7 +275,7 @@ const listTabsTool: Tool = {
     // restore tabs / detached tabs that aren't actually addressable via
     // chrome.tabs.{get,remove,update,...}. If we leak a -1 id into the
     // wrapTabMetadata observation, the LLM learns it as a valid tabId and
-    // a follow-up tool call (get_tab_content / close_tabs / etc.) will hit
+    // a follow-up tool call (close_tabs / etc.) will hit
     // chrome.tabs.get(-1) which throws synchronously with "Value must be at
     // least 0", crashing the loop with a raw API error and no recovery
     // observation. Filter both axes (id + windowId) at the source so phantom
@@ -833,248 +832,6 @@ const moveTabsTool: Tool = {
   },
 };
 
-// ── Unit 5 — get_tab_content + light strip + pre-fetch / cache ──────────────
-
-const GET_TAB_CONTENT_MAX_BYTES = 100_000; // ~100 KB cap before LLM context
-const GET_TAB_CONTENT_PREVIEW_BYTES = 400; // SW pre-fetch ships this many for confirm
-
-interface GetTabContentArgs {
-  tabId: number;
-}
-
-/**
- * Phase 3 P3-U / SEC-2 — self-contained executeScript function. Runs in
- * the page world via chrome.scripting.executeScript; CANNOT reference any
- * outer scope (no imports, no closures). Exported so Unit 5 / loop.ts can
- * reference the same function for both pre-fetch and fallback paths.
- *
- * Light strip (Q10 / SEC-2):
- *  1. Remove input[type="password"] / input[autocomplete*="otp"] entirely
- *  2. Remove elements whose aria-label / name matches credential keywords
- *  3. Remove script / style nodes
- *  4. Trim repeated whitespace
- *
- * Known trade-off: canvas-editor [contenteditable] (Feishu Docs / Google
- * Docs / Notion) text is NOT stripped — keystrokes typed via CDP into a
- * canvas editor that mirrors them into a hidden DOM are still readable.
- * Defense-in-depth: get_tab_content is always-high (P3-S) AND the confirm
- * card shows a preview of the very text about to be sent (P3-U). The user
- * sees the credentials before approving and can reject.
- */
-export function extractPageContentHardened(): {
-  text: string;
-  totalBytes: number;
-} {
-  const SELECTOR_CRED =
-    'input[type="password"], input[autocomplete*="otp"], input[autocomplete*="one-time-code"]';
-  const KEYWORD_RE = /password|otp|cvv|cvc|token|secret|verification.code|验证码|密码/i;
-
-  const root = document.body?.cloneNode(true) as HTMLElement | null;
-  if (!root) return { text: "", totalBytes: 0 };
-
-  // 1. Remove direct credential inputs.
-  root.querySelectorAll(SELECTOR_CRED).forEach((el) => el.remove());
-
-  // 2. Remove elements whose aria-label or name matches credential keywords
-  //    (catches "Verification code" / "OTP" labeled inputs that don't carry
-  //    autocomplete).
-  root.querySelectorAll("[aria-label],[name]").forEach((el) => {
-    const aria = el.getAttribute("aria-label") ?? "";
-    const name = el.getAttribute("name") ?? "";
-    if (KEYWORD_RE.test(aria) || KEYWORD_RE.test(name)) {
-      el.remove();
-    }
-  });
-
-  // 3. Remove non-content scaffolding.
-  root.querySelectorAll("script, style, noscript, template").forEach((el) =>
-    el.remove(),
-  );
-
-  const raw = root.textContent ?? "";
-  const collapsed = raw.replace(/\s+/g, " ").trim();
-  return { text: collapsed, totalBytes: collapsed.length };
-}
-
-const getTabContentTool: Tool = {
-  name: "get_tab_content",
-  description:
-    "Read the visible text content of a tab. Always high-risk (the user " +
-    "sees a content preview before approving). Restricted URLs (chrome://, " +
-    "file://, etc.), discarded tabs, and frozen tabs are rejected. Light " +
-    "strip removes credential-typed inputs (password / OTP / CVV) before " +
-    "the content reaches the LLM, but canvas-editor mirror DOM text is not " +
-    "stripped — the confirm preview is the user's last line of defense.",
-  parameters: {
-    type: "object",
-    properties: {
-      tabId: {
-        type: "integer",
-        description: "Tab id to read content from.",
-      },
-    },
-    required: ["tabId"],
-    additionalProperties: false,
-  },
-  handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
-    const a = (args ?? {}) as GetTabContentArgs;
-    if (typeof a.tabId !== "number") {
-      return { success: false, error: "get_tab_content requires a numeric tabId" };
-    }
-
-    // K-8 confirm-time origin re-verify.
-    const verify = await verifyConfirmedOrigin(a.tabId, ctx.confirmedTabTargets);
-    if (!verify.ok) {
-      return {
-        success: false,
-        error: `get_tab_content skipped: ${verify.reason}`,
-      };
-    }
-
-    if (!verify.tab.url || isRestrictedSchemeForGrouping(verify.tab.url)) {
-      return { success: false, error: "restrictedUrl" };
-    }
-    if (verify.tab.discarded) {
-      return {
-        success: false,
-        error: "discardedTabRequiresActivation",
-      };
-    }
-
-    // P3-U: prefer the SW pre-fetched content (already shown to user in
-    // confirm preview). The cache key is tabId. If the loop fed pre-fetched
-    // content for this id we trust THAT — re-running executeScript here
-    // would race against post-approval navigation.
-    const cached = ctx.preFetchedContent?.get(a.tabId);
-
-    let text: string;
-    let totalBytes: number;
-    if (cached) {
-      text = cached.fullText;
-      totalBytes = cached.totalBytes;
-    } else {
-      // Fallback: fetch now with timeout-guard (W3C #527 frozen-tab issue —
-      // executeScript can hang indefinitely on a frozen tab).
-      // iframe spec §6: allFrames fan-out + per-frame wrapper concat.
-      const FROZEN_TIMEOUT_MS = 5000;
-      try {
-        const fetchPromise = chrome.scripting.executeScript({
-          target: { tabId: a.tabId, allFrames: true },
-          func: extractPageContentHardened,
-        });
-        const timeoutPromise = new Promise<never>((_, reject) =>
-          setTimeout(
-            () => reject(new Error("extractTimeout")),
-            FROZEN_TIMEOUT_MS,
-          ),
-        );
-        const results = (await Promise.race([
-          fetchPromise,
-          timeoutPromise,
-        ])) as chrome.scripting.InjectionResult<{
-          text: string;
-          totalBytes: number;
-        }>[];
-
-        type Raw = { text: string; totalBytes: number };
-        const injections = results.map((r) => ({
-          frameId: r.frameId,
-          raw: r.result as Raw | undefined,
-        }));
-
-        const tree = await chrome.webNavigation.getAllFrames({ tabId: a.tabId });
-        if (!tree) {
-          return { success: false, error: "Tab unavailable" };
-        }
-
-        const top = tree.find((f) => f.frameId === 0);
-        const topUrl = top?.url ?? "";
-        let topOrigin: string | null = null;
-        try { topOrigin = new URL(topUrl).origin; } catch { topOrigin = null; }
-
-        const TOTAL_BUDGET = 50_000;
-        let used = 0;
-
-        const blocks: string[] = [];
-        for (const entry of tree) {
-          let origin: string | null = null;
-          try { origin = new URL(entry.url).origin; if (origin === "null") origin = null; } catch { origin = null; }
-          const crossOrigin = topOrigin !== null && origin !== null && origin !== topOrigin;
-
-          const inj = injections.find((i) => i.frameId === entry.frameId);
-
-          const attrs = [
-            `frame_id="${escapeWrapperAttribute(String(entry.frameId))}"`,
-            `frame_url="${escapeWrapperAttribute(entry.url)}"`,
-          ];
-          if (origin) attrs.push(`frame_origin="${escapeWrapperAttribute(origin)}"`);
-          if (crossOrigin) attrs.push(`cross_origin="true"`);
-
-          if (!inj || !inj.raw) {
-            const reason = entry.url.startsWith("chrome-extension://") ? "extension-child"
-              : entry.url === "about:blank" && !entry.errorOccurred ? "about-blank"
-              : entry.errorOccurred ? "frame-error"
-              : "sandbox";
-            attrs.push(`unreachable="true"`);
-            attrs.push(`reason="${escapeWrapperAttribute(reason)}"`);
-            blocks.push(`<untrusted_page_content ${attrs.join(" ")}></untrusted_page_content>`);
-            continue;
-          }
-
-          let content = inj.raw.text;
-          const remaining = TOTAL_BUDGET - used;
-          let truncated = false;
-          if (content.length > remaining) {
-            content = remaining > 0 ? content.slice(0, remaining) : "";
-            truncated = true;
-          }
-          used += content.length;
-
-          const safeBody = escapeUntrustedWrappers(content);
-
-          if (truncated) attrs.push(`truncated="true"`);
-
-          blocks.push(`<untrusted_page_content ${attrs.join(" ")}>\n${safeBody}\n</untrusted_page_content>`);
-        }
-
-        text = blocks.join("\n");
-        totalBytes = text.length;
-      } catch (e) {
-        return {
-          success: false,
-          error: e instanceof Error ? e.message : "extract failed",
-        };
-      }
-    }
-
-    // Cap content at GET_TAB_CONTENT_MAX_BYTES before going to the LLM
-    // (matches PageSnapshot sliding-window budget; oversized payloads
-    // would evict user_task earlier in history).
-    const capped =
-      totalBytes > GET_TAB_CONTENT_MAX_BYTES
-        ? text.slice(0, GET_TAB_CONTENT_MAX_BYTES)
-        : text;
-    const trailer =
-      totalBytes > GET_TAB_CONTENT_MAX_BYTES
-        ? `\n[truncated: ${totalBytes - GET_TAB_CONTENT_MAX_BYTES} bytes omitted]`
-        : "";
-
-    // iframe spec §6 — text already contains per-frame <untrusted_page_content> blocks.
-    // Cached path still has the old single-frame format; wrap it in a single block
-    // with frame_origin attribute for backward compatibility.
-    const observation = cached
-      ? `<untrusted_page_content frame_id="0" frame_origin="${escapeWrapperAttribute(verify.origin)}">\n${escapeUntrustedWrappers(capped)}${trailer}\n</untrusted_page_content>`
-      : `${capped}${trailer}`;
-
-    return {
-      success: true,
-      observation,
-    };
-  },
-};
-
-export { GET_TAB_CONTENT_PREVIEW_BYTES };
-
 // ── v1.5 Unit 6 — focus_tab ───────────────────────────────────────────────────
 
 /**
@@ -1098,7 +855,7 @@ const focusTabTool: Tool = {
     "Takes effect on the NEXT iteration (the current iteration's snapshot was " +
     "already taken). Use this to operate across multiple pinned tabs in a " +
     "single task: focus_tab(N), then on the next response use click/type/" +
-    "get_tab_content/etc. against tab N. Pinned tabs are listed in the " +
+    "read_page/etc. against tab N. Pinned tabs are listed in the " +
     "system prompt; tabs created by open_url are added to that list.",
   parameters: {
     type: "object",
@@ -1286,7 +1043,6 @@ export const TAB_TOOLS: Tool[] = [
   groupTabsTool,
   ungroupTabsTool,
   moveTabsTool,
-  getTabContentTool,
   focusTabTool,
   openUrlTool,
 ];

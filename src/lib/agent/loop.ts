@@ -1121,7 +1121,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // v1.5 M3-U2 — pass the full pinnedTabs array + initial focus.
       // Single-entry: back-compat phrasing ("a specific browser tab").
       // Multi-entry: lists all tabs with "← current focus" marker and
-      // explains focus_tab. The LLM can call get_tab_content({tabId})
+      // explains focus_tab. The LLM can call read_page({tabId})
       // directly for read tasks; the focus marker reflects task-start
       // focus only (system prompt is static per task; see focus_tab
       // handler for per-iteration refresh semantics).
@@ -1841,7 +1841,6 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           result = await tool.handler(tc.args, {
             tabId: pinnedTabId,
             confirmedTabTargets: undefined,
-            preFetchedContent: undefined,
             // M5 — frozen at chat-start (passed via AgentLoopContext.pinMode);
             // close_tabs K-9 reads this to refuse closing user-locked pins.
             pinMode: ctx.pinMode,

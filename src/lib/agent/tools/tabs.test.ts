@@ -18,7 +18,7 @@ describe("list_tabs — phantom-tabId filter (Chrome TAB_ID_NONE = -1)", () => {
     //
     // The list_tabs handler must filter these phantom tabs out at source,
     // otherwise the LLM learns them as legitimate tabIds from the
-    // observation block and a follow-up get_tab_content / close_tabs
+    // observation block and a follow-up close_tabs
     // crashes the loop.
     chromeMock.tabs.__tabsById.set(100, {
       id: 100,
