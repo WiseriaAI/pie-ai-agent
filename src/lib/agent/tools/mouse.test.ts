@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { requireCdpInput, dispatchMouseAt, buildHoverTool, type MouseToolDeps } from "./mouse";
+import { requireCdpInput, dispatchMouseAt, buildHoverTool, buildClickTool, type MouseToolDeps } from "./mouse";
 import type { CdpSession } from "@/background/cdp-session";
 import { setCdpInputEnabled } from "@/lib/cdp-input-enabled";
 
@@ -151,6 +151,78 @@ describe("hover tool", () => {
     const result = await tool.handler({ frameId: 0, elementIndex: 3 }, { tabId: 7 });
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/another debugger is attached/i);
+  });
+});
+
+describe("click tool (CDP)", () => {
+  beforeEach(async () => {
+    await setCdpInputEnabled(true);
+    vi.mocked(elementToPagePoint).mockReset();
+  });
+
+  function deps(overrides?: Partial<MouseToolDeps>): MouseToolDeps {
+    const session = fakeSession();
+    return {
+      acquireSession: vi.fn().mockResolvedValue(session),
+      sessionId: "S1",
+      requestConsent: vi.fn().mockResolvedValue(true),
+      ...overrides,
+    };
+  }
+
+  it("declares write-class schema with required frameId + elementIndex", () => {
+    const tool = buildClickTool(deps());
+    expect(tool.name).toBe("click");
+    expect((tool.parameters as { required: string[] }).required).toEqual(
+      expect.arrayContaining(["frameId", "elementIndex"]),
+    );
+  });
+
+  it("dispatches mouseMoved → mousePressed → mouseReleased", async () => {
+    const session = fakeSession();
+    vi.mocked(elementToPagePoint).mockResolvedValue({ x: 150, y: 250 });
+    const tool = buildClickTool(deps({ acquireSession: vi.fn().mockResolvedValue(session) }));
+    const result = await tool.handler({ frameId: 0, elementIndex: 5 }, { tabId: 7 });
+    expect(result.success).toBe(true);
+    const sendMock = session.send as ReturnType<typeof vi.fn>;
+    expect(sendMock).toHaveBeenCalledTimes(3);
+    expect(sendMock.mock.calls[0][1].type).toBe("mouseMoved");
+    expect(sendMock.mock.calls[1][1].type).toBe("mousePressed");
+    expect(sendMock.mock.calls[2][1].type).toBe("mouseReleased");
+  });
+
+  it("includes coords in observation", async () => {
+    const session = fakeSession();
+    vi.mocked(elementToPagePoint).mockResolvedValue({ x: 150, y: 250 });
+    const tool = buildClickTool(deps({ acquireSession: vi.fn().mockResolvedValue(session) }));
+    const result = await tool.handler({ frameId: 0, elementIndex: 5 }, { tabId: 7 });
+    expect(result.observation).toMatch(/Clicked \[5\]/);
+    expect(result.observation).toMatch(/150.*250/);
+  });
+
+  it("returns cdp-disabled error when flag=false", async () => {
+    await setCdpInputEnabled(false);
+    const tool = buildClickTool(deps());
+    const result = await tool.handler({ frameId: 0, elementIndex: 5 }, { tabId: 7 });
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/CDP input is disabled/);
+  });
+
+  it("returns cdp-attach-conflict on debugger conflict", async () => {
+    const tool = buildClickTool(
+      deps({ acquireSession: vi.fn().mockRejectedValue(new Error("Another debugger is attached")) }),
+    );
+    const result = await tool.handler({ frameId: 0, elementIndex: 5 }, { tabId: 7 });
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/another debugger is attached/i);
+  });
+
+  it("returns element-not-found error from geometry", async () => {
+    vi.mocked(elementToPagePoint).mockResolvedValue({ kind: "element-not-found", index: 5 });
+    const tool = buildClickTool(deps());
+    const result = await tool.handler({ frameId: 0, elementIndex: 5 }, { tabId: 7 });
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/Element not found at index 5/);
   });
 });
 

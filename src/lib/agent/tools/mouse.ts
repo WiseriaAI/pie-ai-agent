@@ -134,6 +134,58 @@ export function buildHoverTool(deps: MouseToolDeps): Tool {
   };
 }
 
+export function buildClickTool(deps: MouseToolDeps): Tool {
+  return {
+    name: "click",
+    description:
+      "Click an interactive element by its data-pie-idx from the most recent read_page. Uses real mouse events (CDP). If the element is gone (page changed), returns 'Element not found'; call read_page again to get current indices.",
+    parameters: {
+      type: "object",
+      properties: {
+        frameId: { type: "number", description: "Frame ID from latest read_page." },
+        elementIndex: { type: "number", description: "data-pie-idx of the element." },
+      },
+      required: ["frameId", "elementIndex"],
+      additionalProperties: false,
+    },
+    handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
+      const a = args as { frameId: number; elementIndex: number };
+
+      const gate = await requireCdpInput({
+        sessionId: deps.sessionId,
+        requestConsent: deps.requestConsent,
+      });
+      if (!gate.ok) return { success: false, error: gate.error };
+
+      let session: CdpSession;
+      try {
+        session = await deps.acquireSession(ctx.tabId);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (/Another debugger|conflict/i.test(msg)) {
+          return {
+            success: false,
+            error: `CDP attach failed: another debugger is attached to this tab (DevTools or another agent task). Close it and retry.`,
+          };
+        }
+        return { success: false, error: `CDP attach failed: ${msg}` };
+      }
+
+      const point = await elementToPagePoint(ctx.tabId, a.frameId, a.elementIndex, session);
+      if ("kind" in point) return geometryErrorToActionResult(point);
+
+      await dispatchMouseAt(session, point.x, point.y, "mouseMoved");
+      await dispatchMouseAt(session, point.x, point.y, "mousePressed");
+      await dispatchMouseAt(session, point.x, point.y, "mouseReleased");
+
+      return {
+        success: true,
+        observation: `Clicked [${a.elementIndex}] at (${Math.round(point.x)},${Math.round(point.y)}).`,
+      };
+    },
+  };
+}
+
 export async function requireCdpInput(
   args: RequireCdpInputArgs,
 ): Promise<CdpGateResult> {
