@@ -76,6 +76,8 @@ import AgentSummary from "./AgentSummary";
 import SessionConfirmCard from "./SessionConfirmCard";
 import MarkdownContent from "./Markdown";
 import SkillSlashPopover from "./SkillSlashPopover";
+import { useCdpOnboarding } from "../hooks/useCdpOnboarding";
+import { CdpOnboardingCard } from "./CdpOnboardingCard";
 
 interface ChatProps {
   providerLabel: string | null;
@@ -213,6 +215,7 @@ export default function Chat({
 
   // Load instances list + current session's instanceId on mount / sessionId change
   const sessionId = session.sessionId;
+  const { pending: cdpPending, answer: answerCdp } = useCdpOnboarding(session.port, sessionId);
   useEffect(() => {
     listInstances().then(setInstances).catch(() => setInstances([]));
     if (!sessionId) return;
@@ -1188,6 +1191,8 @@ After the skill completes, briefly summarize what was created (the user will see
           </button>
         </div>
       )}
+
+      {cdpPending && <CdpOnboardingCard onAnswer={answerCdp} />}
 
       <Composer
         input={input}
