@@ -24,7 +24,7 @@ import {
   cancelPending,
   drainPending,
 } from "@/lib/sessions/pending-instructions";
-import { buildMidTaskUserMessage } from "@/lib/agent/loop-drain";
+import { buildMidTaskUserMessage, mergeCarryoverIntoMessages } from "@/lib/agent/loop-drain";
 import { broadcastInstructionState } from "@/background/instruction-broadcast";
 import type { SessionAgentState } from "@/lib/sessions/types";
 
@@ -349,25 +349,10 @@ describe("T16c — abort-carryover: leftover pending merges into next task's fir
     const carryover = await drainPending(SESSION_ID);
     expect(carryover).toHaveLength(2);
 
-    // Mirror the handleChatStream merge logic (background/index.ts ~1043–1053)
+    // Use the extracted helper (mirrors handleChatStream in background/index.ts)
     const newTaskContent = "continue with my new task";
     const messages = [{ role: "user" as const, content: newTaskContent }];
-    let mergedMessages = messages;
-
-    if (carryover.length > 0) {
-      const lastIdx = messages.length - 1;
-      const last = messages[lastIdx]!;
-      const merged = carryover
-        .map((p, i) => `${i + 1}. ${p.expandedForLLM ?? p.content}`)
-        .join("\n\n");
-      mergedMessages = [
-        ...messages.slice(0, lastIdx),
-        {
-          ...last,
-          content: `${last.content}\n\n[Earlier mid-task additions]\n${merged}`,
-        },
-      ];
-    }
+    const mergedMessages = mergeCarryoverIntoMessages(messages, carryover);
 
     const resultContent = mergedMessages[0]!.content;
     expect(resultContent).toContain("continue with my new task");
@@ -387,12 +372,9 @@ describe("T16c — abort-carryover: leftover pending merges into next task's fir
     const newTaskContent = "clean new task, no carryover";
     const messages = [{ role: "user" as const, content: newTaskContent }];
 
-    // The handleChatStream guard: if (carryover.length > 0) { ... }
-    let mergedMessages = messages;
-    if (carryover.length > 0) {
-      // This branch should NOT execute
-      throw new Error("unexpected carryover");
-    }
+    // mergeCarryoverIntoMessages returns messages unchanged when carryover is empty
+    const mergedMessages = mergeCarryoverIntoMessages(messages, carryover);
+    expect(mergedMessages).toBe(messages); // same reference — no copy made
 
     expect(mergedMessages[0]!.content).toBe(newTaskContent);
     expect(mergedMessages[0]!.content).not.toContain("[Earlier mid-task additions]");
@@ -412,5 +394,45 @@ describe("T16c — abort-carryover: leftover pending merges into next task's fir
     // Second chat-start would see empty queue
     const secondCarryover = await drainPending(SESSION_ID);
     expect(secondCarryover).toHaveLength(0);
+  });
+
+  it("returns original messages ref unchanged when last message is not a user string (assistant role)", async () => {
+    seedAgentState();
+    await addPending(SESSION_ID, {
+      chatMessageId: "orphan",
+      content: "this will be dropped",
+      createdAt: 1000,
+    });
+    const carryover = await drainPending(SESSION_ID);
+    expect(carryover).toHaveLength(1);
+
+    // Last message is assistant role — cannot merge
+    const messages = [{ role: "assistant" as const, content: "prior reply" }];
+    const result = mergeCarryoverIntoMessages(messages, carryover);
+
+    // Same reference returned — no modification
+    expect(result).toBe(messages);
+    expect(result[0]!.content).toBe("prior reply");
+    expect(result[0]!.content).not.toContain("[Earlier mid-task additions]");
+  });
+
+  it("returns original messages ref unchanged when last message content is not a string", async () => {
+    seedAgentState();
+    await addPending(SESSION_ID, {
+      chatMessageId: "orphan-2",
+      content: "also dropped",
+      createdAt: 1000,
+    });
+    const carryover = await drainPending(SESSION_ID);
+    expect(carryover).toHaveLength(1);
+
+    // Last message is user role but content is an array (vision message, etc.)
+    const messages = [
+      { role: "user" as const, content: [{ type: "text", text: "image attached" }] as unknown as string },
+    ];
+    const result = mergeCarryoverIntoMessages(messages, carryover);
+
+    // Same reference returned — no modification
+    expect(result).toBe(messages);
   });
 });

@@ -94,6 +94,7 @@ import {
 } from "./quote-bridge";
 import { addPending, cancelPending, drainPending } from "@/lib/sessions/pending-instructions";
 import { broadcastInstructionState } from "./instruction-broadcast";
+import { mergeCarryoverIntoMessages } from "@/lib/agent/loop-drain";
 import type { ChatInstructionRejectedMessage } from "@/types/messages";
 
 // Run V1→V2 migration once on SW load (idempotent via schema_version sentinel).
@@ -1038,24 +1039,16 @@ async function handleChatStream(
     // mid-task additions aren't lost.
     const carryover = await drainPending(sessionId);
     if (carryover.length > 0) {
-      const lastIdx = messages.length - 1;
-      const last = messages[lastIdx];
-      if (last && last.role === "user" && typeof last.content === "string") {
-        const merged = carryover
-          .map((p, i) => `${i + 1}. ${p.expandedForLLM ?? p.content}`)
-          .join("\n\n");
-        messages = [
-          ...messages.slice(0, lastIdx),
-          {
-            ...last,
-            content: `${last.content}\n\n[Earlier mid-task additions]\n${merged}`,
-          },
-        ];
-      } else {
+      const merged = mergeCarryoverIntoMessages(messages, carryover);
+      if (merged === messages) {
+        // mergeCarryoverIntoMessages returns the original ref when the last
+        // message isn't a user string — log and drop carryover.
         console.warn(
           `[sw] chat-start drained ${carryover.length} pending instruction(s) but ` +
           `last message is not a user string — items dropped`,
         );
+      } else {
+        messages = merged;
       }
       // Broadcast empty pending so panel removes pending decorations
       await broadcastInstructionState(port, sessionId);

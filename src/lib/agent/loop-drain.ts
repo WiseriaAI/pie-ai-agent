@@ -1,6 +1,6 @@
 import type { PendingInstruction } from "@/lib/sessions/types";
 import { escapeUntrustedWrappers } from "./untrusted-wrappers";
-import type { AgentMessage } from "@/lib/model-router";
+import type { AgentMessage, ChatMessage } from "@/lib/model-router";
 
 /**
  * Issue #34 — build the merged user-message that gets injected at the top of
@@ -30,4 +30,33 @@ export function buildMidTaskUserMessage(
     role: "user",
     content: `<untrusted_user_message source="mid_task">\n${merged}\n</untrusted_user_message>`,
   };
+}
+
+/**
+ * Issue #34 — merge post-abort pending instructions into the last user
+ * message of a new chat-start payload. Uses [Earlier mid-task additions]
+ * marker so the LLM can distinguish the new task from the carried-over
+ * pending. If the last message is not a user string, returns messages
+ * unchanged (caller is expected to log).
+ */
+export function mergeCarryoverIntoMessages(
+  messages: ChatMessage[],
+  carryover: PendingInstruction[],
+): ChatMessage[] {
+  if (carryover.length === 0) return messages;
+  const lastIdx = messages.length - 1;
+  const last = messages[lastIdx];
+  if (!last || last.role !== "user" || typeof last.content !== "string") {
+    return messages;
+  }
+  const merged = carryover
+    .map((p, i) => `${i + 1}. ${p.expandedForLLM ?? p.content}`)
+    .join("\n\n");
+  return [
+    ...messages.slice(0, lastIdx),
+    {
+      ...last,
+      content: `${last.content}\n\n[Earlier mid-task additions]\n${merged}`,
+    },
+  ];
 }
