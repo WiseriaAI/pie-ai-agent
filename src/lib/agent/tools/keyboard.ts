@@ -20,6 +20,7 @@
 import type { ActionResult } from "../../dom-actions/types";
 import { clickByIndex } from "../../dom-actions/click";
 import { safeParseOrigin } from "../loop";
+import { requireCdpInput } from "./mouse";
 import type { CdpSession } from "../../../background/cdp-session";
 import type { Tool, ToolHandlerContext } from "../types";
 import { withActionSettle } from "../wait-for-settle";
@@ -176,10 +177,20 @@ export interface KeyboardToolDeps {
    * the active tab's current origin differs.
    */
   pinnedOrigin: string;
+  /**
+   * Trigger sidepanel consent flow when cdp_input_enabled is undefined.
+   * Bound to requestCdpInputConsent in loop.ts.
+   */
+  requestConsent: (sessionId: string) => Promise<boolean>;
+  /**
+   * Session id for the current chat task — used to route the inline
+   * consent guide through the correct sidepanel port.
+   */
+  sessionId: string;
 }
 
 export function buildKeyboardTools(deps: KeyboardToolDeps): Tool[] {
-  const { acquireSession, pinnedOrigin } = deps;
+  const { acquireSession, pinnedOrigin, requestConsent, sessionId } = deps;
 
   return [
     {
@@ -215,7 +226,10 @@ export function buildKeyboardTools(deps: KeyboardToolDeps): Tool[] {
       handler: async (
         args: unknown,
         ctx: ToolHandlerContext,
-      ): Promise<ActionResult> => withActionSettle(ctx.tabId, async () => {
+      ): Promise<ActionResult> => {
+        const gate = await requireCdpInput({ sessionId, requestConsent });
+        if (!gate.ok) return { success: false, error: gate.error };
+        return withActionSettle(ctx.tabId, async () => {
         const a = args as {
           text: string;
           after_element_index?: number;
@@ -344,7 +358,8 @@ export function buildKeyboardTools(deps: KeyboardToolDeps): Tool[] {
           success: true,
           observation: `Typed ${lengthDesc}${enterDesc} via keyboard simulation (value redacted)`,
         };
-      }),
+        });
+      },
     },
     {
       name: "press_key",
@@ -367,7 +382,10 @@ export function buildKeyboardTools(deps: KeyboardToolDeps): Tool[] {
       handler: async (
         args: unknown,
         ctx: ToolHandlerContext,
-      ): Promise<ActionResult> => withActionSettle(ctx.tabId, async () => {
+      ): Promise<ActionResult> => {
+        const gate = await requireCdpInput({ sessionId, requestConsent });
+        if (!gate.ok) return { success: false, error: gate.error };
+        return withActionSettle(ctx.tabId, async () => {
         const a = args as { key: string };
         const mapping = KEY_MAP[a.key];
         if (!mapping) {
@@ -415,7 +433,8 @@ export function buildKeyboardTools(deps: KeyboardToolDeps): Tool[] {
           success: true,
           observation: `Pressed ${a.key} via keyboard simulation`,
         };
-      }),
+        });
+      },
     },
   ];
 }
