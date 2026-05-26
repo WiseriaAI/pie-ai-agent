@@ -36,6 +36,13 @@ beforeEach(async () => {
       set: vi.fn((kv) => { Object.assign(data, kv); return Promise.resolve(); }),
       remove: vi.fn(() => Promise.resolve()),
     } },
+    scripting: {
+      executeScript: vi.fn().mockResolvedValue([{ result: undefined }]),
+    },
+    webNavigation: {
+      onCommitted: { addListener: vi.fn(), removeListener: vi.fn() },
+      onHistoryStateUpdated: { addListener: vi.fn(), removeListener: vi.fn() },
+    },
   };
   await setCdpInputEnabled(true);
   vi.mocked(elementToPagePoint).mockResolvedValue({ x: 100, y: 200 });

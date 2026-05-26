@@ -35,6 +35,13 @@ beforeEach(() => {
         remove: vi.fn(() => Promise.resolve()),
       },
     },
+    scripting: {
+      executeScript: vi.fn().mockResolvedValue([{ result: undefined }]),
+    },
+    webNavigation: {
+      onCommitted: { addListener: vi.fn(), removeListener: vi.fn() },
+      onHistoryStateUpdated: { addListener: vi.fn(), removeListener: vi.fn() },
+    },
   };
 });
 
