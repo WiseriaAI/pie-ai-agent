@@ -64,3 +64,31 @@ describe("addPending", () => {
     ]);
   });
 });
+
+describe("cancelPending", () => {
+  it("removes the matching entry and returns true", async () => {
+    await addPending(SESSION_ID, { chatMessageId: "m1", content: "a", createdAt: 1 });
+    await addPending(SESSION_ID, { chatMessageId: "m2", content: "b", createdAt: 2 });
+    const removed = await cancelPending(SESSION_ID, "m1");
+    expect(removed).toBe(true);
+    const state = (await chrome.storage.local.get(`session_${SESSION_ID}_agent`))[
+      `session_${SESSION_ID}_agent`
+    ] as SessionAgentState;
+    expect(state.pendingInstructions.map((p) => p.chatMessageId)).toEqual(["m2"]);
+  });
+
+  it("returns false and no-ops when chatMessageId not present", async () => {
+    await addPending(SESSION_ID, { chatMessageId: "m1", content: "a", createdAt: 1 });
+    const removed = await cancelPending(SESSION_ID, "nope");
+    expect(removed).toBe(false);
+    const state = (await chrome.storage.local.get(`session_${SESSION_ID}_agent`))[
+      `session_${SESSION_ID}_agent`
+    ] as SessionAgentState;
+    expect(state.pendingInstructions).toHaveLength(1);
+  });
+
+  it("returns false when session agent state missing", async () => {
+    const removed = await cancelPending("nonexistent", "m1");
+    expect(removed).toBe(false);
+  });
+});
