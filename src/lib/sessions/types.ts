@@ -1,5 +1,6 @@
-import type { DisplayMessage } from "@/types";
+import type { DisplayMessage, Quote } from "@/types";
 import type { AgentMessage } from "@/lib/model-router";
+import type { Attachment } from "@/lib/images";
 
 /**
  * Session lifecycle status (M1-U1 ships the full enum even though M1 only
@@ -249,9 +250,9 @@ export interface PendingInstruction {
   expandedForLLM?: string;
   /** Image attachments staged at send time (rare during streaming since ToolsMenu
    *  is hidden, but supported for symmetry with sendMessage). */
-  attachments?: import("@/lib/images").Attachment[];
+  attachments?: Attachment[];
   /** Quote chips. */
-  quotes?: import("@/types/quotes").Quote[];
+  quotes?: Quote[];
   /** Unix ms — used only for ordering in drain merge. */
   createdAt: number;
 }
