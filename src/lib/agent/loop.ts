@@ -7,6 +7,7 @@ import { hydrateAttachments } from "./image-hydration";
 import {
   BUILT_IN_TOOLS,
   getKeyboardTools,
+  getMouseTools,
   isKeyboardToolName,
 } from "./tools";
 import type { Tool } from "./types";
@@ -31,7 +32,8 @@ import {
   validateAndRepairAdjacentRoles,
   type RoleViolation,
 } from "./history-validation";
-import { isKeyboardSimulationEnabled } from "../keyboard-simulation";
+import { isCdpInputEnabled } from "../cdp-input-enabled";
+import { requestCdpInputConsent } from "../cdp-input-onboarding";
 import { getEnabledSkillPackages } from "../skills";
 import {
   acquireCdpSession,
@@ -1078,10 +1080,11 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
     return session;
   };
 
-  // Read keyboard sim flag at task start. Tool list is re-resolved each
+  // Read CDP input flag at task start. Tool list is re-resolved each
   // iteration (so toggling ON mid-task adds tools next round; toggling
   // OFF triggers kill-switch + abort).
-  const keyboardSimEnabledAtStart = await isKeyboardSimulationEnabled();
+  const cdpInputAtStart = await isCdpInputEnabled();
+  const cdpAvailableAtStart = cdpInputAtStart !== false; // true OR undefined → available
 
   // 2. Initial history
   // Structure: [system, user(initial-task)]
@@ -1116,7 +1119,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
     role: "system",
     content: buildAgentSystemPrompt(
       task,
-      keyboardSimEnabledAtStart,
+      cdpAvailableAtStart,
       /* hasMetaTools */ true,
       // v1.5 M3-U2 — pass the full pinnedTabs array + initial focus.
       // Single-entry: back-compat phrasing ("a specific browser tab").
@@ -1327,18 +1330,29 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // Skills are NOT tools: they live in IndexedDB and are reached via the
       // built-in use_skill / read_skill_file mediation tools (already in
       // BUILT_IN_TOOLS), advertised through the system-prompt skill catalog.
-      const currentKeyboardEnabled = await isKeyboardSimulationEnabled();
-      const keyboardTools = currentKeyboardEnabled
+      const currentCdpInput = await isCdpInputEnabled();
+      const cdpAvailable = currentCdpInput !== false;
+
+      const mouseDeps: import("./tools").MouseToolDeps = {
+        acquireSession: acquireSessionForTask,
+        sessionId,
+        requestConsent: requestCdpInputConsent,
+      };
+      const mouseTools = cdpAvailable ? getMouseTools(mouseDeps) : [];
+
+      const keyboardTools = cdpAvailable
         ? getKeyboardTools({
             acquireSession: acquireSessionForTask,
             pinnedOrigin,
+            sessionId,
+            requestConsent: requestCdpInputConsent,
           })
         : [];
       // #62 — fail-closed vision gating (see filterToolsByVision). Screenshot
       // tools are only offered to models KNOWN to support vision; non-vision
       // and unknown-vision models never see them.
       const allTools = filterToolsByVision(
-        [...BUILT_IN_TOOLS, ...keyboardTools],
+        [...BUILT_IN_TOOLS, ...mouseTools, ...keyboardTools],
         modelConfig.vision,
       );
       const toolDefinitions = toolsToDefinitions(allTools);
