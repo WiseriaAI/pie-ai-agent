@@ -1,0 +1,2005 @@
+# Mid-Task Instructions Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Let users send new instructions during a running agent loop. Each instruction enters a per-session `pendingInstructions` queue (persisted in `SessionAgentState`). At the top of each ReAct iteration the loop drains and merges all pending into a single `<untrusted_user_message source="mid_task">` user message before the next LLM call. Users can cancel any pending entry before it's drained.
+
+**Architecture:** Panel writes `DisplayMessage` (with ulid `id`) to its own chat-history slot and sends `chat-instruction-add { sessionId, chatMessageId, content, ... }` to the SW. SW writes a `PendingInstruction` with the same `chatMessageId` plus the full payload (drain happens entirely in SW; it cannot rely on panel echo) and broadcasts state changes. Loop drain is a single atomic helper: read queue → clear → `writeAtomic` → broadcast. Cancel is symmetric: panel removes DisplayMessage; SW removes PendingInstruction.
+
+**Tech Stack:** TypeScript, React 19, Chrome Extension Manifest V3, vitest + happy-dom + @testing-library/react, chrome.storage.local (writeAtomic), chrome.runtime.connect ports.
+
+**Spec:** [`docs/specs/2026-05-27-mid-task-instructions-design.md`](../specs/2026-05-27-mid-task-instructions-design.md)
+
+**Issue:** [#34](https://github.com/WiseriaAI/pie-ai-agent/issues/34)
+
+---
+
+## File Structure
+
+**Create**
+- `src/lib/sessions/pending-instructions.ts` — SW-side CRUD: `addPending`, `cancelPending`, `drainPending`. Owns the `SessionAgentState.pendingInstructions[]` field via read-modify-writeAtomic.
+- `src/lib/sessions/pending-instructions.test.ts` — unit tests for the three operations + edge cases.
+- `src/lib/agent/loop-drain.test.ts` — unit tests for the drain-and-inject helper at loop top.
+- `src/__tests__/cross-layer/mid-task-instructions.test.ts` — main happy-path + reject + cancel + multi-merge + abort scenarios.
+- `src/__tests__/cross-layer/mid-task-recovery.test.ts` — SW restart, panel reload, reconnect broadcast.
+- `src/sidepanel/components/PendingInstructionList.tsx` — new presentational component rendered above the Composer input box. Reads pending state from props, fires `onCancel(chatMessageId)`.
+- `src/sidepanel/components/PendingInstructionList.test.tsx` — RTL render tests.
+
+**Modify**
+- `src/lib/sessions/types.ts` — add `PendingInstruction` interface; add `pendingInstructions: PendingInstruction[]` field on `SessionAgentState`.
+- `src/types/messages.ts` — extend `DisplayMessage` user variant with optional `id?: string`; add 4 new port message interfaces (`ChatInstructionAddMessage`, `ChatInstructionCancelMessage`, `ChatInstructionStateMessage`, `ChatInstructionRejectedMessage`); add them to `PortMessageToWorker` / `PortMessageToPanel` discriminated unions.
+- `src/lib/agent/loop.ts` — at top of the for-iteration (after `readFocusFromStorage`, before LLM call), call `drainPending(sessionId)`; if non-empty, push a synthesized `<untrusted_user_message source="mid_task">` user message to `agentMessages`.
+- `src/background/index.ts` — handle three new message types in the port listener; broadcast `chat-instruction-state` on panel reconnect (inside `handlePanelMounted`); in `handleChatStream` prepend a drain so abort-saved pending merges into the new task's first user message.
+- `src/sidepanel/hooks/useSession/index.ts` — add `addPendingInstruction` + `cancelPendingInstruction` actions; subscribe to `chat-instruction-state` broadcasts; expose `pendingByChatMessageId: Map<string, PendingInstruction>` to consumers.
+- `src/sidepanel/components/Chat.tsx` — flip `disabled={streaming}` on the textarea to `disabled={!sessionAllowsInput}`; in the action row, render the **Queue** button (reuses `PieSendButton` visual) when `streaming && input.trim()`; submit handler branches on `streaming ? addPendingInstruction() : sendMessage()`; mount `<PendingInstructionList>` above the input box when `pendingMap.size > 0`.
+
+**Delete** — none.
+
+---
+
+## Phase 1: Data structures & types
+
+### Task 1: Extend `SessionAgentState` with `pendingInstructions[]`
+
+**Files:**
+- Modify: `src/lib/sessions/types.ts`
+- Test: `src/lib/sessions/pending-instructions.test.ts` (created in Task 2; this task is type-only)
+
+- [ ] **Step 1.1: Add `PendingInstruction` interface and field**
+
+Edit `src/lib/sessions/types.ts`. After the existing `SessionAgentState` interface (line 227), add:
+
+```ts
+/**
+ * Issue #34 — single entry in the per-session mid-task instruction queue.
+ * Panel-generated `chatMessageId` (ulid) is the link key to `DisplayMessage.id`.
+ * SW stores the full payload (not just an index) because drain happens entirely
+ * inside SW (loop top) and cannot depend on panel echo.
+ */
+export interface PendingInstruction {
+  /** ulid generated by panel; matches DisplayMessage.id. */
+  chatMessageId: string;
+  /** Raw user text. */
+  content: string;
+  /** Slash-expanded LLM-facing text (if panel expanded skills syntax). Prefer this
+   *  over `content` when building the drained user message. */
+  expandedForLLM?: string;
+  /** Image attachments staged at send time (rare during streaming since ToolsMenu
+   *  is hidden, but supported for symmetry with sendMessage). */
+  attachments?: import("@/types/messages").Attachment[];
+  /** Quote chips. */
+  quotes?: import("@/types/messages").Quote[];
+  /** Unix ms — used only for ordering in drain merge. */
+  createdAt: number;
+}
+```
+
+Locate the `SessionAgentState` interface and add the new field right after `agentMessages`:
+
+```ts
+export interface SessionAgentState {
+  agentMessages: AgentMessage[];
+  /**
+   * Issue #34 — per-session FIFO queue of mid-task instructions submitted
+   * during streaming. Drained atomically at the top of each ReAct iteration
+   * (and at chat-start handler entry, to consume any pending left over from
+   * a prior abort). SW is the sole writer.
+   */
+  pendingInstructions: PendingInstruction[];
+  // ...existing fields below (stepIndex, hasImageContent, ...)
+}
+```
+
+- [ ] **Step 1.2: Update default/empty SessionAgentState builders**
+
+Search the codebase for sites that construct fresh `SessionAgentState` and add `pendingInstructions: []`:
+
+```bash
+grep -rn "agentMessages: \[\]" src/lib/sessions/ src/background/ src/lib/agent/
+```
+
+Expected hits include `src/lib/sessions/storage.ts:202` (the default state for new sessions). Add `pendingInstructions: []` next to `agentMessages: []` in each construction site.
+
+- [ ] **Step 1.3: Type-check**
+
+Run:
+```bash
+pnpm tsc --noEmit
+```
+Expected: no new type errors. If existing call sites construct partial states, they'll surface here.
+
+- [ ] **Step 1.4: Commit**
+
+```bash
+git add src/lib/sessions/types.ts src/lib/sessions/storage.ts
+git commit -m "feat(sessions): add pendingInstructions[] field to SessionAgentState (#34)
+
+Issue #34 mid-task instructions data layer foundation. Adds the
+PendingInstruction interface and the queue field on SessionAgentState.
+SW is the sole writer (added in subsequent tasks)."
+```
+
+---
+
+### Task 2: Add port message types
+
+**Files:**
+- Modify: `src/types/messages.ts`
+
+- [ ] **Step 2.1: Extend `DisplayMessage` user variant with optional `id`**
+
+In `src/types/messages.ts`, locate the user variant of `DisplayMessage` (line 130) and add `id?: string`:
+
+```ts
+export type DisplayMessage =
+  | {
+      role: "user";
+      content: string;
+      expandedForLLM?: string;
+      attachments?: Attachment[];
+      quotes?: Quote[];
+      /** Issue #34 — ulid set by panel when added via addPendingInstruction
+       *  during streaming. Cross-references SW pendingInstructions[]. Absent
+       *  on normal sendMessage user messages. */
+      id?: string;
+    }
+  | { role: "assistant"; content: string }
+  // ... rest unchanged
+```
+
+- [ ] **Step 2.2: Add 4 new port message interfaces**
+
+After `ChatAbortMessage` (line 50), add:
+
+```ts
+/**
+ * Issue #34 — panel → SW: enqueue a mid-task instruction.
+ * Sent during streaming when user submits new input. SW writes a
+ * PendingInstruction with the same chatMessageId.
+ */
+export interface ChatInstructionAddMessage {
+  type: "chat-instruction-add";
+  sessionId: string;
+  /** ulid generated by panel; same value used on DisplayMessage.id. */
+  chatMessageId: string;
+  content: string;
+  expandedForLLM?: string;
+  attachments?: Attachment[];
+  quotes?: Quote[];
+}
+
+/**
+ * Issue #34 — panel → SW: remove a pending instruction by chatMessageId.
+ * Idempotent: if SW already drained it, returns current state via broadcast.
+ */
+export interface ChatInstructionCancelMessage {
+  type: "chat-instruction-cancel";
+  sessionId: string;
+  chatMessageId: string;
+}
+
+/**
+ * Issue #34 — SW → panel: broadcast current pending queue state.
+ * Sent after every queue mutation (add / cancel / drain) and on panel
+ * reconnect. Panel cross-references chatMessageId to slot.messages.id to
+ * decide which bubbles get the pending badge.
+ */
+export interface ChatInstructionStateMessage {
+  type: "chat-instruction-state";
+  sessionId: string;
+  pending: PendingInstructionStatePayload[];
+}
+
+export interface PendingInstructionStatePayload {
+  chatMessageId: string;
+  createdAt: number;
+}
+
+/**
+ * Issue #34 — SW → panel: instruction-add arrived after loop ended.
+ * Panel reaction: fall back to normal chat-start with the same content.
+ */
+export interface ChatInstructionRejectedMessage {
+  type: "chat-instruction-rejected";
+  sessionId: string;
+  chatMessageId: string;
+  reason: "not-streaming";
+}
+```
+
+- [ ] **Step 2.3: Add to discriminated unions**
+
+Find `PortMessageToWorker` and `PortMessageToPanel` (search for `export type PortMessage`):
+
+```bash
+grep -n "export type PortMessage" src/types/messages.ts
+```
+
+Add the new types to the appropriate union:
+- `PortMessageToWorker`: `| ChatInstructionAddMessage | ChatInstructionCancelMessage`
+- `PortMessageToPanel`: `| ChatInstructionStateMessage | ChatInstructionRejectedMessage`
+
+- [ ] **Step 2.4: Type-check**
+
+```bash
+pnpm tsc --noEmit
+```
+Expected: any switch/case on the unions that doesn't handle new variants will surface as "Property X is not assignable" or non-exhaustive-check errors. Note them down; the SW listener and panel handler tasks below will resolve them.
+
+If there are exhaustiveness assertions elsewhere (e.g. `assertNever`), add the new variants now with a placeholder `// handled in Task N` comment that the later task will replace.
+
+- [ ] **Step 2.5: Commit**
+
+```bash
+git add src/types/messages.ts
+git commit -m "feat(types): add port messages + DisplayMessage.id for mid-task instructions (#34)
+
+Adds ChatInstruction{Add,Cancel,State,Rejected}Message interfaces and
+an optional id field on the user DisplayMessage variant (link key to
+SW pendingInstructions). Wires them into the PortMessage unions."
+```
+
+---
+
+## Phase 2: SW-side queue module
+
+### Task 3: `pending-instructions.ts` — unit tests for `addPending`
+
+**Files:**
+- Create: `src/lib/sessions/pending-instructions.ts`
+- Create: `src/lib/sessions/pending-instructions.test.ts`
+
+- [ ] **Step 3.1: Write failing test**
+
+```ts
+// src/lib/sessions/pending-instructions.test.ts
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { addPending, cancelPending, drainPending } from "./pending-instructions";
+import type { SessionAgentState } from "./types";
+
+const SESSION_ID = "s1";
+
+function freshAgentState(): SessionAgentState {
+  return {
+    agentMessages: [],
+    pendingInstructions: [],
+    stepIndex: 0,
+    hasImageContent: false,
+  };
+}
+
+beforeEach(() => {
+  const data: Record<string, unknown> = {};
+  // @ts-expect-error mock
+  global.chrome = {
+    storage: {
+      local: {
+        get: vi.fn((keys) => {
+          const want = Array.isArray(keys) ? keys : [keys];
+          const out: Record<string, unknown> = {};
+          for (const k of want) if (k in data) out[k] = data[k];
+          return Promise.resolve(out);
+        }),
+        set: vi.fn((kv: Record<string, unknown>) => {
+          Object.assign(data, kv);
+          return Promise.resolve();
+        }),
+      },
+    },
+  };
+  // seed
+  data[`session_${SESSION_ID}_agent`] = freshAgentState();
+});
+
+describe("addPending", () => {
+  it("appends to queue and persists", async () => {
+    await addPending(SESSION_ID, {
+      chatMessageId: "msg-1",
+      content: "also pin forums",
+      createdAt: 1000,
+    });
+    const state = (await chrome.storage.local.get(`session_${SESSION_ID}_agent`))[
+      `session_${SESSION_ID}_agent`
+    ] as SessionAgentState;
+    expect(state.pendingInstructions).toEqual([
+      { chatMessageId: "msg-1", content: "also pin forums", createdAt: 1000 },
+    ]);
+  });
+
+  it("preserves FIFO order across multiple adds", async () => {
+    await addPending(SESSION_ID, { chatMessageId: "m1", content: "a", createdAt: 1 });
+    await addPending(SESSION_ID, { chatMessageId: "m2", content: "b", createdAt: 2 });
+    await addPending(SESSION_ID, { chatMessageId: "m3", content: "c", createdAt: 3 });
+    const state = (await chrome.storage.local.get(`session_${SESSION_ID}_agent`))[
+      `session_${SESSION_ID}_agent`
+    ] as SessionAgentState;
+    expect(state.pendingInstructions.map((p) => p.chatMessageId)).toEqual([
+      "m1",
+      "m2",
+      "m3",
+    ]);
+  });
+});
+```
+
+- [ ] **Step 3.2: Run test to verify it fails**
+
+```bash
+pnpm vitest run src/lib/sessions/pending-instructions.test.ts
+```
+Expected: FAIL — `pending-instructions.ts` does not exist.
+
+- [ ] **Step 3.3: Write minimal implementation**
+
+Create `src/lib/sessions/pending-instructions.ts`:
+
+```ts
+import type { PendingInstruction, SessionAgentState } from "./types";
+import { agentKey, writeAtomic } from "./storage";
+
+async function readAgent(sessionId: string): Promise<SessionAgentState | null> {
+  const key = agentKey(sessionId);
+  const res = await chrome.storage.local.get(key);
+  return (res[key] as SessionAgentState | undefined) ?? null;
+}
+
+/**
+ * Append a PendingInstruction to the session's queue.
+ * Read-modify-write on session_{id}_agent.
+ */
+export async function addPending(
+  sessionId: string,
+  instruction: PendingInstruction,
+): Promise<void> {
+  const state = await readAgent(sessionId);
+  if (!state) {
+    console.warn(`[pending] addPending: session ${sessionId} agent state missing`);
+    return;
+  }
+  const next: SessionAgentState = {
+    ...state,
+    pendingInstructions: [...state.pendingInstructions, instruction],
+  };
+  await writeAtomic({ [agentKey(sessionId)]: next });
+}
+
+/**
+ * Remove a PendingInstruction by chatMessageId. Idempotent — missing id is no-op.
+ * Returns true if something was removed.
+ */
+export async function cancelPending(
+  sessionId: string,
+  chatMessageId: string,
+): Promise<boolean> {
+  const state = await readAgent(sessionId);
+  if (!state) return false;
+  const before = state.pendingInstructions.length;
+  const filtered = state.pendingInstructions.filter(
+    (p) => p.chatMessageId !== chatMessageId,
+  );
+  if (filtered.length === before) return false;
+  const next: SessionAgentState = { ...state, pendingInstructions: filtered };
+  await writeAtomic({ [agentKey(sessionId)]: next });
+  return true;
+}
+
+/**
+ * Read + clear queue atomically. Returns the drained instructions in FIFO order.
+ * Caller is responsible for broadcasting the empty state and pushing the merged
+ * user message into agentMessages.
+ */
+export async function drainPending(
+  sessionId: string,
+): Promise<PendingInstruction[]> {
+  const state = await readAgent(sessionId);
+  if (!state) return [];
+  const drained = state.pendingInstructions;
+  if (drained.length === 0) return [];
+  const next: SessionAgentState = { ...state, pendingInstructions: [] };
+  await writeAtomic({ [agentKey(sessionId)]: next });
+  return drained;
+}
+```
+
+- [ ] **Step 3.4: Run tests to verify pass**
+
+```bash
+pnpm vitest run src/lib/sessions/pending-instructions.test.ts
+```
+Expected: both addPending tests PASS.
+
+- [ ] **Step 3.5: Commit**
+
+```bash
+git add src/lib/sessions/pending-instructions.ts src/lib/sessions/pending-instructions.test.ts
+git commit -m "feat(sessions): add SW-side pending-instructions module with addPending (#34)
+
+Initial implementation covers addPending. cancelPending and drainPending
+are stubbed for next tasks in this phase."
+```
+
+---
+
+### Task 4: `cancelPending` tests + edge cases
+
+**Files:**
+- Modify: `src/lib/sessions/pending-instructions.test.ts`
+
+- [ ] **Step 4.1: Add failing tests**
+
+Append to the test file:
+
+```ts
+describe("cancelPending", () => {
+  it("removes the matching entry and returns true", async () => {
+    await addPending(SESSION_ID, { chatMessageId: "m1", content: "a", createdAt: 1 });
+    await addPending(SESSION_ID, { chatMessageId: "m2", content: "b", createdAt: 2 });
+    const removed = await cancelPending(SESSION_ID, "m1");
+    expect(removed).toBe(true);
+    const state = (await chrome.storage.local.get(`session_${SESSION_ID}_agent`))[
+      `session_${SESSION_ID}_agent`
+    ] as SessionAgentState;
+    expect(state.pendingInstructions.map((p) => p.chatMessageId)).toEqual(["m2"]);
+  });
+
+  it("returns false and no-ops when chatMessageId not present", async () => {
+    await addPending(SESSION_ID, { chatMessageId: "m1", content: "a", createdAt: 1 });
+    const removed = await cancelPending(SESSION_ID, "nope");
+    expect(removed).toBe(false);
+    const state = (await chrome.storage.local.get(`session_${SESSION_ID}_agent`))[
+      `session_${SESSION_ID}_agent`
+    ] as SessionAgentState;
+    expect(state.pendingInstructions).toHaveLength(1);
+  });
+
+  it("returns false when session agent state missing", async () => {
+    const removed = await cancelPending("nonexistent", "m1");
+    expect(removed).toBe(false);
+  });
+});
+```
+
+- [ ] **Step 4.2: Run tests**
+
+```bash
+pnpm vitest run src/lib/sessions/pending-instructions.test.ts
+```
+Expected: all 3 cancelPending tests PASS (the impl already covers these cases).
+
+- [ ] **Step 4.3: Commit**
+
+```bash
+git add src/lib/sessions/pending-instructions.test.ts
+git commit -m "test(sessions): cancelPending idempotency + missing-session edge cases (#34)"
+```
+
+---
+
+### Task 5: `drainPending` tests + atomicity guard
+
+**Files:**
+- Modify: `src/lib/sessions/pending-instructions.test.ts`
+
+- [ ] **Step 5.1: Add failing tests**
+
+Append:
+
+```ts
+describe("drainPending", () => {
+  it("returns FIFO-ordered drained entries and empties queue", async () => {
+    await addPending(SESSION_ID, { chatMessageId: "m1", content: "a", createdAt: 1 });
+    await addPending(SESSION_ID, { chatMessageId: "m2", content: "b", createdAt: 2 });
+    const drained = await drainPending(SESSION_ID);
+    expect(drained.map((p) => p.chatMessageId)).toEqual(["m1", "m2"]);
+    const state = (await chrome.storage.local.get(`session_${SESSION_ID}_agent`))[
+      `session_${SESSION_ID}_agent`
+    ] as SessionAgentState;
+    expect(state.pendingInstructions).toEqual([]);
+  });
+
+  it("returns empty array when queue empty (no storage write)", async () => {
+    const setSpy = vi.spyOn(chrome.storage.local, "set");
+    const drained = await drainPending(SESSION_ID);
+    expect(drained).toEqual([]);
+    expect(setSpy).not.toHaveBeenCalled();
+  });
+
+  it("returns empty when session missing", async () => {
+    const drained = await drainPending("nonexistent");
+    expect(drained).toEqual([]);
+  });
+
+  it("preserves all PendingInstruction fields including expandedForLLM/attachments", async () => {
+    await addPending(SESSION_ID, {
+      chatMessageId: "m1",
+      content: "user text",
+      expandedForLLM: "expanded text /skill",
+      attachments: [],
+      quotes: [],
+      createdAt: 1,
+    });
+    const drained = await drainPending(SESSION_ID);
+    expect(drained[0]).toMatchObject({
+      chatMessageId: "m1",
+      content: "user text",
+      expandedForLLM: "expanded text /skill",
+    });
+  });
+});
+```
+
+- [ ] **Step 5.2: Run tests**
+
+```bash
+pnpm vitest run src/lib/sessions/pending-instructions.test.ts
+```
+Expected: all 4 drainPending tests PASS.
+
+- [ ] **Step 5.3: Commit**
+
+```bash
+git add src/lib/sessions/pending-instructions.test.ts
+git commit -m "test(sessions): drainPending FIFO order + empty/missing edges + field preservation (#34)"
+```
+
+---
+
+## Phase 3: Loop drain integration
+
+### Task 6: `buildMidTaskUserMessage` helper
+
+**Files:**
+- Create: `src/lib/agent/loop-drain.ts`
+- Create: `src/lib/agent/loop-drain.test.ts`
+
+The drain helper is split out of `loop.ts` to keep it independently testable.
+
+- [ ] **Step 6.1: Write failing test**
+
+```ts
+// src/lib/agent/loop-drain.test.ts
+import { describe, it, expect } from "vitest";
+import { buildMidTaskUserMessage } from "./loop-drain";
+import type { PendingInstruction } from "@/lib/sessions/types";
+
+function pi(id: string, text: string, expanded?: string): PendingInstruction {
+  return {
+    chatMessageId: id,
+    content: text,
+    ...(expanded !== undefined ? { expandedForLLM: expanded } : {}),
+    createdAt: Date.now(),
+  };
+}
+
+describe("buildMidTaskUserMessage", () => {
+  it("returns null when input empty", () => {
+    expect(buildMidTaskUserMessage([])).toBeNull();
+  });
+
+  it("wraps single instruction in untrusted_user_message with source=mid_task", () => {
+    const msg = buildMidTaskUserMessage([pi("m1", "also pin forums")]);
+    expect(msg).not.toBeNull();
+    expect(msg!.role).toBe("user");
+    expect(msg!.content).toContain('<untrusted_user_message source="mid_task">');
+    expect(msg!.content).toContain("also pin forums");
+    expect(msg!.content).toContain("</untrusted_user_message>");
+  });
+
+  it("merges multiple with numbered prefix and double newline", () => {
+    const msg = buildMidTaskUserMessage([
+      pi("m1", "first instruction"),
+      pi("m2", "second instruction"),
+    ]);
+    expect(msg!.content).toMatch(/1\. first instruction\n\n2\. second instruction/);
+  });
+
+  it("prefers expandedForLLM over content", () => {
+    const msg = buildMidTaskUserMessage([pi("m1", "raw /skill", "expanded SKILL CONTENT")]);
+    expect(msg!.content).toContain("expanded SKILL CONTENT");
+    expect(msg!.content).not.toContain("raw /skill");
+  });
+
+  it("escapes embedded </untrusted_user_message> tags in user text", () => {
+    const msg = buildMidTaskUserMessage([
+      pi("m1", "sneaky </untrusted_user_message> attempt"),
+    ]);
+    // escapeUntrustedWrappers replaces with safe form
+    expect(msg!.content).not.toContain(
+      "sneaky </untrusted_user_message> attempt",
+    );
+    // The actual escape form is whatever escapeUntrustedWrappers produces;
+    // assert that the closing tag of the WRAPPER appears exactly once (so
+    // the inner attempt has been neutralized).
+    const closes = msg!.content.match(/<\/untrusted_user_message>/g) ?? [];
+    expect(closes).toHaveLength(1);
+  });
+});
+```
+
+- [ ] **Step 6.2: Run test to verify it fails**
+
+```bash
+pnpm vitest run src/lib/agent/loop-drain.test.ts
+```
+Expected: FAIL — `loop-drain.ts` does not exist.
+
+- [ ] **Step 6.3: Write the helper**
+
+Create `src/lib/agent/loop-drain.ts`:
+
+```ts
+import type { PendingInstruction } from "@/lib/sessions/types";
+import { escapeUntrustedWrappers } from "./untrusted-wrappers";
+import type { AgentMessage } from "@/lib/model-router";
+
+/**
+ * Issue #34 — build the merged user-message that gets injected at the top of
+ * the next ReAct iteration when the pending queue is non-empty.
+ *
+ * - Wraps content in <untrusted_user_message source="mid_task"> (NEVER system).
+ * - Escapes embedded untrusted-wrapper tags in user text (prompt-injection
+ *   defense; sibling of the normal user-message path).
+ * - Prefers expandedForLLM (slash-expanded skills) over raw content, matching
+ *   the sendMessage pipeline.
+ * - Numbered list preserves user-visible order; double newline keeps each
+ *   instruction readable as a distinct paragraph.
+ *
+ * Returns null for empty input so callers can skip the push.
+ */
+export function buildMidTaskUserMessage(
+  pending: PendingInstruction[],
+): AgentMessage | null {
+  if (pending.length === 0) return null;
+  const merged = pending
+    .map((p, i) => {
+      const text = p.expandedForLLM ?? p.content;
+      return `${i + 1}. ${escapeUntrustedWrappers(text)}`;
+    })
+    .join("\n\n");
+  return {
+    role: "user",
+    content: `<untrusted_user_message source="mid_task">\n${merged}\n</untrusted_user_message>`,
+  };
+}
+```
+
+Verify `escapeUntrustedWrappers` is exported from `./untrusted-wrappers`:
+```bash
+grep -n "export function escapeUntrustedWrappers\|export { escapeUntrustedWrappers" src/lib/agent/untrusted-wrappers.ts
+```
+If it's not exported, export it. If the function signature differs from `(text: string) => string`, adapt the call (read the file once to confirm).
+
+- [ ] **Step 6.4: Run tests to verify they pass**
+
+```bash
+pnpm vitest run src/lib/agent/loop-drain.test.ts
+```
+Expected: all 5 tests PASS.
+
+- [ ] **Step 6.5: Commit**
+
+```bash
+git add src/lib/agent/loop-drain.ts src/lib/agent/loop-drain.test.ts
+git commit -m "feat(agent): buildMidTaskUserMessage helper for loop-top drain (#34)
+
+Pure function: takes PendingInstruction[] → AgentMessage. Wraps in
+<untrusted_user_message source=\"mid_task\"> and escapes inner wrapper
+tags. Caller is responsible for invoking drainPending and pushing the
+result into agentMessages."
+```
+
+---
+
+### Task 7: Wire drain into `runAgentLoop`
+
+**Files:**
+- Modify: `src/lib/agent/loop.ts`
+- Test: covered by Phase 5 cross-layer tests; no new unit test (the for-loop is too entangled to mock cleanly — integration coverage is the right level)
+
+- [ ] **Step 7.1: Locate the injection point**
+
+Run:
+```bash
+grep -n "readFocusFromStorage\|signal.aborted" src/lib/agent/loop.ts | head -15
+```
+
+You're looking for the for-iteration top where:
+1. `readFocusFromStorage(...)` is called early
+2. `if (signal.aborted) break;` exists immediately after
+
+Spec §4.4 says the drain goes between these, but conceptually order is:
+```
+abort check → drain → LLM call
+```
+
+The existing structure already has `if (signal.aborted) break;` near loop top; add the drain right after that (and before the LLM stream invocation, which you can identify by a `streamChatByProvider` / `dispatchStreamChat` call).
+
+- [ ] **Step 7.2: Add the drain call**
+
+Inside the for-iteration body, after `readFocusFromStorage` and after `if (signal.aborted) break;`, before the LLM call:
+
+```ts
+// Issue #34 — drain any mid-task instructions submitted during the
+// previous step. Atomic read+clear (drainPending writes session agent
+// state). The push into agentMessages happens here, in-memory; the
+// next step-boundary writeAtomic will include this user message in
+// the persisted agentMessages snapshot.
+const pendingDrained = await drainPending(sessionId);
+const midTaskMsg = buildMidTaskUserMessage(pendingDrained);
+if (midTaskMsg) {
+  agentMessages.push(midTaskMsg);
+  // Broadcast empty pending so panel updates UI immediately
+  // (without waiting for next step write).
+  broadcastInstructionState(port, sessionId, []);
+}
+```
+
+Add imports at the top of `loop.ts`:
+```ts
+import { drainPending } from "@/lib/sessions/pending-instructions";
+import { buildMidTaskUserMessage } from "./loop-drain";
+import { broadcastInstructionState } from "@/background/instruction-broadcast"; // created in Task 9
+```
+
+If `broadcastInstructionState` doesn't exist yet (Task 9 creates it), use a temporary inline `port.postMessage` and replace in Task 9:
+
+```ts
+port.postMessage({
+  type: "chat-instruction-state",
+  sessionId,
+  pending: [],
+});
+```
+
+- [ ] **Step 7.3: Type-check**
+
+```bash
+pnpm tsc --noEmit
+```
+Expected: clean. If `agentMessages.push` complains about AgentMessage shape, double-check `buildMidTaskUserMessage` returns the right `role: "user"` shape that AgentMessage union accepts.
+
+- [ ] **Step 7.4: Run existing loop tests**
+
+```bash
+pnpm vitest run src/lib/agent/
+```
+Expected: existing tests still pass. The drain on empty queue is a no-op so no behavioral regression.
+
+- [ ] **Step 7.5: Commit**
+
+```bash
+git add src/lib/agent/loop.ts
+git commit -m "feat(agent): wire mid-task drain into runAgentLoop iteration top (#34)
+
+drainPending runs after the abort check and before the LLM stream
+call, on every iteration. Empty queue = no-op. Non-empty queue
+pushes a merged <untrusted_user_message source=\"mid_task\"> into
+agentMessages and broadcasts empty state to the panel."
+```
+
+---
+
+## Phase 4: SW port handlers + reconnect broadcast
+
+### Task 8: Handle `chat-instruction-add`
+
+**Files:**
+- Modify: `src/background/index.ts`
+
+- [ ] **Step 8.1: Locate the port listener**
+
+```bash
+grep -n "port.onMessage.addListener\|chat-start.*type\|chat-abort.*type" src/background/index.ts | head
+```
+
+The listener is around line 1274 (in the explore notes). You'll see a sequence of `else if (message.type === ...)` branches.
+
+- [ ] **Step 8.2: Add handler for `chat-instruction-add`**
+
+After the `chat-abort` branch (line ~1292), insert:
+
+```ts
+} else if (message.type === "chat-instruction-add") {
+  if (!verifyPortSession(message.sessionId, "chat-instruction-add")) return;
+
+  // Reject if loop has ended for this session — panel will fall back to chat-start
+  if (!inFlightSessionIds.has(message.sessionId)) {
+    const reply: ChatInstructionRejectedMessage = {
+      type: "chat-instruction-rejected",
+      sessionId: message.sessionId,
+      chatMessageId: message.chatMessageId,
+      reason: "not-streaming",
+    };
+    port.postMessage(reply);
+    return;
+  }
+
+  // Append to queue then broadcast new state
+  void (async () => {
+    try {
+      await addPending(message.sessionId, {
+        chatMessageId: message.chatMessageId,
+        content: message.content,
+        ...(message.expandedForLLM !== undefined
+          ? { expandedForLLM: message.expandedForLLM }
+          : {}),
+        ...(message.attachments?.length ? { attachments: message.attachments } : {}),
+        ...(message.quotes?.length ? { quotes: message.quotes } : {}),
+        createdAt: Date.now(),
+      });
+      // Broadcast new state (includes the just-added entry)
+      const state = await readAgentState(message.sessionId);
+      port.postMessage({
+        type: "chat-instruction-state",
+        sessionId: message.sessionId,
+        pending: (state?.pendingInstructions ?? []).map((p) => ({
+          chatMessageId: p.chatMessageId,
+          createdAt: p.createdAt,
+        })),
+      });
+    } catch (e) {
+      console.warn("[sw] chat-instruction-add failed:", e);
+    }
+  })();
+}
+```
+
+Add imports near top of `src/background/index.ts`:
+
+```ts
+import { addPending } from "@/lib/sessions/pending-instructions";
+import type {
+  ChatInstructionRejectedMessage,
+} from "@/types/messages";
+```
+
+If a `readAgentState` helper doesn't already exist in `src/background/`, add a tiny one (or inline `chrome.storage.local.get(agentKey(sessionId))` here — but prefer the helper).
+
+- [ ] **Step 8.3: Type-check**
+
+```bash
+pnpm tsc --noEmit
+```
+Expected: clean. Exhaustive-check guards (if any) for `PortMessageToWorker` should now be satisfied for `chat-instruction-add` and complain only about `chat-instruction-cancel` (handled next task).
+
+- [ ] **Step 8.4: Commit**
+
+```bash
+git add src/background/index.ts
+git commit -m "feat(sw): handle chat-instruction-add port message (#34)
+
+Adds to pendingInstructions queue when session is streaming;
+replies with chat-instruction-rejected (reason=not-streaming)
+otherwise. Broadcasts chat-instruction-state after successful add."
+```
+
+---
+
+### Task 9: Handle `chat-instruction-cancel` + extract broadcast helper
+
+**Files:**
+- Modify: `src/background/index.ts`
+- Create: `src/background/instruction-broadcast.ts`
+
+- [ ] **Step 9.1: Extract `broadcastInstructionState` helper**
+
+Create `src/background/instruction-broadcast.ts`:
+
+```ts
+import { agentKey } from "@/lib/sessions/storage";
+import type { SessionAgentState } from "@/lib/sessions/types";
+import type { ChatInstructionStateMessage } from "@/types/messages";
+
+/**
+ * Issue #34 — read current pendingInstructions from storage and broadcast
+ * the slim payload (chatMessageId + createdAt only) to the panel via the
+ * given port. Centralizes broadcast so callers (add handler, cancel handler,
+ * drain in loop, reconnect) all use the same shape.
+ */
+export async function broadcastInstructionState(
+  port: chrome.runtime.Port,
+  sessionId: string,
+): Promise<void> {
+  const key = agentKey(sessionId);
+  const res = await chrome.storage.local.get(key);
+  const state = res[key] as SessionAgentState | undefined;
+  const payload: ChatInstructionStateMessage = {
+    type: "chat-instruction-state",
+    sessionId,
+    pending: (state?.pendingInstructions ?? []).map((p) => ({
+      chatMessageId: p.chatMessageId,
+      createdAt: p.createdAt,
+    })),
+  };
+  try {
+    port.postMessage(payload);
+  } catch (e) {
+    console.warn("[sw] broadcastInstructionState postMessage failed:", e);
+  }
+}
+```
+
+- [ ] **Step 9.2: Replace the inline broadcast in `loop.ts` drain block**
+
+In `src/lib/agent/loop.ts` (Task 7 added an inline `port.postMessage`), replace with:
+
+```ts
+if (midTaskMsg) {
+  agentMessages.push(midTaskMsg);
+  await broadcastInstructionState(port, sessionId);
+}
+```
+
+Import update:
+```ts
+import { broadcastInstructionState } from "@/background/instruction-broadcast";
+```
+
+- [ ] **Step 9.3: Use helper in `chat-instruction-add` handler too**
+
+In `src/background/index.ts`, replace the inline broadcast in the `chat-instruction-add` branch (added Task 8) with:
+
+```ts
+await broadcastInstructionState(port, message.sessionId);
+```
+
+- [ ] **Step 9.4: Add `chat-instruction-cancel` handler**
+
+After the `chat-instruction-add` branch:
+
+```ts
+} else if (message.type === "chat-instruction-cancel") {
+  if (!verifyPortSession(message.sessionId, "chat-instruction-cancel")) return;
+  void (async () => {
+    try {
+      await cancelPending(message.sessionId, message.chatMessageId);
+      await broadcastInstructionState(port, message.sessionId);
+    } catch (e) {
+      console.warn("[sw] chat-instruction-cancel failed:", e);
+    }
+  })();
+}
+```
+
+Add to existing import:
+```ts
+import { addPending, cancelPending } from "@/lib/sessions/pending-instructions";
+import { broadcastInstructionState } from "./instruction-broadcast";
+```
+
+- [ ] **Step 9.5: Type-check**
+
+```bash
+pnpm tsc --noEmit
+```
+Expected: clean.
+
+- [ ] **Step 9.6: Run all unit tests**
+
+```bash
+pnpm vitest run src/lib/sessions/ src/lib/agent/loop-drain.test.ts
+```
+Expected: all PASS.
+
+- [ ] **Step 9.7: Commit**
+
+```bash
+git add src/background/index.ts src/background/instruction-broadcast.ts src/lib/agent/loop.ts
+git commit -m "feat(sw): handle chat-instruction-cancel + extract broadcast helper (#34)
+
+cancelPending is idempotent; broadcasts new state regardless. The
+broadcastInstructionState helper centralizes the read-state →
+postMessage flow used by add, cancel, and loop-top drain."
+```
+
+---
+
+### Task 10: Broadcast pending on panel reconnect
+
+**Files:**
+- Modify: `src/background/index.ts`
+
+- [ ] **Step 10.1: Locate `handlePanelMounted`**
+
+```bash
+grep -n "handlePanelMounted\|panel-mounted" src/background/index.ts | head
+```
+
+- [ ] **Step 10.2: Add broadcast at end of `handlePanelMounted`**
+
+In `handlePanelMounted` (the function, not the listener branch), after any existing initial-broadcast logic (look for places it sends initial state), add:
+
+```ts
+// Issue #34 — sync pending instructions to the panel so the reconnected
+// UI can re-decorate any pending bubbles in slot.messages.
+await broadcastInstructionState(port, sessionId);
+```
+
+If `handlePanelMounted` is in a separate file (`src/background/port-handlers.ts`), edit there and import `broadcastInstructionState` from `./instruction-broadcast`.
+
+- [ ] **Step 10.3: Type-check + run all tests**
+
+```bash
+pnpm tsc --noEmit && pnpm vitest run
+```
+Expected: clean + pass.
+
+- [ ] **Step 10.4: Commit**
+
+```bash
+git add src/background/index.ts src/background/port-handlers.ts
+git commit -m "feat(sw): broadcast pending state on panel reconnect (#34)
+
+Guarantees a reconnected panel can re-paint pending badges without
+the user having to interact first. Recovery covers panel reload,
+SW idle eviction → restart, and tab close → reopen."
+```
+
+---
+
+### Task 11: Drain on chat-start (consume post-abort pending)
+
+**Files:**
+- Modify: `src/background/index.ts`
+
+Spec §4.4 Abort path: when user starts a new task and abort-saved pending exists, drain at chat-start handler entry and prepend the merged instructions to the new task's first user message.
+
+- [ ] **Step 11.1: Locate `handleChatStream`**
+
+```bash
+grep -n "function handleChatStream\|handleChatStream(" src/background/index.ts | head
+```
+
+- [ ] **Step 11.2: Drain at the top of `handleChatStream`**
+
+At the very top of `handleChatStream` (before kicking off `runAgentLoop`), before any modification of `messages`:
+
+```ts
+// Issue #34 — if a prior abort left pending instructions, merge them
+// into the first user message of the new task so the user's earlier
+// mid-task additions aren't lost.
+const carryover = await drainPending(sessionId);
+if (carryover.length > 0) {
+  const lastIdx = messages.length - 1;
+  const last = messages[lastIdx];
+  if (last && last.role === "user" && typeof last.content === "string") {
+    const merged = carryover
+      .map((p, i) => `${i + 1}. ${p.expandedForLLM ?? p.content}`)
+      .join("\n\n");
+    messages = [
+      ...messages.slice(0, lastIdx),
+      {
+        ...last,
+        content: `${last.content}\n\n[Earlier mid-task additions]\n${merged}`,
+      },
+    ];
+  }
+  // Broadcast empty pending so panel removes pending decorations
+  // immediately (the carryover messages live in slot.messages from
+  // before; they'll just appear as part of the previous turn's history
+  // without the pending badge once cross-reference fails).
+  await broadcastInstructionState(port, sessionId);
+}
+```
+
+Add imports if missing:
+```ts
+import { drainPending } from "@/lib/sessions/pending-instructions";
+```
+
+- [ ] **Step 11.3: Type-check + tests**
+
+```bash
+pnpm tsc --noEmit && pnpm vitest run
+```
+Expected: clean + pass.
+
+- [ ] **Step 11.4: Commit**
+
+```bash
+git add src/background/index.ts
+git commit -m "feat(sw): drain post-abort pending into next chat-start (#34)
+
+Pending instructions saved across user-triggered abort are merged
+into the first user message of the new task. Prevents user's
+mid-task additions from being silently discarded."
+```
+
+---
+
+## Phase 5: Panel-side hooks + UI
+
+### Task 12: Hook plumbing — `addPendingInstruction` + `cancelPendingInstruction`
+
+**Files:**
+- Modify: `src/sidepanel/hooks/useSession/index.ts`
+
+- [ ] **Step 12.1: Add a `pending` slot field**
+
+Find the `Slot` shape (or wherever `slotsRef` entries are typed; search `streaming: boolean`):
+
+```bash
+grep -n "interface Slot\|streaming: boolean" src/sidepanel/hooks/useSession/index.ts | head -5
+```
+
+Extend with:
+
+```ts
+// inside Slot type
+/** Issue #34 — broadcast snapshot of SW pendingInstructions for this session.
+ *  Keyed by chatMessageId for O(1) lookup in chat-bubble render. */
+pendingByChatMessageId: Map<string, { createdAt: number }>;
+```
+
+In all slot initializers (search for `streaming: false` to find them), add:
+```ts
+pendingByChatMessageId: new Map(),
+```
+
+- [ ] **Step 12.2: Listen for `chat-instruction-state`**
+
+Find the existing port `onMessage` listener (search for `chat-chunk` handler):
+
+```bash
+grep -n "type === \"chat-chunk\"\|onMessage.addListener" src/sidepanel/hooks/useSession/index.ts | head
+```
+
+Add branch:
+
+```ts
+} else if (message.type === "chat-instruction-state") {
+  const map = new Map<string, { createdAt: number }>();
+  for (const p of message.pending) {
+    map.set(p.chatMessageId, { createdAt: p.createdAt });
+  }
+  patchSlot(message.sessionId, { pendingByChatMessageId: map });
+}
+```
+
+- [ ] **Step 12.3: Add `addPendingInstruction` action**
+
+Below the existing `sendMessage` useCallback (around line 686):
+
+```ts
+const addPendingInstruction = useCallback(
+  (input: SendMessageInput) => {
+    const id = sessionIdRef.current;
+    if (!id) return;
+    const slot = slotsRef.current.get(id);
+    if (!slot?.streaming) return; // safety: only during streaming
+    const chatMessageId = ulid();
+    const userMessage: DisplayMessage = {
+      role: "user",
+      content: input.content,
+      id: chatMessageId,
+      ...(input.expandedForLLM !== undefined
+        ? { expandedForLLM: input.expandedForLLM }
+        : {}),
+      ...(input.attachments?.length ? { attachments: input.attachments } : {}),
+      ...(input.quotes?.length ? { quotes: input.quotes } : {}),
+    };
+    const updated = [...(slot.messages ?? []), userMessage];
+    patchSlot(id, { messages: updated });
+    void persistMessagesById(id, updated);
+
+    postWithReconnect(id, {
+      type: "chat-instruction-add",
+      sessionId: id,
+      chatMessageId,
+      content: input.content,
+      ...(input.expandedForLLM !== undefined
+        ? { expandedForLLM: input.expandedForLLM }
+        : {}),
+      ...(input.attachments?.length ? { attachments: input.attachments } : {}),
+      ...(input.quotes?.length ? { quotes: input.quotes } : {}),
+    });
+  },
+  [patchSlot, persistMessagesById, postWithReconnect],
+);
+```
+
+Import `ulid` — check if it's already used (likely):
+```bash
+grep -n "ulid\|from \"ulid\"" src/sidepanel/hooks/useSession/index.ts | head
+```
+If not present, install: `pnpm add ulid` — but check `package.json` first; it's likely already there since other modules use it.
+
+- [ ] **Step 12.4: Add `cancelPendingInstruction` action**
+
+```ts
+const cancelPendingInstruction = useCallback(
+  (chatMessageId: string) => {
+    const id = sessionIdRef.current;
+    if (!id) return;
+    const slot = slotsRef.current.get(id);
+    if (!slot) return;
+    const updated = (slot.messages ?? []).filter(
+      (m) => !("id" in m && m.id === chatMessageId),
+    );
+    patchSlot(id, { messages: updated });
+    void persistMessagesById(id, updated);
+
+    postWithReconnect(id, {
+      type: "chat-instruction-cancel",
+      sessionId: id,
+      chatMessageId,
+    });
+  },
+  [patchSlot, persistMessagesById, postWithReconnect],
+);
+```
+
+- [ ] **Step 12.5: Handle `chat-instruction-rejected`**
+
+```ts
+} else if (message.type === "chat-instruction-rejected") {
+  // SW says loop already ended — fall back to chat-start.
+  // The DisplayMessage was already added by addPendingInstruction;
+  // we need to send chat-start with the full message history.
+  const slot = slotsRef.current.get(message.sessionId);
+  if (!slot) return;
+  // Build chat history identical to sendMessage path: filter user+assistant only
+  const flat = (slot.messages ?? []).filter(
+    (m): m is { role: "user"; content: string; expandedForLLM?: string; id?: string } | { role: "assistant"; content: string } =>
+      m.role === "user" || m.role === "assistant",
+  );
+  const chatMessages = flat.map((m) => ({
+    role: m.role,
+    content: m.role === "user" && m.expandedForLLM ? m.expandedForLLM : m.content,
+  }));
+  patchSlot(message.sessionId, {
+    streaming: true,
+    streamFinished: false,
+    accumulated: "",
+    streamingText: "",
+    error: null,
+  });
+  postWithReconnect(message.sessionId, {
+    type: "chat-start",
+    messages: chatMessages,
+    sessionId: message.sessionId,
+  });
+}
+```
+
+- [ ] **Step 12.6: Export new actions**
+
+At the bottom of the hook (around line 927 where `sendMessage` is exported):
+
+```ts
+return {
+  // ...existing
+  sendMessage,
+  addPendingInstruction,
+  cancelPendingInstruction,
+  // ...
+};
+```
+
+Update the return type:
+```ts
+addPendingInstruction: (input: SendMessageInput) => void;
+cancelPendingInstruction: (chatMessageId: string) => void;
+```
+
+And expose `pendingByChatMessageId` so the Chat component can read it:
+```ts
+// Inside the slot-derived state surface area (search for how `messages` is exposed)
+pendingByChatMessageId: slot.pendingByChatMessageId,
+```
+
+- [ ] **Step 12.7: Type-check**
+
+```bash
+pnpm tsc --noEmit
+```
+Expected: clean.
+
+- [ ] **Step 12.8: Commit**
+
+```bash
+git add src/sidepanel/hooks/useSession/index.ts
+git commit -m "feat(panel): useSession actions for mid-task instructions (#34)
+
+addPendingInstruction generates a ulid chatMessageId, writes the
+DisplayMessage into slot.messages (with id), and sends
+chat-instruction-add to the SW. cancelPendingInstruction filters the
+DisplayMessage and sends chat-instruction-cancel. The hook also
+listens for chat-instruction-state to update slot.pendingByChatMessageId
+and falls back to chat-start on chat-instruction-rejected."
+```
+
+---
+
+### Task 13: PendingInstructionList component
+
+**Files:**
+- Create: `src/sidepanel/components/PendingInstructionList.tsx`
+- Create: `src/sidepanel/components/PendingInstructionList.test.tsx`
+
+- [ ] **Step 13.1: Write failing test**
+
+```tsx
+// src/sidepanel/components/PendingInstructionList.test.tsx
+import { describe, it, expect, vi } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/react";
+import { PendingInstructionList } from "./PendingInstructionList";
+
+describe("PendingInstructionList", () => {
+  it("renders nothing when items empty", () => {
+    const { container } = render(
+      <PendingInstructionList items={[]} onCancel={() => {}} />,
+    );
+    expect(container.firstChild).toBeNull();
+  });
+
+  it("renders caption with count and each item text", () => {
+    render(
+      <PendingInstructionList
+        items={[
+          { chatMessageId: "m1", content: "first" },
+          { chatMessageId: "m2", content: "second" },
+        ]}
+        onCancel={() => {}}
+      />,
+    );
+    expect(screen.getByText(/2 IN QUEUE/i)).toBeInTheDocument();
+    expect(screen.getByText("first")).toBeInTheDocument();
+    expect(screen.getByText("second")).toBeInTheDocument();
+  });
+
+  it("calls onCancel with chatMessageId when × clicked", () => {
+    const onCancel = vi.fn();
+    render(
+      <PendingInstructionList
+        items={[{ chatMessageId: "m1", content: "first" }]}
+        onCancel={onCancel}
+      />,
+    );
+    const cancelBtn = screen.getByRole("button", { name: /cancel/i });
+    fireEvent.click(cancelBtn);
+    expect(onCancel).toHaveBeenCalledWith("m1");
+  });
+});
+```
+
+- [ ] **Step 13.2: Run to verify failure**
+
+```bash
+pnpm vitest run src/sidepanel/components/PendingInstructionList.test.tsx
+```
+Expected: FAIL — component file does not exist.
+
+- [ ] **Step 13.3: Implement the component**
+
+Create `src/sidepanel/components/PendingInstructionList.tsx`:
+
+```tsx
+import { useT } from "@/i18n/use-t";
+
+export interface PendingItem {
+  chatMessageId: string;
+  content: string;
+}
+
+export function PendingInstructionList({
+  items,
+  onCancel,
+}: {
+  items: PendingItem[];
+  onCancel: (chatMessageId: string) => void;
+}) {
+  const t = useT();
+  if (items.length === 0) return null;
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-wider">
+        <div className="h-1.5 w-1.5 rounded-full bg-[#C9A268]" />
+        <span className="text-[#C9A268]">
+          {t("chat.pending.captionPrefix")} · {items.length}{" "}
+          {t("chat.pending.captionSuffix")}
+        </span>
+        <div className="flex-1" />
+        <span className="text-fg-3">{t("chat.pending.hint")}</span>
+      </div>
+      {items.map((item) => (
+        <div
+          key={item.chatMessageId}
+          className="group flex items-start gap-2.5 rounded-lg border border-[#1F242C] bg-[#14181E] px-3 py-2.5 transition-colors hover:border-[#2A3038] hover:bg-[#181D24]"
+        >
+          <div className="mt-1 flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center">
+            <div className="h-1.5 w-1.5 rounded-full bg-[#C9A268]" />
+          </div>
+          <div className="flex-1 text-[13px] leading-[18px] text-[#C2C7CF]">
+            {item.content}
+          </div>
+          <button
+            type="button"
+            aria-label={t("chat.pending.cancel")}
+            title={t("chat.pending.cancel")}
+            onClick={() => onCancel(item.chatMessageId)}
+            className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded text-fg-3 opacity-0 transition-opacity hover:text-fg-1 group-hover:opacity-100"
+          >
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+              <path d="M2 2 L8 8 M8 2 L2 8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+```
+
+- [ ] **Step 13.4: Add i18n keys**
+
+Edit the i18n files (find them):
+```bash
+ls src/i18n/
+grep -rn "chat\.composerPlaceholder" src/i18n/
+```
+
+Add to both locales:
+```ts
+// src/i18n/en.ts (and zh.ts)
+"chat.pending.captionPrefix": "PENDING",
+"chat.pending.captionSuffix": "IN QUEUE",
+"chat.pending.hint": "SENT NEXT TURN",
+"chat.pending.cancel": "Cancel",
+```
+
+zh translations:
+```ts
+"chat.pending.captionPrefix": "待发送",
+"chat.pending.captionSuffix": "条排队",
+"chat.pending.hint": "下一轮加入",
+"chat.pending.cancel": "撤回",
+```
+
+- [ ] **Step 13.5: Run test**
+
+```bash
+pnpm vitest run src/sidepanel/components/PendingInstructionList.test.tsx
+```
+Expected: PASS.
+
+- [ ] **Step 13.6: Commit**
+
+```bash
+git add src/sidepanel/components/PendingInstructionList.tsx src/sidepanel/components/PendingInstructionList.test.tsx src/i18n/
+git commit -m "feat(panel): PendingInstructionList component (#34)
+
+Renders the queue above the Composer input box. Each row has a
+warm-gold queued dot and an × cancel button that appears on hover.
+Empty list renders nothing."
+```
+
+---
+
+### Task 14: Wire `Chat.tsx` — textarea, action row, PendingInstructionList
+
+**Files:**
+- Modify: `src/sidepanel/components/Chat.tsx`
+
+- [ ] **Step 14.1: Pass new actions + pending map through to ComposerProps**
+
+Locate the `Chat` function-component (search for `streaming, streamingText`):
+
+```bash
+grep -n "useSession()\|const {.*sendMessage" src/sidepanel/components/Chat.tsx | head
+```
+
+Pull `addPendingInstruction`, `cancelPendingInstruction`, `pendingByChatMessageId` from `useSession()` alongside `sendMessage` and `abort`. Pass them into the Composer subcomponent prop list.
+
+- [ ] **Step 14.2: Flip textarea `disabled` condition**
+
+In the Composer subcomponent (around line 1480 — `disabled={streaming}`), change to:
+
+```tsx
+disabled={!sessionAllowsInput}
+```
+
+where `sessionAllowsInput` is computed in the parent and passed in as a prop. Definition: `status === "active"`. If `status` isn't already in scope, plumb it down from `useSession()`.
+
+Update placeholder: **unchanged** (leave as-is per spec §5.1).
+
+- [ ] **Step 14.3: Add Queue button to action row**
+
+Find the existing `streaming ? <button onClick={onStop}>...</button> : <PieSendButton ... />` block (around line 1546). Change to:
+
+```tsx
+{streaming ? (
+  <>
+    {input.trim() && (
+      <PieSendButton
+        onClick={onQueueInstruction}
+        disabled={false}
+        aria-label={t("chat.pending.queue")}
+        title={t("chat.pending.queue")}
+      />
+    )}
+    <button
+      type="button"
+      onClick={onStop}
+      aria-label={t("chat.cancelRunningTask")}
+      title={t("chat.cancelRunningTask")}
+      className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded text-fg-1 transition-opacity hover:opacity-70"
+    >
+      <svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor" aria-hidden="true">
+        <path d="M256 256v512h512V256H256z m597.333333-85.333333v682.666666H170.666667V170.666667h682.666666z" />
+      </svg>
+    </button>
+  </>
+) : (
+  <PieSendButton onClick={onSend} disabled={!input.trim()} />
+)}
+```
+
+Note the order: **Queue button left of STOP**. PieSendButton reused for the Queue visual.
+
+Add `onQueueInstruction: () => void` to the Composer props interface.
+
+Add i18n key:
+```ts
+"chat.pending.queue": "Queue for next turn",
+```
+zh:
+```ts
+"chat.pending.queue": "加入下一轮",
+```
+
+- [ ] **Step 14.4: Wire unified `onSubmit` dispatch**
+
+Refactor the Composer subcomponent props: replace `onSend: () => void` with `onSubmit: () => void` (single submit callback the textarea Enter-key and both buttons call). The Composer no longer needs to know whether to send vs queue — the parent's `handleSubmit` decides.
+
+In the Chat component (parent of Composer), find the existing `sendMessage(...)` call site (search `sessionSendMessage(` or `sendMessage({`) and replicate its argument-building logic (slash expansion, attachment + quote staging, clear-on-send). The new unified handler:
+
+```tsx
+const handleSubmit = useCallback(() => {
+  if (!input.trim()) return;
+  // Same payload-building as the existing sendMessage call site: copy
+  // the existing { content, expandedForLLM, attachments, quotes } object
+  // construction from there into a local `payload`.
+  const payload = buildSendPayload(input, attachments, quotes);
+  if (streaming) {
+    addPendingInstruction(payload);
+  } else {
+    sendMessage(payload);
+  }
+  setInput("");
+  clearAttachments(); // whatever the current sendMessage path does
+  clearQuotes();
+}, [input, streaming, attachments, quotes, addPendingInstruction, sendMessage]);
+```
+
+Pass `handleSubmit` as the Composer's `onSubmit` prop. Wire both the Queue button and the textarea Enter-key handler to `onSubmit`. The non-streaming `<PieSendButton>` also uses `onSubmit`.
+
+- [ ] **Step 14.5: Mount PendingInstructionList above the input box**
+
+In the Composer subcomponent's outer container (around line 1460), insert above the box-wrapper div:
+
+```tsx
+{pendingItems.length > 0 && (
+  <div className="px-1 pb-2">
+    <PendingInstructionList
+      items={pendingItems}
+      onCancel={onCancelPending}
+    />
+  </div>
+)}
+```
+
+`pendingItems` is computed from cross-referencing `slot.messages` (DisplayMessage[]) and `pendingByChatMessageId`:
+
+```tsx
+const pendingItems = messages.flatMap((m) => {
+  if (m.role !== "user" || !m.id) return [];
+  if (!pendingByChatMessageId.has(m.id)) return [];
+  return [{ chatMessageId: m.id, content: m.content }];
+});
+```
+
+`onCancelPending` is `cancelPendingInstruction` plumbed through props.
+
+Import:
+```tsx
+import { PendingInstructionList } from "./PendingInstructionList";
+```
+
+- [ ] **Step 14.6: Manual smoke test**
+
+```bash
+pnpm dev
+```
+
+Load extension, start a long-running task (e.g. "list all tabs and group by domain"), and while it's streaming:
+1. Type something in textarea → Queue button appears next to STOP ✓
+2. Hit Enter or click Queue → pending row appears above input ✓
+3. Hover pending row → × visible ✓
+4. Click × → row disappears ✓
+5. Wait for next ReAct step → pending row disappears (consumed by drain), bubble in chat history loses pending badge but stays as user message ✓
+6. Submit pending then click STOP → row remains; sending a new chat-start should merge them ✓
+7. Click another session in drawer, type → goes via normal chat-start (not pending) ✓
+
+If any step fails, debug before committing.
+
+- [ ] **Step 14.7: Commit**
+
+```bash
+git add src/sidepanel/components/Chat.tsx src/i18n/
+git commit -m "feat(panel): wire mid-task instructions into Composer (#34)
+
+textarea stays enabled during streaming (gated on session status only).
+Queue button (reuses PieSendButton) appears left of STOP when input
+non-empty. PendingInstructionList mounts above the input when any
+slot.messages bubble's id matches a SW-broadcast pendingInstructions
+entry."
+```
+
+---
+
+## Phase 6: Cross-layer + recovery tests
+
+### Task 15: Cross-layer happy-path test
+
+**Files:**
+- Create: `src/__tests__/cross-layer/mid-task-instructions.test.ts`
+
+- [ ] **Step 15.1: Establish test scaffolding**
+
+Open an existing cross-layer test to mirror conventions:
+
+```bash
+ls src/__tests__/cross-layer/ | head
+```
+
+Pick one similar in shape (e.g. `consent-gating.test.ts` or `chat-start-and-abort.test.ts`) and copy its setup pattern (mock chrome APIs, port, etc.).
+
+- [ ] **Step 15.2: Write the happy-path test**
+
+```ts
+// src/__tests__/cross-layer/mid-task-instructions.test.ts
+import { describe, it, expect, beforeEach, vi } from "vitest";
+// Import the harness pattern from a sibling test
+import { setupBgTest, runOneStep } from "./helpers"; // use whatever shape exists
+import { addPending } from "@/lib/sessions/pending-instructions";
+
+describe("mid-task instructions: happy path", () => {
+  let h: ReturnType<typeof setupBgTest>;
+  beforeEach(() => {
+    h = setupBgTest();
+  });
+
+  it("drains pending and pushes merged user message before next LLM call", async () => {
+    // 1) Start a chat-start with a single user message
+    await h.startChat("Group all my tabs.");
+    // 2) Mid-stream, add two pending
+    await addPending(h.sessionId, {
+      chatMessageId: "m1",
+      content: "Also pin the result.",
+      createdAt: 1,
+    });
+    await addPending(h.sessionId, {
+      chatMessageId: "m2",
+      content: "Skip the GitHub tab.",
+      createdAt: 2,
+    });
+    // 3) Advance one ReAct step (helper triggers the loop's next iteration)
+    const llmCallArgs = await h.captureNextLlmCallMessages();
+    // 4) Assert the last user message in the LLM-facing messages is the
+    //    merged mid_task wrapper containing both texts
+    const lastUser = llmCallArgs.findLast((m: any) => m.role === "user");
+    expect(lastUser.content).toContain('<untrusted_user_message source="mid_task">');
+    expect(lastUser.content).toContain("Also pin the result.");
+    expect(lastUser.content).toContain("Skip the GitHub tab.");
+    // 5) Queue empty + state broadcasted
+    const state = await h.readAgentState();
+    expect(state.pendingInstructions).toEqual([]);
+    expect(h.lastBroadcastInstructionState()?.pending).toEqual([]);
+  });
+});
+```
+
+If the existing helper pattern doesn't expose `captureNextLlmCallMessages`, build it from the existing mock of `streamChatByProvider` / `dispatchStreamChat`. Replace pseudocode with the actual harness API.
+
+- [ ] **Step 15.3: Run test, iterate until pass**
+
+```bash
+pnpm vitest run src/__tests__/cross-layer/mid-task-instructions.test.ts
+```
+Expected: PASS. If FAIL, fix the integration (most likely loop wiring or harness import).
+
+- [ ] **Step 15.4: Commit**
+
+```bash
+git add src/__tests__/cross-layer/mid-task-instructions.test.ts
+git commit -m "test(cross-layer): mid-task happy path — add → drain → LLM merge (#34)"
+```
+
+---
+
+### Task 16: Cross-layer cancel + reject + multi-merge tests
+
+**Files:**
+- Modify: `src/__tests__/cross-layer/mid-task-instructions.test.ts`
+
+- [ ] **Step 16.1: Add cancel test**
+
+```ts
+it("cancel removes from queue and never reaches LLM", async () => {
+  await h.startChat("Task A");
+  await addPending(h.sessionId, { chatMessageId: "m1", content: "Cancel me.", createdAt: 1 });
+  // simulate panel sending cancel
+  await h.dispatchToPort({
+    type: "chat-instruction-cancel",
+    sessionId: h.sessionId,
+    chatMessageId: "m1",
+  });
+  const llmCallArgs = await h.captureNextLlmCallMessages();
+  const lastUser = llmCallArgs.findLast((m: any) => m.role === "user");
+  expect(lastUser.content).not.toContain("Cancel me.");
+  expect(h.lastBroadcastInstructionState()?.pending).toEqual([]);
+});
+```
+
+- [ ] **Step 16.2: Add reject test**
+
+```ts
+it("add after loop ends → chat-instruction-rejected", async () => {
+  await h.startChat("Task A");
+  await h.runUntilDone(); // helper that drives the loop to completion
+  const replies = h.collectRepliesAfter(() =>
+    h.dispatchToPort({
+      type: "chat-instruction-add",
+      sessionId: h.sessionId,
+      chatMessageId: "late-m1",
+      content: "Late add.",
+    }),
+  );
+  expect(replies.some((r: any) => r.type === "chat-instruction-rejected")).toBe(true);
+});
+```
+
+- [ ] **Step 16.3: Add abort-carryover test**
+
+```ts
+it("abort then chat-start merges leftover pending into first user message", async () => {
+  await h.startChat("Task A");
+  await addPending(h.sessionId, { chatMessageId: "m1", content: "leftover", createdAt: 1 });
+  await h.dispatchToPort({ type: "chat-abort" });
+  // user starts a new task
+  await h.startChat("Task B");
+  const llmCallArgs = await h.captureNextLlmCallMessages();
+  const firstUser = llmCallArgs.find((m: any) => m.role === "user");
+  expect(firstUser.content).toContain("Task B");
+  expect(firstUser.content).toContain("leftover");
+  expect(firstUser.content).toContain("[Earlier mid-task additions]");
+});
+```
+
+- [ ] **Step 16.4: Run all 3**
+
+```bash
+pnpm vitest run src/__tests__/cross-layer/mid-task-instructions.test.ts
+```
+Expected: all 4 tests (15 + 16) PASS.
+
+- [ ] **Step 16.5: Commit**
+
+```bash
+git add src/__tests__/cross-layer/mid-task-instructions.test.ts
+git commit -m "test(cross-layer): cancel + reject + abort-carryover (#34)"
+```
+
+---
+
+### Task 17: Recovery tests (SW restart, reconnect broadcast)
+
+**Files:**
+- Create: `src/__tests__/cross-layer/mid-task-recovery.test.ts`
+
+- [ ] **Step 17.1: Write recovery test**
+
+```ts
+// src/__tests__/cross-layer/mid-task-recovery.test.ts
+import { describe, it, expect, beforeEach } from "vitest";
+import { setupBgTest } from "./helpers";
+import { addPending } from "@/lib/sessions/pending-instructions";
+
+describe("mid-task recovery", () => {
+  let h: ReturnType<typeof setupBgTest>;
+  beforeEach(() => {
+    h = setupBgTest();
+  });
+
+  it("SW restart preserves pendingInstructions; resume drains on next iteration", async () => {
+    await h.startChat("Task A");
+    await addPending(h.sessionId, { chatMessageId: "m1", content: "keep me", createdAt: 1 });
+    // Simulate SW eviction — discard background module state but keep storage
+    await h.simulateSwRestart();
+    // Resume session
+    await h.resumeSession(h.sessionId);
+    const llmCallArgs = await h.captureNextLlmCallMessages();
+    const lastUser = llmCallArgs.findLast((m: any) => m.role === "user");
+    expect(lastUser.content).toContain("keep me");
+  });
+
+  it("panel reconnect broadcasts current pending state", async () => {
+    await h.startChat("Task A");
+    await addPending(h.sessionId, { chatMessageId: "m1", content: "alive", createdAt: 1 });
+    // Simulate panel disconnect + reconnect with same sessionId
+    await h.reconnectPanel(h.sessionId);
+    const lastState = h.lastBroadcastInstructionState();
+    expect(lastState?.pending).toHaveLength(1);
+    expect(lastState?.pending[0].chatMessageId).toBe("m1");
+  });
+});
+```
+
+If `setupBgTest` lacks `simulateSwRestart` or `reconnectPanel`, look at how `chat-start-recovery.test.ts` (or similar) tests SW restart and copy the pattern.
+
+- [ ] **Step 17.2: Run + iterate**
+
+```bash
+pnpm vitest run src/__tests__/cross-layer/mid-task-recovery.test.ts
+```
+Expected: PASS.
+
+- [ ] **Step 17.3: Commit**
+
+```bash
+git add src/__tests__/cross-layer/mid-task-recovery.test.ts
+git commit -m "test(cross-layer): SW restart + panel reconnect recovery (#34)"
+```
+
+---
+
+## Phase 7: Verification + release notes
+
+### Task 18: Full test sweep + build
+
+- [ ] **Step 18.1: Run all tests**
+
+```bash
+pnpm test
+```
+Expected: all PASS, including the new pending/recovery tests and unchanged existing tests.
+
+- [ ] **Step 18.2: Build**
+
+```bash
+pnpm build
+```
+Expected: clean build. Verify `dist/manifest.json` still references `.js` (not `.ts`) for service_worker and content_scripts (release.yml invariant).
+
+- [ ] **Step 18.3: Manual smoke (sidepanel)**
+
+```bash
+pnpm dev
+```
+
+Run through the manual checklist from Task 14.6 plus:
+- Submit pending → close panel → reopen → pending row still visible ✓
+- Force SW restart (chrome://extensions → reload extension while panel open) → reconnect → pending row visible after reconnect broadcast ✓
+- Multi-session: A streaming with pending; switch to B; B's input goes normally; switch back to A; A's pending still there ✓
+
+- [ ] **Step 18.4: If smoke passed, commit any minor fixes**
+
+```bash
+git status
+# If clean, no commit needed.
+# If small fixes were required during smoke testing, commit them with descriptive messages.
+```
+
+---
+
+### Task 19: Release notes + docs/solutions trace
+
+**Files:**
+- Modify: `package.json` (bump version e.g. 0.14.0 → 0.15.0)
+- Modify: `manifest.json` (same version)
+- Create: `docs/release-notes/v0.15.0.md`
+- Create: `docs/solutions/2026-05-27-mid-task-instructions.md`
+
+- [ ] **Step 19.1: Bump version**
+
+In both `package.json` and `manifest.json`, bump version (check current value first):
+```bash
+grep '"version"' package.json manifest.json
+```
+
+- [ ] **Step 19.2: Release notes**
+
+Sample structure (mirror an existing release note):
+
+```md
+# v0.15.0 — Mid-Task Instructions
+
+## What's new
+
+You can now send follow-up instructions while the agent is working. Each
+addition joins the next ReAct step's context. Queue them up; cancel any
+that haven't been sent yet by clicking the × on the pending row.
+
+## 中文摘要
+
+agent 工作时可以追加指令；下一轮自动加入。未发送的可点 × 撤回。
+
+## Invariants
+- Mid-task instructions are wrapped in `<untrusted_user_message source="mid_task">` — never enter the system role.
+- SW is the sole writer of `SessionAgentState.pendingInstructions`.
+- Pending survives SW restart and panel reload (persisted via writeAtomic).
+```
+
+- [ ] **Step 19.3: Solution trace doc**
+
+```md
+# Solution: Mid-Task Instructions (Issue #34)
+
+Spec: `docs/specs/2026-05-27-mid-task-instructions-design.md`
+Plan: `docs/plans/2026-05-27-mid-task-instructions.md`
+
+## Invariants added
+- P-MTI-1 .. P-MTI-9 (see spec §9)
+
+## Files touched
+- `src/lib/sessions/types.ts` — add PendingInstruction + queue field
+- `src/lib/sessions/pending-instructions.ts` — add/cancel/drain (SW)
+- `src/types/messages.ts` — new port messages + DisplayMessage.id
+- `src/lib/agent/loop-drain.ts` — buildMidTaskUserMessage
+- `src/lib/agent/loop.ts` — drain at iteration top
+- `src/background/instruction-broadcast.ts` — centralized state broadcast
+- `src/background/index.ts` — handle three new port messages + reconnect + chat-start carry-over
+- `src/sidepanel/hooks/useSession/index.ts` — actions + listener + state surface
+- `src/sidepanel/components/PendingInstructionList.tsx` — UI
+- `src/sidepanel/components/Chat.tsx` — Composer wiring
+
+## Why these decisions
+See spec §6 for the full decision table.
+```
+
+- [ ] **Step 19.4: Commit**
+
+```bash
+git add package.json manifest.json docs/release-notes/v0.15.0.md docs/solutions/2026-05-27-mid-task-instructions.md
+git commit -m "docs: release notes + solution trace for mid-task instructions (#34)"
+```
+
+- [ ] **Step 19.5: Tag (only if user explicitly asks to release)**
+
+Per CLAUDE.md `## Release`: bump version commit first, then tag:
+
+```bash
+git tag v0.15.0
+git push origin main v0.15.0
+```
+
+`release.yml` will pick up the tag and produce the zip asset.
+
+---
+
+## Self-Review
+
+After all tasks complete, run through the spec sections and check coverage:
+
+| Spec § | Plan task(s) |
+|---|---|
+| §4.1 文件结构 | Task 1–14 |
+| §4.2 数据结构 | Task 1, 2 |
+| §4.3 Port 消息类型 | Task 2 |
+| §4.4 数据流 — 添加 | Task 8, 12 |
+| §4.4 数据流 — 撤回 | Task 9, 12 |
+| §4.4 数据流 — drain | Task 6, 7 |
+| §4.4 数据流 — abort 残留 | Task 11 |
+| §4.4 数据流 — recovery | Task 10, 17 |
+| §4.5 输入框行为表 | Task 14 |
+| §5.1 Composer 修改 | Task 14 |
+| §5.2 Pending List 区 | Task 13, 14 |
+| §5.3 已消费视觉态 | implicit in Task 13 cross-ref logic |
+| §5.4 DisplayMessage.id | Task 2 |
+| §6 决策(why) | covered by spec text, no implementation needed |
+| §7 错误处理 | Task 8, 9, 12, 16 |
+| §8 测试策略 | Task 3–6, 13, 15–17 |
+| §9 Invariants | tests in Task 6, 15–17 + structure in Task 1–11 |
+| §10 文件清单 | all create/modify steps |
+| §11 Non-goals | omitted by design (no tasks) |
