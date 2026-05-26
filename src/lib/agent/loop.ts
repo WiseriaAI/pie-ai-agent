@@ -51,6 +51,8 @@ import {
   setSessionAgent,
 } from "../sessions/storage";
 import { addPinToMeta } from "../sessions/pin-state";
+import { drainPending } from "../sessions/pending-instructions";
+import { buildMidTaskUserMessage } from "./loop-drain";
 import { synthesizeAgentTurnText, type TerminationReason } from "./synthesize-agent-turn";
 import { waitForUrlSettle, type UrlSettleResult } from "./wait-for-url-settle";
 // setLastTaskSynth removed from emitDone — lastTaskSynth is now folded into
@@ -1192,6 +1194,25 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       if (refreshed.focused) {
         pinnedTabId = refreshed.focused.tabId;
         pinnedOrigin = refreshed.focused.origin;
+      }
+
+      // Issue #34 — drain any mid-task instructions submitted during the
+      // previous step. Atomic read+clear (drainPending writes session agent
+      // state). The push into history happens here, in-memory; the next
+      // step-boundary writeAtomic will include this user message in the
+      // persisted agentMessages snapshot.
+      const pendingDrained = await drainPending(sessionId);
+      const midTaskMsg = buildMidTaskUserMessage(pendingDrained);
+      if (midTaskMsg) {
+        history.push(midTaskMsg);
+        // Broadcast empty pending so panel updates UI immediately
+        // (without waiting for next step write).
+        // TODO(#34/Task9): replace with broadcastInstructionState helper
+        port.postMessage({
+          type: "chat-instruction-state",
+          sessionId,
+          pending: [],
+        });
       }
 
       // Origin check (Issue #50: transient-tolerant)
