@@ -1033,6 +1033,29 @@ async function handleChatStream(
       return;
     }
 
+    // Issue #34 — if a prior abort left pending instructions, merge them
+    // into the last user message of the new task so the user's earlier
+    // mid-task additions aren't lost.
+    const carryover = await drainPending(sessionId);
+    if (carryover.length > 0) {
+      const lastIdx = messages.length - 1;
+      const last = messages[lastIdx];
+      if (last && last.role === "user" && typeof last.content === "string") {
+        const merged = carryover
+          .map((p, i) => `${i + 1}. ${p.expandedForLLM ?? p.content}`)
+          .join("\n\n");
+        messages = [
+          ...messages.slice(0, lastIdx),
+          {
+            ...last,
+            content: `${last.content}\n\n[Earlier mid-task additions]\n${merged}`,
+          },
+        ];
+      }
+      // Broadcast empty pending so panel removes pending decorations
+      await broadcastInstructionState(port, sessionId);
+    }
+
     // U2 — task is always the last message (panel sendMessage puts the
     // current user prompt last; this replaces the old reverse-find).
     const task = messages[messages.length - 1]!.content;
