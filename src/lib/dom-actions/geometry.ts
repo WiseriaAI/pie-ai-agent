@@ -58,3 +58,64 @@ export async function elementToPagePoint(
   // iframe path filled in Task 9.
   throw new Error(`Iframe geometry not yet implemented (frameId=${frameId})`);
 }
+
+export interface CdpFrame {
+  id: string;
+  url: string;
+  parentId?: string;
+}
+
+export interface CdpFrameTreeNode {
+  frame: CdpFrame;
+  childFrames?: CdpFrameTreeNode[];
+}
+
+interface ChromeFrame {
+  frameId: number;
+  parentFrameId: number;
+  url: string;
+}
+
+/**
+ * Map a chrome.webNavigation frameId to a CDP frame id by walking both
+ * trees in parallel, matching by (parentMatch, url). Same-URL siblings
+ * are disambiguated by DOM order (sibling index in parent's child list).
+ *
+ * Returns null when no match (e.g. frame closed between read_page and
+ * this call). Caller produces cdp-frame-id-unresolved error.
+ */
+export async function resolveChromeToCdpFrameId(
+  tabId: number,
+  chromeFrameId: number,
+  cdpFrameTree: CdpFrameTreeNode,
+): Promise<string | null> {
+  if (chromeFrameId === 0) return cdpFrameTree.frame.id;
+
+  const chromeFrames = (await chrome.webNavigation.getAllFrames({ tabId })) as ChromeFrame[];
+  const chromeById = new Map(chromeFrames.map((f) => [f.frameId, f]));
+
+  // Compute chrome ancestry path (root → target).
+  const chromePath: ChromeFrame[] = [];
+  let cur: ChromeFrame | undefined = chromeById.get(chromeFrameId);
+  while (cur && cur.frameId !== 0) {
+    chromePath.unshift(cur);
+    cur = chromeById.get(cur.parentFrameId);
+  }
+  if (!cur) return null; // disconnected from root
+
+  // Walk CDP tree from root, matching each level.
+  let node: CdpFrameTreeNode = cdpFrameTree;
+  for (const chromeChild of chromePath) {
+    const candidates = (node.childFrames ?? []).filter(
+      (c) => c.frame.url === chromeChild.url,
+    );
+    if (candidates.length === 0) return null;
+    // Same-URL siblings: pick by index among chrome siblings with same URL.
+    const chromeSiblings = chromeFrames.filter(
+      (f) => f.parentFrameId === chromeChild.parentFrameId && f.url === chromeChild.url,
+    );
+    const siblingIndex = chromeSiblings.findIndex((f) => f.frameId === chromeChild.frameId);
+    node = candidates[siblingIndex] ?? candidates[0];
+  }
+  return node.frame.id;
+}
