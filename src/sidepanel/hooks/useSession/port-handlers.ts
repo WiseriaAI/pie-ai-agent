@@ -9,7 +9,7 @@ export interface CreatePortHandlersDeps {
   /** Issue #34 — ref to postWithReconnect; populated after hook wires up the
    *  port machinery (avoids circular useMemo dep). Used by
    *  chat-instruction-rejected to fall back to chat-start. */
-  postMessageRef?: MutableRefObject<((sessionId: string, payload: PortMessageToWorker) => void) | null>;
+  postMessageRef?: MutableRefObject<((sessionId: string, payload: PortMessageToWorker) => boolean) | null>;
   /** #30 migration bridge — sync legacy single-tenant state while callers
    *  still read from it. Removed in Task 9b. */
   legacy?: {
