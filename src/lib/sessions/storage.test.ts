@@ -163,6 +163,7 @@ describe("setSessionMeta / setSessionAgent — D2 dual-key independence", () => 
     // Mutate the agent state out-of-band so we can detect leakage.
     const agentBefore: SessionAgentState = {
       agentMessages: [{ role: "user", content: "hi" }],
+      pendingInstructions: [],
       stepIndex: 7,
       hasImageContent: false,
     };
@@ -181,6 +182,7 @@ describe("setSessionMeta / setSessionAgent — D2 dual-key independence", () => 
 
     await setSessionAgent(meta.id, {
       agentMessages: [{ role: "assistant", content: "ok" }],
+      pendingInstructions: [],
       stepIndex: 1,
       hasImageContent: false,
     });
@@ -434,6 +436,7 @@ describe("setPendingConfirm / scrubPendingConfirm — M1-U4", () => {
     const meta = await createSession();
     await setSessionAgent(meta.id, {
       agentMessages: [{ role: "user", content: "hi" }],
+      pendingInstructions: [],
       stepIndex: 3,
       hasImageContent: false,
     });
@@ -454,6 +457,7 @@ describe("setPendingConfirm / scrubPendingConfirm — M1-U4", () => {
     const meta = await createSession();
     await setSessionAgent(meta.id, {
       agentMessages: [{ role: "user", content: "hi" }],
+      pendingInstructions: [],
       stepIndex: 3,
       hasImageContent: false,
     });
@@ -826,6 +830,7 @@ describe("setLastTaskSynth / clearLastTaskSynth — U3 (AD1 fix: agent-state)", 
       setLastTaskSynth(meta.id, synth),
       setSessionAgent(meta.id, {
         agentMessages: snapshotMessages,
+        pendingInstructions: [],
         stepIndex: 3,
         hasImageContent: false,
       }),
@@ -864,6 +869,7 @@ describe("setLastTaskSynth / clearLastTaskSynth — U3 (AD1 fix: agent-state)", 
     // from emitDone by writing the tombstone directly via setSessionAgent.
     const tombstone: SessionAgentState = {
       agentMessages: [],
+      pendingInstructions: [],
       stepIndex: 0,
       hasImageContent: false,
       lastTaskSynth: synth,
@@ -1082,6 +1088,7 @@ describe("M5 — upgradeAutoToTaskAtChatStart (chat-start hook)", () => {
       } satisfies SessionMeta,
       [agentKey(id)]: {
         agentMessages: [],
+        pendingInstructions: [],
         stepIndex: 0,
         hasImageContent: false,
       } satisfies SessionAgentState,
@@ -1190,6 +1197,7 @@ describe("migrateLastTaskSynthFromMeta — AD1 migration", () => {
     // Simulate tombstone with synth folded in (post-AD1 emitDone path)
     await setSessionAgent(meta.id, {
       agentMessages: [],
+      pendingInstructions: [],
       stepIndex: 0,
       hasImageContent: false,
       lastTaskSynth: synth,
@@ -1281,6 +1289,7 @@ describe("v1.5 multi-pin storage", () => {
     await setSessionMeta(meta);
     await setSessionAgent("s4", {
       agentMessages: [],
+      pendingInstructions: [],
       stepIndex: 1,
       hasImageContent: false,
     });

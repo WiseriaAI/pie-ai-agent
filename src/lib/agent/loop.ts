@@ -484,6 +484,7 @@ export function buildSessionAgentSnapshot(
 ): SessionAgentState {
   return {
     agentMessages: structuredClone(history),
+    pendingInstructions: [],
     stepIndex,
     hasImageContent,
   };

@@ -100,6 +100,7 @@ export async function runSessionMigrations(): Promise<{ cleared: string[] }> {
   // Agent state has no id field — just copy.
   const newAgent: SessionAgentState = {
     agentMessages: rawAgent?.agentMessages ?? [],
+    pendingInstructions: rawAgent?.pendingInstructions ?? [],
     stepIndex: rawAgent?.stepIndex ?? 0,
     hasImageContent: rawAgent?.hasImageContent ?? false,
     ...(rawAgent?.pendingConfirm != null

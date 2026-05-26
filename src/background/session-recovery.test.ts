@@ -30,6 +30,7 @@ describe("detectAndMarkPaused — happy paths", () => {
     const meta = await createSession({ now: 1000 });
     await setSessionAgent(meta.id, {
       agentMessages: [{ role: "user", content: "task" }],
+      pendingInstructions: [],
       stepIndex: 3,
       hasImageContent: false,
     });
@@ -46,6 +47,7 @@ describe("detectAndMarkPaused — happy paths", () => {
     const meta = await createSession();
     await setSessionAgent(meta.id, {
       agentMessages: [{ role: "user", content: "task" }],
+      pendingInstructions: [],
       stepIndex: 2,
       hasImageContent: false,
     });
@@ -84,11 +86,13 @@ describe("detectAndMarkPaused — happy paths", () => {
     const b = await createSession();
     await setSessionAgent(a.id, {
       agentMessages: [{ role: "user", content: "task-a" }],
+      pendingInstructions: [],
       stepIndex: 3,
       hasImageContent: false,
     });
     await setSessionAgent(b.id, {
       agentMessages: [{ role: "user", content: "task-b" }],
+      pendingInstructions: [],
       stepIndex: 5,
       hasImageContent: false,
     });
@@ -108,6 +112,7 @@ describe("detectAndMarkPaused — R14 image-bearing sessions", () => {
     const meta = await createSession();
     await setSessionAgent(meta.id, {
       agentMessages: [{ role: "user", content: "task" }],
+      pendingInstructions: [],
       stepIndex: 2,
       hasImageContent: true, // R14 trigger
     });
@@ -123,6 +128,7 @@ describe("detectAndMarkPaused — R14 image-bearing sessions", () => {
     const meta = await createSession();
     await setSessionAgent(meta.id, {
       agentMessages: [{ role: "user", content: "task" }],
+      pendingInstructions: [],
       stepIndex: 3,
       hasImageContent: false,
     });
@@ -138,6 +144,7 @@ describe("detectAndMarkPaused — R14 image-bearing sessions", () => {
     const meta = await createSession();
     await setSessionAgent(meta.id, {
       agentMessages: [{ role: "user", content: "task" }],
+      pendingInstructions: [],
       stepIndex: 5,
       hasImageContent: true,
     });
@@ -157,6 +164,7 @@ describe("detectAndMarkPaused — recoveryGuard", () => {
     const meta = await createSession();
     await setSessionAgent(meta.id, {
       agentMessages: [{ role: "user", content: "task" }],
+      pendingInstructions: [],
       stepIndex: 2,
       hasImageContent: false,
     });
@@ -184,6 +192,7 @@ describe("detectAndMarkPaused — recoveryGuard", () => {
     const meta = await createSession();
     await setSessionAgent(meta.id, {
       agentMessages: [{ role: "user", content: "task" }],
+      pendingInstructions: [],
       stepIndex: 2,
       hasImageContent: false,
     });
@@ -207,6 +216,7 @@ describe("detectAndMarkPaused — recoveryGuard", () => {
     const meta = await createSession();
     await setSessionAgent(meta.id, {
       agentMessages: [{ role: "user", content: "task" }],
+      pendingInstructions: [],
       stepIndex: 2,
       hasImageContent: false,
     });
@@ -244,6 +254,7 @@ describe("transitionPortInFlightSessionsToPaused — per-port subset", () => {
     const meta = await createSession();
     await setSessionAgent(meta.id, {
       agentMessages: [{ role: "user", content: "task" }],
+      pendingInstructions: [],
       stepIndex: 4,
       hasImageContent: false,
     });
@@ -259,6 +270,7 @@ describe("transitionPortInFlightSessionsToPaused — per-port subset", () => {
     const meta = await createSession();
     await setSessionAgent(meta.id, {
       agentMessages: [{ role: "user", content: "task" }],
+      pendingInstructions: [],
       stepIndex: 2,
       hasImageContent: false,
     });
@@ -291,11 +303,13 @@ describe("transitionPortInFlightSessionsToPaused — per-port subset", () => {
     const b1 = await createSession();
     await setSessionAgent(a1.id, {
       agentMessages: [{ role: "user", content: "a1" }],
+      pendingInstructions: [],
       stepIndex: 3,
       hasImageContent: false,
     });
     await setSessionAgent(b1.id, {
       agentMessages: [{ role: "user", content: "b1" }],
+      pendingInstructions: [],
       stepIndex: 7,
       hasImageContent: false,
     });
@@ -311,6 +325,7 @@ describe("transitionPortInFlightSessionsToPaused — per-port subset", () => {
     const real = await createSession();
     await setSessionAgent(real.id, {
       agentMessages: [{ role: "user", content: "task" }],
+      pendingInstructions: [],
       stepIndex: 1,
       hasImageContent: false,
     });
@@ -328,6 +343,7 @@ describe("transitionPortInFlightSessionsToPaused — per-port subset", () => {
     const meta = await createSession();
     await setSessionAgent(meta.id, {
       agentMessages: [{ role: "user", content: "task" }],
+      pendingInstructions: [],
       stepIndex: 2,
       hasImageContent: false,
     });
@@ -342,6 +358,7 @@ describe("transitionPortInFlightSessionsToPaused — per-port subset", () => {
     const meta = await createSession();
     await setSessionAgent(meta.id, {
       agentMessages: [{ role: "user", content: "task" }],
+      pendingInstructions: [],
       stepIndex: 3,
       hasImageContent: true, // R14 trigger
     });
@@ -357,6 +374,7 @@ describe("transitionPortInFlightSessionsToPaused — per-port subset", () => {
     const meta = await createSession();
     await setSessionAgent(meta.id, {
       agentMessages: [{ role: "user", content: "task" }],
+      pendingInstructions: [],
       stepIndex: 2,
       hasImageContent: false,
     });

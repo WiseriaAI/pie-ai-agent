@@ -29,6 +29,7 @@ import type { SessionAgentState } from "./types";
 
 const EMPTY_AGENT: SessionAgentState = {
   agentMessages: [],
+  pendingInstructions: [],
   stepIndex: 0,
   hasImageContent: false,
 };
@@ -166,6 +167,7 @@ describe("Scenario 4: archive releases meta + agent storage bytes", () => {
     // Seed a non-trivial agent state so the bytes saved are measurable.
     const largeAgent: SessionAgentState = {
       agentMessages: [{ role: "user", content: "hello ".repeat(100) }],
+      pendingInstructions: [],
       stepIndex: 5,
       hasImageContent: false,
     };

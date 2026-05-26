@@ -49,6 +49,7 @@ describe("buildSessionAgentSnapshot", () => {
     const snap = buildSessionAgentSnapshot(history, 1);
     expect(snap).toEqual({
       agentMessages: history,
+      pendingInstructions: [],
       stepIndex: 1,
       hasImageContent: false,
     });
@@ -182,6 +183,7 @@ describe("buildSessionAgentSnapshot", () => {
     const tombstone = buildSessionAgentTombstone();
     expect(tombstone).toEqual({
       agentMessages: [],
+      pendingInstructions: [],
       stepIndex: 0,
       hasImageContent: false,
     });
@@ -825,10 +827,11 @@ describe("v1.5 multi-pin — mergeSessionAgentSnapshot", () => {
     overrides: Partial<SessionAgentState> = {},
   ): SessionAgentState => ({
     agentMessages: [{ role: "user", content: "x" }],
+    pendingInstructions: [],
     stepIndex: 1,
     hasImageContent: false,
     ...overrides,
-  });
+  } as SessionAgentState);
 
   it("returns snapshot when existing is null (first-write path)", () => {
     const snap = baseSnapshot();
@@ -843,6 +846,7 @@ describe("v1.5 multi-pin — mergeSessionAgentSnapshot", () => {
     // silently falls back to pinnedTabs[0] — focus lost on every iteration.
     const existing: SessionAgentState = {
       agentMessages: [],
+      pendingInstructions: [],
       stepIndex: 0,
       hasImageContent: false,
       currentFocusTabId: 13,
@@ -861,6 +865,7 @@ describe("v1.5 multi-pin — mergeSessionAgentSnapshot", () => {
   it("preserves pendingConfirm from existing when snapshot omits it", () => {
     const existing: SessionAgentState = {
       agentMessages: [{ role: "user", content: "prev" }],
+      pendingInstructions: [],
       stepIndex: 1,
       hasImageContent: false,
       pendingConfirm: {
@@ -878,6 +883,7 @@ describe("v1.5 multi-pin — mergeSessionAgentSnapshot", () => {
   it("snapshot fields override existing for the four core fields", () => {
     const existing: SessionAgentState = {
       agentMessages: [{ role: "user", content: "old" }],
+      pendingInstructions: [],
       stepIndex: 5,
       hasImageContent: false,
       currentFocusTabId: 13,
@@ -903,6 +909,7 @@ describe("v1.5 multi-pin — mergeSessionAgentSnapshot", () => {
     // unambiguous output of buildSessionAgentTombstone) and bypass the merge.
     const existing: SessionAgentState = {
       agentMessages: [{ role: "user", content: "prev" }],
+      pendingInstructions: [],
       stepIndex: 7,
       hasImageContent: false,
       currentFocusTabId: 13,
@@ -928,6 +935,7 @@ describe("v1.5 multi-pin — mergeSessionAgentSnapshot", () => {
     // currentFocusTabId from existing is dropped.
     const existing: SessionAgentState = {
       agentMessages: [{ role: "user", content: "prev" }],
+      pendingInstructions: [],
       stepIndex: 5,
       hasImageContent: false,
       currentFocusTabId: 13,
@@ -945,12 +953,14 @@ describe("v1.5 multi-pin — mergeSessionAgentSnapshot", () => {
     // it for safety). The tombstone signature is the AND of both conditions.
     const existing: SessionAgentState = {
       agentMessages: [],
+      pendingInstructions: [],
       stepIndex: 0,
       hasImageContent: false,
       currentFocusTabId: 13,
     };
     const odd: SessionAgentState = {
       agentMessages: [{ role: "user", content: "x" }],
+      pendingInstructions: [],
       stepIndex: 0,
       hasImageContent: false,
     };
@@ -1072,6 +1082,7 @@ describe("v1.5 Task 6+7 — readFocusFromStorage (integration regression)", () =
     );
     await setSessionAgent(sessionId, {
       agentMessages: [{ role: "user", content: "x" }],
+      pendingInstructions: [],
       stepIndex: 1,
       hasImageContent: false,
       currentFocusTabId: 20,
@@ -1098,6 +1109,7 @@ describe("v1.5 Task 6+7 — readFocusFromStorage (integration regression)", () =
     );
     await setSessionAgent(sessionId, {
       agentMessages: [],
+      pendingInstructions: [],
       stepIndex: 0,
       hasImageContent: false,
     });
@@ -1144,6 +1156,7 @@ describe("v1.5 Task 6+7 — readFocusFromStorage (integration regression)", () =
     // Suppose focus_tab(50) was also called
     await setSessionAgent(sessionId, {
       agentMessages: [{ role: "user", content: "x" }],
+      pendingInstructions: [],
       stepIndex: 1,
       hasImageContent: false,
       currentFocusTabId: 50,
@@ -1237,6 +1250,7 @@ describe("v1.5 Task 6+7 — readFocusFromStorage (integration regression)", () =
     );
     await setSessionAgent(sessionId, {
       agentMessages: [{ role: "user", content: "x" }],
+      pendingInstructions: [],
       stepIndex: 1,
       hasImageContent: false,
     });
@@ -1536,6 +1550,7 @@ describe("issue #59 — mergeSessionAgentSnapshot preserves contextUsage", () =>
   it("non-tombstone spread keeps existing.contextUsage when snapshot omits it", () => {
     const existing: SessionAgentState = {
       agentMessages: [{ role: "user", content: "hi" }],
+      pendingInstructions: [],
       stepIndex: 3,
       hasImageContent: false,
       currentFocusTabId: 99,
@@ -1548,6 +1563,7 @@ describe("issue #59 — mergeSessionAgentSnapshot preserves contextUsage", () =>
     };
     const snapshot: SessionAgentState = {
       agentMessages: [{ role: "user", content: "hi" }, { role: "assistant", content: "ok" }],
+      pendingInstructions: [],
       stepIndex: 4,
       hasImageContent: false,
     };
@@ -1560,6 +1576,7 @@ describe("issue #59 — mergeSessionAgentSnapshot preserves contextUsage", () =>
   it("tombstone full-replace drops existing.contextUsage IF tombstone doesn't carry it", () => {
     const existing: SessionAgentState = {
       agentMessages: [{ role: "user", content: "x" }],
+      pendingInstructions: [],
       stepIndex: 5,
       hasImageContent: false,
       contextUsage: {
@@ -1577,6 +1594,7 @@ describe("issue #59 — mergeSessionAgentSnapshot preserves contextUsage", () =>
   it("tombstone full-replace keeps carryUsage when caller passed it", () => {
     const existing: SessionAgentState = {
       agentMessages: [{ role: "user", content: "x" }],
+      pendingInstructions: [],
       stepIndex: 5,
       hasImageContent: false,
       contextUsage: {

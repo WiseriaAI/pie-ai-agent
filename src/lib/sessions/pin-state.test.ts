@@ -21,6 +21,7 @@ const FRESH = (overrides: Partial<SessionMeta> = {}): SessionMeta => ({
 
 const AGENT = (stepIndex: number): SessionAgentState => ({
   agentMessages: [],
+  pendingInstructions: [],
   stepIndex,
   hasImageContent: false,
 });
