@@ -24,12 +24,10 @@ import type { AgentLoopContext } from "./loop";
 //     separately by loop-detection.test.ts; this file only locks the
 //     runAgentLoop WIRING, which is detector-agnostic (the same branch in the
 //     loop handles both verdict kinds identically).
-//   - getAllFramesAndDiff (frame-discovery) is mocked to return a fixed
-//     reachable top frame so the per-iteration snapshot is stable without
-//     wrestling chrome.webNavigation.
-//   - chrome.scripting.executeScript is stubbed (the loop injects the snapshot
-//     fn per iteration; the click handler also execs in-tab — both resolve to
-//     benign shapes here).
+//   - chrome.scripting.executeScript is stubbed for the click handler's
+//     in-tab invocation. The loop no longer calls executeScript for snapshot
+//     (pull-mode: read_page stamps data-pie-idx on demand; tab title comes from
+//     chrome.tabs.get which is already seeded via chromeMock).
 //
 // The signature is identical whether the click "succeeds" or "errors", so the
 // wiring assertions hold regardless; the errored result simply selects which
@@ -39,22 +37,6 @@ import type { AgentLoopContext } from "./loop";
 const streamChatMock = vi.fn();
 vi.mock("../model-router", () => ({
   streamChat: (...args: unknown[]) => streamChatMock(...args),
-}));
-
-// Fixed reachable top frame — avoids the real webNavigation frame-tree walk.
-vi.mock("./frame-discovery", () => ({
-  getAllFramesAndDiff: vi.fn(async () => [
-    {
-      frameId: 0,
-      frameUrl: "https://example.com/",
-      origin: "https://example.com",
-      crossOrigin: false,
-      parentFrameId: null,
-      elements: [
-        { index: 5, tag: "button", text: "Submit", ariaLabel: undefined, type: undefined },
-      ],
-    },
-  ]),
 }));
 
 // Import AFTER vi.mock calls so the mocks are in place.
@@ -101,23 +83,13 @@ describe("runAgentLoop — loop detection + reflection (#61 a/b)", () => {
       title: "Example",
     });
 
-    // chrome.scripting — the loop injects the snapshot fn per iteration; the
-    // click handler also execs in-tab. Return a benign per-frame result for
-    // the snapshot injection; the action exec result shape is ignored here.
+    // chrome.scripting — used by the click handler's in-tab executeScript.
+    // The loop no longer calls executeScript for snapshot; title comes from
+    // chromeMock.tabs (seeded above). The click result shape doesn't matter
+    // here — the loop only checks for success:true, and absence triggers the
+    // B-detector (repeat+error) which is the desired test path.
     (chromeMock as unknown as { scripting: unknown }).scripting = {
-      executeScript: vi.fn(async () => [
-        {
-          frameId: 0,
-          result: {
-            url: "https://example.com/",
-            title: "Example",
-            elements: [
-              { index: 5, tag: "button", text: "Submit" },
-            ],
-            semantic: { headings: [], alerts: [], status: [] },
-          },
-        },
-      ]),
+      executeScript: vi.fn(async () => [{ frameId: 0, result: undefined }]),
     };
   });
 

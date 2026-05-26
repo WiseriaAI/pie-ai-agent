@@ -10,6 +10,7 @@ import { SKILL_META_TOOLS } from "./tools/skill-meta";
 import { SKILL_ACCESS_TOOLS } from "./tools/skill-access";
 import { TAB_TOOLS } from "./tools/tabs";
 import { searchWebTool } from "./tools/search";
+import { readPageTool } from "./tools/read-page";
 import { withActionSettle } from "./wait-for-settle";
 
 export {
@@ -73,17 +74,17 @@ export const BUILT_IN_TOOLS: Tool[] = [
   {
     name: "click",
     description:
-      "Click an interactive element on the page identified by its frame id and element index from the most recent snapshot.",
+      "Click an interactive element by its data-pie-idx from the most recent read_page. If the element is gone (page changed), returns 'Element not found'; call read_page again to get current indices.",
     parameters: {
       type: "object",
       properties: {
         frameId: {
           type: "number",
-          description: "Frame ID from the most recent snapshot. Use 0 for the top frame.",
+          description: "Frame ID from latest read_page.",
         },
         elementIndex: {
           type: "number",
-          description: "The index of the element to click (from snapshot, within the specified frame).",
+          description: "data-pie-idx of the element.",
         },
       },
       required: ["frameId", "elementIndex"],
@@ -100,17 +101,17 @@ export const BUILT_IN_TOOLS: Tool[] = [
   {
     name: "type",
     description:
-      "Type text into an input, textarea, or contenteditable element identified by its frame id and element index.",
+      "Type text into an input/textarea/contenteditable by its data-pie-idx from the most recent read_page. If the element is gone (page changed), returns 'Element not found'; call read_page again to get current indices.",
     parameters: {
       type: "object",
       properties: {
         frameId: {
           type: "number",
-          description: "Frame ID from the most recent snapshot. Use 0 for the top frame.",
+          description: "Frame ID from latest read_page.",
         },
         elementIndex: {
           type: "number",
-          description: "The index of the element to type into (from snapshot, within the specified frame).",
+          description: "data-pie-idx of the element.",
         },
         text: {
           type: "string",
@@ -165,21 +166,21 @@ export const BUILT_IN_TOOLS: Tool[] = [
   {
     name: "select",
     description:
-      "Select an option in a <select> element by its value, identified by frame id and element index.",
+      "Select an option in a <select> element by its data-pie-idx from the most recent read_page. If the element is gone (page changed), returns 'Element not found'; call read_page again to get current indices.",
     parameters: {
       type: "object",
       properties: {
         frameId: {
           type: "number",
-          description: "Frame ID from the most recent snapshot. Use 0 for the top frame.",
+          description: "Frame ID from latest read_page.",
         },
         elementIndex: {
           type: "number",
-          description: "The index of the <select> element (from snapshot, within the specified frame).",
+          description: "data-pie-idx of the <select>.",
         },
         value: {
           type: "string",
-          description: "The option value to select.",
+          description: "Option value to select.",
         },
       },
       required: ["frameId", "elementIndex", "value"],
@@ -304,6 +305,7 @@ export const BUILT_IN_TOOLS: Tool[] = [
     },
   },
   searchWebTool,
+  readPageTool,
 ];
 
 // iframe spec R-iframe-1 — build-time assertion: writes target a specific

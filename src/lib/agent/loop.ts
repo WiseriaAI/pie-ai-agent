@@ -4,14 +4,6 @@ import { streamChat } from "../model-router";
 import { addImage, evictSession } from "../../background/image-cache";
 import { resetTaskBudget, dispatchCaptureVisibleTab, dispatchCaptureFullPageTab, type CdpAcquirer } from "./tools/screenshot";
 import { hydrateAttachments } from "./image-hydration";
-import { snapshotInteractiveElements } from "../dom-actions/snapshot";
-import type {
-  PageSnapshot,
-  FrameInjectionResult,
-  ReachableFrameSnapshot,
-} from "../dom-actions/types";
-import { MAX_TOTAL_ELEMENTS } from "../dom-actions/types";
-import { getAllFramesAndDiff, type FrameInjection } from "./frame-discovery";
 import {
   BUILT_IN_TOOLS,
   getKeyboardTools,
@@ -48,7 +40,6 @@ import {
 import type {
   AgentStepMessage,
   AgentDoneTaskMessage,
-  ResolvedElement,
 } from "../../types/messages";
 import type { SessionAgentState } from "../sessions/types";
 import {
@@ -304,24 +295,6 @@ export function filterToolsByVision<T extends { name: string }>(
   return tools.filter((t) => !SCREENSHOT_TOOL_NAME_SET.has(t.name));
 }
 
-function resolveElement(
-  snapshot: PageSnapshot,
-  elementIndex: unknown,
-  frameId?: unknown,
-): ResolvedElement | undefined {
-  if (typeof elementIndex !== "number") return undefined;
-  const fid = typeof frameId === "number" ? frameId : 0;
-  const frame = snapshot.frames.find((f) => f.frameId === fid);
-  if (!frame || !("elements" in frame)) return undefined;
-  const el = frame.elements.find((e) => e.index === elementIndex);
-  if (!el) return undefined;
-  return {
-    text: el.text,
-    ariaLabel: el.ariaLabel,
-    tag: el.tag,
-    type: el.type,
-  };
-}
 
 function sendAgentStep(
   port: chrome.runtime.Port,
@@ -636,6 +609,25 @@ export function resolveFocusedPin(
   const primary = pinnedTabs[0]!;
   if (currentFocusTabId === undefined) return primary;
   return pinnedTabs.find((p) => p.tabId === currentFocusTabId) ?? primary;
+}
+
+/**
+ * Task 3.3 — first-turn read_page nudge.
+ *
+ * Returns a short reminder string to append to the iteration-0 observation
+ * when a pinned tab is present. The system prompt's READ_PAGE_GUIDANCE
+ * already contains this instruction, but a per-turn nudge placed right
+ * before the LLM's first decision ensures it isn't lost when the context
+ * window is nearly full and the system prompt is implicitly compressed.
+ *
+ * Exported as a pure helper so unit tests can verify the text without
+ * exercising the full Chrome-coupled runAgentLoop.
+ *
+ * Callers MUST only emit this on the first iteration of a fresh task (not
+ * on resume and not on iterations > startStepIndex).
+ */
+export function buildFirstTurnReadPageHint(pinnedTabId: number): string {
+  return `You haven't called read_page yet. If the task involves the active page, call read_page({tabId: ${pinnedTabId}}) first to get element indices and frame versions.`;
 }
 
 /**
@@ -1129,7 +1121,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // v1.5 M3-U2 — pass the full pinnedTabs array + initial focus.
       // Single-entry: back-compat phrasing ("a specific browser tab").
       // Multi-entry: lists all tabs with "← current focus" marker and
-      // explains focus_tab. The LLM can call get_tab_content({tabId})
+      // explains focus_tab. The LLM can call read_page({tabId})
       // directly for read tasks; the focus marker reflects task-start
       // focus only (system prompt is static per task; see focus_tab
       // handler for per-iteration refresh semantics).
@@ -1199,6 +1191,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
 
       // Origin check (Issue #50: transient-tolerant)
       let currentUrl: string;
+      let pageTitle: string;
       try {
         const currentTab = await chrome.tabs.get(pinnedTabId);
         const decision = await interpretPinnedTabUrl({
@@ -1217,6 +1210,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           return;
         }
         currentUrl = decision.url;
+        pageTitle = currentTab.title ?? "";
       } catch {
         if (signal.aborted) return;
         await emitDone({
@@ -1228,74 +1222,10 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         return;
       }
 
-      // Snapshot the page
-      let snapshot: PageSnapshot;
-      try {
-        const results = await chrome.scripting.executeScript({
-          target: { tabId: pinnedTabId, allFrames: true },
-          func: snapshotInteractiveElements,
-        });
-
-        const injections: FrameInjection[] = results.map((r) => ({
-          frameId: r.frameId,
-          result: r.result as FrameInjectionResult | undefined,
-        }));
-
-        let frames = await getAllFramesAndDiff(pinnedTabId, injections);
-
-        // Enforce MAX_TOTAL_ELEMENTS budget — top frame is first, never truncated
-        let totalSoFar = 0;
-        frames = frames.map((f) => {
-          if ("unreachable" in f && f.unreachable) return f;
-          const remaining = MAX_TOTAL_ELEMENTS - totalSoFar;
-          if (remaining <= 0) {
-            return { ...f, elements: [], truncated: true } as ReachableFrameSnapshot;
-          }
-          if (f.elements.length > remaining) {
-            return { ...f, elements: f.elements.slice(0, remaining), truncated: true } as ReachableFrameSnapshot;
-          }
-          totalSoFar += f.elements.length;
-          return f;
-        });
-
-        // Top frame is frames[0] — assemble PageSnapshot with top-frame
-        // semantic + title + url. snapshot.ts injection already filled semantic
-        // per frame; we use the top frame's only (plan §2 decision).
-        const topResult = injections.find((i) => i.frameId === 0)?.result;
-        snapshot = {
-          url: topResult?.url ?? currentUrl,
-          title: topResult?.title ?? "",
-          frames,
-          semantic: topResult?.semantic ?? { headings: [], alerts: [], status: [] },
-        };
-
-        const reachable = frames.filter((f) => !("unreachable" in f && f.unreachable));
-        const unreachable = frames.filter((f) => "unreachable" in f && f.unreachable);
-        const crossOrigin = reachable.filter((f) => f.crossOrigin);
-        console.log(
-          `[snapshot] step=${stepIndex} frames=${frames.length} (reachable=${reachable.length}` +
-            (crossOrigin.length ? ` cross_origin=${crossOrigin.length}` : "") +
-            (unreachable.length ? ` unreachable=${unreachable.length}` : "") +
-            ")",
-        );
-        for (const f of frames) {
-          const kind = "unreachable" in f && f.unreachable
-            ? `unreachable reason=${f.reason}`
-            : `${f.elements.length} elements` + (f.crossOrigin ? " cross_origin" : "");
-          console.log(`  frame_id=${f.frameId} ${f.frameUrl} — ${kind}`);
-        }
-      } catch {
-        await emitDone({
-          type: "agent-done-task",
-          success: false,
-          summary: "Failed to snapshot page. The page may have navigated.",
-          stepCount: stepIndex - 1,
-        }, "abort");
-        return;
-      }
+      console.log(`[loop] step=${stepIndex} url=${currentUrl}`);
 
       // Build observation text
-      let observationText = buildObservationMessage(snapshot, currentUrl);
+      let observationText = buildObservationMessage(pageTitle, currentUrl);
       // #61(b) — tail-inject accumulated reflections (trusted; NOT wrapped in
       // <untrusted_*>). Always re-appended to the NEWEST observation so it
       // survives sliding-window / token-budget pressure and stale-elision
@@ -1303,6 +1233,14 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // reflections tail — fine, the latest turn always re-carries them).
       if (reflectionMemory.length > 0) {
         observationText += `\n\n<reflections>\n${reflectionMemory.join("\n\n")}\n</reflections>`;
+      }
+      // Task 3.3 — first-turn read_page nudge. Appended to the iteration-0
+      // observation only when a pinned tab is present and this is NOT a
+      // resumed loop (resumed loops already have context from prior steps).
+      // The hint reinforces READ_PAGE_GUIDANCE at the natural decision point
+      // so the LLM doesn't miss it when the context window is filling up.
+      if (stepIndex === startStepIndex && !isResumedFirstIteration && currentPinnedTabs.length > 0) {
+        observationText += `\n\n${buildFirstTurnReadPageHint(pinnedTabId)}`;
       }
       const observationBlock: ContentBlock = { type: "text", text: observationText };
 
@@ -1792,8 +1730,9 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           continue;
         }
 
-        // Resolve element for confirmation / display
-        const resolvedElement = resolveElement(snapshot, args.elementIndex, args.frameId);
+        // Element resolution is no longer available (pull-mode: read_page stamps
+        // data-pie-idx; the loop no longer maintains a frame snapshot).
+        const resolvedElement = undefined;
 
         // Send pending step
         emitStep({
@@ -1901,9 +1840,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         try {
           result = await tool.handler(tc.args, {
             tabId: pinnedTabId,
-            snapshot,
             confirmedTabTargets: undefined,
-            preFetchedContent: undefined,
             // M5 — frozen at chat-start (passed via AgentLoopContext.pinMode);
             // close_tabs K-9 reads this to refuse closing user-locked pins.
             pinMode: ctx.pinMode,

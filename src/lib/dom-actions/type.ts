@@ -19,7 +19,7 @@ import type { ActionResult } from "./types";
  * All helper functions are nested for executeScript self-containment.
  * Diagnostic logs are emitted to the target page's console for debugging.
  *
- * @param index - The index assigned by snapshotInteractiveElements
+ * @param index - The index stamped by read_page (pageSnapshotInjected)
  * @param text  - Text to type
  * @param clear - If true, clear existing content before typing
  */
@@ -132,7 +132,7 @@ export async function typeByIndex(
   }
 
   // ── Locate target ──
-  const el = document.querySelector(`[data-chrome-ai-agent-idx="${index}"]`);
+  const el = document.querySelector(`[data-pie-idx="${index}"]`);
   if (!el) {
     return {
       success: false,

@@ -12,7 +12,7 @@ describe("parseSkillMarkdown", () => {
       "  - fields: 哪些字段",
       "  - format: json 或 csv",
       "capabilities:",
-      "  tools: [get_tab_content, click]",
+      "  tools: [read_page, click]",
       "---",
       "",
       "Extract the fields the user asked for.",
@@ -23,7 +23,7 @@ describe("parseSkillMarkdown", () => {
     expect(frontmatter.description).toBe("抽取页面字段");
     expect(frontmatter.version).toBe("1.0.0");
     expect(frontmatter.inputs).toEqual(["fields: 哪些字段", "format: json 或 csv"]);
-    expect(frontmatter.capabilities?.tools).toEqual(["get_tab_content", "click"]);
+    expect(frontmatter.capabilities?.tools).toEqual(["read_page", "click"]);
     expect(body.trim()).toBe("Extract the fields the user asked for.");
   });
 
@@ -34,14 +34,14 @@ describe("parseSkillMarkdown", () => {
       "description: 块状列表能力",
       "capabilities:",
       "  tools:",
-      "    - get_tab_content",
+      "    - read_page",
       "    - click",
       "---",
       "body",
     ].join("\n");
 
     const { frontmatter } = parseSkillMarkdown(md);
-    expect(frontmatter.capabilities?.tools).toEqual(["get_tab_content", "click"]);
+    expect(frontmatter.capabilities?.tools).toEqual(["read_page", "click"]);
   });
 
   it("处理 CRLF 行尾", () => {

@@ -1,4 +1,4 @@
-import type { PageSnapshot, ActionResult } from "../dom-actions/types";
+import type { ActionResult } from "../dom-actions/types";
 
 /**
  * Phase 3 — confirm-time TabTarget snapshot injected into the handler context
@@ -16,25 +16,9 @@ export interface ConfirmedTabTarget {
   title: string;
 }
 
-/**
- * Phase 3 P3-U / SEC-2 — handler-side cache of content the SW already
- * fetched during the confirm pre-compute phase. get_tab_content is a "fetch
- * before confirm" tool: the SW runs executeScript before the user even sees
- * the confirm card so the content preview can show what's about to be sent
- * to the LLM. After approval, the handler reuses this cache to avoid a
- * second executeScript (which could race against page navigation between
- * approval and dispatch — same K-8 logic, applied to content).
- */
-export interface PreFetchedTabContent {
-  fullText: string;
-  totalBytes: number;
-}
-
 export interface ToolHandlerContext {
   tabId: number;
-  snapshot: PageSnapshot;
   confirmedTabTargets?: Map<number, ConfirmedTabTarget>;
-  preFetchedContent?: Map<number, PreFetchedTabContent>;
   /**
    * M5 — current session's pin mode. Frozen at chat-start (SW dispatcher
    * computes via getEffectivePinMode from meta+agent and passes through

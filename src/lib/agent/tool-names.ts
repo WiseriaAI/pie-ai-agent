@@ -39,7 +39,6 @@ const SKILL_MEDIATION_TOOL_NAMES = [
 // allWindows).
 export const TAB_TOOL_NAMES = [
   "list_tabs",
-  "get_tab_content",
   "close_tabs",
   "activate_tab",
   "group_tabs",
@@ -65,6 +64,13 @@ export const SEARCH_TOOL_NAMES = [
   "search_web",
 ] as const;
 
+// Page snapshot tool (always present in BUILT_IN_TOOLS).
+//
+// class=read: reads page DOM structure; no tab/page state mutation.
+export const PAGE_SNAPSHOT_TOOL_NAMES = [
+  "read_page",
+] as const;
+
 export const KNOWN_BUILT_IN_TOOL_NAMES = [
   ...PHASE_2_TOOL_NAMES,
   ...SKILL_META_TOOL_NAMES_FOR_REGISTRY,
@@ -72,6 +78,7 @@ export const KNOWN_BUILT_IN_TOOL_NAMES = [
   ...TAB_TOOL_NAMES,
   ...SCREENSHOT_TOOL_NAMES,
   ...SEARCH_TOOL_NAMES,
+  ...PAGE_SNAPSHOT_TOOL_NAMES,
 ] as const;
 
 export const KNOWN_KEYBOARD_TOOL_NAMES = [
@@ -85,7 +92,7 @@ export const KNOWN_KEYBOARD_TOOL_NAMES = [
 // against page / tab / browser state. The R7 lock (loop.ts dispatch) uses
 // the class to gate cross-session conflicts: a `write` tool whose target
 // tab is pinned by another active session is refused with an observation.
-// `read` tools (list_tabs, get_tab_content, scroll, etc.) are allowed
+// `read` tools (list_tabs, scroll, etc.) are allowed
 // concurrently because the user has informed-approved the data exposure
 // at confirm time and read concurrency does not corrupt page state.
 //
@@ -98,7 +105,7 @@ export const KNOWN_KEYBOARD_TOOL_NAMES = [
 //       a future cross-session quota lock could reuse the same dispatch
 //       point if needed).
 //   - list_skills — read.
-//   - list_tabs / get_tab_content / activate_tab — read (informational
+//   - list_tabs / activate_tab — read (informational
 //       reads + activate-tab which only changes which tab is foregrounded,
 //       not its content).
 //   - close_tabs / group_tabs / ungroup_tabs / move_tabs — write (mutates
@@ -131,7 +138,6 @@ export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
   read_skill_file: "read",
   // Phase 3 cross-tab tools
   list_tabs: "read",
-  get_tab_content: "read",
   activate_tab: "read",
   close_tabs: "write",
   group_tabs: "write",
@@ -147,6 +153,8 @@ export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
   capture_fullpage_tab: "read",
   // Web search tool — reads external data, no browser tab mutation
   search_web: "read",
+  // Page snapshot tool — reads page DOM structure, no tab/page state mutation
+  read_page: "read",
 };
 
 // Build-time exhaustive check — every known tool name MUST have a class

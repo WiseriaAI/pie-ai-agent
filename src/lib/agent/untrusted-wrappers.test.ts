@@ -4,7 +4,7 @@
  * Includes:
  *  1. Functional tests for escapeUntrustedWrappers
  *  2. Scenario 8 (dual-list lock-step): every tag in UNTRUSTED_WRAPPER_TAGS
- *     must also appear in snapshot.ts inline replace() chain.
+ *     must also appear in page-snapshot.ts WRAPPER_TAGS_LIST.
  *     This is a build-time coherence check enforced as a vitest assertion.
  */
 
@@ -17,23 +17,20 @@ import { escapeUntrustedWrappers, UNTRUSTED_WRAPPER_TAGS } from "./untrusted-wra
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
 
 // --- Dual-list lock-step assertion (Scenario 8 / Integration) ---
-describe("dual-list lock-step: UNTRUSTED_WRAPPER_TAGS ↔ snapshot.ts sanitizeText", () => {
-  it("every tag in UNTRUSTED_WRAPPER_TAGS must appear in snapshot.ts inline replace() chain", () => {
+describe("dual-list lock-step: UNTRUSTED_WRAPPER_TAGS ↔ page-snapshot.ts WRAPPER_TAGS_LIST", () => {
+  it("every tag in UNTRUSTED_WRAPPER_TAGS must appear as a string literal in page-snapshot.ts WRAPPER_TAGS_LIST", () => {
     const snapshotPath = path.resolve(
       __dirname,
-      "../../lib/dom-actions/snapshot.ts",
+      "../../lib/dom-actions/page-snapshot.ts",
     );
     const snapshotSource = fs.readFileSync(snapshotPath, "utf-8");
 
     for (const tag of UNTRUSTED_WRAPPER_TAGS) {
-      // Each tag must appear in the sanitizeText chain as:
-      //   .replace(/<\/?TAG>/gi, "[filtered]")
-      // Use string.includes to match the exact literal (regex escaping of backslash
-      // in RegExp constructor is error-prone; includes is unambiguous here).
-      const needle = `replace(/<\\/?${tag}>/gi, "[filtered]")`;
+      // Each tag must appear as a quoted string literal in the WRAPPER_TAGS_LIST array.
+      // page-snapshot.ts uses a compiled regex from that list rather than inline replaces.
       expect(
-        snapshotSource.includes(needle),
-        `snapshot.ts is missing .replace(/<\\/?${tag}>/gi, "[filtered]") — dual-list lock-step broken`,
+        snapshotSource.includes(`"${tag}"`),
+        `page-snapshot.ts WRAPPER_TAGS_LIST is missing "${tag}" — dual-list lock-step broken`,
       ).toBe(true);
     }
   });

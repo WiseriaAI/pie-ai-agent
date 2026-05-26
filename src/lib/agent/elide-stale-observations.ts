@@ -17,7 +17,7 @@ import type { AgentMessage, ContentBlock } from "../model-router/types";
 export const STALE_OBSERVATION_MARKER =
   "[Interactive elements from this earlier page snapshot were omitted to save context. " +
   "Only the most recent snapshot is shown in full. If you still need details from this " +
-  "page, re-read it (e.g. get_tab_content) or rely on notes you kept in your reasoning.]";
+  "page, re-read it (e.g. read_page) or rely on notes you kept in your reasoning.]";
 
 /**
  * Literal that begins every per-frame block emitted by `renderFrameBlock`

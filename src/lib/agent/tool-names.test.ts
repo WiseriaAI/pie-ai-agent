@@ -46,7 +46,6 @@ describe("M3-U4 — TOOL_CLASSES registry", () => {
   it("classifies Phase 3 cross-tab tools per the R7 split", () => {
     // Reads
     expect(TOOL_CLASSES.list_tabs).toBe("read");
-    expect(TOOL_CLASSES.get_tab_content).toBe("read");
     expect(TOOL_CLASSES.activate_tab).toBe("read");
     // Writes
     expect(TOOL_CLASSES.close_tabs).toBe("write");
