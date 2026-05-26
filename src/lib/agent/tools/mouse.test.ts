@@ -1,7 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { requireCdpInput, dispatchMouseAt } from "./mouse";
+import { requireCdpInput, dispatchMouseAt, buildHoverTool, type MouseToolDeps } from "./mouse";
 import type { CdpSession } from "@/background/cdp-session";
 import { setCdpInputEnabled } from "@/lib/cdp-input-enabled";
+
+vi.mock("@/lib/dom-actions/geometry", () => ({
+  elementToPagePoint: vi.fn(),
+}));
+
+import { elementToPagePoint } from "@/lib/dom-actions/geometry";
 
 const fakeSession = (): CdpSession => ({
   tabId: 7,
@@ -57,6 +63,86 @@ describe("dispatchMouseAt", () => {
       clickCount: 1,
       pointerType: "mouse",
     });
+  });
+});
+
+describe("hover tool", () => {
+  beforeEach(async () => {
+    await setCdpInputEnabled(true);
+    vi.mocked(elementToPagePoint).mockReset();
+  });
+
+  function deps(overrides?: Partial<MouseToolDeps>): MouseToolDeps {
+    const session = fakeSession();
+    return {
+      acquireSession: vi.fn().mockResolvedValue(session),
+      sessionId: "S1",
+      requestConsent: vi.fn().mockResolvedValue(true),
+      ...overrides,
+    };
+  }
+
+  it("declares write-class schema with required frameId + elementIndex", () => {
+    const tool = buildHoverTool(deps());
+    expect(tool.name).toBe("hover");
+    expect((tool.parameters as { required: string[] }).required).toEqual(
+      expect.arrayContaining(["frameId", "elementIndex"]),
+    );
+  });
+
+  it("returns success observation with mouseMoved dispatched", async () => {
+    const session = fakeSession();
+    vi.mocked(elementToPagePoint).mockResolvedValue({ x: 100, y: 200 });
+    const tool = buildHoverTool(deps({ acquireSession: vi.fn().mockResolvedValue(session) }));
+    const result = await tool.handler({ frameId: 0, elementIndex: 3 }, { tabId: 7 });
+    expect(result.success).toBe(true);
+    expect(result.observation).toMatch(/Hovered \[3\]/);
+    expect(result.observation).toMatch(/read_page/i);
+    expect(session.send).toHaveBeenCalledWith(
+      "Input.dispatchMouseEvent",
+      expect.objectContaining({ type: "mouseMoved", x: 100, y: 200 }),
+    );
+  });
+
+  it("returns cdp-disabled error when flag=false", async () => {
+    await setCdpInputEnabled(false);
+    const tool = buildHoverTool(deps());
+    const result = await tool.handler({ frameId: 0, elementIndex: 3 }, { tabId: 7 });
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/CDP input is disabled/);
+  });
+
+  it("returns element-not-found error from geometry", async () => {
+    vi.mocked(elementToPagePoint).mockResolvedValue({ kind: "element-not-found", index: 3 });
+    const tool = buildHoverTool(deps());
+    const result = await tool.handler({ frameId: 0, elementIndex: 3 }, { tabId: 7 });
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/Element not found at index 3/);
+  });
+
+  it("returns element-not-visible error from geometry", async () => {
+    vi.mocked(elementToPagePoint).mockResolvedValue({ kind: "element-not-visible", index: 3 });
+    const tool = buildHoverTool(deps());
+    const result = await tool.handler({ frameId: 0, elementIndex: 3 }, { tabId: 7 });
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/zero size|Element \[3\]/);
+  });
+
+  it("returns frame-gone error from geometry", async () => {
+    vi.mocked(elementToPagePoint).mockResolvedValue({ kind: "frame-gone", frameId: 7 });
+    const tool = buildHoverTool(deps());
+    const result = await tool.handler({ frameId: 7, elementIndex: 3 }, { tabId: 7 });
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/Frame 7 unreachable/);
+  });
+
+  it("returns cdp-attach-conflict on acquireSession conflict", async () => {
+    const tool = buildHoverTool(
+      deps({ acquireSession: vi.fn().mockRejectedValue(new Error("Another debugger is attached")) }),
+    );
+    const result = await tool.handler({ frameId: 0, elementIndex: 3 }, { tabId: 7 });
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/another debugger is attached/i);
   });
 });
 
