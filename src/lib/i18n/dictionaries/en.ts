@@ -174,6 +174,13 @@ export const enDict = {
     rec: "REC",
     toolsMenu: "More tools",
     sendMessage: "Send message",
+    pending: {
+      captionPrefix: "PENDING",
+      captionSuffix: "IN QUEUE",
+      hint: "SENT NEXT TURN",
+      cancel: "Cancel",
+      queue: "Queue for next turn",
+    },
     contextRing: {
       ariaLabel: "Context window usage",
       sessionUsage: "Session usage",

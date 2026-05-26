@@ -174,6 +174,13 @@ export const zhCNDict = {
     rec: "录制",
     toolsMenu: "更多工具",
     sendMessage: "发送消息",
+    pending: {
+      captionPrefix: "待发送",
+      captionSuffix: "条排队",
+      hint: "下一轮加入",
+      cancel: "撤回",
+      queue: "加入下一轮",
+    },
     contextRing: {
       ariaLabel: "上下文窗口用量",
       sessionUsage: "本轮会话用量",
