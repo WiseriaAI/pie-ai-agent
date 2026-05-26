@@ -16,10 +16,7 @@ export async function addPending(
   instruction: PendingInstruction,
 ): Promise<void> {
   const state = await readAgent(sessionId);
-  if (!state) {
-    console.warn(`[pending] addPending: session ${sessionId} agent state missing`);
-    return;
-  }
+  if (!state) return;
   const next: SessionAgentState = {
     ...state,
     pendingInstructions: [...state.pendingInstructions, instruction],

@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+import { chromeMock } from "@/test/setup";
 import { addPending, cancelPending, drainPending } from "./pending-instructions";
 import type { SessionAgentState } from "./types";
 
@@ -13,36 +14,19 @@ function freshAgentState(): SessionAgentState {
   };
 }
 
-beforeEach(() => {
-  const data: Record<string, unknown> = {};
-  // @ts-expect-error mock
-  global.chrome = {
-    storage: {
-      local: {
-        get: vi.fn((keys) => {
-          const want = Array.isArray(keys) ? keys : [keys];
-          const out: Record<string, unknown> = {};
-          for (const k of want) if (k in data) out[k] = data[k];
-          return Promise.resolve(out);
-        }),
-        set: vi.fn((kv: Record<string, unknown>) => {
-          Object.assign(data, kv);
-          return Promise.resolve();
-        }),
-      },
-    },
-  };
-  data[`session_${SESSION_ID}_agent`] = freshAgentState();
-});
+function seedAgentState(sessionId = SESSION_ID, state: SessionAgentState = freshAgentState()) {
+  chromeMock.storage.local.__store[`session_${sessionId}_agent`] = state;
+}
 
 describe("addPending", () => {
   it("appends to queue and persists", async () => {
+    seedAgentState();
     await addPending(SESSION_ID, {
       chatMessageId: "msg-1",
       content: "also pin forums",
       createdAt: 1000,
     });
-    const state = (await chrome.storage.local.get(`session_${SESSION_ID}_agent`))[
+    const state = chromeMock.storage.local.__store[
       `session_${SESSION_ID}_agent`
     ] as SessionAgentState;
     expect(state.pendingInstructions).toEqual([
@@ -51,10 +35,11 @@ describe("addPending", () => {
   });
 
   it("preserves FIFO order across multiple adds", async () => {
+    seedAgentState();
     await addPending(SESSION_ID, { chatMessageId: "m1", content: "a", createdAt: 1 });
     await addPending(SESSION_ID, { chatMessageId: "m2", content: "b", createdAt: 2 });
     await addPending(SESSION_ID, { chatMessageId: "m3", content: "c", createdAt: 3 });
-    const state = (await chrome.storage.local.get(`session_${SESSION_ID}_agent`))[
+    const state = chromeMock.storage.local.__store[
       `session_${SESSION_ID}_agent`
     ] as SessionAgentState;
     expect(state.pendingInstructions.map((p) => p.chatMessageId)).toEqual([
@@ -67,21 +52,23 @@ describe("addPending", () => {
 
 describe("cancelPending", () => {
   it("removes the matching entry and returns true", async () => {
+    seedAgentState();
     await addPending(SESSION_ID, { chatMessageId: "m1", content: "a", createdAt: 1 });
     await addPending(SESSION_ID, { chatMessageId: "m2", content: "b", createdAt: 2 });
     const removed = await cancelPending(SESSION_ID, "m1");
     expect(removed).toBe(true);
-    const state = (await chrome.storage.local.get(`session_${SESSION_ID}_agent`))[
+    const state = chromeMock.storage.local.__store[
       `session_${SESSION_ID}_agent`
     ] as SessionAgentState;
     expect(state.pendingInstructions.map((p) => p.chatMessageId)).toEqual(["m2"]);
   });
 
   it("returns false and no-ops when chatMessageId not present", async () => {
+    seedAgentState();
     await addPending(SESSION_ID, { chatMessageId: "m1", content: "a", createdAt: 1 });
     const removed = await cancelPending(SESSION_ID, "nope");
     expect(removed).toBe(false);
-    const state = (await chrome.storage.local.get(`session_${SESSION_ID}_agent`))[
+    const state = chromeMock.storage.local.__store[
       `session_${SESSION_ID}_agent`
     ] as SessionAgentState;
     expect(state.pendingInstructions).toHaveLength(1);
@@ -95,18 +82,20 @@ describe("cancelPending", () => {
 
 describe("drainPending", () => {
   it("returns FIFO-ordered drained entries and empties queue", async () => {
+    seedAgentState();
     await addPending(SESSION_ID, { chatMessageId: "m1", content: "a", createdAt: 1 });
     await addPending(SESSION_ID, { chatMessageId: "m2", content: "b", createdAt: 2 });
     const drained = await drainPending(SESSION_ID);
     expect(drained.map((p) => p.chatMessageId)).toEqual(["m1", "m2"]);
-    const state = (await chrome.storage.local.get(`session_${SESSION_ID}_agent`))[
+    const state = chromeMock.storage.local.__store[
       `session_${SESSION_ID}_agent`
     ] as SessionAgentState;
     expect(state.pendingInstructions).toEqual([]);
   });
 
   it("returns empty array when queue empty (no storage write)", async () => {
-    const setSpy = vi.spyOn(chrome.storage.local, "set");
+    seedAgentState();
+    const setSpy = vi.spyOn(chromeMock.storage.local, "set");
     const drained = await drainPending(SESSION_ID);
     expect(drained).toEqual([]);
     expect(setSpy).not.toHaveBeenCalled();
@@ -118,6 +107,7 @@ describe("drainPending", () => {
   });
 
   it("preserves all PendingInstruction fields including expandedForLLM/attachments", async () => {
+    seedAgentState();
     await addPending(SESSION_ID, {
       chatMessageId: "m1",
       content: "user text",
