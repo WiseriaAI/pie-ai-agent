@@ -155,6 +155,7 @@ export async function unarchiveSession(id: string): Promise<void> {
     [metaKey(id)]: restoredMeta,
     [agentKey(id)]: payload.agent ?? {
       agentMessages: [],
+      pendingInstructions: [],
       stepIndex: 0,
     },
     [archivedKey(id)]: undefined,

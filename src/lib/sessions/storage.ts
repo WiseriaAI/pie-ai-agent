@@ -200,6 +200,7 @@ export async function createSession(
 
   const agent: SessionAgentState = {
     agentMessages: [],
+    pendingInstructions: [],
     stepIndex: 0,
     hasImageContent: false,
   };

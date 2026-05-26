@@ -517,6 +517,7 @@ export function buildSessionAgentTombstone(
 ): SessionAgentState {
   const base: SessionAgentState = {
     agentMessages: [],
+    pendingInstructions: [],
     stepIndex: 0,
     hasImageContent: false,
   };
@@ -1452,6 +1453,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           const nextUsage = mergeContextUsage(cur?.contextUsage, lastStepUsage);
           const base: SessionAgentState = cur ?? {
             agentMessages: [],
+            pendingInstructions: [],
             stepIndex: 0,
             hasImageContent: false,
           };
