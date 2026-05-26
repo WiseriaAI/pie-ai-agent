@@ -1051,6 +1051,11 @@ async function handleChatStream(
             content: `${last.content}\n\n[Earlier mid-task additions]\n${merged}`,
           },
         ];
+      } else {
+        console.warn(
+          `[sw] chat-start drained ${carryover.length} pending instruction(s) but ` +
+          `last message is not a user string — items dropped`,
+        );
       }
       // Broadcast empty pending so panel removes pending decorations
       await broadcastInstructionState(port, sessionId);
