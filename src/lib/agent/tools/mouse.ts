@@ -76,6 +76,12 @@ function geometryErrorToActionResult(e: GeometryError): ActionResult {
         success: false,
         error: `Internal: frame mapping failed for frameId ${e.frameId}. Try in top frame.`,
       };
+    default: {
+      // Exhaustiveness check — if GeometryError gains a new kind, this
+      // triggers a compile error so the mapping must be updated.
+      const _exhaustive: never = e;
+      throw new Error(`Unhandled GeometryError kind: ${JSON.stringify(_exhaustive)}`);
+    }
   }
 }
 

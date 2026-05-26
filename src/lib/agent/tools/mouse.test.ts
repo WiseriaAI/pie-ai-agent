@@ -136,6 +136,14 @@ describe("hover tool", () => {
     expect(result.error).toMatch(/Frame 7 unreachable/);
   });
 
+  it("returns cdp-frame-id-unresolved error from geometry", async () => {
+    vi.mocked(elementToPagePoint).mockResolvedValue({ kind: "cdp-frame-id-unresolved", frameId: 9 });
+    const tool = buildHoverTool(deps());
+    const result = await tool.handler({ frameId: 9, elementIndex: 3 }, { tabId: 7 });
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/frame mapping failed for frameId 9/);
+  });
+
   it("returns cdp-attach-conflict on acquireSession conflict", async () => {
     const tool = buildHoverTool(
       deps({ acquireSession: vi.fn().mockRejectedValue(new Error("Another debugger is attached")) }),
