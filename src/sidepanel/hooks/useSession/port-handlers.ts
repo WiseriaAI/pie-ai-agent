@@ -1,11 +1,15 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
-import type { DisplayMessage, PortMessageToPanel, QuoteAddedMessage } from "@/types";
+import type { DisplayMessage, PortMessageToPanel, PortMessageToWorker, QuoteAddedMessage } from "@/types";
 import { withSlot, type SessionRuntimeSlot } from "./runtime-map";
 
 export interface CreatePortHandlersDeps {
   slotsRef: MutableRefObject<Map<string, SessionRuntimeSlot>>;
   setSlots: Dispatch<SetStateAction<Map<string, SessionRuntimeSlot>>>;
   persistMessages: (sessionId: string, messages: DisplayMessage[]) => Promise<void>;
+  /** Issue #34 — ref to postWithReconnect; populated after hook wires up the
+   *  port machinery (avoids circular useMemo dep). Used by
+   *  chat-instruction-rejected to fall back to chat-start. */
+  postMessageRef?: MutableRefObject<((sessionId: string, payload: PortMessageToWorker) => void) | null>;
   /** #30 migration bridge — sync legacy single-tenant state while callers
    *  still read from it. Removed in Task 9b. */
   legacy?: {
@@ -30,7 +34,7 @@ export interface PortHandlers {
 }
 
 export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
-  const { slotsRef, setSlots, persistMessages, legacy } = deps;
+  const { slotsRef, setSlots, persistMessages, postMessageRef, legacy } = deps;
 
   /** Sync write to slotsRef (Bug-fix-A truth source) + setSlots for React commit. */
   function patchSlot(
@@ -222,6 +226,49 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
           totalInputTokens: msg.totalInputTokens,
           totalOutputTokens: msg.totalOutputTokens,
         },
+      });
+      return;
+    }
+
+    // Issue #34 — SW → panel: update pending instruction state for this session.
+    if (msg.type === "chat-instruction-state") {
+      const map = new Map<string, { createdAt: number }>();
+      for (const p of msg.pending) {
+        map.set(p.chatMessageId, { createdAt: p.createdAt });
+      }
+      patchSlot(msg.sessionId, { pendingByChatMessageId: map });
+      return;
+    }
+
+    // Issue #34 — SW → panel: instruction-add arrived after loop ended; fall
+    // back to a normal chat-start so the user's message is still processed.
+    if (msg.type === "chat-instruction-rejected") {
+      const slot = slotsRef.current.get(msg.sessionId);
+      if (!slot) return;
+      const flat = (slot.messages ?? []).filter(
+        (m): m is
+          | { role: "user"; content: string; expandedForLLM?: string; id?: string }
+          | { role: "assistant"; content: string } =>
+          m.role === "user" || m.role === "assistant",
+      );
+      const chatMessages = flat.map((m) => ({
+        role: m.role,
+        content:
+          m.role === "user" && "expandedForLLM" in m && m.expandedForLLM
+            ? m.expandedForLLM
+            : m.content,
+      }));
+      patchSlot(msg.sessionId, {
+        streaming: true,
+        streamFinished: false,
+        accumulated: "",
+        streamingText: "",
+        error: null,
+      });
+      postMessageRef?.current?.(msg.sessionId, {
+        type: "chat-start",
+        messages: chatMessages,
+        sessionId: msg.sessionId,
       });
       return;
     }
