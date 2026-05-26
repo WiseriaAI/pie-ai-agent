@@ -1552,7 +1552,7 @@ function Composer({
                 className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded text-fg-1 transition-opacity hover:opacity-70"
               >
                 <svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor" aria-hidden="true">
-                  <path d="M256 256v512h512V256H256z m597.333333-85.333333v682.666666H170.666667V170.666667h682.666666z" />
+                  <path d="M512 1024A512 512 0 1 1 512 0a512 512 0 0 1 0 1024z m3.008-92.992a416 416 0 1 0 0-832 416 416 0 0 0 0 832zM320 320h384v384H320V320z" />
                 </svg>
               </button>
             ) : (
