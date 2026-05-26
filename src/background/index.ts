@@ -48,7 +48,7 @@ import {
 import { KEYBOARD_SIMULATION_STORAGE_KEY } from "@/lib/keyboard-simulation";
 
 import { runSessionMigrations } from "@/lib/sessions/migration";
-import { runCdpInputMigration } from "./cdp-input-migration";
+import { migrateLegacyKeyboardFlag } from "@/lib/cdp-input-enabled";
 import { getCrossSessionPinnedTabIds } from "@/lib/sessions/pinned-tab-registry";
 import { getEffectivePinMode, getPrimaryPin } from "@/lib/sessions/pin-state";
 import { chat } from "@/lib/model-router";
@@ -169,7 +169,7 @@ chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 // independently. The 30s `recoveryGuard` inside detectAndMarkPaused
 // deduplicates repeated calls.
 // Run cdp-input flag migration on every SW startup (idempotent).
-void runCdpInputMigration();
+void migrateLegacyKeyboardFlag();
 
 const recoveryReady: Promise<void> = runSessionMigrations()
   .catch((e) => {
@@ -196,7 +196,7 @@ chrome.runtime.onInstalled.addListener((details) => {
   recoveryReady.catch((e) => {
     console.warn("[sw] recovery on onInstalled failed:", e);
   });
-  void runCdpInputMigration();
+  void migrateLegacyKeyboardFlag();
   // ROADMAP §14 v1.1 — re-inject content scripts into already-open tabs so
   // they get a live runtime after extension reload/update. Without this,
   // previously-open tabs would orphan and silently fail every sendMessage
@@ -221,7 +221,7 @@ chrome.runtime.onStartup.addListener(() => {
   recoveryReady.catch((e) => {
     console.warn("[sw] recovery on onStartup failed:", e);
   });
-  void runCdpInputMigration();
+  void migrateLegacyKeyboardFlag();
 });
 
 // --- Phase 2.5 — CDP keyboard simulation lifecycle hooks ---
