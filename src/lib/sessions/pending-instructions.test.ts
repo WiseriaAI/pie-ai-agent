@@ -92,3 +92,45 @@ describe("cancelPending", () => {
     expect(removed).toBe(false);
   });
 });
+
+describe("drainPending", () => {
+  it("returns FIFO-ordered drained entries and empties queue", async () => {
+    await addPending(SESSION_ID, { chatMessageId: "m1", content: "a", createdAt: 1 });
+    await addPending(SESSION_ID, { chatMessageId: "m2", content: "b", createdAt: 2 });
+    const drained = await drainPending(SESSION_ID);
+    expect(drained.map((p) => p.chatMessageId)).toEqual(["m1", "m2"]);
+    const state = (await chrome.storage.local.get(`session_${SESSION_ID}_agent`))[
+      `session_${SESSION_ID}_agent`
+    ] as SessionAgentState;
+    expect(state.pendingInstructions).toEqual([]);
+  });
+
+  it("returns empty array when queue empty (no storage write)", async () => {
+    const setSpy = vi.spyOn(chrome.storage.local, "set");
+    const drained = await drainPending(SESSION_ID);
+    expect(drained).toEqual([]);
+    expect(setSpy).not.toHaveBeenCalled();
+  });
+
+  it("returns empty when session missing", async () => {
+    const drained = await drainPending("nonexistent");
+    expect(drained).toEqual([]);
+  });
+
+  it("preserves all PendingInstruction fields including expandedForLLM/attachments", async () => {
+    await addPending(SESSION_ID, {
+      chatMessageId: "m1",
+      content: "user text",
+      expandedForLLM: "expanded text /skill",
+      attachments: [],
+      quotes: [],
+      createdAt: 1,
+    });
+    const drained = await drainPending(SESSION_ID);
+    expect(drained[0]).toMatchObject({
+      chatMessageId: "m1",
+      content: "user text",
+      expandedForLLM: "expanded text /skill",
+    });
+  });
+});
