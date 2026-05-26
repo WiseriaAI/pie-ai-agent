@@ -66,16 +66,16 @@ export const enDict = {
     active: "ACTIVE",
     noActiveConfig: "No active config — pick one below.",
     experimental: "EXPERIMENTAL",
-    cdpKeyboard: {
-      title: "CDP keyboard input",
-      description:
-        "Lets the agent type into canvas-rendered editors (Feishu Docs, Google Docs, Notion) via Chrome DevTools Protocol. Required only for those — regular sites work without this.",
-      warningTitle: "Heads up — debugger access is active",
-      warning1:
-        "Chrome shows a yellow debug bar on the target tab while the agent uses keyboard tools. Each call requires your approval.",
-      warning2:
-        "If the window is minimized or the tab is off-screen, the bar may not be visible — the extension is still controlling it.",
-      warning3: "Click the yellow bar's \"Cancel\" anytime to revoke access.",
+    cdpInput: {
+      title: "Browser input simulation (CDP)",
+      description: "Required for hover, click, and keyboard tools. Enabling triggers Chrome's yellow debugger bar while a task runs.",
+      statusNotAsked: "Not yet configured — first hover/click will ask for consent.",
+      statusEnabled: "Enabled — hover, click, and keyboard tools available.",
+      statusDisabled: "Disabled — hover, click, and keyboard tools unavailable.",
+      warningTitle: "While enabled:",
+      warning1: "Chrome shows a yellow debugger bar on the active tab.",
+      warning2: "All hover/click/keyboard actions use real CDP events; existing Chrome DevTools sessions on the same tab will conflict.",
+      warning3: "Toggle off any time to disable; running tasks abort cleanly.",
     },
     searchProvider: {
       caps: "Search provider",
@@ -100,6 +100,13 @@ export const enDict = {
       getKeyLink: "Get a key — 1,000 free / month",
       forgetConfirm: "Forget the saved Tavily key? You'll need to re-paste it to search again.",
     },
+  },
+  cdpOnboarding: {
+    title: "Pie needs to enable browser input simulation (CDP)",
+    body1: "Many modern sites only respond to real mouse events. With this enabled, Pie uses Chrome's debug protocol to simulate real mouse moves and clicks.",
+    body2: "While active, Chrome will show a yellow bar at the top of the tab — this is Chrome's required notification and cannot be hidden. It clears when the task ends.",
+    enable: "Enable",
+    decline: "Not now",
   },
   chat: {
     elementPicker: {

@@ -66,16 +66,16 @@ export const zhCNDict = {
     active: "当前使用",
     noActiveConfig: "暂无活跃配置 — 从下方选择一个。",
     experimental: "实验性功能",
-    cdpKeyboard: {
-      title: "CDP 键盘输入",
-      description:
-        "允许 Agent 通过 Chrome DevTools Protocol 在画布渲染的编辑器（飞书文档、Google Docs、Notion）中键入。仅这些场景需要——普通网站无需开启。",
-      warningTitle: "注意 — debugger 权限已激活",
-      warning1:
-        "Agent 使用键盘工具时，Chrome 会在目标标签页顶部显示黄色调试栏。每次调用均需你的批准。",
-      warning2:
-        "如果窗口最小化或标签页在屏幕外，调试栏可能不可见 — 扩展仍在控制中。",
-      warning3: "随时点击黄色调试栏的\"Cancel\"即可撤销访问权限。",
+    cdpInput: {
+      title: "浏览器输入模拟（CDP）",
+      description: "hover、click 和键盘工具所需。启用后任务期间标签页会出现 Chrome 黄条提示。",
+      statusNotAsked: "尚未配置——首次使用 hover/click 时会请求确认。",
+      statusEnabled: "已启用——hover、click、键盘工具可用。",
+      statusDisabled: "已禁用——hover、click、键盘工具不可用。",
+      warningTitle: "启用期间：",
+      warning1: "Chrome 在活动标签页顶部显示调试黄条。",
+      warning2: "所有 hover/click/键盘操作都走真实 CDP 事件；同一标签的现有 DevTools 会话会冲突。",
+      warning3: "可随时关闭；运行中的任务会干净中止。",
     },
     searchProvider: {
       caps: "网页搜索",
@@ -100,6 +100,13 @@ export const zhCNDict = {
       getKeyLink: "获取 key — 每月免费 1,000 次",
       forgetConfirm: "清除已保存的 Tavily key 吗?下次搜索前需要重新粘贴。",
     },
+  },
+  cdpOnboarding: {
+    title: "Pie 需要启用浏览器输入模拟（CDP）",
+    body1: "现代网站很多按钮和菜单只对真实鼠标事件响应。启用后 Pie 用 Chrome 的调试接口模拟真实鼠标移动和点击。",
+    body2: "启用期间标签页顶部会出现「Pie 已开始调试此浏览器」的黄条——这是 Chrome 强制提示，无法关闭。任务结束自动解除。",
+    enable: "启用",
+    decline: "不启用",
   },
   chat: {
     elementPicker: {

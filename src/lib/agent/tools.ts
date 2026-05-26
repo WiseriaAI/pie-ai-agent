@@ -1,4 +1,4 @@
-import { clickByIndex } from "../dom-actions/click";
+import { buildClickTool, buildHoverTool, type MouseToolDeps } from "./tools/mouse";
 import { typeByIndex } from "../dom-actions/type";
 import { scroll } from "../dom-actions/scroll";
 import { selectByIndex } from "../dom-actions/select";
@@ -11,7 +11,6 @@ import { SKILL_ACCESS_TOOLS } from "./tools/skill-access";
 import { TAB_TOOLS } from "./tools/tabs";
 import { searchWebTool } from "./tools/search";
 import { readPageTool } from "./tools/read-page";
-import { withActionSettle } from "./wait-for-settle";
 
 export {
   KEYBOARD_TOOL_NAMES,
@@ -35,6 +34,17 @@ export {
 export function getKeyboardTools(deps: KeyboardToolDeps): Tool[] {
   return buildKeyboardTools(deps);
 }
+
+/**
+ * Phase 6 — mouse tools (hover + CDP click). Always returned (handlers
+ * gate via requireCdpInput → inline onboarding flow). T16 wires this
+ * into loop.ts alongside getKeyboardTools.
+ */
+export function getMouseTools(deps: MouseToolDeps): Tool[] {
+  return [buildHoverTool(deps), buildClickTool(deps)];
+}
+
+export type { MouseToolDeps };
 
 // ── Helper: run a self-contained function in the target tab ──────────────────
 
@@ -71,33 +81,6 @@ async function execInTab<T extends unknown[]>(
 // ── Built-in tools ────────────────────────────────────────────────────────────
 
 export const BUILT_IN_TOOLS: Tool[] = [
-  {
-    name: "click",
-    description:
-      "Click an interactive element by its data-pie-idx from the most recent read_page. If the element is gone (page changed), returns 'Element not found'; call read_page again to get current indices.",
-    parameters: {
-      type: "object",
-      properties: {
-        frameId: {
-          type: "number",
-          description: "Frame ID from latest read_page.",
-        },
-        elementIndex: {
-          type: "number",
-          description: "data-pie-idx of the element.",
-        },
-      },
-      required: ["frameId", "elementIndex"],
-      additionalProperties: false,
-    },
-    handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
-      const a = args as { frameId: number; elementIndex: number };
-      return withActionSettle(ctx.tabId, () =>
-        execInTab(ctx.tabId, clickByIndex, [a.elementIndex], a.frameId),
-      );
-    },
-  },
-
   {
     name: "type",
     description:
@@ -312,7 +295,7 @@ export const BUILT_IN_TOOLS: Tool[] = [
 // frame via (frameId, elementIndex) tuple. If this fails, a future schema
 // edit accidentally dropped frameId required-ness.
 (function assertWriteToolsRequireFrameId() {
-  const writeTools = ["click", "type", "select"];
+  const writeTools = ["type", "select"];
   for (const name of writeTools) {
     const t = BUILT_IN_TOOLS.find((tool) => tool.name === name);
     if (!t) {
@@ -323,6 +306,27 @@ export const BUILT_IN_TOOLS: Tool[] = [
       throw new Error(
         `[R-iframe-1] tool "${name}" must require frameId in its JSON schema`,
       );
+    }
+  }
+})();
+
+// iframe spec R-iframe-1 (mouse tools) — same invariant for hover + click,
+// which are built via getMouseTools factory (not in BUILT_IN_TOOLS).
+(function assertMouseToolsRequireFrameId() {
+  const dummyDeps: MouseToolDeps = {
+    acquireSession: () => Promise.reject(new Error("dummy")),
+    sessionId: "build-time-check",
+    requestConsent: () => Promise.reject(new Error("dummy")),
+  };
+  const mouseTools = getMouseTools(dummyDeps);
+  for (const name of ["click", "hover"]) {
+    const t = mouseTools.find((tool) => tool.name === name);
+    if (!t) {
+      throw new Error(`[R-iframe-1] getMouseTools missing tool: ${name}`);
+    }
+    const required = (t.parameters as { required?: string[] }).required ?? [];
+    if (!required.includes("frameId")) {
+      throw new Error(`[R-iframe-1] mouse tool "${name}" must require frameId`);
     }
   }
 })();

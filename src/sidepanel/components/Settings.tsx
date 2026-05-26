@@ -14,7 +14,7 @@ import {
 import { getProviderMeta } from "@/lib/model-router/providers/registry";
 import { resolveProviderMeta } from "@/lib/model-router/providers/registry";
 import { fetchOpenRouterModels } from "@/lib/openrouter-models-fetch";
-import { isKeyboardSimulationEnabled, setKeyboardSimulationEnabled } from "@/lib/keyboard-simulation";
+import { isCdpInputEnabled, setCdpInputEnabled } from "@/lib/cdp-input-enabled";
 import {
   listCustomProviders, deleteCustomProvider, getInstancesUsingCustomProvider,
   type StoredCustomProvider, CUSTOM_PREFIX, providerRefToId,
@@ -41,7 +41,7 @@ export default function Settings({ onBack, onRunSkill }: Props) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showWizard, setShowWizard] = useState(false);
-  const [keyboardSim, setKeyboardSim] = useState(false);
+  const [cdpInput, setCdpInput] = useState<boolean | undefined>(undefined);
   const [testResult, setTestResult] = useState<Record<string, { ok: boolean; message: string }>>({});
   // Per-provider custom models pool — sticky across instances of the same provider.
   const [providerPools, setProviderPools] = useState<Record<string, string[]>>({});
@@ -71,7 +71,7 @@ export default function Settings({ onBack, onRunSkill }: Props) {
 
   useEffect(() => {
     reload();
-    isKeyboardSimulationEnabled().then(setKeyboardSim);
+    isCdpInputEnabled().then(setCdpInput);
   }, [reload]);
 
   async function handleCreate(provider: ProviderRef, payload: InstanceFormPayload) {
@@ -324,9 +324,9 @@ export default function Settings({ onBack, onRunSkill }: Props) {
               </section>
             )}
 
-            <KeyboardSimSection
-              enabled={keyboardSim}
-              onToggle={async (n) => { setKeyboardSim(n); await setKeyboardSimulationEnabled(n); }}
+            <CdpInputSection
+              state={cdpInput}
+              onSet={async (next) => { setCdpInput(next); await setCdpInputEnabled(next); }}
             />
 
             <section className="flex flex-col gap-3.5">
@@ -432,14 +432,15 @@ function SegmentedTabs({
   );
 }
 
-function KeyboardSimSection({
-  enabled,
-  onToggle,
+function CdpInputSection({
+  state,
+  onSet,
 }: {
-  enabled: boolean;
-  onToggle: (next: boolean) => void;
+  state: boolean | undefined;
+  onSet: (next: boolean) => void;
 }) {
   const t = useT();
+  const enabled = state === true;
   return (
     <section className="flex flex-col gap-3">
       <div className="flex items-baseline justify-between">
@@ -448,26 +449,27 @@ function KeyboardSimSection({
       <div className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-3.5">
         <div className="flex items-start gap-3">
           <div className="flex flex-1 flex-col gap-1">
-            <div className="text-[13px] font-medium text-fg-1">{t("settings.cdpKeyboard.title")}</div>
+            <div className="text-[13px] font-medium text-fg-1">{t("settings.cdpInput.title")}</div>
             <p className="text-[12px] leading-[18px] text-fg-2">
-              {t("settings.cdpKeyboard.description")}
+              {t("settings.cdpInput.description")}
+            </p>
+            <p className="text-[11px] text-fg-3 mt-0.5">
+              {state === undefined
+                ? t("settings.cdpInput.statusNotAsked")
+                : enabled
+                ? t("settings.cdpInput.statusEnabled")
+                : t("settings.cdpInput.statusDisabled")}
             </p>
           </div>
-          <Switch checked={enabled} onChange={onToggle} />
+          <Switch checked={enabled} onChange={onSet} />
         </div>
         {enabled && (
           <div className="flex flex-col gap-1.5 rounded border border-warning-line bg-warning-tint px-3 py-2 text-[11px] leading-[16px] text-warning">
-            <span className="font-medium">{t("settings.cdpKeyboard.warningTitle")}</span>
+            <span className="font-medium">{t("settings.cdpInput.warningTitle")}</span>
             <ul className="flex flex-col gap-1 pl-3 text-warning/90">
-              <li className="list-['—__'] pl-0">
-                {t("settings.cdpKeyboard.warning1")}
-              </li>
-              <li className="list-['—__'] pl-0">
-                {t("settings.cdpKeyboard.warning2")}
-              </li>
-              <li className="list-['—__'] pl-0">
-                {t("settings.cdpKeyboard.warning3")}
-              </li>
+              <li className="list-['—__'] pl-0">{t("settings.cdpInput.warning1")}</li>
+              <li className="list-['—__'] pl-0">{t("settings.cdpInput.warning2")}</li>
+              <li className="list-['—__'] pl-0">{t("settings.cdpInput.warning3")}</li>
             </ul>
           </div>
         )}

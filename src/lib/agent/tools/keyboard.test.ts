@@ -5,6 +5,7 @@ import type { CdpSession } from "../../../background/cdp-session";
 import type { ActionResult } from "../../dom-actions/types";
 import type { ToolHandlerContext } from "../types";
 import { chromeMock } from "../../../test/setup";
+import { setCdpInputEnabled } from "@/lib/cdp-input-enabled";
 
 // CDP modifier bitmask: Shift = 8 (others: Alt 1, Ctrl 2, Meta 4).
 const SHIFT_MODIFIER = 8;
@@ -52,15 +53,18 @@ function ctx(): ToolHandlerContext {
 describe("dispatch_keyboard_input — softBreak", () => {
   let acquired: { session: CdpSession; calls: SendCall[] };
 
-  beforeEach(() => {
+  beforeEach(async () => {
     seedActiveTab();
     acquired = makeFakeSession();
+    await setCdpInputEnabled(true);
   });
 
   function getDispatchTool() {
     const tools = buildKeyboardTools({
       acquireSession: async () => acquired.session,
       pinnedOrigin: ORIGIN,
+      requestConsent: async () => true,
+      sessionId: "S1",
     });
     const tool = tools.find((t) => t.name === "dispatch_keyboard_input");
     if (!tool) throw new Error("dispatch_keyboard_input tool not found");

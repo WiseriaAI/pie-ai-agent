@@ -45,9 +45,16 @@ import {
   handleExternalDetach,
   detachAllSessions,
 } from "./cdp-session";
-import { KEYBOARD_SIMULATION_STORAGE_KEY } from "@/lib/keyboard-simulation";
+import {
+  registerOnboardingPort,
+  unregisterOnboardingPort,
+  handleOnboardingResponse,
+  onStorageChanged as onCdpInputStorageChanged,
+} from "@/lib/cdp-input-onboarding";
+import { CDP_INPUT_ENABLED_STORAGE_KEY } from "@/lib/cdp-input-enabled";
 
 import { runSessionMigrations } from "@/lib/sessions/migration";
+import { migrateLegacyKeyboardFlag } from "@/lib/cdp-input-enabled";
 import { getCrossSessionPinnedTabIds } from "@/lib/sessions/pinned-tab-registry";
 import { getEffectivePinMode, getPrimaryPin } from "@/lib/sessions/pin-state";
 import { chat } from "@/lib/model-router";
@@ -167,6 +174,9 @@ chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 // ordered pipeline rather than each calling detectAndMarkPaused
 // independently. The 30s `recoveryGuard` inside detectAndMarkPaused
 // deduplicates repeated calls.
+// Run cdp-input flag migration on every SW startup (idempotent).
+void migrateLegacyKeyboardFlag();
+
 const recoveryReady: Promise<void> = runSessionMigrations()
   .catch((e) => {
     console.warn("[sw] session migrations failed:", e);
@@ -192,6 +202,7 @@ chrome.runtime.onInstalled.addListener((details) => {
   recoveryReady.catch((e) => {
     console.warn("[sw] recovery on onInstalled failed:", e);
   });
+  void migrateLegacyKeyboardFlag();
   // ROADMAP §14 v1.1 — re-inject content scripts into already-open tabs so
   // they get a live runtime after extension reload/update. Without this,
   // previously-open tabs would orphan and silently fail every sendMessage
@@ -216,6 +227,7 @@ chrome.runtime.onStartup.addListener(() => {
   recoveryReady.catch((e) => {
     console.warn("[sw] recovery on onStartup failed:", e);
   });
+  void migrateLegacyKeyboardFlag();
 });
 
 // --- Phase 2.5 — CDP keyboard simulation lifecycle hooks ---
@@ -247,7 +259,8 @@ chrome.debugger.onDetach.addListener((source, reason) => {
 // the session lazily).
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local") return;
-  const change = changes[KEYBOARD_SIMULATION_STORAGE_KEY];
+  onCdpInputStorageChanged(changes);
+  const change = changes[CDP_INPUT_ENABLED_STORAGE_KEY];
   if (!change) return;
   if (change.newValue === false || change.newValue === undefined) {
     void detachAllSessions("kill-switch");
@@ -1195,6 +1208,7 @@ chrome.runtime.onConnect.addListener((port) => {
   // panel connects, not when a recording starts. Without this, quote-added never
   // reaches the panel because the dispatch loop iterates an empty map.
   portsBySession.set(portSessionId, port);
+  registerOnboardingPort(portSessionId, port);
 
   // v1.1 — drain any quote-added stashed while panel was booting (bubble click
   // triggers sidePanel.open + dispatchQuoteAdded back-to-back; the dispatch
@@ -1347,12 +1361,25 @@ chrome.runtime.onConnect.addListener((port) => {
     } else if (message.type === "picker:stop") {
       void broadcastPickerExit((message as { tabId: number }).tabId);
     }
+    // CDP input onboarding — panel replies with user's consent choice.
+    if (
+      message &&
+      typeof message === "object" &&
+      message.type === "cdp-onboarding-response" &&
+      typeof (message as { enabled?: unknown }).enabled === "boolean"
+    ) {
+      void handleOnboardingResponse(
+        portSessionId,
+        (message as { enabled: boolean }).enabled,
+      );
+    }
   });
 
   port.onDisconnect.addListener(() => {
     // Recording v1 — panel disconnect aborts any active recording for this session.
     abortRecordingForSession(port, portSessionId, "panel-disconnect");
     portsBySession.delete(portSessionId);
+    unregisterOnboardingPort(portSessionId);
 
     abortRotation.current.abort();
     keepAlive.stop();

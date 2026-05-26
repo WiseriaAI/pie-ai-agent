@@ -18,8 +18,29 @@
 // Spec: docs/plans/2026-04-28-001-feat-phase2.5-cdp-keyboard-simulation-plan.md
 
 import type { ActionResult } from "../../dom-actions/types";
-import { clickByIndex } from "../../dom-actions/click";
+
+/**
+ * Self-contained function injected via chrome.scripting.executeScript to
+ * focus-click an element before a keyboard dispatch. Mirrors the old
+ * dom-actions/click.ts contract; lives here as the only remaining
+ * consumer of synthetic click (the public click tool is now CDP-based).
+ */
+function focusClickByIndex(index: number): ActionResult {
+  const el = document.querySelector(`[data-pie-idx="${index}"]`);
+  if (!el) {
+    return {
+      success: false,
+      error: `Element not found at index ${index}. The page may have changed; try snapshotting again.`,
+    };
+  }
+  (el as HTMLElement).click();
+  return {
+    success: true,
+    observation: `Focus-clicked element [${index}]`,
+  };
+}
 import { safeParseOrigin } from "../loop";
+import { requireCdpInput } from "./mouse";
 import type { CdpSession } from "../../../background/cdp-session";
 import type { Tool, ToolHandlerContext } from "../types";
 import { withActionSettle } from "../wait-for-settle";
@@ -176,10 +197,20 @@ export interface KeyboardToolDeps {
    * the active tab's current origin differs.
    */
   pinnedOrigin: string;
+  /**
+   * Trigger sidepanel consent flow when cdp_input_enabled is undefined.
+   * Bound to requestCdpInputConsent in loop.ts.
+   */
+  requestConsent: (sessionId: string) => Promise<boolean>;
+  /**
+   * Session id for the current chat task — used to route the inline
+   * consent guide through the correct sidepanel port.
+   */
+  sessionId: string;
 }
 
 export function buildKeyboardTools(deps: KeyboardToolDeps): Tool[] {
-  const { acquireSession, pinnedOrigin } = deps;
+  const { acquireSession, pinnedOrigin, requestConsent, sessionId } = deps;
 
   return [
     {
@@ -215,7 +246,10 @@ export function buildKeyboardTools(deps: KeyboardToolDeps): Tool[] {
       handler: async (
         args: unknown,
         ctx: ToolHandlerContext,
-      ): Promise<ActionResult> => withActionSettle(ctx.tabId, async () => {
+      ): Promise<ActionResult> => {
+        const gate = await requireCdpInput({ sessionId, requestConsent });
+        if (!gate.ok) return { success: false, error: gate.error };
+        return withActionSettle(ctx.tabId, async () => {
         const a = args as {
           text: string;
           after_element_index?: number;
@@ -243,7 +277,7 @@ export function buildKeyboardTools(deps: KeyboardToolDeps): Tool[] {
           const clickResult = await chrome.scripting
             .executeScript({
               target: { tabId: ctx.tabId },
-              func: clickByIndex,
+              func: focusClickByIndex,
               args: [a.after_element_index],
             })
             .then(
@@ -344,7 +378,8 @@ export function buildKeyboardTools(deps: KeyboardToolDeps): Tool[] {
           success: true,
           observation: `Typed ${lengthDesc}${enterDesc} via keyboard simulation (value redacted)`,
         };
-      }),
+        });
+      },
     },
     {
       name: "press_key",
@@ -367,7 +402,10 @@ export function buildKeyboardTools(deps: KeyboardToolDeps): Tool[] {
       handler: async (
         args: unknown,
         ctx: ToolHandlerContext,
-      ): Promise<ActionResult> => withActionSettle(ctx.tabId, async () => {
+      ): Promise<ActionResult> => {
+        const gate = await requireCdpInput({ sessionId, requestConsent });
+        if (!gate.ok) return { success: false, error: gate.error };
+        return withActionSettle(ctx.tabId, async () => {
         const a = args as { key: string };
         const mapping = KEY_MAP[a.key];
         if (!mapping) {
@@ -415,7 +453,8 @@ export function buildKeyboardTools(deps: KeyboardToolDeps): Tool[] {
           success: true,
           observation: `Pressed ${a.key} via keyboard simulation`,
         };
-      }),
+        });
+      },
     },
   ];
 }

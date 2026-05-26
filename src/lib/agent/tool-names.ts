@@ -9,6 +9,7 @@
 // Phase 2 DOM action tools (always present in BUILT_IN_TOOLS).
 const PHASE_2_TOOL_NAMES = [
   "click",
+  "hover",
   "type",
   "scroll",
   "select",
@@ -122,6 +123,7 @@ export type ToolClass = "read" | "write";
 export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
   // Phase 2 DOM tools
   click: "write",
+  hover: "write",
   type: "write",
   select: "write",
   scroll: "read",
