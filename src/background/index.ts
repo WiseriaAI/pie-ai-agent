@@ -595,6 +595,10 @@ async function handlePanelMounted(
       e,
     );
   });
+
+  // Issue #34 — sync pending instructions to the panel so the reconnected
+  // UI can re-decorate any pending bubbles in slot.messages.
+  await broadcastInstructionState(port, sessionId);
 }
 
 // --- M1-U5: Resume + Discard handlers ---
