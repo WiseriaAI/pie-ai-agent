@@ -53,6 +53,7 @@ import {
 import { addPinToMeta } from "../sessions/pin-state";
 import { drainPending } from "../sessions/pending-instructions";
 import { buildMidTaskUserMessage } from "./loop-drain";
+import { broadcastInstructionState } from "@/background/instruction-broadcast";
 import { synthesizeAgentTurnText, type TerminationReason } from "./synthesize-agent-turn";
 import { waitForUrlSettle, type UrlSettleResult } from "./wait-for-url-settle";
 // setLastTaskSynth removed from emitDone — lastTaskSynth is now folded into
@@ -1207,12 +1208,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         history.push(midTaskMsg);
         // Broadcast empty pending so panel updates UI immediately
         // (without waiting for next step write).
-        // TODO(#34/Task9): replace with broadcastInstructionState helper
-        port.postMessage({
-          type: "chat-instruction-state",
-          sessionId,
-          pending: [],
-        });
+        await broadcastInstructionState(port, sessionId);
       }
 
       // Origin check (Issue #50: transient-tolerant)

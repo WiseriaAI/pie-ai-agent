@@ -1326,6 +1326,16 @@ chrome.runtime.onConnect.addListener((port) => {
           console.warn("[sw] chat-instruction-add failed:", e);
         }
       })();
+    } else if (message.type === "chat-instruction-cancel") {
+      if (!verifyPortSession(message.sessionId, "chat-instruction-cancel")) return;
+      void (async () => {
+        try {
+          await cancelPending(message.sessionId, message.chatMessageId);
+          await broadcastInstructionState(port, message.sessionId);
+        } catch (e) {
+          console.warn("[sw] chat-instruction-cancel failed:", e);
+        }
+      })();
     } else if (message.type === "panel-mounted") {
       if (!verifyPortSession(message.sessionId, "panel-mounted")) return;
       handlePanelMounted(port, message.sessionId).catch(
