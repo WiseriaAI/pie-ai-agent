@@ -92,6 +92,9 @@ import {
   broadcastPickerEnter,
   broadcastPickerExit,
 } from "./quote-bridge";
+import { addPending, cancelPending, drainPending } from "@/lib/sessions/pending-instructions";
+import { broadcastInstructionState } from "./instruction-broadcast";
+import type { ChatInstructionRejectedMessage } from "@/types/messages";
 
 // Run V1→V2 migration once on SW load (idempotent via schema_version sentinel).
 migrateV1toV2().catch((e) => console.error("migration v2 failed", e));
@@ -1290,6 +1293,39 @@ chrome.runtime.onConnect.addListener((port) => {
       );
     } else if (message.type === "chat-abort") {
       abortRotation.current.abort();
+    } else if (message.type === "chat-instruction-add") {
+      if (!verifyPortSession(message.sessionId, "chat-instruction-add")) return;
+
+      // Reject if loop has ended for this session — panel will fall back to chat-start
+      if (!inFlightSessionIds.has(message.sessionId)) {
+        const reply: ChatInstructionRejectedMessage = {
+          type: "chat-instruction-rejected",
+          sessionId: message.sessionId,
+          chatMessageId: message.chatMessageId,
+          reason: "not-streaming",
+        };
+        port.postMessage(reply);
+        return;
+      }
+
+      // Append to queue then broadcast new state
+      void (async () => {
+        try {
+          await addPending(message.sessionId, {
+            chatMessageId: message.chatMessageId,
+            content: message.content,
+            ...(message.expandedForLLM !== undefined
+              ? { expandedForLLM: message.expandedForLLM }
+              : {}),
+            ...(message.attachments?.length ? { attachments: message.attachments } : {}),
+            ...(message.quotes?.length ? { quotes: message.quotes } : {}),
+            createdAt: Date.now(),
+          });
+          await broadcastInstructionState(port, message.sessionId);
+        } catch (e) {
+          console.warn("[sw] chat-instruction-add failed:", e);
+        }
+      })();
     } else if (message.type === "panel-mounted") {
       if (!verifyPortSession(message.sessionId, "panel-mounted")) return;
       handlePanelMounted(port, message.sessionId).catch(
