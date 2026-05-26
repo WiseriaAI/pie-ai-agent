@@ -907,6 +907,7 @@ describe("setActive — multi-session port lifecycle (#30)", () => {
       },
       [`session_${id}_agent`]: {
         agentMessages: [],
+        pendingInstructions: [],
         stepIndex: 0,
         hasImageContent: false,
         contextUsage: {
