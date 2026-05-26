@@ -3,6 +3,7 @@ import type { CdpSession } from "@/background/cdp-session";
 import type { Tool, ToolHandlerContext } from "../types";
 import type { ActionResult } from "@/lib/dom-actions/types";
 import { elementToPagePoint, type GeometryError } from "@/lib/dom-actions/geometry";
+import { withActionSettle } from "../wait-for-settle";
 
 /**
  * Internal: dispatch a single CDP mouse event at the given page coords.
@@ -122,14 +123,16 @@ export function buildHoverTool(deps: MouseToolDeps): Tool {
         return { success: false, error: `CDP attach failed: ${msg}` };
       }
 
-      const point = await elementToPagePoint(ctx.tabId, a.frameId, a.elementIndex, session);
-      if ("kind" in point) return geometryErrorToActionResult(point);
+      return withActionSettle(ctx.tabId, async () => {
+        const point = await elementToPagePoint(ctx.tabId, a.frameId, a.elementIndex, session);
+        if ("kind" in point) return geometryErrorToActionResult(point);
 
-      await dispatchMouseAt(session, point.x, point.y, "mouseMoved");
-      return {
-        success: true,
-        observation: `Hovered [${a.elementIndex}] at (${Math.round(point.x)},${Math.round(point.y)}). New content may have appeared; call read_page to observe.`,
-      };
+        await dispatchMouseAt(session, point.x, point.y, "mouseMoved");
+        return {
+          success: true,
+          observation: `Hovered [${a.elementIndex}] at (${Math.round(point.x)},${Math.round(point.y)}). New content may have appeared; call read_page to observe.`,
+        };
+      });
     },
   };
 }
@@ -171,17 +174,19 @@ export function buildClickTool(deps: MouseToolDeps): Tool {
         return { success: false, error: `CDP attach failed: ${msg}` };
       }
 
-      const point = await elementToPagePoint(ctx.tabId, a.frameId, a.elementIndex, session);
-      if ("kind" in point) return geometryErrorToActionResult(point);
+      return withActionSettle(ctx.tabId, async () => {
+        const point = await elementToPagePoint(ctx.tabId, a.frameId, a.elementIndex, session);
+        if ("kind" in point) return geometryErrorToActionResult(point);
 
-      await dispatchMouseAt(session, point.x, point.y, "mouseMoved");
-      await dispatchMouseAt(session, point.x, point.y, "mousePressed");
-      await dispatchMouseAt(session, point.x, point.y, "mouseReleased");
+        await dispatchMouseAt(session, point.x, point.y, "mouseMoved");
+        await dispatchMouseAt(session, point.x, point.y, "mousePressed");
+        await dispatchMouseAt(session, point.x, point.y, "mouseReleased");
 
-      return {
-        success: true,
-        observation: `Clicked [${a.elementIndex}] at (${Math.round(point.x)},${Math.round(point.y)}).`,
-      };
+        return {
+          success: true,
+          observation: `Clicked [${a.elementIndex}] at (${Math.round(point.x)},${Math.round(point.y)}).`,
+        };
+      });
     },
   };
 }

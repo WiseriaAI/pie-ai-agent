@@ -1884,18 +1884,18 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
 
         let observation = result.observation ?? result.error ?? "";
 
-        // Phase 2.5: when type tool reports IME buffer error and
-        // keyboard simulation is OFF, append a hint pointing user to
-        // Settings. Skipped when sim is ON (LLM should retry via
+        // Phase 2.5: when type tool reports IME buffer error and CDP
+        // input simulation is OFF, append a hint pointing user to
+        // Settings. Skipped when CDP is ON (LLM should retry via
         // dispatch_keyboard_input on its own per system prompt).
         if (
           tc.name === "type" &&
           !result.success &&
           observation.includes("hidden IME / keyboard capture buffer") &&
-          !currentKeyboardEnabled
+          !cdpAvailable
         ) {
           observation +=
-            "\n(Tip: enable 'Keyboard simulation' in Settings to handle this case via CDP.)";
+            "\n(Tip: enable 'Browser input simulation (CDP)' in Settings to handle this case via CDP.)";
         }
 
         toolResultBlocks.push({
