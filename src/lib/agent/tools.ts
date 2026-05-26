@@ -12,7 +12,6 @@ import { TAB_TOOLS } from "./tools/tabs";
 import { searchWebTool } from "./tools/search";
 import { readPageTool } from "./tools/read-page";
 import { withActionSettle } from "./wait-for-settle";
-import { getFrameVersion } from "./tools/page-version-registry";
 
 export {
   KEYBOARD_TOOL_NAMES,
@@ -69,51 +68,13 @@ async function execInTab<T extends unknown[]>(
   }
 }
 
-// ── Stale-detection helper ───────────────────────────────────────────────────
-
-/**
- * Verifies the frame version before executing a write-class tool.
- * Returns { ok: true } if the frame is current, or { ok: false, result }
- * with the appropriate error code for the LLM to retry.
- *
- * Error codes:
- *   frameGone            — frame not in registry; LLM must call read_page first.
- *   frameVersionMismatch — DOM mutated since last snapshot; indices shifted.
- */
-function verifyFrameVersion(
-  tabId: number,
-  frameId: number,
-  expectedFrameVersion: number,
-): { ok: true } | { ok: false; result: ActionResult } {
-  const entry = getFrameVersion(tabId, frameId);
-  if (!entry) {
-    return {
-      ok: false,
-      result: {
-        success: false,
-        error: "frameGone: Frame not in registry. Call read_page first.",
-      },
-    };
-  }
-  if (entry.version !== expectedFrameVersion) {
-    return {
-      ok: false,
-      result: {
-        success: false,
-        error: `frameVersionMismatch: expected ${expectedFrameVersion}, current ${entry.version}. Re-call read_page; indices may have shifted.`,
-      },
-    };
-  }
-  return { ok: true };
-}
-
 // ── Built-in tools ────────────────────────────────────────────────────────────
 
 export const BUILT_IN_TOOLS: Tool[] = [
   {
     name: "click",
     description:
-      "Click an interactive element. Requires expectedFrameVersion from the latest read_page; mismatch returns frameVersionMismatch and you must re-call read_page.",
+      "Click an interactive element by its data-pie-idx from the most recent read_page. If the element is gone (page changed), returns 'Element not found'; call read_page again to get current indices.",
     parameters: {
       type: "object",
       properties: {
@@ -125,18 +86,12 @@ export const BUILT_IN_TOOLS: Tool[] = [
           type: "number",
           description: "data-pie-idx of the element.",
         },
-        expectedFrameVersion: {
-          type: "number",
-          description: "frame_version from the latest read_page for this frame.",
-        },
       },
-      required: ["frameId", "elementIndex", "expectedFrameVersion"],
+      required: ["frameId", "elementIndex"],
       additionalProperties: false,
     },
     handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
-      const a = args as { frameId: number; elementIndex: number; expectedFrameVersion: number };
-      const verify = verifyFrameVersion(ctx.tabId, a.frameId, a.expectedFrameVersion);
-      if (!verify.ok) return verify.result;
+      const a = args as { frameId: number; elementIndex: number };
       return withActionSettle(ctx.tabId, () =>
         execInTab(ctx.tabId, clickByIndex, [a.elementIndex], a.frameId),
       );
@@ -146,7 +101,7 @@ export const BUILT_IN_TOOLS: Tool[] = [
   {
     name: "type",
     description:
-      "Type text into an input/textarea/contenteditable. Requires expectedFrameVersion; mismatch returns frameVersionMismatch.",
+      "Type text into an input/textarea/contenteditable by its data-pie-idx from the most recent read_page. If the element is gone (page changed), returns 'Element not found'; call read_page again to get current indices.",
     parameters: {
       type: "object",
       properties: {
@@ -166,18 +121,12 @@ export const BUILT_IN_TOOLS: Tool[] = [
           type: "boolean",
           description: "If true, clear existing content before typing. Defaults to false.",
         },
-        expectedFrameVersion: {
-          type: "number",
-          description: "frame_version from the latest read_page for this frame.",
-        },
       },
-      required: ["frameId", "elementIndex", "text", "expectedFrameVersion"],
+      required: ["frameId", "elementIndex", "text"],
       additionalProperties: false,
     },
     handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
-      const a = args as { frameId: number; elementIndex: number; text: string; clear?: boolean; expectedFrameVersion: number };
-      const verify = verifyFrameVersion(ctx.tabId, a.frameId, a.expectedFrameVersion);
-      if (!verify.ok) return verify.result;
+      const a = args as { frameId: number; elementIndex: number; text: string; clear?: boolean };
       return execInTab(ctx.tabId, typeByIndex, [a.elementIndex, a.text, a.clear ?? false], a.frameId);
     },
   },
@@ -217,7 +166,7 @@ export const BUILT_IN_TOOLS: Tool[] = [
   {
     name: "select",
     description:
-      "Select an option in a <select> element. Requires expectedFrameVersion; mismatch returns frameVersionMismatch.",
+      "Select an option in a <select> element by its data-pie-idx from the most recent read_page. If the element is gone (page changed), returns 'Element not found'; call read_page again to get current indices.",
     parameters: {
       type: "object",
       properties: {
@@ -233,18 +182,12 @@ export const BUILT_IN_TOOLS: Tool[] = [
           type: "string",
           description: "Option value to select.",
         },
-        expectedFrameVersion: {
-          type: "number",
-          description: "frame_version from the latest read_page for this frame.",
-        },
       },
-      required: ["frameId", "elementIndex", "value", "expectedFrameVersion"],
+      required: ["frameId", "elementIndex", "value"],
       additionalProperties: false,
     },
     handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
-      const a = args as { frameId: number; elementIndex: number; value: string; expectedFrameVersion: number };
-      const verify = verifyFrameVersion(ctx.tabId, a.frameId, a.expectedFrameVersion);
-      if (!verify.ok) return verify.result;
+      const a = args as { frameId: number; elementIndex: number; value: string };
       return execInTab(ctx.tabId, selectByIndex, [a.elementIndex, a.value], a.frameId);
     },
   },

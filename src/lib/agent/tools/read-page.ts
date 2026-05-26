@@ -1,8 +1,6 @@
 import type { Tool, ToolHandlerContext } from "../types";
 import type { ActionResult } from "../../dom-actions/types";
 import { pageSnapshotInjected, type PageSnapshotResult } from "../../dom-actions/page-snapshot";
-import { versionBootstrapInjected } from "../../dom-actions/version-bootstrap";
-import { recordFrameVersion } from "./page-version-registry";
 import { escapeWrapperAttribute, escapeUntrustedWrappers } from "../untrusted-wrappers";
 import { isRestrictedSchemeForGrouping } from "./tabs";
 
@@ -22,9 +20,8 @@ export const readPageTool: Tool = {
   description:
     "Read the active page's HTML structure (interactive elements stamped with data-pie-idx, " +
     "shadow DOM traversed, scrollable regions noted). Returns per-frame HTML inside " +
-    "<untrusted_page_content> wrappers plus a <frame_map> with version tokens. " +
-    "Call this before any click/type/select; pass the returned frame_version as expectedFrameVersion " +
-    "to those tools.",
+    "<untrusted_page_content> wrappers plus a <frame_map>. " +
+    "Call this before any click/type/select to get current element indices.",
   parameters: {
     type: "object",
     properties: {
@@ -50,19 +47,6 @@ export const readPageTool: Tool = {
     }
     if (tab.discarded) {
       return { success: false, error: "discardedTabRequiresActivation" };
-    }
-
-    // Install MutationObserver bootstrap in every frame before reading. Idempotent
-    // in the page so safe to call every time. Failure is non-fatal — page-snapshot
-    // returns version=-1 if observer not installed and the LLM falls back to
-    // not relying on stale detection for this read.
-    try {
-      await chrome.scripting.executeScript({
-        target: { tabId: a.tabId, allFrames: true },
-        func: versionBootstrapInjected,
-      });
-    } catch {
-      // ignore — see comment above
     }
 
     let results: chrome.scripting.InjectionResult<PageSnapshotResult>[];
@@ -131,7 +115,6 @@ export const readPageTool: Tool = {
         const attrs = [
           `frame_id="${f.frameId}"`,
           `frame_url="${escapeWrapperAttribute(f.url)}"`,
-          `frame_version="-1"`,
           `unreachable="true"`,
           `reason="${reason}"`,
         ];
@@ -139,12 +122,9 @@ export const readPageTool: Tool = {
         continue;
       }
 
-      recordFrameVersion(a.tabId, f.frameId, data.version);
-
       const mapAttrs = [
         `frame_id="${f.frameId}"`,
         `url="${escapeWrapperAttribute(f.url)}"`,
-        `version="${data.version}"`,
       ];
       if (crossOrigin) mapAttrs.push(`cross_origin="true"`);
       frameMapLines.push("  " + mapAttrs.join(" "));
@@ -157,7 +137,6 @@ export const readPageTool: Tool = {
 
       const blockAttrs: string[] = [
         `frame_id="${f.frameId}"`,
-        `frame_version="${data.version}"`,
       ];
       if (crossOrigin) blockAttrs.push(`cross_origin="true"`);
 

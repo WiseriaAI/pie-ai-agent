@@ -128,7 +128,7 @@ function buildPinnedContextBlock(
 - Pinned tab id: ${pin.tabId}
 - Pinned origin: ${pin.origin}
 
-Each iteration's observation gives you only the current URL and page title of the pinned tab. To inspect, read, extract from, or operate on the page, call \`read_page({tabId: ${pin.tabId}})\` DIRECTLY — do NOT call list_tabs first to look up the id (it's right above). read_page returns the page HTML structure (interactive elements stamped with data-pie-idx, scrollable hints, frame_version tokens). list_tabs is for discovering OTHER tabs the user might want to act on.`;
+Each iteration's observation gives you only the current URL and page title of the pinned tab. To inspect, read, extract from, or operate on the page, call \`read_page({tabId: ${pin.tabId}})\` DIRECTLY — do NOT call list_tabs first to look up the id (it's right above). read_page returns the page HTML structure (interactive elements stamped with data-pie-idx, scrollable hints). list_tabs is for discovering OTHER tabs the user might want to act on.`;
   }
 
   // Multi-pin: list all tabs, marking the current focus.
@@ -143,7 +143,7 @@ Each iteration's observation gives you only the current URL and page title of th
   return `\n\nYou are anchored to ${pinnedTabs.length} browser tabs for this conversation:
 ${tabLines}
 
-Each iteration's observation carries only the URL and page title for the currently focused tab. To inspect, read, extract from, or operate on a tab, call \`read_page({tabId: N})\` with the desired tabId — do NOT call list_tabs first (ids are above). read_page returns the page HTML structure (interactive elements stamped with data-pie-idx, scrollable hints, frame_version tokens).
+Each iteration's observation carries only the URL and page title for the currently focused tab. To inspect, read, extract from, or operate on a tab, call \`read_page({tabId: N})\` with the desired tabId — do NOT call list_tabs first (ids are above). read_page returns the page HTML structure (interactive elements stamped with data-pie-idx, scrollable hints).
 
 To switch which tab you operate on, call focus_tab({tabId: N}) where N is one of the pinned tab ids above. The new tab becomes the focus on the NEXT iteration — do NOT batch click/type/scroll against the new tab in the same response as focus_tab; instead call read_page on it next turn before writing.`;
 }
@@ -190,19 +190,18 @@ const READ_PAGE_GUIDANCE = `
 ## Reading the page
 
 Call \`read_page(tabId)\` to get the page's HTML structure. The response contains:
-- A \`<frame_map>\` listing all frames with their current \`version\`
+- A \`<frame_map>\` listing all frames
 - Optional \`<scrollable_regions>\` hints if the page has scrollable lists
-- Per-frame \`<untrusted_page_content frame_id="N" frame_version="V">\` blocks containing
+- Per-frame \`<untrusted_page_content frame_id="N">\` blocks containing
   the stripped HTML. Interactive elements are stamped with \`data-pie-idx="N"\`.
 
 ## Modifying the page
 
 \`click\`, \`type\`, and \`select\` all require:
 - \`frameId\` and \`elementIndex\` (from \`data-pie-idx\` in the most recent read_page output)
-- \`expectedFrameVersion\` (the \`frame_version\` from that same read_page)
 
-If the page changed between read and write, you'll get \`frameVersionMismatch\`. Re-call
-read_page and use the new version. Element indices may have shifted.
+If the page changed between read and write and the target element is gone, the write tool
+returns "Element not found". Re-call read_page to get current indices.
 
 If you haven't read the page yet but the user task requires interacting with it, call
 read_page first.

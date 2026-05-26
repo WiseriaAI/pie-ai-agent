@@ -85,7 +85,6 @@ import {
   broadcastPickerEnter,
   broadcastPickerExit,
 } from "./quote-bridge";
-import { setVersionFromBump, clearTab, clearFrame } from "@/lib/agent/tools/page-version-registry";
 
 // Run V1→V2 migration once on SW load (idempotent via schema_version sentinel).
 migrateV1toV2().catch((e) => console.error("migration v2 failed", e));
@@ -458,16 +457,6 @@ async function handleExtractPage(): Promise<ExtractPageResponse> {
 
 // Message listener for page extraction requests
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  // Version bridge — content-script MutationObserver bump → registry.
-  if (message?.type === "pie/frame-version-bump") {
-    const tabId = sender.tab?.id;
-    const frameId = sender.frameId;
-    if (typeof tabId === "number" && typeof frameId === "number" && typeof message.version === "number") {
-      setVersionFromBump(tabId, frameId, message.version);
-    }
-    return false; // synchronous, no response
-  }
-
   // Recording v1 — capture inject 函数 → SW（不走 port）
   if (message?.type === "recording-action") {
     const sess = findRecordingSessionByTabId(sender.tab?.id);
@@ -1396,10 +1385,8 @@ chrome.runtime.onConnect.addListener((port) => {
 });
 
 // Recording v1 — webNavigation hooks for hard-nav re-inject + SPA route record.
-// onCommitted also clears page-version-registry entries for the navigated frame.
 if (chrome.webNavigation) {
   chrome.webNavigation.onCommitted.addListener((details) => {
-    clearFrame(details.tabId, details.frameId);
     const sess = findRecordingSessionByTabId(details.tabId);
     if (!sess) return;
     const port = portsBySession.get(sess.sessionId);
@@ -1420,9 +1407,7 @@ if (chrome.webNavigation) {
 }
 
 // Recording v1 — abort recording when the recorded tab closes.
-// Also clears page-version-registry entries for the closed tab.
 chrome.tabs.onRemoved.addListener((closedTabId) => {
-  clearTab(closedTabId);
   for (const sess of Array.from(recordingState.values())) {
     if (sess.tabId !== closedTabId) continue;
     const port = portsBySession.get(sess.sessionId);

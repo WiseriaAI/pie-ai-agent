@@ -260,7 +260,9 @@ describe("buildAgentSystemPrompt Phase 3", () => {
   it("system prompt 描述 read_page 而不是自动 snapshot", () => {
     const prompt = buildAgentSystemPrompt("do x");
     expect(prompt).toContain("read_page");
-    expect(prompt).toContain("expectedFrameVersion");
+    expect(prompt).toContain("Element not found");
+    expect(prompt).not.toContain("expectedFrameVersion");
+    expect(prompt).not.toContain("frameVersionMismatch");
     expect(prompt).not.toMatch(/each iteration[^.]*snapshot.*automatic/i);
   });
 });

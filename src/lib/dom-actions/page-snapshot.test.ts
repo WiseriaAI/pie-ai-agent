@@ -1,20 +1,18 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import { pageSnapshotInjected } from "./page-snapshot";
 
 describe("pageSnapshotInjected", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
     document.querySelectorAll("[data-pie-idx]").forEach((el) => el.removeAttribute("data-pie-idx"));
-    (window as any).__pieFrameVersion__ = 5;
-    delete (window as any).__pieFrameObserver__;
   });
 
-  it("返回 html + version + scrollableHints", () => {
+  it("返回 html + scrollableHints", () => {
     document.body.innerHTML = `<button>X</button>`;
     const result = pageSnapshotInjected();
     expect(result).toHaveProperty("html");
-    expect(result).toHaveProperty("version", 5);
     expect(result).toHaveProperty("scrollableHints");
+    expect(result).not.toHaveProperty("version");
   });
 
   it("在可交互元素上 stamp data-pie-idx", () => {
@@ -121,42 +119,5 @@ describe("pageSnapshotInjected", () => {
     const result = pageSnapshotInjected();
     expect(result.html).toContain("[filtered]");
     expect(result.html).not.toContain("untrusted_page_content");
-  });
-
-  it("stamp 时暂停 MutationObserver（避免 stamp mutations 触发 version bump）", () => {
-    // Regression guard: previously, the ~200 setAttribute/removeAttribute calls
-    // in Step C were observed by the per-frame MutationObserver, debounced
-    // 150ms, then bumped __pieFrameVersion__. The LLM's expectedFrameVersion
-    // (read at end of snapshot) lagged by one, causing every first write tool
-    // call to fail frameVersionMismatch.
-    document.body.innerHTML = `<button>A</button><a href="/x">B</a><input type="text">`;
-    const disconnectSpy = vi.fn();
-    const observeSpy = vi.fn();
-    (window as any).__pieFrameObserver__ = {
-      disconnect: disconnectSpy,
-      observe: observeSpy,
-    };
-
-    pageSnapshotInjected();
-
-    // Both must have been called exactly once: disconnect before Step C,
-    // observe after Step C with the same target+config used by bootstrap.
-    expect(disconnectSpy).toHaveBeenCalledTimes(1);
-    expect(observeSpy).toHaveBeenCalledTimes(1);
-    expect(observeSpy).toHaveBeenCalledWith(document.documentElement, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      characterData: true,
-    });
-    // Order: disconnect before observe (Step C is between them).
-    expect(disconnectSpy.mock.invocationCallOrder[0])
-      .toBeLessThan(observeSpy.mock.invocationCallOrder[0]);
-  });
-
-  it("无 observer 时也能跑（observer 还没装载场景）", () => {
-    // No __pieFrameObserver__ set. Should not throw.
-    document.body.innerHTML = `<button>X</button>`;
-    expect(() => pageSnapshotInjected()).not.toThrow();
   });
 });
