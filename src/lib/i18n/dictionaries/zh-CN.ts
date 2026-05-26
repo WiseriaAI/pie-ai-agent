@@ -101,6 +101,13 @@ export const zhCNDict = {
       forgetConfirm: "清除已保存的 Tavily key 吗?下次搜索前需要重新粘贴。",
     },
   },
+  cdpOnboarding: {
+    title: "Pie 需要启用浏览器输入模拟（CDP）",
+    body1: "现代网站很多按钮和菜单只对真实鼠标事件响应。启用后 Pie 用 Chrome 的调试接口模拟真实鼠标移动和点击。",
+    body2: "启用期间标签页顶部会出现「Pie 已开始调试此浏览器」的黄条——这是 Chrome 强制提示，无法关闭。任务结束自动解除。",
+    enable: "启用",
+    decline: "不启用",
+  },
   chat: {
     elementPicker: {
       idle: "拾取页面元素",

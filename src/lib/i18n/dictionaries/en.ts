@@ -101,6 +101,13 @@ export const enDict = {
       forgetConfirm: "Forget the saved Tavily key? You'll need to re-paste it to search again.",
     },
   },
+  cdpOnboarding: {
+    title: "Pie needs to enable browser input simulation (CDP)",
+    body1: "Many modern sites only respond to real mouse events. With this enabled, Pie uses Chrome's debug protocol to simulate real mouse moves and clicks.",
+    body2: "While active, Chrome will show a yellow bar at the top of the tab — this is Chrome's required notification and cannot be hidden. It clears when the task ends.",
+    enable: "Enable",
+    decline: "Not now",
+  },
   chat: {
     elementPicker: {
       idle: "Pick page element",
