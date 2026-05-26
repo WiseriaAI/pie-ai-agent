@@ -1,3 +1,5 @@
+import type { CdpSession } from "../../background/cdp-session";
+
 export type GeometryError =
   | { kind: "element-not-found"; index: number }
   | { kind: "element-not-visible"; index: number }
@@ -32,6 +34,7 @@ export async function elementToPagePoint(
   tabId: number,
   frameId: number,
   elementIndex: number,
+  cdpSession?: CdpSession,
 ): Promise<PagePoint | GeometryError> {
   let injection;
   try {
@@ -55,8 +58,31 @@ export async function elementToPagePoint(
     y: rect.y + rect.h / 2,
   };
   if (frameId === 0) return center;
-  // iframe path filled in Task 9.
-  throw new Error(`Iframe geometry not yet implemented (frameId=${frameId})`);
+
+  if (!cdpSession) {
+    throw new Error("elementToPagePoint: iframe geometry requires cdpSession");
+  }
+  const { frameTree } = (await cdpSession.send("Page.getFrameTree")) as {
+    frameTree: CdpFrameTreeNode;
+  };
+  const cdpFrameId = await resolveChromeToCdpFrameId(tabId, frameId, frameTree);
+  if (!cdpFrameId) return { kind: "cdp-frame-id-unresolved", frameId };
+
+  const { nodeId } = (await cdpSession.send("DOM.getNodeForFrameOwner", {
+    frameId: cdpFrameId,
+  })) as { nodeId: number };
+
+  const { model } = (await cdpSession.send("DOM.getBoxModel", { nodeId })) as {
+    model: { content: number[] };
+  };
+  // content = [x1,y1, x2,y2, x3,y3, x4,y4]; (x1,y1) is top-left
+  const iframeOriginX = model.content[0];
+  const iframeOriginY = model.content[1];
+
+  return {
+    x: iframeOriginX + center.x,
+    y: iframeOriginY + center.y,
+  };
 }
 
 export interface CdpFrame {

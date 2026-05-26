@@ -95,6 +95,88 @@ describe("resolveChromeToCdpFrameId", () => {
   });
 });
 
+describe("elementToPagePoint — iframe", () => {
+  beforeEach(() => {
+    // @ts-expect-error mock
+    global.chrome = {
+      ...global.chrome,
+      scripting: { executeScript: vi.fn() },
+      webNavigation: { getAllFrames: vi.fn() },
+    };
+  });
+
+  it("accumulates iframe origin + frame-local rect center", async () => {
+    // executeScript returns frame-local rect (inside iframe)
+    (chrome.scripting.executeScript as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { result: { x: 20, y: 30, w: 10, h: 20 } },
+    ]);
+    (chrome.webNavigation.getAllFrames as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { frameId: 0, parentFrameId: -1, url: "https://top.test/" },
+      { frameId: 42, parentFrameId: 0, url: "https://child.test/iframe" },
+    ]);
+
+    // Mock CDP session module
+    const sendMock = vi.fn().mockImplementation((method: string) => {
+      if (method === "Page.getFrameTree") {
+        return Promise.resolve({
+          frameTree: {
+            frame: { id: "F-top", url: "https://top.test/" },
+            childFrames: [{ frame: { id: "F-child", url: "https://child.test/iframe", parentId: "F-top" } }],
+          },
+        });
+      }
+      if (method === "DOM.getNodeForFrameOwner") {
+        return Promise.resolve({ nodeId: 99 });
+      }
+      if (method === "DOM.getBoxModel") {
+        return Promise.resolve({
+          model: { content: [200, 300, 600, 300, 600, 500, 200, 500] },
+        });
+      }
+      throw new Error(`Unexpected CDP method: ${method}`);
+    });
+
+    const result = await elementToPagePoint(7, 42, 3, {
+      send: sendMock as never,
+      tabId: 7,
+      ownerToken: { sessionId: "S1", tabId: 7 },
+      generationId: 1,
+      isAlive: true,
+      detachedReason: null,
+      detach: vi.fn(),
+    });
+
+    // iframe top-left = (200, 300); frame-local rect center = (25, 40); sum = (225, 340)
+    expect(result).toEqual({ x: 225, y: 340 });
+  });
+
+  it("returns cdp-frame-id-unresolved when CDP tree has no match", async () => {
+    (chrome.scripting.executeScript as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { result: { x: 0, y: 0, w: 10, h: 10 } },
+    ]);
+    (chrome.webNavigation.getAllFrames as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { frameId: 0, parentFrameId: -1, url: "https://top.test/" },
+      { frameId: 42, parentFrameId: 0, url: "https://child.test/iframe" },
+    ]);
+    const sendMock = vi.fn().mockImplementation((method: string) => {
+      if (method === "Page.getFrameTree") {
+        return Promise.resolve({ frameTree: { frame: { id: "F-top", url: "https://top.test/" }, childFrames: [] } });
+      }
+      throw new Error(`Unexpected: ${method}`);
+    });
+    const result = await elementToPagePoint(7, 42, 3, {
+      send: sendMock as never,
+      tabId: 7,
+      ownerToken: { sessionId: "S1", tabId: 7 },
+      generationId: 1,
+      isAlive: true,
+      detachedReason: null,
+      detach: vi.fn(),
+    });
+    expect(result).toEqual({ kind: "cdp-frame-id-unresolved", frameId: 42 });
+  });
+});
+
 describe("readRectByIdx (injected fn)", () => {
   it("returns null when element absent", () => {
     document.body.innerHTML = "";
