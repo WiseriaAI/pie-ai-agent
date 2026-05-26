@@ -50,7 +50,7 @@ export function mergeCarryoverIntoMessages(
     return messages;
   }
   const merged = carryover
-    .map((p, i) => `${i + 1}. ${p.expandedForLLM ?? p.content}`)
+    .map((p, i) => `${i + 1}. ${escapeUntrustedWrappers(p.expandedForLLM ?? p.content)}`)
     .join("\n\n");
   return [
     ...messages.slice(0, lastIdx),

@@ -1,6 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
 import { chromeMock } from "@/test/setup";
 import { addPending, cancelPending, drainPending } from "./pending-instructions";
+import {
+  buildSessionAgentSnapshot,
+  buildSessionAgentTombstone,
+  mergeSessionAgentSnapshot,
+} from "@/lib/agent/loop";
 import type { SessionAgentState } from "./types";
 
 const SESSION_ID = "s1";
@@ -122,5 +127,60 @@ describe("drainPending", () => {
       content: "user text",
       expandedForLLM: "expanded text /skill",
     });
+  });
+});
+
+// ── Regression: snapshot merge must not clobber pendingInstructions ───────────
+//
+// Issue #34 clobber-fix: buildSessionAgentSnapshot deliberately omits
+// pendingInstructions from the returned object. mergeSessionAgentSnapshot
+// spreads existing first, then snapshot, so a step-boundary write will
+// preserve whatever addPending wrote to storage during the step's execution
+// window (T2 < task-end T3).
+//
+// buildSessionAgentTombstone also must preserve pendingInstructions through
+// mergeSessionAgentSnapshot even though tombstone detection bypasses the
+// normal spread.
+
+describe("snapshot merge preserves pendingInstructions (clobber regression)", () => {
+  it("step-boundary snapshot does not erase pending instruction added mid-step", () => {
+    const pending = [{ chatMessageId: "m1", content: "also pin forums", createdAt: 1000 }];
+    const existing: SessionAgentState = {
+      agentMessages: [{ role: "user", content: "old" }],
+      pendingInstructions: pending,
+      stepIndex: 1,
+      hasImageContent: false,
+    };
+    // buildSessionAgentSnapshot omits pendingInstructions — simulates a
+    // step-boundary snapshot arriving after addPending wrote to storage.
+    const snapshot = buildSessionAgentSnapshot(
+      [{ role: "user", content: "new" }],
+      2,
+    );
+    expect("pendingInstructions" in snapshot).toBe(false);
+    const merged = mergeSessionAgentSnapshot(existing, snapshot);
+    // Pending instruction from storage must be preserved.
+    expect(merged.pendingInstructions).toEqual(pending);
+    // Snapshot fields still win for the fields it carries.
+    expect(merged.stepIndex).toBe(2);
+  });
+
+  it("tombstone does not erase pending instruction added at task completion boundary", () => {
+    const pending = [{ chatMessageId: "m2", content: "carry me over", createdAt: 2000 }];
+    const existing: SessionAgentState = {
+      agentMessages: [{ role: "user", content: "prev task" }],
+      pendingInstructions: pending,
+      stepIndex: 5,
+      hasImageContent: false,
+      currentFocusTabId: 42,
+    };
+    const tombstone = buildSessionAgentTombstone();
+    const merged = mergeSessionAgentSnapshot(existing, tombstone);
+    // pendingInstructions carried over for next chat-start drain (P-MTI-9).
+    expect(merged.pendingInstructions).toEqual(pending);
+    // Tombstone still resets agent-runtime fields.
+    expect(merged.stepIndex).toBe(0);
+    expect(merged.agentMessages).toEqual([]);
+    expect(merged.currentFocusTabId).toBeUndefined();
   });
 });

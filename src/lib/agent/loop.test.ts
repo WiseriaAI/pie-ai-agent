@@ -47,12 +47,15 @@ describe("buildSessionAgentSnapshot", () => {
       { role: "user", content: "do the thing" },
     ];
     const snap = buildSessionAgentSnapshot(history, 1);
+    // pendingInstructions is intentionally NOT in the snapshot so that
+    // mergeSessionAgentSnapshot preserves whatever addPending wrote to
+    // storage during the step's execution window (clobber-fix).
     expect(snap).toEqual({
       agentMessages: history,
-      pendingInstructions: [],
       stepIndex: 1,
       hasImageContent: false,
     });
+    expect("pendingInstructions" in snap).toBe(false);
   });
 
   it("stepIndex maps semantically to 'completed steps' (matches SessionAgentState JSDoc)", () => {
@@ -902,14 +905,21 @@ describe("v1.5 multi-pin — mergeSessionAgentSnapshot", () => {
     expect(merged.currentFocusTabId).toBe(13);
   });
 
-  it("tombstone signature (stepIndex 0 + empty agentMessages) clears carry-over fields", () => {
+  it("tombstone signature (stepIndex 0 + empty agentMessages) clears carry-over fields but preserves pendingInstructions", () => {
     // A tombstone is "fresh task reset" — currentFocusTabId and pendingConfirm
     // MUST be cleared so a subsequent task starts with fresh focus on
     // pinnedTabs[0]. Detect the tombstone shape by structure (the
-    // unambiguous output of buildSessionAgentTombstone) and bypass the merge.
+    // unambiguous output of buildSessionAgentTombstone) and bypass the spread.
+    //
+    // Exception: pendingInstructions MUST be preserved. The user may have
+    // submitted an instruction during the last step's execution window
+    // (addPending writes T2 < task-end T3). The tombstone would otherwise
+    // silently erase the user's entry before it could be drained at next
+    // chat-start (P-MTI-9 carry-over invariant, clobber-fix #34).
+    const pending = [{ chatMessageId: "m1", content: "leftover", createdAt: 1 }];
     const existing: SessionAgentState = {
       agentMessages: [{ role: "user", content: "prev" }],
-      pendingInstructions: [],
+      pendingInstructions: pending,
       stepIndex: 7,
       hasImageContent: false,
       currentFocusTabId: 13,
@@ -921,11 +931,13 @@ describe("v1.5 multi-pin — mergeSessionAgentSnapshot", () => {
     };
     const tombstone = buildSessionAgentTombstone();
     const merged = mergeSessionAgentSnapshot(existing, tombstone);
-    // Tombstone wins fully — no carry-over.
+    // Tombstone clears agent-runtime carry-over fields:
     expect(merged.currentFocusTabId).toBeUndefined();
     expect(merged.pendingConfirm).toBeUndefined();
     expect(merged.stepIndex).toBe(0);
     expect(merged.agentMessages).toEqual([]);
+    // pendingInstructions from existing storage is preserved:
+    expect(merged.pendingInstructions).toEqual(pending);
   });
 
   it("tombstone with lastTaskSynth payload (folded by builder) still clears carry-over", () => {

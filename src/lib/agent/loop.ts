@@ -487,7 +487,6 @@ export function buildSessionAgentSnapshot(
 ): SessionAgentState {
   return {
     agentMessages: structuredClone(history),
-    pendingInstructions: [],
     stepIndex,
     hasImageContent,
   };
@@ -556,7 +555,10 @@ export function buildSessionAgentTombstone(
  * marker (`stepIndex === 0 && agentMessages.length === 0`). On tombstone
  * we MUST clear carry-over fields so a fresh task starts with fresh focus
  * (currentFocusTabId reset, pendingConfirm cleared). Detect by the shape
- * `buildSessionAgentTombstone` produces and bypass the merge — full replace.
+ * `buildSessionAgentTombstone` produces and bypass the merge — full replace,
+ * EXCEPT `pendingInstructions`: instructions the user submitted during the
+ * final step's execution window must survive the tombstone write so they can
+ * be drained at the next chat-start (P-MTI-9 carry-over invariant).
  *
  * Exported for unit testing.
  */
@@ -569,7 +571,13 @@ export function mergeSessionAgentSnapshot(
   // unambiguous "fresh task reset" shape produced by buildSessionAgentTombstone.
   // (A live task at stepIndex 1+ never has an empty agentMessages array.)
   const isTombstone = snapshot.stepIndex === 0 && snapshot.agentMessages.length === 0;
-  if (isTombstone) return snapshot;
+  if (isTombstone) {
+    // Preserve pendingInstructions from storage — the user may have submitted
+    // an instruction during the last step's execution window (T2 < task-end T3).
+    // buildSessionAgentTombstone initialises the field to [] but the storage
+    // value (written by addPending) is the authoritative one.
+    return { ...snapshot, pendingInstructions: existing.pendingInstructions };
+  }
   return { ...existing, ...snapshot };
 }
 
