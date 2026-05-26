@@ -28,7 +28,9 @@ export function readRectByIdx(idx: number):
 /**
  * Compute page-level coordinates for the center of an element by data-pie-idx.
  * For frameId === 0, returns the rect center directly (frame-local === page-level).
- * For frameId > 0, see Task 8 + 9 for iframe geometry (throws here for now).
+ * For frameId > 0, resolves chrome→CDP frame id and adds the iframe's
+ * page-level top-left (via CDP DOM.getBoxModel) to the frame-local center.
+ * Requires a cdpSession when frameId > 0; throws otherwise (caller bug).
  */
 export async function elementToPagePoint(
   tabId: number,
