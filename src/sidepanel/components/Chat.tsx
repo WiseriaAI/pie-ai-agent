@@ -76,6 +76,7 @@ import AgentSummary from "./AgentSummary";
 import SessionConfirmCard from "./SessionConfirmCard";
 import MarkdownContent from "./Markdown";
 import SkillSlashPopover from "./SkillSlashPopover";
+import { PendingInstructionList, type PendingItem } from "./PendingInstructionList";
 import { useCdpOnboarding } from "../hooks/useCdpOnboarding";
 import { CdpOnboardingCard } from "./CdpOnboardingCard";
 
@@ -163,6 +164,10 @@ export default function Chat({
     clearQuotes,
     port,
     usage,
+    status,
+    addPendingInstruction,
+    cancelPendingInstruction,
+    pendingByChatMessageId,
   } = session;
   // Derive convenience aliases from pinnedTabs[] for the locked-pin display.
   // Primary pin is the first entry (oldest / chat-start anchor).
@@ -734,6 +739,77 @@ After the skill completes, briefly summarize what was created (the user will see
     }
   }
 
+  // Issue #34 — textarea enabled only when the session is active (not paused/failed/archived).
+  // Replaces the old `disabled={streaming}` guard which kept the field locked
+  // between tasks even when the agent was idle.
+  const sessionAllowsInput = status === "active";
+
+  // Issue #34 — pending instruction items derived from messages + pendingByChatMessageId.
+  const pendingItems = messages.flatMap((m) => {
+    if (m.role !== "user" || !m.id) return [];
+    if (!pendingByChatMessageId.has(m.id)) return [];
+    return [{ chatMessageId: m.id, content: m.content }];
+  });
+
+  // Issue #34 — unified submit: queue during streaming, send otherwise.
+  // Keeps all slash-expansion / pendingRecording / quote logic in the existing
+  // sendMessage() function so it only runs on the non-streaming path.
+  function handleSubmit() {
+    if (streaming) {
+      const userInput = input.trim();
+      if (!userInput) return;
+
+      // Build simple payload — slash expansion is not meaningful during
+      // streaming (the active task already has its expanded prompt).
+      const pendingAttachments = attachments.length > 0 ? [...attachments] : undefined;
+      setAttachments([]);
+
+      const quoteImages: ImageAttachment[] = [];
+      const quoteParts: string[] = [];
+      if (quotes) {
+        for (const q of quotes) {
+          if (q.kind === "text") {
+            quoteParts.push(
+              `<untrusted_page_quote source_url="${escapeWrapperAttribute(q.sourceUrl)}">\n${q.text}\n</untrusted_page_quote>`,
+            );
+          } else {
+            quoteParts.push(
+              `<untrusted_page_element source_url="${escapeWrapperAttribute(q.sourceUrl)}" role="${escapeWrapperAttribute(q.role)}" name="${escapeWrapperAttribute(q.accessibleName)}">\ntext_content: ${JSON.stringify(q.textContent)}\nouter_html: ${JSON.stringify(q.outerHTMLTruncated)}\n</untrusted_page_element>`,
+            );
+            if (q.imageDataUrl) {
+              const [meta, b64] = q.imageDataUrl.split(",");
+              const mediaType = (meta.match(/data:([^;]+)/)?.[1] ?? "image/jpeg") as "image/jpeg" | "image/png";
+              quoteImages.push({ id: `quote-${q.id}`, data: b64, mediaType });
+            }
+          }
+        }
+      }
+      const allAttachments = [...(pendingAttachments ?? []), ...quoteImages];
+
+      let expandedForLLM: string | undefined = undefined;
+      if (quoteParts.length > 0) {
+        const quoteText = quoteParts.join("\n\n");
+        expandedForLLM = quoteText ? `${quoteText}\n\n${userInput}` : userInput;
+      }
+
+      const stagedQuotes = quotes && quotes.length > 0 ? [...quotes] : undefined;
+
+      addPendingInstruction({
+        content: userInput,
+        expandedForLLM,
+        attachments: allAttachments.length > 0 ? allAttachments : undefined,
+        quotes: stagedQuotes,
+      });
+
+      setInput("");
+      if (quotes && quotes.length > 0 && sessionId) {
+        clearQuotes(sessionId);
+      }
+    } else {
+      void sendMessage();
+    }
+  }
+
   async function onPickElement() {
     const tab = await chrome.tabs.query({ active: true, currentWindow: true });
     const tabId = tab[0]?.id;
@@ -786,7 +862,7 @@ After the skill completes, briefly summarize what was created (the user will see
 
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      sendMessage();
+      handleSubmit();
     }
   }
 
@@ -1197,6 +1273,7 @@ After the skill completes, briefly summarize what was created (the user will see
       <Composer
         input={input}
         streaming={streaming}
+        sessionAllowsInput={sessionAllowsInput}
         popoverOpen={popoverOpen}
         slashState={slashState}
         popoverSelected={popoverSelected}
@@ -1211,7 +1288,7 @@ After the skill completes, briefly summarize what was created (the user will see
         onSelectPopover={setPopoverSelected}
         onPickSkill={pickSlashSkill}
         onKeyDown={handleKeyDown}
-        onSend={() => sendMessage()}
+        onSubmit={handleSubmit}
         onStop={handleStop}
         onAttachClick={() => fileInputRef.current?.click()}
         onPickElement={onPickElement}
@@ -1229,6 +1306,8 @@ After the skill completes, briefly summarize what was created (the user will see
         onManageInstances={onOpenSettings}
         usage={usage}
         maxContextTokens={maxContextTokens}
+        pendingItems={pendingItems}
+        onCancelPending={cancelPendingInstruction}
       />
     </div>
   );
@@ -1397,6 +1476,7 @@ function WorkingIndicator() {
 function Composer({
   input,
   streaming,
+  sessionAllowsInput,
   popoverOpen,
   slashState,
   popoverSelected,
@@ -1406,7 +1486,7 @@ function Composer({
   onSelectPopover,
   onPickSkill,
   onKeyDown,
-  onSend,
+  onSubmit,
   onStop,
   onAttachClick,
   onPasteFiles,
@@ -1421,9 +1501,14 @@ function Composer({
   onManageInstances,
   usage,
   maxContextTokens,
+  pendingItems,
+  onCancelPending,
 }: {
   input: string;
   streaming: boolean;
+  /** Issue #34 — true when the session is active (status === "active").
+   *  Textarea is disabled when false (paused/failed/archived). */
+  sessionAllowsInput: boolean;
   popoverOpen: boolean;
   slashState: { query: string; results: SkillPackage[] } | null;
   popoverSelected: number;
@@ -1433,7 +1518,8 @@ function Composer({
   onSelectPopover: (i: number) => void;
   onPickSkill: (skill: SkillPackage) => void;
   onKeyDown: (e: React.KeyboardEvent) => void;
-  onSend: () => void;
+  /** Issue #34 — unified submit: queues during streaming, sends otherwise. */
+  onSubmit: () => void;
   onStop: () => void;
   onAttachClick: () => void;
   onPasteFiles: (files: File[]) => void;
@@ -1454,10 +1540,23 @@ function Composer({
   onManageInstances: () => void;
   usage?: import("@/lib/sessions/types").SessionAgentState["contextUsage"];
   maxContextTokens?: number;
+  /** Issue #34 — pending instructions queued for the next agent turn. */
+  pendingItems: PendingItem[];
+  /** Issue #34 — cancel a pending instruction by chatMessageId. */
+  onCancelPending: (chatMessageId: string) => void;
 }) {
   const t = useT();
   return (
     <div className="flex flex-shrink-0 flex-col gap-2 border-t border-line bg-canvas px-4 pb-4 pt-4">
+      {/* Issue #34 — pending instruction list above the input box */}
+      {pendingItems.length > 0 && (
+        <div className="px-1 pb-2">
+          <PendingInstructionList
+            items={pendingItems}
+            onCancel={onCancelPending}
+          />
+        </div>
+      )}
       <div className="relative">
         {popoverOpen && slashState && (
           <SkillSlashPopover
@@ -1477,7 +1576,7 @@ function Composer({
             onKeyDown={onKeyDown}
             placeholder={t("chat.composerPlaceholder")}
             rows={3}
-            disabled={streaming}
+            disabled={!sessionAllowsInput}
             className="min-h-[60px] resize-none bg-transparent text-[13px] leading-5 text-fg-1 placeholder:text-fg-3 disabled:opacity-50"
             onPaste={(e) => {
               const items = e.clipboardData?.items;
@@ -1544,19 +1643,29 @@ function Composer({
               maxContextTokens={maxContextTokens}
             />
             {streaming ? (
-              <button
-                type="button"
-                onClick={onStop}
-                aria-label={t("chat.cancelRunningTask")}
-                title={t("chat.cancelRunningTask")}
-                className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded text-fg-1 transition-opacity hover:opacity-70"
-              >
-                <svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor" aria-hidden="true">
-                  <path d="M512 1024A512 512 0 1 1 512 0a512 512 0 0 1 0 1024z m3.008-92.992a416 416 0 1 0 0-832 416 416 0 0 0 0 832zM320 320h384v384H320V320z" />
-                </svg>
-              </button>
+              <>
+                {input.trim() && (
+                  <PieSendButton
+                    onClick={onSubmit}
+                    disabled={false}
+                    aria-label={t("chat.pending.queue")}
+                    title={t("chat.pending.queue")}
+                  />
+                )}
+                <button
+                  type="button"
+                  onClick={onStop}
+                  aria-label={t("chat.cancelRunningTask")}
+                  title={t("chat.cancelRunningTask")}
+                  className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded text-fg-1 transition-opacity hover:opacity-70"
+                >
+                  <svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor" aria-hidden="true">
+                    <path d="M256 256v512h512V256H256z m597.333333-85.333333v682.666666H170.666667V170.666667h682.666666z" />
+                  </svg>
+                </button>
+              </>
             ) : (
-              <PieSendButton onClick={onSend} disabled={!input.trim()} />
+              <PieSendButton onClick={onSubmit} disabled={!input.trim()} />
             )}
           </div>
         </div>
@@ -1701,18 +1810,24 @@ function ToolsMenu({
 function PieSendButton({
   onClick,
   disabled,
+  "aria-label": ariaLabel,
+  title: titleProp,
 }: {
   onClick: () => void;
   disabled: boolean;
+  "aria-label"?: string;
+  title?: string;
 }) {
   const t = useT();
+  const label = ariaLabel ?? t("chat.sendMessage");
+  const titleStr = titleProp ?? t("chat.sendMessage");
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      aria-label={t("chat.sendMessage")}
-      title={t("chat.sendMessage")}
+      aria-label={label}
+      title={titleStr}
       className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded text-fg-1 transition-opacity hover:opacity-70 disabled:cursor-not-allowed disabled:opacity-40"
     >
       <svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor" aria-hidden="true">
