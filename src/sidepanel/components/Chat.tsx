@@ -613,10 +613,22 @@ export default function Chat({
     return { query, results: filterAndSortSkillsForSlash(query, enabledSkills) };
   }, [input, enabledSkills]);
 
+  // Issue #34 — hide user messages that are still pending (rendered in the
+  // PendingInstructionList above the Composer instead). When SW drains the
+  // queue, the broadcast clears pendingByChatMessageId for that id and the
+  // bubble naturally reappears in chat history as a normal user message.
+  const visibleMessages = useMemo(
+    () =>
+      messages.filter(
+        (m) => !(m.role === "user" && m.id && pendingByChatMessageId.has(m.id)),
+      ),
+    [messages, pendingByChatMessageId],
+  );
+
   // Group consecutive agent-step messages into one AgentStepGroup. Declared
   // here, ABOVE all early returns, so hooks order stays stable across renders
   // (React error #310 happened when this was below `if (hasConfig === null)`).
-  const segments = useMemo(() => buildSegments(messages), [messages]);
+  const segments = useMemo(() => buildSegments(visibleMessages), [visibleMessages]);
 
   const popoverOpen = slashState !== null && input !== dismissedInput;
 
