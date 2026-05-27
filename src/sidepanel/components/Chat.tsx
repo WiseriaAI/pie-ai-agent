@@ -1667,15 +1667,23 @@ function Composer({
                     <path d="M256 256v512h512V256H256z m597.333333-85.333333v682.666666H170.666667V170.666667h682.666666z" />
                   </svg>
                 </button>
-                {input.trim() && (
+                {/* Issue #34 — Queue button slides in/out by animating width:
+                    keeps the button mounted so width/opacity transitions fire,
+                    overflow-hidden clips during the slide, and flex layout
+                    pushes the left-side controls as width expands/collapses. */}
+                <div
+                  className={`flex flex-shrink-0 items-center overflow-hidden transition-all duration-300 ease-out ${
+                    input.trim() ? "w-8 opacity-100" : "pointer-events-none w-0 opacity-0"
+                  }`}
+                  aria-hidden={!input.trim()}
+                >
                   <PieSendButton
                     onClick={onSubmit}
-                    disabled={false}
+                    disabled={!input.trim()}
                     aria-label={t("chat.pending.queue")}
                     title={t("chat.pending.queue")}
-                    className="scale-in"
                   />
-                )}
+                </div>
               </>
             ) : (
               <PieSendButton onClick={onSubmit} disabled={!input.trim()} />
