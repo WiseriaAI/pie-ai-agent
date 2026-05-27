@@ -30,7 +30,7 @@ tool registry — DOM actions, cross-tab orchestration, and CDP-level
 keyboard input for canvas editors that don't honor standard DOM events.
 Workflows can be saved as Skills with explicit tool whitelists. Every
 irreversible or cross-origin step is gated by a confirm card so you stay
-in informed control. BYOK: paste your own API key from any of eight LLM
+in informed control. BYOK: paste your own API key from any of nine LLM
 providers — encrypted locally, no Pie backend, no telemetry.
 
 - **Browser automation through native tool calling.** The LLM uses

@@ -13,7 +13,7 @@ BYOK (Bring Your Own Key) Chrome Extension — 用户插入自己的 API key 获
 - `src/background/` — Service Worker: message routing, port streaming, agent loop dispatch, keep-alive, CDP session lifecycle
 - `src/content/` — placeholder (DOM ops 走 `chrome.scripting.executeScript` 注入)
 - `src/sidepanel/` — Sidebar UI: Chat (Agent UI) / Settings / SkillsList / SessionDrawer
-- `src/lib/model-router/` — Unified LLM interface + tool calling; `providers/` 9 providers + `_shared/openai-compat-core.ts` + `_shared/anthropic-compat-core.ts` + `registry.ts` 元数据 + id-keyed `providers/index.ts` dispatch
+- `src/lib/model-router/` — Unified LLM interface + tool calling; per-provider modules under `providers/` + two shared cores (`_shared/openai-compat-core.ts`, `_shared/anthropic-compat-core.ts`) + `registry.ts` 元数据 + id-keyed `providers/index.ts` dispatch（provider 清单见 README）
 - `src/lib/dom-actions/` — Self-contained DOM action functions injected via executeScript
 - `src/lib/agent/` — ReAct loop, tool registry, prompt builder, sliding window, `untrusted-wrappers.ts`, `tool-names.ts`(read/write tool 分类)
 - `src/lib/agent/tools/` — `keyboard.ts` (CDP) / `skill-meta.ts` (skill CRUD) / `tabs.ts` (cross-tab)
@@ -25,11 +25,6 @@ BYOK (Bring Your Own Key) Chrome Extension — 用户插入自己的 API key 获
 - `src/lib/provider-custom-models.ts` — per-provider sticky pool（`pcm_${provider}`）跨 instance 共享自定义 model id
 - `src/lib/openrouter-models-fetch.ts` — `/v1/models` 公共 endpoint normaliser
 - `src/types/` — Shared message + agent protocol types
-
-## Supported Providers
-
-Anthropic (native), OpenAI, OpenRouter, MiniMax, ZhiPu (智谱), Bailian (百炼), Gemini (native), DeepSeek, MiMo (小米)。
-6 家 OpenAI-compat 走 `_shared/openai-compat-core.ts` (OpenRouter 加自家 headers via hooks)；Anthropic 和 MiMo 走 `_shared/anthropic-compat-core.ts` (MiMo 覆盖 endpoint + Bearer auth via hooks)；Gemini 走自家 native module。新加 provider = registry entry + 模块文件 + manifest host_permission，不改 dispatch 代码。
 
 ## Commands
 
@@ -72,7 +67,7 @@ Workflow 内置 invariant（任一失败则 CI fail，不会上传）：
 - DOM access: `<all_urls>` host_permission + `chrome.scripting.executeScript`（activeTab 不够 side-panel 常驻场景）
 - Streaming: `chrome.runtime.connect()` port，**不用** `sendMessage`；keep-alive 25s `getPlatformInfo()`
 - SSE parser 同时处理 `\n` 和 `\r\n` 行尾
-- Provider registry pattern: 加 provider = registry entry + 模块文件 + manifest host_permission；capability flags (`vision`/`tools`/`maxContextTokens`) 在 `ModelMeta` per-model 维度；id-keyed dispatch 表 `streamChatByProvider`（builtin）或 `dispatchStreamChat`（custom）
+- Provider registry pattern: 加 provider = registry entry + 模块文件 + manifest host_permission；capability flags (`vision`/`tools`/`maxContextTokens`) 在 `ModelMeta` per-model 维度；id-keyed dispatch 表 `streamChatByProvider`（builtin）或 `dispatchStreamChat`（custom）。Provider 模块基本是薄 wrapper：OpenAI-compat 家族走 `_shared/openai-compat-core.ts`（OpenRouter 用 customHeaders hook），Anthropic + MiMo 走 `_shared/anthropic-compat-core.ts`（hooks: `endpointPath` / `authHeaders` / `customHeaders` / `promptCache`），Gemini 自带 native module
 - Custom provider `baseUrl` 在 provider 层定义（`StoredCustomProvider.baseUrl`），instance 不能 override
 - Custom provider 一律走 `_shared/openai-compat-core.ts`（OpenAI-compat wire，不带 hooks）
 - `<all_urls>` host_permission 是 custom provider fetch（`/v1/models` + streaming）的前提
