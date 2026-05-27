@@ -1644,14 +1644,6 @@ function Composer({
             />
             {streaming ? (
               <>
-                {input.trim() && (
-                  <PieSendButton
-                    onClick={onSubmit}
-                    disabled={false}
-                    aria-label={t("chat.pending.queue")}
-                    title={t("chat.pending.queue")}
-                  />
-                )}
                 <button
                   type="button"
                   onClick={onStop}
@@ -1663,6 +1655,15 @@ function Composer({
                     <path d="M256 256v512h512V256H256z m597.333333-85.333333v682.666666H170.666667V170.666667h682.666666z" />
                   </svg>
                 </button>
+                {input.trim() && (
+                  <PieSendButton
+                    onClick={onSubmit}
+                    disabled={false}
+                    aria-label={t("chat.pending.queue")}
+                    title={t("chat.pending.queue")}
+                    className="scale-in"
+                  />
+                )}
               </>
             ) : (
               <PieSendButton onClick={onSubmit} disabled={!input.trim()} />
@@ -1812,15 +1813,18 @@ function PieSendButton({
   disabled,
   "aria-label": ariaLabel,
   title: titleProp,
+  className,
 }: {
   onClick: () => void;
   disabled: boolean;
   "aria-label"?: string;
   title?: string;
+  className?: string;
 }) {
   const t = useT();
   const label = ariaLabel ?? t("chat.sendMessage");
   const titleStr = titleProp ?? t("chat.sendMessage");
+  const base = "flex h-8 w-8 flex-shrink-0 items-center justify-center rounded text-fg-1 transition-opacity hover:opacity-70 disabled:cursor-not-allowed disabled:opacity-40";
   return (
     <button
       type="button"
@@ -1828,7 +1832,7 @@ function PieSendButton({
       disabled={disabled}
       aria-label={label}
       title={titleStr}
-      className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded text-fg-1 transition-opacity hover:opacity-70 disabled:cursor-not-allowed disabled:opacity-40"
+      className={className ? `${base} ${className}` : base}
     >
       <svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor" aria-hidden="true">
         <path d="M557.397333 167.204571l293.059048 293.059048L902.192762 512l-51.712 51.712-293.059048 293.083429-51.736381-51.712L762.148571 548.571429H121.904762v-73.142858h640.243809L505.660952 218.940952l51.736381-51.736381z" />

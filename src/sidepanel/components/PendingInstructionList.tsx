@@ -16,9 +16,9 @@ export function PendingInstructionList({
   if (items.length === 0) return null;
   return (
     <div className="flex flex-col gap-1.5">
-      <div className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-wider">
-        <div className="h-1.5 w-1.5 rounded-full bg-[#C9A268]" />
-        <span className="text-[#C9A268]">
+      <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-wider">
+        <div className="h-1.5 w-1.5 rounded-full bg-pending" />
+        <span className="text-pending">
           {t("chat.pending.captionPrefix")} · {items.length}{" "}
           {t("chat.pending.captionSuffix")}
         </span>
@@ -28,12 +28,12 @@ export function PendingInstructionList({
       {items.map((item) => (
         <div
           key={item.chatMessageId}
-          className="group flex items-start gap-2.5 rounded-lg border border-[#1F242C] bg-[#14181E] px-3 py-2.5 transition-colors hover:border-[#2A3038] hover:bg-[#181D24]"
+          className="bubble-in group flex items-start gap-2.5 rounded-lg border border-line bg-field px-3 py-2.5 transition-colors hover:border-accent-line hover:bg-surface"
         >
           <div className="mt-1 flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center">
-            <div className="h-1.5 w-1.5 rounded-full bg-[#C9A268]" />
+            <div className="h-1.5 w-1.5 rounded-full bg-pending" />
           </div>
-          <div className="flex-1 text-[13px] leading-[18px] text-[#C2C7CF]">
+          <div className="flex-1 text-[13px] leading-[18px] text-fg-1">
             {item.content}
           </div>
           <button
