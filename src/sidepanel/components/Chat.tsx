@@ -1628,17 +1628,19 @@ function Composer({
           />
           {/* Bottom row: action row */}
           <div className="flex items-center gap-2">
-            {!streaming && (
-              <ToolsMenu
-                onPickElement={onPickElement}
-                pickerActive={pickerActive}
-                onAttachClick={onAttachClick}
-                supportsVision={supportsVision}
-                attachmentCount={attachmentCount}
-                onStartRecording={onStartRecording}
-                recordingDisabled={recordingDisabled}
-              />
-            )}
+            {/* Issue #34 — ToolsMenu (+ button) stays available during streaming
+                so users can attach images / pick elements / stage quotes on a
+                mid-task instruction before queueing it. Recording is the only
+                item that cannot run during streaming and is disabled below. */}
+            <ToolsMenu
+              onPickElement={onPickElement}
+              pickerActive={pickerActive}
+              onAttachClick={onAttachClick}
+              supportsVision={supportsVision}
+              attachmentCount={attachmentCount}
+              onStartRecording={onStartRecording}
+              recordingDisabled={recordingDisabled || streaming}
+            />
             <div className="flex-1" />
             <InstanceSelector
               instances={instances}
