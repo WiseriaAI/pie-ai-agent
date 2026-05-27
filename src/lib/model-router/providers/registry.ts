@@ -118,6 +118,19 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
       { id: "deepseek-v4-pro", vision: false, tools: true, maxContextTokens: 1_000_000 },
     ],
   },
+  {
+    id: "mimo",
+    name: "MiMo (小米)",
+    defaultBaseUrl: "https://api.xiaomimimo.com",
+    placeholder: "API key",
+    models: [
+      { id: "mimo-v2.5-pro", vision: false, tools: true, maxContextTokens: 1_000_000 },
+      { id: "mimo-v2.5",     vision: true,  tools: true, maxContextTokens: 1_000_000 },
+      { id: "mimo-v2-pro",   vision: false, tools: true, maxContextTokens: 1_000_000 },
+      { id: "mimo-v2-omni",  vision: true,  tools: true, maxContextTokens: 256_000   },
+      { id: "mimo-v2-flash", vision: false, tools: true, maxContextTokens: 256_000   },
+    ],
+  },
 ];
 
 export function getProviderMeta(id: BuiltinProvider): ProviderMeta | undefined {

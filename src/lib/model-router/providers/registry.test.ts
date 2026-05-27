@@ -27,7 +27,7 @@ describe("ProviderMeta schema", () => {
   });
 
   it("non-OpenRouter providers have non-empty models[] (hardcoded)", () => {
-    const ids = ["anthropic", "openai", "zhipu", "bailian", "minimax", "gemini", "deepseek"] as const;
+    const ids = ["anthropic", "openai", "zhipu", "bailian", "minimax", "gemini", "deepseek", "mimo"] as const;
     for (const id of ids) {
       const meta = getProviderMeta(id)!;
       expect(meta.models.length).toBeGreaterThan(0);
@@ -42,6 +42,12 @@ describe("ProviderMeta schema", () => {
   it("DeepSeek is registered", () => {
     expect(getProviderMeta("deepseek")).toBeDefined();
     expect(getProviderMeta("deepseek")!.defaultBaseUrl).toBe("https://api.deepseek.com");
+  });
+
+  it("MiMo is registered", () => {
+    expect(getProviderMeta("mimo")).toBeDefined();
+    expect(getProviderMeta("mimo")!.defaultBaseUrl).toBe("https://api.xiaomimimo.com");
+    expect(getProviderMeta("mimo")!.name).toBe("MiMo (小米)");
   });
 });
 
@@ -99,6 +105,25 @@ describe("ModelMeta capability flags (per-model)", () => {
     expect(getModelMeta("deepseek", "deepseek-v4-flash")?.tools).toBe(true);
     expect(getModelMeta("deepseek", "deepseek-v4-flash")?.vision).toBe(false);
     expect(getModelMeta("deepseek", "deepseek-v4-flash")?.maxContextTokens).toBe(1_000_000);
+  });
+
+  it("MiMo model capability flags — pro is text-only, v2.5 has vision, omni has vision", () => {
+    expect(getModelMeta("mimo", "mimo-v2.5-pro")?.tools).toBe(true);
+    expect(getModelMeta("mimo", "mimo-v2.5-pro")?.vision).toBe(false);
+    expect(getModelMeta("mimo", "mimo-v2.5-pro")?.maxContextTokens).toBe(1_000_000);
+
+    expect(getModelMeta("mimo", "mimo-v2.5")?.vision).toBe(true);
+    expect(getModelMeta("mimo", "mimo-v2.5")?.maxContextTokens).toBe(1_000_000);
+
+    expect(getModelMeta("mimo", "mimo-v2-omni")?.vision).toBe(true);
+    expect(getModelMeta("mimo", "mimo-v2-omni")?.maxContextTokens).toBe(256_000);
+  });
+
+  it("MiMo does NOT expose TTS models (mimo-v2.5-tts, etc.)", () => {
+    expect(getModelMeta("mimo", "mimo-v2.5-tts")).toBeUndefined();
+    expect(getModelMeta("mimo", "mimo-v2-tts")).toBeUndefined();
+    expect(getModelMeta("mimo", "mimo-v2.5-tts-voiceclone")).toBeUndefined();
+    expect(getModelMeta("mimo", "mimo-v2.5-tts-voicedesign")).toBeUndefined();
   });
 });
 

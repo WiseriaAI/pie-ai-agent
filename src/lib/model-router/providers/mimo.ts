@@ -8,8 +8,8 @@ export async function* streamChat(
   signal?: AbortSignal,
   tools?: ToolDefinition[],
 ): AsyncGenerator<StreamEvent> {
-  yield* streamChatAnthropicCompat(config, messages, signal, tools, { promptCache: true });
+  yield* streamChatAnthropicCompat(config, messages, signal, tools, {
+    endpointPath: "/anthropic/v1/messages",
+    authHeaders: (c) => ({ authorization: `Bearer ${c.apiKey}` }),
+  });
 }
-
-// Preserve test-only re-exports for anthropic.test.ts (imports via ./anthropic)
-export { _toWireMessagesForTest, _buildRequestBodyForTest } from "./_shared/anthropic-compat-core";

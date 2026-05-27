@@ -64,7 +64,7 @@ describe("streamChatOpenAICompat", () => {
     fetchMock.mockRestore();
   });
 
-  it("hooks.authHeader replaces default Bearer (not merged)", async () => {
+  it("hooks.authHeaders replaces default Bearer (not merged)", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       mockSseResponse([
         'data: {"choices":[{"delta":{"content":"hi"}}]}',
@@ -78,7 +78,7 @@ describe("streamChatOpenAICompat", () => {
       baseUrl: "https://example.test",
     };
     for await (const _ of streamChatOpenAICompat(config, [{ role: "user", content: "hi" }], undefined, undefined, {
-      authHeader: () => ({ "X-Custom-Auth": "secret-token" }),
+      authHeaders: () => ({ "X-Custom-Auth": "secret-token" }),
     })) { /* drain */ }
     const init = fetchMock.mock.calls[0]![1] as RequestInit;
     const headers = init.headers as Record<string, string>;

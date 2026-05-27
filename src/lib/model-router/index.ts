@@ -18,7 +18,8 @@ export type BuiltinProvider =
   | "zhipu"
   | "bailian"
   | "gemini"
-  | "deepseek";
+  | "deepseek"
+  | "mimo";
 
 export type ProviderRef = BuiltinProvider | `custom:${string}`;
 

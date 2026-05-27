@@ -37,7 +37,7 @@ export interface OpenAICompatHooks {
   /** Headers merged on top of standard `Authorization` + `content-type`. */
   customHeaders?: (config: ModelConfig) => Record<string, string>;
   /** Replaces the default `Authorization: Bearer ${apiKey}`. */
-  authHeader?: (config: ModelConfig) => Record<string, string>;
+  authHeaders?: (config: ModelConfig) => Record<string, string>;
 }
 
 interface OpenAIWireMessage {
@@ -140,7 +140,7 @@ export async function* streamChatOpenAICompat(
     requestBody.tool_choice = "auto";
   }
 
-  const auth = hooks?.authHeader?.(config) ?? { authorization: `Bearer ${config.apiKey}` };
+  const auth = hooks?.authHeaders?.(config) ?? { authorization: `Bearer ${config.apiKey}` };
   const headers: Record<string, string> = {
     "content-type": "application/json",
     ...auth,
