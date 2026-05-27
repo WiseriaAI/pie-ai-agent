@@ -41,6 +41,15 @@ function toWireMessages(messages: AgentMessage[]): {
           },
         };
       }
+      if (block.type === "tool_result") {
+        const out: Record<string, unknown> = {
+          type: "tool_result",
+          tool_use_id: block.toolUseId,
+          content: block.content,
+        };
+        if (block.isError !== undefined) out.is_error = block.isError;
+        return out;
+      }
       return block;
     });
     wireMessages.push({ role: msg.role, content: wireBlocks });

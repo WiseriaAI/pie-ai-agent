@@ -16,6 +16,49 @@ const tools: ToolDefinition[] = [
   { name: "type", description: "type", parameters: { type: "object" } },
 ];
 
+describe("anthropic-compat-core: tool_result wire shape", () => {
+  it("translates tool_result block fields to snake_case (tool_use_id, is_error)", () => {
+    const msgs: AgentMessage[] = [
+      {
+        role: "user",
+        content: [
+          { type: "tool_result", toolUseId: "toolu_abc", content: "ok" },
+          { type: "tool_result", toolUseId: "toolu_def", content: "bad", isError: true },
+        ],
+      },
+    ];
+    const body = _buildRequestBodyForTest(config, msgs, undefined, false);
+    const wireMessages = body.messages as Array<{ role: string; content: unknown[] }>;
+    expect(wireMessages[0].content[0]).toEqual({
+      type: "tool_result",
+      tool_use_id: "toolu_abc",
+      content: "ok",
+    });
+    expect(wireMessages[0].content[1]).toEqual({
+      type: "tool_result",
+      tool_use_id: "toolu_def",
+      content: "bad",
+      is_error: true,
+    });
+  });
+
+  it("does not emit camelCase toolUseId / isError fields on the wire", () => {
+    const msgs: AgentMessage[] = [
+      {
+        role: "user",
+        content: [{ type: "tool_result", toolUseId: "toolu_abc", content: "ok", isError: false }],
+      },
+    ];
+    const body = _buildRequestBodyForTest(config, msgs, undefined, false);
+    const wireMessages = body.messages as Array<{ role: string; content: Array<Record<string, unknown>> }>;
+    const block = wireMessages[0].content[0];
+    expect(block.toolUseId).toBeUndefined();
+    expect(block.isError).toBeUndefined();
+    expect(block.tool_use_id).toBe("toolu_abc");
+    expect(block.is_error).toBe(false);
+  });
+});
+
 describe("anthropic-compat-core: promptCache hook", () => {
   it("promptCache=false produces a plain string system field (no block array, no cache_control)", () => {
     const body = _buildRequestBodyForTest(config, [systemMsg, userMsg], tools, false);
