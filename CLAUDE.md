@@ -13,7 +13,7 @@ BYOK (Bring Your Own Key) Chrome Extension — 用户插入自己的 API key 获
 - `src/background/` — Service Worker: message routing, port streaming, agent loop dispatch, keep-alive, CDP session lifecycle
 - `src/content/` — placeholder (DOM ops 走 `chrome.scripting.executeScript` 注入)
 - `src/sidepanel/` — Sidebar UI: Chat (Agent UI) / Settings / SkillsList / SessionDrawer
-- `src/lib/model-router/` — Unified LLM interface + tool calling; `providers/` 8 providers + `_shared/openai-compat-core.ts` + `registry.ts` 元数据 + id-keyed `providers/index.ts` dispatch
+- `src/lib/model-router/` — Unified LLM interface + tool calling; `providers/` 9 providers + `_shared/openai-compat-core.ts` + `_shared/anthropic-compat-core.ts` + `registry.ts` 元数据 + id-keyed `providers/index.ts` dispatch
 - `src/lib/dom-actions/` — Self-contained DOM action functions injected via executeScript
 - `src/lib/agent/` — ReAct loop, tool registry, prompt builder, sliding window, `untrusted-wrappers.ts`, `tool-names.ts`(read/write tool 分类)
 - `src/lib/agent/tools/` — `keyboard.ts` (CDP) / `skill-meta.ts` (skill CRUD) / `tabs.ts` (cross-tab)
@@ -28,8 +28,8 @@ BYOK (Bring Your Own Key) Chrome Extension — 用户插入自己的 API key 获
 
 ## Supported Providers
 
-Anthropic (native), OpenAI, OpenRouter, MiniMax, ZhiPu (智谱), Bailian (百炼), Gemini (native), DeepSeek。
-5 家 OpenAI-compat 走 `_shared/openai-compat-core.ts` (OpenRouter 加自家 headers via hooks)；Anthropic 和 Gemini 走自家 native module。新加 provider = registry entry + 模块文件 + manifest host_permission，不改 dispatch 代码。
+Anthropic (native), OpenAI, OpenRouter, MiniMax, ZhiPu (智谱), Bailian (百炼), Gemini (native), DeepSeek, MiMo (小米)。
+6 家 OpenAI-compat 走 `_shared/openai-compat-core.ts` (OpenRouter 加自家 headers via hooks)；Anthropic 和 MiMo 走 `_shared/anthropic-compat-core.ts` (MiMo 覆盖 endpoint + Bearer auth via hooks)；Gemini 走自家 native module。新加 provider = registry entry + 模块文件 + manifest host_permission，不改 dispatch 代码。
 
 ## Commands
 

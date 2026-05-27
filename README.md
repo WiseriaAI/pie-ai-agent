@@ -54,7 +54,7 @@ providers — encrypted locally, no Pie backend, no telemetry.
 - **Side panel, not pop-up.** Pie lives in Chrome's side panel and stays
   open while you browse — chat, run agent tasks, manage tabs without
   losing context.
-- **BYOK.** Bring your own API key from any of eight LLM providers.
+- **BYOK.** Bring your own API key from any of nine LLM providers.
   Encrypted at rest with AES-GCM in `chrome.storage.local`. No Pie
   backend, no telemetry, no proxy. See [PRIVACY.md](PRIVACY.md).
 
@@ -139,6 +139,7 @@ than burning your tokens on a plan you've already disagreed with.
 | MiniMax | OpenAI-compatible |
 | ZhiPu (智谱) | OpenAI-compatible |
 | Bailian (百炼) | OpenAI-compatible |
+| MiMo (小米) | Anthropic-compatible |
 
 Adding a provider is a registry entry plus a host permission. Local
 Ollama is on the [roadmap](docs/ROADMAP.md).
