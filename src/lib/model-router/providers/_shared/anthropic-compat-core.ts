@@ -104,21 +104,28 @@ export async function* streamChatAnthropicCompat(
   messages: AgentMessage[],
   signal?: AbortSignal,
   tools?: ToolDefinition[],
-  _hooks?: AnthropicCompatHooks,
+  hooks?: AnthropicCompatHooks,
 ): AsyncGenerator<StreamEvent> {
   const baseUrl = config.baseUrl!.replace(/\/$/, "");
-  const body = buildRequestBody(config, messages, tools, _hooks?.promptCache ?? false);
+  const endpointPath = hooks?.endpointPath ?? "/v1/messages";
+  const body = buildRequestBody(config, messages, tools, hooks?.promptCache ?? false);
   const name = displayProviderName(config);
+
+  const auth = hooks?.authHeaders?.(config) ?? {
+    "x-api-key": config.apiKey,
+    "anthropic-version": "2023-06-01",
+  };
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    ...auth,
+    ...(hooks?.customHeaders?.(config) ?? {}),
+  };
 
   let response: Response;
   try {
-    response = await fetch(`${baseUrl}/v1/messages`, {
+    response = await fetch(`${baseUrl}${endpointPath}`, {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": config.apiKey,
-        "anthropic-version": "2023-06-01",
-      },
+      headers,
       body: JSON.stringify(body),
       signal,
     });

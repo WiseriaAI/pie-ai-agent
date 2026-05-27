@@ -39,3 +39,71 @@ describe("anthropic-compat-core: promptCache hook", () => {
     expect(wireTools[1].cache_control).toEqual({ type: "ephemeral" });
   });
 });
+
+import { vi } from "vitest";
+import { streamChatAnthropicCompat } from "./anthropic-compat-core";
+
+function mockEmptyStream() {
+  return vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    new Response(
+      new ReadableStream({
+        start(c) {
+          c.enqueue(new TextEncoder().encode("event: message_stop\ndata: {}\n\n"));
+          c.close();
+        },
+      }),
+      { status: 200, headers: { "content-type": "text/event-stream" } },
+    ),
+  );
+}
+
+describe("anthropic-compat-core: endpoint and header hooks", () => {
+  it("default endpointPath is /v1/messages", async () => {
+    const fetchMock = mockEmptyStream();
+    for await (const _ of streamChatAnthropicCompat(config, [userMsg])) { /* drain */ }
+    expect(fetchMock.mock.calls[0]![0]).toBe("https://api.anthropic.com/v1/messages");
+    fetchMock.mockRestore();
+  });
+
+  it("hooks.endpointPath overrides the request URL suffix", async () => {
+    const fetchMock = mockEmptyStream();
+    for await (const _ of streamChatAnthropicCompat(config, [userMsg], undefined, undefined, {
+      endpointPath: "/anthropic/v1/messages",
+    })) { /* drain */ }
+    expect(fetchMock.mock.calls[0]![0]).toBe("https://api.anthropic.com/anthropic/v1/messages");
+    fetchMock.mockRestore();
+  });
+
+  it("default auth headers are x-api-key + anthropic-version", async () => {
+    const fetchMock = mockEmptyStream();
+    for await (const _ of streamChatAnthropicCompat(config, [userMsg])) { /* drain */ }
+    const headers = (fetchMock.mock.calls[0]![1] as RequestInit).headers as Record<string, string>;
+    expect(headers["x-api-key"]).toBe("sk-test");
+    expect(headers["anthropic-version"]).toBe("2023-06-01");
+    expect(headers.authorization).toBeUndefined();
+    fetchMock.mockRestore();
+  });
+
+  it("hooks.authHeaders fully replaces the default auth set", async () => {
+    const fetchMock = mockEmptyStream();
+    for await (const _ of streamChatAnthropicCompat(config, [userMsg], undefined, undefined, {
+      authHeaders: (c) => ({ authorization: `Bearer ${c.apiKey}` }),
+    })) { /* drain */ }
+    const headers = (fetchMock.mock.calls[0]![1] as RequestInit).headers as Record<string, string>;
+    expect(headers.authorization).toBe("Bearer sk-test");
+    expect(headers["x-api-key"]).toBeUndefined();
+    expect(headers["anthropic-version"]).toBeUndefined();
+    fetchMock.mockRestore();
+  });
+
+  it("hooks.customHeaders are merged on top of auth", async () => {
+    const fetchMock = mockEmptyStream();
+    for await (const _ of streamChatAnthropicCompat(config, [userMsg], undefined, undefined, {
+      customHeaders: () => ({ "x-trace-id": "abc" }),
+    })) { /* drain */ }
+    const headers = (fetchMock.mock.calls[0]![1] as RequestInit).headers as Record<string, string>;
+    expect(headers["x-trace-id"]).toBe("abc");
+    expect(headers["x-api-key"]).toBe("sk-test");
+    fetchMock.mockRestore();
+  });
+});
