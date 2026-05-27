@@ -92,6 +92,10 @@ import {
   broadcastPickerEnter,
   broadcastPickerExit,
 } from "./quote-bridge";
+import { addPending, cancelPending, drainPending } from "@/lib/sessions/pending-instructions";
+import { broadcastInstructionState } from "./instruction-broadcast";
+import { mergeCarryoverIntoMessages } from "@/lib/agent/loop-drain";
+import type { ChatInstructionRejectedMessage } from "@/types/messages";
 
 // Run V1→V2 migration once on SW load (idempotent via schema_version sentinel).
 migrateV1toV2().catch((e) => console.error("migration v2 failed", e));
@@ -592,6 +596,10 @@ async function handlePanelMounted(
       e,
     );
   });
+
+  // Issue #34 — sync pending instructions to the panel so the reconnected
+  // UI can re-decorate any pending bubbles in slot.messages.
+  await broadcastInstructionState(port, sessionId);
 }
 
 // --- M1-U5: Resume + Discard handlers ---
@@ -1026,6 +1034,26 @@ async function handleChatStream(
       return;
     }
 
+    // Issue #34 — if a prior abort left pending instructions, merge them
+    // into the last user message of the new task so the user's earlier
+    // mid-task additions aren't lost.
+    const carryover = await drainPending(sessionId);
+    if (carryover.length > 0) {
+      const merged = mergeCarryoverIntoMessages(messages, carryover);
+      if (merged === messages) {
+        // mergeCarryoverIntoMessages returns the original ref when the last
+        // message isn't a user string — log and drop carryover.
+        console.warn(
+          `[sw] chat-start drained ${carryover.length} pending instruction(s) but ` +
+          `last message is not a user string — items dropped`,
+        );
+      } else {
+        messages = merged;
+      }
+      // Broadcast empty pending so panel removes pending decorations
+      await broadcastInstructionState(port, sessionId);
+    }
+
     // U2 — task is always the last message (panel sendMessage puts the
     // current user prompt last; this replaces the old reverse-find).
     const task = messages[messages.length - 1]!.content;
@@ -1290,6 +1318,49 @@ chrome.runtime.onConnect.addListener((port) => {
       );
     } else if (message.type === "chat-abort") {
       abortRotation.current.abort();
+    } else if (message.type === "chat-instruction-add") {
+      if (!verifyPortSession(message.sessionId, "chat-instruction-add")) return;
+
+      // Reject if loop has ended for this session — panel will fall back to chat-start
+      if (!inFlightSessionIds.has(message.sessionId)) {
+        const reply: ChatInstructionRejectedMessage = {
+          type: "chat-instruction-rejected",
+          sessionId: message.sessionId,
+          chatMessageId: message.chatMessageId,
+          reason: "not-streaming",
+        };
+        port.postMessage(reply);
+        return;
+      }
+
+      // Append to queue then broadcast new state
+      void (async () => {
+        try {
+          await addPending(message.sessionId, {
+            chatMessageId: message.chatMessageId,
+            content: message.content,
+            ...(message.expandedForLLM !== undefined
+              ? { expandedForLLM: message.expandedForLLM }
+              : {}),
+            ...(message.attachments?.length ? { attachments: message.attachments } : {}),
+            ...(message.quotes?.length ? { quotes: message.quotes } : {}),
+            createdAt: Date.now(),
+          });
+          await broadcastInstructionState(port, message.sessionId);
+        } catch (e) {
+          console.warn("[sw] chat-instruction-add failed:", e);
+        }
+      })();
+    } else if (message.type === "chat-instruction-cancel") {
+      if (!verifyPortSession(message.sessionId, "chat-instruction-cancel")) return;
+      void (async () => {
+        try {
+          await cancelPending(message.sessionId, message.chatMessageId);
+          await broadcastInstructionState(port, message.sessionId);
+        } catch (e) {
+          console.warn("[sw] chat-instruction-cancel failed:", e);
+        }
+      })();
     } else if (message.type === "panel-mounted") {
       if (!verifyPortSession(message.sessionId, "panel-mounted")) return;
       handlePanelMounted(port, message.sessionId).catch(

@@ -173,7 +173,19 @@ export interface UseSession {
    *  state). Populated on setActive (cold path) and agent-usage wire events
    *  (hot path). */
   usage?: SessionAgentState["contextUsage"];
+  /** Issue #34 — SW-broadcast snapshot of pending instructions for the active
+   *  session. Keyed by chatMessageId for O(1) lookup in chat-bubble render.
+   *  Empty Map when no instructions are pending. */
+  pendingByChatMessageId: Map<string, { createdAt: number }>;
   sendMessage: (input: SendMessageInput) => void;
+  /** Issue #34 — append a pending instruction during streaming. Generates a
+   *  chatMessageId, writes the DisplayMessage into slot.messages (with id),
+   *  and sends chat-instruction-add to the SW. No-op when not streaming. */
+  addPendingInstruction: (input: SendMessageInput) => void;
+  /** Issue #34 — cancel a pending instruction by chatMessageId. Removes the
+   *  DisplayMessage from slot.messages and sends chat-instruction-cancel to
+   *  the SW. Idempotent. */
+  cancelPendingInstruction: (chatMessageId: string) => void;
   /** Sends a chat-abort message to the SW. Caller is responsible for
    *  guarding against rapid-fire aborts. */
   abort: () => void;
@@ -247,6 +259,12 @@ export function useSession(): UseSession {
   const [slots, setSlots] = useState<Map<string, SessionRuntimeSlot>>(new Map());
   const slotsRef = useRef<Map<string, SessionRuntimeSlot>>(new Map());
 
+  // Issue #34 — ref populated after postWithReconnect is created; passed into
+  // createPortHandlers to break the portHandlers → connectPortFor → portHandlers
+  // circular dependency while still letting chat-instruction-rejected fall back
+  // to chat-start via the live postWithReconnect function.
+  const postWithReconnectRef = useRef<((id: string, payload: PortMessageToWorker) => boolean) | null>(null);
+
   // patchSlot — sync write to slotsRef (Bug-fix-A truth source) + setSlots
   // for React commit.
   const patchSlot = useCallback(
@@ -293,11 +311,15 @@ export function useSession(): UseSession {
 
   // Multi-session (#30) — single onMessage listener routes by message.sessionId;
   // per-port disconnect closure flushes partial text scoped to that port's session.
+  // Issue #34 — postMessageRef is passed so chat-instruction-rejected can fall
+  // back to chat-start; the ref is populated after postWithReconnect is defined
+  // to break the circular portHandlers → connectPortFor → portHandlers dep.
   const portHandlers = useMemo(
     () => createPortHandlers({
       slotsRef,
       setSlots,
       persistMessages: persistMessagesById,
+      postMessageRef: postWithReconnectRef,
     }),
     [persistMessagesById],
   );
@@ -378,6 +400,10 @@ export function useSession(): UseSession {
     },
     [getOrReconnectPort],
   );
+
+  // Issue #34 — populate the ref so port-handlers.ts chat-instruction-rejected
+  // can call postWithReconnect without a circular useMemo dep.
+  postWithReconnectRef.current = postWithReconnect;
 
   useEffect(() => {
     let cancelled = false;
@@ -688,6 +714,71 @@ export function useSession(): UseSession {
     [persistMessagesById, patchSlot, postWithReconnect],
   );
 
+  // ── addPendingInstruction ─────────────────────────────────────────────
+  // Issue #34 — appends a user DisplayMessage (with a stable id) to the
+  // slot and sends chat-instruction-add to the SW. Only valid during
+  // streaming; ignored otherwise. Uses crypto.randomUUID as the panel has
+  // no ulid dependency.
+  const addPendingInstruction = useCallback(
+    (input: SendMessageInput) => {
+      const id = sessionIdRef.current;
+      if (!id) return;
+      const slot = slotsRef.current.get(id);
+      if (!slot?.streaming) return; // safety: only during streaming
+      const chatMessageId = crypto.randomUUID();
+      const userMessage: DisplayMessage = {
+        role: "user",
+        content: input.content,
+        id: chatMessageId,
+        ...(input.expandedForLLM !== undefined
+          ? { expandedForLLM: input.expandedForLLM }
+          : {}),
+        ...(input.attachments?.length ? { attachments: input.attachments } : {}),
+        ...(input.quotes?.length ? { quotes: input.quotes } : {}),
+      };
+      const updated = [...(slot.messages ?? []), userMessage];
+      patchSlot(id, { messages: updated });
+      void persistMessagesById(id, updated);
+
+      postWithReconnect(id, {
+        type: "chat-instruction-add",
+        sessionId: id,
+        chatMessageId,
+        content: input.content,
+        ...(input.expandedForLLM !== undefined
+          ? { expandedForLLM: input.expandedForLLM }
+          : {}),
+        ...(input.attachments?.length ? { attachments: input.attachments } : {}),
+        ...(input.quotes?.length ? { quotes: input.quotes } : {}),
+      });
+    },
+    [patchSlot, persistMessagesById, postWithReconnect],
+  );
+
+  // ── cancelPendingInstruction ──────────────────────────────────────────
+  // Issue #34 — removes the DisplayMessage with the given id from slot.messages
+  // and sends chat-instruction-cancel to the SW. Idempotent.
+  const cancelPendingInstruction = useCallback(
+    (chatMessageId: string) => {
+      const id = sessionIdRef.current;
+      if (!id) return;
+      const slot = slotsRef.current.get(id);
+      if (!slot) return;
+      const updated = (slot.messages ?? []).filter(
+        (m) => !("id" in m && m.id === chatMessageId),
+      );
+      patchSlot(id, { messages: updated });
+      void persistMessagesById(id, updated);
+
+      postWithReconnect(id, {
+        type: "chat-instruction-cancel",
+        sessionId: id,
+        chatMessageId,
+      });
+    },
+    [patchSlot, persistMessagesById, postWithReconnect],
+  );
+
   const abort = useCallback(() => {
     const id = sessionIdRef.current;
     if (!id) return;
@@ -924,7 +1015,10 @@ export function useSession(): UseSession {
     toast: active.toast,
     quotes: active.quotes,
     usage: active.usage, // Issue #59
+    pendingByChatMessageId: active.pendingByChatMessageId, // Issue #34
     sendMessage,
+    addPendingInstruction, // Issue #34
+    cancelPendingInstruction, // Issue #34
     abort,
     resumeTask,
     discardTask,

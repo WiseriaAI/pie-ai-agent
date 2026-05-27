@@ -28,6 +28,9 @@ export type SessionRuntimeSlot = {
    *  switch (mount/setActive). undefined when no LLM call has returned
    *  yet for this session — the composer hides the ring in that state. */
   usage?: SessionAgentState["contextUsage"];
+  /** Issue #34 — broadcast snapshot of SW pendingInstructions for this session.
+   *  Keyed by chatMessageId for O(1) lookup in chat-bubble render. */
+  pendingByChatMessageId: Map<string, { createdAt: number }>;
 };
 
 export const EMPTY_SLOT: SessionRuntimeSlot = {
@@ -39,6 +42,7 @@ export const EMPTY_SLOT: SessionRuntimeSlot = {
   accumulated: "",
   streamFinished: true,
   quotes: [],
+  pendingByChatMessageId: new Map(),
 };
 
 /**

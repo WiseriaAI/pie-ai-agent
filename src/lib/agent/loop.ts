@@ -51,6 +51,9 @@ import {
   setSessionAgent,
 } from "../sessions/storage";
 import { addPinToMeta } from "../sessions/pin-state";
+import { drainPending } from "../sessions/pending-instructions";
+import { buildMidTaskUserMessage } from "./loop-drain";
+import { broadcastInstructionState } from "@/background/instruction-broadcast";
 import { synthesizeAgentTurnText, type TerminationReason } from "./synthesize-agent-turn";
 import { waitForUrlSettle, type UrlSettleResult } from "./wait-for-url-settle";
 // setLastTaskSynth removed from emitDone — lastTaskSynth is now folded into
@@ -517,6 +520,7 @@ export function buildSessionAgentTombstone(
 ): SessionAgentState {
   const base: SessionAgentState = {
     agentMessages: [],
+    pendingInstructions: [],
     stepIndex: 0,
     hasImageContent: false,
   };
@@ -551,7 +555,10 @@ export function buildSessionAgentTombstone(
  * marker (`stepIndex === 0 && agentMessages.length === 0`). On tombstone
  * we MUST clear carry-over fields so a fresh task starts with fresh focus
  * (currentFocusTabId reset, pendingConfirm cleared). Detect by the shape
- * `buildSessionAgentTombstone` produces and bypass the merge — full replace.
+ * `buildSessionAgentTombstone` produces and bypass the merge — full replace,
+ * EXCEPT `pendingInstructions`: instructions the user submitted during the
+ * final step's execution window must survive the tombstone write so they can
+ * be drained at the next chat-start (P-MTI-9 carry-over invariant).
  *
  * Exported for unit testing.
  */
@@ -564,7 +571,13 @@ export function mergeSessionAgentSnapshot(
   // unambiguous "fresh task reset" shape produced by buildSessionAgentTombstone.
   // (A live task at stepIndex 1+ never has an empty agentMessages array.)
   const isTombstone = snapshot.stepIndex === 0 && snapshot.agentMessages.length === 0;
-  if (isTombstone) return snapshot;
+  if (isTombstone) {
+    // Preserve pendingInstructions from storage — the user may have submitted
+    // an instruction during the last step's execution window (T2 < task-end T3).
+    // buildSessionAgentTombstone initialises the field to [] but the storage
+    // value (written by addPending) is the authoritative one.
+    return { ...snapshot, pendingInstructions: existing.pendingInstructions };
+  }
   return { ...existing, ...snapshot };
 }
 
@@ -1192,6 +1205,20 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         pinnedOrigin = refreshed.focused.origin;
       }
 
+      // Issue #34 — drain any mid-task instructions submitted during the
+      // previous step. Atomic read+clear (drainPending writes session agent
+      // state). The push into history happens here, in-memory; the next
+      // step-boundary writeAtomic will include this user message in the
+      // persisted agentMessages snapshot.
+      const pendingDrained = await drainPending(sessionId);
+      const midTaskMsg = buildMidTaskUserMessage(pendingDrained);
+      if (midTaskMsg) {
+        history.push(midTaskMsg);
+        // Broadcast empty pending so panel updates UI immediately
+        // (without waiting for next step write).
+        await broadcastInstructionState(port, sessionId);
+      }
+
       // Origin check (Issue #50: transient-tolerant)
       let currentUrl: string;
       let pageTitle: string;
@@ -1452,6 +1479,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           const nextUsage = mergeContextUsage(cur?.contextUsage, lastStepUsage);
           const base: SessionAgentState = cur ?? {
             agentMessages: [],
+            pendingInstructions: [],
             stepIndex: 0,
             hasImageContent: false,
           };

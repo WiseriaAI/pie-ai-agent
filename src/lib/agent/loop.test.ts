@@ -47,11 +47,15 @@ describe("buildSessionAgentSnapshot", () => {
       { role: "user", content: "do the thing" },
     ];
     const snap = buildSessionAgentSnapshot(history, 1);
+    // pendingInstructions is intentionally NOT in the snapshot so that
+    // mergeSessionAgentSnapshot preserves whatever addPending wrote to
+    // storage during the step's execution window (clobber-fix).
     expect(snap).toEqual({
       agentMessages: history,
       stepIndex: 1,
       hasImageContent: false,
     });
+    expect("pendingInstructions" in snap).toBe(false);
   });
 
   it("stepIndex maps semantically to 'completed steps' (matches SessionAgentState JSDoc)", () => {
@@ -182,6 +186,7 @@ describe("buildSessionAgentSnapshot", () => {
     const tombstone = buildSessionAgentTombstone();
     expect(tombstone).toEqual({
       agentMessages: [],
+      pendingInstructions: [],
       stepIndex: 0,
       hasImageContent: false,
     });
@@ -825,10 +830,11 @@ describe("v1.5 multi-pin — mergeSessionAgentSnapshot", () => {
     overrides: Partial<SessionAgentState> = {},
   ): SessionAgentState => ({
     agentMessages: [{ role: "user", content: "x" }],
+    pendingInstructions: [],
     stepIndex: 1,
     hasImageContent: false,
     ...overrides,
-  });
+  } as SessionAgentState);
 
   it("returns snapshot when existing is null (first-write path)", () => {
     const snap = baseSnapshot();
@@ -843,6 +849,7 @@ describe("v1.5 multi-pin — mergeSessionAgentSnapshot", () => {
     // silently falls back to pinnedTabs[0] — focus lost on every iteration.
     const existing: SessionAgentState = {
       agentMessages: [],
+      pendingInstructions: [],
       stepIndex: 0,
       hasImageContent: false,
       currentFocusTabId: 13,
@@ -861,6 +868,7 @@ describe("v1.5 multi-pin — mergeSessionAgentSnapshot", () => {
   it("preserves pendingConfirm from existing when snapshot omits it", () => {
     const existing: SessionAgentState = {
       agentMessages: [{ role: "user", content: "prev" }],
+      pendingInstructions: [],
       stepIndex: 1,
       hasImageContent: false,
       pendingConfirm: {
@@ -878,6 +886,7 @@ describe("v1.5 multi-pin — mergeSessionAgentSnapshot", () => {
   it("snapshot fields override existing for the four core fields", () => {
     const existing: SessionAgentState = {
       agentMessages: [{ role: "user", content: "old" }],
+      pendingInstructions: [],
       stepIndex: 5,
       hasImageContent: false,
       currentFocusTabId: 13,
@@ -896,13 +905,21 @@ describe("v1.5 multi-pin — mergeSessionAgentSnapshot", () => {
     expect(merged.currentFocusTabId).toBe(13);
   });
 
-  it("tombstone signature (stepIndex 0 + empty agentMessages) clears carry-over fields", () => {
+  it("tombstone signature (stepIndex 0 + empty agentMessages) clears carry-over fields but preserves pendingInstructions", () => {
     // A tombstone is "fresh task reset" — currentFocusTabId and pendingConfirm
     // MUST be cleared so a subsequent task starts with fresh focus on
     // pinnedTabs[0]. Detect the tombstone shape by structure (the
-    // unambiguous output of buildSessionAgentTombstone) and bypass the merge.
+    // unambiguous output of buildSessionAgentTombstone) and bypass the spread.
+    //
+    // Exception: pendingInstructions MUST be preserved. The user may have
+    // submitted an instruction during the last step's execution window
+    // (addPending writes T2 < task-end T3). The tombstone would otherwise
+    // silently erase the user's entry before it could be drained at next
+    // chat-start (P-MTI-9 carry-over invariant, clobber-fix #34).
+    const pending = [{ chatMessageId: "m1", content: "leftover", createdAt: 1 }];
     const existing: SessionAgentState = {
       agentMessages: [{ role: "user", content: "prev" }],
+      pendingInstructions: pending,
       stepIndex: 7,
       hasImageContent: false,
       currentFocusTabId: 13,
@@ -914,11 +931,13 @@ describe("v1.5 multi-pin — mergeSessionAgentSnapshot", () => {
     };
     const tombstone = buildSessionAgentTombstone();
     const merged = mergeSessionAgentSnapshot(existing, tombstone);
-    // Tombstone wins fully — no carry-over.
+    // Tombstone clears agent-runtime carry-over fields:
     expect(merged.currentFocusTabId).toBeUndefined();
     expect(merged.pendingConfirm).toBeUndefined();
     expect(merged.stepIndex).toBe(0);
     expect(merged.agentMessages).toEqual([]);
+    // pendingInstructions from existing storage is preserved:
+    expect(merged.pendingInstructions).toEqual(pending);
   });
 
   it("tombstone with lastTaskSynth payload (folded by builder) still clears carry-over", () => {
@@ -928,6 +947,7 @@ describe("v1.5 multi-pin — mergeSessionAgentSnapshot", () => {
     // currentFocusTabId from existing is dropped.
     const existing: SessionAgentState = {
       agentMessages: [{ role: "user", content: "prev" }],
+      pendingInstructions: [],
       stepIndex: 5,
       hasImageContent: false,
       currentFocusTabId: 13,
@@ -945,12 +965,14 @@ describe("v1.5 multi-pin — mergeSessionAgentSnapshot", () => {
     // it for safety). The tombstone signature is the AND of both conditions.
     const existing: SessionAgentState = {
       agentMessages: [],
+      pendingInstructions: [],
       stepIndex: 0,
       hasImageContent: false,
       currentFocusTabId: 13,
     };
     const odd: SessionAgentState = {
       agentMessages: [{ role: "user", content: "x" }],
+      pendingInstructions: [],
       stepIndex: 0,
       hasImageContent: false,
     };
@@ -1072,6 +1094,7 @@ describe("v1.5 Task 6+7 — readFocusFromStorage (integration regression)", () =
     );
     await setSessionAgent(sessionId, {
       agentMessages: [{ role: "user", content: "x" }],
+      pendingInstructions: [],
       stepIndex: 1,
       hasImageContent: false,
       currentFocusTabId: 20,
@@ -1098,6 +1121,7 @@ describe("v1.5 Task 6+7 — readFocusFromStorage (integration regression)", () =
     );
     await setSessionAgent(sessionId, {
       agentMessages: [],
+      pendingInstructions: [],
       stepIndex: 0,
       hasImageContent: false,
     });
@@ -1144,6 +1168,7 @@ describe("v1.5 Task 6+7 — readFocusFromStorage (integration regression)", () =
     // Suppose focus_tab(50) was also called
     await setSessionAgent(sessionId, {
       agentMessages: [{ role: "user", content: "x" }],
+      pendingInstructions: [],
       stepIndex: 1,
       hasImageContent: false,
       currentFocusTabId: 50,
@@ -1237,6 +1262,7 @@ describe("v1.5 Task 6+7 — readFocusFromStorage (integration regression)", () =
     );
     await setSessionAgent(sessionId, {
       agentMessages: [{ role: "user", content: "x" }],
+      pendingInstructions: [],
       stepIndex: 1,
       hasImageContent: false,
     });
@@ -1536,6 +1562,7 @@ describe("issue #59 — mergeSessionAgentSnapshot preserves contextUsage", () =>
   it("non-tombstone spread keeps existing.contextUsage when snapshot omits it", () => {
     const existing: SessionAgentState = {
       agentMessages: [{ role: "user", content: "hi" }],
+      pendingInstructions: [],
       stepIndex: 3,
       hasImageContent: false,
       currentFocusTabId: 99,
@@ -1548,6 +1575,7 @@ describe("issue #59 — mergeSessionAgentSnapshot preserves contextUsage", () =>
     };
     const snapshot: SessionAgentState = {
       agentMessages: [{ role: "user", content: "hi" }, { role: "assistant", content: "ok" }],
+      pendingInstructions: [],
       stepIndex: 4,
       hasImageContent: false,
     };
@@ -1560,6 +1588,7 @@ describe("issue #59 — mergeSessionAgentSnapshot preserves contextUsage", () =>
   it("tombstone full-replace drops existing.contextUsage IF tombstone doesn't carry it", () => {
     const existing: SessionAgentState = {
       agentMessages: [{ role: "user", content: "x" }],
+      pendingInstructions: [],
       stepIndex: 5,
       hasImageContent: false,
       contextUsage: {
@@ -1577,6 +1606,7 @@ describe("issue #59 — mergeSessionAgentSnapshot preserves contextUsage", () =>
   it("tombstone full-replace keeps carryUsage when caller passed it", () => {
     const existing: SessionAgentState = {
       agentMessages: [{ role: "user", content: "x" }],
+      pendingInstructions: [],
       stepIndex: 5,
       hasImageContent: false,
       contextUsage: {

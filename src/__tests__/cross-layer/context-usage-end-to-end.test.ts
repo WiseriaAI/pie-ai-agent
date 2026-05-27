@@ -17,6 +17,7 @@ describe("issue #59 — context usage end-to-end", () => {
     // Simulate step 1
     await setSessionAgent(sessionId, {
       agentMessages: [{ role: "user", content: "hi" }],
+      pendingInstructions: [],
       stepIndex: 1,
       hasImageContent: false,
     });
@@ -62,6 +63,7 @@ describe("issue #59 — context usage end-to-end", () => {
     // Task 1, two steps
     await setSessionAgent(sessionId, {
       agentMessages: [{ role: "user", content: "task1" }],
+      pendingInstructions: [],
       stepIndex: 1,
       hasImageContent: false,
       contextUsage: mergeContextUsage(undefined, {
@@ -90,6 +92,7 @@ describe("issue #59 — context usage end-to-end", () => {
     // Task 2 starts — first step
     await setSessionAgent(sessionId, {
       agentMessages: [{ role: "user", content: "task2" }],
+      pendingInstructions: [],
       stepIndex: 1,
       hasImageContent: false,
       contextUsage: afterTomb?.contextUsage, // carry into fresh state
@@ -110,6 +113,7 @@ describe("issue #59 — context usage end-to-end", () => {
   it("snapshot-merge between steps does not clobber contextUsage", async () => {
     const existing: SessionAgentState = {
       agentMessages: [{ role: "user", content: "x" }],
+      pendingInstructions: [],
       stepIndex: 2,
       hasImageContent: false,
       currentFocusTabId: 42,
@@ -125,6 +129,7 @@ describe("issue #59 — context usage end-to-end", () => {
         { role: "user", content: "x" },
         { role: "assistant", content: "y" },
       ],
+      pendingInstructions: [],
       stepIndex: 3,
       hasImageContent: false,
     };
