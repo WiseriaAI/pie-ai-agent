@@ -56,6 +56,7 @@ function buildRequestBody(
   config: ModelConfig,
   messages: AgentMessage[],
   tools?: ToolDefinition[],
+  promptCache: boolean = false,
 ): Record<string, unknown> {
   const { system, messages: wireMessages } = toWireMessages(messages);
 
@@ -67,9 +68,9 @@ function buildRequestBody(
   };
 
   if (system) {
-    body.system = [
-      { type: "text", text: system, cache_control: CACHE_CONTROL_EPHEMERAL },
-    ];
+    body.system = promptCache
+      ? [{ type: "text", text: system, cache_control: CACHE_CONTROL_EPHEMERAL }]
+      : system;
   }
 
   if (tools && tools.length > 0) {
@@ -78,8 +79,10 @@ function buildRequestBody(
       description: t.description,
       input_schema: t.parameters,
     }));
-    (wireTools[wireTools.length - 1] as Record<string, unknown>).cache_control =
-      CACHE_CONTROL_EPHEMERAL;
+    if (promptCache) {
+      (wireTools[wireTools.length - 1] as Record<string, unknown>).cache_control =
+        CACHE_CONTROL_EPHEMERAL;
+    }
     body.tools = wireTools;
     body.tool_choice = { type: "auto" };
   }
@@ -104,7 +107,7 @@ export async function* streamChatAnthropicCompat(
   _hooks?: AnthropicCompatHooks,
 ): AsyncGenerator<StreamEvent> {
   const baseUrl = config.baseUrl!.replace(/\/$/, "");
-  const body = buildRequestBody(config, messages, tools);
+  const body = buildRequestBody(config, messages, tools, _hooks?.promptCache ?? false);
   const name = displayProviderName(config);
 
   let response: Response;
@@ -229,4 +232,9 @@ export async function* streamChatAnthropicCompat(
 
 // Test-only exports — preserve names used by anthropic.test.ts
 export const _toWireMessagesForTest = toWireMessages;
-export const _buildRequestBodyForTest = buildRequestBody;
+export const _buildRequestBodyForTest = (
+  config: ModelConfig,
+  messages: AgentMessage[],
+  tools?: ToolDefinition[],
+  promptCache: boolean = true,
+) => buildRequestBody(config, messages, tools, promptCache);

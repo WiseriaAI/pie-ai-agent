@@ -8,7 +8,7 @@ export async function* streamChat(
   signal?: AbortSignal,
   tools?: ToolDefinition[],
 ): AsyncGenerator<StreamEvent> {
-  yield* streamChatAnthropicCompat(config, messages, signal, tools);
+  yield* streamChatAnthropicCompat(config, messages, signal, tools, { promptCache: true });
 }
 
 // Preserve test-only re-exports for anthropic.test.ts (imports via ./anthropic)
