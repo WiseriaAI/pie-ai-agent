@@ -96,6 +96,7 @@ import { addPending, cancelPending, drainPending } from "@/lib/sessions/pending-
 import { broadcastInstructionState } from "./instruction-broadcast";
 import { mergeCarryoverIntoMessages } from "@/lib/agent/loop-drain";
 import type { ChatInstructionRejectedMessage } from "@/types/messages";
+import { isFilePdfUrl } from "@/lib/pdf/detect";
 
 // Run V1→V2 migration once on SW load (idempotent via schema_version sentinel).
 migrateV1toV2().catch((e) => console.error("migration v2 failed", e));
@@ -1511,6 +1512,29 @@ chrome.tabs.onRemoved.addListener((closedTabId) => {
     const port = portsBySession.get(sess.sessionId);
     if (port) handleRecordingTabClosed(port, closedTabId);
     else recordingState.delete(sess.sessionId);
+  }
+});
+
+// PDF agent — broadcast a prompt to all open sidepanels when the user
+// navigates to a local PDF and file:// access is not yet granted.
+async function broadcastPdfNeedsFileAccess(tabId: number): Promise<void> {
+  // Defensive: skip if the permission API isn't available (test contexts).
+  if (typeof chrome.extension?.isAllowedFileSchemeAccess !== "function") return;
+  const allowed = await chrome.extension.isAllowedFileSchemeAccess();
+  if (allowed) return;
+  for (const port of portsBySession.values()) {
+    try {
+      port.postMessage({ type: "pdf:needs-file-access", tabId });
+    } catch {
+      // port may have disconnected concurrently
+    }
+  }
+}
+
+chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
+  if (info.status !== "complete") return;
+  if (isFilePdfUrl(tab.url)) {
+    void broadcastPdfNeedsFileAccess(tabId);
   }
 });
 

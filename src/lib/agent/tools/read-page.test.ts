@@ -122,4 +122,25 @@ describe("read_page tool", () => {
     expect(r.observation).toMatch(/frame_id="0".*truncated="true"/s);
     expect(r.observation).toMatch(/frame_id="3".*unread="budget"/s);
   });
+
+  it("returns pdf_tab error when the target tab url ends in .pdf", async () => {
+    // Use vi.stubGlobal to get a fresh mock — consistent with other tests in this file.
+    const executeScript = vi.fn();
+    const tabsGet = vi.fn().mockResolvedValue({
+      id: 42,
+      url: "https://arxiv.org/pdf/2401.12345.pdf",
+    } as chrome.tabs.Tab);
+    vi.stubGlobal("chrome", {
+      tabs: { get: tabsGet },
+      scripting: { executeScript },
+    });
+
+    const r = await readPageTool.handler({ tabId: 42 }, {} as never);
+    expect(r.success).toBe(false);
+    expect(r.error).toMatch(/pdf_tab/);
+    expect(r.error).toMatch(/read_pdf/);
+    // Make sure we never reached executeScript
+    expect(executeScript).not.toHaveBeenCalled();
+    expect(tabsGet).toHaveBeenCalledWith(42);
+  });
 });

@@ -4,6 +4,9 @@ dist/
 *.log
 .DS_Store
 
+# Vendored WASM staged into public/ at build time (copied to dist/liteparse.wasm)
+public/liteparse.wasm
+
 .context/
 
 # Git worktrees for isolated parallel development

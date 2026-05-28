@@ -16,7 +16,10 @@ BYOK (Bring Your Own Key) Chrome Extension — 用户插入自己的 API key 获
 - `src/lib/model-router/` — Unified LLM interface + tool calling; per-provider modules under `providers/` + two shared cores (`_shared/openai-compat-core.ts`, `_shared/anthropic-compat-core.ts`) + `registry.ts` 元数据 + id-keyed `providers/index.ts` dispatch（provider 清单见 README）
 - `src/lib/dom-actions/` — Self-contained DOM action functions injected via executeScript
 - `src/lib/agent/` — ReAct loop, tool registry, prompt builder, sliding window, `untrusted-wrappers.ts`, `tool-names.ts`(read/write tool 分类)
-- `src/lib/agent/tools/` — `keyboard.ts` (CDP) / `skill-meta.ts` (skill CRUD) / `tabs.ts` (cross-tab)
+- `src/lib/agent/tools/` — `keyboard.ts` (CDP) / `skill-meta.ts` (skill CRUD) / `tabs.ts` (cross-tab) / `pdf.ts` (`read_pdf` / `search_pdf` / `get_pdf_outline` tools, all read-class)
+- `src/lib/pdf/` — PDF tab detection (`isPdfTab`) + page-range parser (`parsePageRange`)
+- `src/offscreen/` — Offscreen document hosting LiteParse v2 WASM (`pdf-parser.html` + `pdf-parser.ts`), in-memory cache, message dispatch
+- `src/background/offscreen-manager.ts` — Lazy offscreen lifecycle + SW↔offscreen request/response bridge
 - `src/lib/skills/` — Skill framework: SkillPackage (frontmatter + virtual file tree) stored in IndexedDB (skill-store), SKILL.md frontmatter parser, builtin packages, getEnabledSkillPackages; skills are accessed via use_skill/read_skill_file mediation tools + a system-prompt catalog and are NOT tools themselves.
 - `src/lib/sessions/` — Multi-session persistence: state-machine, lifecycle (archive/delete), pinned-tab-registry, title
 - `src/lib/crypto.ts` — AES-GCM encryption helper（与 `src/lib/instances.ts` 配合存 instance API key）
@@ -80,6 +83,7 @@ Workflow 内置 invariant（任一失败则 CI fail，不会上传）：
 - Prompt injection 防御: 页面 snapshot 在 user role 用 `<untrusted_*>` wrapper（`untrusted_page_content` / `untrusted_tab_metadata` / `untrusted_user_message`），**never** 进 system role；`untrusted-wrappers.ts` 是唯一 escape 入口
 - Per-session sandbox: per-session port (`chat-stream-${sessionId}`) + per-session `pinnedTabs[]` + `currentFocusTabId` (v1.5 multi-pin) + CDP `ownerToken={sessionId,tabId}` + 跨 session R7 lock
 - Session 持久化: storage at-rest 持 raw `agentMessages`（LLM resume 需要原始 context），panel render 才走 `redactArgsForPanel`；archive/restore 走 `writeAtomic` 单调用
+- PDF capability: Chrome's built-in PDF viewer is sealed, so PDF text is parsed via an MV3 offscreen document running LiteParse v2 WASM (~4 MB, Apache-2.0). The `offscreen` permission + `wasm-unsafe-eval` CSP in `extension_pages` are required. WASM is copied from `node_modules/@llamaindex/liteparse-wasm/pkg/liteparse_wasm_bg.wasm` into `public/liteparse.wasm` at build time (gitignored) and emitted to `dist/liteparse.wasm`. The three PDF tools (`read_pdf` / `search_pdf` / `get_pdf_outline`) route through `src/background/offscreen-manager.ts` which uses `chrome.runtime.sendMessage({target:"offscreen",...})` for request/response. Cache is in-memory in the offscreen doc, keyed by `tab.url`; SW idle → offscreen evicted → re-parse next call. `read_page` returns a `pdf_tab:` error on PDF tabs so the LLM self-corrects to `read_pdf`. New untrusted wrappers `untrusted_pdf_page` / `untrusted_pdf_match` / `untrusted_pdf_outline_entry` are registered in both `UNTRUSTED_WRAPPER_TAGS` (untrusted-wrappers.ts) and `WRAPPER_TAGS_LIST` (page-snapshot.ts) per dual-list invariant. Local PDFs require the user to enable `Allow access to file URLs`; `<PdfPermissionCard>` mounts via `usePdfPermission` when the SW broadcasts `pdf:needs-file-access`.
 
 ## Docs Map
 

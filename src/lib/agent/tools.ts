@@ -11,6 +11,7 @@ import { SKILL_ACCESS_TOOLS } from "./tools/skill-access";
 import { TAB_TOOLS } from "./tools/tabs";
 import { searchWebTool } from "./tools/search";
 import { readPageTool } from "./tools/read-page";
+import { PDF_TOOLS } from "./tools/pdf";
 
 export {
   KEYBOARD_TOOL_NAMES,
@@ -289,6 +290,7 @@ export const BUILT_IN_TOOLS: Tool[] = [
   },
   searchWebTool,
   readPageTool,
+  ...PDF_TOOLS,
 ];
 
 // iframe spec R-iframe-1 — build-time assertion: writes target a specific

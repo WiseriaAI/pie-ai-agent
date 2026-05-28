@@ -79,6 +79,8 @@ import SkillSlashPopover from "./SkillSlashPopover";
 import { PendingInstructionList, type PendingItem } from "./PendingInstructionList";
 import { useCdpOnboarding } from "../hooks/useCdpOnboarding";
 import { CdpOnboardingCard } from "./CdpOnboardingCard";
+import { usePdfPermission } from "../hooks/usePdfPermission";
+import { PdfPermissionCard } from "./PdfPermissionCard";
 
 interface ChatProps {
   providerLabel: string | null;
@@ -221,6 +223,9 @@ export default function Chat({
   // Load instances list + current session's instanceId on mount / sessionId change
   const sessionId = session.sessionId;
   const { pending: cdpPending, answer: answerCdp } = useCdpOnboarding(session.port, sessionId);
+  const { showCard: showPdfPermission, dismiss: dismissPdfPermission } = usePdfPermission(
+    session.port,
+  );
   useEffect(() => {
     listInstances().then(setInstances).catch(() => setInstances([]));
     if (!sessionId) return;
@@ -1281,6 +1286,9 @@ After the skill completes, briefly summarize what was created (the user will see
       )}
 
       {cdpPending && <CdpOnboardingCard onAnswer={answerCdp} />}
+      {showPdfPermission && (
+        <PdfPermissionCard onDismiss={dismissPdfPermission} />
+      )}
 
       <Composer
         input={input}

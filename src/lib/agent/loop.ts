@@ -35,6 +35,7 @@ import {
 import { isCdpInputEnabled } from "../cdp-input-enabled";
 import { requestCdpInputConsent } from "../cdp-input-onboarding";
 import { getEnabledSkillPackages } from "../skills";
+import { isFilePdfUrl } from "../pdf/detect";
 import {
   acquireCdpSession,
   type CdpSession,
@@ -327,6 +328,7 @@ export function isRestrictedUrl(url: string): boolean {
   // has no sensible way to pin: file://, data:, javascript:, blob:. Without these
   // checks, any subsequent navigation within one of these schemes would pass the
   // per-round origin comparison (`"null" === "null"`), defeating the isolation.
+  if (isFilePdfUrl(url)) return false;
   return (
     url.startsWith("chrome://") ||
     url.startsWith("chrome-extension://") ||
@@ -340,6 +342,11 @@ export function isRestrictedUrl(url: string): boolean {
 }
 
 export function safeParseOrigin(url: string): string | null {
+  // For file://*.pdf, use the URL itself as pin identity since the parsed
+  // `origin` is "null" (opaque). Per-iteration `origin === pinnedOrigin`
+  // becomes URL-equality, which is correct: if the user navigates the tab
+  // away from this exact PDF the gate trips.
+  if (isFilePdfUrl(url)) return url;
   try {
     const origin = new URL(url).origin;
     // Opaque origins parse to the literal string "null"; treat them as unresolvable.

@@ -4,7 +4,7 @@
   "name": "__MSG_extension_name__",
   "version": "0.16.0",
   "description": "__MSG_extension_description__",
-  "permissions": ["activeTab", "sidePanel", "storage", "tabs", "tabGroups", "scripting", "debugger", "webNavigation"],
+  "permissions": ["activeTab", "sidePanel", "storage", "tabs", "tabGroups", "scripting", "debugger", "webNavigation", "offscreen"],
   "host_permissions": [
     "<all_urls>",
     "https://api.anthropic.com/*",
@@ -17,6 +17,15 @@
     "https://api.deepseek.com/*",
     "https://api.xiaomimimo.com/*",
     "https://api.tavily.com/*"
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["liteparse.wasm", "src/offscreen/pdf-parser.html"],
+      "matches": ["<all_urls>"]
+    }
   ],
   "background": {
     "service_worker": "src/background/index.ts",
