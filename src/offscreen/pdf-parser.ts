@@ -1,3 +1,4 @@
+import initLiteParse, { LiteParse } from "@llamaindex/liteparse-wasm";
 import { tabUrlForCacheKey } from "@/lib/pdf/detect";
 
 export interface ParsedPage {
@@ -158,14 +159,89 @@ export async function handleMessage(
   }
 }
 
+// ── LiteParse WASM integration ────────────────────────────────────────────────
+
+let liteParseReady: Promise<void> | null = null;
+
+async function ensureLiteParse(): Promise<void> {
+  if (liteParseReady) return liteParseReady;
+  liteParseReady = (async () => {
+    const wasmUrl = chrome.runtime.getURL("liteparse.wasm");
+    await initLiteParse(wasmUrl);
+  })().catch((err) => {
+    liteParseReady = null; // retry on next call
+    throw err;
+  });
+  return liteParseReady;
+}
+
+async function realParseBytes(bytes: ArrayBuffer): Promise<ParsedPdf> {
+  await ensureLiteParse();
+
+  const parser = new LiteParse({ ocrEnabled: false, outputFormat: "json", quiet: true });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const raw: any = await parser.parse(new Uint8Array(bytes));
+
+  // raw.pages is an array of page objects; each page may contain:
+  //   - items: Array<{ text: string, ... }> for spatial text items, OR
+  //   - text: string for plain text output
+  // raw.text: string — full document text (not split by page)
+  // raw.metadata: { title?: string, ... } — document metadata
+  // raw.outline: Array<{ level: number, title: string, page: number }> — TOC
+
+  const rawPages: unknown[] = Array.isArray(raw?.pages) ? raw.pages : [];
+
+  const pages: ParsedPage[] = rawPages.map((p: unknown, i: number) => {
+    const page = p as Record<string, unknown>;
+    // Prefer a top-level text field; fall back to joining items[].text
+    let text = "";
+    if (typeof page.text === "string") {
+      text = page.text;
+    } else if (Array.isArray(page.items)) {
+      text = (page.items as Array<Record<string, unknown>>)
+        .map((item) => (typeof item.text === "string" ? item.text : ""))
+        .join(" ");
+    }
+    const pageNum =
+      typeof page.page_number === "number"
+        ? page.page_number
+        : typeof page.pageNumber === "number"
+          ? page.pageNumber
+          : i + 1;
+    return { page: pageNum, text };
+  });
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const metadata = (raw?.metadata ?? {}) as Record<string, any>;
+  const title: string | null =
+    typeof metadata.title === "string" && metadata.title.length > 0
+      ? metadata.title
+      : null;
+
+  const rawOutline: unknown[] = Array.isArray(raw?.outline) ? raw.outline : [];
+  const outline: OutlineEntry[] = rawOutline
+    .filter(
+      (o): o is Record<string, unknown> =>
+        o !== null && typeof o === "object",
+    )
+    .map((o, i) => ({
+      level: typeof o.level === "number" ? o.level : 1,
+      title: typeof o.title === "string" ? o.title : `Section ${i + 1}`,
+      page: typeof o.page === "number" ? o.page : 1,
+    }));
+
+  return {
+    totalPages: pages.length,
+    title,
+    outline,
+    pages,
+  };
+}
+
 // ── Runtime wiring (skipped under vitest / non-extension contexts) ───────────
 if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
   const state = createState();
-  // Task 6 will replace this stub with the real LiteParse call.
-  const placeholderParse = async (_bytes: ArrayBuffer): Promise<ParsedPdf> => {
-    throw new Error("parse_failed: parser not yet wired (Task 6)");
-  };
-  const deps: ParserDeps = { parseBytes: placeholderParse, fetchImpl: fetch.bind(globalThis) };
+  const deps: ParserDeps = { parseBytes: realParseBytes, fetchImpl: fetch.bind(globalThis) };
 
   chrome.runtime.onMessage.addListener((raw, _sender, sendResponse) => {
     const msg = raw as { target?: string; requestId?: string } & Partial<OffscreenMessage>;
