@@ -96,6 +96,7 @@ import { addPending, cancelPending, drainPending } from "@/lib/sessions/pending-
 import { broadcastInstructionState } from "./instruction-broadcast";
 import { mergeCarryoverIntoMessages } from "@/lib/agent/loop-drain";
 import type { ChatInstructionRejectedMessage } from "@/types/messages";
+import { isPdfTab } from "@/lib/pdf/detect";
 
 // Run V1→V2 migration once on SW load (idempotent via schema_version sentinel).
 migrateV1toV2().catch((e) => console.error("migration v2 failed", e));
@@ -1532,7 +1533,7 @@ async function broadcastPdfNeedsFileAccess(tabId: number): Promise<void> {
 
 chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
   if (info.status !== "complete") return;
-  if (tab.url && tab.url.startsWith("file://") && /\.pdf(?:$|[?#])/i.test(tab.url)) {
+  if (tab.url && tab.url.startsWith("file://") && isPdfTab(tab)) {
     void broadcastPdfNeedsFileAccess(tabId);
   }
 });
