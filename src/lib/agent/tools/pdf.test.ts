@@ -54,6 +54,9 @@ describe("read_pdf tool", () => {
     expect(r.observation).toContain("Page one body.");
     expect(r.observation).toContain('page="2"');
     expect(r.observation).toContain("Page two body.");
+    const calls = vi.mocked(offscreen.sendToOffscreen).mock.calls;
+    expect(calls[0][0]).toMatchObject({ type: "pdf:outline" });
+    expect(calls[1][0]).toMatchObject({ type: "pdf:read_page" });
   });
 
   it("truncates to max_chars at page boundary and marks truncated=true", async () => {
@@ -75,6 +78,9 @@ describe("read_pdf tool", () => {
     expect(r.observation).toContain("AAAAA");
     expect(r.observation).not.toContain("BBBBB");
     expect(r.observation).not.toContain("CCCCC");
+    const calls = vi.mocked(offscreen.sendToOffscreen).mock.calls;
+    expect(calls[0][0]).toMatchObject({ type: "pdf:outline" });
+    expect(calls[1][0]).toMatchObject({ type: "pdf:read_page" });
   });
 
   it("propagates offscreen-side error verbatim", async () => {
