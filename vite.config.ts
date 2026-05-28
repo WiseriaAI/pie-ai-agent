@@ -13,12 +13,14 @@ function copyLiteparseWasm(): Plugin {
   return {
     name: "copy-liteparse-wasm",
     apply: "build",
-    closeBundle() {
+    buildStart() {
+      // Copy to public/ so @crxjs/vite-plugin can resolve it in web_accessible_resources
+      // and it gets emitted to dist/ automatically by Vite's asset pipeline.
       const src = path.resolve(
         __dirname,
         "node_modules/@llamaindex/liteparse-wasm/pkg/liteparse_wasm_bg.wasm",
       );
-      const dst = path.resolve(__dirname, "dist/liteparse.wasm");
+      const dst = path.resolve(__dirname, "public/liteparse.wasm");
       fs.copyFileSync(src, dst);
     },
   };
