@@ -35,5 +35,15 @@ export default defineConfig({
   },
   build: {
     outDir: "dist",
+    rollupOptions: {
+      // Offscreen documents are not declared in manifest.json (only via
+      // chrome.offscreen.createDocument), so @crxjs/vite-plugin does not
+      // auto-discover them. Adding the HTML as a Rollup input causes Vite
+      // to bundle the inline `<script type="module" src="./pdf-parser.ts">`
+      // into a real JS module and rewrite the HTML to point at it.
+      input: {
+        "offscreen-pdf-parser": path.resolve(__dirname, "src/offscreen/pdf-parser.html"),
+      },
+    },
   },
 });
