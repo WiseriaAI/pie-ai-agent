@@ -50,6 +50,9 @@ export const UNTRUSTED_WRAPPER_TAGS = [
   "untrusted_skill_content",
   "untrusted_compacted_steps",
   "untrusted_search_result",
+  "untrusted_pdf_page",
+  "untrusted_pdf_match",
+  "untrusted_pdf_outline_entry",
 ] as const;
 
 // Zero-width / invisible chars that an attacker might hide inside a tag literal.

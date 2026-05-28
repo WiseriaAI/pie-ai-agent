@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@llamaindex/liteparse-wasm':
+        specifier: ^2.0.0
+        version: 2.0.0
       react:
         specifier: ^19.2.5
         version: 19.2.5
@@ -107,6 +110,10 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
+
+  '@llamaindex/liteparse-wasm@2.0.0':
+    resolution: {integrity: sha512-zZlAcnpAJDMS0NC3oF58Yci/NYfrm/xrpyaVMbEi/5/EnZ9XJJIMQAIQ5RDeSLMc0YcSTOzop6Ot8Gg45VLxAg==}
+    engines: {node: '>=18.0.0'}
 
   '@napi-rs/wasm-runtime@1.1.3':
     resolution: {integrity: sha512-xK9sGVbJWYb08+mTJt3/YV24WxvxpXcXtP6B172paPZ+Ts69Re9dAr7lKwJoeIx8OoeuimEiRZ7umkiUVClmmQ==}
@@ -1396,6 +1403,8 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
+
+  '@llamaindex/liteparse-wasm@2.0.0': {}
 
   '@napi-rs/wasm-runtime@1.1.3(@emnapi/core@1.9.2)(@emnapi/runtime@1.9.2)':
     dependencies:

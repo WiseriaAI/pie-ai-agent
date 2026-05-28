@@ -27,6 +27,7 @@ import {
   type SessionRuntimeSlot,
 } from "./runtime-map";
 import { createPortHandlers } from "./port-handlers";
+import { isFilePdfUrl } from "@/lib/pdf/detect";
 
 /**
  * useSession — single-source-of-truth for the active session's messages,
@@ -113,6 +114,11 @@ async function captureActivePinned(): Promise<
     // throw "Value must be at least 0" and crash the agent loop. Filter
     // explicitly: only pin to a real, addressable tab.
     if (!Number.isInteger(tab.id) || tab.id < 0) return null;
+    // file://*.pdf exception: PDF viewer is sealed, so URL itself is the pin
+    // identity (mirrors loop.ts isFilePdfUrl handling).
+    if (isFilePdfUrl(tab.url)) {
+      return { pinnedTabId: tab.id, pinnedOrigin: tab.url };
+    }
     if (RESTRICTED_PIN_PREFIXES.some((p) => tab.url!.startsWith(p))) return null;
     const origin = new URL(tab.url).origin;
     if (!origin || origin === "null") return null;

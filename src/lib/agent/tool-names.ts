@@ -72,6 +72,17 @@ export const PAGE_SNAPSHOT_TOOL_NAMES = [
   "read_page",
 ] as const;
 
+// PDF tools (always present in BUILT_IN_TOOLS once Task 10 lands).
+//
+// class=read: parses bytes and returns text observations; never mutates
+// tab/page state. Snippet/outline/page text are streamed back into the
+// agent loop only — no DOM writes, no chrome.tabs writes.
+export const PDF_TOOL_NAMES = [
+  "read_pdf",
+  "search_pdf",
+  "get_pdf_outline",
+] as const;
+
 export const KNOWN_BUILT_IN_TOOL_NAMES = [
   ...PHASE_2_TOOL_NAMES,
   ...SKILL_META_TOOL_NAMES_FOR_REGISTRY,
@@ -80,6 +91,7 @@ export const KNOWN_BUILT_IN_TOOL_NAMES = [
   ...SCREENSHOT_TOOL_NAMES,
   ...SEARCH_TOOL_NAMES,
   ...PAGE_SNAPSHOT_TOOL_NAMES,
+  ...PDF_TOOL_NAMES,
 ] as const;
 
 export const KNOWN_KEYBOARD_TOOL_NAMES = [
@@ -157,6 +169,10 @@ export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
   search_web: "read",
   // Page snapshot tool — reads page DOM structure, no tab/page state mutation
   read_page: "read",
+  // PDF tools — pure text producers, parse-only, no tab mutation
+  read_pdf: "read",
+  search_pdf: "read",
+  get_pdf_outline: "read",
 };
 
 // Build-time exhaustive check — every known tool name MUST have a class

@@ -1,0 +1,44 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { PdfPermissionCard } from "./PdfPermissionCard";
+
+afterEach(() => {
+  cleanup();
+});
+
+beforeEach(() => {
+  vi.restoreAllMocks();
+  vi.stubGlobal("chrome", {
+    runtime: { id: "abc" },
+    tabs: { create: vi.fn() },
+    extension: { isAllowedFileSchemeAccess: vi.fn(async () => false) },
+  });
+});
+
+describe("<PdfPermissionCard />", () => {
+  it("renders the explanation and the open-settings button", () => {
+    render(<PdfPermissionCard onDismiss={() => {}} />);
+    expect(screen.getByText(/local pdf/i)).toBeTruthy();
+    expect(screen.getByRole("button", { name: /allow access/i })).toBeTruthy();
+  });
+
+  it("opens chrome://extensions for the extension id when the button is clicked", () => {
+    const createSpy = vi.spyOn(chrome.tabs, "create");
+    render(<PdfPermissionCard onDismiss={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /allow access/i }));
+    expect(createSpy).toHaveBeenCalledWith({
+      url: "chrome://extensions/?id=abc",
+    });
+  });
+
+  it("calls onDismiss when isAllowedFileSchemeAccess turns true on visibilitychange", async () => {
+    const onDismiss = vi.fn();
+    vi.spyOn(chrome.extension, "isAllowedFileSchemeAccess").mockResolvedValue(true);
+    render(<PdfPermissionCard onDismiss={onDismiss} />);
+    document.dispatchEvent(new Event("visibilitychange"));
+    // Allow effect to flush
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(onDismiss).toHaveBeenCalled();
+  });
+});

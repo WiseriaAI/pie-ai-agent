@@ -266,3 +266,22 @@ describe("buildAgentSystemPrompt Phase 3", () => {
     expect(prompt).not.toMatch(/each iteration[^.]*snapshot.*automatic/i);
   });
 });
+
+describe("PDF guidance", () => {
+  it("includes PDF tools in the system prompt", () => {
+    const prompt = buildAgentSystemPrompt("test task");
+    expect(prompt).toMatch(/read_pdf/);
+    expect(prompt).toMatch(/search_pdf/);
+    expect(prompt).toMatch(/get_pdf_outline/);
+  });
+
+  it("advises starting with get_pdf_outline on unfamiliar PDFs", () => {
+    const prompt = buildAgentSystemPrompt("test task");
+    expect(prompt).toMatch(/get_pdf_outline.*(?:first|start)/is);
+  });
+
+  it("documents the pdf_tab error self-correction protocol", () => {
+    const prompt = buildAgentSystemPrompt("test task");
+    expect(prompt).toMatch(/pdf_tab/);
+  });
+});
