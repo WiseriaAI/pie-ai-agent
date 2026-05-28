@@ -1530,7 +1530,8 @@ async function broadcastPdfNeedsFileAccess(tabId: number): Promise<void> {
   }
 }
 
-chrome.tabs.onUpdated.addListener((tabId, _info, tab) => {
+chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
+  if (info.status !== "complete") return;
   if (tab.url && tab.url.startsWith("file://") && /\.pdf(?:$|[?#])/i.test(tab.url)) {
     void broadcastPdfNeedsFileAccess(tabId);
   }
