@@ -133,4 +133,17 @@ describe("search_pdf tool", () => {
     expect(calls).toHaveLength(1);
     expect(calls[0][0]).toMatchObject({ type: "pdf:search", query: "hello" });
   });
+
+  it("returns no-matches sentinel and skips offscreen call when total is 0", async () => {
+    vi.spyOn(chrome.tabs, "get").mockResolvedValue({ id: 99, url: "https://x/a.pdf" } as chrome.tabs.Tab);
+    vi.spyOn(offscreen, "sendToOffscreen").mockResolvedValue({
+      matches: [],
+      total_matches: 0,
+    } as unknown);
+    const r = await searchPdfTool.handler({ query: "needle" }, ctx);
+    expect(r.success).toBe(true);
+    expect(r.observation).toContain('total_matches="0"');
+    expect(r.observation).toContain("no matches");
+    expect(r.observation).not.toMatch(/<untrusted_pdf_match/);
+  });
 });

@@ -179,10 +179,11 @@ export const searchPdfTool: Tool = {
     if (!query) {
       return { success: false, error: "empty_query: provide a non-empty search term" };
     }
-    const maxResults = Math.min(
-      50,
-      Math.max(1, Math.floor(a.max_results ?? DEFAULT_SEARCH_MAX)),
-    );
+    const rawMax =
+      typeof a.max_results === "number" && Number.isFinite(a.max_results)
+        ? a.max_results
+        : DEFAULT_SEARCH_MAX;
+    const maxResults = Math.min(50, Math.max(1, Math.floor(rawMax)));
 
     const tab = await resolveActivePdfTab(ctx.tabId);
     if (!tab.ok) return { success: false, error: tab.error };
@@ -200,6 +201,13 @@ export const searchPdfTool: Tool = {
       })) as typeof payload;
     } catch (e) {
       return { success: false, error: e instanceof Error ? e.message : String(e) };
+    }
+
+    if (payload.matches.length === 0) {
+      return {
+        success: true,
+        observation: `<search_pdf query="${escapeWrapperAttribute(query)}" total_matches="0">no matches</search_pdf>`,
+      };
     }
 
     const rows = payload.matches
