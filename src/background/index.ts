@@ -1514,4 +1514,26 @@ chrome.tabs.onRemoved.addListener((closedTabId) => {
   }
 });
 
+// PDF agent — broadcast a prompt to all open sidepanels when the user
+// navigates to a local PDF and file:// access is not yet granted.
+async function broadcastPdfNeedsFileAccess(tabId: number): Promise<void> {
+  // Defensive: skip if the permission API isn't available (test contexts).
+  if (typeof chrome.extension?.isAllowedFileSchemeAccess !== "function") return;
+  const allowed = await chrome.extension.isAllowedFileSchemeAccess();
+  if (allowed) return;
+  for (const port of portsBySession.values()) {
+    try {
+      port.postMessage({ type: "pdf:needs-file-access", tabId });
+    } catch {
+      // port may have disconnected concurrently
+    }
+  }
+}
+
+chrome.tabs.onUpdated.addListener((tabId, _info, tab) => {
+  if (tab.url && tab.url.startsWith("file://") && /\.pdf(?:$|[?#])/i.test(tab.url)) {
+    void broadcastPdfNeedsFileAccess(tabId);
+  }
+});
+
 console.log("[Pie] Service worker started");
