@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "default_locale": "en",
   "name": "__MSG_extension_name__",
-  "version": "0.16.0",
+  "version": "0.17.0",
   "description": "__MSG_extension_description__",
   "permissions": ["activeTab", "sidePanel", "storage", "tabs", "tabGroups", "scripting", "debugger", "webNavigation", "offscreen"],
   "host_permissions": [
