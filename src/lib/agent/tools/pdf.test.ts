@@ -92,7 +92,7 @@ describe("read_pdf tool", () => {
   });
 });
 
-import { searchPdfTool } from "./pdf";
+import { searchPdfTool, getPdfOutlineTool } from "./pdf";
 
 describe("search_pdf tool", () => {
   beforeEach(() => {
@@ -145,5 +145,55 @@ describe("search_pdf tool", () => {
     expect(r.observation).toContain('total_matches="0"');
     expect(r.observation).toContain("no matches");
     expect(r.observation).not.toMatch(/<untrusted_pdf_match/);
+  });
+});
+
+describe("get_pdf_outline tool", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("errors not_a_pdf for non-pdf tab", async () => {
+    vi.spyOn(chrome.tabs, "get").mockResolvedValue({ id: 99, url: "https://x/index.html" } as chrome.tabs.Tab);
+    const r = await getPdfOutlineTool.handler({}, ctx);
+    expect(r.success).toBe(false);
+    expect(r.error).toMatch(/not_a_pdf/);
+  });
+
+  it("renders outline + metadata", async () => {
+    vi.spyOn(chrome.tabs, "get").mockResolvedValue({ id: 99, url: "https://x/a.pdf" } as chrome.tabs.Tab);
+    vi.spyOn(offscreen, "sendToOffscreen").mockResolvedValue({
+      title: "On Bubble Sort",
+      total_pages: 12,
+      outline: [
+        { level: 1, title: "Introduction", page: 1 },
+        { level: 2, title: "History", page: 2 },
+        { level: 1, title: "Method", page: 4 },
+      ],
+    } as unknown);
+    const r = await getPdfOutlineTool.handler({}, ctx);
+    expect(r.success).toBe(true);
+    expect(r.observation).toContain('title="On Bubble Sort"');
+    expect(r.observation).toContain('total_pages="12"');
+    expect(r.observation).toContain("Introduction");
+    expect(r.observation).toContain('page="4"');
+    // Protocol lock — confirm we only made the outline call.
+    const calls = vi.mocked(offscreen.sendToOffscreen).mock.calls;
+    expect(calls).toHaveLength(1);
+    expect(calls[0][0]).toMatchObject({ type: "pdf:outline" });
+  });
+
+  it("renders empty outline gracefully", async () => {
+    vi.spyOn(chrome.tabs, "get").mockResolvedValue({ id: 99, url: "https://x/a.pdf" } as chrome.tabs.Tab);
+    vi.spyOn(offscreen, "sendToOffscreen").mockResolvedValue({
+      title: null,
+      total_pages: 3,
+      outline: [],
+    } as unknown);
+    const r = await getPdfOutlineTool.handler({}, ctx);
+    expect(r.success).toBe(true);
+    expect(r.observation).toContain('title=""');
+    expect(r.observation).toContain('total_pages="3"');
+    expect(r.observation).toContain("no outline");
   });
 });

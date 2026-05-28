@@ -226,4 +226,56 @@ export const searchPdfTool: Tool = {
   },
 };
 
-export const PDF_TOOLS: Tool[] = [readPdfTool, searchPdfTool];
+export const getPdfOutlineTool: Tool = {
+  name: "get_pdf_outline",
+  description:
+    "Get the PDF outline (table of contents) and metadata for the active pinned tab. " +
+    "Call this first to understand the PDF structure before reading pages.",
+  parameters: {
+    type: "object",
+    properties: {},
+    required: [],
+    additionalProperties: false,
+  },
+  handler: async (_args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
+    const tab = await resolveActivePdfTab(ctx.tabId);
+    if (!tab.ok) return { success: false, error: tab.error };
+
+    let payload: {
+      title: string | null;
+      total_pages: number;
+      outline: Array<{ level: number; title: string; page: number }>;
+    };
+    try {
+      payload = (await sendToOffscreen({
+        type: "pdf:outline",
+        url: tab.url,
+      })) as typeof payload;
+    } catch (e) {
+      return { success: false, error: e instanceof Error ? e.message : String(e) };
+    }
+
+    const titleAttr = escapeWrapperAttribute(payload.title ?? "");
+    if (payload.outline.length === 0) {
+      return {
+        success: true,
+        observation:
+          `<get_pdf_outline title="${titleAttr}" total_pages="${payload.total_pages}">no outline</get_pdf_outline>`,
+      };
+    }
+
+    const lines = payload.outline
+      .map(
+        (e) =>
+          `  <untrusted_pdf_outline_entry level="${e.level}" page="${e.page}">${escapeUntrustedWrappers(e.title)}</untrusted_pdf_outline_entry>`,
+      )
+      .join("\n");
+    return {
+      success: true,
+      observation:
+        `<get_pdf_outline title="${titleAttr}" total_pages="${payload.total_pages}">\n${lines}\n</get_pdf_outline>`,
+    };
+  },
+};
+
+export const PDF_TOOLS: Tool[] = [readPdfTool, searchPdfTool, getPdfOutlineTool];

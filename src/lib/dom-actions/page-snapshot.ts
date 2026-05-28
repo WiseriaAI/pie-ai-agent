@@ -48,6 +48,7 @@ export function pageSnapshotInjected(): PageSnapshotResult {
     "untrusted_skill_content", "untrusted_compacted_steps", "untrusted_search_result",
     "untrusted_pdf_page",
     "untrusted_pdf_match",
+    "untrusted_pdf_outline_entry",
   ];
   const WRAPPER_TAGS = new Set(WRAPPER_TAGS_LIST);
 
