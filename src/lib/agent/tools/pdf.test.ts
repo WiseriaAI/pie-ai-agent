@@ -91,3 +91,46 @@ describe("read_pdf tool", () => {
     expect(r.error).toMatch(/encrypted_pdf/);
   });
 });
+
+import { searchPdfTool } from "./pdf";
+
+describe("search_pdf tool", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("errors not_a_pdf for non-pdf tab", async () => {
+    vi.spyOn(chrome.tabs, "get").mockResolvedValue({ id: 99, url: "https://x/index.html" } as chrome.tabs.Tab);
+    const r = await searchPdfTool.handler({ query: "hello" }, ctx);
+    expect(r.success).toBe(false);
+    expect(r.error).toMatch(/not_a_pdf/);
+  });
+
+  it("rejects empty query", async () => {
+    vi.spyOn(chrome.tabs, "get").mockResolvedValue({ id: 99, url: "https://x/a.pdf" } as chrome.tabs.Tab);
+    const r = await searchPdfTool.handler({ query: "  " }, ctx);
+    expect(r.success).toBe(false);
+    expect(r.error).toMatch(/empty_query/);
+  });
+
+  it("renders matches with snippet under search_pdf wrapper", async () => {
+    vi.spyOn(chrome.tabs, "get").mockResolvedValue({ id: 99, url: "https://x/a.pdf" } as chrome.tabs.Tab);
+    vi.spyOn(offscreen, "sendToOffscreen").mockResolvedValue({
+      matches: [
+        { page: 1, snippet: "…hello world…", match_offset: 5 },
+        { page: 2, snippet: "…big hello PDF…", match_offset: 10 },
+      ],
+      total_matches: 2,
+    } as unknown);
+    const r = await searchPdfTool.handler({ query: "hello" }, ctx);
+    expect(r.success).toBe(true);
+    expect(r.observation).toContain('query="hello"');
+    expect(r.observation).toContain('page="1"');
+    expect(r.observation).toContain("…hello world…");
+    expect(r.observation).toContain('total_matches="2"');
+    // Confirm protocol — exactly one offscreen call, of type pdf:search.
+    const calls = vi.mocked(offscreen.sendToOffscreen).mock.calls;
+    expect(calls).toHaveLength(1);
+    expect(calls[0][0]).toMatchObject({ type: "pdf:search", query: "hello" });
+  });
+});

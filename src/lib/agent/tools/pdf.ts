@@ -3,7 +3,7 @@ import type { ActionResult } from "@/lib/dom-actions/types";
 import { sendToOffscreen } from "@/background/offscreen-manager";
 import { isPdfTab } from "@/lib/pdf/detect";
 import { parsePageRange } from "@/lib/pdf/page-range";
-import { escapeUntrustedWrappers } from "../untrusted-wrappers";
+import { escapeUntrustedWrappers, escapeWrapperAttribute } from "../untrusted-wrappers";
 
 const DEFAULT_MAX_CHARS = 8000;
 const HARD_MAX_PAGES_PER_CALL = 50; // safety: huge spec like "1-9999" is sliced down
@@ -143,5 +143,79 @@ export const readPdfTool: Tool = {
   },
 };
 
-// Tasks 8/9 will extend this array.
-export const PDF_TOOLS: Tool[] = [readPdfTool];
+const DEFAULT_SEARCH_MAX = 10;
+
+interface SearchPdfArgs {
+  query?: string;
+  max_results?: number;
+}
+
+export const searchPdfTool: Tool = {
+  name: "search_pdf",
+  description:
+    "Full-text search the PDF in the active pinned tab. Returns matching pages with " +
+    "surrounding snippets. Use this to find specific terms in large PDFs before reading full pages.",
+  parameters: {
+    type: "object",
+    properties: {
+      query: {
+        type: "string",
+        description: "Search term (case-insensitive substring match).",
+      },
+      max_results: {
+        type: "integer",
+        description: "Default 10. Capped at 50.",
+        default: DEFAULT_SEARCH_MAX,
+        minimum: 1,
+        maximum: 50,
+      },
+    },
+    required: ["query"],
+    additionalProperties: false,
+  },
+  handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
+    const a = (args ?? {}) as SearchPdfArgs;
+    const query = typeof a.query === "string" ? a.query.trim() : "";
+    if (!query) {
+      return { success: false, error: "empty_query: provide a non-empty search term" };
+    }
+    const maxResults = Math.min(
+      50,
+      Math.max(1, Math.floor(a.max_results ?? DEFAULT_SEARCH_MAX)),
+    );
+
+    const tab = await resolveActivePdfTab(ctx.tabId);
+    if (!tab.ok) return { success: false, error: tab.error };
+
+    let payload: {
+      matches: Array<{ page: number; snippet: string; match_offset: number }>;
+      total_matches: number;
+    };
+    try {
+      payload = (await sendToOffscreen({
+        type: "pdf:search",
+        url: tab.url,
+        query,
+        maxResults,
+      })) as typeof payload;
+    } catch (e) {
+      return { success: false, error: e instanceof Error ? e.message : String(e) };
+    }
+
+    const rows = payload.matches
+      .map(
+        (m) =>
+          `  <untrusted_pdf_match page="${m.page}" offset="${m.match_offset}">${escapeUntrustedWrappers(m.snippet)}</untrusted_pdf_match>`,
+      )
+      .join("\n");
+
+    const observation =
+      `<search_pdf query="${escapeWrapperAttribute(query)}" total_matches="${payload.total_matches}">\n` +
+      `${rows}\n` +
+      `</search_pdf>`;
+
+    return { success: true, observation };
+  },
+};
+
+export const PDF_TOOLS: Tool[] = [readPdfTool, searchPdfTool];
