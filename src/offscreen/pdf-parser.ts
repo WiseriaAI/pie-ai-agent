@@ -203,11 +203,7 @@ async function realParseBytes(bytes: ArrayBuffer): Promise<ParsedPdf> {
         .join(" ");
     }
     const pageNum =
-      typeof page.page_number === "number"
-        ? page.page_number
-        : typeof page.pageNumber === "number"
-          ? page.pageNumber
-          : i + 1;
+      typeof page.pageNumber === "number" ? page.pageNumber : i + 1;
     return { page: pageNum, text };
   });
 
@@ -221,13 +217,16 @@ async function realParseBytes(bytes: ArrayBuffer): Promise<ParsedPdf> {
   const rawOutline: unknown[] = Array.isArray(raw?.outline) ? raw.outline : [];
   const outline: OutlineEntry[] = rawOutline
     .filter(
-      (o): o is Record<string, unknown> =>
-        o !== null && typeof o === "object",
+      (o): o is { title: string; page: number; level?: number } =>
+        o !== null &&
+        typeof o === "object" &&
+        typeof (o as Record<string, unknown>).title === "string" &&
+        typeof (o as Record<string, unknown>).page === "number",
     )
-    .map((o, i) => ({
+    .map((o) => ({
       level: typeof o.level === "number" ? o.level : 1,
-      title: typeof o.title === "string" ? o.title : `Section ${i + 1}`,
-      page: typeof o.page === "number" ? o.page : 1,
+      title: o.title,
+      page: o.page,
     }));
 
   return {
