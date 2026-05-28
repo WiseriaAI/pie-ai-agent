@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isPdfTab, tabUrlForCacheKey } from "./detect";
+import { isFilePdfUrl, isPdfTab, tabUrlForCacheKey } from "./detect";
 
 describe("isPdfTab", () => {
   function tab(url: string): Pick<chrome.tabs.Tab, "url"> {
@@ -42,6 +42,33 @@ describe("isPdfTab", () => {
 
   it("rejects .pdf appearing only in a hash fragment", () => {
     expect(isPdfTab(tab("https://example.com/viewer#file.pdf"))).toBe(false);
+  });
+});
+
+describe("isFilePdfUrl", () => {
+  it("matches file:// + .pdf", () => {
+    expect(isFilePdfUrl("file:///Users/me/paper.pdf")).toBe(true);
+    expect(isFilePdfUrl("file:///C:/docs/report.PDF")).toBe(true);
+    expect(isFilePdfUrl("file:///x.pdf?v=1")).toBe(true);
+    expect(isFilePdfUrl("file:///x.pdf#page=3")).toBe(true);
+  });
+
+  it("rejects file:// non-pdf", () => {
+    expect(isFilePdfUrl("file:///Users/me/page.html")).toBe(false);
+    expect(isFilePdfUrl("file:///Users/me/notes.txt")).toBe(false);
+    expect(isFilePdfUrl("file:///Users/me/")).toBe(false);
+  });
+
+  it("rejects non-file scheme even when path ends in .pdf", () => {
+    expect(isFilePdfUrl("https://example.com/a.pdf")).toBe(false);
+    expect(isFilePdfUrl("chrome://settings/a.pdf")).toBe(false);
+    expect(isFilePdfUrl("data:application/pdf;base64,JVBE")).toBe(false);
+  });
+
+  it("handles undefined / null / empty", () => {
+    expect(isFilePdfUrl(undefined)).toBe(false);
+    expect(isFilePdfUrl(null)).toBe(false);
+    expect(isFilePdfUrl("")).toBe(false);
   });
 });
 

@@ -18,6 +18,19 @@ export function isPdfTab(tab: Pick<chrome.tabs.Tab, "url">): boolean {
 }
 
 /**
+ * `file://*.pdf` exception used by the agent pin-gate (loop.ts isRestrictedUrl
+ * + safeParseOrigin) and the panel pin-capture (useSession). Chrome's built-in
+ * PDF viewer is sealed and cannot navigate, so a file:// PDF tab is safe to
+ * pin via its full URL as identity. Other file:// URLs remain restricted
+ * because `new URL(...).origin` collapses to "null" and would defeat
+ * per-iteration origin isolation.
+ */
+export function isFilePdfUrl(url: string | undefined | null): boolean {
+  if (!url || !url.startsWith("file://")) return false;
+  return isPdfTab({ url });
+}
+
+/**
  * Cache key derivation. MVP just returns the URL — SW recycle / sidepanel
  * close already flushes the offscreen-resident cache (in-memory map). If
  * a user edits a PDF in place and re-asks the agent we'd serve stale text;
