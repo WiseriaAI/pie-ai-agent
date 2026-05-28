@@ -483,6 +483,13 @@ export interface RecordingAbortedBroadcast {
   reason: "sw-restart" | "session-switched" | "panel-disconnect" | "tab-closed" | "csp-blocked" | "user-discard";
 }
 
+// --- PDF permission ---
+
+export interface PdfNeedsFileAccessMessage {
+  type: "pdf:needs-file-access";
+  tabId: number;
+}
+
 // --- Discriminated Unions ---
 
 export type PortMessageToWorker =
@@ -512,4 +519,5 @@ export type PortMessageToPanel =
   | RecordingAbortedBroadcast          // NEW
   | QuoteAddedMessage                  // issue #38
   | ChatInstructionStateMessage        // Issue #34
-  | ChatInstructionRejectedMessage;    // Issue #34
+  | ChatInstructionRejectedMessage    // Issue #34
+  | PdfNeedsFileAccessMessage;        // PDF local file access card

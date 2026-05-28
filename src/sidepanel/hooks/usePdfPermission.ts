@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { PortMessageToPanel } from "@/types/messages";
 
 interface State {
   showCard: boolean;
@@ -17,10 +18,8 @@ export function usePdfPermission(port: chrome.runtime.Port | null): State {
 
   useEffect(() => {
     if (!port) return;
-    const listener = (msg: unknown) => {
-      if (typeof msg !== "object" || msg === null) return;
-      const m = msg as { type?: string };
-      if (m.type === "pdf:needs-file-access") setShowCard(true);
+    const listener = (msg: PortMessageToPanel) => {
+      if (msg.type === "pdf:needs-file-access") setShowCard(true);
     };
     port.onMessage.addListener(listener);
     return () => port.onMessage.removeListener(listener);
