@@ -22,7 +22,9 @@ export function parsePageRange(
 
   for (const part of parts) {
     if (part.includes("-")) {
-      const [aStr, bStr] = part.split("-").map((s) => s.trim());
+      const tokens = part.split("-").map((s) => s.trim());
+      if (tokens.length !== 2 || tokens[0] === "" || tokens[1] === "") continue;
+      const [aStr, bStr] = tokens;
       const a = Number(aStr);
       const b = Number(bStr);
       if (!Number.isInteger(a) || !Number.isInteger(b)) continue;

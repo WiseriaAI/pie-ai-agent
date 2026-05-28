@@ -43,4 +43,19 @@ describe("parsePageRange", () => {
   it("returns empty for total=0", () => {
     expect(parsePageRange("1-3", 0)).toEqual([]);
   });
+
+  it("ignores negative page numbers", () => {
+    expect(parsePageRange("-1", 10)).toEqual([]);
+    expect(parsePageRange("-5", 10)).toEqual([]);
+  });
+
+  it("ignores malformed range with too many dashes", () => {
+    expect(parsePageRange("1-2-3", 10)).toEqual([]);
+  });
+
+  it("ignores bare dash and empty tokens", () => {
+    expect(parsePageRange("-", 10)).toEqual([]);
+    expect(parsePageRange("1-", 10)).toEqual([]);
+    expect(parsePageRange("-3", 10)).toEqual([]);
+  });
 });
