@@ -3,6 +3,7 @@ import type { ActionResult } from "../../dom-actions/types";
 import { pageSnapshotInjected, type PageSnapshotResult } from "../../dom-actions/page-snapshot";
 import { escapeWrapperAttribute, escapeUntrustedWrappers } from "../untrusted-wrappers";
 import { isRestrictedSchemeForGrouping } from "./tabs";
+import { isPdfTab } from "@/lib/pdf/detect";
 
 const TOTAL_BUDGET_BYTES = 50_000;
 
@@ -41,6 +42,13 @@ export const readPageTool: Tool = {
       tab = await chrome.tabs.get(a.tabId);
     } catch {
       return { success: false, error: "Tab not found" };
+    }
+    if (isPdfTab(tab)) {
+      return {
+        success: false,
+        error:
+          "pdf_tab: This tab is a PDF. Use read_pdf / search_pdf / get_pdf_outline instead.",
+      };
     }
     if (!tab.url || isRestrictedSchemeForGrouping(tab.url)) {
       return { success: false, error: "restrictedUrl: cannot read restricted-scheme tabs" };
