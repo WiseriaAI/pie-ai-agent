@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest";
 import { isPdfTab, tabUrlForCacheKey } from "./detect";
 
 describe("isPdfTab", () => {
-  function tab(url: string): chrome.tabs.Tab {
-    return { url } as chrome.tabs.Tab;
+  function tab(url: string): Pick<chrome.tabs.Tab, "url"> {
+    return { url };
   }
 
   it("matches lowercase .pdf", () => {
@@ -32,8 +32,16 @@ describe("isPdfTab", () => {
   });
 
   it("handles missing url gracefully", () => {
-    expect(isPdfTab({} as chrome.tabs.Tab)).toBe(false);
+    expect(isPdfTab({})).toBe(false);
     expect(isPdfTab(tab(""))).toBe(false);
+  });
+
+  it("rejects .pdfx extension", () => {
+    expect(isPdfTab(tab("https://example.com/report.pdfx"))).toBe(false);
+  });
+
+  it("rejects .pdf appearing only in a hash fragment", () => {
+    expect(isPdfTab(tab("https://example.com/viewer#file.pdf"))).toBe(false);
   });
 });
 
@@ -41,6 +49,12 @@ describe("tabUrlForCacheKey", () => {
   it("returns the url verbatim (MVP: no normalization)", () => {
     expect(tabUrlForCacheKey("https://example.com/a.pdf?x=1")).toBe(
       "https://example.com/a.pdf?x=1",
+    );
+  });
+
+  it("does not strip hash fragments (MVP: verbatim)", () => {
+    expect(tabUrlForCacheKey("https://example.com/a.pdf#page=5")).toBe(
+      "https://example.com/a.pdf#page=5",
     );
   });
 });
