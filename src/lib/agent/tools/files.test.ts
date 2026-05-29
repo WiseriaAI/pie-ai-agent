@@ -119,4 +119,60 @@ describe("read_local_file tool", () => {
     expect(r.success).toBe(false);
     expect(r.error).toContain("image_via_picker");
   });
+
+  it("rejects non-file:// URIs without fetching (C1 SSRF guard)", async () => {
+    const r = await readLocalFileTool.handler({ uri: "http://169.254.169.254/" }, { tabId: 1 } as never);
+    expect(r.success).toBe(false);
+    expect(r.error).toContain("invalid_uri");
+    expect(globalThis.fetch as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
+  });
+
+  it("returns fetch_failed with status for a non-ok response", async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false, status: 403, headers: { get: () => null },
+    });
+    const r = await readLocalFileTool.handler({ uri: "file:///tmp/a.txt" }, { tabId: 1 } as never);
+    expect(r.success).toBe(false);
+    expect(r.error).toContain("fetch_failed: status 403");
+  });
+
+  it("rejects text larger than 5MB via Content-Length pre-check", async () => {
+    const headers = { get: (h: string) => (h.toLowerCase() === "content-length" ? String(6 * 1024 * 1024) : "text/plain") };
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true, headers, text: async () => "x",
+    });
+    const r = await readLocalFileTool.handler({ uri: "file:///tmp/big.txt" }, { tabId: 1 } as never);
+    expect(r.success).toBe(false);
+    expect(r.error).toContain("too_large");
+  });
+
+  it("rejects text larger than 5MB via post-read length guard", async () => {
+    const big = "x".repeat(5 * 1024 * 1024 + 1);
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true, headers: { get: () => "text/plain" }, text: async () => big,
+    });
+    const r = await readLocalFileTool.handler({ uri: "file:///tmp/big.txt" }, { tabId: 1 } as never);
+    expect(r.success).toBe(false);
+    expect(r.error).toContain("too_large");
+  });
+
+  it("truncates text over READ_MAX_CHARS but under the 5MB cap", async () => {
+    const text = "y".repeat(250_000);
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true, headers: { get: () => "text/plain" }, text: async () => text,
+    });
+    const r = await readLocalFileTool.handler({ uri: "file:///tmp/long.txt" }, { tabId: 1 } as never);
+    expect(r.success).toBe(true);
+    expect(r.observation).toContain("[truncated]");
+    expect(r.observation).toContain('truncated="true"');
+  });
+
+  it("returns unsupported_type for an unknown binary", async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true, headers: { get: () => "application/octet-stream" }, arrayBuffer: async () => new ArrayBuffer(8),
+    });
+    const r = await readLocalFileTool.handler({ uri: "file:///tmp/a.bin" }, { tabId: 1 } as never);
+    expect(r.success).toBe(false);
+    expect(r.error).toContain("unsupported_type");
+  });
 });

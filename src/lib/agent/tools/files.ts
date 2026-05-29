@@ -81,7 +81,9 @@ function normalizeFileUri(uri: string): string {
 function basename(uri: string): string {
   const noQuery = uri.split(/[?#]/)[0];
   const parts = noQuery.split("/").filter(Boolean);
-  return parts[parts.length - 1] ?? "file";
+  let raw = parts[parts.length - 1] ?? "file";
+  if (raw.endsWith(":")) raw = "file"; // e.g. "file:" from file:///
+  try { return decodeURIComponent(raw); } catch { return raw; }
 }
 
 interface ReadLocalArgs { uri?: string }
@@ -102,24 +104,33 @@ export const readLocalFileTool: Tool = {
     const a = (args ?? {}) as ReadLocalArgs;
     if (typeof a.uri !== "string" || !a.uri.trim()) return { success: false, error: "uri is required" };
     const uri = normalizeFileUri(a.uri);
-    if (uri.startsWith("file://")) {
-      const allowed = await chrome.extension.isAllowedFileSchemeAccess();
-      if (!allowed) return { success: false, error: "file_access_denied: enable 'Allow access to file URLs' in chrome://extensions to read local files" };
+    if (!uri.startsWith("file://")) {
+      return { success: false, error: `invalid_uri: read_local_file only accepts file:// URIs or absolute paths; got "${uri.slice(0, 80)}"` };
     }
+    const allowed = await chrome.extension.isAllowedFileSchemeAccess();
+    if (!allowed) return { success: false, error: "file_access_denied: enable 'Allow access to file URLs' in chrome://extensions to read local files" };
     let res: Response;
     try { res = await fetch(uri); }
     catch (e) { return { success: false, error: `fetch_failed: ${e instanceof Error ? e.message : String(e)}` }; }
     if (!res.ok) return { success: false, error: `fetch_failed: status ${res.status}` };
+
+    const contentLength = res.headers.get("content-length");
+    if (contentLength && Number(contentLength) > MAX_FILE_BYTES) {
+      return { success: false, error: `too_large: exceeds ${MAX_FILE_BYTES / (1024 * 1024)}MB cap` };
+    }
 
     const name = basename(uri);
     const mime = (res.headers.get("content-type") ?? "").split(";")[0].trim();
     const kind = classifyFile(name, mime);
 
     if (kind === "image") return { success: false, error: "image_via_picker: cannot return images through read_local_file; ask the user to attach the image via the + menu." };
-    if (kind === "unsupported") return { success: false, error: `unsupported_type: ${name} (${mime || "unknown"})` };
+    if (kind === "unsupported") return { success: false, error: `unsupported_type: ${escapeUntrustedWrappers(name)} (${escapeUntrustedWrappers(mime || "unknown")})` };
 
     if (kind === "text") {
       const text = await res.text();
+      if (text.length > MAX_FILE_BYTES) {
+        return { success: false, error: `too_large: exceeds ${MAX_FILE_BYTES / (1024 * 1024)}MB cap` };
+      }
       const truncated = text.length > READ_MAX_CHARS;
       const body = truncated ? `${text.slice(0, READ_MAX_CHARS)}\n…[truncated]` : text;
       return {
