@@ -14,7 +14,8 @@ const OFFSCREEN_HTML = "src/offscreen/pdf-parser.html";
 export type OffscreenRequest =
   | { type: "pdf:outline"; url: string }
   | { type: "pdf:read_page"; url: string; pages: number[] }
-  | { type: "pdf:search"; url: string; query: string; maxResults: number };
+  | { type: "pdf:search"; url: string; query: string; maxResults: number }
+  | { type: "pdf:parse_bytes"; bytes: ArrayBuffer; cacheKey: string };
 
 export interface OffscreenSuccess<T = unknown> {
   ok: true;
