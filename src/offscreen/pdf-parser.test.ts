@@ -137,4 +137,26 @@ describe("offscreen pdf-parser dispatch", () => {
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error).toMatch(/too_large/);
   });
+
+  it("pdf:parse_bytes parses raw bytes and returns all pages", async () => {
+    const state = { cache: new Map() };
+    const deps = {
+      parseBytes: vi.fn(async () => ({
+        title: "t", totalPages: 2, outline: [],
+        pages: [{ page: 1, text: "p1" }, { page: 2, text: "p2" }],
+      })),
+      fetchImpl: vi.fn(), // must NOT be called for bytes path
+    };
+    const bytes = new ArrayBuffer(16);
+    const r = await handleMessage(
+      { type: "pdf:parse_bytes", bytes, cacheKey: "k1" } as never,
+      state as never, deps as never,
+    );
+    expect(r.ok).toBe(true);
+    expect(deps.fetchImpl).not.toHaveBeenCalled();
+    expect((r as { result: { total_pages: number } }).result.total_pages).toBe(2);
+    // second call with same cacheKey hits cache (parseBytes called once)
+    await handleMessage({ type: "pdf:parse_bytes", bytes, cacheKey: "k1" } as never, state as never, deps as never);
+    expect(deps.parseBytes).toHaveBeenCalledTimes(1);
+  });
 });

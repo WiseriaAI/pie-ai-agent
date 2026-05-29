@@ -35,7 +35,8 @@ export interface ParserDeps {
 export type OffscreenMessage =
   | { type: "pdf:outline"; url: string }
   | { type: "pdf:read_page"; url: string; pages: number[] }
-  | { type: "pdf:search"; url: string; query: string; maxResults: number };
+  | { type: "pdf:search"; url: string; query: string; maxResults: number }
+  | { type: "pdf:parse_bytes"; bytes: ArrayBuffer; cacheKey: string };
 
 export type HandleResult =
   | { ok: true; result: unknown }
@@ -87,6 +88,34 @@ async function getParsed(
   return parsed;
 }
 
+async function getParsedFromBytes(
+  bytes: ArrayBuffer,
+  cacheKey: string,
+  state: ParserState,
+  deps: ParserDeps,
+): Promise<ParsedPdf> {
+  const cached = state.cache.get(cacheKey);
+  if (cached) return cached;
+  if (bytes.byteLength > MAX_BYTES) {
+    throw new Error(
+      `too_large: ${Math.round(bytes.byteLength / (1024 * 1024))}MB exceeds ${MAX_BYTES / (1024 * 1024)}MB cap`,
+    );
+  }
+  let parsed: ParsedPdf;
+  try {
+    parsed = await deps.parseBytes(bytes);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "parse error";
+    if (/password|encrypt/i.test(msg)) throw new Error(`encrypted_pdf: ${msg}`);
+    throw new Error(`parse_failed: ${msg}`);
+  }
+  if (parsed.pages.every((p) => p.text.trim() === "")) {
+    throw new Error(SCAN_SENTINEL);
+  }
+  state.cache.set(cacheKey, parsed);
+  return parsed;
+}
+
 function buildSnippet(text: string, offset: number, query: string): string {
   const start = Math.max(0, offset - SNIPPET_CONTEXT);
   const end = Math.min(text.length, offset + query.length + SNIPPET_CONTEXT);
@@ -101,6 +130,11 @@ export async function handleMessage(
   deps: ParserDeps,
 ): Promise<HandleResult> {
   try {
+    if (msg.type === "pdf:parse_bytes") {
+      const parsed = await getParsedFromBytes(msg.bytes, msg.cacheKey, state, deps);
+      return { ok: true, result: { pages: parsed.pages, total_pages: parsed.totalPages } };
+    }
+
     const parsed = await getParsed(msg.url, state, deps);
 
     switch (msg.type) {
