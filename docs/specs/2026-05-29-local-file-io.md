@@ -18,7 +18,7 @@
 - 常驻"工作目录"(agent 在某个本地目录里反复读写)。
 - 批处理(agent 自主遍历目录里多个文件)。
 - Office 文档(docx/xlsx)解析。
-- 任意路径写入(写出统一落到下载目录)。
+- 程序化写入任意路径(自动落到下载目录;用户可经 `saveAs` 手动选位置,但 agent 不能指定绝对路径)。
 - Native Messaging。
 
 ### 已确认的产品决策
@@ -29,7 +29,8 @@
 | 读取触发 | 用户主动 **和** agent 主动(human-in-loop)都要 |
 | 读取选定方式 | `file://` URI(tab/路径) **和** Finder 弹窗(字节)都支持 |
 | 读取类型 | 纯文本/代码、PDF、图片(不含 Office) |
-| 写出落点 | `chrome.downloads` → `Downloads/pie/`(自动落盘,不支持任意目录) |
+| 写出落点 | `chrome.downloads` → 默认 `Downloads/pie/`;可选 `saveAs` 弹"另存为"让用户自选位置 |
+| 大小上限 | 单文件读取 5MB,超限拒绝 |
 | UI 入口 | 全部并入 composer 的 `+`(`ToolsMenu`);把现有"附加图片"项替换为统一的"附加文件",旧图片能力作为子集保留 |
 
 ---
@@ -115,10 +116,12 @@
 ### 4.3 `save_to_downloads`(写出,agent 自主)
 
 - **class**: write → 触发 R7 跨 session 锁。
-- **入参**: `{ filename: string; content: string; mime?: string }`。`filename` 强制相对、落在 `pie/` 子目录下(剥离 `../` 等越界)。
+- **入参**: `{ filename: string; content: string; mime?: string; saveAs?: boolean }`。`filename` 强制相对、落在 `pie/` 子目录下(剥离 `../` 等越界)。
 - **流程(SW)**:
   1. 由 `content`(+ `mime`,默认 `text/plain`)构造 `data:` URL(`URL.createObjectURL` 在 SW 不可用)。
-  2. `chrome.downloads.download({ url, filename: 'pie/' + name, conflictAction: 'uniquify', saveAs: false })`。
+  2. `chrome.downloads.download({ url, filename: 'pie/' + name, conflictAction: 'uniquify', saveAs })`。
+     - `saveAs` 默认 `false` → 静默落到 `Downloads/pie/`。
+     - `saveAs: true` → 弹原生"另存为"对话框,用户可自选位置(此时 `pie/` 仅作为默认建议名)。
   3. `uniquify` 天然防覆盖(同名自动 `(1)`);返回最终落点/文件名给 agent。
 - **manifest**: 新增 `downloads` permission。
 
@@ -164,7 +167,7 @@ export interface FileAttachment {
 
 - **Prompt injection 防御**:所有读入文本是 untrusted → 一律包 `untrusted_local_file`,**绝不**进 system role。新增 wrapper 必须在双表注册:`UNTRUSTED_WRAPPER_TAGS`(`untrusted-wrappers.ts`)与 `WRAPPER_TAGS_LIST`(`page-snapshot.ts`)(dual-list invariant)。图片走 vision block,不需文本 wrapper。
 - **read/write 分类**:`read_local_file` / `request_local_file` = read;`save_to_downloads` = write。三者在 `tool-names.ts` 声明 class(build-time invariant,漏声明会 throw)。
-- **截断策略**:文本/PDF 文本按字符预算截断,末尾标注 `…[truncated N/total chars]`;图片复用现有 resize。预算具体值在 plan 阶段定(初值建议 ~50KB 字符/文件,可调)。
+- **大小上限**:单文件 **5MB**。超过 → 拒绝并返回可自纠错误(提示用户拆分/另选)。5MB 以内:图片 resize 后进 vision;文本/PDF 提取文本全量注入(包 untrusted wrapper),末尾若被裁再标注 `…[truncated]`。注:5MB 纯文本 token 量很大,可能超出模型上下文 → 由现有 sliding-window 处理,必要时 agent 用 `pages`/分段自行读取。
 - **权限**:
   - `file://` 读取靠用户"允许访问文件 URL"开关(不改 manifest),复用 `needs-file-access` 广播 + `PdfPermissionCard` 模式。
   - 写出加 `downloads` permission(manifest)。
@@ -190,9 +193,9 @@ export interface FileAttachment {
 
 ## 8. 测试要点
 
-- `save_to_downloads`:`data:` URL 构造、`pie/` 前缀强制、`../` 越界剥离、`uniquify` 防覆盖。
+- `save_to_downloads`:`data:` URL 构造、`pie/` 前缀强制、`../` 越界剥离、`uniquify` 防覆盖、`saveAs` 透传。
 - `read_local_file`:MIME 分流、file:// 权限缺失的错误路径、PDF 走现有 offscreen。
-- `processPickedFile`:三类分流、图片无 vision 丢弃、截断标注。
+- `processPickedFile`:三类分流、图片无 vision 丢弃、5MB 上限拒绝、截断标注。
 - offscreen `pdf:parse_bytes`:字节解析与缓存命中。
 - 跨层:`untrusted_local_file` 双表注册 invariant;read/write 分类 invariant;write-class 触发 R7 锁。
 - UI:`+` 菜单"附加文件"全类型、FileChip 渲染/移除、paste/drop 非图片文件。
