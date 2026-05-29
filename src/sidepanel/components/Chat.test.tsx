@@ -1,11 +1,11 @@
 /**
- * Chat — Phase 5 image input UI tests
+ * Chat — Phase 5 image input UI tests + Task 4.4 unified file attach tests
  *
  * Tests cover:
- * - Attach button renders when provider supportsVision=true
- * - Attach button is disabled when provider supportsVision=false
+ * - Attach file button renders (always enabled — text/PDF work without vision)
+ * - Attach button is NOT disabled when provider supportsVision=false
  * - Thumbnail row hidden when no attachments
- * - Thumbnail row visible after attachments are added
+ * - FileChip row renders after text file is selected
  * - Remove image button calls removeAttachment
  *
  * Harness: minimal UseSession mock + vi.mock for storage so checkConfig()
@@ -20,18 +20,50 @@ import Chat from "./Chat";
 import type { UseSession } from "@/sidepanel/hooks/useSession";
 import type { DisplayMessage } from "@/types";
 
-// ── Mock @/lib/images/resize-panel so addFiles resolves synchronously ─────────
-vi.mock("@/lib/images/resize-panel", () => ({
-  resizePanel: vi.fn(async (_file: File) => ({
-    ok: true as const,
-    value: {
-      data: "AAAA",
-      mediaType: "image/jpeg" as const,
-      width: 100,
-      height: 100,
-      byteLength: 3,
-    },
-  })),
+// ── Mock @/lib/files/process-picked-file so tests control routing ─────────────
+vi.mock("@/lib/files/process-picked-file", () => ({
+  processPickedFile: vi.fn(async (file: File, opts: { supportsVision: boolean }) => {
+    if (file.type.startsWith("image/")) {
+      if (!opts.supportsVision) {
+        return { ok: false as const, reason: "no_vision" as const, message: "current model has no vision" };
+      }
+      return {
+        ok: true as const,
+        kind: "image" as const,
+        attachment: {
+          kind: "image" as const,
+          id: `img_${Math.random()}`,
+          data: "AAAA",
+          mediaType: "image/jpeg" as const,
+          width: 100,
+          height: 100,
+          byteLength: 3,
+        },
+      };
+    }
+    // text/plain, application/pdf, etc.
+    return {
+      ok: true as const,
+      kind: "file" as const,
+      attachment: {
+        kind: "file" as const,
+        id: `file_${Math.random()}`,
+        name: file.name,
+        mime: file.type || "text/plain",
+        text: "hello world",
+        truncated: false,
+        totalChars: 11,
+        source: "picker" as const,
+      },
+    };
+  }),
+}));
+
+// ── Mock @/lib/files/inject so wrapper is predictable ──────────────────────────
+vi.mock("@/lib/files/inject", () => ({
+  fileAttachmentToWrapper: vi.fn((att: { name: string; mime: string; truncated: boolean; text: string }) =>
+    `<untrusted_local_file name="${att.name}" mime="${att.mime}" truncated="${att.truncated}">\n${att.text}\n</untrusted_local_file>`,
+  ),
 }));
 
 // ── Mock @/lib/instances so checkConfig never touches real crypto ─────────────
@@ -145,8 +177,8 @@ afterEach(() => {
 
 // ── tests ────────────────────────────────────────────────────────────────────
 
-describe("Chat — image upload UI (Phase 5)", () => {
-  it("renders attach button when provider supports vision (anthropic)", async () => {
+describe("Chat — file attach UI (Phase 5 / Task 4.4)", () => {
+  it("renders attach file button when provider supports vision (anthropic)", async () => {
     seedProvider("anthropic");
     render(
       <Chat
@@ -162,12 +194,14 @@ describe("Chat — image upload UI (Phase 5)", () => {
     await act(async () => {
       fireEvent.click(toolsBtn);
     });
-    const btn = await screen.findByRole("button", { name: /attach image/i });
+    const btn = await screen.findByRole("button", { name: /attach file/i });
     expect(btn).toBeTruthy();
-    expect(btn.hasAttribute("disabled") && btn.getAttribute("disabled") !== null).toBe(false);
+    // Attach file is always enabled — not disabled even with vision provider
+    expect((btn as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it("attach button disabled when provider does not support vision (minimax)", async () => {
+  it("attach file button is NOT disabled when provider does not support vision (minimax)", async () => {
+    // Task 4.4: text/PDF attach is always enabled; vision gate is inside addPickedFiles via toast
     seedProvider("minimax");
     render(
       <Chat
@@ -181,9 +215,10 @@ describe("Chat — image upload UI (Phase 5)", () => {
     await act(async () => {
       fireEvent.click(toolsBtn);
     });
-    const btn = await screen.findByRole("button", { name: /attach image/i });
+    const btn = await screen.findByRole("button", { name: /attach file/i });
     expect(btn).toBeTruthy();
-    expect((btn as HTMLButtonElement).disabled).toBe(true);
+    // NOT disabled — text/PDF work without vision
+    expect((btn as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("thumbnail row is not rendered when no attachments exist", async () => {
@@ -217,7 +252,7 @@ describe("Chat — image upload UI (Phase 5)", () => {
     await act(async () => {
       fireEvent.click(toolsBtn);
     });
-    const btn = await screen.findByRole("button", { name: /attach image/i });
+    const btn = await screen.findByRole("button", { name: /attach file/i });
 
     // Spy on the hidden file input's click method
     const fileInputs = document.querySelectorAll('input[type="file"]');
@@ -229,7 +264,7 @@ describe("Chat — image upload UI (Phase 5)", () => {
     expect(clickSpy).toHaveBeenCalled();
   });
 
-  it("attach button shows correct aria-label", async () => {
+  it("attach button shows correct aria-label (Attach file)", async () => {
     seedProvider("anthropic");
     render(
       <Chat
@@ -243,11 +278,11 @@ describe("Chat — image upload UI (Phase 5)", () => {
     await act(async () => {
       fireEvent.click(toolsBtn);
     });
-    const btn = await screen.findByRole("button", { name: /attach image/i });
-    expect(btn.getAttribute("aria-label")).toBe("attach image");
+    const btn = await screen.findByRole("button", { name: /attach file/i });
+    expect(btn.getAttribute("aria-label")).toBe("Attach file");
   });
 
-  it("hidden file input accepts image MIME types", async () => {
+  it("hidden file input accepts broad MIME types including text and pdf", async () => {
     seedProvider("anthropic");
     render(
       <Chat
@@ -261,11 +296,15 @@ describe("Chat — image upload UI (Phase 5)", () => {
 
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
     expect(fileInput).toBeTruthy();
-    expect(fileInput.accept).toBe("image/jpeg,image/png,image/webp,image/gif");
+    // accept now includes image/*, application/pdf, text/*, and code extensions
+    expect(fileInput.accept).toContain("image/*");
+    expect(fileInput.accept).toContain("application/pdf");
+    expect(fileInput.accept).toContain("text/*");
     expect(fileInput.multiple).toBe(true);
   });
 
-  it("local toast shown when attach button is clicked with vision-less provider", async () => {
+  it("attach file button is always enabled for non-vision providers (no disabled guard)", async () => {
+    // Task 4.4: minimax has no vision, but attach file button must still be clickable
     seedProvider("minimax");
     render(
       <Chat
@@ -275,22 +314,17 @@ describe("Chat — image upload UI (Phase 5)", () => {
       />,
     );
 
-    // Wait for initial render, then open the tools menu to expose the
-    // attach item (lives inside the + popover, not directly in the row).
     const toolsBtn = await screen.findByRole("button", { name: /more tools/i });
     await act(async () => {
       fireEvent.click(toolsBtn);
     });
 
-    // When supportsVision=false, addFiles (if called directly) would show toast.
-    // We can test by firing the file input's onChange with a mock file.
-    // But since the button is disabled we can't click it normally.
-    // Instead, verify the button is disabled as the supportsVision guard.
-    const btn = screen.getByRole("button", { name: /attach image/i });
-    expect((btn as HTMLButtonElement).disabled).toBe(true);
+    const btn = screen.getByRole("button", { name: /attach file/i });
+    // Task 4.4: always enabled
+    expect((btn as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it("attach button not shown during streaming", async () => {
+  it("attach button not shown during streaming (menu closed by default)", async () => {
     seedProvider("anthropic");
     render(
       <Chat
@@ -302,8 +336,8 @@ describe("Chat — image upload UI (Phase 5)", () => {
 
     // During streaming, STOP button appears instead of Send/attach
     await screen.findByTitle(/Cancel running task/i);
-    // Attach button should not be visible (hidden when streaming)
-    expect(screen.queryByRole("button", { name: /attach image/i })).toBeNull();
+    // Attach file button is inside the closed tools menu — not visible without clicking
+    expect(screen.queryByRole("button", { name: /attach file/i })).toBeNull();
   });
 
   it("local attachment toast renders with warning styling", async () => {
@@ -336,11 +370,9 @@ describe("Chat — image upload UI (Phase 5)", () => {
 });
 
 describe("Chat — attachment count cap", () => {
-  it("MAX_IMAGES_PER_TURN is honoured — attach button disabled at cap", async () => {
-    // This is a structural / TypeScript-level check verifiable by inspecting
-    // the rendered button's disabled state when attachmentCount >= MAX_IMAGES_PER_TURN.
-    // Since we can't easily inject 3 attachments without mocking resizePanel,
-    // we just verify the button is enabled when count = 0 (below cap).
+  it("Attach file button is always enabled (cap only blocks images via toast)", async () => {
+    // Task 4.4: the attach file button is always enabled; image-specific cap
+    // is enforced inside addPickedFiles via showLocalToast, not by disabling the button.
     seedProvider("anthropic");
     render(
       <Chat
@@ -354,8 +386,8 @@ describe("Chat — attachment count cap", () => {
     await act(async () => {
       fireEvent.click(toolsBtn);
     });
-    const btn = await screen.findByRole("button", { name: /attach image/i });
-    // 0 attachments — not disabled
+    const btn = await screen.findByRole("button", { name: /attach file/i });
+    // Always enabled
     expect((btn as HTMLButtonElement).disabled).toBe(false);
   });
 });
@@ -577,8 +609,9 @@ describe("Chat — behavioral image flows (Phase 5)", () => {
     });
 
     // Toast must surface — user reported "no response" was the prior bug.
+    // processPickedFile mock returns "current model has no vision" for image+no-vision.
     expect(
-      await screen.findByText(/does not support image input/i),
+      await screen.findByText(/has no vision|does not support image input/i),
     ).toBeTruthy();
     // No thumbnail attached
     expect(screen.queryByAltText(/uploaded image preview/i)).toBeNull();
@@ -649,6 +682,130 @@ describe("Chat — send clears attachments", () => {
     expect(sendMock).toHaveBeenCalledWith(
       expect.objectContaining({ content: "Hello" }),
     );
+  });
+});
+
+// ── Task 4.4 — FileChip + file attachment send path ──────────────────────────
+
+describe("Chat — Task 4.4 file attachments", () => {
+  it("selecting a .md file via file input renders a FileChip with the filename", async () => {
+    seedProvider("anthropic");
+    render(
+      <Chat
+        providerLabel="Anthropic"
+        onOpenSettings={vi.fn()}
+        session={makeSession()}
+      />,
+    );
+
+    await screen.findByRole("button", { name: /more tools/i });
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const mdFile = new File(["# Hello\nworld"], "readme.md", { type: "text/markdown" });
+
+    await act(async () => {
+      fireEvent.change(fileInput, { target: { files: [mdFile] } });
+    });
+
+    // FileChip should appear with the filename
+    const chip = await screen.findByText("readme.md");
+    expect(chip).toBeTruthy();
+  });
+
+  it("FileChip remove button removes the chip", async () => {
+    seedProvider("anthropic");
+    render(
+      <Chat
+        providerLabel="Anthropic"
+        onOpenSettings={vi.fn()}
+        session={makeSession()}
+      />,
+    );
+
+    await screen.findByRole("button", { name: /more tools/i });
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const mdFile = new File(["# Hello"], "notes.md", { type: "text/markdown" });
+
+    await act(async () => {
+      fireEvent.change(fileInput, { target: { files: [mdFile] } });
+    });
+
+    // Chip appears
+    await screen.findByText("notes.md");
+
+    // Click the remove button on the chip
+    const removeBtn = screen.getByRole("button", { name: /remove file/i });
+    await act(async () => {
+      fireEvent.click(removeBtn);
+    });
+
+    // Chip should be gone
+    expect(screen.queryByText("notes.md")).toBeNull();
+  });
+
+  it("sending with a file attachment calls sendMessage with expandedForLLM containing the wrapper", async () => {
+    seedProvider("anthropic");
+    const sendMock = vi.fn();
+    render(
+      <Chat
+        providerLabel="Anthropic"
+        onOpenSettings={vi.fn()}
+        session={makeSession({ sendMessage: sendMock })}
+      />,
+    );
+
+    await screen.findByRole("button", { name: /more tools/i });
+
+    // Attach a text file
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const txtFile = new File(["hello world"], "notes.txt", { type: "text/plain" });
+
+    await act(async () => {
+      fireEvent.change(fileInput, { target: { files: [txtFile] } });
+    });
+
+    // Chip renders
+    await screen.findByText("notes.txt");
+
+    // Type something and submit
+    const textarea = screen.getByPlaceholderText(/Tell the agent/i);
+    await act(async () => {
+      fireEvent.change(textarea, { target: { value: "analyze this" } });
+    });
+
+    const sendBtn = screen.getByRole("button", { name: /Send/i });
+    await act(async () => {
+      fireEvent.click(sendBtn);
+    });
+
+    // sendMessage should include expandedForLLM with the file wrapper
+    expect(sendMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: "analyze this",
+        expandedForLLM: expect.stringContaining("<untrusted_local_file"),
+      }),
+    );
+  });
+
+  it("attach file button in + menu is NOT disabled for minimax (no vision) provider", async () => {
+    seedProvider("minimax");
+    render(
+      <Chat
+        providerLabel="MiniMax"
+        onOpenSettings={vi.fn()}
+        session={makeSession()}
+      />,
+    );
+
+    const toolsBtn = await screen.findByRole("button", { name: /more tools/i });
+    await act(async () => {
+      fireEvent.click(toolsBtn);
+    });
+
+    const attachBtn = await screen.findByRole("button", { name: /attach file/i });
+    // Task 4.4: text/PDF always allowed, so button must not be disabled
+    expect((attachBtn as HTMLButtonElement).disabled).toBe(false);
   });
 });
 

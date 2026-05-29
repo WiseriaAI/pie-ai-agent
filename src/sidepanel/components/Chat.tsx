@@ -10,8 +10,11 @@ import { resolveModelVision, resolveModelMeta } from "@/lib/model-router/provide
 import ContextRing from "./ContextRing";
 import type { BuiltinProvider } from "@/lib/model-router";
 import { listInstances, getActiveInstance, getInstance, type DecryptedInstance } from "@/lib/instances";
-import { resizePanel } from "@/lib/images/resize-panel";
 import type { ImageAttachment } from "@/lib/images";
+import type { FileAttachment } from "@/lib/files/types";
+import { processPickedFile } from "@/lib/files/process-picked-file";
+import { fileAttachmentToWrapper } from "@/lib/files/inject";
+import { FileChip } from "./FileChip";
 import type { UseSession } from "@/sidepanel/hooks/useSession";
 import AgentStepGroup, { type AgentStepData } from "./AgentStepGroup";
 import PinnedTabDropdown from "./PinnedTabDropdown";
@@ -202,6 +205,7 @@ export default function Chat({
 
   // Phase 5 image input state
   const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
+  const [fileAttachments, setFileAttachments] = useState<FileAttachment[]>([]);
   const [resizing, setResizing] = useState<Set<string>>(new Set());
   const [supportsVision, setSupportsVision] = useState<boolean>(false);
   const [maxContextTokens, setMaxContextTokens] = useState<number | undefined>(undefined);
@@ -551,11 +555,7 @@ export default function Chat({
     toastTimerRef.current = setTimeout(() => setAttachLocalToast(null), 4000);
   }
 
-  const addFiles = async (files: File[]) => {
-    if (!supportsVision) {
-      showLocalToast(t("chat.attachment.attachImageNoVision"));
-      return;
-    }
+  const addPickedFiles = async (files: File[]) => {
     if (files.length === 0) {
       // Composer detected image data in the paste/drop event but no File
       // object was extractable (e.g. user copied an <img> from a web page —
@@ -566,42 +566,52 @@ export default function Chat({
       );
       return;
     }
-    const room = MAX_IMAGES_PER_TURN - attachments.length;
-    if (room <= 0) {
-      showLocalToast(t("chat.attachment.maxImagesPerMessage", { max: String(MAX_IMAGES_PER_TURN) }));
-      return;
-    }
-    const slice = files.slice(0, room);
-    for (const f of slice) {
-      const tempId = `pending_${crypto.randomUUID()}`;
-      setResizing((s) => new Set(s).add(tempId));
-      try {
-        const r = await resizePanel(f);
-        setResizing((s) => {
-          const next = new Set(s);
-          next.delete(tempId);
-          return next;
-        });
-        if (!r.ok) {
-          showLocalToast(t("chat.attachment.imageRejected", { reason: r.reason }));
+    for (const f of files) {
+      // For image files, use the per-image resize spinner UX.
+      // processPickedFile handles image resizing internally, but we track
+      // the spinner for images so the user sees feedback during resize.
+      const isImage = f.type.startsWith("image/");
+      let tempId: string | null = null;
+      if (isImage) {
+        // Check image cap before starting spinner
+        if (attachments.length >= MAX_IMAGES_PER_TURN) {
+          showLocalToast(t("chat.attachment.maxImagesPerMessage", { max: String(MAX_IMAGES_PER_TURN) }));
           continue;
         }
-        const att: ImageAttachment = {
-          kind: "image",
-          id: `img_user_${crypto.randomUUID()}`,
-          mediaType: r.value.mediaType,
-          data: r.value.data,
-          width: r.value.width,
-          height: r.value.height,
-          byteLength: r.value.byteLength,
-        };
-        setAttachments((prev) => [...prev, att]);
+        tempId = `pending_${crypto.randomUUID()}`;
+        setResizing((s) => new Set(s).add(tempId!));
+      }
+      try {
+        const result = await processPickedFile(f, { supportsVision });
+        if (isImage && tempId) {
+          setResizing((s) => {
+            const next = new Set(s);
+            next.delete(tempId!);
+            return next;
+          });
+        }
+        if (!result.ok) {
+          showLocalToast(result.message);
+          continue;
+        }
+        if (result.kind === "image") {
+          // Re-check cap after async operation in case another file added one
+          setAttachments((prev) => {
+            if (prev.length >= MAX_IMAGES_PER_TURN) return prev;
+            return [...prev, result.attachment];
+          });
+        } else {
+          // kind === "file" — text/code/PDF
+          setFileAttachments((prev) => [...prev, result.attachment]);
+        }
       } catch {
-        setResizing((s) => {
-          const next = new Set(s);
-          next.delete(tempId);
-          return next;
-        });
+        if (isImage && tempId) {
+          setResizing((s) => {
+            const next = new Set(s);
+            next.delete(tempId!);
+            return next;
+          });
+        }
         showLocalToast(t("chat.attachment.imageProcessingFailed"));
       }
     }
@@ -706,6 +716,8 @@ After the skill completes, briefly summarize what was created (the user will see
     // Capture attachments snapshot before clearing
     const pendingAttachments = attachments.length > 0 ? [...attachments] : undefined;
     setAttachments([]);
+    const pendingFileAttachments = fileAttachments.length > 0 ? [...fileAttachments] : undefined;
+    setFileAttachments([]);
 
     // Issue #38 v1 — serialize quotes into the LLM-facing wire content and
     // element-quote screenshots into attachments. The display layer reads the
@@ -739,6 +751,14 @@ After the skill completes, briefly summarize what was created (the user will see
       const quoteText = quoteParts.join("\n\n");
       const wireText = expandedForLLM ?? content;
       expandedForLLM = wireText ? `${quoteText}\n\n${wireText}` : quoteText;
+    }
+
+    // Append file attachment wrappers to the LLM-facing content (same pattern
+    // as quote wrappers above — joined into expandedForLLM, not visible content).
+    if (pendingFileAttachments && pendingFileAttachments.length > 0) {
+      const fileParts = pendingFileAttachments.map(fileAttachmentToWrapper).join("\n\n");
+      const wireText = expandedForLLM ?? content;
+      expandedForLLM = wireText ? `${wireText}\n\n${fileParts}` : fileParts;
     }
 
     const stagedQuotes = quotes && quotes.length > 0 ? [...quotes] : undefined;
@@ -780,6 +800,8 @@ After the skill completes, briefly summarize what was created (the user will see
       // streaming (the active task already has its expanded prompt).
       const pendingAttachments = attachments.length > 0 ? [...attachments] : undefined;
       setAttachments([]);
+      const pendingFileAttachments = fileAttachments.length > 0 ? [...fileAttachments] : undefined;
+      setFileAttachments([]);
 
       const quoteImages: ImageAttachment[] = [];
       const quoteParts: string[] = [];
@@ -807,6 +829,13 @@ After the skill completes, briefly summarize what was created (the user will see
       if (quoteParts.length > 0) {
         const quoteText = quoteParts.join("\n\n");
         expandedForLLM = quoteText ? `${quoteText}\n\n${userInput}` : userInput;
+      }
+
+      // Append file attachment wrappers (mirrors the sendMessage path above).
+      if (pendingFileAttachments && pendingFileAttachments.length > 0) {
+        const fileParts = pendingFileAttachments.map(fileAttachmentToWrapper).join("\n\n");
+        const wireText = expandedForLLM ?? userInput;
+        expandedForLLM = wireText ? `${wireText}\n\n${fileParts}` : fileParts;
       }
 
       const stagedQuotes = quotes && quotes.length > 0 ? [...quotes] : undefined;
@@ -1117,11 +1146,11 @@ After the skill completes, briefly summarize what was created (the user will see
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/jpeg,image/png,image/webp,image/gif"
+        accept="image/*,application/pdf,text/*,.md,.markdown,.json,.jsonl,.csv,.tsv,.log,.xml,.yaml,.yml,.ts,.tsx,.js,.jsx,.py,.rb,.go,.rs,.java,.c,.h,.cpp,.sh,.toml,.ini,.sql"
         multiple
         style={{ display: "none" }}
         onChange={(e) => {
-          if (e.target.files) void addFiles([...e.target.files]);
+          if (e.target.files) void addPickedFiles([...e.target.files]);
           e.target.value = "";
         }}
       />
@@ -1163,6 +1192,15 @@ After the skill completes, briefly summarize what was created (the user will see
               quote={q}
               onRemove={(id) => sessionId && removeQuote(sessionId, id)}
             />
+          ))}
+        </div>
+      )}
+
+      {/* File attachments chip row (text/code/PDF) */}
+      {fileAttachments.length > 0 && (
+        <div className="flex gap-2 px-4 pb-2 flex-wrap" aria-label={t("chat.files.fileAttachments")}>
+          {fileAttachments.map((f) => (
+            <FileChip key={f.id} attachment={f} onRemove={(id) => setFileAttachments((p) => p.filter((x) => x.id !== id))} />
           ))}
         </div>
       )}
@@ -1313,8 +1351,8 @@ After the skill completes, briefly summarize what was created (the user will see
         onAttachClick={() => fileInputRef.current?.click()}
         onPickElement={onPickElement}
         pickerActive={pickerActive}
-        onPasteFiles={(files) => void addFiles(files)}
-        onDropFiles={(files) => void addFiles(files)}
+        onPasteFiles={(files) => void addPickedFiles(files)}
+        onDropFiles={(files) => void addPickedFiles(files)}
         onStartRecording={onStartRecording}
         recordingDisabled={pendingRecording !== null}
         instances={instances}
@@ -1735,12 +1773,10 @@ function ToolsMenu({
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
 
-  const attachDisabled = !supportsVision || attachmentCount >= MAX_IMAGES_PER_TURN;
-  const attachTitle = !supportsVision
-    ? t("chat.attachment.attachImageNoVision")
-    : attachmentCount >= MAX_IMAGES_PER_TURN
-      ? t("chat.attachment.maxImagesPerMessage", { max: String(MAX_IMAGES_PER_TURN) })
-      : t("chat.attachment.attachImageTitle");
+  // Attach file is always enabled — image-specific limits (no vision / cap exceeded)
+  // are handled inside addPickedFiles via toasts; text/PDF always allowed.
+  const attachDisabled = false;
+  const attachTitle = t("chat.files.attachFile");
 
   return (
     <div ref={ref} className="relative">
@@ -1786,9 +1822,8 @@ function ToolsMenu({
           )}
           <button
             type="button"
-            aria-label={t("chat.attachment.attachImage")}
+            aria-label={t("chat.files.attachFile")}
             onClick={() => {
-              if (attachDisabled) return;
               setOpen(false);
               onAttachClick();
             }}
@@ -1810,7 +1845,7 @@ function ToolsMenu({
             >
               <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
             </svg>
-            <span>{t("chat.attachment.attachImage")}</span>
+            <span>{t("chat.files.attachFile")}</span>
           </button>
           {onStartRecording && (
             <button
