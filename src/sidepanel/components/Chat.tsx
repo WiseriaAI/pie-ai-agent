@@ -651,6 +651,9 @@ export default function Chat({
   // images / unsupported / failures → ok:false with a reason.
   const handleLocalFileRequestPick = async (files: File[]) => {
     const f = files[0];
+    // Defensive only: a native-dialog Cancel produces NO onChange event, so
+    // this branch effectively never fires from the picker. The real Cancel
+    // path is the card's Cancel button (onCancel → respondLocalFile).
     if (!f) {
       respondLocalFile({ ok: false, reason: "cancelled by user" });
       return;
@@ -668,8 +671,21 @@ export default function Chat({
         });
         return;
       }
-      // Image or unsupported / failed.
-      showLocalToast(t("chat.attachment.attachImageNoVision"));
+      // Non-file outcome: either a processing failure (!ok) with a specific
+      // reason, or an image (ok but kind:"image") which can't be returned
+      // through this tool result. Mirror the reason-mapping used in
+      // addPickedFiles so the toast matches the actual failure.
+      if (!result.ok) {
+        switch (result.reason) {
+          case "too_large": showLocalToast(t("chat.files.tooLarge", { name: f.name })); break;
+          case "unsupported": showLocalToast(t("chat.files.unsupported", { name: f.name })); break;
+          case "no_vision": showLocalToast(t("chat.attachment.attachImageNoVision")); break;
+          default: showLocalToast(t("chat.files.processingFailed"));
+        }
+      } else {
+        // ok:true but kind:"image" — images can't be returned through this tool result
+        showLocalToast(t("chat.attachment.attachImageNoVision"));
+      }
       respondLocalFile({
         ok: false,
         reason: "image_or_unsupported: that file type can't be returned here; for images use the + menu",

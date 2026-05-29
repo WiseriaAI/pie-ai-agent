@@ -29,6 +29,7 @@ export function useLocalFileRequest(
       const m = msg as { type?: string; sessionId?: string };
       if (m.sessionId !== sessionId) return;
       if (m.type === "request-local-file") setPending(true);
+      if (m.type === "local-file-timeout") setPending(false);
     };
     port.onMessage.addListener(listener);
     return () => port.onMessage.removeListener(listener);

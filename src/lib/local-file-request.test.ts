@@ -61,4 +61,21 @@ describe("local-file-request round-trip", () => {
       /no sidepanel port for session/,
     );
   });
+
+  it("rejects after the timeout and notifies the panel", async () => {
+    vi.useFakeTimers();
+    const port = fakePort();
+    registerLocalFilePort("s-timeout", port);
+    const p = requestLocalFileFromPanel("s-timeout");
+    // Attach the rejection handler before advancing timers so the rejection
+    // isn't flagged as unhandled when the timer fires synchronously.
+    const assertion = expect(p).rejects.toThrow(/timed out/);
+    vi.advanceTimersByTime(120_001);
+    await assertion;
+    expect(port.postMessage as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "local-file-timeout", sessionId: "s-timeout" }),
+    );
+    unregisterLocalFilePort("s-timeout");
+    vi.useRealTimers();
+  });
 });

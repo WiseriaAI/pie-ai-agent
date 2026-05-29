@@ -60,6 +60,10 @@ export async function requestLocalFileFromPanel(
     const timer = setTimeout(() => {
       pendingBySession.delete(sessionId);
       reject(new Error("timed out waiting for the user to pick a file"));
+      // Notify the panel so it can dismiss the lingering card. The port is
+      // still registered at timeout time (unregister rejects+clears first).
+      const p = portsBySession.get(sessionId);
+      if (p) p.postMessage({ type: "local-file-timeout", sessionId });
     }, REQUEST_TIMEOUT_MS);
     pendingBySession.set(sessionId, { resolve, reject, timer });
     port.postMessage({ type: "request-local-file", sessionId });
