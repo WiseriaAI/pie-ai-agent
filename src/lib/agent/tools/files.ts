@@ -3,7 +3,8 @@ import type { ActionResult } from "@/lib/dom-actions/types";
 import { sanitizeDownloadName } from "@/lib/files/download-name";
 import { sendToOffscreen } from "@/background/offscreen-manager";
 import { classifyFile, MAX_FILE_BYTES } from "@/lib/file-read/classify";
-import { escapeUntrustedWrappers, escapeWrapperAttribute } from "../untrusted-wrappers";
+import { escapeUntrustedWrappers } from "../untrusted-wrappers";
+import { buildLocalFileWrapper } from "@/lib/files/inject";
 
 interface SaveArgs {
   filename?: string;
@@ -135,9 +136,7 @@ export const readLocalFileTool: Tool = {
       const body = truncated ? `${text.slice(0, READ_MAX_CHARS)}\n…[truncated]` : text;
       return {
         success: true,
-        observation:
-          `<untrusted_local_file name="${escapeWrapperAttribute(name)}" mime="${escapeWrapperAttribute(mime || "text/plain")}" truncated="${truncated}">\n` +
-          `${escapeUntrustedWrappers(body)}\n</untrusted_local_file>`,
+        observation: buildLocalFileWrapper({ name, mime: mime || "text/plain", text: body, truncated }),
       };
     }
 
@@ -146,12 +145,12 @@ export const readLocalFileTool: Tool = {
     if (bytes.byteLength > MAX_FILE_BYTES) return { success: false, error: `too_large: exceeds ${MAX_FILE_BYTES / (1024 * 1024)}MB cap` };
     try {
       const parsed = (await sendToOffscreen({ type: "pdf:parse_bytes", bytes, cacheKey: uri })) as { pages: Array<{ page: number; text: string }>; total_pages: number };
-      const joined = parsed.pages.map((p) => p.text).join("\n").slice(0, READ_MAX_CHARS);
+      const joinedFull = parsed.pages.map((p) => p.text).join("\n");
+      const truncated = joinedFull.length > READ_MAX_CHARS;
+      const body = truncated ? `${joinedFull.slice(0, READ_MAX_CHARS)}\n…[truncated]` : joinedFull;
       return {
         success: true,
-        observation:
-          `<untrusted_local_file name="${escapeWrapperAttribute(name)}" mime="application/pdf" total_pages="${parsed.total_pages}">\n` +
-          `${escapeUntrustedWrappers(joined)}\n</untrusted_local_file>`,
+        observation: buildLocalFileWrapper({ name, mime: "application/pdf", text: body, truncated, totalPages: parsed.total_pages }),
       };
     } catch (e) { return { success: false, error: e instanceof Error ? e.message : String(e) }; }
   },
@@ -196,10 +195,7 @@ export function buildRequestLocalFileTool(deps: RequestLocalFileDeps): Tool {
         const f = await deps.requestFile(deps.sessionId);
         return {
           success: true,
-          observation:
-            `<untrusted_local_file name="${escapeWrapperAttribute(f.name)}" ` +
-            `mime="${escapeWrapperAttribute(f.mime || "text/plain")}" truncated="${f.truncated}">\n` +
-            `${escapeUntrustedWrappers(f.text)}\n</untrusted_local_file>`,
+          observation: buildLocalFileWrapper({ name: f.name, mime: f.mime || "text/plain", text: f.text, truncated: f.truncated }),
         };
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
