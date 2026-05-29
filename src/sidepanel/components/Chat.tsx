@@ -591,7 +591,27 @@ export default function Chat({
           });
         }
         if (!result.ok) {
-          showLocalToast(result.message);
+          // Map reason → localized message. processPickedFile stays
+          // i18n-decoupled (returns English dev strings); we localize here.
+          // result.message is a dev-only fallback for unmapped reasons.
+          let toastMsg: string;
+          switch (result.reason) {
+            case "no_vision":
+              toastMsg = t("chat.attachment.attachImageNoVision");
+              break;
+            case "too_large":
+              toastMsg = t("chat.files.tooLarge", { name: f.name });
+              break;
+            case "unsupported":
+              toastMsg = t("chat.files.unsupported", { name: f.name });
+              break;
+            case "error":
+              toastMsg = t("chat.files.processingFailed");
+              break;
+            default:
+              toastMsg = result.message;
+          }
+          showLocalToast(toastMsg);
           continue;
         }
         if (result.kind === "image") {
@@ -612,7 +632,7 @@ export default function Chat({
             return next;
           });
         }
-        showLocalToast(t("chat.attachment.imageProcessingFailed"));
+        showLocalToast(t("chat.files.processingFailed"));
       }
     }
   };
@@ -1656,17 +1676,18 @@ function Composer({
                   if (f) files.push(f);
                 }
               }
-              // Always invoke — addFiles surfaces a toast for every reason
+              // Always invoke — addPickedFiles surfaces a toast for every reason
               // (no-vision-provider / cap-exceeded / empty-files / resize-fail).
               onPasteFiles(files);
             }}
             onDrop={(e) => {
+              // Forward ALL dropped File objects — addPickedFiles routes by
+              // type and rejects unsupported ones via toast. Supports images,
+              // text/code, and PDFs (Task 4.4 unified attach).
               const dropped = [...(e.dataTransfer?.files ?? [])];
-              const hasImageInDrop = dropped.some((f) => f.type.startsWith("image/"));
-              if (!hasImageInDrop) return; // non-image drop, leave to default
+              if (dropped.length === 0) return; // no File blobs, leave to default
               e.preventDefault();
-              const files = dropped.filter((f) => f.type.startsWith("image/"));
-              onDropFiles(files);
+              onDropFiles(dropped);
             }}
             onDragOver={(e) => {
               e.preventDefault();
@@ -1775,8 +1796,6 @@ function ToolsMenu({
 
   // Attach file is always enabled — image-specific limits (no vision / cap exceeded)
   // are handled inside addPickedFiles via toasts; text/PDF always allowed.
-  const attachDisabled = false;
-  const attachTitle = t("chat.files.attachFile");
 
   return (
     <div ref={ref} className="relative">
@@ -1827,8 +1846,7 @@ function ToolsMenu({
               setOpen(false);
               onAttachClick();
             }}
-            disabled={attachDisabled}
-            title={attachTitle}
+            title={t("chat.files.attachFile")}
             className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[12px] text-fg-1 hover:bg-field disabled:cursor-not-allowed disabled:opacity-40"
           >
             <svg

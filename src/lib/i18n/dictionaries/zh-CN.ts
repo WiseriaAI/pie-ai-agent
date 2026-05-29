@@ -138,7 +138,7 @@ export const zhCNDict = {
       imageRejected: "图片被拒绝：{reason}",
       imageProcessingFailed: "图片处理失败。",
     },
-    files: { attachFile: "附加文件", truncated: "已截断", remove: "移除文件", fileAttachments: "文件附件" },
+    files: { attachFile: "附加文件", truncated: "已截断", remove: "移除文件", fileAttachments: "文件附件", tooLarge: "{name} 超过 5MB 上限", unsupported: "{name}：不支持的文件类型", processingFailed: "无法读取该文件" },
     stepCount: { one: "步", other: "步" },
     noApiKey: "没有 API Key",
     noApiKeyDescription: "从任一支持的 provider 添加 API key 即可开始使用 Agent。",

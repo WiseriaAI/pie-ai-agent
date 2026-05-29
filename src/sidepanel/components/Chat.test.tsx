@@ -533,6 +533,31 @@ describe("Chat — behavioral image flows (Phase 5)", () => {
     expect(thumb).toBeTruthy();
   });
 
+  it("drop of a non-image file (.md) attaches it as a FileChip (Fix 5)", async () => {
+    seedProvider("anthropic");
+    render(
+      <Chat
+        providerLabel="Anthropic"
+        onOpenSettings={vi.fn()}
+        session={makeSession()}
+      />,
+    );
+
+    await screen.findByRole("button", { name: /more tools/i });
+    const textarea = screen.getByPlaceholderText(/Tell the agent/i);
+    const file = new File(["# hi"], "dropped.md", { type: "text/markdown" });
+    const dt = makeDropDT([file]);
+
+    await act(async () => {
+      fireEvent.dragOver(textarea, { dataTransfer: dt });
+      fireEvent.drop(textarea, { dataTransfer: dt });
+    });
+
+    // FileChip with the dropped filename should appear
+    const chip = await screen.findByText("dropped.md");
+    expect(chip).toBeTruthy();
+  });
+
   it("4th image is dropped silently and only 3 thumbnails appear", async () => {
     seedProvider("anthropic");
     render(
