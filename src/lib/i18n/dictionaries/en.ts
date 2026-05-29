@@ -138,6 +138,7 @@ export const enDict = {
       imageRejected: "Image rejected: {reason}",
       imageProcessingFailed: "Image processing failed.",
     },
+    files: { attachFile: "Attach file", truncated: "truncated", remove: "Remove file", fileAttachments: "File attachments" },
     stepCount: { one: "step", other: "steps" },
     noApiKey: "NO API KEY",
     noApiKeyDescription: "Add an API key from any supported provider to start using the agent.",
