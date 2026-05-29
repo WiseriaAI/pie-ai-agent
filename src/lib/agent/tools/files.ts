@@ -9,6 +9,13 @@ interface SaveArgs {
   saveAs?: boolean;
 }
 
+// Allowlist of text-family MIME types. A hallucinating LLM could otherwise
+// pass e.g. text/html, turning the data: URL into something renderable, so
+// the broad `text/*` branch explicitly excludes html/xhtml.
+const SAFE_MIME = /^(text\/(?!html|xhtml)|application\/(json|xml|csv|x-ndjson))/;
+
+const MAX_CONTENT_BYTES = 5 * 1024 * 1024;
+
 export const saveToDownloadsTool: Tool = {
   name: "save_to_downloads",
   description:
@@ -31,8 +38,12 @@ export const saveToDownloadsTool: Tool = {
     if (typeof a.content !== "string") {
       return { success: false, error: "content is required (string)" };
     }
-    const filename = sanitizeDownloadName(typeof a.filename === "string" ? a.filename : "");
-    const mime = typeof a.mime === "string" && a.mime ? a.mime : "text/plain";
+    if (a.content.length > MAX_CONTENT_BYTES) {
+      return { success: false, error: `content_too_large: max ${MAX_CONTENT_BYTES / 1024 / 1024}MB` };
+    }
+    const rawFilename = typeof a.filename === "string" ? a.filename : "";
+    const filename = sanitizeDownloadName(rawFilename);
+    const mime = typeof a.mime === "string" && SAFE_MIME.test(a.mime) ? a.mime : "text/plain";
     const saveAs = a.save_as === true || a.saveAs === true;
     const url = `data:${mime};charset=utf-8,${encodeURIComponent(a.content)}`;
     try {
@@ -40,9 +51,17 @@ export const saveToDownloadsTool: Tool = {
     } catch (e) {
       return { success: false, error: `download_failed: ${e instanceof Error ? e.message : String(e)}` };
     }
+    // Signal when the caller's name was discarded for the safe fallback so the
+    // LLM knows the file isn't where it asked.
+    const sanitizedToFallback = filename === "pie/untitled.txt" && rawFilename !== "pie/untitled.txt";
+    const renameNote = sanitizedToFallback ? " (filename was sanitized to untitled.txt)" : "";
     return {
       success: true,
-      observation: `Saved to Downloads/${filename}${saveAs ? " (user chose location via Save As)" : ""}. Note: if a same-named file existed, Chrome appended a numeric suffix.`,
+      observation: `Saved to Downloads/${filename}${
+        saveAs
+          ? " (user chose location via Save As)"
+          : ". Note: if a same-named file existed, Chrome appended a numeric suffix."
+      }${renameNote}`,
     };
   },
 };
