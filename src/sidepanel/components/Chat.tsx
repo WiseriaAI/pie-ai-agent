@@ -82,6 +82,8 @@ import SkillSlashPopover from "./SkillSlashPopover";
 import { PendingInstructionList, type PendingItem } from "./PendingInstructionList";
 import { useCdpOnboarding } from "../hooks/useCdpOnboarding";
 import { CdpOnboardingCard } from "./CdpOnboardingCard";
+import { useLocalFileRequest } from "../hooks/useLocalFileRequest";
+import { LocalFileRequestCard } from "./LocalFileRequestCard";
 import { usePdfPermission } from "../hooks/usePdfPermission";
 import { PdfPermissionCard } from "./PdfPermissionCard";
 
@@ -211,6 +213,9 @@ export default function Chat({
   const [maxContextTokens, setMaxContextTokens] = useState<number | undefined>(undefined);
   const [attachLocalToast, setAttachLocalToast] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  // Dedicated picker for request_local_file (kept separate from fileInputRef so
+  // the pick routes to the SW round-trip, not the normal attach flow).
+  const localFileRequestInputRef = useRef<HTMLInputElement | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // InstanceSelector state — list of configured instances + per-session current
@@ -227,6 +232,10 @@ export default function Chat({
   // Load instances list + current session's instanceId on mount / sessionId change
   const sessionId = session.sessionId;
   const { pending: cdpPending, answer: answerCdp } = useCdpOnboarding(session.port, sessionId);
+  const { pending: localFilePending, respond: respondLocalFile } = useLocalFileRequest(
+    session.port,
+    sessionId,
+  );
   const { showCard: showPdfPermission, dismiss: dismissPdfPermission } = usePdfPermission(
     session.port,
   );
@@ -634,6 +643,40 @@ export default function Chat({
         }
         showLocalToast(t("chat.files.processingFailed"));
       }
+    }
+  };
+
+  // request_local_file — the user picked a file via the dedicated input. Route
+  // the result back to the SW (not the normal attach flow). Text/PDF → ok;
+  // images / unsupported / failures → ok:false with a reason.
+  const handleLocalFileRequestPick = async (files: File[]) => {
+    const f = files[0];
+    if (!f) {
+      respondLocalFile({ ok: false, reason: "cancelled by user" });
+      return;
+    }
+    try {
+      const result = await processPickedFile(f, { supportsVision });
+      if (result.ok && result.kind === "file") {
+        const att = result.attachment;
+        respondLocalFile({
+          ok: true,
+          name: att.name,
+          mime: att.mime,
+          text: att.text,
+          truncated: att.truncated,
+        });
+        return;
+      }
+      // Image or unsupported / failed.
+      showLocalToast(t("chat.attachment.attachImageNoVision"));
+      respondLocalFile({
+        ok: false,
+        reason: "image_or_unsupported: that file type can't be returned here; for images use the + menu",
+      });
+    } catch {
+      showLocalToast(t("chat.files.processingFailed"));
+      respondLocalFile({ ok: false, reason: "processing failed" });
     }
   };
 
@@ -1175,6 +1218,19 @@ After the skill completes, briefly summarize what was created (the user will see
         }}
       />
 
+      {/* request_local_file — dedicated hidden input; pick routes to the SW
+          round-trip via handleLocalFileRequestPick, not the normal attach flow. */}
+      <input
+        ref={localFileRequestInputRef}
+        type="file"
+        accept="application/pdf,text/*,.md,.markdown,.json,.jsonl,.csv,.tsv,.log,.xml,.yaml,.yml,.ts,.tsx,.js,.jsx,.py,.rb,.go,.rs,.java,.c,.h,.cpp,.sh,.toml,.ini,.sql"
+        style={{ display: "none" }}
+        onChange={(e) => {
+          if (e.target.files) void handleLocalFileRequestPick([...e.target.files]);
+          e.target.value = "";
+        }}
+      />
+
       {/* Phase 5 — local attach error toast (provider no vision / cap exceeded / resize fail) */}
       {attachLocalToast && (
         <div
@@ -1344,6 +1400,12 @@ After the skill completes, briefly summarize what was created (the user will see
       )}
 
       {cdpPending && <CdpOnboardingCard onAnswer={answerCdp} />}
+      {localFilePending && (
+        <LocalFileRequestCard
+          onChoose={() => localFileRequestInputRef.current?.click()}
+          onCancel={() => respondLocalFile({ ok: false, reason: "cancelled by user" })}
+        />
+      )}
       {showPdfPermission && (
         <PdfPermissionCard onDismiss={dismissPdfPermission} />
       )}

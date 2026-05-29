@@ -89,6 +89,7 @@ export const PDF_TOOL_NAMES = [
 export const LOCAL_FILE_TOOL_NAMES = [
   "save_to_downloads",
   "read_local_file",
+  "request_local_file",
 ] as const;
 
 export const KNOWN_BUILT_IN_TOOL_NAMES = [
@@ -185,6 +186,7 @@ export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
   // Local file I/O
   save_to_downloads: "write",
   read_local_file: "read",
+  request_local_file: "read",
 };
 
 // Build-time exhaustive check — every known tool name MUST have a class

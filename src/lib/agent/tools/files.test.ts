@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { saveToDownloadsTool, readLocalFileTool } from "./files";
+import { saveToDownloadsTool, readLocalFileTool, buildRequestLocalFileTool } from "./files";
 import { sendToOffscreen } from "@/background/offscreen-manager";
 vi.mock("@/background/offscreen-manager", () => ({ sendToOffscreen: vi.fn() }));
 
@@ -174,5 +174,30 @@ describe("read_local_file tool", () => {
     const r = await readLocalFileTool.handler({ uri: "file:///tmp/a.bin" }, { tabId: 1 } as never);
     expect(r.success).toBe(false);
     expect(r.error).toContain("unsupported_type");
+  });
+});
+
+describe("buildRequestLocalFileTool", () => {
+  const ctx = { tabId: 1 } as never;
+
+  it("returns success + untrusted_local_file wrapper on a picked file", async () => {
+    const tool = buildRequestLocalFileTool({
+      sessionId: "s",
+      requestFile: async () => ({ name: "a.md", mime: "text/markdown", text: "hi", truncated: false }),
+    });
+    const r = await tool.handler({}, ctx);
+    expect(r.success).toBe(true);
+    expect(r.observation).toContain('<untrusted_local_file name="a.md"');
+    expect(r.observation).toContain("hi");
+  });
+
+  it("returns panel_unavailable error when requestFile rejects", async () => {
+    const tool = buildRequestLocalFileTool({
+      sessionId: "s",
+      requestFile: async () => { throw new Error("no sidepanel port for session s"); },
+    });
+    const r = await tool.handler({}, ctx);
+    expect(r.success).toBe(false);
+    expect(r.error).toContain("panel_unavailable");
   });
 });

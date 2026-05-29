@@ -158,3 +158,58 @@ export const readLocalFileTool: Tool = {
 };
 
 export const LOCAL_FILE_TOOLS: Tool[] = [saveToDownloadsTool, readLocalFileTool];
+
+// ── request_local_file — human-in-the-loop file picker ──────────────────────
+//
+// Unlike read_local_file (which fetches a file:// URI directly), this tool
+// asks the user to pick a file via the side panel. The handler is dep-injected
+// in loop.ts with `requestFile` bound to requestLocalFileFromPanel (the SW↔panel
+// round-trip in src/lib/local-file-request.ts). Because it needs runtime deps,
+// it is NOT part of the static LOCAL_FILE_TOOLS array.
+
+export interface RequestLocalFileDeps {
+  sessionId: string;
+  requestFile: (sessionId: string) => Promise<{
+    name: string;
+    mime: string;
+    text: string;
+    truncated: boolean;
+  }>;
+}
+
+export function buildRequestLocalFileTool(deps: RequestLocalFileDeps): Tool {
+  return {
+    name: "request_local_file",
+    description:
+      "Prompt the user to pick a local file (text/code or PDF) via the side panel, and return " +
+      "its extracted text. Use this when you need a file's contents but don't have its path — " +
+      "the user chooses the file themselves. Requires the side panel to be open. For images, " +
+      "ask the user to attach them via the + menu instead (images can't be returned here).",
+    parameters: {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: false,
+    },
+    handler: async (_args: unknown, _ctx: ToolHandlerContext): Promise<ActionResult> => {
+      try {
+        const f = await deps.requestFile(deps.sessionId);
+        return {
+          success: true,
+          observation:
+            `<untrusted_local_file name="${escapeWrapperAttribute(f.name)}" ` +
+            `mime="${escapeWrapperAttribute(f.mime || "text/plain")}" truncated="${f.truncated}">\n` +
+            `${escapeUntrustedWrappers(f.text)}\n</untrusted_local_file>`,
+        };
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return {
+          success: false,
+          error:
+            `panel_unavailable: ${msg} — ask the user to attach the file via the + menu, ` +
+            `or give a file:// path for read_local_file.`,
+        };
+      }
+    },
+  };
+}

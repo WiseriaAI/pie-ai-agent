@@ -34,6 +34,8 @@ import {
 } from "./history-validation";
 import { isCdpInputEnabled } from "../cdp-input-enabled";
 import { requestCdpInputConsent } from "../cdp-input-onboarding";
+import { requestLocalFileFromPanel } from "../local-file-request";
+import { buildRequestLocalFileTool } from "./tools/files";
 import { getEnabledSkillPackages } from "../skills";
 import { isFilePdfUrl } from "../pdf/detect";
 import {
@@ -1385,8 +1387,12 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // #62 — fail-closed vision gating (see filterToolsByVision). Screenshot
       // tools are only offered to models KNOWN to support vision; non-vision
       // and unknown-vision models never see them.
+      const requestLocalFileTool = buildRequestLocalFileTool({
+        sessionId,
+        requestFile: requestLocalFileFromPanel,
+      });
       const allTools = filterToolsByVision(
-        [...BUILT_IN_TOOLS, ...mouseTools, ...keyboardTools],
+        [...BUILT_IN_TOOLS, ...mouseTools, ...keyboardTools, requestLocalFileTool],
         modelConfig.vision,
       );
       const toolDefinitions = toolsToDefinitions(allTools);
