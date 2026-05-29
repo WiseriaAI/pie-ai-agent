@@ -243,6 +243,10 @@ const downloads = {
   download: vi.fn(async () => 1),
 };
 
+const extension = {
+  isAllowedFileSchemeAccess: vi.fn(async () => true),
+};
+
 const chromeMock = {
   storage: {
     local,
@@ -256,6 +260,7 @@ const chromeMock = {
   webNavigation,
   i18n,
   downloads,
+  extension,
 };
 
 // Install on globalThis so `chrome.storage.local.get(...)` works in src code.
@@ -290,6 +295,8 @@ beforeEach(() => {
   i18n.getUILanguage.mockClear();
   i18n.getMessage.mockClear();
   downloads.download.mockClear();
+  extension.isAllowedFileSchemeAccess.mockReset();
+  extension.isAllowedFileSchemeAccess.mockResolvedValue(true);
 });
 
 export { chromeMock };

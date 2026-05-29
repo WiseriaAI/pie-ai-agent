@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { saveToDownloadsTool } from "./files";
+import { saveToDownloadsTool, readLocalFileTool } from "./files";
+import { sendToOffscreen } from "@/background/offscreen-manager";
+vi.mock("@/background/offscreen-manager", () => ({ sendToOffscreen: vi.fn() }));
 
 const ctx = { tabId: 1 } as Parameters<typeof saveToDownloadsTool.handler>[1];
 
@@ -59,5 +61,62 @@ describe("save_to_downloads tool", () => {
     const r = await saveToDownloadsTool.handler({ filename: "a.txt" }, ctx);
     expect(r.success).toBe(false);
     expect(chrome.downloads.download).not.toHaveBeenCalled();
+  });
+});
+
+describe("read_local_file tool", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (chrome.extension as { isAllowedFileSchemeAccess: ReturnType<typeof vi.fn> })
+      .isAllowedFileSchemeAccess = vi.fn(async () => true);
+    globalThis.fetch = vi.fn();
+  });
+
+  it("reads a text file and wraps it untrusted", async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true, headers: { get: () => "text/plain" }, text: async () => "hello world",
+    });
+    const r = await readLocalFileTool.handler({ uri: "file:///tmp/a.txt" }, { tabId: 1 } as never);
+    expect(r.success).toBe(true);
+    expect(r.observation).toMatch(/<untrusted_local_file[^>]*name="a.txt"/);
+    expect(r.observation).toContain("hello world");
+  });
+
+  it("normalizes a bare absolute path to file://", async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true, headers: { get: () => "text/plain" }, text: async () => "x",
+    });
+    await readLocalFileTool.handler({ uri: "/tmp/a.txt" }, { tabId: 1 } as never);
+    expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBe("file:///tmp/a.txt");
+  });
+
+  it("returns file_access_denied when toggle is off", async () => {
+    (chrome.extension as { isAllowedFileSchemeAccess: ReturnType<typeof vi.fn> })
+      .isAllowedFileSchemeAccess = vi.fn(async () => false);
+    const r = await readLocalFileTool.handler({ uri: "file:///tmp/a.txt" }, { tabId: 1 } as never);
+    expect(r.success).toBe(false);
+    expect(r.error).toContain("file_access_denied");
+  });
+
+  it("parses a PDF via offscreen pdf:parse_bytes", async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true, headers: { get: () => "application/pdf" }, arrayBuffer: async () => new ArrayBuffer(8),
+    });
+    (sendToOffscreen as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ pages: [{ page: 1, text: "pdf text" }], total_pages: 1 });
+    const r = await readLocalFileTool.handler({ uri: "file:///tmp/a.pdf" }, { tabId: 1 } as never);
+    expect(r.success).toBe(true);
+    expect(r.observation).toContain("pdf text");
+    // exactly one offscreen call (pdf:parse_bytes), keyed by uri
+    expect((sendToOffscreen as ReturnType<typeof vi.fn>).mock.calls[0][0]).toMatchObject({ type: "pdf:parse_bytes" });
+  });
+
+  it("rejects image uris with guidance", async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true, headers: { get: () => "image/png" }, arrayBuffer: async () => new ArrayBuffer(8),
+    });
+    const r = await readLocalFileTool.handler({ uri: "file:///tmp/a.png" }, { tabId: 1 } as never);
+    expect(r.success).toBe(false);
+    expect(r.error).toContain("image_via_picker");
   });
 });

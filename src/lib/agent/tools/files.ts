@@ -1,6 +1,9 @@
 import type { Tool, ToolHandlerContext } from "../types";
 import type { ActionResult } from "@/lib/dom-actions/types";
 import { sanitizeDownloadName } from "@/lib/files/download-name";
+import { sendToOffscreen } from "@/background/offscreen-manager";
+import { classifyFile, MAX_FILE_BYTES } from "@/lib/file-read/classify";
+import { escapeUntrustedWrappers, escapeWrapperAttribute } from "../untrusted-wrappers";
 
 interface SaveArgs {
   filename?: string;
@@ -66,4 +69,81 @@ export const saveToDownloadsTool: Tool = {
   },
 };
 
-export const LOCAL_FILE_TOOLS: Tool[] = [saveToDownloadsTool];
+const READ_MAX_CHARS = 200_000; // injected-text safety ceiling (well below 5MB)
+
+function normalizeFileUri(uri: string): string {
+  const u = uri.trim();
+  if (u.startsWith("file://")) return u;
+  if (u.startsWith("/")) return `file://${u}`;
+  return u;
+}
+
+function basename(uri: string): string {
+  const noQuery = uri.split(/[?#]/)[0];
+  const parts = noQuery.split("/").filter(Boolean);
+  return parts[parts.length - 1] ?? "file";
+}
+
+interface ReadLocalArgs { uri?: string }
+
+export const readLocalFileTool: Tool = {
+  name: "read_local_file",
+  description:
+    "Read a local file by its file:// URI (or absolute path) and return its text. Works for " +
+    "text/code files and PDFs. The user must have enabled 'Allow access to file URLs' for the " +
+    "extension. For images, ask the user to attach them via the + menu instead.",
+  parameters: {
+    type: "object",
+    properties: { uri: { type: "string", description: 'A file:// URI or absolute path, e.g. "file:///Users/me/notes.md".' } },
+    required: ["uri"],
+    additionalProperties: false,
+  },
+  handler: async (args: unknown, _ctx: ToolHandlerContext): Promise<ActionResult> => {
+    const a = (args ?? {}) as ReadLocalArgs;
+    if (typeof a.uri !== "string" || !a.uri.trim()) return { success: false, error: "uri is required" };
+    const uri = normalizeFileUri(a.uri);
+    if (uri.startsWith("file://")) {
+      const allowed = await chrome.extension.isAllowedFileSchemeAccess();
+      if (!allowed) return { success: false, error: "file_access_denied: enable 'Allow access to file URLs' in chrome://extensions to read local files" };
+    }
+    let res: Response;
+    try { res = await fetch(uri); }
+    catch (e) { return { success: false, error: `fetch_failed: ${e instanceof Error ? e.message : String(e)}` }; }
+    if (!res.ok) return { success: false, error: `fetch_failed: status ${res.status}` };
+
+    const name = basename(uri);
+    const mime = (res.headers.get("content-type") ?? "").split(";")[0].trim();
+    const kind = classifyFile(name, mime);
+
+    if (kind === "image") return { success: false, error: "image_via_picker: cannot return images through read_local_file; ask the user to attach the image via the + menu." };
+    if (kind === "unsupported") return { success: false, error: `unsupported_type: ${name} (${mime || "unknown"})` };
+
+    if (kind === "text") {
+      const text = await res.text();
+      const truncated = text.length > READ_MAX_CHARS;
+      const body = truncated ? `${text.slice(0, READ_MAX_CHARS)}\n…[truncated]` : text;
+      return {
+        success: true,
+        observation:
+          `<untrusted_local_file name="${escapeWrapperAttribute(name)}" mime="${escapeWrapperAttribute(mime || "text/plain")}" truncated="${truncated}">\n` +
+          `${escapeUntrustedWrappers(body)}\n</untrusted_local_file>`,
+      };
+    }
+
+    // pdf
+    const bytes = await res.arrayBuffer();
+    if (bytes.byteLength > MAX_FILE_BYTES) return { success: false, error: `too_large: exceeds ${MAX_FILE_BYTES / (1024 * 1024)}MB cap` };
+    try {
+      const parsed = (await sendToOffscreen({ type: "pdf:parse_bytes", bytes, cacheKey: uri })) as { pages: Array<{ page: number; text: string }>; total_pages: number };
+      const joined = parsed.pages.map((p) => p.text).join("\n").slice(0, READ_MAX_CHARS);
+      return {
+        success: true,
+        observation:
+          `<untrusted_local_file name="${escapeWrapperAttribute(name)}" mime="application/pdf" total_pages="${parsed.total_pages}">\n` +
+          `${escapeUntrustedWrappers(joined)}\n</untrusted_local_file>`,
+      };
+    } catch (e) { return { success: false, error: e instanceof Error ? e.message : String(e) }; }
+  },
+};
+
+export const LOCAL_FILE_TOOLS: Tool[] = [saveToDownloadsTool, readLocalFileTool];
