@@ -239,6 +239,10 @@ const i18n = {
   getMessage: vi.fn((key: string) => key),
 };
 
+const downloads = {
+  download: vi.fn(async () => 1),
+};
+
 const chromeMock = {
   storage: {
     local,
@@ -251,6 +255,7 @@ const chromeMock = {
   tabs,
   webNavigation,
   i18n,
+  downloads,
 };
 
 // Install on globalThis so `chrome.storage.local.get(...)` works in src code.
@@ -284,6 +289,7 @@ beforeEach(() => {
   i18n.__uiLanguage = "en";
   i18n.getUILanguage.mockClear();
   i18n.getMessage.mockClear();
+  downloads.download.mockClear();
 });
 
 export { chromeMock };
