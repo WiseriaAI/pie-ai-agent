@@ -11,6 +11,7 @@ import { streamChat as minimaxChat } from "./minimax";
 import { streamChat as geminiChat } from "./gemini";
 import { streamChat as deepseekChat } from "./deepseek";
 import { streamChat as mimoChat } from "./mimo";
+import { streamChat as managedChat } from "./managed";
 import { streamChatOpenAICompat } from "./_shared/openai-compat-core";
 
 export type StreamChatFn = (
@@ -30,6 +31,7 @@ export const streamChatByProvider: Record<BuiltinProvider, StreamChatFn> = {
   gemini: geminiChat,
   deepseek: deepseekChat,
   mimo: mimoChat,
+  managed: managedChat,
 };
 
 const BUILTIN_DISPATCH: Record<BuiltinProvider, StreamChatFn> = streamChatByProvider;

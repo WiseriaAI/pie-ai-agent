@@ -131,6 +131,17 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
       { id: "mimo-v2-flash", vision: false, tools: true, maxContextTokens: 256_000   },
     ],
   },
+  {
+    id: "managed",
+    name: "Pie 官方服务",
+    // ⚠️ replace with real Supabase project ref before launch
+    defaultBaseUrl: "https://YOUR_PROJECT_REF.supabase.co/functions/v1",
+    placeholder: "（登录后自动填充）",
+    models: [
+      { id: "default",  displayName: "标准", vision: true, tools: true, maxContextTokens: 1_000_000 },
+      { id: "advanced", displayName: "深度", vision: true, tools: true, maxContextTokens: 1_000_000 },
+    ],
+  },
 ];
 
 export function getProviderMeta(id: BuiltinProvider): ProviderMeta | undefined {

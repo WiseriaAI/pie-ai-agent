@@ -4,7 +4,7 @@
   "name": "__MSG_extension_name__",
   "version": "0.18.0",
   "description": "__MSG_extension_description__",
-  "permissions": ["activeTab", "sidePanel", "storage", "tabs", "tabGroups", "scripting", "debugger", "webNavigation", "offscreen", "downloads"],
+  "permissions": ["activeTab", "sidePanel", "storage", "tabs", "tabGroups", "scripting", "debugger", "webNavigation", "offscreen", "downloads", "identity"],
   "host_permissions": [
     "<all_urls>",
     "https://api.anthropic.com/*",
@@ -16,7 +16,8 @@
     "https://generativelanguage.googleapis.com/*",
     "https://api.deepseek.com/*",
     "https://api.xiaomimimo.com/*",
-    "https://api.tavily.com/*"
+    "https://api.tavily.com/*",
+    "https://*.supabase.co/*"
   ],
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
