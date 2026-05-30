@@ -36,10 +36,7 @@ export function LocalFileRequestCard({ onChoose, onCancel }: Props) {
       <div className="text-[13px] font-medium text-warning">
         {t("chat.files.requestTitle")}
       </div>
-      <p className="text-warning/90">
-        The agent asked for a file. Choose a text/code file or a PDF to share its
-        contents. For images, attach them via the + menu instead.
-      </p>
+      <p className="text-warning/90">{t("chat.files.requestBody")}</p>
       <div className="flex gap-2">
         <button
           type="button"
