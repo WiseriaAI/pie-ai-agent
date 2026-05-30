@@ -1,6 +1,6 @@
 import { it, expect, vi, beforeEach } from "vitest";
 import { chromeMock } from "@/test/setup";
-import { saveAuth, getStoredAuth, clearAuth, isExpiringSoon, getValidJwt, fetchEntitlement, getCachedEntitlement } from "./managed-auth";
+import { saveAuth, getStoredAuth, clearAuth, isExpiringSoon, getValidJwt, fetchEntitlement, getCachedEntitlement, loginWithOAuth } from "./managed-auth";
 
 beforeEach(() => {
   chromeMock.storage.local.__store = {};
@@ -65,4 +65,27 @@ it("concurrent getValidJwt() with expiring token makes only one refresh request"
   expect(jwt1).toBe("new");
   expect(jwt2).toBe("new");
   expect(fetchMock).toHaveBeenCalledTimes(1);
+});
+
+it("loginWithOAuth exchanges code and persists auth + entitlement", async () => {
+  chromeMock.identity = {
+    getRedirectURL: vi.fn(() => "https://abc.chromiumapp.org/"),
+    launchWebAuthFlow: vi.fn(async () => "https://abc.chromiumapp.org/?code=AUTHCODE"),
+  };
+  const fetchMock = vi.fn(async (url: string) => {
+    if (url.endsWith("/auth/exchange"))
+      return new Response(JSON.stringify({
+        jwt: "j", refreshToken: "r", expiresAt: Date.now() + 3_600_000,
+        entitlement: { plan: "free", tiers: [{ tierId: "default", displayName: "标准" }] },
+      }), { status: 200 });
+    throw new Error("unexpected " + url);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+
+  const ent = await loginWithOAuth();
+
+  expect((await getStoredAuth())!.jwt).toBe("j");
+  expect(ent.plan).toBe("free");
+  expect(chromeMock.identity.launchWebAuthFlow).toHaveBeenCalledWith(
+    expect.objectContaining({ interactive: true }));
 });

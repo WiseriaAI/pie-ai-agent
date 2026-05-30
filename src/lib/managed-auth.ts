@@ -70,3 +70,28 @@ export async function getCachedEntitlement(): Promise<Entitlement | null> {
   const r = await chrome.storage.local.get(ENT_KEY);
   return (r[ENT_KEY] as Entitlement) ?? null;
 }
+
+/** 拉起 OAuth，换取 JWT，落盘 auth + entitlement，返回 entitlement。 */
+export async function loginWithOAuth(): Promise<Entitlement> {
+  const redirectUri = chrome.identity.getRedirectURL();
+  const authUrl = `${base()}/auth/start?redirect_uri=${encodeURIComponent(redirectUri)}`;
+  const redirected = await chrome.identity.launchWebAuthFlow({ url: authUrl, interactive: true });
+  if (!redirected) throw new Error("managed login: no redirect URL returned");
+  const code = new URL(redirected).searchParams.get("code");
+  if (!code) throw new Error("managed login: no code in redirect");
+
+  const res = await fetch(`${base()}/auth/exchange`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ code, redirectUri }),
+  });
+  if (!res.ok) throw new Error(`managed exchange failed: ${res.status}`);
+  const data = await res.json() as StoredAuth & { entitlement: Entitlement };
+  await saveAuth({ jwt: data.jwt, refreshToken: data.refreshToken, expiresAt: data.expiresAt });
+  await chrome.storage.local.set({ [ENT_KEY]: data.entitlement });
+  return data.entitlement;
+}
+
+export async function logout(): Promise<void> {
+  await clearAuth();
+}

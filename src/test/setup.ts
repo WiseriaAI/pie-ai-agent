@@ -247,6 +247,11 @@ const extension = {
   isAllowedFileSchemeAccess: vi.fn(async () => true),
 };
 
+const identity = {
+  getRedirectURL: () => "https://EXT.chromiumapp.org/",
+  launchWebAuthFlow: async () => "https://EXT.chromiumapp.org/?code=stub",
+};
+
 const chromeMock = {
   storage: {
     local,
@@ -261,6 +266,7 @@ const chromeMock = {
   i18n,
   downloads,
   extension,
+  identity,
 };
 
 // Install on globalThis so `chrome.storage.local.get(...)` works in src code.
