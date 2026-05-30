@@ -86,6 +86,7 @@ import { useLocalFileRequest } from "../hooks/useLocalFileRequest";
 import { LocalFileRequestCard } from "./LocalFileRequestCard";
 import { usePdfPermission } from "../hooks/usePdfPermission";
 import { PdfPermissionCard } from "./PdfPermissionCard";
+import { QuotaExhaustedCard } from "./QuotaExhaustedCard";
 
 interface ChatProps {
   providerLabel: string | null;
@@ -1184,11 +1185,41 @@ After the skill completes, briefly summarize what was created (the user will see
                 where active step spinners alone could feel like a hang. */}
             {streaming && !streamingText && <WorkingIndicator />}
 
-            {error && (
-              <div className="rounded-lg border border-warning-line bg-warning-tint px-3 py-2 text-[12px] text-warning">
-                {error}
-              </div>
-            )}
+            {error && (() => {
+                const codeMatch = /\((40[23])\)/.exec(error);
+                const code = codeMatch ? Number(codeMatch[1]) : undefined;
+                if (code === 402) {
+                  return (
+                    <QuotaExhaustedCard
+                      kind="quota"
+                      onByok={onOpenSettings}
+                      onBuy={() => {
+                        // Phase-1 placeholder — Phase-2 will open Stripe Checkout
+                        // TODO: replace with real Stripe Checkout URL when available
+                        void chrome.tabs.create({ url: "https://pie.wiseriaai.com/buy" });
+                      }}
+                    />
+                  );
+                }
+                if (code === 403) {
+                  return (
+                    <QuotaExhaustedCard
+                      kind="upgrade"
+                      onByok={onOpenSettings}
+                      onBuy={() => {
+                        // Phase-1 placeholder — Phase-2 will open Stripe Checkout
+                        // TODO: replace with real Stripe Checkout URL when available
+                        void chrome.tabs.create({ url: "https://pie.wiseriaai.com/buy" });
+                      }}
+                    />
+                  );
+                }
+                return (
+                  <div className="rounded-lg border border-warning-line bg-warning-tint px-3 py-2 text-[12px] text-warning">
+                    {error}
+                  </div>
+                );
+              })()}
 
             {/* SEC-PLAN-009 — transient toast from SW (flood-limit warning, etc.) */}
             {toast && (
