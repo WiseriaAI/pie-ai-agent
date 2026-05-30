@@ -71,6 +71,7 @@ Workflow 内置 invariant（任一失败则 CI fail，不会上传）：
 - Streaming: `chrome.runtime.connect()` port，**不用** `sendMessage`；keep-alive 25s `getPlatformInfo()`
 - SSE parser 同时处理 `\n` 和 `\r\n` 行尾
 - Provider registry pattern: 加 provider = registry entry + 模块文件 + manifest host_permission；capability flags (`vision`/`tools`/`maxContextTokens`) 在 `ModelMeta` per-model 维度；id-keyed dispatch 表 `streamChatByProvider`（builtin）或 `dispatchStreamChat`（custom）。Provider 模块基本是薄 wrapper：OpenAI-compat 家族走 `_shared/openai-compat-core.ts`（OpenRouter 用 customHeaders hook），Anthropic + MiMo 走 `_shared/anthropic-compat-core.ts`（hooks: `endpointPath` / `authHeaders` / `customHeaders` / `promptCache`），Gemini 自带 native module
+- Managed provider 不变量：`apiKey` 字段存后端颁发的 JWT；`model` 字段存 `tier_id`（如 `"default"` / `"advanced"`），服务端用 `tier_config` 表将其映射到真实 upstream_model（改模型只改 SQL，客户端无感）；新建 managed instance 必须走登录流（`ManagedLoginCard` → `createManagedInstance`），不通过 InstanceForm；JWT 在 task-start resolve 和 401 时由 `managed-auth`（single-flight）静默刷新；客户端永远不知道真实模型名、上游 API key 或 credit 计价
 - Custom provider `baseUrl` 在 provider 层定义（`StoredCustomProvider.baseUrl`），instance 不能 override
 - Custom provider 一律走 `_shared/openai-compat-core.ts`（OpenAI-compat wire，不带 hooks）
 - `<all_urls>` host_permission 是 custom provider fetch（`/v1/models` + streaming）的前提

@@ -131,6 +131,7 @@ than burning your tokens on a plan you've already disagreed with.
 
 | Provider | Notes |
 |---|---|
+| Pie 官方服务（managed）| 登录即用，免自带 key — 后端托管计费 |
 | Anthropic Claude | Native API + native `tool_use` |
 | OpenAI | OpenAI `function_calling` |
 | Gemini | Native API |

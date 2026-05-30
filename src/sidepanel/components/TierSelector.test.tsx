@@ -21,6 +21,14 @@ it("calls onChange with tierId on select", () => {
 });
 
 it("free user with single tier renders a locked single option", () => {
-  render(<TierSelector tiers={[tiers[0]]} value="default" onChange={() => {}} />);
+  const onChange = vi.fn();
+  render(<TierSelector tiers={[tiers[0]]} value="default" onChange={onChange} />);
   expect(screen.getByText("标准")).toBeTruthy();
+  // No chevron (▾/▴) should be shown when locked
+  expect(screen.queryByText("▾")).toBeNull();
+  expect(screen.queryByText("▴")).toBeNull();
+  // Clicking the button should NOT open a dropdown list
+  fireEvent.click(screen.getByRole("button"));
+  expect(screen.queryByText("深度")).toBeNull();
+  expect(onChange).not.toHaveBeenCalled();
 });

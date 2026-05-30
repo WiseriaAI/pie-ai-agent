@@ -96,12 +96,16 @@ export default function InstanceForm(props: Props) {
     });
   }, [props.initialCustomModels]);
   // Managed-mode: tiers loaded from cached entitlement (falls back to registry default)
-  const defaultTiers: TierOption[] = meta?.models?.map((m) => ({ tierId: m.id, displayName: m.displayName ?? m.id })) ?? [{ tierId: "default", displayName: "标准" }];
+  const defaultTiers: TierOption[] = meta?.models?.map((m) => ({ tierId: m.id, displayName: m.displayName ?? m.id })) ?? [];
   const [tiers, setTiers] = useState<TierOption[]>(defaultTiers);
   useEffect(() => {
     if (!isManaged) return;
     getCachedEntitlement().then((ent) => {
-      if (ent && ent.tiers.length > 0) setTiers(ent.tiers);
+      if (ent && ent.tiers.length > 0) {
+        setTiers(ent.tiers);
+        // Stale-model guard: if saved tier is not in the loaded list, reset to first
+        setModel((m) => ent.tiers.some((t) => t.tierId === m) ? m : ent.tiers[0].tierId);
+      }
     });
   }, [isManaged]);
 

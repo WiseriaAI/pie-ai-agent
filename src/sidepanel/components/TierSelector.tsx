@@ -11,10 +11,11 @@ export function TierSelector({ tiers, value, onChange }: Props) {
     <div className="relative">
       <button
         type="button"
+        disabled={single}
         onClick={() => !single && setOpen(!open)}
-        className="flex w-full items-center gap-2 rounded border border-line bg-field px-3 py-2 text-left text-[12px] text-fg-1 hover:border-fg-3"
+        className={`flex w-full items-center gap-2 rounded border border-line bg-field px-3 py-2 text-left text-[12px] text-fg-1${single ? " cursor-default" : " hover:border-fg-3"}`}
       >
-        <span>{current?.displayName ?? "标准"}</span>
+        <span>{current?.displayName}</span>
         {!single && <span className="ml-auto text-fg-3">{open ? "▴" : "▾"}</span>}
       </button>
       {open && !single && (

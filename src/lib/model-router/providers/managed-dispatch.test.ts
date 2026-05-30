@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { it, expect } from "vitest";
 import { dispatchStreamChat, streamChatByProvider } from "@/lib/model-router/providers";
 import { getProviderMeta } from "@/lib/model-router/providers/registry";
 import { streamChat as managedChat } from "@/lib/model-router/providers/managed";

@@ -68,10 +68,8 @@ it("concurrent getValidJwt() with expiring token makes only one refresh request"
 });
 
 it("loginWithOAuth exchanges code and persists auth + entitlement", async () => {
-  chromeMock.identity = {
-    getRedirectURL: vi.fn(() => "https://abc.chromiumapp.org/"),
-    launchWebAuthFlow: vi.fn(async () => "https://abc.chromiumapp.org/?code=AUTHCODE"),
-  };
+  const getRedirectURLSpy = vi.spyOn(chromeMock.identity, "getRedirectURL").mockReturnValue("https://abc.chromiumapp.org/");
+  const launchWebAuthFlowSpy = vi.spyOn(chromeMock.identity, "launchWebAuthFlow").mockResolvedValue("https://abc.chromiumapp.org/?code=AUTHCODE");
   const fetchMock = vi.fn(async (url: string) => {
     if (url.endsWith("/auth/exchange"))
       return new Response(JSON.stringify({
@@ -86,6 +84,7 @@ it("loginWithOAuth exchanges code and persists auth + entitlement", async () => 
 
   expect((await getStoredAuth())!.jwt).toBe("j");
   expect(ent.plan).toBe("free");
-  expect(chromeMock.identity.launchWebAuthFlow).toHaveBeenCalledWith(
+  expect(launchWebAuthFlowSpy).toHaveBeenCalledWith(
     expect.objectContaining({ interactive: true }));
+  expect(getRedirectURLSpy).toHaveBeenCalled();
 });
