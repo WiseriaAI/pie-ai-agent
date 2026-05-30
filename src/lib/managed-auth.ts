@@ -1,0 +1,72 @@
+import { getProviderMeta } from "@/lib/model-router/providers/registry";
+
+const AUTH_KEY = "managed_auth";
+const ENT_KEY = "managed_entitlement";
+const REFRESH_SKEW_MS = 5 * 60_000; // 提前 5 分钟刷新
+
+export interface StoredAuth { jwt: string; refreshToken: string; expiresAt: number; }
+export interface Entitlement { plan: "free" | "paid"; tiers: { tierId: string; displayName: string }[]; }
+
+function base(): string {
+  return getProviderMeta("managed")!.defaultBaseUrl;
+}
+
+export async function saveAuth(a: StoredAuth): Promise<void> {
+  await chrome.storage.local.set({ [AUTH_KEY]: a });
+}
+export async function getStoredAuth(): Promise<StoredAuth | null> {
+  const r = await chrome.storage.local.get(AUTH_KEY);
+  return (r[AUTH_KEY] as StoredAuth) ?? null;
+}
+export async function clearAuth(): Promise<void> {
+  await chrome.storage.local.remove([AUTH_KEY, ENT_KEY]);
+}
+
+export function isExpiringSoon(expiresAt: number): boolean {
+  return expiresAt - Date.now() <= REFRESH_SKEW_MS;
+}
+
+let refreshInFlight: Promise<string> | null = null;
+
+/** 用 refresh token 换新 JWT，落盘并返回新 JWT。并发调用共享同一个飞行中的请求。 */
+export async function refreshJwt(): Promise<string> {
+  if (refreshInFlight) return refreshInFlight;
+  refreshInFlight = _doRefresh().finally(() => { refreshInFlight = null; });
+  return refreshInFlight;
+}
+
+async function _doRefresh(): Promise<string> {
+  const cur = await getStoredAuth();
+  if (!cur) throw new Error("managed: not logged in");
+  const res = await fetch(`${base()}/auth/refresh`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ refreshToken: cur.refreshToken }),
+  });
+  if (!res.ok) throw new Error(`managed refresh failed: ${res.status}`);
+  const data = await res.json() as StoredAuth;
+  const next: StoredAuth = { jwt: data.jwt, refreshToken: data.refreshToken, expiresAt: data.expiresAt };
+  await saveAuth(next);
+  return next.jwt;
+}
+
+/** 返回一个有效 JWT：临近过期则先刷新。 */
+export async function getValidJwt(): Promise<string> {
+  const cur = await getStoredAuth();
+  if (!cur) throw new Error("managed: not logged in");
+  if (isExpiringSoon(cur.expiresAt)) return refreshJwt();
+  return cur.jwt;
+}
+
+export async function fetchEntitlement(): Promise<Entitlement> {
+  const jwt = await getValidJwt();
+  const res = await fetch(`${base()}/me/entitlement`, { headers: { authorization: `Bearer ${jwt}` } });
+  if (!res.ok) throw new Error(`managed entitlement failed: ${res.status}`);
+  const ent = await res.json() as Entitlement;
+  await chrome.storage.local.set({ [ENT_KEY]: ent });
+  return ent;
+}
+export async function getCachedEntitlement(): Promise<Entitlement | null> {
+  const r = await chrome.storage.local.get(ENT_KEY);
+  return (r[ENT_KEY] as Entitlement) ?? null;
+}
