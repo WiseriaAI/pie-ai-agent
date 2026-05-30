@@ -159,12 +159,13 @@ export async function* streamChatOpenAICompat(
   if (!response.ok) {
     const text = await response.text().catch(() => "");
     const name = displayProviderName(config);
-    if (response.status === 401) yield { type: "error", error: `Invalid ${name} API key` };
-    else if (response.status === 429) {
+    const status = response.status;
+    if (status === 401) yield { type: "error", error: `Invalid ${name} API key`, status };
+    else if (status === 429) {
       const retryAfter = response.headers.get("retry-after");
-      yield { type: "error", error: `${name} rate limit exceeded${retryAfter ? `. Retry after ${retryAfter}s` : ""}` };
+      yield { type: "error", error: `${name} rate limit exceeded${retryAfter ? `. Retry after ${retryAfter}s` : ""}`, status };
     } else {
-      yield { type: "error", error: `${name} API error (${response.status}): ${text}` };
+      yield { type: "error", error: `${name} API error (${status}): ${text}`, status };
     }
     return;
   }

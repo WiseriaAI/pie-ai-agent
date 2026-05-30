@@ -86,4 +86,24 @@ describe("streamChatOpenAICompat", () => {
     expect(headers.authorization).toBeUndefined();
     fetchMock.mockRestore();
   });
+
+  it("attaches HTTP status to error events on non-200", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ error: "insufficient_credits" }), { status: 402 }),
+    );
+    const config: ModelConfig = {
+      provider: "openai",
+      model: "default",
+      apiKey: "jwt",
+      baseUrl: "https://x.test/functions/v1",
+    };
+    const events: { type: string; status?: number }[] = [];
+    for await (const ev of streamChatOpenAICompat(config, [{ role: "user", content: "hi" }])) {
+      events.push(ev as { type: string; status?: number });
+    }
+    const err = events.find((e) => e.type === "error");
+    expect(err).toBeDefined();
+    expect(err!.status).toBe(402);
+    fetchMock.mockRestore();
+  });
 });

@@ -149,4 +149,18 @@ describe("anthropic-compat-core: endpoint and header hooks", () => {
     expect(headers["x-api-key"]).toBe("sk-test");
     fetchMock.mockRestore();
   });
+
+  it("attaches HTTP status to error events on non-200", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ error: "rate_limited" }), { status: 429 }),
+    );
+    const events: { type: string; status?: number }[] = [];
+    for await (const ev of streamChatAnthropicCompat(config, [userMsg])) {
+      events.push(ev as { type: string; status?: number });
+    }
+    const err = events.find((e) => e.type === "error");
+    expect(err).toBeDefined();
+    expect(err!.status).toBe(429);
+    fetchMock.mockRestore();
+  });
 });

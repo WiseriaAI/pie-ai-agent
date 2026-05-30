@@ -52,4 +52,4 @@ export type StreamEvent =
       stopReason?: "end" | "tool_calls" | "length";
       usage?: { inputTokens: number; outputTokens: number };
     }
-  | { type: "error"; error: string };
+  | { type: "error"; error: string; status?: number };
