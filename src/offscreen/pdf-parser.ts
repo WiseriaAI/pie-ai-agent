@@ -202,7 +202,9 @@ async function ensureLiteParse(): Promise<void> {
   if (liteParseReady) return liteParseReady;
   liteParseReady = (async () => {
     const wasmUrl = chrome.runtime.getURL("liteparse.wasm");
-    await initLiteParse(wasmUrl);
+    // wasm-bindgen ≥0.2.93 deprecated positional init args; pass a single
+    // { module_or_path } object to avoid the runtime deprecation warning.
+    await initLiteParse({ module_or_path: wasmUrl });
   })().catch((err) => {
     liteParseReady = null; // retry on next call
     throw err;
