@@ -132,11 +132,18 @@ export async function resolveInstanceToModelConfig(id: string): Promise<ModelCon
   const vision = inst.provider.startsWith("custom:")
     ? await resolveCustomModelVision(inst.provider, inst.model)
     : resolveModelVision(inst.provider as BuiltinProvider, inst.model, inst.fetchedModels);
+  // managed: use a fresh valid JWT from managed-auth, overriding the instance's stored (stale) JWT
+  let apiKey = inst.apiKey;
+  if (inst.provider === "managed") {
+    const { getValidJwt } = await import("@/lib/managed-auth");
+    try { apiKey = await getValidJwt(); } catch { /* not logged in → keep stored value; downstream 401 handles it */ }
+  }
+
   return {
     provider: inst.provider,
     providerName: meta.name,
     model: inst.model,
-    apiKey: inst.apiKey,
+    apiKey,
     baseUrl: meta.defaultBaseUrl,
     ...(inst.maxTokens != null && { maxTokens: inst.maxTokens }),
     ...(vision !== undefined && { vision }),

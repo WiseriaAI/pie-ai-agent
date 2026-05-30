@@ -1,11 +1,13 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { chromeMock } from "@/test/setup";
 import {
   createInstance, getInstance, listInstances, deleteInstance,
   setActiveInstance, getActiveInstance, resolveActiveInstanceModelConfig,
+  resolveInstanceToModelConfig,
   updateInstance,
 } from "./instances";
 import { saveCustomProvider } from "./custom-providers";
+import { saveAuth } from "@/lib/managed-auth";
 
 beforeEach(() => {
   chromeMock.storage.local.__store = {};
@@ -216,5 +218,35 @@ describe("instances CRUD", () => {
         expect(cfg!.vision).toBeUndefined();
       });
     });
+  });
+});
+
+describe("managed JWT refresh at task-start (resolveInstanceToModelConfig)", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("resolveInstanceToModelConfig refreshes managed JWT at task start", async () => {
+    // Create a managed instance with "old-jwt" stored as the apiKey
+    const id = await createInstance({
+      provider: "managed",
+      nickname: "Pie 官方",
+      apiKey: "old-jwt",
+      model: "default",
+    });
+    // Store auth with near-expiry (< 5-min skew) so getValidJwt() triggers refresh
+    await saveAuth({ jwt: "old-jwt", refreshToken: "r1", expiresAt: Date.now() + 1000 });
+    // Mock fetch to respond to /auth/refresh with a fresh JWT
+    vi.stubGlobal("fetch", vi.fn(async () =>
+      new Response(
+        JSON.stringify({ jwt: "new-jwt", refreshToken: "r2", expiresAt: Date.now() + 3_600_000 }),
+        { status: 200 },
+      ),
+    ));
+
+    const cfg = await resolveInstanceToModelConfig(id);
+    expect(cfg!.provider).toBe("managed");
+    expect(cfg!.model).toBe("default");   // tier_id passes through unchanged
+    expect(cfg!.apiKey).toBe("new-jwt");  // refreshed
   });
 });
