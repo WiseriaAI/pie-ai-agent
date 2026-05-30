@@ -5,6 +5,8 @@ import { useProviderMeta } from "@/sidepanel/hooks/useProviderMeta";
 import { CUSTOM_PREFIX } from "@/lib/custom-providers";
 import { useT } from "@/lib/i18n";
 import ModelDropdown from "./ModelDropdown";
+import { TierSelector, type TierOption } from "./TierSelector";
+import { getCachedEntitlement } from "@/lib/managed-auth";
 
 export interface InstanceFormPayload {
   nickname: string;
@@ -58,6 +60,7 @@ export default function InstanceForm(props: Props) {
   const syncMeta = props.provider.startsWith(CUSTOM_PREFIX) ? undefined : getProviderMeta(props.provider as BuiltinProvider);
   const meta = resolvedMeta ?? syncMeta;
   const isCustomProvider = props.provider.startsWith(CUSTOM_PREFIX);
+  const isManaged = props.provider === "managed";
   const effectiveFetchedModels = useMemo(() => {
     if (isCustomProvider && meta?.models) return meta.models;
     return props.fetchedModels;
@@ -92,10 +95,20 @@ export default function InstanceForm(props: Props) {
       return changed ? merged : prev;
     });
   }, [props.initialCustomModels]);
+  // Managed-mode: tiers loaded from cached entitlement (falls back to registry default)
+  const defaultTiers: TierOption[] = meta?.models?.map((m) => ({ tierId: m.id, displayName: m.displayName ?? m.id })) ?? [{ tierId: "default", displayName: "标准" }];
+  const [tiers, setTiers] = useState<TierOption[]>(defaultTiers);
+  useEffect(() => {
+    if (!isManaged) return;
+    getCachedEntitlement().then((ent) => {
+      if (ent && ent.tiers.length > 0) setTiers(ent.tiers);
+    });
+  }, [isManaged]);
+
   // Edit mode: start in read-only partial-reveal; create mode: always in replacing state
   const [replacing, setReplacing] = useState(props.mode === "create" || !props.existingApiKey);
 
-  const requireApiKey = props.mode === "create" || replacing;
+  const requireApiKey = !isManaged && (props.mode === "create" || replacing);
   const canSave = (!requireApiKey || apiKey.trim().length > 0) && model.trim().length > 0;
 
   const payload: InstanceFormPayload = { nickname, apiKey, model, customModels };
@@ -123,81 +136,89 @@ export default function InstanceForm(props: Props) {
         )}
       </Field>
 
-      <Field label={t("instanceForm.apiKey")} hint={t("instanceForm.aesGcmLocal")}>
-        {!replacing && props.existingApiKey ? (
-          <div className="flex flex-col gap-1.5">
-            <div className="flex gap-1.5">
-              <div className="flex-1 rounded border border-line bg-field px-3 py-2 font-mono text-[12px] text-fg-1 select-all">
-                {partialReveal(props.existingApiKey)}
+      {!isManaged && (
+        <Field label={t("instanceForm.apiKey")} hint={t("instanceForm.aesGcmLocal")}>
+          {!replacing && props.existingApiKey ? (
+            <div className="flex flex-col gap-1.5">
+              <div className="flex gap-1.5">
+                <div className="flex-1 rounded border border-line bg-field px-3 py-2 font-mono text-[12px] text-fg-1 select-all">
+                  {partialReveal(props.existingApiKey)}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setReplacing(true)}
+                  className="rounded border border-line bg-field px-2.5 text-[11px] text-fg-2 hover:text-fg-1"
+                >
+                  {t("instanceForm.replaceKey")}
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setReplacing(true)}
-                className="rounded border border-line bg-field px-2.5 text-[11px] text-fg-2 hover:text-fg-1"
-              >
-                {t("instanceForm.replaceKey")}
-              </button>
             </div>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-1.5">
-            <div className="flex gap-1.5">
-              <input
-                aria-label={t("instanceForm.apiKeyLabel")}
-                type={showKey ? "text" : "password"}
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder={meta?.placeholder ?? ""}
-                className="flex-1 rounded border border-line bg-field px-3 py-2 text-[12px] text-fg-1"
-              />
-              <button
-                type="button"
-                onClick={() => setShowKey(!showKey)}
-                className="rounded border border-line bg-field px-2.5 text-[11px] text-fg-2"
-              >
-                {showKey ? t("instanceForm.hideKey") : t("instanceForm.showKey")}
-              </button>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              <div className="flex gap-1.5">
+                <input
+                  aria-label={t("instanceForm.apiKeyLabel")}
+                  type={showKey ? "text" : "password"}
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder={meta?.placeholder ?? ""}
+                  className="flex-1 rounded border border-line bg-field px-3 py-2 text-[12px] text-fg-1"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowKey(!showKey)}
+                  className="rounded border border-line bg-field px-2.5 text-[11px] text-fg-2"
+                >
+                  {showKey ? t("instanceForm.hideKey") : t("instanceForm.showKey")}
+                </button>
+              </div>
+              {props.mode === "edit" && props.existingApiKey && (
+                <button
+                  type="button"
+                  onClick={() => { setApiKey(""); setReplacing(false); }}
+                  className="self-start rounded border border-line bg-transparent px-3 py-1.5 text-[11px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
+                >
+                  {t("instanceForm.cancelKeepKey")}
+                </button>
+              )}
             </div>
-            {props.mode === "edit" && props.existingApiKey && (
-              <button
-                type="button"
-                onClick={() => { setApiKey(""); setReplacing(false); }}
-                className="self-start rounded border border-line bg-transparent px-3 py-1.5 text-[11px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
-              >
-                {t("instanceForm.cancelKeepKey")}
-              </button>
-            )}
-          </div>
-        )}
-      </Field>
+          )}
+        </Field>
+      )}
 
-      <Field label={t("instanceForm.model")}>
-        <ModelDropdown
-          provider={props.provider}
-          value={model}
-          customModels={customModels}
-          fetchedModels={effectiveFetchedModels}
-          fetchedAt={props.fetchedAt}
-          isFetching={props.isFetching}
-          onChange={setModel}
-          onAddCustom={isCustomProvider ? undefined : (id) => {
-            setCustomModels((prev) => (prev.includes(id) ? prev : [...prev, id]));
-            setModel(id);
-            props.onAddCustomModel?.(id);
-          }}
-          onRemoveCustom={isCustomProvider ? undefined : (id) => {
-            setCustomModels((prev) => prev.filter((x) => x !== id));
-            if (model === id) setModel("");
-            props.onRemoveCustomModel?.(id);
-          }}
-          onRefresh={() => {
-            // Effective apiKey: just-typed (replacing OR creating) takes
-            // precedence; otherwise fall back to existing stored key.
-            const effective = apiKey.trim().length > 0 ? apiKey : (props.existingApiKey ?? "");
-            props.onRefreshModels?.(effective);
-          }}
-        />
-      </Field>
+      {isManaged ? (
+        <Field label={t("instanceForm.thinkingStrength")}>
+          <TierSelector tiers={tiers} value={model} onChange={setModel} />
+        </Field>
+      ) : (
+        <Field label={t("instanceForm.model")}>
+          <ModelDropdown
+            provider={props.provider}
+            value={model}
+            customModels={customModels}
+            fetchedModels={effectiveFetchedModels}
+            fetchedAt={props.fetchedAt}
+            isFetching={props.isFetching}
+            onChange={setModel}
+            onAddCustom={isCustomProvider ? undefined : (id) => {
+              setCustomModels((prev) => (prev.includes(id) ? prev : [...prev, id]));
+              setModel(id);
+              props.onAddCustomModel?.(id);
+            }}
+            onRemoveCustom={isCustomProvider ? undefined : (id) => {
+              setCustomModels((prev) => prev.filter((x) => x !== id));
+              if (model === id) setModel("");
+              props.onRemoveCustomModel?.(id);
+            }}
+            onRefresh={() => {
+              // Effective apiKey: just-typed (replacing OR creating) takes
+              // precedence; otherwise fall back to existing stored key.
+              const effective = apiKey.trim().length > 0 ? apiKey : (props.existingApiKey ?? "");
+              props.onRefreshModels?.(effective);
+            }}
+          />
+        </Field>
+      )}
 
       {!props.renderActions && (
         <div className="flex flex-wrap gap-1.5 pt-1">

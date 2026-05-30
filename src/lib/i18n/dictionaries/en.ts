@@ -225,6 +225,7 @@ export const enDict = {
     showKey: "Show",
     cancelKeepKey: "Cancel — keep current key",
     model: "MODEL",
+    thinkingStrength: "THINKING STRENGTH",
     test: "Test",
     save: "Save",
     forgetConfig: "Forget config",

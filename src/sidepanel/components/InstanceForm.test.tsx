@@ -1,5 +1,6 @@
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, afterEach } from "vitest";
+import { chromeMock } from "@/test/setup";
 import InstanceForm from "./InstanceForm";
 
 afterEach(() => {
@@ -100,5 +101,27 @@ describe("InstanceForm", () => {
       (el) => el.tagName === "INPUT",
     );
     expect(input).toBeTruthy();
+  });
+
+  it("managed provider hides apiKey input and shows TierSelector", async () => {
+    chromeMock.storage.local.__store["managed_entitlement"] = {
+      plan: "free",
+      tiers: [{ tierId: "default", displayName: "标准" }],
+    };
+    render(
+      <InstanceForm
+        mode="edit"
+        provider="managed"
+        initialNickname="Pie 官方"
+        initialModel="default"
+        existingApiKey="managed-jwt-injected"
+        onSave={() => {}}
+        onTest={() => {}}
+      />,
+    );
+    // No API key input should be visible
+    expect(screen.queryByLabelText(/api key/i)).toBeNull();
+    // TierSelector should show the cached entitlement's displayName
+    expect(await screen.findByText("标准")).toBeTruthy();
   });
 });

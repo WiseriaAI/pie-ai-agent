@@ -225,6 +225,7 @@ export const zhCNDict = {
     showKey: "显示",
     cancelKeepKey: "取消 — 保留当前 Key",
     model: "模型",
+    thinkingStrength: "思考强度",
     test: "测试",
     save: "保存",
     forgetConfig: "删除配置",
