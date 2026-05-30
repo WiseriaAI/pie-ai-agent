@@ -3,6 +3,7 @@ import { resizePanel } from "@/lib/images/resize-panel";
 import type { FileAttachment } from "./types";
 import { classifyFile, MAX_FILE_BYTES } from "@/lib/file-read/classify";
 import { sendToOffscreen } from "@/background/offscreen-manager";
+import { arrayBufferToBase64 } from "@/lib/files/base64";
 
 const READ_MAX_CHARS = 200_000;
 
@@ -51,7 +52,7 @@ export async function processPickedFile(
   try {
     const bytes = await file.arrayBuffer();
     const parsed = (await sendToOffscreen({
-      type: "pdf:parse_bytes", bytes, cacheKey: `${file.name}:${file.size}`,
+      type: "pdf:parse_bytes", base64: arrayBufferToBase64(bytes), cacheKey: `${file.name}:${file.size}`,
     })) as { pages: Array<{ page: number; text: string }>; total_pages: number };
     const joined = parsed.pages.map((p) => p.text).join("\n");
     const truncated = joined.length > READ_MAX_CHARS;

@@ -3,6 +3,7 @@ import type { ActionResult } from "@/lib/dom-actions/types";
 import { sanitizeDownloadName } from "@/lib/files/download-name";
 import { sendToOffscreen } from "@/background/offscreen-manager";
 import { classifyFile, MAX_FILE_BYTES } from "@/lib/file-read/classify";
+import { arrayBufferToBase64 } from "@/lib/files/base64";
 import { escapeUntrustedWrappers } from "../untrusted-wrappers";
 import { buildLocalFileWrapper } from "@/lib/files/inject";
 
@@ -144,7 +145,7 @@ export const readLocalFileTool: Tool = {
     const bytes = await res.arrayBuffer();
     if (bytes.byteLength > MAX_FILE_BYTES) return { success: false, error: `too_large: exceeds ${MAX_FILE_BYTES / (1024 * 1024)}MB cap` };
     try {
-      const parsed = (await sendToOffscreen({ type: "pdf:parse_bytes", bytes, cacheKey: uri })) as { pages: Array<{ page: number; text: string }>; total_pages: number };
+      const parsed = (await sendToOffscreen({ type: "pdf:parse_bytes", base64: arrayBufferToBase64(bytes), cacheKey: uri })) as { pages: Array<{ page: number; text: string }>; total_pages: number };
       const joinedFull = parsed.pages.map((p) => p.text).join("\n");
       const truncated = joinedFull.length > READ_MAX_CHARS;
       const body = truncated ? `${joinedFull.slice(0, READ_MAX_CHARS)}\n…[truncated]` : joinedFull;

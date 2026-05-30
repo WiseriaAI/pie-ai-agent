@@ -15,7 +15,7 @@ export type OffscreenRequest =
   | { type: "pdf:outline"; url: string }
   | { type: "pdf:read_page"; url: string; pages: number[] }
   | { type: "pdf:search"; url: string; query: string; maxResults: number }
-  | { type: "pdf:parse_bytes"; bytes: ArrayBuffer; cacheKey: string };
+  | { type: "pdf:parse_bytes"; base64: string; cacheKey: string };
 
 export interface OffscreenSuccess<T = unknown> {
   ok: true;
