@@ -1,5 +1,6 @@
 import type { ChatMessage } from "@/lib/model-router";
 import type { Attachment } from "@/lib/images";
+import type { FileAttachment } from "@/lib/files/types";
 import type { CapturedActionPayload, RecordedAction } from "@/lib/recording/types";
 import type { Quote, QuoteAddedMessage } from "./quotes";
 
@@ -195,6 +196,10 @@ export type DisplayMessage =
        *  quote block without re-parsing XML. Bytes-bearing (element imageDataUrl)
        *  follow the same R10 scrub rules as attachments at storage boundary. */
       quotes?: Quote[];
+      /** FIX-B — file attachments staged at send time. Carried on the display
+       *  message so MessageBubble can echo the filename(s) in the chat bubble.
+       *  The actual text content lives in expandedForLLM; this is display-only. */
+      fileAttachments?: FileAttachment[];
       /** Issue #34 — ulid set by panel when added via addPendingInstruction
        *  during streaming. Cross-references SW pendingInstructions[]. Absent
        *  on normal sendMessage user messages. */

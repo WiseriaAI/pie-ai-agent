@@ -12,6 +12,7 @@ import { TAB_TOOLS } from "./tools/tabs";
 import { searchWebTool } from "./tools/search";
 import { readPageTool } from "./tools/read-page";
 import { PDF_TOOLS } from "./tools/pdf";
+import { LOCAL_FILE_TOOLS } from "./tools/files";
 
 export {
   KEYBOARD_TOOL_NAMES,
@@ -291,6 +292,7 @@ export const BUILT_IN_TOOLS: Tool[] = [
   searchWebTool,
   readPageTool,
   ...PDF_TOOLS,
+  ...LOCAL_FILE_TOOLS,
 ];
 
 // iframe spec R-iframe-1 — build-time assertion: writes target a specific

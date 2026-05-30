@@ -10,8 +10,11 @@ import { resolveModelVision, resolveModelMeta } from "@/lib/model-router/provide
 import ContextRing from "./ContextRing";
 import type { BuiltinProvider } from "@/lib/model-router";
 import { listInstances, getActiveInstance, getInstance, type DecryptedInstance } from "@/lib/instances";
-import { resizePanel } from "@/lib/images/resize-panel";
 import type { ImageAttachment } from "@/lib/images";
+import type { FileAttachment } from "@/lib/files/types";
+import { processPickedFile } from "@/lib/files/process-picked-file";
+import { fileAttachmentToWrapper } from "@/lib/files/inject";
+import { FileChip } from "./FileChip";
 import type { UseSession } from "@/sidepanel/hooks/useSession";
 import AgentStepGroup, { type AgentStepData } from "./AgentStepGroup";
 import PinnedTabDropdown from "./PinnedTabDropdown";
@@ -79,6 +82,8 @@ import SkillSlashPopover from "./SkillSlashPopover";
 import { PendingInstructionList, type PendingItem } from "./PendingInstructionList";
 import { useCdpOnboarding } from "../hooks/useCdpOnboarding";
 import { CdpOnboardingCard } from "./CdpOnboardingCard";
+import { useLocalFileRequest } from "../hooks/useLocalFileRequest";
+import { LocalFileRequestCard } from "./LocalFileRequestCard";
 import { usePdfPermission } from "../hooks/usePdfPermission";
 import { PdfPermissionCard } from "./PdfPermissionCard";
 
@@ -202,11 +207,15 @@ export default function Chat({
 
   // Phase 5 image input state
   const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
+  const [fileAttachments, setFileAttachments] = useState<FileAttachment[]>([]);
   const [resizing, setResizing] = useState<Set<string>>(new Set());
   const [supportsVision, setSupportsVision] = useState<boolean>(false);
   const [maxContextTokens, setMaxContextTokens] = useState<number | undefined>(undefined);
   const [attachLocalToast, setAttachLocalToast] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  // Dedicated picker for request_local_file (kept separate from fileInputRef so
+  // the pick routes to the SW round-trip, not the normal attach flow).
+  const localFileRequestInputRef = useRef<HTMLInputElement | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // InstanceSelector state — list of configured instances + per-session current
@@ -223,6 +232,10 @@ export default function Chat({
   // Load instances list + current session's instanceId on mount / sessionId change
   const sessionId = session.sessionId;
   const { pending: cdpPending, answer: answerCdp } = useCdpOnboarding(session.port, sessionId);
+  const { pending: localFilePending, respond: respondLocalFile } = useLocalFileRequest(
+    session.port,
+    sessionId,
+  );
   const { showCard: showPdfPermission, dismiss: dismissPdfPermission } = usePdfPermission(
     session.port,
   );
@@ -551,11 +564,7 @@ export default function Chat({
     toastTimerRef.current = setTimeout(() => setAttachLocalToast(null), 4000);
   }
 
-  const addFiles = async (files: File[]) => {
-    if (!supportsVision) {
-      showLocalToast(t("chat.attachment.attachImageNoVision"));
-      return;
-    }
+  const addPickedFiles = async (files: File[]) => {
     if (files.length === 0) {
       // Composer detected image data in the paste/drop event but no File
       // object was extractable (e.g. user copied an <img> from a web page —
@@ -566,44 +575,124 @@ export default function Chat({
       );
       return;
     }
-    const room = MAX_IMAGES_PER_TURN - attachments.length;
-    if (room <= 0) {
-      showLocalToast(t("chat.attachment.maxImagesPerMessage", { max: String(MAX_IMAGES_PER_TURN) }));
-      return;
-    }
-    const slice = files.slice(0, room);
-    for (const f of slice) {
-      const tempId = `pending_${crypto.randomUUID()}`;
-      setResizing((s) => new Set(s).add(tempId));
-      try {
-        const r = await resizePanel(f);
-        setResizing((s) => {
-          const next = new Set(s);
-          next.delete(tempId);
-          return next;
-        });
-        if (!r.ok) {
-          showLocalToast(t("chat.attachment.imageRejected", { reason: r.reason }));
+    for (const f of files) {
+      // For image files, use the per-image resize spinner UX.
+      // processPickedFile handles image resizing internally, but we track
+      // the spinner for images so the user sees feedback during resize.
+      const isImage = f.type.startsWith("image/");
+      let tempId: string | null = null;
+      if (isImage) {
+        // Check image cap before starting spinner
+        if (attachments.length >= MAX_IMAGES_PER_TURN) {
+          showLocalToast(t("chat.attachment.maxImagesPerMessage", { max: String(MAX_IMAGES_PER_TURN) }));
           continue;
         }
-        const att: ImageAttachment = {
-          kind: "image",
-          id: `img_user_${crypto.randomUUID()}`,
-          mediaType: r.value.mediaType,
-          data: r.value.data,
-          width: r.value.width,
-          height: r.value.height,
-          byteLength: r.value.byteLength,
-        };
-        setAttachments((prev) => [...prev, att]);
-      } catch {
-        setResizing((s) => {
-          const next = new Set(s);
-          next.delete(tempId);
-          return next;
-        });
-        showLocalToast(t("chat.attachment.imageProcessingFailed"));
+        tempId = `pending_${crypto.randomUUID()}`;
+        setResizing((s) => new Set(s).add(tempId!));
       }
+      try {
+        const result = await processPickedFile(f, { supportsVision });
+        if (isImage && tempId) {
+          setResizing((s) => {
+            const next = new Set(s);
+            next.delete(tempId!);
+            return next;
+          });
+        }
+        if (!result.ok) {
+          // Map reason → localized message. processPickedFile stays
+          // i18n-decoupled (returns English dev strings); we localize here.
+          // result.message is a dev-only fallback for unmapped reasons.
+          let toastMsg: string;
+          switch (result.reason) {
+            case "no_vision":
+              toastMsg = t("chat.attachment.attachImageNoVision");
+              break;
+            case "too_large":
+              toastMsg = t("chat.files.tooLarge", { name: f.name });
+              break;
+            case "unsupported":
+              toastMsg = t("chat.files.unsupported", { name: f.name });
+              break;
+            case "error":
+              toastMsg = t("chat.files.processingFailed");
+              break;
+            default:
+              toastMsg = result.message;
+          }
+          showLocalToast(toastMsg);
+          continue;
+        }
+        if (result.kind === "image") {
+          // Re-check cap after async operation in case another file added one
+          setAttachments((prev) => {
+            if (prev.length >= MAX_IMAGES_PER_TURN) return prev;
+            return [...prev, result.attachment];
+          });
+        } else {
+          // kind === "file" — text/code/PDF
+          setFileAttachments((prev) => [...prev, result.attachment]);
+        }
+      } catch {
+        if (isImage && tempId) {
+          setResizing((s) => {
+            const next = new Set(s);
+            next.delete(tempId!);
+            return next;
+          });
+        }
+        showLocalToast(t("chat.files.processingFailed"));
+      }
+    }
+  };
+
+  // request_local_file — the user picked a file via the dedicated input. Route
+  // the result back to the SW (not the normal attach flow). Text/PDF → ok;
+  // images / unsupported / failures → ok:false with a reason.
+  const handleLocalFileRequestPick = async (files: File[]) => {
+    const f = files[0];
+    // Defensive only: a native-dialog Cancel produces NO onChange event, so
+    // this branch effectively never fires from the picker. The real Cancel
+    // path is the card's Cancel button (onCancel → respondLocalFile).
+    if (!f) {
+      respondLocalFile({ ok: false, reason: "cancelled by user" });
+      return;
+    }
+    try {
+      const result = await processPickedFile(f, { supportsVision });
+      if (result.ok && result.kind === "file") {
+        const att = result.attachment;
+        respondLocalFile({
+          ok: true,
+          name: att.name,
+          mime: att.mime,
+          text: att.text,
+          truncated: att.truncated,
+        });
+        return;
+      }
+      // Non-file outcome: either a processing failure (!ok) with a specific
+      // reason, or an image (ok but kind:"image") which can't be returned
+      // through this tool result. Mirror the reason-mapping used in
+      // addPickedFiles so the toast matches the actual failure.
+      if (!result.ok) {
+        switch (result.reason) {
+          case "too_large": showLocalToast(t("chat.files.tooLarge", { name: f.name })); break;
+          case "unsupported": showLocalToast(t("chat.files.unsupported", { name: f.name })); break;
+          case "no_vision": showLocalToast(t("chat.attachment.attachImageNoVision")); break;
+          default: showLocalToast(t("chat.files.processingFailed"));
+        }
+      } else {
+        // ok:true but kind:"image" — images can't be returned through this tool result
+        showLocalToast(t("chat.attachment.attachImageNoVision"));
+      }
+      respondLocalFile({
+        ok: false,
+        reason: "image_or_unsupported: that file type can't be returned here; for images use the + menu",
+      });
+    } catch {
+      showLocalToast(t("chat.files.processingFailed"));
+      respondLocalFile({ ok: false, reason: "processing failed" });
     }
   };
 
@@ -706,6 +795,8 @@ After the skill completes, briefly summarize what was created (the user will see
     // Capture attachments snapshot before clearing
     const pendingAttachments = attachments.length > 0 ? [...attachments] : undefined;
     setAttachments([]);
+    const pendingFileAttachments = fileAttachments.length > 0 ? [...fileAttachments] : undefined;
+    setFileAttachments([]);
 
     // Issue #38 v1 — serialize quotes into the LLM-facing wire content and
     // element-quote screenshots into attachments. The display layer reads the
@@ -741,6 +832,14 @@ After the skill completes, briefly summarize what was created (the user will see
       expandedForLLM = wireText ? `${quoteText}\n\n${wireText}` : quoteText;
     }
 
+    // Append file attachment wrappers to the LLM-facing content (same pattern
+    // as quote wrappers above — joined into expandedForLLM, not visible content).
+    if (pendingFileAttachments && pendingFileAttachments.length > 0) {
+      const fileParts = pendingFileAttachments.map(fileAttachmentToWrapper).join("\n\n");
+      const wireText = expandedForLLM ?? content;
+      expandedForLLM = wireText ? `${wireText}\n\n${fileParts}` : fileParts;
+    }
+
     const stagedQuotes = quotes && quotes.length > 0 ? [...quotes] : undefined;
 
     sessionSendMessage({
@@ -748,6 +847,7 @@ After the skill completes, briefly summarize what was created (the user will see
       expandedForLLM,
       attachments: allAttachments.length > 0 ? allAttachments : undefined,
       quotes: stagedQuotes,
+      fileAttachments: pendingFileAttachments,
     });
 
     // Clear quotes after send
@@ -780,6 +880,8 @@ After the skill completes, briefly summarize what was created (the user will see
       // streaming (the active task already has its expanded prompt).
       const pendingAttachments = attachments.length > 0 ? [...attachments] : undefined;
       setAttachments([]);
+      const pendingFileAttachments = fileAttachments.length > 0 ? [...fileAttachments] : undefined;
+      setFileAttachments([]);
 
       const quoteImages: ImageAttachment[] = [];
       const quoteParts: string[] = [];
@@ -809,6 +911,13 @@ After the skill completes, briefly summarize what was created (the user will see
         expandedForLLM = quoteText ? `${quoteText}\n\n${userInput}` : userInput;
       }
 
+      // Append file attachment wrappers (mirrors the sendMessage path above).
+      if (pendingFileAttachments && pendingFileAttachments.length > 0) {
+        const fileParts = pendingFileAttachments.map(fileAttachmentToWrapper).join("\n\n");
+        const wireText = expandedForLLM ?? userInput;
+        expandedForLLM = wireText ? `${wireText}\n\n${fileParts}` : fileParts;
+      }
+
       const stagedQuotes = quotes && quotes.length > 0 ? [...quotes] : undefined;
 
       addPendingInstruction({
@@ -816,6 +925,7 @@ After the skill completes, briefly summarize what was created (the user will see
         expandedForLLM,
         attachments: allAttachments.length > 0 ? allAttachments : undefined,
         quotes: stagedQuotes,
+        fileAttachments: pendingFileAttachments,
       });
 
       setInput("");
@@ -1117,11 +1227,24 @@ After the skill completes, briefly summarize what was created (the user will see
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/jpeg,image/png,image/webp,image/gif"
+        accept="image/*,application/pdf,text/*,.md,.markdown,.json,.jsonl,.csv,.tsv,.log,.xml,.yaml,.yml,.ts,.tsx,.js,.jsx,.py,.rb,.go,.rs,.java,.c,.h,.cpp,.sh,.toml,.ini,.sql"
         multiple
         style={{ display: "none" }}
         onChange={(e) => {
-          if (e.target.files) void addFiles([...e.target.files]);
+          if (e.target.files) void addPickedFiles([...e.target.files]);
+          e.target.value = "";
+        }}
+      />
+
+      {/* request_local_file — dedicated hidden input; pick routes to the SW
+          round-trip via handleLocalFileRequestPick, not the normal attach flow. */}
+      <input
+        ref={localFileRequestInputRef}
+        type="file"
+        accept="application/pdf,text/*,.md,.markdown,.json,.jsonl,.csv,.tsv,.log,.xml,.yaml,.yml,.ts,.tsx,.js,.jsx,.py,.rb,.go,.rs,.java,.c,.h,.cpp,.sh,.toml,.ini,.sql"
+        style={{ display: "none" }}
+        onChange={(e) => {
+          if (e.target.files) void handleLocalFileRequestPick([...e.target.files]);
           e.target.value = "";
         }}
       />
@@ -1163,6 +1286,15 @@ After the skill completes, briefly summarize what was created (the user will see
               quote={q}
               onRemove={(id) => sessionId && removeQuote(sessionId, id)}
             />
+          ))}
+        </div>
+      )}
+
+      {/* File attachments chip row (text/code/PDF) */}
+      {fileAttachments.length > 0 && (
+        <div className="flex gap-2 px-4 pb-2 flex-wrap" aria-label={t("chat.files.fileAttachments")}>
+          {fileAttachments.map((f) => (
+            <FileChip key={f.id} attachment={f} onRemove={(id) => setFileAttachments((p) => p.filter((x) => x.id !== id))} />
           ))}
         </div>
       )}
@@ -1286,6 +1418,12 @@ After the skill completes, briefly summarize what was created (the user will see
       )}
 
       {cdpPending && <CdpOnboardingCard onAnswer={answerCdp} />}
+      {localFilePending && (
+        <LocalFileRequestCard
+          onChoose={() => localFileRequestInputRef.current?.click()}
+          onCancel={() => respondLocalFile({ ok: false, reason: "cancelled by user" })}
+        />
+      )}
       {showPdfPermission && (
         <PdfPermissionCard onDismiss={dismissPdfPermission} />
       )}
@@ -1313,8 +1451,8 @@ After the skill completes, briefly summarize what was created (the user will see
         onAttachClick={() => fileInputRef.current?.click()}
         onPickElement={onPickElement}
         pickerActive={pickerActive}
-        onPasteFiles={(files) => void addFiles(files)}
-        onDropFiles={(files) => void addFiles(files)}
+        onPasteFiles={(files) => void addPickedFiles(files)}
+        onDropFiles={(files) => void addPickedFiles(files)}
         onStartRecording={onStartRecording}
         recordingDisabled={pendingRecording !== null}
         instances={instances}
@@ -1392,6 +1530,7 @@ function MessageBubble({
       (a) => !a.id.startsWith("quote-"),
     );
     const hasQuotes = !!message.quotes && message.quotes.length > 0;
+    const hasFileAttachments = !!message.fileAttachments && message.fileAttachments.length > 0;
     const hasText = message.content.length > 0;
     return (
       <div className="flex justify-end">
@@ -1432,6 +1571,13 @@ function MessageBubble({
                     )}
                   </span>
                 </div>
+              ))}
+            </div>
+          )}
+          {hasFileAttachments && (
+            <div className="flex flex-wrap gap-1.5">
+              {message.fileAttachments!.map((fa) => (
+                <FileChip key={fa.id} attachment={fa} />
               ))}
             </div>
           )}
@@ -1599,36 +1745,53 @@ function Composer({
             disabled={!sessionAllowsInput}
             className="min-h-[60px] resize-none bg-transparent text-[13px] leading-5 text-fg-1 placeholder:text-fg-3 disabled:opacity-50"
             onPaste={(e) => {
-              const items = e.clipboardData?.items;
-              if (!items) return;
-              // Detect ANY image in clipboard (file OR string-typed image
-              // data like text/uri-list of an image URL). Without this
-              // detection, paste would silently no-op when (a) provider
-              // lacks vision OR (b) clipboard has image-as-URL (common
-              // when copying from web pages) — user reports "no response".
-              const hasImageInClipboard = Array.from(items).some((item) =>
-                item.type.startsWith("image/"),
-              );
-              if (!hasImageInClipboard) return; // normal text paste, fall through
-              e.preventDefault();
-              const files: File[] = [];
-              for (const item of items) {
-                if (item.kind === "file" && item.type.startsWith("image/")) {
-                  const f = item.getAsFile();
-                  if (f) files.push(f);
+              const dt = e.clipboardData;
+              if (!dt) return;
+              // Collect EVERY file blob on the clipboard — images copied as
+              // image data, plus any text/PDF blob an app exposes. Prefer the
+              // standard FileList; fall back to file-kind items (some sources
+              // only populate items). addPickedFiles routes by type and
+              // rejects unsupported ones via toast.
+              // NOTE: macOS Finder "Copy file" usually does NOT surface a File
+              // here (browser limitation), so paste mainly covers app-copied
+              // blobs; drag-drop (onDrop) is the reliable path for Finder files.
+              const files: File[] = [...(dt.files ?? [])];
+              if (files.length === 0 && dt.items) {
+                for (const item of dt.items) {
+                  if (item.kind === "file") {
+                    const f = item.getAsFile();
+                    if (f) files.push(f);
+                  }
                 }
               }
-              // Always invoke — addFiles surfaces a toast for every reason
-              // (no-vision-provider / cap-exceeded / empty-files / resize-fail).
-              onPasteFiles(files);
+              if (files.length > 0) {
+                e.preventDefault();
+                // Always invoke — addPickedFiles surfaces a toast for every
+                // reason (no-vision / cap-exceeded / unsupported / fail).
+                onPasteFiles(files);
+                return;
+              }
+              // No file blobs. If an image is present only as a string (e.g. an
+              // image URL copied from a web page), it can't be attached —
+              // surface the existing guidance toast instead of a silent no-op.
+              const hasImageString = Array.from(dt.items ?? []).some((item) =>
+                item.type.startsWith("image/"),
+              );
+              if (hasImageString) {
+                e.preventDefault();
+                onPasteFiles([]); // empty → clipboardUnsupported guidance toast
+                return;
+              }
+              // Otherwise: normal text paste — fall through (no preventDefault).
             }}
             onDrop={(e) => {
+              // Forward ALL dropped File objects — addPickedFiles routes by
+              // type and rejects unsupported ones via toast. Supports images,
+              // text/code, and PDFs (Task 4.4 unified attach).
               const dropped = [...(e.dataTransfer?.files ?? [])];
-              const hasImageInDrop = dropped.some((f) => f.type.startsWith("image/"));
-              if (!hasImageInDrop) return; // non-image drop, leave to default
+              if (dropped.length === 0) return; // no File blobs, leave to default
               e.preventDefault();
-              const files = dropped.filter((f) => f.type.startsWith("image/"));
-              onDropFiles(files);
+              onDropFiles(dropped);
             }}
             onDragOver={(e) => {
               e.preventDefault();
@@ -1735,12 +1898,8 @@ function ToolsMenu({
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
 
-  const attachDisabled = !supportsVision || attachmentCount >= MAX_IMAGES_PER_TURN;
-  const attachTitle = !supportsVision
-    ? t("chat.attachment.attachImageNoVision")
-    : attachmentCount >= MAX_IMAGES_PER_TURN
-      ? t("chat.attachment.maxImagesPerMessage", { max: String(MAX_IMAGES_PER_TURN) })
-      : t("chat.attachment.attachImageTitle");
+  // Attach file is always enabled — image-specific limits (no vision / cap exceeded)
+  // are handled inside addPickedFiles via toasts; text/PDF always allowed.
 
   return (
     <div ref={ref} className="relative">
@@ -1761,7 +1920,7 @@ function ToolsMenu({
         </svg>
       </button>
       {open && (
-        <div className="absolute bottom-full left-0 z-20 mb-2 w-[200px] overflow-hidden rounded-[10px] border border-line bg-surface shadow-[0_8px_24px_rgba(0,0,0,0.12)]">
+        <div className="absolute bottom-full left-0 z-20 mb-2 w-max whitespace-nowrap overflow-hidden rounded-[10px] border border-line bg-surface shadow-[0_8px_24px_rgba(0,0,0,0.12)]">
           {onPickElement && (
             <button
               type="button"
@@ -1786,14 +1945,12 @@ function ToolsMenu({
           )}
           <button
             type="button"
-            aria-label={t("chat.attachment.attachImage")}
+            aria-label={t("chat.files.attachFile")}
             onClick={() => {
-              if (attachDisabled) return;
               setOpen(false);
               onAttachClick();
             }}
-            disabled={attachDisabled}
-            title={attachTitle}
+            title={t("chat.files.attachFile")}
             className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[12px] text-fg-1 hover:bg-field disabled:cursor-not-allowed disabled:opacity-40"
           >
             <svg
@@ -1810,7 +1967,7 @@ function ToolsMenu({
             >
               <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
             </svg>
-            <span>{t("chat.attachment.attachImage")}</span>
+            <span>{t("chat.files.attachFile")}</span>
           </button>
           {onStartRecording && (
             <button
@@ -1825,10 +1982,16 @@ function ToolsMenu({
               title={t("chat.recordTitle")}
               className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[12px] text-fg-1 hover:bg-field disabled:cursor-not-allowed disabled:opacity-40"
             >
-              <span
-                className="inline-block h-2 w-2 flex-shrink-0 rounded-full bg-pending"
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 1024 1024"
+                fill="currentColor"
                 aria-hidden="true"
-              />
+                className="-mx-0.5 flex-shrink-0"
+              >
+                <path d="M512 179.2c44.8 0 87.466667 8.533333 130.133333 25.6 40.533333 17.066667 76.8 40.533333 106.666667 70.4s53.333333 66.133333 70.4 106.666667c17.066667 40.533333 25.6 85.333333 25.6 130.133333s-8.533333 87.466667-25.6 130.133333c-17.066667 40.533333-40.533333 76.8-70.4 106.666667s-66.133333 53.333333-106.666667 70.4-85.333333 25.6-130.133333 25.6-87.466667-8.533333-130.133333-25.6c-40.533333-17.066667-76.8-40.533333-106.666667-70.4s-53.333333-66.133333-70.4-106.666667c-17.066667-40.533333-25.6-85.333333-25.6-130.133333 0-44.8 8.533333-87.466667 25.6-130.133333 17.066667-40.533333 40.533333-76.8 70.4-106.666667s66.133333-53.333333 106.666667-70.4 85.333333-25.6 130.133333-25.6z m0 91.733333c-42.666667 0-83.2 10.666667-121.6 32-36.266667 21.333333-66.133333 51.2-87.466667 87.466667-21.333333 36.266667-32 76.8-32 121.6s10.666667 83.2 32 121.6 51.2 66.133333 87.466667 87.466667c36.266667 21.333333 76.8 32 121.6 32 42.666667 0 83.2-10.666667 121.6-32s66.133333-51.2 87.466667-87.466667 32-76.8 32-121.6-10.666667-83.2-32-121.6c-21.333333-36.266667-51.2-66.133333-87.466667-87.466667s-78.933333-32-121.6-32z m0 130.133334c29.866667 0 55.466667 10.666667 78.933333 32 21.333333 21.333333 32 46.933333 32 78.933333 0 29.866667-10.666667 55.466667-32 78.933333-21.333333 21.333333-46.933333 32-78.933333 32s-55.466667-10.666667-78.933333-32c-21.333333-21.333333-32-46.933333-32-78.933333s10.666667-55.466667 32-78.933333c23.466667-21.333333 49.066667-32 78.933333-32z" />
+              </svg>
               <span>{t("chat.startRecording")}</span>
             </button>
           )}

@@ -83,6 +83,15 @@ export const PDF_TOOL_NAMES = [
   "get_pdf_outline",
 ] as const;
 
+// Local file I/O tools.
+//   save_to_downloads — write (creates a file in the user's Downloads).
+//   read_local_file / request_local_file — read (added in later phases).
+export const LOCAL_FILE_TOOL_NAMES = [
+  "save_to_downloads",
+  "read_local_file",
+  "request_local_file",
+] as const;
+
 export const KNOWN_BUILT_IN_TOOL_NAMES = [
   ...PHASE_2_TOOL_NAMES,
   ...SKILL_META_TOOL_NAMES_FOR_REGISTRY,
@@ -92,6 +101,7 @@ export const KNOWN_BUILT_IN_TOOL_NAMES = [
   ...SEARCH_TOOL_NAMES,
   ...PAGE_SNAPSHOT_TOOL_NAMES,
   ...PDF_TOOL_NAMES,
+  ...LOCAL_FILE_TOOL_NAMES,
 ] as const;
 
 export const KNOWN_KEYBOARD_TOOL_NAMES = [
@@ -173,6 +183,10 @@ export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
   read_pdf: "read",
   search_pdf: "read",
   get_pdf_outline: "read",
+  // Local file I/O
+  save_to_downloads: "write",
+  read_local_file: "read",
+  request_local_file: "read",
 };
 
 // Build-time exhaustive check — every known tool name MUST have a class

@@ -51,6 +51,11 @@ import {
   handleOnboardingResponse,
   onStorageChanged as onCdpInputStorageChanged,
 } from "@/lib/cdp-input-onboarding";
+import {
+  registerLocalFilePort,
+  unregisterLocalFilePort,
+  handleLocalFileResponse,
+} from "@/lib/local-file-request";
 import { CDP_INPUT_ENABLED_STORAGE_KEY } from "@/lib/cdp-input-enabled";
 
 import { runSessionMigrations } from "@/lib/sessions/migration";
@@ -1238,6 +1243,7 @@ chrome.runtime.onConnect.addListener((port) => {
   // reaches the panel because the dispatch loop iterates an empty map.
   portsBySession.set(portSessionId, port);
   registerOnboardingPort(portSessionId, port);
+  registerLocalFilePort(portSessionId, port);
 
   // v1.1 — drain any quote-added stashed while panel was booting (bubble click
   // triggers sidePanel.open + dispatchQuoteAdded back-to-back; the dispatch
@@ -1445,6 +1451,20 @@ chrome.runtime.onConnect.addListener((port) => {
         (message as { enabled: boolean }).enabled,
       );
     }
+    // request_local_file — panel replies with the user's picked file (or a
+    // cancel / unsupported reason). Keyed by the trusted port-derived session.
+    if (
+      message &&
+      typeof message === "object" &&
+      (message as { type?: string }).type === "local-file-response"
+    ) {
+      handleLocalFileResponse(
+        portSessionId,
+        message as
+          | { ok: true; name: string; mime: string; text: string; truncated: boolean }
+          | { ok: false; reason: string },
+      );
+    }
   });
 
   port.onDisconnect.addListener(() => {
@@ -1452,6 +1472,7 @@ chrome.runtime.onConnect.addListener((port) => {
     abortRecordingForSession(port, portSessionId, "panel-disconnect");
     portsBySession.delete(portSessionId);
     unregisterOnboardingPort(portSessionId);
+    unregisterLocalFilePort(portSessionId);
 
     abortRotation.current.abort();
     keepAlive.stop();
