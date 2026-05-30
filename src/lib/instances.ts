@@ -161,6 +161,10 @@ async function readIndex(): Promise<string[]> {
   return ((r[INDEX_KEY] as string[]) ?? []).slice();
 }
 
+export async function createManagedInstance(jwt: string, tierId = "default", nickname = "Pie 官方"): Promise<string> {
+  return createInstance({ provider: "managed", nickname, apiKey: jwt, model: tierId });
+}
+
 export async function updateInstance(id: string, patch: Partial<{
   nickname: string;
   apiKey: string;

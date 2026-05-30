@@ -25,6 +25,7 @@ import InstanceForm, { type InstanceFormPayload } from "./InstanceForm";
 import InstancesList from "./InstancesList";
 import NewConfigWizard from "./NewConfigWizard";
 import CustomProviderForm from "./CustomProviderForm";
+import { ManagedLoginCard } from "./ManagedLoginCard";
 import { useT, setLocale, type LocaleSetting } from "@/lib/i18n";
 
 interface Props {
@@ -187,6 +188,13 @@ export default function Settings({ onBack, onRunSkill }: Props) {
                   {instances.length} {t("settings.myConfigs.countSuffix")}
                 </span>
               </div>
+
+              <ManagedLoginCard
+                onDone={async (id) => {
+                  await reload();
+                  setActiveId(id);
+                }}
+              />
 
               <InstancesList
                 instances={instances}
