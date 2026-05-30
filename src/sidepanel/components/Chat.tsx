@@ -1745,28 +1745,44 @@ function Composer({
             disabled={!sessionAllowsInput}
             className="min-h-[60px] resize-none bg-transparent text-[13px] leading-5 text-fg-1 placeholder:text-fg-3 disabled:opacity-50"
             onPaste={(e) => {
-              const items = e.clipboardData?.items;
-              if (!items) return;
-              // Detect ANY image in clipboard (file OR string-typed image
-              // data like text/uri-list of an image URL). Without this
-              // detection, paste would silently no-op when (a) provider
-              // lacks vision OR (b) clipboard has image-as-URL (common
-              // when copying from web pages) — user reports "no response".
-              const hasImageInClipboard = Array.from(items).some((item) =>
-                item.type.startsWith("image/"),
-              );
-              if (!hasImageInClipboard) return; // normal text paste, fall through
-              e.preventDefault();
-              const files: File[] = [];
-              for (const item of items) {
-                if (item.kind === "file" && item.type.startsWith("image/")) {
-                  const f = item.getAsFile();
-                  if (f) files.push(f);
+              const dt = e.clipboardData;
+              if (!dt) return;
+              // Collect EVERY file blob on the clipboard — images copied as
+              // image data, plus any text/PDF blob an app exposes. Prefer the
+              // standard FileList; fall back to file-kind items (some sources
+              // only populate items). addPickedFiles routes by type and
+              // rejects unsupported ones via toast.
+              // NOTE: macOS Finder "Copy file" usually does NOT surface a File
+              // here (browser limitation), so paste mainly covers app-copied
+              // blobs; drag-drop (onDrop) is the reliable path for Finder files.
+              const files: File[] = [...(dt.files ?? [])];
+              if (files.length === 0 && dt.items) {
+                for (const item of dt.items) {
+                  if (item.kind === "file") {
+                    const f = item.getAsFile();
+                    if (f) files.push(f);
+                  }
                 }
               }
-              // Always invoke — addPickedFiles surfaces a toast for every reason
-              // (no-vision-provider / cap-exceeded / empty-files / resize-fail).
-              onPasteFiles(files);
+              if (files.length > 0) {
+                e.preventDefault();
+                // Always invoke — addPickedFiles surfaces a toast for every
+                // reason (no-vision / cap-exceeded / unsupported / fail).
+                onPasteFiles(files);
+                return;
+              }
+              // No file blobs. If an image is present only as a string (e.g. an
+              // image URL copied from a web page), it can't be attached —
+              // surface the existing guidance toast instead of a silent no-op.
+              const hasImageString = Array.from(dt.items ?? []).some((item) =>
+                item.type.startsWith("image/"),
+              );
+              if (hasImageString) {
+                e.preventDefault();
+                onPasteFiles([]); // empty → clipboardUnsupported guidance toast
+                return;
+              }
+              // Otherwise: normal text paste — fall through (no preventDefault).
             }}
             onDrop={(e) => {
               // Forward ALL dropped File objects — addPickedFiles routes by

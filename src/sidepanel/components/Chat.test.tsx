@@ -558,6 +558,29 @@ describe("Chat — behavioral image flows (Phase 5)", () => {
     expect(chip).toBeTruthy();
   });
 
+  it("paste of a non-image file (.md) attaches it as a FileChip", async () => {
+    seedProvider("anthropic");
+    render(
+      <Chat
+        providerLabel="Anthropic"
+        onOpenSettings={vi.fn()}
+        session={makeSession()}
+      />,
+    );
+
+    await screen.findByRole("button", { name: /more tools/i });
+    const textarea = screen.getByPlaceholderText(/Tell the agent/i);
+    const file = new File(["# hi"], "pasted.md", { type: "text/markdown" });
+
+    await act(async () => {
+      fireEvent.paste(textarea, { clipboardData: makeClipboardDT([file]) });
+    });
+
+    // FileChip with the pasted filename should appear
+    const chip = await screen.findByText("pasted.md");
+    expect(chip).toBeTruthy();
+  });
+
   it("4th image is dropped silently and only 3 thumbnails appear", async () => {
     seedProvider("anthropic");
     render(
