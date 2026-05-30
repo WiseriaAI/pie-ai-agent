@@ -191,13 +191,15 @@ describe("buildRequestLocalFileTool", () => {
     expect(r.observation).toContain("hi");
   });
 
-  it("returns panel_unavailable error when requestFile rejects", async () => {
+  it("returns actionable error message when requestFile rejects", async () => {
     const tool = buildRequestLocalFileTool({
       sessionId: "s",
       requestFile: async () => { throw new Error("no sidepanel port for session s"); },
     });
     const r = await tool.handler({}, ctx);
     expect(r.success).toBe(false);
-    expect(r.error).toContain("panel_unavailable");
+    expect(r.error).toContain("Could not get a file");
+    expect(r.error).toContain("attach (+) button");
+    expect(r.error).toContain("read_local_file");
   });
 });

@@ -813,6 +813,82 @@ describe("Chat — Task 4.4 file attachments", () => {
     );
   });
 
+  it("FIX-B: sent message with file attachment carries fileAttachments on the call to sendMessage", async () => {
+    // Assert that the message object passed to sendMessage includes fileAttachments
+    // so that the DisplayMessage carries it for MessageBubble rendering.
+    seedProvider("anthropic");
+    const sendMock = vi.fn();
+    render(
+      <Chat
+        providerLabel="Anthropic"
+        onOpenSettings={vi.fn()}
+        session={makeSession({ sendMessage: sendMock })}
+      />,
+    );
+
+    await screen.findByRole("button", { name: /more tools/i });
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const txtFile = new File(["file content"], "data.txt", { type: "text/plain" });
+
+    await act(async () => {
+      fireEvent.change(fileInput, { target: { files: [txtFile] } });
+    });
+
+    await screen.findByText("data.txt");
+
+    const textarea = screen.getByPlaceholderText(/Tell the agent/i);
+    await act(async () => {
+      fireEvent.change(textarea, { target: { value: "use this" } });
+    });
+
+    const sendBtn = screen.getByRole("button", { name: /Send/i });
+    await act(async () => {
+      fireEvent.click(sendBtn);
+    });
+
+    // sendMessage must carry fileAttachments so useSession can forward it to the DisplayMessage
+    const callArg = sendMock.mock.calls[0][0] as { fileAttachments?: Array<{ name: string }> };
+    expect(callArg.fileAttachments).toBeDefined();
+    expect(callArg.fileAttachments![0].name).toBe("data.txt");
+  });
+
+  it("FIX-B: MessageBubble renders filename chip for a message carrying fileAttachments", async () => {
+    seedProvider("anthropic");
+    const messages: DisplayMessage[] = [
+      {
+        role: "user",
+        content: "analyze this",
+        fileAttachments: [
+          {
+            kind: "file",
+            id: "fa-1",
+            name: "report.pdf",
+            mime: "application/pdf",
+            text: "pdf content",
+            truncated: false,
+            totalChars: 11,
+            source: "picker",
+          },
+        ],
+      },
+    ];
+    render(
+      <Chat
+        providerLabel="Anthropic"
+        onOpenSettings={vi.fn()}
+        session={makeSession({ messages })}
+      />,
+    );
+
+    await screen.findByRole("button", { name: /more tools/i });
+
+    // The file name should appear in the message bubble (rendered via FileChip with no remove button)
+    expect(screen.getByText("report.pdf")).toBeTruthy();
+    // No remove button in read-only bubble
+    expect(screen.queryByRole("button", { name: /remove file/i })).toBeNull();
+  });
+
   it("attach file button in + menu is NOT disabled for minimax (no vision) provider", async () => {
     seedProvider("minimax");
     render(

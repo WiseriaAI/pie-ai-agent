@@ -847,6 +847,7 @@ After the skill completes, briefly summarize what was created (the user will see
       expandedForLLM,
       attachments: allAttachments.length > 0 ? allAttachments : undefined,
       quotes: stagedQuotes,
+      fileAttachments: pendingFileAttachments,
     });
 
     // Clear quotes after send
@@ -924,6 +925,7 @@ After the skill completes, briefly summarize what was created (the user will see
         expandedForLLM,
         attachments: allAttachments.length > 0 ? allAttachments : undefined,
         quotes: stagedQuotes,
+        fileAttachments: pendingFileAttachments,
       });
 
       setInput("");
@@ -1528,6 +1530,7 @@ function MessageBubble({
       (a) => !a.id.startsWith("quote-"),
     );
     const hasQuotes = !!message.quotes && message.quotes.length > 0;
+    const hasFileAttachments = !!message.fileAttachments && message.fileAttachments.length > 0;
     const hasText = message.content.length > 0;
     return (
       <div className="flex justify-end">
@@ -1568,6 +1571,13 @@ function MessageBubble({
                     )}
                   </span>
                 </div>
+              ))}
+            </div>
+          )}
+          {hasFileAttachments && (
+            <div className="flex flex-wrap gap-1.5">
+              {message.fileAttachments!.map((fa) => (
+                <FileChip key={fa.id} attachment={fa} />
               ))}
             </div>
           )}

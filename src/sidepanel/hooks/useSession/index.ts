@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChatMessage } from "@/lib/model-router";
 import type { ImageAttachment } from "@/lib/images";
+import type { FileAttachment } from "@/lib/files/types";
 import { useT } from "@/lib/i18n";
 import type {
   DisplayMessage,
@@ -142,6 +143,8 @@ interface SendMessageInput {
    *  wrapper text already lives in `expandedForLLM`; this is the structured
    *  copy for the chat bubble to render without re-parsing. */
   quotes?: Quote[];
+  /** FIX-B — file attachments staged at send time, for bubble display. */
+  fileAttachments?: FileAttachment[];
 }
 
 export interface UseSession {
@@ -589,6 +592,7 @@ export function useSession(): UseSession {
           ? { attachments: input.attachments }
           : {}),
         ...(input.quotes?.length ? { quotes: input.quotes } : {}),
+        ...(input.fileAttachments?.length ? { fileAttachments: input.fileAttachments } : {}),
       };
       const currentMessages = slotsRef.current.get(id)?.messages ?? [];
       const updated = [...currentMessages, userMessage];
@@ -741,6 +745,7 @@ export function useSession(): UseSession {
           : {}),
         ...(input.attachments?.length ? { attachments: input.attachments } : {}),
         ...(input.quotes?.length ? { quotes: input.quotes } : {}),
+        ...(input.fileAttachments?.length ? { fileAttachments: input.fileAttachments } : {}),
       };
       const updated = [...(slot.messages ?? []), userMessage];
       patchSlot(id, { messages: updated });

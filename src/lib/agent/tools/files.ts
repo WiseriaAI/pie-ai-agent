@@ -24,9 +24,11 @@ const MAX_CONTENT_BYTES = 5 * 1024 * 1024;
 export const saveToDownloadsTool: Tool = {
   name: "save_to_downloads",
   description:
-    "Write text content to the user's local Downloads folder under a 'pie/' subfolder. " +
-    "Use for saving generated reports, code, or markdown. Set save_as=true to let the user " +
-    "pick the location via a Save As dialog. Cannot write to arbitrary absolute paths.",
+    "Save text content to the user's computer via the browser's download mechanism. " +
+    "By default it goes to the Downloads/pie/ folder, but if the user's browser is set to " +
+    "ask where to save each file, a save-location dialog will appear. " +
+    "Set save_as=true to always show a Save As dialog so the user picks the location. " +
+    "Use for saving generated reports, code, or markdown. Cannot write to arbitrary absolute paths.",
   parameters: {
     type: "object",
     properties: {
@@ -199,12 +201,10 @@ export function buildRequestLocalFileTool(deps: RequestLocalFileDeps): Tool {
           observation: buildLocalFileWrapper({ name: f.name, mime: f.mime || "text/plain", text: f.text, truncated: f.truncated }),
         };
       } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
+        const reason = e instanceof Error ? e.message : String(e);
         return {
           success: false,
-          error:
-            `panel_unavailable: ${msg} — ask the user to attach the file via the + menu, ` +
-            `or give a file:// path for read_local_file.`,
+          error: `Could not get a file from the user (${reason}). You can ask them to attach the file using the attach (+) button in the chat, or if you know the file's path, call read_local_file with a file:// URI.`,
         };
       }
     },

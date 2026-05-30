@@ -23,7 +23,7 @@ interface PendingRequest {
 const portsBySession = new Map<string, chrome.runtime.Port>();
 const pendingBySession = new Map<string, PendingRequest>();
 
-const REQUEST_TIMEOUT_MS = 120_000;
+export const REQUEST_TIMEOUT_MS = 120_000;
 
 export function registerLocalFilePort(
   sessionId: string,
