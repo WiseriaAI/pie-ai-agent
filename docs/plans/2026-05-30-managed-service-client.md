@@ -1041,8 +1041,8 @@ git commit -m "docs: managed service tier — README provider list + CLAUDE inva
 
 ---
 
-## 上线前置（非代码，blocker）
+## 上线前置（非代码）
 
 - registry 的 `defaultBaseUrl` 占位 `YOUR_PROJECT_REF` 必须替换为真实 Supabase project ref（与 backend plan 同步）。
 - OAuth redirect：`chrome.identity.getRedirectURL()` 形如 `https://<extid>.chromiumapp.org/`，需在服务端 OAuth provider 的 allowed redirect 列表登记（见 backend plan）。
-- 上游 ToS 确认（见 spec §11）——这是整个 feature 的上线硬门槛。
+- 上游 ToS：**已评估，非 blocker**（见 spec §11）。模型经服务端 `tier_config` 热切换、不绑定单一厂商；本服务属应用代理自有用户的标准模式。部署时 skim 所选上游政策即可。
