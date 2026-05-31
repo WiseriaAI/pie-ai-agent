@@ -134,8 +134,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
   {
     id: "managed",
     name: "Pie 官方服务",
-    // ⚠️ replace with real Supabase project ref before launch
-    defaultBaseUrl: "https://YOUR_PROJECT_REF.supabase.co/functions/v1",
+    defaultBaseUrl: "https://jsiaudthmclgqatgzfpv.supabase.co/functions/v1",
     placeholder: "（登录后自动填充）",
     models: [
       { id: "default",  displayName: "标准", vision: true, tools: true, maxContextTokens: 1_000_000 },
