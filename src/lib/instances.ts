@@ -3,6 +3,11 @@ import { resolveProviderMeta, getProviderMeta } from "@/lib/model-router/provide
 import { resolveModelVision } from "@/lib/model-router/providers/registry";
 import { getOrCreateEncryptionKey, encrypt, decrypt } from "@/lib/crypto";
 import { getCustomProvider, providerRefToId } from "@/lib/custom-providers";
+// Static import (not dynamic): a dynamic import() here runs in the service worker and
+// triggers the bundler's module-preload helper, which touches `document` → "document is
+// not defined" in the SW. The instances↔managed-auth↔registry↔custom-providers cycle is
+// safe because every cross-module reference is used only inside functions, not at module top level.
+import { getValidJwt } from "@/lib/managed-auth";
 
 export interface StoredInstance {
   id: string;
@@ -135,7 +140,6 @@ export async function resolveInstanceToModelConfig(id: string): Promise<ModelCon
   // managed: use a fresh valid JWT from managed-auth, overriding the instance's stored (stale) JWT
   let apiKey = inst.apiKey;
   if (inst.provider === "managed") {
-    const { getValidJwt } = await import("@/lib/managed-auth");
     try { apiKey = await getValidJwt(); } catch { /* not logged in → keep stored value; downstream 401 handles it */ }
   }
 
