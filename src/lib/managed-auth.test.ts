@@ -88,3 +88,34 @@ it("loginWithOAuth exchanges code and persists auth + entitlement", async () => 
     expect.objectContaining({ interactive: true }));
   expect(getRedirectURLSpy).toHaveBeenCalled();
 });
+
+it("loginWithOAuth reads the access_token from the URL fragment (Supabase implicit flow)", async () => {
+  vi.spyOn(chromeMock.identity, "getRedirectURL").mockReturnValue("https://abc.chromiumapp.org/");
+  vi.spyOn(chromeMock.identity, "launchWebAuthFlow").mockResolvedValue(
+    "https://abc.chromiumapp.org/#access_token=SUPA_TOKEN&token_type=bearer&expires_in=3600&refresh_token=ignored");
+  let sentBody: { code?: string } = {};
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
+    if (url.endsWith("/auth/exchange")) {
+      sentBody = JSON.parse(String(init.body));
+      return new Response(JSON.stringify({
+        jwt: "j2", refreshToken: "r2", expiresAt: Date.now() + 3_600_000,
+        entitlement: { plan: "free", tiers: [{ tierId: "default", displayName: "标准" }] },
+      }), { status: 200 });
+    }
+    throw new Error("unexpected " + url);
+  }));
+
+  await loginWithOAuth();
+
+  // the Supabase access_token from the fragment is forwarded as `code` to /auth/exchange
+  expect(sentBody.code).toBe("SUPA_TOKEN");
+  expect((await getStoredAuth())!.jwt).toBe("j2");
+});
+
+it("loginWithOAuth surfaces an OAuth error from the redirect fragment", async () => {
+  vi.spyOn(chromeMock.identity, "getRedirectURL").mockReturnValue("https://abc.chromiumapp.org/");
+  vi.spyOn(chromeMock.identity, "launchWebAuthFlow").mockResolvedValue(
+    "https://abc.chromiumapp.org/#error=access_denied&error_description=user%20cancelled");
+  vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("should not reach exchange"); }));
+  await expect(loginWithOAuth()).rejects.toThrow(/access_denied|user/);
+});

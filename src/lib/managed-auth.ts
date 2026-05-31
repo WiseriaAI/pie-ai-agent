@@ -77,8 +77,14 @@ export async function loginWithOAuth(): Promise<Entitlement> {
   const authUrl = `${base()}/auth/start?redirect_uri=${encodeURIComponent(redirectUri)}`;
   const redirected = await chrome.identity.launchWebAuthFlow({ url: authUrl, interactive: true });
   if (!redirected) throw new Error("managed login: no redirect URL returned");
-  const code = new URL(redirected).searchParams.get("code");
-  if (!code) throw new Error("managed login: no code in redirect");
+  // Supabase 隐式流把 session 放在 URL fragment（#access_token=...）；PKCE 才用 ?code=。
+  // 兼容两者：优先取 fragment 的 access_token，回退到 query 的 code。后端 /auth/exchange 用它做 getUser()。
+  const u = new URL(redirected);
+  const frag = new URLSearchParams(u.hash.replace(/^#/, ""));
+  const oauthError = frag.get("error_description") ?? frag.get("error") ?? u.searchParams.get("error");
+  if (oauthError) throw new Error(`managed login: ${oauthError}`);
+  const code = frag.get("access_token") ?? u.searchParams.get("code");
+  if (!code) throw new Error("managed login: no token in redirect");
 
   const res = await fetch(`${base()}/auth/exchange`, {
     method: "POST",
