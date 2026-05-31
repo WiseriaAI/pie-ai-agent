@@ -237,9 +237,8 @@ const listTabsTool: Tool = {
   name: "list_tabs",
   description:
     "List open browser tabs with metadata (id, title, domain, active state, group). " +
-    "Default scope is currentWindow (low risk). scope='allWindows' exposes tabs across " +
-    "all windows and triggers a high-risk user confirmation. By default every visible " +
-    "tab is returned; pass `limit` to cap the response.",
+    "Defaults to the current window; scope='allWindows' covers every browser window. " +
+    "By default every visible tab is returned; pass `limit` to cap the response.",
   parameters: {
     type: "object",
     properties: {
@@ -247,7 +246,7 @@ const listTabsTool: Tool = {
         type: "string",
         enum: ["currentWindow", "allWindows"],
         description:
-          "currentWindow (default): tabs in the agent's window only. allWindows: tabs across every browser window — requires user confirmation.",
+          "currentWindow (default): tabs in the agent's window only. allWindows: tabs across every browser window.",
       },
       limit: {
         type: "number",
@@ -368,10 +367,9 @@ function summarizePartial(
 const closeTabsTool: Tool = {
   name: "close_tabs",
   description:
-    "Close one or more tabs by id. Cannot close the agent's pinned/active tab " +
-    "(K-9) — ask the user to close the current tab manually instead. Each tab " +
-    "is re-verified against the origin shown on the confirm card; tabs that " +
-    "have navigated to a different origin since approval are skipped.",
+    "Close one or more tabs by id (batch into one call). Cannot close the agent's " +
+    "pinned tab — ask the user to close the current tab manually instead. Tabs that " +
+    "have navigated to a different origin since the task started are skipped.",
   parameters: {
     type: "object",
     properties: {
@@ -568,7 +566,7 @@ const groupTabsTool: Tool = {
   description:
     "Move one or more tabs into a tab group. Creates a new group when no " +
     "groupId is supplied. Optional groupName + color let you label the group. " +
-    "Tabs that have navigated since the confirm card are skipped. " +
+    "Tabs that have navigated to a different origin since the task started are skipped. " +
     "Restricted-URL tabs (chrome://, file://, etc.) are also skipped.",
   parameters: {
     type: "object",
@@ -686,7 +684,7 @@ const ungroupTabsTool: Tool = {
   description:
     "Remove one or more tabs from their current tab group. The group is " +
     "automatically deleted when the last tab leaves it. Tabs that have " +
-    "navigated since the confirm card are skipped.",
+    "navigated to a different origin since the task started are skipped.",
   parameters: {
     type: "object",
     properties: {
@@ -752,9 +750,9 @@ const moveTabsTool: Tool = {
   name: "move_tabs",
   description:
     "Reorder one or more tabs to a target index within their current window. " +
-    "Cross-window moves are not supported in v1 — all tabIds must share a " +
-    "single windowId. Tabs that have navigated since the confirm card are " +
-    "skipped.",
+    "Cross-window moves are not supported — all tabIds must share a single " +
+    "windowId. Tabs that have navigated to a different origin since the task " +
+    "started are skipped.",
   parameters: {
     type: "object",
     properties: {
@@ -851,12 +849,10 @@ const moveTabsTool: Tool = {
 const focusTabTool: Tool = {
   name: "focus_tab",
   description:
-    "Switch the agent's snapshot focus to one of the session's pinned tabs. " +
-    "Takes effect on the NEXT iteration (the current iteration's snapshot was " +
-    "already taken). Use this to operate across multiple pinned tabs in a " +
-    "single task: focus_tab(N), then on the next response use click/type/" +
-    "read_page/etc. against tab N. Pinned tabs are listed in the " +
-    "system prompt; tabs created by open_url are added to that list.",
+    "Switch the agent's focus to one of the session's pinned tabs (listed in " +
+    "the system prompt; open_url tabs are added there). Takes effect on the " +
+    "NEXT iteration — call focus_tab(N), then read_page/click/type against tab " +
+    "N on the following response. Use it to work across multiple pinned tabs.",
   parameters: {
     type: "object",
     properties: {
@@ -935,10 +931,9 @@ const OPEN_URL_MAX_LEN = 4096;
 const openUrlTool: Tool = {
   name: "open_url",
   description:
-    "Open a new browser tab loading the given URL. Each call requires user " +
-    "approval (high risk). The new tab is added to this session's pinned tab " +
-    "list — use focus_tab(newTabId) on the next iteration to operate on it. " +
-    "Only http: and https: are allowed; other schemes are rejected.",
+    "Open a new browser tab at the given URL (http/https only; other schemes " +
+    "rejected). The new tab auto-joins this session's pinned tab list — call " +
+    "focus_tab(newTabId) on the next iteration to operate on it.",
   parameters: {
     type: "object",
     properties: {

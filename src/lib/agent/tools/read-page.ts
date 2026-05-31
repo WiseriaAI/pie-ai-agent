@@ -19,7 +19,7 @@ function classifyUnreachable(url: string, errorOccurred?: boolean): string {
 export const readPageTool: Tool = {
   name: "read_page",
   description:
-    "Read the active page's HTML structure (interactive elements stamped with data-pie-idx, " +
+    "Read the given tab's HTML structure (interactive elements stamped with data-pie-idx, " +
     "shadow DOM traversed, scrollable regions noted). Returns per-frame HTML inside " +
     "<untrusted_page_content> wrappers plus a <frame_map>. " +
     "Call this before any click/type/select to get current element indices.",
