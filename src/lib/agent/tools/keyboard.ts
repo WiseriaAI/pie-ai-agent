@@ -216,7 +216,7 @@ export function buildKeyboardTools(deps: KeyboardToolDeps): Tool[] {
     {
       name: "dispatch_keyboard_input",
       description:
-        "Send text input via simulated real keyboard (Chrome DevTools Protocol). Pass the FULL multi-paragraph content in one call — every newline character inside `text` is converted to an Enter key press, so paragraphs/lists/code blocks are inserted correctly. Avoid breaking content into many small calls; each call requires the user to approve. Use ONLY for canvas-rendered editors (Feishu Docs, Google Docs, Notion) where the regular `type` tool returns 'hidden IME / keyboard capture buffer'. Activates Chrome's debugger (yellow bar appears). Set `softBreak: true` if newlines should be intra-paragraph soft breaks (Shift+Enter) instead of new paragraphs — Notion / Feishu / Google Docs treat Enter as block break and Shift+Enter as line break within the same block.",
+        "Send text input via simulated real keyboard (Chrome DevTools Protocol). Pass the FULL multi-paragraph content in ONE call — every newline character inside `text` is converted to an Enter key press, so paragraphs/lists/code blocks are inserted correctly; don't split into many small calls. Use ONLY for canvas-rendered editors (Feishu Docs, Google Docs, Notion) where the regular `type` tool returns 'hidden IME / keyboard capture buffer'. Activates Chrome's debugger (yellow bar appears). Set `softBreak: true` if newlines should be intra-paragraph soft breaks (Shift+Enter) instead of new paragraphs — Notion / Feishu / Google Docs treat Enter as block break and Shift+Enter as line break within the same block.",
       parameters: {
         type: "object",
         properties: {
@@ -383,7 +383,7 @@ export function buildKeyboardTools(deps: KeyboardToolDeps): Tool[] {
     },
     {
       name: "press_key",
-      description: `Press a single control key via simulated real keyboard (CDP). Use for navigation in canvas-rendered editors. Activates Chrome's debugger; each call requires approval. Allowed keys: ${Object.keys(KEY_MAP).join(", ")}.`,
+      description: `Press a single control key via simulated real keyboard (CDP). Use for navigation in canvas-rendered editors. Activates Chrome's debugger (yellow bar appears). Allowed keys: ${Object.keys(KEY_MAP).join(", ")}.`,
       parameters: {
         type: "object",
         properties: {
