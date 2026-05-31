@@ -63,7 +63,13 @@ import { waitForUrlSettle, type UrlSettleResult } from "./wait-for-url-settle";
 // the tombstone write by buildSessionAgentTombstone(synth) to prevent the
 // two-write race on the agent key (AD1 fix). No import needed.
 
-const MAX_STEPS = 30;
+// Soft step budget. The loop is NOT bounded by this — termination is the
+// LLM's call (done/fail or a plain-text reply) or a user abort. Once a task
+// runs past this many steps the loop starts injecting an escalating budget
+// nudge so the model self-paces; there is deliberately no absolute hard
+// ceiling (a stuck model burns tokens until the user aborts — accepted
+// tradeoff for full LLM-controlled termination).
+const SOFT_STEP_BUDGET = 30;
 
 /** #58 — react 段 sliding-window 放宽后的兜底上限。正常由 token 阈值先触发 compaction。 */
 const REACT_BIG_CAP = 60;
@@ -361,7 +367,32 @@ export function safeParseOrigin(url: string): string | null {
 
 export type InterpretPinnedTabUrlResult =
   | { kind: "ok"; url: string }
-  | { kind: "stop"; summary: string };
+  | {
+      // The focused pinned tab diverged from its expected state (origin
+      // changed, restricted scheme, still-navigating, or gone). We do NOT
+      // terminate the task — the loop injects `notice` as a trusted
+      // <system_notice> observation and lets the LLM decide what to do next
+      // (continue, recover via focus_tab/open_url, or call fail). `url` is the
+      // best-effort current URL for the observation header (empty when the tab
+      // is gone / unsettled). `noticeKey` is a stable dedup key so the loop
+      // surfaces each distinct divergence only once.
+      kind: "notice";
+      url: string;
+      notice: string;
+      noticeKey: string;
+    };
+
+// Shared closing sentence — every navigation notice reminds the LLM that the
+// runtime will NOT stop the task; termination is the model's call (done/fail
+// or a plain-text reply).
+const NOTICE_TAIL =
+  "The task was NOT stopped — decide whether to continue here, recover " +
+  "(focus_tab to another pinned tab, open_url, or navigate back), or call " +
+  "`fail` to stop and explain to the user.";
+
+function originChangedNotice(pinnedOrigin: string, observed: string): string {
+  return `The focused tab navigated from ${pinnedOrigin} to ${observed}. ${NOTICE_TAIL}`;
+}
 
 export interface InterpretPinnedTabUrlArgs {
   tab: chrome.tabs.Tab;
@@ -377,21 +408,22 @@ export interface InterpretPinnedTabUrlArgs {
 }
 
 /**
- * Issue #50 — per-iteration pinned-tab origin gate, with transient
- * tolerance for navigations that have not yet committed.
+ * Issue #50 / advisory-navigation rework — per-iteration pinned-tab origin
+ * gate. The gate is now ADVISORY: it never terminates the task. When the
+ * focused tab diverges from its expected state it returns a `notice` that the
+ * loop surfaces to the LLM as a trusted <system_notice> observation; the LLM
+ * decides whether to continue, recover, or call `fail`. (Previously this
+ * hard-stopped the loop — a benign cross-origin redirect chain, e.g.
+ * picrew.github.io → github.com → back, could be sampled mid-flight and kill
+ * the task. The transient-redirect false-positive is gone with the stop.)
  *
- * Three branches:
- *   1. tab.url is a non-transient http(s) URL → run the classic
- *      isRestrictedUrl + safeParseOrigin + origin === pinnedOrigin check
- *      (same code path as the pre-#50 loop).
- *   2. tab.url is transient ("" / undefined / "about:blank") AND
- *      tab.pendingUrl reveals an origin that doesn't match pinnedOrigin
- *      → fast-fail STOP with "origin changed" — avoids a wasted 5s wait
- *      when we already know the navigation is going elsewhere.
- *   3. tab.url is transient → await awaitSettle and translate the
- *      UrlSettleResult into ok / stop. Timeout reuses the existing
- *      "restricted URL" summary so the panel renders the same chip as
- *      a real chrome:// hit (Decision 4 in the spec).
+ * Branches:
+ *   1. tab.url is a non-transient URL → restricted / unparseable / origin-
+ *      mismatch each map to a distinct notice; an exact origin match is `ok`.
+ *   2. tab.url is transient ("" / "about:blank") → await awaitSettle for the
+ *      true destination (no pendingUrl fast-fail — a redirect chain may still
+ *      land back on the pinned origin), then translate the UrlSettleResult
+ *      into ok / notice. `timeout` becomes a "still navigating" notice.
  */
 export async function interpretPinnedTabUrl(
   args: InterpretPinnedTabUrlArgs,
@@ -403,40 +435,46 @@ export async function interpretPinnedTabUrl(
   if (!isTransient) {
     if (isRestrictedUrl(url)) {
       return {
-        kind: "stop",
-        summary: "Page navigated to a restricted URL, agent stopped",
+        kind: "notice",
+        url,
+        notice:
+          `The focused tab is now at a restricted page (${url}) that cannot ` +
+          `be read or operated on. ${NOTICE_TAIL}`,
+        noticeKey: `restricted:${url}`,
       };
     }
     const origin = safeParseOrigin(url);
     if (!origin) {
       return {
-        kind: "stop",
-        summary: "Page origin changed, agent stopped for safety",
+        kind: "notice",
+        url,
+        notice:
+          `The focused tab is at a URL with no usable origin (${url}). ` +
+          `${NOTICE_TAIL}`,
+        noticeKey: `unparseable:${url}`,
       };
     }
     if (origin !== pinnedOrigin) {
       return {
-        kind: "stop",
-        summary: `Page origin changed from ${pinnedOrigin} to ${origin}, agent stopped`,
+        kind: "notice",
+        url,
+        notice: originChangedNotice(pinnedOrigin, origin),
+        noticeKey: `origin:${origin}`,
       };
     }
     return { kind: "ok", url };
   }
 
-  // Transient branch — pendingUrl fast-fail before paying the wait.
-  const pendingUrl = tab.pendingUrl ?? "";
-  if (pendingUrl) {
-    const pendingOrigin = safeParseOrigin(pendingUrl);
-    if (pendingOrigin && pendingOrigin !== pinnedOrigin) {
-      return {
-        kind: "stop",
-        summary: `Page origin changed from ${pinnedOrigin} to ${pendingOrigin}, agent stopped`,
-      };
-    }
-  }
-
+  // Transient branch — always await settle for the true destination. We no
+  // longer fast-fail on pendingUrl: a multi-hop redirect can pass through a
+  // foreign origin and still land back on the pinned one.
   if (typeof tab.id !== "number" || tab.id < 0) {
-    return { kind: "stop", summary: "Tab was closed, agent stopped" };
+    return {
+      kind: "notice",
+      url: "",
+      notice: `The focused tab is no longer available (closed). ${NOTICE_TAIL}`,
+      noticeKey: "tab-closed",
+    };
   }
 
   const r = await awaitSettle(tab.id, pinnedOrigin, timeoutMs, signal);
@@ -448,18 +486,28 @@ export async function interpretPinnedTabUrl(
       ? safeParseOrigin(r.observedUrl) ?? "unknown"
       : "unknown";
     return {
-      kind: "stop",
-      summary: `Page origin changed from ${pinnedOrigin} to ${observed}, agent stopped`,
+      kind: "notice",
+      url: r.observedUrl ?? "",
+      notice: originChangedNotice(pinnedOrigin, observed),
+      noticeKey: `origin:${observed}`,
     };
   }
   if (r.reason === "tab-gone") {
-    return { kind: "stop", summary: "Tab was closed, agent stopped" };
+    return {
+      kind: "notice",
+      url: "",
+      notice: `The focused tab (id ${tab.id}) is no longer available (closed). ${NOTICE_TAIL}`,
+      noticeKey: "tab-closed",
+    };
   }
-  // reason === "timeout" — reuse existing copy so panel UI is identical
-  // to a real restricted-URL hit (Decision 4).
+  // reason === "timeout" — the page is still navigating and hasn't settled.
   return {
-    kind: "stop",
-    summary: "Page navigated to a restricted URL, agent stopped",
+    kind: "notice",
+    url: "",
+    notice:
+      `The focused tab is still navigating and its URL has not settled. ` +
+      `${NOTICE_TAIL}`,
+    noticeKey: "navigating",
   };
 }
 
@@ -801,9 +849,11 @@ if (RECENT_STEPS_CAP + 1 < DEFAULT_OSCILLATION_MAX_PERIOD * DEFAULT_OSCILLATION_
       `(MAX_PERIOD ${DEFAULT_OSCILLATION_MAX_PERIOD} × MIN_CYCLES ${DEFAULT_OSCILLATION_MIN_CYCLES} − 1).`,
   );
 }
-/** Max intra-episode reflections before the loop hard-fails. Prevents a
- *  secondary "reflect → loop again → reflect" cycle. */
-const MAX_REFLECTIONS = 2;
+/** Number of loop-detected interventions after which the reflection note
+ *  escalates to a strong "call `fail`" directive. The loop NEVER hard-stops
+ *  on this — escalation is advisory; only the LLM (done/fail/plain-text) or a
+ *  user abort ends the task. */
+const REFLECTION_ESCALATE_AFTER = 2;
 
 /** Trusted tool_result content for tool_use blocks whose execution was
  *  skipped because a loop was detected. NOT wrapped in <untrusted_*> — this
@@ -814,17 +864,10 @@ const REFLECTION_SKIP_RESULT =
   "observation, then choose a different approach or call `fail` if the task " +
   "cannot proceed.";
 
-/** Trusted tool_result content used on the hard-stop (reflection budget
- *  exhausted) path. Unlike REFLECTION_SKIP_RESULT it does NOT invite another
- *  attempt — the next turn has NO tools — it asks the model for a final
- *  failure summary. NOT wrapped in <untrusted_*> (runtime-authored). */
-const REFLECTION_GIVEUP_RESULT =
-  "You are being stopped: you repeated the same action too many times without " +
-  "progress and will not be allowed to act further. Reply with a brief final " +
-  "summary (1–3 sentences) of what you were trying to do, what you attempted, " +
-  "and why it could not be completed. Do not attempt any tool calls.";
-
-/** Build the trusted reflection note appended to <reflections>. */
+/** Build the trusted reflection note appended to <reflections>. Past
+ *  REFLECTION_ESCALATE_AFTER interventions the note escalates to a blunt
+ *  "stop retrying, call `fail`" directive — but the runtime still does not
+ *  terminate; the model must choose to. */
 function buildReflectionNote(verdict: LoopVerdict, attempt: number): string {
   const why =
     verdict.kind === "repeat-error"
@@ -835,45 +878,20 @@ function buildReflectionNote(verdict: LoopVerdict, attempt: number): string {
           ? `you are cycling between the same ${verdict.period} actions (a ${verdict.period}-step loop) without making progress`
           : // unreachable defensive default (LoopVerdict has no other kind that reaches here)
             "you appear to be repeating an action without progress";
-  return (
+  const base =
     `Self-correction (intervention ${attempt}): ${why}. You are stuck in a loop. ` +
     "Before acting again: (1) re-read the latest page snapshot above — did the previous " +
     "action have the effect you expected? (2) If an element is unresponsive, try a different " +
     "element, a different tool, or scroll to reveal new state. (3) If the task genuinely " +
-    "cannot proceed, call `fail` with a clear explanation. Do NOT repeat the same action."
-  );
-}
-
-/**
- * #65 — final, tools-disabled LLM turn that asks the stuck model to author its
- * own failure summary. Passing an empty tool list means the model cannot emit
- * a tool call to resume the loop; we only collect its text. Returns the trimmed
- * text, or null on abort / stream error / empty output (caller falls back to a
- * deterministic summary). Costs one LLM call, only on the rare hard-stop path.
- */
-async function generateStuckSummary(
-  modelConfig: ModelConfig,
-  history: AgentMessage[],
-  signal: AbortSignal,
-): Promise<string | null> {
-  if (signal.aborted) return null;
-  const slid = applySlidingWindow(history);
-  const elided = elideStaleObservations(slid);
-  const budgeted = await applyTokenBudget(elided, modelConfig.provider, modelConfig.model);
-  const { repaired } = validateAndRepairAdjacentRoles(budgeted);
-  let text = "";
-  try {
-    for await (const event of streamChat(modelConfig, repaired, signal, [])) {
-      if (signal.aborted) return null;
-      if (event.type === "text-delta") text += event.text;
-      else if (event.type === "error") return null;
-      // tool-call-* events are ignored — no tools were offered.
-    }
-  } catch {
-    return null;
+    "cannot proceed, call `fail` with a clear explanation. Do NOT repeat the same action.";
+  if (attempt > REFLECTION_ESCALATE_AFTER) {
+    return (
+      `${base} You have now self-corrected ${attempt} times without breaking the ` +
+      "loop — repeating again wastes the user's tokens. If your next attempt is " +
+      "not a fundamentally different approach, call `fail` now and explain the blocker."
+    );
   }
-  const trimmed = text.trim();
-  return trimmed.length > 0 ? trimmed : null;
+  return base;
 }
 
 // ── Main loop ─────────────────────────────────────────────────────────────────
@@ -1194,12 +1212,22 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
   const compactionMaxTokens = compactionModelMeta?.maxContextTokens ?? COMPACTION_FALLBACK_MAX_TOKENS;
   const compactionSummarizer = createDefaultSummarizer(modelConfig);
 
+  // Advisory-navigation warn-once tracker. The per-iteration origin gate is
+  // advisory (never terminates); to avoid re-injecting the same notice every
+  // step while the page sits on a diverged origin, we surface each distinct
+  // divergence (keyed by noticeKey) only once. Reset to null on any `ok` so a
+  // later divergence — or a return to the pinned origin then away again — is
+  // surfaced afresh.
+  let lastNoticeKey: string | null = null;
+
   try {
     // M1-U5 — resume path starts the counter at the next step beyond
-    // what was persisted. The MAX_STEPS bound still applies as the
-    // absolute task ceiling; resume does not reset it.
+    // what was persisted.
     const startStepIndex = (ctx.resumedFromStep ?? 0) + 1;
-    for (let stepIndex = startStepIndex; stepIndex <= MAX_STEPS; stepIndex++) {
+    // Unbounded — only an LLM termination (done/fail/plain-text) or a user
+    // abort exits this loop. The soft budget nudge (SOFT_STEP_BUDGET) steers
+    // the model to wrap up; there is no absolute step ceiling by design.
+    for (let stepIndex = startStepIndex; !signal.aborted; stepIndex++) {
       lastStepIndex = stepIndex;
       if (signal.aborted) return; // → finally
 
@@ -1228,9 +1256,19 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         await broadcastInstructionState(port, sessionId);
       }
 
-      // Origin check (Issue #50: transient-tolerant)
+      // Advisory origin check. interpretPinnedTabUrl NEVER terminates the
+      // task — a divergence (origin change / restricted / still-navigating /
+      // tab gone) comes back as a `notice` we surface to the LLM as a trusted
+      // <system_notice> block; the LLM decides whether to continue, recover
+      // (focus_tab/open_url), or call `fail`. A raw chrome.tabs.get throw
+      // (tab truly gone) is handled the same way — a tab-closed notice — so
+      // every navigation outcome flows back to the model rather than killing
+      // the loop.
       let currentUrl: string;
       let pageTitle: string;
+      // Trusted runtime notices for this step (navigation divergence + soft
+      // budget nudge). Joined into a single <system_notice> block below.
+      const sysNotices: string[] = [];
       try {
         const currentTab = await chrome.tabs.get(pinnedTabId);
         const decision = await interpretPinnedTabUrl({
@@ -1239,32 +1277,55 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           awaitSettle: waitForUrlSettle,
           signal,
         });
-        if (decision.kind === "stop") {
-          await emitDone({
-            type: "agent-done-task",
-            success: false,
-            summary: decision.summary,
-            stepCount: stepIndex - 1,
-          }, "abort");
-          return;
+        if (decision.kind === "notice") {
+          currentUrl = decision.url || "(focused tab unavailable)";
+          pageTitle = currentTab.title ?? "";
+          if (decision.noticeKey !== lastNoticeKey) {
+            sysNotices.push(decision.notice);
+            lastNoticeKey = decision.noticeKey;
+          }
+        } else {
+          currentUrl = decision.url;
+          pageTitle = currentTab.title ?? "";
+          lastNoticeKey = null;
         }
-        currentUrl = decision.url;
-        pageTitle = currentTab.title ?? "";
       } catch {
         if (signal.aborted) return;
-        await emitDone({
-          type: "agent-done-task",
-          success: false,
-          summary: "Tab was closed, agent stopped",
-          stepCount: stepIndex - 1,
-        }, "abort");
-        return;
+        // chrome.tabs.get throws → the focused tab is genuinely gone.
+        currentUrl = "(focused tab unavailable)";
+        pageTitle = "";
+        if (lastNoticeKey !== "tab-closed") {
+          sysNotices.push(
+            `The focused tab (id ${pinnedTabId}) is no longer available ` +
+              `(closed). ${NOTICE_TAIL}`,
+          );
+          lastNoticeKey = "tab-closed";
+        }
+      }
+
+      // Soft budget nudge — no hard step ceiling, so once past the soft
+      // budget we escalate pressure to self-terminate. Re-emitted each step
+      // with the live count so the model sees the cost climbing.
+      if (stepIndex >= SOFT_STEP_BUDGET) {
+        sysNotices.push(
+          `You've taken ${stepIndex} steps (soft budget ${SOFT_STEP_BUDGET}). ` +
+            `The runtime will not stop you, but long tasks burn the user's ` +
+            `tokens — wrap up now: finish with \`done\`, or call \`fail\` if ` +
+            `you're blocked.`,
+        );
       }
 
       console.log(`[loop] step=${stepIndex} url=${currentUrl}`);
 
       // Build observation text
       let observationText = buildObservationMessage(pageTitle, currentUrl);
+      // Advisory runtime notices (trusted block, NOT untrusted page data).
+      // Navigation divergence is surfaced once per distinct change; the budget
+      // nudge re-appears past the soft budget. Placed before <reflections> so
+      // they lead the observation when present.
+      if (sysNotices.length > 0) {
+        observationText += `\n\n<system_notice>\n${sysNotices.join("\n\n")}\n</system_notice>`;
+      }
       // #61(b) — tail-inject accumulated reflections (trusted; NOT wrapped in
       // <untrusted_*>). Always re-appended to the NEWEST observation so it
       // survives sliding-window / token-budget pressure and stale-elision
@@ -1611,44 +1672,11 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           isError: true,
         }));
 
-        if (reflectionCount >= MAX_REFLECTIONS) {
-          // Reflection budget exhausted — hard terminate (#61). #65: give the
-          // model ONE final tools-disabled turn to author its own failure
-          // summary, falling back to a deterministic string. Termination is
-          // still guaranteed — we emitDone(success:false) regardless.
-          const giveupResults: ContentBlock[] = completedToolCalls.map((tc) => ({
-            type: "tool_result",
-            toolUseId: tc.id,
-            content: REFLECTION_GIVEUP_RESULT,
-            isError: true,
-          }));
-          history.push({ role: "assistant", content: assistantBlocks });
-          history.push({ role: "user", content: giveupResults });
-          if (ctx.onStepSnapshot) {
-            const snap = buildSessionAgentSnapshot(history, stepIndex, hasImageContent);
-            ctx.onStepSnapshot(snap).catch((e) => {
-              console.warn(
-                `[agent] snapshot (reflection-giveup) failed for session=${ctx.sessionId} step=${stepIndex}:`,
-                e,
-              );
-            });
-          }
-          const llmSummary = await generateStuckSummary(modelConfig, history, signal);
-          if (signal.aborted) return; // → finally emits an abort done
-          const summary =
-            llmSummary ?? "Agent got stuck repeating the same action and stopped.";
-          await emitDone(
-            {
-              type: "agent-done-task",
-              success: false,
-              summary,
-              stepCount: stepIndex,
-            },
-            "fail",
-          );
-          return;
-        }
-
+        // Loop detected. We never hard-terminate here — the reflection note
+        // is injected (escalating past REFLECTION_ESCALATE_AFTER) and the loop
+        // continues; only the LLM (fail/done/plain-text) or a user abort ends
+        // the task. The skip tool_results above close the assistant turn so
+        // the model gets a clean next turn to change approach or call `fail`.
         reflectionCount++;
         const note = buildReflectionNote(verdict, reflectionCount);
         reflectionMemory.push(note);
@@ -2018,13 +2046,10 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       }
     }
 
-    // Max steps exceeded
-    await emitDone({
-      type: "agent-done-task",
-      success: false,
-      summary: "Max steps reached",
-      stepCount: MAX_STEPS,
-    }, "max-steps");
+    // The loop only exits here when signal.aborted flipped between the step
+    // increment and the condition check (the in-body `if (signal.aborted)
+    // return` is the usual abort exit). The finally block emits the abort
+    // done — there is no "max steps" terminal path anymore.
   } finally {
     // Always tear down any CDP session this task acquired. Idempotent —
     // signal abort listener inside cdp-session.ts may have already done
