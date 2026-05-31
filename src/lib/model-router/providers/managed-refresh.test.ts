@@ -11,7 +11,7 @@ it("on 401 refreshes token once and retries, then succeeds", async () => {
   await saveAuth({ jwt: "old-jwt", refreshToken: "r1", expiresAt: Date.now() + 30 * 60_000 });
   let call = 0;
   vi.stubGlobal("fetch", vi.fn(async (url: string) => {
-    if (url.endsWith("/auth/refresh"))
+    if (url.endsWith("/auth-refresh"))
       return new Response(JSON.stringify({ jwt: "new-jwt", refreshToken: "r2", expiresAt: Date.now() + 3_600_000 }), { status: 200 });
     call++;
     if (call === 1) return new Response("", { status: 401 });
@@ -30,7 +30,7 @@ it("on 401 refreshes token once and retries, then succeeds", async () => {
 it("on persistent 401 surfaces error (no infinite retry)", async () => {
   await saveAuth({ jwt: "old-jwt", refreshToken: "r1", expiresAt: Date.now() + 30 * 60_000 });
   vi.stubGlobal("fetch", vi.fn(async (url: string) => {
-    if (url.endsWith("/auth/refresh"))
+    if (url.endsWith("/auth-refresh"))
       return new Response(JSON.stringify({ jwt: "new-jwt", refreshToken: "r2", expiresAt: Date.now() + 3_600_000 }), { status: 200 });
     return new Response("", { status: 401 });
   }));

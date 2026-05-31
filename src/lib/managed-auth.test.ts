@@ -23,7 +23,7 @@ it("getValidJwt refreshes when expiring and persists new tokens", async () => {
   const jwt = await getValidJwt();
 
   expect(jwt).toBe("new");
-  expect(fetchMock).toHaveBeenCalledWith(expect.stringMatching(/\/auth\/refresh$/), expect.objectContaining({ method: "POST" }));
+  expect(fetchMock).toHaveBeenCalledWith(expect.stringMatching(/\/auth-refresh$/), expect.objectContaining({ method: "POST" }));
   expect((await getStoredAuth())!.refreshToken).toBe("r2");
 });
 
@@ -71,7 +71,7 @@ it("loginWithOAuth exchanges code and persists auth + entitlement", async () => 
   const getRedirectURLSpy = vi.spyOn(chromeMock.identity, "getRedirectURL").mockReturnValue("https://abc.chromiumapp.org/");
   const launchWebAuthFlowSpy = vi.spyOn(chromeMock.identity, "launchWebAuthFlow").mockResolvedValue("https://abc.chromiumapp.org/?code=AUTHCODE");
   const fetchMock = vi.fn(async (url: string) => {
-    if (url.endsWith("/auth/exchange"))
+    if (url.endsWith("/auth-exchange"))
       return new Response(JSON.stringify({
         jwt: "j", refreshToken: "r", expiresAt: Date.now() + 3_600_000,
         entitlement: { plan: "free", tiers: [{ tierId: "default", displayName: "标准" }] },
@@ -95,7 +95,7 @@ it("loginWithOAuth reads the access_token from the URL fragment (Supabase implic
     "https://abc.chromiumapp.org/#access_token=SUPA_TOKEN&token_type=bearer&expires_in=3600&refresh_token=ignored");
   let sentBody: { code?: string } = {};
   vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
-    if (url.endsWith("/auth/exchange")) {
+    if (url.endsWith("/auth-exchange")) {
       sentBody = JSON.parse(String(init.body));
       return new Response(JSON.stringify({
         jwt: "j2", refreshToken: "r2", expiresAt: Date.now() + 3_600_000,

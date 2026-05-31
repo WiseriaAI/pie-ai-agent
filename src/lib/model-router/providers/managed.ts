@@ -9,7 +9,13 @@ export async function* streamChat(
   signal?: AbortSignal,
   tools?: ToolDefinition[],
 ): AsyncGenerator<StreamEvent> {
-  let active = config;
+  // Supabase Edge Functions 按函数名路由：聊天函数是 `v1-chat`，所以把 baseUrl 指到该函数
+  // （registry 的 defaultBaseUrl 是 .../functions/v1）。openai-compat-core 再在其后拼 chat/completions，
+  // 整条 .../functions/v1/v1-chat/** 都由网关路由到 v1-chat 函数。
+  let active: ModelConfig = {
+    ...config,
+    baseUrl: `${(config.baseUrl ?? "").replace(/\/$/, "")}/v1-chat`,
+  };
   for (let attempt = 0; attempt < 2; attempt++) {
     let auth401 = false;
     for await (const ev of streamChatOpenAICompat(active, messages, signal, tools, {

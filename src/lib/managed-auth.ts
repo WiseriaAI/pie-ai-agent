@@ -38,7 +38,7 @@ export async function refreshJwt(): Promise<string> {
 async function _doRefresh(): Promise<string> {
   const cur = await getStoredAuth();
   if (!cur) throw new Error("managed: not logged in");
-  const res = await fetch(`${base()}/auth/refresh`, {
+  const res = await fetch(`${base()}/auth-refresh`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ refreshToken: cur.refreshToken }),
@@ -60,7 +60,7 @@ export async function getValidJwt(): Promise<string> {
 
 export async function fetchEntitlement(): Promise<Entitlement> {
   const jwt = await getValidJwt();
-  const res = await fetch(`${base()}/me/entitlement`, { headers: { authorization: `Bearer ${jwt}` } });
+  const res = await fetch(`${base()}/me-entitlement`, { headers: { authorization: `Bearer ${jwt}` } });
   if (!res.ok) throw new Error(`managed entitlement failed: ${res.status}`);
   const ent = await res.json() as Entitlement;
   await chrome.storage.local.set({ [ENT_KEY]: ent });
@@ -74,7 +74,7 @@ export async function getCachedEntitlement(): Promise<Entitlement | null> {
 /** 拉起 OAuth，换取 JWT，落盘 auth + entitlement，返回 entitlement。 */
 export async function loginWithOAuth(): Promise<Entitlement> {
   const redirectUri = chrome.identity.getRedirectURL();
-  const authUrl = `${base()}/auth/start?redirect_uri=${encodeURIComponent(redirectUri)}`;
+  const authUrl = `${base()}/auth-start?redirect_uri=${encodeURIComponent(redirectUri)}`;
   const redirected = await chrome.identity.launchWebAuthFlow({ url: authUrl, interactive: true });
   if (!redirected) throw new Error("managed login: no redirect URL returned");
   // Supabase 隐式流把 session 放在 URL fragment（#access_token=...）；PKCE 才用 ?code=。
@@ -86,7 +86,7 @@ export async function loginWithOAuth(): Promise<Entitlement> {
   const code = frag.get("access_token") ?? u.searchParams.get("code");
   if (!code) throw new Error("managed login: no token in redirect");
 
-  const res = await fetch(`${base()}/auth/exchange`, {
+  const res = await fetch(`${base()}/auth-exchange`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ code, redirectUri }),
