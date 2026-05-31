@@ -1326,7 +1326,7 @@ describe("interpretPinnedTabUrl (Issue #50 — navigation transient tolerance)",
     expect(settle).not.toHaveBeenCalled();
   });
 
-  it("returns stop with restricted summary for chrome:// URL (no settle call)", async () => {
+  it("returns a restricted notice for chrome:// URL — never stops (no settle call)", async () => {
     const settle = makeAwaitSettle(async () => {
       throw new Error("must not be called");
     });
@@ -1335,14 +1335,17 @@ describe("interpretPinnedTabUrl (Issue #50 — navigation transient tolerance)",
       pinnedOrigin: HTTPS_A,
       awaitSettle: settle,
     });
-    expect(r).toEqual({
-      kind: "stop",
-      summary: "Page navigated to a restricted URL, agent stopped",
-    });
+    expect(r.kind).toBe("notice");
+    if (r.kind === "notice") {
+      expect(r.url).toBe("chrome://settings");
+      expect(r.notice).toMatch(/restricted/i);
+      expect(r.notice).toMatch(/NOT stopped/);
+      expect(r.noticeKey).toBe("restricted:chrome://settings");
+    }
     expect(settle).not.toHaveBeenCalled();
   });
 
-  it("returns stop with origin-changed summary when origin diverges from pinnedOrigin", async () => {
+  it("returns an origin-changed notice when origin diverges — never stops (no settle call)", async () => {
     const settle = makeAwaitSettle(async () => {
       throw new Error("must not be called for non-transient url");
     });
@@ -1351,14 +1354,18 @@ describe("interpretPinnedTabUrl (Issue #50 — navigation transient tolerance)",
       pinnedOrigin: HTTPS_A,
       awaitSettle: settle,
     });
-    expect(r).toEqual({
-      kind: "stop",
-      summary: `Page origin changed from ${HTTPS_A} to ${HTTPS_B}, agent stopped`,
-    });
+    expect(r.kind).toBe("notice");
+    if (r.kind === "notice") {
+      expect(r.url).toBe(`${HTTPS_B}/landing`);
+      expect(r.notice).toContain(HTTPS_A);
+      expect(r.notice).toContain(HTTPS_B);
+      expect(r.notice).toMatch(/NOT stopped/);
+      expect(r.noticeKey).toBe(`origin:${HTTPS_B}`);
+    }
     expect(settle).not.toHaveBeenCalled();
   });
 
-  it("returns stop for unparseable / opaque-origin url (existing safety behavior)", async () => {
+  it("returns an unparseable-origin notice for a non-url string — never stops", async () => {
     const settle = makeAwaitSettle(async () => {
       throw new Error("must not be called");
     });
@@ -1367,15 +1374,19 @@ describe("interpretPinnedTabUrl (Issue #50 — navigation transient tolerance)",
       pinnedOrigin: HTTPS_A,
       awaitSettle: settle,
     });
-    expect(r).toEqual({
-      kind: "stop",
-      summary: "Page origin changed, agent stopped for safety",
-    });
+    expect(r.kind).toBe("notice");
+    if (r.kind === "notice") {
+      expect(r.url).toBe("not a url");
+      expect(r.notice).toMatch(/origin/i);
+      expect(r.noticeKey).toBe("unparseable:not a url");
+    }
   });
 
-  it("fast-fails on pendingUrl whose origin does not match pinnedOrigin (no settle call)", async () => {
-    const settle = makeAwaitSettle(async () => {
-      throw new Error("must not be called when pendingUrl pre-empts");
+  it("no longer fast-fails on pendingUrl mismatch — it awaits settle for the true destination", async () => {
+    const settle = makeAwaitSettle(async (_tabId, expectedOrigin) => {
+      expect(expectedOrigin).toBe(HTTPS_A);
+      // The redirect chain actually lands back on the pinned origin.
+      return { committed: true, url: `${HTTPS_A}/final` };
     });
     const r = await interpretPinnedTabUrl({
       tab: {
@@ -1386,11 +1397,8 @@ describe("interpretPinnedTabUrl (Issue #50 — navigation transient tolerance)",
       pinnedOrigin: HTTPS_A,
       awaitSettle: settle,
     });
-    expect(r).toEqual({
-      kind: "stop",
-      summary: `Page origin changed from ${HTTPS_A} to ${HTTPS_B}, agent stopped`,
-    });
-    expect(settle).not.toHaveBeenCalled();
+    expect(r).toEqual({ kind: "ok", url: `${HTTPS_A}/final` });
+    expect(settle).toHaveBeenCalledTimes(1);
   });
 
   it("on about:blank with no pendingUrl: awaits settle and returns ok on commit", async () => {
@@ -1408,7 +1416,7 @@ describe("interpretPinnedTabUrl (Issue #50 — navigation transient tolerance)",
     expect(settle).toHaveBeenCalledWith(1, HTTPS_A, 5000, undefined);
   });
 
-  it("on about:blank: settle origin-mismatch returns stop with observed origin in summary", async () => {
+  it("on about:blank: settle origin-mismatch returns an origin-changed notice with observed origin", async () => {
     const settle = makeAwaitSettle(async () => ({
       committed: false,
       reason: "origin-mismatch",
@@ -1419,13 +1427,16 @@ describe("interpretPinnedTabUrl (Issue #50 — navigation transient tolerance)",
       pinnedOrigin: HTTPS_A,
       awaitSettle: settle,
     });
-    expect(r).toEqual({
-      kind: "stop",
-      summary: `Page origin changed from ${HTTPS_A} to ${HTTPS_B}, agent stopped`,
-    });
+    expect(r.kind).toBe("notice");
+    if (r.kind === "notice") {
+      expect(r.url).toBe(`${HTTPS_B}/post-commit`);
+      expect(r.notice).toContain(HTTPS_A);
+      expect(r.notice).toContain(HTTPS_B);
+      expect(r.noticeKey).toBe(`origin:${HTTPS_B}`);
+    }
   });
 
-  it("on about:blank: settle timeout returns stop with restricted-URL summary (reuses existing copy)", async () => {
+  it("on about:blank: settle timeout returns a still-navigating notice — never stops", async () => {
     const settle = makeAwaitSettle(async () => ({
       committed: false,
       reason: "timeout",
@@ -1435,13 +1446,14 @@ describe("interpretPinnedTabUrl (Issue #50 — navigation transient tolerance)",
       pinnedOrigin: HTTPS_A,
       awaitSettle: settle,
     });
-    expect(r).toEqual({
-      kind: "stop",
-      summary: "Page navigated to a restricted URL, agent stopped",
-    });
+    expect(r.kind).toBe("notice");
+    if (r.kind === "notice") {
+      expect(r.notice).toMatch(/navigat/i);
+      expect(r.noticeKey).toBe("navigating");
+    }
   });
 
-  it("on about:blank: settle tab-gone returns stop with tab-closed summary", async () => {
+  it("on about:blank: settle tab-gone returns a tab-closed notice — never stops", async () => {
     const settle = makeAwaitSettle(async () => ({
       committed: false,
       reason: "tab-gone",
@@ -1451,10 +1463,11 @@ describe("interpretPinnedTabUrl (Issue #50 — navigation transient tolerance)",
       pinnedOrigin: HTTPS_A,
       awaitSettle: settle,
     });
-    expect(r).toEqual({
-      kind: "stop",
-      summary: "Tab was closed, agent stopped",
-    });
+    expect(r.kind).toBe("notice");
+    if (r.kind === "notice") {
+      expect(r.notice).toMatch(/closed|no longer/i);
+      expect(r.noticeKey).toBe("tab-closed");
+    }
   });
 
   it("on empty / undefined url: behaves the same as about:blank (awaits settle)", async () => {

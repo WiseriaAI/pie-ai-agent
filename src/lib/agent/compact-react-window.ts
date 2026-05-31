@@ -132,7 +132,7 @@ export function buildCompactionMessages(pairs: AgentMessage[]): AgentMessage[] {
   ];
 }
 
-/** 默认 summarizer:用当前 model 跑无 tool streamChat,收集纯文本(模式同 generateStuckSummary)。 */
+/** 默认 summarizer:用当前 model 跑无 tool streamChat,收集纯文本。 */
 export function createDefaultSummarizer(modelConfig: ModelConfig): ReactSummarizer {
   return async (pairs, signal) => {
     if (signal.aborted) return null;

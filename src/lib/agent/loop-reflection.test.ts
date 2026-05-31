@@ -13,25 +13,23 @@ import type { AgentLoopContext } from "./loop";
 // targets pure helpers), so this lives in its own file with a focused harness:
 //
 //   - streamChat (model-router) is mocked to yield the SAME `click` tool call
-//     every invocation → identical step signatures, which trips detectLoop.
-//     The stubbed executeScript result carries no `success:true`, so every
-//     click action returns errored; that means the B-detector (repeat+error,
-//     threshold 2) fires FIRST — on the 2nd identical errored step — before
-//     the A-detector (exact-repeat, threshold 3) would. This test is
-//     deliberately resilient to that: it does NOT pin exact step indices,
-//     only that the reflect step + <reflections> injection + hard-fail +
-//     early termination all occur. detectLoop's A-vs-B distinction is covered
-//     separately by loop-detection.test.ts; this file only locks the
-//     runAgentLoop WIRING, which is detector-agnostic (the same branch in the
-//     loop handles both verdict kinds identically).
+//     for the first several invocations → identical step signatures, which
+//     trips detectLoop. The stubbed executeScript result carries no
+//     `success:true`, so every click action returns errored; that means the
+//     B-detector (repeat+error, threshold 2) fires FIRST — on the 2nd
+//     identical errored step. After enough interventions the mock yields a
+//     `fail` tool call: the loop NO LONGER hard-terminates on a detected loop
+//     (advisory-navigation rework), so the model itself must call done/fail
+//     to end the task. These tests assert the reflect step + <reflections>
+//     injection + escalation + LLM-controlled termination all occur.
 //   - chrome.scripting.executeScript is stubbed for the click handler's
 //     in-tab invocation. The loop no longer calls executeScript for snapshot
 //     (pull-mode: read_page stamps data-pie-idx on demand; tab title comes from
 //     chrome.tabs.get which is already seeded via chromeMock).
 //
-// The signature is identical whether the click "succeeds" or "errors", so the
-// wiring assertions hold regardless; the errored result simply selects which
-// detector verdict (B) the loop receives.
+// NOTE: the loop is now UNBOUNDED (no MAX_STEPS ceiling). A mock that yields
+// `click` forever would spin forever — every test here must eventually yield a
+// `fail` (or `done`) so the model terminates the task.
 
 // streamChat is a vi.fn so we can assert invocation counts.
 const streamChatMock = vi.fn();
@@ -62,17 +60,34 @@ function clickStream(callId: string): StreamEvent[] {
   ];
 }
 
+/** A `fail` tool call — the model's LLM-controlled termination path. */
+function failStream(callId: string, reason: string): StreamEvent[] {
+  return [
+    { type: "tool-call-start", id: callId, index: 0, name: "fail" },
+    { type: "tool-call-delta", index: 0, argsDelta: JSON.stringify({ reason }) },
+    { type: "tool-call-end", index: 0 },
+  ];
+}
+
 describe("runAgentLoop — loop detection + reflection (#61 a/b)", () => {
   const SESSION_ID = "sess-reflect";
   const TAB_ID = 101;
 
   beforeEach(() => {
     streamChatMock.mockReset();
-    // Each streamChat call yields the SAME click action but with a UNIQUE
-    // tool_use id (Anthropic requires unique ids; the signature ignores id).
+    // The first 4 streamChat calls yield the SAME click action (unique
+    // tool_use ids; the signature ignores id) → trips the loop detector and
+    // drives reflection escalation. The loop no longer hard-terminates, so on
+    // the 5th call the model yields `fail` to end the task (LLM-controlled
+    // termination). Without this the unbounded loop would spin forever.
     let n = 0;
     streamChatMock.mockImplementation(() => {
       n++;
+      if (n >= 5) {
+        return streamOf(
+          failStream(`f${n}`, "Could not click the submit button after retrying."),
+        );
+      }
       return streamOf(clickStream(`t${n}`));
     });
 
@@ -129,7 +144,7 @@ describe("runAgentLoop — loop detection + reflection (#61 a/b)", () => {
     };
   }
 
-  it("trips the detector, emits a reflect step + <reflections>, then hard-fails", async () => {
+  it("trips the detector, emits a reflect step + <reflections>, escalates, then the model calls fail", async () => {
     const snapshots: SessionAgentState[] = [];
     const onStepSnapshot = vi.fn(async (s: SessionAgentState) => {
       // structuredClone so later in-place history mutation can't rewrite
@@ -154,7 +169,15 @@ describe("runAgentLoop — loop detection + reflection (#61 a/b)", () => {
     expect(reflectSteps[0]!.status).toBe("ok");
     expect(String(reflectSteps[0]!.observation)).toMatch(/Self-correction/);
 
-    // (2) A snapshot taken after a reflection carries the <reflections> tail
+    // (2) Escalation: past REFLECTION_ESCALATE_AFTER (2) interventions, the
+    // note escalates to a blunt "self-corrected N times … call fail" directive.
+    expect(
+      reflectSteps.some((s) =>
+        /self-corrected \d+ times/.test(String(s.observation ?? "")),
+      ),
+    ).toBe(true);
+
+    // (3) A snapshot taken after a reflection carries the <reflections> tail
     // in a user observation message. Note the tail lands in the observation
     // that opens the NEXT step (it's appended to the prior step's
     // tool_result user turn, then a fresh assistant/skip turn is pushed on
@@ -172,31 +195,31 @@ describe("runAgentLoop — loop detection + reflection (#61 a/b)", () => {
     const reflectionSnapshot = snapshots.find(userTextHasReflections);
     expect(reflectionSnapshot).toBeDefined();
 
-    // (3) Reflection budget exhausted → agent-done-task success:false with the
-    // "stuck repeating" summary.
+    // (4) Termination is LLM-controlled: the done carries the model's `fail`
+    // reason — NOT any runtime-authored "stuck repeating" string (that hard-
+    // stop path was removed).
     const doneFail = posts.find(
-      (m) =>
-        m.type === "agent-done-task" &&
-        m.success === false &&
-        typeof m.summary === "string" &&
-        (m.summary as string).includes("stuck repeating"),
+      (m) => m.type === "agent-done-task" && m.success === false,
     );
     expect(doneFail).toBeDefined();
+    expect(doneFail!.summary).toContain("Could not click the submit button");
+    expect(String(doneFail!.summary)).not.toMatch(/stuck repeating/);
   });
 
-  it("never executes the looping tool more times than the model emitted (no runaway)", async () => {
+  it("does not hard-terminate on a detected loop — it runs until the model calls fail", async () => {
     const onStepSnapshot = vi.fn(async () => {});
     const ctx = makeCtx(onStepSnapshot);
     await runAgentLoop(ctx);
 
-    // The mocked click action errors every time, so the B-detector
-    // (repeat+error, threshold 2) trips early, and with MAX_REFLECTIONS=2 the
-    // loop hard-fails well before MAX_STEPS (30). Assert it stopped early — a
-    // regression that disabled detection would run until MAX_STEPS. The bounds
-    // are intentionally loose (not exact step indices) so the test stays
-    // resilient to which detector verdict fires first.
-    expect(streamChatMock.mock.calls.length).toBeLessThan(30);
-    expect(streamChatMock.mock.calls.length).toBeGreaterThanOrEqual(3);
+    // The runtime no longer ends the task on a detected loop; the mock keeps
+    // clicking until its 5th call yields `fail`. So streamChat is invoked
+    // exactly 5 times — proving the loop kept going past the old hard-stop
+    // (which fired at intervention 2) and only stopped when the model did.
+    expect(streamChatMock.mock.calls.length).toBe(5);
+    const done = (ctx.port.postMessage as ReturnType<typeof vi.fn>).mock.calls
+      .map((c) => c[0] as Record<string, unknown>)
+      .find((m) => m.type === "agent-done-task");
+    expect(done?.success).toBe(false);
   });
 
   // ── #64 — oscillation (a→b→a→b) detection ──────────────────────────────────
@@ -219,32 +242,32 @@ describe("runAgentLoop — loop detection + reflection (#61 a/b)", () => {
     // streamChatMock.mockReset() in beforeEach, then this override is
     // applied on top within the test body itself).
     let n = 0;
-    streamChatMock.mockImplementation(
-      async function* (
-        _cfg: unknown,
-        _hist: unknown,
-        _sig: unknown,
-        tools: unknown[],
-      ) {
-        // The generateStuckSummary final turn passes an empty tools array.
-        // Yield a simple text delta so the loop can terminate cleanly.
-        if (Array.isArray(tools) && tools.length === 0) {
-          yield { type: "text-delta", text: "I kept alternating between two buttons." };
-          return;
-        }
-        // Alternate between elementIndex 1 and 2 → two distinct signatures.
-        const idx = n % 2 === 0 ? 1 : 2;
-        n++;
-        const id = `osc-t${n}`;
-        yield { type: "tool-call-start", id, index: 0, name: "click" };
+    streamChatMock.mockImplementation(async function* () {
+      n++;
+      // After 6 alternating clicks (enough to trip the period-2 oscillation
+      // detector and emit a reflect step), the model calls `fail` to end the
+      // task — the loop never hard-terminates on its own.
+      if (n >= 7) {
+        yield { type: "tool-call-start", id: `osc-f${n}`, index: 0, name: "fail" };
         yield {
           type: "tool-call-delta",
           index: 0,
-          argsDelta: JSON.stringify({ elementIndex: idx, frameId: 0 }),
+          argsDelta: JSON.stringify({ reason: "Kept alternating between two buttons." }),
         };
         yield { type: "tool-call-end", index: 0 };
-      },
-    );
+        return;
+      }
+      // Alternate between elementIndex 1 and 2 → two distinct signatures.
+      const idx = n % 2 === 0 ? 1 : 2;
+      const id = `osc-t${n}`;
+      yield { type: "tool-call-start", id, index: 0, name: "click" };
+      yield {
+        type: "tool-call-delta",
+        index: 0,
+        argsDelta: JSON.stringify({ elementIndex: idx, frameId: 0 }),
+      };
+      yield { type: "tool-call-end", index: 0 };
+    });
 
     const onStepSnapshot = vi.fn(async () => {});
     const ctx = makeCtx(onStepSnapshot);
@@ -268,101 +291,5 @@ describe("runAgentLoop — loop detection + reflection (#61 a/b)", () => {
         /cycling between the same 2 actions/.test(String(s.observation ?? "")),
       ),
     ).toBe(true);
-  });
-
-  // ── #65 — model-authored summary on hard-stop ────────────────────────────────
-  //
-  // When the reflection budget (MAX_REFLECTIONS=2) is exhausted, the loop calls
-  // generateStuckSummary which fires one final streamChat invocation with an
-  // empty tool list. If the model produces non-empty text, that text becomes the
-  // agent-done-task summary (model-authored path). The fallback deterministic
-  // string ("Agent got stuck repeating the same action and stopped.") is only
-  // used when the final turn yields no text.
-
-  it("uses the model-authored summary on hard-stop when available (#65)", async () => {
-    // Drive the same identical-click loop as the existing hard-stop tests.
-    // When the final tools-disabled summary turn arrives, yield a DISTINCTIVE
-    // text so we can assert the model-authored path is taken.
-    let callCount = 0;
-    streamChatMock.mockImplementation(
-      async function* (
-        _cfg: unknown,
-        _hist: unknown,
-        _sig: unknown,
-        tools: unknown[],
-      ) {
-        if (Array.isArray(tools) && tools.length === 0) {
-          yield {
-            type: "text-delta",
-            text: "FINAL_SUMMARY: the Place Order button never worked.",
-          };
-          return;
-        }
-        const id = `hs65-t${++callCount}`;
-        yield { type: "tool-call-start", id, index: 0, name: "click" };
-        yield {
-          type: "tool-call-delta",
-          index: 0,
-          argsDelta: JSON.stringify({ elementIndex: 5, frameId: 0 }),
-        };
-        yield { type: "tool-call-end", index: 0 };
-      },
-    );
-
-    const onStepSnapshot = vi.fn(async () => {});
-    const ctx = makeCtx(onStepSnapshot);
-    await runAgentLoop(ctx);
-
-    const posts = (ctx.port.postMessage as ReturnType<typeof vi.fn>).mock.calls.map(
-      (c) => c[0] as Record<string, unknown>,
-    );
-
-    const done = posts.find((m) => m.type === "agent-done-task");
-    expect(done?.success).toBe(false);
-    expect(done?.summary).toContain(
-      "FINAL_SUMMARY: the Place Order button never worked.",
-    );
-  });
-
-  it("falls back to the deterministic stuck-summary when the final turn yields no text (#65)", async () => {
-    // Same hard-stop loop, but the tools-disabled summary turn yields an error
-    // event instead of any text. The loop must use the deterministic fallback.
-    let callCount = 0;
-    streamChatMock.mockImplementation(
-      async function* (
-        _cfg: unknown,
-        _hist: unknown,
-        _sig: unknown,
-        tools: unknown[],
-      ) {
-        if (Array.isArray(tools) && tools.length === 0) {
-          // Yield an error event and no text — triggers the null fallback.
-          yield { type: "error", error: "boom" };
-          return;
-        }
-        const id = `fb65-t${++callCount}`;
-        yield { type: "tool-call-start", id, index: 0, name: "click" };
-        yield {
-          type: "tool-call-delta",
-          index: 0,
-          argsDelta: JSON.stringify({ elementIndex: 5, frameId: 0 }),
-        };
-        yield { type: "tool-call-end", index: 0 };
-      },
-    );
-
-    const onStepSnapshot = vi.fn(async () => {});
-    const ctx = makeCtx(onStepSnapshot);
-    await runAgentLoop(ctx);
-
-    const posts = (ctx.port.postMessage as ReturnType<typeof vi.fn>).mock.calls.map(
-      (c) => c[0] as Record<string, unknown>,
-    );
-
-    const done = posts.find((m) => m.type === "agent-done-task");
-    expect(done?.success).toBe(false);
-    expect(done?.summary).toBe(
-      "Agent got stuck repeating the same action and stopped.",
-    );
   });
 });
