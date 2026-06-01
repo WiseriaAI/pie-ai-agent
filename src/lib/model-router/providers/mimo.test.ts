@@ -35,12 +35,13 @@ describe("mimo wrapper", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0]!;
-    expect(url).toBe("https://api.xiaomimimo.com/anthropic/v1/messages");
+    expect(String(url)).toBe("https://api.xiaomimimo.com/anthropic/v1/messages");
 
-    const headers = (init as RequestInit).headers as Record<string, string>;
-    expect(headers.authorization).toBe("Bearer mk-test");
-    expect(headers["x-api-key"]).toBeUndefined();
-    expect(headers["anthropic-version"]).toBeUndefined();
+    // The SDK passes headers as a Headers instance, so read via .get() (transport-agnostic).
+    const headers = new Headers((init as RequestInit).headers as HeadersInit);
+    expect(headers.get("authorization")).toBe("Bearer mk-test");
+    expect(headers.get("x-api-key")).toBeNull();
+    expect(headers.get("anthropic-version")).toBeNull();
 
     const body = JSON.parse((init as RequestInit).body as string);
     expect(typeof body.system).toBe("string");

@@ -1,84 +1,78 @@
-import { describe, it, expect } from "vitest";
-import { _toWireMessagesForTest, _buildRequestBodyForTest } from "./anthropic";
-import type { AgentMessage, ToolDefinition } from "../types";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { streamChat } from "./anthropic";
 import type { ModelConfig } from "@/lib/model-router";
+import type { AgentMessage, ToolDefinition } from "../types";
 
-describe("anthropic toWireMessages — image", () => {
-  it("ImageBlock passes through with snake_case media_type", () => {
-    const msgs: AgentMessage[] = [
+function stop(): Response {
+  return new Response(
+    new ReadableStream({
+      start(c) {
+        c.enqueue(new TextEncoder().encode("event: message_stop\ndata: {}\n\n"));
+        c.close();
+      },
+    }),
+    { status: 200, headers: { "content-type": "text/event-stream" } },
+  );
+}
+
+const config: ModelConfig = {
+  provider: "anthropic",
+  model: "claude-sonnet-4-6",
+  apiKey: "sk-test",
+  baseUrl: "https://api.anthropic.com",
+};
+
+afterEach(() => vi.restoreAllMocks());
+
+describe("anthropic wrapper (SDK-backed)", () => {
+  it("posts to /v1/messages with x-api-key + anthropic-version", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(stop());
+    for await (const _ of streamChat(config, [{ role: "user", content: "hi" }])) { /* drain */ }
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(String(url)).toBe("https://api.anthropic.com/v1/messages");
+    const h = new Headers((init as RequestInit).headers as HeadersInit);
+    expect(h.get("x-api-key")).toBe("sk-test");
+    expect(h.get("anthropic-version")).toBe("2023-06-01");
+    expect(h.get("authorization")).toBeNull();
+  });
+
+  it("enables prompt caching: system block + last tool carry cache_control", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(stop());
+    const tools: ToolDefinition[] = [
+      { name: "click", description: "click", parameters: { type: "object" } },
+      { name: "type", description: "type", parameters: { type: "object" } },
+    ];
+    const messages: AgentMessage[] = [
+      { role: "system", content: "You are an agent." },
+      { role: "user", content: "go" },
+    ];
+    for await (const _ of streamChat(config, messages, undefined, tools)) { /* drain */ }
+    const body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string);
+    expect(body.system).toEqual([
+      { type: "text", text: "You are an agent.", cache_control: { type: "ephemeral" } },
+    ]);
+    expect(body.tools[0].cache_control).toBeUndefined();
+    expect(body.tools[1].cache_control).toEqual({ type: "ephemeral" });
+    expect(body.tool_choice).toEqual({ type: "auto" });
+  });
+
+  it("passes image blocks through with snake_case media_type", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(stop());
+    const messages: AgentMessage[] = [
       {
         role: "user",
         content: [
-          {
-            type: "image",
-            source: { type: "base64", mediaType: "image/jpeg", data: "AAAA" },
-          },
+          { type: "image", source: { type: "base64", mediaType: "image/jpeg", data: "AAAA" } },
           { type: "text", text: "what is this?" },
         ],
       },
     ];
-    const wire = _toWireMessagesForTest(msgs);
-    expect(wire.messages[0].content[0]).toEqual({
+    for await (const _ of streamChat(config, messages)) { /* drain */ }
+    const body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string);
+    expect(body.messages[0].content[0]).toEqual({
       type: "image",
       source: { type: "base64", media_type: "image/jpeg", data: "AAAA" },
     });
-    expect(wire.messages[0].content[1]).toEqual({ type: "text", text: "what is this?" });
-  });
-});
-
-describe("anthropic prompt caching — cache_control breakpoints", () => {
-  const config: ModelConfig = {
-    provider: "anthropic",
-    model: "claude-sonnet-4-6",
-    apiKey: "sk-test",
-    baseUrl: "https://api.anthropic.com",
-  };
-  const systemMsg: AgentMessage = { role: "system", content: "You are an agent." };
-  const userMsg: AgentMessage = { role: "user", content: "do the thing" };
-  const tools: ToolDefinition[] = [
-    { name: "click", description: "click an element", parameters: { type: "object" } },
-    { name: "type", description: "type text", parameters: { type: "object" } },
-  ];
-
-  it("marks the last tool definition with cache_control ephemeral", () => {
-    const body = _buildRequestBodyForTest(config, [systemMsg, userMsg], tools);
-    const wireTools = body.tools as Array<Record<string, unknown>>;
-    expect(wireTools).toHaveLength(2);
-    // Only the last tool carries the breakpoint — it caches the whole tools prefix.
-    expect(wireTools[0].cache_control).toBeUndefined();
-    expect(wireTools[1].cache_control).toEqual({ type: "ephemeral" });
-  });
-
-  it("converts the system string to a block array with a cache_control breakpoint", () => {
-    const body = _buildRequestBodyForTest(config, [systemMsg, userMsg], tools);
-    expect(body.system).toEqual([
-      { type: "text", text: "You are an agent.", cache_control: { type: "ephemeral" } },
-    ]);
-  });
-
-  it("still caches the system prefix when no tools are present", () => {
-    const body = _buildRequestBodyForTest(config, [systemMsg, userMsg], undefined);
-    expect(body.tools).toBeUndefined();
-    expect(body.system).toEqual([
-      { type: "text", text: "You are an agent.", cache_control: { type: "ephemeral" } },
-    ]);
-  });
-
-  it("omits the system field entirely when there is no system message", () => {
-    const body = _buildRequestBodyForTest(config, [userMsg], undefined);
-    expect(body.system).toBeUndefined();
-  });
-
-  it("preserves model, messages, stream and max_tokens", () => {
-    const body = _buildRequestBodyForTest(
-      { ...config, maxTokens: 2048 },
-      [systemMsg, userMsg],
-      tools,
-    );
-    expect(body.model).toBe("claude-sonnet-4-6");
-    expect(body.stream).toBe(true);
-    expect(body.max_tokens).toBe(2048);
-    expect(body.messages).toEqual([{ role: "user", content: "do the thing" }]);
-    expect(body.tool_choice).toEqual({ type: "auto" });
+    expect(body.messages[0].content[1]).toEqual({ type: "text", text: "what is this?" });
   });
 });

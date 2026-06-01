@@ -16,9 +16,8 @@ import { readSSELines } from "@/lib/model-router/sse";
  *    events and emit done with stopReason="tool_calls".
  *
  * 2. tool_call function.arguments included in same first chunk as id+name —
- *    Triggered by MiniMax (api.minimax.chat), some OpenRouter routes, and
- *    zero-arg tools. We accumulate `initialArgs` from the first chunk and
- *    emit a tool-call-delta if non-empty.
+ *    Triggered by some OpenRouter routes and zero-arg tools. We accumulate
+ *    `initialArgs` from the first chunk and emit a tool-call-delta if non-empty.
  */
 
 /**
