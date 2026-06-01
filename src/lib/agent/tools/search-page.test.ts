@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { searchPageTool } from "./search-page";
+import { BUILT_IN_TOOLS } from "../tools";
+import { getToolClass } from "../tool-names";
 
 function frameResult(frameId: number, matches: any[], total: number, extra?: Partial<any>) {
   return {
@@ -173,5 +175,14 @@ describe("search_page tool", () => {
     stubChrome({ injectThrows: true });
     const r = await searchPageTool.handler({ tabId: 7, query: "x" }, {} as any);
     expect(r.success).toBe(false);
+  });
+});
+
+describe("search_page registry", () => {
+  it("在 BUILT_IN_TOOLS 中", () => {
+    expect(BUILT_IN_TOOLS.find((t) => t.name === "search_page")).toBeTruthy();
+  });
+  it("分类为 read", () => {
+    expect(getToolClass("search_page")).toBe("read");
   });
 });
