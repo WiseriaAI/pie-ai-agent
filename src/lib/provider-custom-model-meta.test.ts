@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
+import { chromeMock } from "@/test/setup";
 import {
   getProviderCustomModelMetas,
   getProviderCustomModelMeta,
@@ -7,19 +8,8 @@ import {
   DEFAULT_CUSTOM_MODEL_MAX_CONTEXT,
 } from "./provider-custom-model-meta";
 
-// In-memory chrome.storage.local mock (happy-dom 不带 chrome)
 beforeEach(() => {
-  const store: Record<string, unknown> = {};
-  vi.stubGlobal("chrome", {
-    storage: {
-      local: {
-        get: async (k: string) => ({ [k]: store[k] }),
-        set: async (obj: Record<string, unknown>) => {
-          Object.assign(store, obj);
-        },
-      },
-    },
-  });
+  chromeMock.storage.local.__store = {};
 });
 
 describe("provider-custom-model-meta", () => {
