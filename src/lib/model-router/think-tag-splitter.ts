@@ -58,13 +58,6 @@ export function createThinkTagSplitter(): ThinkTagSplitter {
 
   return {
     feed: (chunk) => process(chunk, false),
-    flush: () => {
-      const out = process("", true);
-      if (carry) {
-        out.push({ kind: inside ? "think" : "text", text: carry });
-        carry = "";
-      }
-      return out;
-    },
+    flush: () => process("", true),
   };
 }
