@@ -1,7 +1,7 @@
 <div align="center">
   <img src="public/icons/icon-128.svg" alt="Pie" width="96" height="96" />
   <h1>Pie</h1>
-  <p><strong>Browser-automation agent for Chrome — natural-language tasks executed through native tool calling, scoped Skills, CDP keyboard control, and a confirm-before-act security model.</strong></p>
+  <p><strong>Browser-automation agent for Chrome — natural-language tasks executed through native tool calling, scoped Skills, CDP keyboard control, and a sandboxed, prompt-injection-resistant execution model.</strong></p>
   <p>
     <a href="https://chromewebstore.google.com/detail/pie-%C2%B7-open-source-ai-agen/gpccjhdgjkmalnepmeclooflliiocfed"><img src="https://img.shields.io/chrome-web-store/v/gpccjhdgjkmalnepmeclooflliiocfed?label=Chrome%20Web%20Store&logo=googlechrome&logoColor=white" alt="Available in the Chrome Web Store" /></a>
   </p>
@@ -28,10 +28,12 @@ Pie turns Chrome into a browser-automation agent. Describe a task in
 natural language; the LLM plans steps and executes them through a typed
 tool registry — DOM actions, cross-tab orchestration, and CDP-level
 keyboard input for canvas editors that don't honor standard DOM events.
-Workflows can be saved as Skills with explicit tool whitelists. Every
-irreversible or cross-origin step is gated by a confirm card so you stay
-in informed control. BYOK: paste your own API key from any of nine LLM
-providers — encrypted locally, no Pie backend, no telemetry.
+Workflows can be saved as Skills with explicit tool whitelists. Tools
+run without per-action approval prompts; page content reaches the model
+only inside `<untrusted_*>` wrappers, tools are split into read vs. write
+classes with cross-session locks, and each session is sandboxed — so
+automation stays contained. BYOK: paste your own API key from any of nine
+LLM providers — encrypted locally, no Pie backend, no telemetry.
 
 - **Browser automation through native tool calling.** The LLM uses
   Anthropic `tool_use` blocks or OpenAI `function_calling` to drive a
@@ -44,10 +46,12 @@ providers — encrypted locally, no Pie backend, no telemetry.
   tool whitelist; run it as `/skill_name`. The agent can author its own
   skills too — gated by an 8-guard capability boundary so they cannot
   expand their own privileges.
-- **Asks before it acts.** Every high-risk action (form submit, sensitive
-  field, raw CDP input, cross-origin tab op, closing a pinned tab) is
-  gated by a confirm card showing the exact tool, raw arguments, and
-  affected origin — so you stay in informed control.
+- **Contained by design.** Tools run without a per-action approval click.
+  Containment comes from defense in depth: page and third-party content
+  reaches the model only inside `<untrusted_*>` wrappers (prompt-injection
+  defense), tools are classified read vs. write with cross-session write
+  locks, and each session is sandboxed (its own port, pinned tabs, and CDP
+  owner token). CDP keyboard injection is off until you opt in.
 - **Multi-session, durable.** Conversations survive Service Worker
   restarts; archived sessions evict on storage pressure (LRU + 30-day hard
   delete).
@@ -94,9 +98,9 @@ is allowed to call. Run any skill from chat by typing `/skill_name`.
 The agent itself can author skills via `create_skill` / `update_skill` /
 `delete_skill` meta-tools — useful for capturing a workflow the model
 just walked through, so it can be replayed in the next session. An
-agent-authored skill is tainted with `author='agent'` and triggers a
-one-time confirmation card on its first run; a skill the model invented
-never silently executes the next time around.
+agent-authored skill is tagged with `author='agent'` and is bound by the
+same capability-grant invariants below — it can only call tools it was
+explicitly granted and cannot widen its own privileges.
 
 A skill cannot escape its declared tool whitelist. Eight capability-grant
 invariants are enforced on every skill mutation — hard size caps (≤8 KB
@@ -104,28 +108,29 @@ prompt template, ≤2 KB parameter schema), forbidden meta-tool nesting,
 1 MB per-installation storage budget, name validation against the live
 tool registry — so a runaway skill cannot widen its own privileges.
 
-### High-risk operation approval
-Pie classifies every tool call before it runs. Anything irreversible or
-cross-origin requires you to approve a confirmation card first.
-**High-risk** triggers include: submitting forms, typing into password
-/ payment / email fields, raw keyboard input via CDP, closing a pinned
-tab, and any cross-origin tab operation.
+### Safety model
+Pie runs tools directly — there is no per-action approval card in the hot
+path. Safety is layered instead:
 
-The confirm card shows you:
+- **Prompt-injection containment.** Page content, tab metadata, and skill
+  arguments reach the model only inside `<untrusted_*>` wrappers, and never
+  in the system prompt — so text in a page's DOM can't be read as a trusted
+  instruction.
+- **Read vs. write tool classes.** Every tool is declared read or write at
+  build time. Write-class tools are blocked from touching a tab another
+  session has pinned (cross-session write lock), so concurrent sessions
+  can't corrupt each other.
+- **Per-session sandbox.** Each session has its own streaming port, its own
+  set of pinned tabs, and a CDP owner token, so one task can't hijack
+  another's tab or debugger session.
+- **CDP keyboard injection is off by default** — you opt in from Settings
+  before it can attach at all.
+- **Skills can't self-escalate** — enforced by the capability-grant
+  invariants above.
 
-- The exact tool name and the raw argument the agent intends to pass
-  (so you can spot a mistake or a prompt-injected instruction in the
-  page DOM before it runs)
-- The origin and tab title for each affected tab, called out
-  separately when the action would cross the original task's pinned
-  origin
-- An **Approve** / **Reject** pair, plus a task-level **Discard**
-  option for when you want to abandon the agent's plan entirely
-
-The CDP keyboard-simulation feature is **off by default** — you opt in
-from Settings before it can be attached at all. If you reject three
-actions on the same task, Pie terminates the task automatically rather
-than burning your tokens on a plan you've already disagreed with.
+The one approval you'll still see is at **resume** time: if you pause a
+task and its pinned tab was closed or navigated to a different origin, Pie
+shows a drift card before continuing rather than acting on the wrong page.
 
 ### Supported providers
 
@@ -223,9 +228,9 @@ the device.
   header on direct provider API calls
 - All page content delivered to the LLM is wrapped in `<untrusted_*>` tags,
   hardening against prompt injection from page DOM
-- Cross-origin tab actions and high-risk DOM actions require an explicit
-  confirm card — Pie shows you exactly what would happen, on which origin,
-  before it runs
+- Tools run without a per-action approval prompt; containment comes from
+  read/write tool classes with cross-session write locks and per-session
+  sandboxing (isolated port, pinned tabs, CDP owner token)
 - No telemetry, no analytics, no third parties
 
 Full policy: [PRIVACY.md](PRIVACY.md).
@@ -259,7 +264,7 @@ after each service-worker change.
 | `src/background/` | Service Worker — message routing, agent loop dispatch, keep-alive |
 | `src/sidepanel/` | React side-panel UI (Chat, Settings, session drawer) |
 | `src/lib/model-router/` | Unified LLM interface; per-provider streaming + tool calling |
-| `src/lib/agent/` | ReAct loop, tool registry, risk classifier, prompt builder |
+| `src/lib/agent/` | ReAct loop, tool registry, read/write tool classification, untrusted-content wrappers, prompt builder |
 | `src/lib/dom-actions/` | Self-contained DOM action functions injected via `executeScript` |
 | `src/lib/skills/` | Skill framework: types, storage, built-in skills |
 | `src/lib/sessions/` | Session lifecycle: persistence, archive, multi-session sandbox |
