@@ -84,7 +84,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
   },
   {
     id: "zhipu",
-    name: "ZhiPu (智谱)",
+    name: "GLM(Zhipu)",
     defaultBaseUrl: "https://open.bigmodel.cn/api/paas/v4",
     placeholder: "API key",
     models: [
@@ -95,7 +95,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
   },
   {
     id: "bailian",
-    name: "Bailian (百炼)",
+    name: "Bailian",
     defaultBaseUrl: "https://dashscope.aliyuncs.com/compatible-mode",
     placeholder: "sk-...",
     models: [
@@ -126,7 +126,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
   },
   {
     id: "mimo",
-    name: "MiMo (小米)",
+    name: "Mimo(Xiaomi)",
     defaultBaseUrl: "https://api.xiaomimimo.com",
     placeholder: "API key",
     models: [
