@@ -6,6 +6,12 @@ import {
   addProviderCustomModel,
   removeProviderCustomModel,
 } from "@/lib/provider-custom-models";
+import {
+  getProviderCustomModelMetas,
+  setProviderCustomModelMeta,
+  removeProviderCustomModelMeta,
+  type StoredCustomModelMeta,
+} from "@/lib/provider-custom-model-meta";
 import { listCustomProviders, type StoredCustomProvider, CUSTOM_PREFIX } from "@/lib/custom-providers";
 import { useT, providerDisplayName } from "@/lib/i18n";
 import { fetchOpenRouterModels } from "@/lib/openrouter-models-fetch";
@@ -27,6 +33,8 @@ export default function NewConfigWizard(props: Props) {
   // Provider-level custom models pool — pre-populates the form's dropdown
   // so user sees previously-typed custom ids carry across instances.
   const [pool, setPool] = useState<string[]>([]);
+  // Per-model meta (vision, maxContextTokens) for custom models in this wizard session.
+  const [metas, setMetas] = useState<Record<string, StoredCustomModelMeta>>({});
   // Lazy-fetched OpenRouter model list, scoped to this wizard session.
   // Lives here (not in InstanceForm) so the model list persists even when
   // the user clicks ← provider and navigates back to step 2.
@@ -41,6 +49,12 @@ export default function NewConfigWizard(props: Props) {
   useEffect(() => {
     if (!provider) return;
     getProviderCustomModels(provider).then(setPool).catch(() => setPool([]));
+    // pcmm metas are builtin-scoped; custom providers have none — clear stale builtin metas.
+    if (provider.startsWith(CUSTOM_PREFIX)) {
+      setMetas({});
+    } else {
+      getProviderCustomModelMetas(provider as BuiltinProvider).then(setMetas).catch(() => setMetas({}));
+    }
     // Reset fetched cache when provider changes — different provider, different model list.
     setFetchedModels(undefined);
     setFetchedAt(undefined);
@@ -146,6 +160,8 @@ export default function NewConfigWizard(props: Props) {
   // for builtins, customProviders for custom) so switching providers never
   // momentarily shows — or seeds the nickname with — the previously-selected
   // provider's name. (`provider` is non-null here, past the step-1 guard.)
+  // pcmm callbacks are gated to builtin providers in InstanceForm, so this cast is safe.
+  const builtinProvider = provider as BuiltinProvider;
   const builtinMeta = provider.startsWith(CUSTOM_PREFIX)
     ? undefined
     : getProviderMeta(provider as BuiltinProvider);
@@ -162,19 +178,28 @@ export default function NewConfigWizard(props: Props) {
         provider={provider}
         initialNickname={metaName}
         initialCustomModels={pool}
+        customModelMetas={metas}
         fetchedModels={fetchedModels}
         fetchedAt={fetchedAt}
         isFetching={isFetching}
         saveLabel={t("newConfigWizard.create")}
         onSave={(p) => props.onCreate(provider, p)}
         onTest={(p) => props.onTest(provider, p)}
-        onAddCustomModel={async (id) => {
-          const next = await addProviderCustomModel(provider, id);
-          setPool(next);
+        onAddCustomModel={async (id, meta) => {
+          await addProviderCustomModel(provider, id);
+          await setProviderCustomModelMeta(builtinProvider, id, meta);
+          setPool(await getProviderCustomModels(provider));
+          setMetas(await getProviderCustomModelMetas(builtinProvider));
+        }}
+        onUpdateCustomModelMeta={async (id, meta) => {
+          await setProviderCustomModelMeta(builtinProvider, id, meta);
+          setMetas(await getProviderCustomModelMetas(builtinProvider));
         }}
         onRemoveCustomModel={async (id) => {
-          const next = await removeProviderCustomModel(provider, id);
-          setPool(next);
+          await removeProviderCustomModel(provider, id);
+          await removeProviderCustomModelMeta(builtinProvider, id);
+          setPool(await getProviderCustomModels(provider));
+          setMetas(await getProviderCustomModelMetas(builtinProvider));
         }}
         onRefreshModels={async (apiKey) => {
           // Only OpenRouter has /v1/models lazy fetch; other providers stay hardcoded.
