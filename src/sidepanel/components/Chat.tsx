@@ -23,6 +23,7 @@ import { QuoteChip } from "./QuoteChip";
 import { escapeWrapperAttribute } from "@/lib/agent/untrusted-wrappers";
 import type { Quote, TextQuote, ElementQuote } from "@/types";
 import InstanceSelector from "./InstanceSelector";
+import ThinkingSection from "./ThinkingSection";
 import { useT } from "@/lib/i18n";
 import {
   getSessionMeta,
@@ -154,6 +155,7 @@ export default function Chat({
     messages,
     streaming,
     streamingText,
+    streamingThinking,
     error,
     toast,
     pinnedTabs,
@@ -1170,9 +1172,10 @@ After the skill completes, briefly summarize what was created (the user will see
               return null;
             })}
 
-            {streaming && streamingText && (
+            {streaming && (streamingText || streamingThinking) && (
               <MessageBubble
-                message={{ role: "assistant", content: streamingText }}
+                message={{ role: "assistant", content: streamingText, thinking: streamingThinking }}
+                thinkingStreaming={!!streamingThinking}
               />
             )}
 
@@ -1182,7 +1185,7 @@ After the skill completes, briefly summarize what was created (the user will see
                 to look to confirm "still working" — covers the gaps between
                 tool calls (last step ok, next LLM round not yet started)
                 where active step spinners alone could feel like a hang. */}
-            {streaming && !streamingText && <WorkingIndicator />}
+            {streaming && !streamingText && !streamingThinking && <WorkingIndicator />}
 
             {error && (
               <div className="rounded-lg border border-warning-line bg-warning-tint px-3 py-2 text-[12px] text-warning">
@@ -1518,8 +1521,10 @@ function PageChangedBanner({ onNewTask }: { onNewTask: () => void }) {
 
 function MessageBubble({
   message,
+  thinkingStreaming = false,
 }: {
   message: Extract<DisplayMessage, { role: "user" | "assistant" }>;
+  thinkingStreaming?: boolean;
 }) {
   const t = useT();
   if (message.role === "user") {
@@ -1614,9 +1619,14 @@ function MessageBubble({
         <div className="h-1 w-1 rounded-full bg-accent" />
         <span className="caps text-fg-2">{t("chat.agent")}</span>
       </div>
-      <div className="text-[13px] leading-5 text-fg-1">
-        <MarkdownContent content={message.content} />
-      </div>
+      {(message.thinking || thinkingStreaming) && (
+        <ThinkingSection thinking={message.thinking ?? ""} streaming={thinkingStreaming} />
+      )}
+      {message.content && (
+        <div className="text-[13px] leading-5 text-fg-1">
+          <MarkdownContent content={message.content} />
+        </div>
+      )}
     </div>
   );
 }

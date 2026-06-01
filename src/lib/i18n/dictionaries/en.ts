@@ -260,6 +260,10 @@ export const enDict = {
     steps: "steps",
     done: " done",
   },
+  thinking: {
+    label: "Thinking",
+    inProgress: "Thinking…",
+  },
   agentSummary: {
     doneSteps: "DONE · {count} STEPS",
     failedAtStep: "FAILED AT STEP {step}",
