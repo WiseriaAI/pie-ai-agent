@@ -30,7 +30,7 @@ tool registry — DOM actions, cross-tab orchestration, and CDP-level
 keyboard input for canvas editors that don't honor standard DOM events.
 Workflows can be saved as Skills with explicit tool whitelists. Every
 irreversible or cross-origin step is gated by a confirm card so you stay
-in informed control. BYOK: paste your own API key from any of nine LLM
+in informed control. BYOK: paste your own API key from any of ten LLM
 providers — encrypted locally, no Pie backend, no telemetry.
 
 - **Browser automation through native tool calling.** The LLM uses
@@ -140,7 +140,7 @@ than burning your tokens on a plan you've already disagreed with.
 | GLM(Zhipu) | OpenAI-compatible |
 | Bailian | OpenAI-compatible |
 | Mimo(Xiaomi) | Anthropic-compatible |
-| Moonshot(Kimi) | OpenAI-compatible · 国际区 `api.moonshot.ai` / 中国区 `api.moonshot.cn`（新建实例时选对应条目即选区；中国区显示名按语言本地化） |
+| Moonshot(Kimi) | OpenAI-compatible · International `api.moonshot.ai` / China `api.moonshot.cn` (pick the matching entry to select region) |
 
 Adding a provider is a registry entry plus a host permission. Local
 Ollama is on the [roadmap](docs/ROADMAP.md).
