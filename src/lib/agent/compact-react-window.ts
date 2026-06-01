@@ -9,7 +9,8 @@
  * 与 elide/budget(无状态 wire-time 副本)不同:compaction 含 LLM 调用,
  * 每轮重算会贵且非确定,故 in-place 持久化、压一次缓存住。
  */
-import type { AgentMessage, ContentBlock, ModelConfig } from "../model-router/types";
+import type { AgentMessage, ContentBlock } from "../model-router/types";
+import type { ModelConfig } from "../model-router";
 import { streamChat } from "../model-router";
 import { findReactStartIdx } from "./window";
 import { estimateTokens } from "./window-token-budget";

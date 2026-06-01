@@ -640,7 +640,8 @@ const groupTabsTool: Tool = {
 
     let newGroupId: number;
     try {
-      newGroupId = await chrome.tabs.group({ tabIds: survivors });
+      // survivors is non-empty (checked above); cast to the required non-empty tuple type.
+      newGroupId = await chrome.tabs.group({ tabIds: survivors as [number, ...number[]] });
       result.ok.push(...survivors);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
@@ -730,7 +731,8 @@ const ungroupTabsTool: Tool = {
     }
 
     try {
-      await chrome.tabs.ungroup(survivors);
+      // survivors is non-empty (checked above); cast to the required non-empty tuple type.
+      await chrome.tabs.ungroup(survivors as [number, ...number[]]);
       result.ok.push(...survivors);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);

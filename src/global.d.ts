@@ -4,3 +4,5 @@
 // (pnpm's non-hoisted layout otherwise leaves @types/chrome's transitive
 // references unresolved, dropping the global and producing ~450 phantom errors.)
 /// <reference types="chrome" />
+/// <reference types="vite/client" />
+

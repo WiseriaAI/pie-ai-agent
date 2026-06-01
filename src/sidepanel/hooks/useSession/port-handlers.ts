@@ -82,6 +82,9 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
   };
 
   const handleMessage = (msg: PortMessageToPanel) => {
+    // pdf:needs-file-access has no sessionId; it is handled by usePdfPermission separately.
+    if (msg.type === "pdf:needs-file-access") return;
+
     const id = msg.sessionId;
 
     if (msg.type === "chat-chunk") {

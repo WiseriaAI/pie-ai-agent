@@ -17,6 +17,7 @@
  */
 
 import type { AgentMessage, ContentBlock } from "../model-router/types";
+import type { ProviderRef } from "../model-router";
 import { resolveModelMeta } from "../model-router/providers/registry";
 import { findReactStartIdx } from "./window";
 
@@ -131,7 +132,7 @@ export function estimateTokens(messages: AgentMessage[], provider?: string): num
  */
 export async function applyTokenBudget(
   messages: AgentMessage[],
-  provider: string,
+  provider: ProviderRef,
   model: string,
 ): Promise<AgentMessage[]> {
   // Resolve per-model context window limit (issue #76).
