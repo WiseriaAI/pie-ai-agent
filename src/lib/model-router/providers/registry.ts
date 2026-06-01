@@ -34,6 +34,16 @@ export interface ProviderMeta {
   modelsEndpoint?: string;
 }
 
+// Kimi (Moonshot) curated models — shared by both the international
+// (api.moonshot.ai) and China (api.moonshot.cn) registry entries so the two
+// stay in lockstep. kimi-k2.x are multimodal; moonshot-v1-* are text fallbacks.
+const MOONSHOT_MODELS: ModelMeta[] = [
+  { id: "kimi-k2.6", vision: true, tools: true, maxContextTokens: 256_000 },
+  { id: "kimi-k2.5", vision: true, tools: true, maxContextTokens: 256_000 },
+  { id: "moonshot-v1-128k", vision: false, tools: true, maxContextTokens: 128_000 },
+  { id: "moonshot-v1-32k", vision: false, tools: true, maxContextTokens: 32_000 },
+];
+
 export const PROVIDER_REGISTRY: ProviderMeta[] = [
   {
     id: "anthropic",
@@ -137,6 +147,20 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
       { id: "mimo-v2-flash", vision: false, tools: true, maxContextTokens: 256_000   },
     ],
   },
+  {
+    id: "moonshot",
+    name: "Moonshot(Kimi)",
+    defaultBaseUrl: "https://api.moonshot.ai",
+    placeholder: "sk-...",
+    models: MOONSHOT_MODELS,
+  },
+  {
+    id: "moonshot-cn",
+    name: "Moonshot(Kimi) China",
+    defaultBaseUrl: "https://api.moonshot.cn",
+    placeholder: "sk-...",
+    models: MOONSHOT_MODELS,
+  },
 ];
 
 export function getProviderMeta(id: BuiltinProvider): ProviderMeta | undefined {
@@ -202,8 +226,8 @@ export async function resolveModelMeta(ref: ProviderRef, modelId: string): Promi
  * fallback to per-instance fetched catalogs.
  *
  * Lookup order:
- *   1. Hardcoded registry (covers anthropic, openai, minimax, zhipu, bailian,
- *      gemini, deepseek — `models[]` is non-empty for these).
+ *   1. Hardcoded registry (covers all non-OpenRouter providers — `models[]` is
+ *      non-empty for these; see PROVIDER_REGISTRY).
  *   2. Caller-supplied `fetchedModels` (covers OpenRouter, whose registry
  *      `models: []` is intentionally empty and populated lazily per-instance
  *      via `/v1/models`).

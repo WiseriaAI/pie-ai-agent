@@ -32,7 +32,7 @@ Workflows can be saved as Skills with explicit tool whitelists. Tools
 run without per-action approval prompts; page content reaches the model
 only inside `<untrusted_*>` wrappers, tools are split into read vs. write
 classes with cross-session locks, and each session is sandboxed — so
-automation stays contained. BYOK: paste your own API key from any of nine
+automation stays contained. BYOK: paste your own API key from any of ten
 LLM providers — encrypted locally, no Pie backend, no telemetry.
 
 - **Browser automation through native tool calling.** The LLM uses
@@ -58,7 +58,7 @@ LLM providers — encrypted locally, no Pie backend, no telemetry.
 - **Side panel, not pop-up.** Pie lives in Chrome's side panel and stays
   open while you browse — chat, run agent tasks, manage tabs without
   losing context.
-- **BYOK.** Bring your own API key from any of nine LLM providers.
+- **BYOK.** Bring your own API key from any of ten LLM providers.
   Encrypted at rest with AES-GCM in `chrome.storage.local`. No Pie
   backend, no telemetry, no proxy. See [PRIVACY.md](PRIVACY.md).
 
@@ -140,11 +140,12 @@ shows a drift card before continuing rather than acting on the wrong page.
 | OpenAI | OpenAI `function_calling` |
 | Gemini | Native API |
 | OpenRouter | OpenAI-compatible |
-| DeepSeek | OpenAI-compatible |
-| MiniMax | OpenAI-compatible |
-| ZhiPu (智谱) | OpenAI-compatible |
-| Bailian (百炼) | OpenAI-compatible |
-| MiMo (小米) | Anthropic-compatible |
+| DeepSeek | Anthropic-compatible |
+| MiniMax | Anthropic-compatible |
+| GLM(Zhipu) | OpenAI-compatible |
+| Bailian | OpenAI-compatible |
+| Mimo(Xiaomi) | Anthropic-compatible |
+| Moonshot(Kimi) | OpenAI-compatible · International `api.moonshot.ai` / China `api.moonshot.cn` (pick the matching entry to select region) |
 
 Adding a provider is a registry entry plus a host permission. Local
 Ollama is on the [roadmap](docs/ROADMAP.md).
