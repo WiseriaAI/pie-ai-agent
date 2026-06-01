@@ -245,9 +245,13 @@ export default function Chat({
     listInstances().then(setInstances).catch(() => setInstances([]));
     if (!sessionId) return;
 
-    // Effective id = per-session pin fallback to global active
+    // Effective id = per-session pin fallback to global active.
+    // sessionId is narrowed to string by the early return above; the async
+    // closure captures the narrowed binding but TypeScript doesn't propagate
+    // that narrowing into nested async functions — capture it explicitly.
+    const sessionIdStr = sessionId as string;
     async function loadEffective() {
-      const meta = await getSessionMeta(sessionId);
+      const meta = await getSessionMeta(sessionIdStr);
       const fallback = meta?.instanceId ?? (await getActiveInstance());
       setCurrentInstanceId(fallback);
     }
@@ -393,7 +397,7 @@ export default function Chat({
     };
     const onUpdated = (
       _tabId: number,
-      changeInfo: chrome.tabs.TabChangeInfo,
+      changeInfo: chrome.tabs.OnUpdatedInfo,
       tab: chrome.tabs.Tab,
     ) => {
       // Refresh on any url OR title change of the active tab. Title alone
@@ -444,7 +448,7 @@ export default function Chat({
     if (pinnedTabIds.size === 0) return;
     const onUpdated = (
       tabId: number,
-      info: chrome.tabs.TabChangeInfo,
+      info: chrome.tabs.OnUpdatedInfo,
       _tab: chrome.tabs.Tab,
     ) => {
       // Only fire for an actual pinned tab navigating — not any other tab,
@@ -487,7 +491,7 @@ export default function Chat({
     void fetchTitle();
     const onUpdated = (
       tabId: number,
-      changeInfo: chrome.tabs.TabChangeInfo,
+      changeInfo: chrome.tabs.OnUpdatedInfo,
       tab: chrome.tabs.Tab,
     ) => {
       if (tabId !== targetTabId) return;
@@ -818,7 +822,10 @@ After the skill completes, briefly summarize what was created (the user will see
           if (q.imageDataUrl) {
             const [meta, b64] = q.imageDataUrl.split(",");
             const mediaType = (meta.match(/data:([^;]+)/)?.[1] ?? "image/jpeg") as "image/jpeg" | "image/png";
-            quoteImages.push({ id: `quote-${q.id}`, data: b64, mediaType });
+            // width/height unknown for quote element screenshots; byteLength approximated
+            // from base64 length. These fields are required by ImageAttachment but are
+            // not used for quote images (they are LLM-context-only, not thumbnail-displayed).
+            quoteImages.push({ kind: "image" as const, id: `quote-${q.id}`, data: b64, mediaType, width: 0, height: 0, byteLength: Math.ceil((b64.length * 3) / 4) });
           }
         }
       }
@@ -900,7 +907,10 @@ After the skill completes, briefly summarize what was created (the user will see
             if (q.imageDataUrl) {
               const [meta, b64] = q.imageDataUrl.split(",");
               const mediaType = (meta.match(/data:([^;]+)/)?.[1] ?? "image/jpeg") as "image/jpeg" | "image/png";
-              quoteImages.push({ id: `quote-${q.id}`, data: b64, mediaType });
+              // width/height unknown for quote element screenshots; byteLength approximated
+              // from base64 length. These fields are required by ImageAttachment but are
+              // not used for quote images (they are LLM-context-only, not thumbnail-displayed).
+              quoteImages.push({ kind: "image" as const, id: `quote-${q.id}`, data: b64, mediaType, width: 0, height: 0, byteLength: Math.ceil((b64.length * 3) / 4) });
             }
           }
         }

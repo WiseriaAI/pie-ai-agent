@@ -67,7 +67,7 @@ describe("save_to_downloads tool", () => {
 describe("read_local_file tool", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    (chrome.extension as { isAllowedFileSchemeAccess: ReturnType<typeof vi.fn> })
+    (chrome.extension as unknown as { isAllowedFileSchemeAccess: ReturnType<typeof vi.fn> })
       .isAllowedFileSchemeAccess = vi.fn(async () => true);
     globalThis.fetch = vi.fn();
   });
@@ -91,7 +91,7 @@ describe("read_local_file tool", () => {
   });
 
   it("returns file_access_denied when toggle is off", async () => {
-    (chrome.extension as { isAllowedFileSchemeAccess: ReturnType<typeof vi.fn> })
+    (chrome.extension as unknown as { isAllowedFileSchemeAccess: ReturnType<typeof vi.fn> })
       .isAllowedFileSchemeAccess = vi.fn(async () => false);
     const r = await readLocalFileTool.handler({ uri: "file:///tmp/a.txt" }, { tabId: 1 } as never);
     expect(r.success).toBe(false);

@@ -21,7 +21,6 @@ const fakeSession = (): CdpSession => ({
 
 beforeEach(() => {
   const data: Record<string, unknown> = {};
-  // @ts-expect-error mock
   global.chrome = {
     storage: {
       local: {
@@ -33,16 +32,16 @@ beforeEach(() => {
         }),
         set: vi.fn((kv) => { Object.assign(data, kv); return Promise.resolve(); }),
         remove: vi.fn(() => Promise.resolve()),
-      },
+      } as unknown as typeof chrome.storage.local,
     },
     scripting: {
       executeScript: vi.fn().mockResolvedValue([{ result: undefined }]),
-    },
+    } as unknown as typeof chrome.scripting,
     webNavigation: {
-      onCommitted: { addListener: vi.fn(), removeListener: vi.fn() },
-      onHistoryStateUpdated: { addListener: vi.fn(), removeListener: vi.fn() },
+      onCommitted: { addListener: vi.fn(), removeListener: vi.fn() } as unknown as typeof chrome.webNavigation.onCommitted,
+      onHistoryStateUpdated: { addListener: vi.fn(), removeListener: vi.fn() } as unknown as typeof chrome.webNavigation.onHistoryStateUpdated,
     },
-  };
+  } as unknown as typeof chrome;
 });
 
 describe("dispatchMouseAt", () => {

@@ -9,11 +9,12 @@ export async function getOrCreateEncryptionKey(): Promise<CryptoKey> {
     try {
       const result = await chrome.storage.local.get(SESSION_KEY_NAME);
       if (result[SESSION_KEY_NAME]) {
-        const rawKey = new Uint8Array(result[SESSION_KEY_NAME]);
+        // Stored as Array.from(Uint8Array) → number[]; cast to satisfy Uint8Array constructor.
+        const rawKey = new Uint8Array(result[SESSION_KEY_NAME] as number[]);
         return crypto.subtle.importKey("raw", rawKey, "AES-GCM", true, [
           "encrypt",
           "decrypt",
-        ]);
+        ] as KeyUsage[]);
       }
 
       const rawKey = crypto.getRandomValues(new Uint8Array(32));
@@ -22,7 +23,7 @@ export async function getOrCreateEncryptionKey(): Promise<CryptoKey> {
         rawKey,
         "AES-GCM",
         true,
-        ["encrypt", "decrypt"],
+        ["encrypt", "decrypt"] as KeyUsage[],
       );
 
       const exported = await crypto.subtle.exportKey("raw", key);

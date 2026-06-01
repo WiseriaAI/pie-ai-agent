@@ -1,4 +1,5 @@
-import type { ModelConfig, AgentMessage, ContentBlock, ToolDefinition } from "../model-router/types";
+import type { AgentMessage, ContentBlock, ToolDefinition } from "../model-router/types";
+import type { ModelConfig } from "../model-router";
 import type { ChatMessage } from "../model-router";
 import { streamChat } from "../model-router";
 import { addImage, evictSession } from "../../background/image-cache";
@@ -543,11 +544,14 @@ export function buildSessionAgentSnapshot(
   stepIndex: number,
   hasImageContent: boolean = false,
 ): SessionAgentState {
+  // pendingInstructions is intentionally omitted: mergeSessionAgentSnapshot (non-tombstone
+  // path) spreads existing first so storage's pendingInstructions value is preserved.
+  // The cast satisfies SessionAgentState's type while keeping the field absent at runtime.
   return {
     agentMessages: structuredClone(history),
     stepIndex,
     hasImageContent,
-  };
+  } as SessionAgentState;
 }
 
 /**
@@ -2078,7 +2082,9 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
     // or unexpected throw before any emit), emit one with a reason-based
     // summary. Pure-text replies skip this — they use chat-done.
     if (!doneEmitted && !normalTextReply) {
-      const reason = cdpSession?.detachedReason ?? null;
+      // TypeScript 6 narrows cdpSession to never in this finally block due to control-flow
+      // analysis of the inner async closure assignment; cast through unknown to recover type.
+      const reason = (cdpSession as CdpSession | null)?.detachedReason ?? null;
       let summary: string;
       switch (reason) {
         case "user-cancelled-via-yellow-bar":

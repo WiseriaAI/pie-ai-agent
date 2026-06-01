@@ -1,4 +1,6 @@
-import type { Provider } from "@/lib/model-router";
+import type { ProviderRef } from "@/lib/model-router";
+// Alias for backward compatibility; ProviderRef superset covers both builtin and custom providers.
+type Provider = ProviderRef;
 
 /**
  * Provider-level "custom models pool" — sticky across instances of the same

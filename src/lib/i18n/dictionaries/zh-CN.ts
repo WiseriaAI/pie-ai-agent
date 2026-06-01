@@ -1,4 +1,5 @@
 import type { EnDict } from "./en";
+import type { Translations } from "../types";
 
 export const zhCNDict = {
   common: {
@@ -434,4 +435,4 @@ export const zhCNDict = {
     openSessionsList: "打开会话列表",
     pendingBadge: "，{count} 个待处理",
   },
-} as const satisfies EnDict;
+} as const satisfies Translations<EnDict>;

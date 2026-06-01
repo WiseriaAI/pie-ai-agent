@@ -13,15 +13,14 @@ import {
 
 beforeEach(() => {
   vi.restoreAllMocks();
-  // @ts-expect-error
   globalThis.chrome = {
     tabs: {
-      get: vi.fn(async (id: number) => ({ id, windowId: 7, url: "https://example.com" })),
+      get: vi.fn(async (id: number) => ({ id, windowId: 7, url: "https://example.com" })) as unknown as typeof chrome.tabs.get,
       captureVisibleTab: vi.fn(async () => "data:image/png;base64,xxxx"),
       sendMessage: vi.fn(),
     },
-    runtime: { lastError: null },
-  };
+    runtime: { lastError: undefined },
+  } as unknown as typeof chrome;
   vi.spyOn(crypto, "randomUUID").mockReturnValue("u-1" as `${string}-${string}-${string}-${string}-${string}`);
 });
 
@@ -70,8 +69,7 @@ describe("QuoteBridge", () => {
   });
 
   it("element capture → imageDataUrl=null when captureVisibleTab throws", async () => {
-    // @ts-expect-error
-    chrome.tabs.captureVisibleTab = vi.fn(async () => {
+    (chrome.tabs as unknown as { captureVisibleTab: unknown }).captureVisibleTab = vi.fn(async () => {
       throw new Error("Permission denied");
     });
     const sender = { tab: { id: 42 } } as chrome.runtime.MessageSender;

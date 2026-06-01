@@ -20,7 +20,7 @@ describe("instances CRUD", () => {
       model: "claude-opus-4-7",
     });
     expect(id).toMatch(/^[0-9a-f]{8}-/);
-    const stored = chromeMock.storage.local.__store[`instance_${id}`];
+    const stored = chromeMock.storage.local.__store[`instance_${id}`] as Record<string, unknown>;
     expect(stored.encryptedKey).toBeDefined();
     expect(stored.encryptedKey).not.toContain("sk-ant-secret");
     const idx = chromeMock.storage.local.__store["instances_index"];

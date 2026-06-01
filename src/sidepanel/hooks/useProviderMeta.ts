@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { ProviderRef } from "@/lib/model-router";
 import type { ProviderMeta } from "@/lib/model-router/providers/registry";
 import { resolveProviderMeta } from "@/lib/model-router/providers/registry";
 
@@ -8,7 +9,7 @@ export interface UseProviderMeta {
   error: string | null;
 }
 
-export function useProviderMeta(ref: string | null): UseProviderMeta {
+export function useProviderMeta(ref: ProviderRef | null): UseProviderMeta {
   const [meta, setMeta] = useState<ProviderMeta | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

@@ -104,7 +104,7 @@ describe("mergeCarryoverIntoMessages", () => {
 
   it("returns messages unchanged when last message is not a string user message", () => {
     const messages: ChatMessage[] = [
-      { role: "user", content: [{ type: "text", text: "array content" }] },
+      { role: "user", content: [{ type: "text", text: "array content" }] as unknown as string },
     ];
     const carryover: PendingInstruction[] = [
       { chatMessageId: "m1", content: "leftover", createdAt: 1 },

@@ -33,7 +33,8 @@ describe("<PdfPermissionCard />", () => {
 
   it("calls onDismiss when isAllowedFileSchemeAccess turns true on visibilitychange", async () => {
     const onDismiss = vi.fn();
-    vi.spyOn(chrome.extension, "isAllowedFileSchemeAccess").mockResolvedValue(true);
+    (vi.spyOn(chrome.extension, "isAllowedFileSchemeAccess") as unknown as { mockResolvedValue(v: boolean): void })
+      .mockResolvedValue(true);
     render(<PdfPermissionCard onDismiss={onDismiss} />);
     document.dispatchEvent(new Event("visibilitychange"));
     // Allow effect to flush

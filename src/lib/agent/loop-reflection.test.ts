@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "@/test/setup";
 import { chromeMock } from "@/test/setup";
 import type { StreamEvent } from "@/lib/model-router/types";
-import type { ModelConfig } from "@/lib/model-router/types";
+import type { ModelConfig } from "@/lib/model-router";
 import type { SessionAgentState } from "@/lib/sessions/types";
 import type { AgentLoopContext } from "./loop";
 

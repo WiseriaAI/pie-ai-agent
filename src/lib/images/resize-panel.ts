@@ -10,7 +10,10 @@ const JPEG_QUALITY = 0.85;
 
 export type ResizePanelOutcome =
   | { ok: true; value: ResizeResult }
-  | { ok: false; reason: ValidateResult extends { ok: false } ? ValidateResult["reason"] : never };
+  // Use intersection to extract the reason from the failure variant of ValidateResult.
+  // Conditional `ValidateResult extends {ok:false}` does NOT distribute and resolves to
+  // never; intersection is the correct idiom here.
+  | { ok: false; reason: (ValidateResult & { ok: false })["reason"] };
 
 /**
  * Panel-side resize using DOM Canvas. EXIF stripped naturally because

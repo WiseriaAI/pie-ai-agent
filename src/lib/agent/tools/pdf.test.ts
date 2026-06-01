@@ -5,10 +5,8 @@ import * as offscreen from "@/background/offscreen-manager";
 const ctx = { tabId: 99 } as Parameters<typeof readPdfTool.handler>[1];
 
 function mockTab(url: string) {
-  vi.spyOn(chrome.tabs, "get").mockResolvedValue({
-    id: 99,
-    url,
-  } as chrome.tabs.Tab);
+  (vi.spyOn(chrome.tabs, "get") as unknown as { mockResolvedValue(v: chrome.tabs.Tab): void })
+    .mockResolvedValue({ id: 99, url } as chrome.tabs.Tab);
 }
 
 describe("read_pdf tool", () => {
@@ -29,7 +27,8 @@ describe("read_pdf tool", () => {
 
   it("errors file_access_denied for file:// without permission", async () => {
     mockTab("file:///Users/me/a.pdf");
-    vi.spyOn(chrome.extension, "isAllowedFileSchemeAccess").mockResolvedValue(false);
+    (vi.spyOn(chrome.extension, "isAllowedFileSchemeAccess") as unknown as { mockResolvedValue(v: boolean): void })
+      .mockResolvedValue(false);
     const r = await readPdfTool.handler({}, ctx);
     expect(r.success).toBe(false);
     expect(r.error).toMatch(/file_access_denied/);
@@ -100,21 +99,24 @@ describe("search_pdf tool", () => {
   });
 
   it("errors not_a_pdf for non-pdf tab", async () => {
-    vi.spyOn(chrome.tabs, "get").mockResolvedValue({ id: 99, url: "https://x/index.html" } as chrome.tabs.Tab);
+    (vi.spyOn(chrome.tabs, "get") as unknown as { mockResolvedValue(v: chrome.tabs.Tab): void })
+    .mockResolvedValue({ id: 99, url: "https://x/index.html" } as chrome.tabs.Tab);
     const r = await searchPdfTool.handler({ query: "hello" }, ctx);
     expect(r.success).toBe(false);
     expect(r.error).toMatch(/not_a_pdf/);
   });
 
   it("rejects empty query", async () => {
-    vi.spyOn(chrome.tabs, "get").mockResolvedValue({ id: 99, url: "https://x/a.pdf" } as chrome.tabs.Tab);
+    (vi.spyOn(chrome.tabs, "get") as unknown as { mockResolvedValue(v: chrome.tabs.Tab): void })
+    .mockResolvedValue({ id: 99, url: "https://x/a.pdf" } as chrome.tabs.Tab);
     const r = await searchPdfTool.handler({ query: "  " }, ctx);
     expect(r.success).toBe(false);
     expect(r.error).toMatch(/empty_query/);
   });
 
   it("renders matches with snippet under search_pdf wrapper", async () => {
-    vi.spyOn(chrome.tabs, "get").mockResolvedValue({ id: 99, url: "https://x/a.pdf" } as chrome.tabs.Tab);
+    (vi.spyOn(chrome.tabs, "get") as unknown as { mockResolvedValue(v: chrome.tabs.Tab): void })
+    .mockResolvedValue({ id: 99, url: "https://x/a.pdf" } as chrome.tabs.Tab);
     vi.spyOn(offscreen, "sendToOffscreen").mockResolvedValue({
       matches: [
         { page: 1, snippet: "…hello world…", match_offset: 5 },
@@ -135,7 +137,8 @@ describe("search_pdf tool", () => {
   });
 
   it("returns no-matches sentinel and skips offscreen call when total is 0", async () => {
-    vi.spyOn(chrome.tabs, "get").mockResolvedValue({ id: 99, url: "https://x/a.pdf" } as chrome.tabs.Tab);
+    (vi.spyOn(chrome.tabs, "get") as unknown as { mockResolvedValue(v: chrome.tabs.Tab): void })
+    .mockResolvedValue({ id: 99, url: "https://x/a.pdf" } as chrome.tabs.Tab);
     vi.spyOn(offscreen, "sendToOffscreen").mockResolvedValue({
       matches: [],
       total_matches: 0,
@@ -154,14 +157,16 @@ describe("get_pdf_outline tool", () => {
   });
 
   it("errors not_a_pdf for non-pdf tab", async () => {
-    vi.spyOn(chrome.tabs, "get").mockResolvedValue({ id: 99, url: "https://x/index.html" } as chrome.tabs.Tab);
+    (vi.spyOn(chrome.tabs, "get") as unknown as { mockResolvedValue(v: chrome.tabs.Tab): void })
+    .mockResolvedValue({ id: 99, url: "https://x/index.html" } as chrome.tabs.Tab);
     const r = await getPdfOutlineTool.handler({}, ctx);
     expect(r.success).toBe(false);
     expect(r.error).toMatch(/not_a_pdf/);
   });
 
   it("renders outline + metadata", async () => {
-    vi.spyOn(chrome.tabs, "get").mockResolvedValue({ id: 99, url: "https://x/a.pdf" } as chrome.tabs.Tab);
+    (vi.spyOn(chrome.tabs, "get") as unknown as { mockResolvedValue(v: chrome.tabs.Tab): void })
+    .mockResolvedValue({ id: 99, url: "https://x/a.pdf" } as chrome.tabs.Tab);
     vi.spyOn(offscreen, "sendToOffscreen").mockResolvedValue({
       title: "On Bubble Sort",
       total_pages: 12,
@@ -184,7 +189,8 @@ describe("get_pdf_outline tool", () => {
   });
 
   it("renders empty outline gracefully", async () => {
-    vi.spyOn(chrome.tabs, "get").mockResolvedValue({ id: 99, url: "https://x/a.pdf" } as chrome.tabs.Tab);
+    (vi.spyOn(chrome.tabs, "get") as unknown as { mockResolvedValue(v: chrome.tabs.Tab): void })
+    .mockResolvedValue({ id: 99, url: "https://x/a.pdf" } as chrome.tabs.Tab);
     vi.spyOn(offscreen, "sendToOffscreen").mockResolvedValue({
       title: null,
       total_pages: 3,

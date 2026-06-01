@@ -81,10 +81,8 @@ describe("escapeWrapperAttribute — HTML-entity sanitize for wrapper open-tag a
 
   it("returns empty string for empty / undefined input", () => {
     expect(escapeWrapperAttribute("")).toBe("");
-    // @ts-expect-error - testing runtime fallback
-    expect(escapeWrapperAttribute(undefined)).toBe("");
-    // @ts-expect-error - testing runtime fallback
-    expect(escapeWrapperAttribute(null)).toBe("");
+    expect(escapeWrapperAttribute(undefined as unknown as string)).toBe("");
+    expect(escapeWrapperAttribute(null as unknown as string)).toBe("");
   });
 
   it("leaves benign characters untouched", () => {

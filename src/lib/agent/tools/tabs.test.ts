@@ -247,6 +247,7 @@ describe("close_tabs K-9 (M5/v1.5) — pinMode-aware pinned-tab protection", () 
 });
 
 // ── v1.5 Task 6 — focus_tab handler ─────────────────────────────────────────
+import type { ToolHandlerContext } from "@/lib/agent/types";
 
 describe("focus_tab (v1.5 Task 6) — handler contract", () => {
   const snapshot = { url: "", title: "", elements: [] };
@@ -263,7 +264,7 @@ describe("focus_tab (v1.5 Task 6) — handler contract", () => {
           { tabId: 20, origin: "https://b.example.com" },
         ],
         setCurrentFocusTabId,
-      },
+      } as unknown as ToolHandlerContext,
     );
     expect(result.success).toBe(true);
     expect(setCurrentFocusTabId).toHaveBeenCalledWith(10);
@@ -285,7 +286,7 @@ describe("focus_tab (v1.5 Task 6) — handler contract", () => {
           { tabId: 20, origin: "https://b.example.com" },
         ],
         setCurrentFocusTabId,
-      },
+      } as unknown as ToolHandlerContext,
     );
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/not in pinnedTabs/i);
@@ -303,7 +304,7 @@ describe("focus_tab (v1.5 Task 6) — handler contract", () => {
         tabId: 5,
         snapshot,
         pinnedTabs: [],
-      },
+      } as unknown as ToolHandlerContext,
     );
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/no pinned tabs/i);
@@ -318,7 +319,7 @@ describe("focus_tab (v1.5 Task 6) — handler contract", () => {
         snapshot,
         pinnedTabs: [{ tabId: 10, origin: "https://a.example.com" }],
         // setCurrentFocusTabId intentionally omitted
-      },
+      } as unknown as ToolHandlerContext,
     );
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/missing setCurrentFocusTabId/i);
@@ -331,7 +332,7 @@ describe("focus_tab (v1.5 Task 6) — handler contract", () => {
         tabId: 10,
         snapshot,
         pinnedTabs: [{ tabId: 10, origin: "https://a.example.com" }],
-      },
+      } as unknown as ToolHandlerContext,
     );
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/requires a numeric tabId/i);

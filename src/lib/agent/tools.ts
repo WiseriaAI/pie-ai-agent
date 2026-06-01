@@ -52,8 +52,8 @@ export type { MouseToolDeps };
 
 async function execInTab<T extends unknown[]>(
   tabId: number,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  func: (...args: T) => ActionResult,
+  // chrome.scripting.executeScript awaits promise-returning injected functions at runtime.
+  func: (...args: T) => ActionResult | Promise<ActionResult>,
   args: T,
   frameId?: number,
 ): Promise<ActionResult> {

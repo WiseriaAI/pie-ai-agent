@@ -12,7 +12,11 @@
  * string, the LLM-generated title can overwrite it.
  */
 
-export type TitleableMessage = { role: string; content: string };
+// content is optional so the type is compatible with DisplayMessage (which has
+// agent-step / agent-summary / session-confirm variants without a content field)
+// as well as the SW's ChatMessage (which always has content). The function body
+// already guards for empty/missing content.
+export type TitleableMessage = { role: string; content?: string };
 
 /**
  * Derives a fallback title from the first user message in msgs.
@@ -24,7 +28,7 @@ export function deriveTitleFromMessages(
 ): string | undefined {
   for (const m of msgs) {
     if (m.role !== "user") continue;
-    const collapsed = m.content.trim().replace(/\s+/g, " ");
+    const collapsed = (m.content ?? "").trim().replace(/\s+/g, " ");
     if (collapsed.length === 0) continue;
     if (collapsed.length <= 40) return collapsed;
     return collapsed.slice(0, 40).trimEnd() + "…";
