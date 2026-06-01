@@ -1,6 +1,7 @@
 import type { ModelConfig } from "@/lib/model-router";
 import type { AgentMessage, ToolDefinition, StreamEvent } from "@/lib/model-router/types";
 import { readSSELines } from "@/lib/model-router/sse";
+import { createThinkTagSplitter } from "../../think-tag-splitter";
 
 /**
  * Shared OpenAI-compatible Chat Completions streaming core.
@@ -170,6 +171,8 @@ export async function* streamChatOpenAICompat(
 
   let usage: { inputTokens: number; outputTokens: number } | undefined;
   const pendingToolCalls = new Map<number, PendingToolCall>();
+  const splitter = createThinkTagSplitter();
+  let thinkingOpen = false;
 
   try {
     for await (const sse of readSSELines(response, signal)) {
@@ -178,9 +181,29 @@ export async function* streamChatOpenAICompat(
         if (pendingToolCalls.size > 0) {
           for (const [index] of pendingToolCalls) yield { type: "tool-call-end", index };
           pendingToolCalls.clear();
+          for (const seg of splitter.flush()) {
+            if (seg.kind === "think") {
+              if (!thinkingOpen) { yield { type: "thinking-start", replay: false }; thinkingOpen = true; }
+              yield { type: "thinking-delta", text: seg.text };
+            } else {
+              if (thinkingOpen) { yield { type: "thinking-end" }; thinkingOpen = false; }
+              yield { type: "text-delta", text: seg.text };
+            }
+          }
+          if (thinkingOpen) { yield { type: "thinking-end" }; thinkingOpen = false; }
           yield { type: "done", stopReason: "tool_calls", usage };
           return;
         }
+        for (const seg of splitter.flush()) {
+          if (seg.kind === "think") {
+            if (!thinkingOpen) { yield { type: "thinking-start", replay: false }; thinkingOpen = true; }
+            yield { type: "thinking-delta", text: seg.text };
+          } else {
+            if (thinkingOpen) { yield { type: "thinking-end" }; thinkingOpen = false; }
+            yield { type: "text-delta", text: seg.text };
+          }
+        }
+        if (thinkingOpen) { yield { type: "thinking-end" }; thinkingOpen = false; }
         yield { type: "done", stopReason: "end", usage };
         return;
       }
@@ -191,7 +214,22 @@ export async function* streamChatOpenAICompat(
         if (!choice) continue;
         const delta = choice.delta;
         const finishReason: string | null = choice.finish_reason;
-        if (delta?.content) yield { type: "text-delta", text: delta.content };
+        const reasoning: string | undefined = delta?.reasoning_content ?? delta?.reasoning;
+        if (reasoning) {
+          if (!thinkingOpen) { yield { type: "thinking-start", replay: false }; thinkingOpen = true; }
+          yield { type: "thinking-delta", text: reasoning };
+        }
+        if (delta?.content) {
+          for (const seg of splitter.feed(delta.content)) {
+            if (seg.kind === "think") {
+              if (!thinkingOpen) { yield { type: "thinking-start", replay: false }; thinkingOpen = true; }
+              yield { type: "thinking-delta", text: seg.text };
+            } else {
+              if (thinkingOpen) { yield { type: "thinking-end" }; thinkingOpen = false; }
+              yield { type: "text-delta", text: seg.text };
+            }
+          }
+        }
         if (delta?.tool_calls) {
           for (const tcd of delta.tool_calls) {
             const index: number = tcd.index;
@@ -216,9 +254,29 @@ export async function* streamChatOpenAICompat(
           if (finishReason === "tool_calls") {
             for (const [index] of pendingToolCalls) yield { type: "tool-call-end", index };
             pendingToolCalls.clear();
+            for (const seg of splitter.flush()) {
+              if (seg.kind === "think") {
+                if (!thinkingOpen) { yield { type: "thinking-start", replay: false }; thinkingOpen = true; }
+                yield { type: "thinking-delta", text: seg.text };
+              } else {
+                if (thinkingOpen) { yield { type: "thinking-end" }; thinkingOpen = false; }
+                yield { type: "text-delta", text: seg.text };
+              }
+            }
+            if (thinkingOpen) { yield { type: "thinking-end" }; thinkingOpen = false; }
             yield { type: "done", stopReason: "tool_calls", usage };
             return;
           } else if (finishReason === "stop" || finishReason === "length") {
+            for (const seg of splitter.flush()) {
+              if (seg.kind === "think") {
+                if (!thinkingOpen) { yield { type: "thinking-start", replay: false }; thinkingOpen = true; }
+                yield { type: "thinking-delta", text: seg.text };
+              } else {
+                if (thinkingOpen) { yield { type: "thinking-end" }; thinkingOpen = false; }
+                yield { type: "text-delta", text: seg.text };
+              }
+            }
+            if (thinkingOpen) { yield { type: "thinking-end" }; thinkingOpen = false; }
             yield { type: "done", stopReason: mapStopReason(finishReason), usage };
             return;
           }
@@ -227,6 +285,16 @@ export async function* streamChatOpenAICompat(
         // skip unparseable lines
       }
     }
+    for (const seg of splitter.flush()) {
+      if (seg.kind === "think") {
+        if (!thinkingOpen) { yield { type: "thinking-start", replay: false }; thinkingOpen = true; }
+        yield { type: "thinking-delta", text: seg.text };
+      } else {
+        if (thinkingOpen) { yield { type: "thinking-end" }; thinkingOpen = false; }
+        yield { type: "text-delta", text: seg.text };
+      }
+    }
+    if (thinkingOpen) { yield { type: "thinking-end" }; thinkingOpen = false; }
     yield { type: "done", usage };
   } catch (e) {
     if (signal?.aborted) return;

@@ -1,6 +1,7 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { streamChatOpenAICompat } from "./openai-compat-core";
 import type { ModelConfig } from "@/lib/model-router";
+import type { StreamEvent } from "@/lib/model-router/types";
 
 function mockSseResponse(lines: string[]) {
   const body = new ReadableStream<Uint8Array>({
@@ -85,5 +86,77 @@ describe("streamChatOpenAICompat", () => {
     expect(headers["X-Custom-Auth"]).toBe("secret-token");
     expect(headers.authorization).toBeUndefined();
     fetchMock.mockRestore();
+  });
+});
+
+// Helper: raw SSE chunks (no auto-appended newlines, unlike mockSseResponse)
+function sseRaw(lines: string[]): Response {
+  return new Response(
+    new ReadableStream({
+      start(c) {
+        for (const l of lines) c.enqueue(new TextEncoder().encode(l));
+        c.close();
+      },
+    }),
+    { status: 200, headers: { "content-type": "text/event-stream" } },
+  );
+}
+
+const thinkingCfg = { provider: "openai", model: "m", apiKey: "k", baseUrl: "https://api.openai.com" } as ModelConfig;
+
+async function collectEvents(g: AsyncGenerator<StreamEvent>): Promise<StreamEvent[]> {
+  const out: StreamEvent[] = [];
+  for await (const e of g) out.push(e);
+  return out;
+}
+
+afterEach(() => vi.restoreAllMocks());
+
+describe("openai-compat thinking", () => {
+  it("maps reasoning_content to thinking events (replay:false), not text", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      sseRaw([
+        'data: {"choices":[{"delta":{"reasoning_content":"thinking…"},"index":0}]}\n\n',
+        'data: {"choices":[{"delta":{"content":"answer"},"index":0}]}\n\n',
+        'data: {"choices":[{"delta":{},"finish_reason":"stop","index":0}]}\n\n',
+        "data: [DONE]\n\n",
+      ]),
+    );
+    const ev = await collectEvents(streamChatOpenAICompat(thinkingCfg, [{ role: "user", content: "hi" }]));
+    const types = ev.map((e) => e.type);
+    expect(types).toContain("thinking-start");
+    expect(ev.find((e) => e.type === "thinking-start")).toMatchObject({ replay: false });
+    expect(ev.find((e) => e.type === "thinking-delta")).toMatchObject({ text: "thinking…" });
+    expect(ev.filter((e) => e.type === "text-delta").map((e: any) => e.text).join("")).toBe("answer");
+    const tEnd = types.indexOf("thinking-end");
+    const firstText = types.indexOf("text-delta");
+    expect(tEnd).toBeGreaterThanOrEqual(0);
+    expect(tEnd).toBeLessThan(firstText);
+  });
+
+  it("splits inline <think> tags out of content (replay:false)", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      sseRaw([
+        'data: {"choices":[{"delta":{"content":"<think>plan</think>done"},"index":0}]}\n\n',
+        'data: {"choices":[{"delta":{},"finish_reason":"stop","index":0}]}\n\n',
+        "data: [DONE]\n\n",
+      ]),
+    );
+    const ev = await collectEvents(streamChatOpenAICompat(thinkingCfg, [{ role: "user", content: "hi" }]));
+    expect(ev.find((e) => e.type === "thinking-delta")).toMatchObject({ text: "plan" });
+    expect(ev.filter((e) => e.type === "text-delta").map((e: any) => e.text).join("")).toBe("done");
+  });
+
+  it("leaves plain content unaffected (no thinking events)", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      sseRaw([
+        'data: {"choices":[{"delta":{"content":"hello"},"index":0}]}\n\n',
+        'data: {"choices":[{"delta":{},"finish_reason":"stop","index":0}]}\n\n',
+        "data: [DONE]\n\n",
+      ]),
+    );
+    const ev = await collectEvents(streamChatOpenAICompat(thinkingCfg, [{ role: "user", content: "hi" }]));
+    expect(ev.some((e) => e.type.startsWith("thinking"))).toBe(false);
+    expect(ev.filter((e) => e.type === "text-delta").map((e: any) => e.text).join("")).toBe("hello");
   });
 });
