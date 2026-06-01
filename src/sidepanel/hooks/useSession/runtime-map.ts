@@ -19,6 +19,8 @@ export type SessionRuntimeSlot = {
    *  `accumulatedRef.current` (single-tenant). Consumed by chat-chunk /
    *  chat-done / chat-error / agent-step flush paths. */
   accumulated: string;
+  /** #93 — 思考过程增量累积器（与 accumulated 并行）。flush 时落到 assistant 消息的 thinking 字段。 */
+  streamingThinking: string;
   /** Equivalent to the legacy `streamFinishedRef.current`. */
   streamFinished: boolean;
   /** Issue #38 v1 — per-session page content references (not persisted). */
@@ -40,6 +42,7 @@ export const EMPTY_SLOT: SessionRuntimeSlot = {
   toast: null,
   messages: [],
   accumulated: "",
+  streamingThinking: "",
   streamFinished: true,
   quotes: [],
   pendingByChatMessageId: new Map(),

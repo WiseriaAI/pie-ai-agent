@@ -59,6 +59,7 @@ import { buildMidTaskUserMessage } from "./loop-drain";
 import { broadcastInstructionState } from "@/background/instruction-broadcast";
 import { synthesizeAgentTurnText, type TerminationReason } from "./synthesize-agent-turn";
 import { waitForUrlSettle, type UrlSettleResult } from "./wait-for-url-settle";
+import { assembleAssistantBlocks, type ThinkingContentBlock } from "./assistant-blocks";
 // setLastTaskSynth removed from emitDone — lastTaskSynth is now folded into
 // the tombstone write by buildSessionAgentTombstone(synth) to prevent the
 // two-write race on the agent key (AD1 fix). No import needed.
@@ -1460,6 +1461,9 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
 
       // Stream from LLM
       let accumulatedText = "";
+      let thinkingAccum = "";
+      let thinkingReplay = false;
+      const thinkingBlocks: ThinkingContentBlock[] = [];
       const openToolCalls = new Map<
         number,
         { id: string; name: string; argsAccum: string }
@@ -1487,6 +1491,21 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           accumulatedText += event.text;
           // Stream text to panel as it arrives (Phase 1 compatible)
           port.postMessage(withSession({ type: "chat-chunk", text: event.text }, sessionId));
+        } else if (event.type === "thinking-start") {
+          thinkingAccum = "";
+          thinkingReplay = event.replay;
+        } else if (event.type === "thinking-delta") {
+          thinkingAccum += event.text;
+          port.postMessage(withSession({ type: "thinking-chunk", text: event.text }, sessionId));
+        } else if (event.type === "thinking-end") {
+          if (thinkingReplay && thinkingAccum) {
+            thinkingBlocks.push({
+              type: "thinking",
+              thinking: thinkingAccum,
+              ...(event.signature ? { signature: event.signature } : {}),
+            });
+          }
+          thinkingAccum = "";
         } else if (event.type === "tool-call-start") {
           openToolCalls.set(event.index, {
             id: event.id,
@@ -1641,19 +1660,12 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         return;
       }
 
-      // Build the assistant message with all tool_use blocks (+ optional text block)
-      const assistantBlocks: ContentBlock[] = [];
-      if (accumulatedText) {
-        assistantBlocks.push({ type: "text", text: accumulatedText });
-      }
-      for (const tc of completedToolCalls) {
-        assistantBlocks.push({
-          type: "tool_use",
-          id: tc.id,
-          name: tc.name,
-          input: tc.args,
-        });
-      }
+      // Build the assistant message with all tool_use blocks (+ optional text + thinking blocks)
+      const assistantBlocks: ContentBlock[] = assembleAssistantBlocks(
+        thinkingBlocks,
+        accumulatedText,
+        completedToolCalls,
+      );
 
       // #61(a)(b) — loop detection BEFORE executing this step's tools. The
       // signature fingerprints all tool calls (name + stable args). detectLoop

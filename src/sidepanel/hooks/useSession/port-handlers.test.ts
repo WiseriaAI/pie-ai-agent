@@ -309,6 +309,49 @@ describe("makeDisconnectHandler", () => {
   });
 });
 
+describe("thinking-chunk", () => {
+  it("accumulates thinking-chunk and attaches it on chat-done", async () => {
+    const deps = makeDeps();
+    deps.slotsRef.current.set("s1", {
+      ...EMPTY_SLOT,
+      streaming: true,
+      streamFinished: false,
+    });
+    const { handleMessage } = createPortHandlers(deps);
+    handleMessage({ type: "thinking-chunk", text: "reason ", sessionId: "s1" } as PortMessageToPanel);
+    handleMessage({ type: "thinking-chunk", text: "more", sessionId: "s1" } as PortMessageToPanel);
+    handleMessage({ type: "chat-chunk", text: "answer", sessionId: "s1" } as PortMessageToPanel);
+    handleMessage({ type: "chat-done", sessionId: "s1" } as PortMessageToPanel);
+    const slot = deps.slotsRef.current.get("s1")!;
+    expect(slot.messages).toEqual([
+      { role: "assistant", content: "answer", thinking: "reason more" },
+    ]);
+    expect(slot.streamingThinking).toBe("");
+  });
+
+  it("flushes a thinking-only assistant message before an agent-step", () => {
+    const deps = makeDeps();
+    deps.slotsRef.current.set("s1", {
+      ...EMPTY_SLOT,
+      streaming: true,
+      streamFinished: false,
+    });
+    const { handleMessage } = createPortHandlers(deps);
+    handleMessage({ type: "thinking-chunk", text: "deciding", sessionId: "s1" } as PortMessageToPanel);
+    handleMessage({
+      type: "agent-step",
+      sessionId: "s1",
+      stepIndex: 0,
+      tool: "click",
+      args: {},
+      status: "pending",
+    } as PortMessageToPanel);
+    const slot = deps.slotsRef.current.get("s1")!;
+    expect(slot.messages[0]).toEqual({ role: "assistant", content: "", thinking: "deciding" });
+    expect(slot.messages[1]).toMatchObject({ role: "agent-step", tool: "click" });
+  });
+});
+
 describe("agent-usage", () => {
   it("writes payload fields onto slot.usage for the matching sessionId", () => {
     const deps = makeDeps();

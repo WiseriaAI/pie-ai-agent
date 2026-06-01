@@ -260,6 +260,10 @@ export const zhCNDict = {
     steps: "步",
     done: " 完成",
   },
+  thinking: {
+    label: "思考过程",
+    inProgress: "思考中…",
+  },
   agentSummary: {
     doneSteps: "完成 · {count} 步",
     failedAtStep: "第 {step} 步失败",

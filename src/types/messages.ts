@@ -115,6 +115,13 @@ export interface ChatChunkMessage {
   sessionId: string;
 }
 
+/** SW → Panel：思考过程增量（与 chat-chunk 并行；面板累积到 streamingThinking）。 #93 */
+export interface ThinkingChunkMessage {
+  type: "thinking-chunk";
+  text: string;
+  sessionId: string;
+}
+
 export interface ChatDoneMessage {
   type: "chat-done";
   usage?: { inputTokens: number; outputTokens: number };
@@ -205,7 +212,7 @@ export type DisplayMessage =
        *  on normal sendMessage user messages. */
       id?: string;
     }
-  | { role: "assistant"; content: string }
+  | { role: "assistant"; content: string; thinking?: string }
   | {
       role: "agent-step";
       stepIndex: number;
@@ -511,6 +518,7 @@ export type PortMessageToWorker =
 
 export type PortMessageToPanel =
   | ChatChunkMessage
+  | ThinkingChunkMessage
   | ChatDoneMessage
   | ChatErrorMessage
   | AgentUsageMessage
