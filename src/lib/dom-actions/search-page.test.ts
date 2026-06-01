@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { searchPageInjected, type SearchPageParams } from "./search-page";
+import { pageSnapshotInjected } from "./page-snapshot";
 
 function run(overrides: Partial<SearchPageParams>) {
   const params: SearchPageParams = {
@@ -148,5 +149,48 @@ describe("searchPageInjected", () => {
     const r = run({ queries: ["refund"] });
     expect(r.total).toBe(0);
     expect(r.matches.length).toBe(0);
+  });
+});
+
+describe("search_page ↔ read_page idx parity (cross-layer regression)", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    document
+      .querySelectorAll("[data-pie-idx]")
+      .forEach((el) => el.removeAttribute("data-pie-idx"));
+  });
+
+  it("两个注入函数盖出的 idx→element 映射相同", () => {
+    document.body.innerHTML = `
+      <h1>Title</h1>
+      <button id="b0">A</button>
+      <a id="a1" href="/x">B</a>
+      <input id="i2" type="text">
+      <p>plain text refund</p>
+      <div id="host"></div>
+    `;
+    const shadow = document
+      .getElementById("host")!
+      .attachShadow({ mode: "open" });
+    shadow.innerHTML = `<button id="sb">S</button>`;
+
+    // read_page stamps first
+    pageSnapshotInjected();
+    const fromRead = new Map<string, string | null>();
+    for (const id of ["b0", "a1", "i2"]) {
+      fromRead.set(id, document.getElementById(id)!.getAttribute("data-pie-idx"));
+    }
+    fromRead.set("sb", shadow.getElementById("sb")!.getAttribute("data-pie-idx"));
+
+    // search_page re-stamps (clears + restamps with the copied algorithm)
+    searchPageInjected({ queries: ["refund"], regex: false, mode: "all", maxResults: 10 });
+    for (const id of ["b0", "a1", "i2"]) {
+      expect(document.getElementById(id)!.getAttribute("data-pie-idx")).toBe(
+        fromRead.get(id),
+      );
+    }
+    expect(shadow.getElementById("sb")!.getAttribute("data-pie-idx")).toBe(
+      fromRead.get("sb"),
+    );
   });
 });
