@@ -16,6 +16,8 @@
     "https://generativelanguage.googleapis.com/*",
     "https://api.deepseek.com/*",
     "https://api.xiaomimimo.com/*",
+    "https://api.moonshot.ai/*",
+    "https://api.moonshot.cn/*",
     "https://api.tavily.com/*"
   ],
   "content_security_policy": {
