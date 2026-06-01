@@ -1,5 +1,6 @@
 node_modules/
 dist/
+dist-eval/
 .vite/
 *.log
 .DS_Store
@@ -33,3 +34,6 @@ eval/runs/
 
 # Python virtual environment for eval scorer
 eval/.venv/
+
+# Python bytecode cache (eval scorer)
+__pycache__/
