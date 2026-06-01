@@ -3,7 +3,7 @@ import type { ProviderRef, BuiltinProvider, ModelMeta } from "@/lib/model-router
 import { getProviderMeta } from "@/lib/model-router";
 import { useProviderMeta } from "@/sidepanel/hooks/useProviderMeta";
 import { CUSTOM_PREFIX } from "@/lib/custom-providers";
-import { useT } from "@/lib/i18n";
+import { useT, providerDisplayName } from "@/lib/i18n";
 import ModelDropdown from "./ModelDropdown";
 
 export interface InstanceFormPayload {
@@ -117,7 +117,7 @@ export default function InstanceForm(props: Props) {
           <div className="h-[38px] animate-pulse rounded border border-line bg-field" />
         ) : (
           <div className="flex items-center gap-2 rounded border border-line bg-field px-3 py-2 text-[12px] text-fg-2">
-            <span className="text-fg-1">{meta?.name ?? props.provider}</span>
+            <span className="text-fg-1">{meta ? providerDisplayName(meta, t) : props.provider}</span>
             <span className="ml-auto font-mono text-[10px] text-fg-3">{t("instanceForm.locked")}</span>
           </div>
         )}

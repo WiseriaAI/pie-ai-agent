@@ -70,6 +70,7 @@ export const SEARCH_TOOL_NAMES = [
 // class=read: reads page DOM structure; no tab/page state mutation.
 export const PAGE_SNAPSHOT_TOOL_NAMES = [
   "read_page",
+  "search_page",
 ] as const;
 
 // PDF tools (always present in BUILT_IN_TOOLS once Task 10 lands).
@@ -179,6 +180,7 @@ export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
   search_web: "read",
   // Page snapshot tool — reads page DOM structure, no tab/page state mutation
   read_page: "read",
+  search_page: "read",
   // PDF tools — pure text producers, parse-only, no tab mutation
   read_pdf: "read",
   search_pdf: "read",

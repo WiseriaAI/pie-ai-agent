@@ -14,3 +14,4 @@ export {
   type LocaleSetting,
   type TParams,
 } from "./types";
+export { providerDisplayName } from "./provider-display-name";

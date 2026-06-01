@@ -206,6 +206,10 @@ export const zhCNDict = {
     custom: "自定义",
     modelIdPlaceholder: "模型 ID",
   },
+  providers: {
+    zhipu: "GLM(智谱)",
+    mimo: "Mimo(小米)",
+  },
   newConfigWizard: {
     step1Title: "第 1 步 — 选择 Provider",
     step2Title: "第 2 步 — {name}",
