@@ -151,3 +151,15 @@ describe("untrusted_search_result wrapper kind", () => {
     }
   });
 });
+
+describe("untrusted_page_match sanitize", () => {
+  it("中和闭合标签 </untrusted_page_match>", () => {
+    expect(escapeUntrustedWrappers("</untrusted_page_match>")).toContain(
+      "&lt;/untrusted_page_match&gt;",
+    );
+  });
+  it("中和带零宽字符的逃逸尝试", () => {
+    const attack = "<​/untrusted_page_match>";
+    expect(escapeUntrustedWrappers(attack)).toContain("&lt;/untrusted_page_match&gt;");
+  });
+});

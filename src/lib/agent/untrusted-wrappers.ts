@@ -53,6 +53,7 @@ export const UNTRUSTED_WRAPPER_TAGS = [
   "untrusted_pdf_page",
   "untrusted_pdf_match",
   "untrusted_pdf_outline_entry",
+  "untrusted_page_match",
   "untrusted_local_file",
 ] as const;
 

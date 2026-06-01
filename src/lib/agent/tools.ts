@@ -11,6 +11,7 @@ import { SKILL_ACCESS_TOOLS } from "./tools/skill-access";
 import { TAB_TOOLS } from "./tools/tabs";
 import { searchWebTool } from "./tools/search";
 import { readPageTool } from "./tools/read-page";
+import { searchPageTool } from "./tools/search-page";
 import { PDF_TOOLS } from "./tools/pdf";
 import { LOCAL_FILE_TOOLS } from "./tools/files";
 
@@ -291,6 +292,7 @@ export const BUILT_IN_TOOLS: Tool[] = [
   },
   searchWebTool,
   readPageTool,
+  searchPageTool,
   ...PDF_TOOLS,
   ...LOCAL_FILE_TOOLS,
 ];
