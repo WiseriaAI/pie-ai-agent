@@ -1,7 +1,7 @@
 <div align="center">
   <img src="public/icons/icon-128.svg" alt="Pie" width="96" height="96" />
   <h1>Pie</h1>
-  <p><strong>Chrome 浏览器自动化 Agent —— 通过原生工具调用、Skill 系统、CDP 键盘控制和执行前确认机制，把自然语言任务变成可控的浏览器操作。</strong></p>
+  <p><strong>Chrome 浏览器自动化 Agent —— 通过原生工具调用、Skill 系统、CDP 键盘控制，以及沙箱化、抗提示词注入的执行模型，把自然语言任务变成可控的浏览器操作。</strong></p>
   <p>
     <a href="https://chromewebstore.google.com/detail/pie-%C2%B7-open-source-ai-agen/gpccjhdgjkmalnepmeclooflliiocfed"><img src="https://img.shields.io/chrome-web-store/v/gpccjhdgjkmalnepmeclooflliiocfed?label=Chrome%20Web%20Store&logo=googlechrome&logoColor=white" alt="Chrome Web Store 上架" /></a>
   </p>
@@ -27,8 +27,10 @@
 Pie 把 Chrome 变成一个浏览器自动化 Agent。用自然语言描述一个任务，LLM
 拆解步骤，并通过类型化的工具注册表执行 —— 包括 DOM 动作、跨标签页编排，
 以及面向飞书文档、Google Docs 这类不响应标准 DOM 事件的 canvas 编辑器
-的 CDP 键盘注入。工作流可以保存为带显式工具白名单的 Skill。每一个不可
-逆或跨域操作都会先弹出确认卡片，确保你知情可控。BYOK：把你已有的 API
+的 CDP 键盘注入。工作流可以保存为带显式工具白名单的 Skill。工具直接执行、不再有逐动作
+确认卡片；页面内容只在 `<untrusted_*>` 包裹内进入模型、工具按读 / 写
+分类并对其它会话固定的标签页加写锁、每个会话独立沙箱 —— 自动化由此
+受到约束。BYOK：把你已有的 API
 key 粘进来即可（支持 10 家 LLM 供应商）—— 本地加密保存，无 Pie 后端，
 无埋点。
 
@@ -41,9 +43,11 @@ key 粘进来即可（支持 10 家 LLM 供应商）—— 本地加密保存，
 - **Skill 是一等公民。** Skill 是带工具白名单的提示词模板，对话里输入
   `/skill_name` 即可触发。Agent 也能自己写 Skill —— 但被 8 道能力授权
   不变量约束，无法越权扩张自身权限。
-- **执行前先确认。** 每个高危动作（提交表单、敏感字段输入、CDP 原生键盘
-  注入、跨域标签页操作、关闭固定标签页）在执行前都会弹出确认卡片，展示
-  确切动作、原始参数、影响到的 origin —— 你始终保有知情控制权。
+- **设计上即受限。** 工具直接执行，没有逐动作的确认点击。约束来自纵深
+  防御：页面与第三方内容只在 `<untrusted_*>` 包裹内进入模型（防提示词
+  注入）、工具按读 / 写分类并对其它会话固定的标签页加写锁、每个会话独立
+  沙箱（独立 port、固定标签页、CDP owner token）。CDP 键盘注入默认关闭，
+  需手动开启。
 - **多会话持久化。** 对话状态在 Service Worker 重启后仍然可恢复；
   归档会话在存储压力下按 LRU 淘汰，30 天后硬删除。
 - **侧边栏，不是弹窗。** Pie 常驻 Chrome 侧边栏，浏览过程中保持打开 ——
@@ -85,32 +89,30 @@ Skill 是带显式工具白名单的提示词模板。打开 **设置 → Skills
 
 Agent 自己也能通过 `create_skill` / `update_skill` / `delete_skill` 元工具
 创建 Skill —— 适合把模型刚刚走通的工作流捕获下来，下一次会话直接复用。
-Agent 创建的 Skill 会被打上 `author='agent'` 标记，首次执行时会触发
-一次性确认卡片；模型自创的 Skill 永远不会在下一次执行时被静默运行。
+Agent 创建的 Skill 会被打上 `author='agent'` 标记，并同样受下文的能力
+授权不变量约束 —— 它只能调用被授予的工具，无法自行扩张权限。
 
 Skill 无法越过自己声明的工具白名单。每次 Skill 写入都会强制执行
 8 道能力授权不变量 —— 硬上限（提示模板 ≤ 8 KB、参数 schema ≤ 2 KB）、
 禁止嵌套元工具、单设备 1 MB 存储预算、对实时工具注册表做名称校验 ——
 失控的 Skill 无法自行扩张权限。
 
-### 高危动作审批
-Pie 在每次工具调用执行前都会做风险分类。任何不可逆操作或跨域操作都需要
-你先批准一张确认卡片。**高危**触发条件包括：表单提交、向密码 / 支付 /
-邮件字段输入、通过 CDP 注入原生键盘事件、关闭固定标签页，以及任何跨域
-标签页操作。
+### 安全模型
+Pie 直接执行工具 —— 主路径上没有逐动作的确认卡片。安全是分层的：
 
-确认卡片会展示：
+- **提示词注入隔离。** 页面内容、标签页元数据、Skill 参数只在
+  `<untrusted_*>` 包裹内进入模型，且永不进入 system prompt —— 页面 DOM
+  里的文本因此无法被当作可信指令执行。
+- **读 / 写工具分类。** 每个工具在构建期被声明为读或写。写类工具被禁止
+  操作其它会话已固定的标签页（跨会话写锁），并发会话之间不会互相破坏。
+- **按会话沙箱。** 每个会话有独立的流式 port、独立的固定标签页集合，以及
+  CDP owner token —— 一个任务无法劫持另一个任务的标签页或调试会话。
+- **CDP 键盘注入默认关闭** —— 必须先在设置里开启才能附加。
+- **Skill 无法自我提权** —— 由上文的能力授权不变量强制保证。
 
-- 工具的精确名称与 Agent 准备传入的原始参数（让你能在执行前发现错误，
-  或揪出页面 DOM 里被注入的提示词指令）
-- 每个受影响标签页的 origin 与标题；当动作会跨过任务起始时锁定的
-  pinned origin 时单独标注
-- **Approve / Reject** 按钮对，外加任务级 **Discard** 选项，用于完全
-  放弃 Agent 的当前计划
-
-CDP 键盘模拟功能 **默认关闭** —— 必须先在设置里开启才能附加。如果你在
-同一个任务里连续拒绝 3 次，Pie 会自动终止任务，避免在你已经否定的计划上
-继续烧 token。
+你仍会看到的唯一一次审批发生在**恢复任务**时：如果你暂停了任务、而其
+固定标签页已被关闭或导航到了不同 origin，Pie 会先弹出 drift 卡片再继续，
+避免在错误的页面上动作。
 
 ### 支持的供应商
 
@@ -202,8 +204,8 @@ pnpm build
   供应商的 API 请求一起发送
 - 所有发给 LLM 的页面内容都包裹在 `<untrusted_*>` 标签里，硬抗来自页面
   DOM 的提示词注入
-- 跨域标签页动作和高危 DOM 动作都需要明确的确认卡片 —— Pie 在执行前
-  把动作内容、目标 origin 一并展示给你
+- 工具不再有逐动作的确认弹窗；约束来自读 / 写工具分类与跨会话写锁，以及
+  按会话的沙箱隔离（独立 port、固定标签页、CDP owner token）
 - 无埋点、无统计、无第三方
 
 完整策略：[PRIVACY.md](PRIVACY.md)。
@@ -236,7 +238,7 @@ service worker 后到 `chrome://extensions` 点 **重新加载**。
 | `src/background/` | Service Worker —— 消息路由、Agent loop 派发、保活 |
 | `src/sidepanel/` | React 侧边栏 UI（Chat、Settings、会话抽屉） |
 | `src/lib/model-router/` | 统一 LLM 接口；按供应商封装流式 + 工具调用 |
-| `src/lib/agent/` | ReAct 循环、工具注册表、风险分类器、提示词构造 |
+| `src/lib/agent/` | ReAct 循环、工具注册表、读 / 写工具分类、untrusted 内容包裹、提示词构造 |
 | `src/lib/dom-actions/` | 通过 `executeScript` 注入的自包含 DOM 动作函数 |
 | `src/lib/skills/` | Skill 框架：类型、存储、内置 Skill |
 | `src/lib/sessions/` | 会话生命周期：持久化、归档、多会话沙箱 |
