@@ -26,24 +26,25 @@ function copyLiteparseWasm(): Plugin {
   };
 }
 
-export default defineConfig({
-  plugins: [react(), tailwindcss(), crx({ manifest }), copyLiteparseWasm()],
-  resolve: {
-    alias: {
-      "@": path.resolve(__dirname, "src"),
+export default defineConfig(({ mode }) => {
+  const isEval = mode === "eval";
+  return {
+    plugins: [react(), tailwindcss(), crx({ manifest }), copyLiteparseWasm()],
+    define: {
+      __PIE_EVAL__: JSON.stringify(isEval),
     },
-  },
-  build: {
-    outDir: "dist",
-    rollupOptions: {
-      // Offscreen documents are not declared in manifest.json (only via
-      // chrome.offscreen.createDocument), so @crxjs/vite-plugin does not
-      // auto-discover them. Adding the HTML as a Rollup input causes Vite
-      // to bundle the inline `<script type="module" src="./pdf-parser.ts">`
-      // into a real JS module and rewrite the HTML to point at it.
-      input: {
-        "offscreen-pdf-parser": path.resolve(__dirname, "src/offscreen/pdf-parser.html"),
+    resolve: {
+      alias: {
+        "@": path.resolve(__dirname, "src"),
       },
     },
-  },
+    build: {
+      outDir: isEval ? "dist-eval" : "dist",
+      rollupOptions: {
+        input: {
+          "offscreen-pdf-parser": path.resolve(__dirname, "src/offscreen/pdf-parser.html"),
+        },
+      },
+    },
+  };
 });

@@ -1560,3 +1560,10 @@ chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
 });
 
 console.log("[Pie] Service worker started");
+
+// --- Eval harness (dev-only) ---
+// __PIE_EVAL__ 由 Vite define 静态替换:prod=false → 整个 import 被 tree-shake,
+// eval-bridge.ts 不进 dist/(由 scripts/assert-no-eval-bridge.mjs 在 CI 兜底)。
+if (__PIE_EVAL__) {
+  import("./eval-bridge").then((m) => m.mountEvalBridge());
+}
