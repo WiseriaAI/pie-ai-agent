@@ -1,6 +1,8 @@
-import { describe, it, expect } from "vitest";
-import { getProviderMeta, getModelMeta, PROVIDER_REGISTRY, resolveModelVision } from "./registry";
+import { describe, it, expect, beforeEach } from "vitest";
+import { getProviderMeta, getModelMeta, PROVIDER_REGISTRY, resolveModelVision, resolveModelMeta } from "./registry";
 import type { ModelMeta } from "./registry";
+import { setProviderCustomModelMeta } from "@/lib/provider-custom-model-meta";
+import { chromeMock } from "@/test/setup";
 
 describe("ProviderMeta schema", () => {
   it("every provider has a defaultBaseUrl, placeholder, and models[]", () => {
@@ -167,5 +169,32 @@ describe("Per-provider model id uniqueness", () => {
       const unique = new Set(ids);
       expect(unique.size).toBe(ids.length);
     }
+  });
+});
+
+describe("resolveModelMeta + pcmm", () => {
+  beforeEach(() => { chromeMock.storage.local.__store = {}; });
+
+  it("builtin custom id resolves from pcmm with tools forced true", async () => {
+    await setProviderCustomModelMeta("minimax", "MiniMax-Future", { vision: true, maxContextTokens: 1_000_000 });
+    const meta = await resolveModelMeta("minimax", "MiniMax-Future");
+    expect(meta).toMatchObject({ id: "MiniMax-Future", vision: true, tools: true, maxContextTokens: 1_000_000 });
+  });
+
+  it("registry preset wins over pcmm (preset not overridable)", async () => {
+    await setProviderCustomModelMeta("minimax", "MiniMax-M3", { vision: false, maxContextTokens: 1 });
+    const meta = await resolveModelMeta("minimax", "MiniMax-M3");
+    expect(meta?.maxContextTokens).toBe(1_000_000); // preset value, not pcmm's 1
+    expect(meta?.vision).toBe(true);
+  });
+
+  it("unknown id with no pcmm returns null", async () => {
+    expect(await resolveModelMeta("minimax", "no-such-model")).toBeNull();
+  });
+
+  it("pcmm displayName propagates into resolved meta", async () => {
+    await setProviderCustomModelMeta("minimax", "Named-Model", { displayName: "My Model", vision: false, maxContextTokens: 256_000 });
+    const meta = await resolveModelMeta("minimax", "Named-Model");
+    expect(meta?.displayName).toBe("My Model");
   });
 });
