@@ -190,8 +190,13 @@ export async function* streamChatAnthropicSdk(
         }
       } else if (event.type === "message_delta") {
         stopReason = mapStopReason(event.delta.stop_reason);
+        // MiMo / MiniMax report the real prompt size only in this terminal
+        // delta (message_start carried 0); Anthropic-official sends it up front
+        // and leaves this null. Prefer a positive late value, else keep what
+        // message_start already gave us. (#59)
+        const deltaInput = event.usage.input_tokens;
         usage = {
-          inputTokens: usage?.inputTokens ?? 0,
+          inputTokens: deltaInput != null && deltaInput > 0 ? deltaInput : usage?.inputTokens ?? 0,
           outputTokens: event.usage.output_tokens ?? 0,
         };
       }
