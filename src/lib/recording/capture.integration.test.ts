@@ -12,12 +12,6 @@ import { installCaptureListener } from "./capture";
 import { detectSensitive } from "./redact";
 import type { CapturedActionPayload } from "./types";
 
-declare global {
-  interface Window {
-    chrome?: { runtime?: { sendMessage?: (...args: unknown[]) => void } };
-  }
-}
-
 describe("capture.installCaptureListener", () => {
   let captured: Array<{ type: string; payload: CapturedActionPayload }>;
   let uninstall: () => void;
@@ -27,7 +21,7 @@ describe("capture.installCaptureListener", () => {
     captured = [];
     // Reset idempotent install flag so each test starts clean.
     (window as Window & { __pieRecordingInstalled?: boolean }).__pieRecordingInstalled = false;
-    window.chrome = {
+    (window as unknown as { chrome: unknown }).chrome = {
       runtime: {
         sendMessage: vi.fn((msg: unknown) => {
           captured.push(msg as { type: string; payload: CapturedActionPayload });
@@ -153,7 +147,7 @@ describe("capture.installCaptureListener", () => {
       const captureLabel = captured[idx]!.payload.label;
       const captureHint = captured[idx]!.payload.selectorHint;
       const captureUnstable = captured[idx]!.payload.unstable;
-      const region = el.closest("main") ? "main" : "other";
+      const region: string = el.closest("main") ? "main" : "other";
       // Mirror capture.ts's getRegion + querySelectorAll logic for nth fallback.
       const regionRoot =
         region === "main" ? document.querySelector("main") :

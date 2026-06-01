@@ -228,7 +228,7 @@ describe("session-confirm-request", () => {
       confirmationId: "sc1",
       kind: "drift-card",
       payload: { driftedOrigin: "https://x.com" },
-    } as PortMessageToPanel);
+    } as unknown as PortMessageToPanel);
     const slot = deps.slotsRef.current.get("s1")!;
     expect(slot.messages).toHaveLength(1);
     expect(slot.messages[0]).toMatchObject({

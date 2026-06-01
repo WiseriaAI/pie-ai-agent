@@ -11,10 +11,9 @@ interface MockStorage { [k: string]: unknown }
 
 beforeEach(() => {
   const data: MockStorage = {};
-  // @ts-expect-error mock
   global.chrome = {
     storage: {
-      local: {
+      local: ({
         get: vi.fn((keys: string | string[]) => {
           const want = Array.isArray(keys) ? keys : [keys];
           const out: MockStorage = {};
@@ -30,9 +29,9 @@ beforeEach(() => {
           for (const k of want) delete data[k];
           return Promise.resolve();
         }),
-      },
+      } as unknown as typeof chrome.storage.local),
     },
-  };
+  } as unknown as typeof chrome;
 });
 
 describe("cdp-input-enabled", () => {

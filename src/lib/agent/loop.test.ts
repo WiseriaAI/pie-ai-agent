@@ -1035,10 +1035,10 @@ describe("v1.5 Task 6 — per-iteration focus refresh (pure-function contract)",
     ];
 
     // The loop's guard pattern: meta wins, ctx is fallback.
-    const refreshedPins = metaSnap?.pinnedTabs ?? ctxPinnedTabs;
+    const refreshedPins = (metaSnap as { pinnedTabs?: Array<{ tabId: number; origin: string }> } | null)?.pinnedTabs ?? ctxPinnedTabs;
     const refreshedFocus = resolveFocusedPin(
       refreshedPins,
-      agentSnap?.currentFocusTabId,
+      (agentSnap as SessionAgentState | null)?.currentFocusTabId,
     );
 
     expect(refreshedFocus).toEqual({ tabId: 10, origin: "https://a.example.com" });
@@ -1308,6 +1308,7 @@ describe("interpretPinnedTabUrl (Issue #50 — navigation transient tolerance)",
       tabId: number,
       expectedOrigin: string,
       timeoutMs: number,
+      signal?: AbortSignal,
     ) => Promise<UrlSettleResult>,
   ) {
     return vi.fn(impl);

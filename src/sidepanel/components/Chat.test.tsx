@@ -13,10 +13,13 @@
  * patched on the global chrome mock.
  */
 
+import React from "react";
 import { render, screen, fireEvent, cleanup, act, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { chromeMock } from "@/test/setup";
 import Chat from "./Chat";
+// Escape hatch for tests that pass extra props (onOpenSessionList, activePanel) not in ChatProps
+const ChatAny = Chat as unknown as React.ComponentType<Record<string, unknown>>;
 import type { UseSession } from "@/sidepanel/hooks/useSession";
 import type { DisplayMessage } from "@/types";
 
@@ -945,7 +948,7 @@ describe("Chat — M5 pinMode behavior", () => {
     });
     await act(async () => {
       render(
-        <Chat
+        <ChatAny
           session={session}
           onOpenSettings={vi.fn()}
           onOpenSessionList={vi.fn()}
@@ -968,7 +971,7 @@ describe("Chat — M5 pinMode behavior", () => {
     });
     await act(async () => {
       render(
-        <Chat
+        <ChatAny
           session={session}
           onOpenSettings={vi.fn()}
           onOpenSessionList={vi.fn()}
@@ -990,7 +993,7 @@ describe("Chat — M5 pinMode behavior", () => {
     });
     await act(async () => {
       render(
-        <Chat
+        <ChatAny
           session={session}
           onOpenSettings={vi.fn()}
           onOpenSessionList={vi.fn()}
@@ -1012,7 +1015,7 @@ describe("Chat — M5 pinMode behavior", () => {
       pinnedTabs: [{ tabId: 5, origin: "https://x.com" }],
     });
     const { unmount: unmountUser } = render(
-      <Chat session={userSession} onOpenSettings={vi.fn()} onOpenSessionList={vi.fn()} activePanel="chat" />,
+      <ChatAny session={userSession} onOpenSettings={vi.fn()} onOpenSessionList={vi.fn()} activePanel="chat" />,
     );
     // Live-preview is gated by isLocked → user mode = locked = no listeners.
     // Only the pageChanged effect could register tabsOnUpdated.
@@ -1026,7 +1029,7 @@ describe("Chat — M5 pinMode behavior", () => {
       pinnedTabs: [{ tabId: 5, origin: "https://x.com" }],
     });
     const { unmount: unmountTask } = render(
-      <Chat session={taskSession} onOpenSettings={vi.fn()} onOpenSessionList={vi.fn()} activePanel="chat" />,
+      <ChatAny session={taskSession} onOpenSettings={vi.fn()} onOpenSessionList={vi.fn()} activePanel="chat" />,
     );
     const taskCalls = tabsOnUpdated.addListener.mock.calls.length;
     unmountTask();
@@ -1049,18 +1052,18 @@ describe("Chat — M5 pinMode behavior", () => {
     // to dispatch to all of them so the test reflects production behavior.
     type OnUpdatedFn = (
       tabId: number,
-      changeInfo: chrome.tabs.TabChangeInfo,
+      changeInfo: chrome.tabs.OnUpdatedInfo,
       tab: chrome.tabs.Tab,
     ) => void;
     const onUpdatedFns: OnUpdatedFn[] = [];
     tabsOnUpdated.addListener.mockClear();
-    tabsOnUpdated.addListener.mockImplementation((fn: unknown) => {
+    (tabsOnUpdated.addListener as ReturnType<typeof vi.fn>).mockImplementation((fn: unknown) => {
       onUpdatedFns.push(fn as OnUpdatedFn);
     });
 
     await act(async () => {
       render(
-        <Chat session={session} onOpenSettings={vi.fn()} onOpenSessionList={vi.fn()} activePanel="chat" />,
+        <ChatAny session={session} onOpenSettings={vi.fn()} onOpenSessionList={vi.fn()} activePanel="chat" />,
       );
     });
 
@@ -1068,7 +1071,7 @@ describe("Chat — M5 pinMode behavior", () => {
 
     const dispatchAll = (
       tabId: number,
-      changeInfo: chrome.tabs.TabChangeInfo,
+      changeInfo: chrome.tabs.OnUpdatedInfo,
       tab: chrome.tabs.Tab,
     ) => {
       for (const fn of onUpdatedFns) fn(tabId, changeInfo, tab);
@@ -1142,7 +1145,7 @@ describe("EmptyState centered greeting", () => {
     // Chat tests render without I18nProvider wrapper — useT() falls back to English.
     // The zh-CN locale path is covered by src/lib/i18n/__tests__/use-t.test.tsx.
     const session = makeSession();
-    render(<Chat session={session} onOpenSettings={() => {}} />);
+    render(<Chat session={session} onOpenSettings={() => {}} providerLabel={null} />);
 
     const greetings = [
       "Hey, what are we looking at today?",
@@ -1161,7 +1164,7 @@ describe("EmptyState centered greeting", () => {
 
   it("does NOT render 'READY' caps label or SUGGESTED skill section", async () => {
     const session = makeSession();
-    render(<Chat session={session} onOpenSettings={() => {}} />);
+    render(<Chat session={session} onOpenSettings={() => {}} providerLabel={null} />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 0));
     });

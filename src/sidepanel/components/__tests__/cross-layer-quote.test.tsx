@@ -12,14 +12,13 @@ import { escapeWrapperAttribute } from "@/lib/agent/untrusted-wrappers";
 
 beforeEach(() => {
   vi.restoreAllMocks();
-  // @ts-expect-error
   globalThis.chrome = {
     tabs: {
-      get: vi.fn(async (id: number) => ({ id, windowId: 1 })),
+      get: vi.fn(async (id: number) => ({ id, windowId: 1 })) as unknown as typeof chrome.tabs.get,
       captureVisibleTab: vi.fn(async () => "data:image/png;base64,raw"),
       sendMessage: vi.fn(),
     },
-  };
+  } as unknown as typeof chrome;
   vi.spyOn(crypto, "randomUUID").mockReturnValue("u-cross" as `${string}-${string}-${string}-${string}-${string}`);
 });
 

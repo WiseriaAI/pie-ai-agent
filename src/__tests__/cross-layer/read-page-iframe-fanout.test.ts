@@ -50,7 +50,7 @@ describe("read_page iframe fanout cross-layer", () => {
     expect(r.observation).toMatch(/frame_id="3"[\s\S]*cross_origin="true"/);
 
     // Same-origin frame 2 should NOT have cross_origin mark in frame_map or blocks
-    const frame2Section = r.observation.match(/frame_id="2".*?(?=frame_id="3"|<\/frame_map>|<untrusted)/s);
+    const frame2Section = r.observation!.match(/frame_id="2".*?(?=frame_id="3"|<\/frame_map>|<untrusted)/s);
     expect(frame2Section?.[0]).not.toMatch(/cross_origin/);
 
     // All three frames should appear as HTML blocks

@@ -62,7 +62,7 @@ describe("makeCdpAdapterForScreenshot — SW CDP bridge shape (C-1)", () => {
     await adapter.acquireSession({ sessionId: "s1", tabId: 42 });
 
     const [, secondArg] = spy.mock.calls[0]!;
-    const { onExternalDetach } = secondArg as { onExternalDetach: () => void };
+    const { onExternalDetach } = secondArg as unknown as { onExternalDetach: () => void };
 
     expect(ac.signal.aborted).toBe(false);
     onExternalDetach();

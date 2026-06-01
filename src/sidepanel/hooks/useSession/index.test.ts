@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { chromeMock } from "@/test/setup";
+import { chromeMock, type FakePort } from "@/test/setup";
 import {
   createSession,
   getSessionMeta,
@@ -15,7 +15,6 @@ import { useSession } from ".";
 // injected. All SW→panel messages now carry sessionId; the hook filter drops
 // messages whose sessionId doesn't match the active session.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type FakePort = { __emit: (msg: any) => void; [key: string]: unknown };
 function emitWithSession(port: FakePort, msg: Record<string, unknown>, sessionId: string) {
   port.__emit({ ...msg, sessionId });
 }
@@ -196,7 +195,7 @@ describe("useSession — sendMessage / streaming", () => {
     // Only one port opened, only one chat-start sent.
     expect(chromeMock.runtime.__ports).toHaveLength(1);
     expect(result.current.messages).toHaveLength(1);
-    expect(result.current.messages[0]!.content).toBe("first");
+    expect((result.current.messages[0] as { content: string }).content).toBe("first");
   });
 
   it("accumulates chat-chunk into streamingText", async () => {

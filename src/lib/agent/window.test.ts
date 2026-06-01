@@ -27,7 +27,7 @@ function assistantToolUse(toolName = "click"): AgentMessage {
 
 function userToolResult(toolId = "tu1"): AgentMessage {
   const blocks: ContentBlock[] = [
-    { type: "tool_result", tool_use_id: toolId, content: "ok" },
+    { type: "tool_result", toolUseId: toolId, content: "ok" },
   ];
   return { role: "user", content: blocks };
 }

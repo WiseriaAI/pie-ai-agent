@@ -2,12 +2,11 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { elementToPagePoint, readRectByIdx, resolveChromeToCdpFrameId } from "./geometry";
 
 beforeEach(() => {
-  // @ts-expect-error mock
   global.chrome = {
     scripting: {
       executeScript: vi.fn(),
-    },
-  };
+    } as unknown as typeof chrome.scripting,
+  } as unknown as typeof chrome;
 });
 
 describe("elementToPagePoint — top frame", () => {
@@ -44,13 +43,12 @@ describe("elementToPagePoint — top frame", () => {
 
 describe("resolveChromeToCdpFrameId", () => {
   beforeEach(() => {
-    // @ts-expect-error mock
     global.chrome = {
       ...global.chrome,
       webNavigation: {
         getAllFrames: vi.fn(),
-      },
-    };
+      } as unknown as typeof chrome.webNavigation,
+    } as unknown as typeof chrome;
   });
 
   it("returns the matching CDP frame id by URL + parent chain", async () => {
@@ -97,12 +95,11 @@ describe("resolveChromeToCdpFrameId", () => {
 
 describe("elementToPagePoint — iframe", () => {
   beforeEach(() => {
-    // @ts-expect-error mock
     global.chrome = {
       ...global.chrome,
-      scripting: { executeScript: vi.fn() },
-      webNavigation: { getAllFrames: vi.fn() },
-    };
+      scripting: { executeScript: vi.fn() } as unknown as typeof chrome.scripting,
+      webNavigation: { getAllFrames: vi.fn() } as unknown as typeof chrome.webNavigation,
+    } as unknown as typeof chrome;
   });
 
   it("accumulates iframe origin + frame-local rect center", async () => {
