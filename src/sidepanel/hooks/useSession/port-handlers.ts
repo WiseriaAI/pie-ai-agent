@@ -192,6 +192,7 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
       patchSlot(id, {
         messages: next,
         accumulated: "",
+        streamingThinking: "",
         streamingText: "",
         streaming: false,
         streamFinished: true,
