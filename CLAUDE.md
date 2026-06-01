@@ -13,7 +13,7 @@ BYOK (Bring Your Own Key) Chrome Extension — 用户插入自己的 API key 获
 - `src/background/` — Service Worker: message routing, port streaming, agent loop dispatch, keep-alive, CDP session lifecycle
 - `src/content/` — placeholder (DOM ops 走 `chrome.scripting.executeScript` 注入)
 - `src/sidepanel/` — Sidebar UI: Chat (Agent UI) / Settings / SkillsList / SessionDrawer
-- `src/lib/model-router/` — Unified LLM interface + tool calling; per-provider modules under `providers/` + two shared cores (`_shared/openai-compat-core.ts`, `_shared/anthropic-compat-core.ts`) + `registry.ts` 元数据 + id-keyed `providers/index.ts` dispatch（provider 清单见 README）
+- `src/lib/model-router/` — Unified LLM interface + tool calling; per-provider modules under `providers/` + three shared cores (`_shared/openai-compat-core.ts`, `_shared/anthropic-compat-core.ts` 手写 SSE, `_shared/anthropic-sdk-core.ts` 官方 `@anthropic-ai/sdk` 后端) + `registry.ts` 元数据 + id-keyed `providers/index.ts` dispatch（provider 清单见 README）
 - `src/lib/dom-actions/` — Self-contained DOM action functions injected via executeScript
 - `src/lib/agent/` — ReAct loop, tool registry, prompt builder, sliding window, `untrusted-wrappers.ts`, `tool-names.ts`(read/write tool 分类)
 - `src/lib/agent/tools/` — `keyboard.ts` (CDP) / `skill-meta.ts` (skill CRUD) / `tabs.ts` (cross-tab) / `pdf.ts` (`read_pdf` / `search_pdf` / `get_pdf_outline` tools, all read-class)
@@ -70,7 +70,7 @@ Workflow 内置 invariant（任一失败则 CI fail，不会上传）：
 - DOM access: `<all_urls>` host_permission + `chrome.scripting.executeScript`（activeTab 不够 side-panel 常驻场景）
 - Streaming: `chrome.runtime.connect()` port，**不用** `sendMessage`；keep-alive 25s `getPlatformInfo()`
 - SSE parser 同时处理 `\n` 和 `\r\n` 行尾
-- Provider registry pattern: 加 provider = registry entry + 模块文件 + manifest host_permission；capability flags (`vision`/`tools`/`maxContextTokens`) 在 `ModelMeta` per-model 维度；id-keyed dispatch 表 `streamChatByProvider`（builtin）或 `dispatchStreamChat`（custom）。Provider 模块基本是薄 wrapper：OpenAI-compat 家族走 `_shared/openai-compat-core.ts`（OpenRouter 用 customHeaders hook），Anthropic + MiMo 走 `_shared/anthropic-compat-core.ts`（hooks: `endpointPath` / `authHeaders` / `customHeaders` / `promptCache`），Gemini 自带 native module
+- Provider registry pattern: 加 provider = registry entry + 模块文件 + manifest host_permission；capability flags (`vision`/`tools`/`maxContextTokens`) 在 `ModelMeta` per-model 维度；id-keyed dispatch 表 `streamChatByProvider`（builtin）或 `dispatchStreamChat`（custom）。Provider 模块基本是薄 wrapper：OpenAI-compat 家族走 `_shared/openai-compat-core.ts`（OpenRouter 用 customHeaders hook），Anthropic 走 `_shared/anthropic-compat-core.ts`（手写 SSE；hooks: `endpointPath` / `authHeaders` / `customHeaders` / `promptCache`），MiMo 走 `_shared/anthropic-sdk-core.ts`（官方 `@anthropic-ai/sdk` 后端，#91 canary；hooks: `baseUrlSuffix` / `auth` / `stripAnthropicVersion` / `promptCache`；wire 与手写 core 保持一致：Bearer + 无 anthropic-version），Gemini 自带 native module。SDK 在 MV3 service worker 里已验证可用：无 eval（CSP-safe），用 fetch/ReadableStream，`process.*`/`Buffer` 引用全被 runtime 探测或鸭子类型 guard，缺失时不执行
 - Custom provider `baseUrl` 在 provider 层定义（`StoredCustomProvider.baseUrl`），instance 不能 override
 - Custom provider 一律走 `_shared/openai-compat-core.ts`（OpenAI-compat wire，不带 hooks）
 - `<all_urls>` host_permission 是 custom provider fetch（`/v1/models` + streaming）的前提
