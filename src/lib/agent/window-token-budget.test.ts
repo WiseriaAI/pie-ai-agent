@@ -404,6 +404,40 @@ describe("estimateTokens — image-skip (Phase 5 HARD GATE)", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// thinking block — text must count toward token estimate
+// ---------------------------------------------------------------------------
+
+describe("estimateTokens — thinking block counts toward budget", () => {
+  it("a message with a thinking block has a higher estimate than without it", () => {
+    const thinkingText = "A".repeat(400); // 400 chars of reasoning
+    const baseText = "hello"; // 5 chars
+
+    const msgsWithoutThinking: AgentMessage[] = [
+      { role: "assistant", content: [{ type: "text", text: baseText }] },
+    ];
+    const msgsWithThinking: AgentMessage[] = [
+      {
+        role: "assistant",
+        content: [
+          { type: "thinking", thinking: thinkingText },
+          { type: "text", text: baseText },
+        ],
+      },
+    ];
+
+    const tokensWithout = estimateTokens(msgsWithoutThinking);
+    const tokensWith = estimateTokens(msgsWithThinking);
+
+    // thinking text (400 chars) must increase the estimate
+    expect(tokensWith).toBeGreaterThan(tokensWithout);
+    // ceil((400 + 5) / 4) = ceil(405 / 4) = 102 for with-thinking
+    // ceil(5 / 4) = 2 for without-thinking
+    expect(tokensWithout).toBe(2);
+    expect(tokensWith).toBe(102);
+  });
+});
+
 describe("applyTokenBudget — image-bearing turn drop semantics unchanged", () => {
   it("image turns drop in age order (oldest first), no special preservation", async () => {
     // Spec: image cache lifecycle handles eviction, NOT the budget. The budget

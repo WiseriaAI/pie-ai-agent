@@ -49,6 +49,7 @@ function extractText(msg: AgentMessage): string {
   for (const b of msg.content as ContentBlock[]) {
     if (b.type === "image") continue;
     if (b.type === "text") parts.push(b.text);
+    else if (b.type === "thinking") parts.push(b.thinking);
     else if (b.type === "tool_use") parts.push(JSON.stringify(b.input));
     else if (b.type === "tool_result") parts.push(b.content);
   }
