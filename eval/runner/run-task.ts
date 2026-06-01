@@ -2,6 +2,7 @@ import { mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from "node
 import path from "node:path";
 import { launchPieChrome } from "./launch";
 import { scrubHar } from "./har-scrub";
+import { seedAuth, type AuthConfig } from "./auth";
 import type { TaskDef, EvalTrace, RunStatus, Har } from "./types";
 
 export interface ModelEnv { provider: string; model: string; apiKey: string }
@@ -30,6 +31,18 @@ export async function runOneTask(opts: {
     const launched = await launchPieChrome({ userDataDir, harPath });
     context = launched.context;
     const { serviceWorker } = launched;
+
+    // Optional auth-seeding: log into sites so the agent starts already authenticated.
+    const pieEvalAuth = process.env.PIE_EVAL_AUTH;
+    if (pieEvalAuth && pieEvalAuth.trim() !== "") {
+      let authConfigs: AuthConfig[];
+      try {
+        authConfigs = JSON.parse(pieEvalAuth) as AuthConfig[];
+      } catch (parseErr) {
+        throw new Error(`[orchestrator] PIE_EVAL_AUTH is not valid JSON: ${parseErr}`);
+      }
+      await seedAuth(context, authConfigs);
+    }
 
     await serviceWorker.evaluate(async (cfg) => {
       await (globalThis as any).__pieEval.seedConfig(cfg);

@@ -83,6 +83,12 @@ export PIE_EVAL_ENVIRONMENTS='{"shopping_admin":{"urls":["http://localhost:7780/
 eval/run-task.sh eval/tasks/0.json
 ```
 
+**Optional: pre-seed authentication** — set `PIE_EVAL_AUTH` to a JSON array of `AuthConfig` objects so the agent starts each task already logged in (mirrors WebArena's official eval pre-injection). If unset, auth-seeding is skipped.
+
+```bash
+export PIE_EVAL_AUTH='[{"loginUrl":"http://localhost:7780/admin","usernameField":"input[name=\"login[username]\"]","passwordField":"input[name=\"login[password]\"]","username":"admin","password":"admin1234","successUrlContains":"/admin/"}]'
+```
+
 The script writes all artifacts under `eval/runs/<taskId>-<timestamp>/` and
 prints the final `score.json` to stdout.
 
