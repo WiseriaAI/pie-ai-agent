@@ -27,7 +27,14 @@ export interface ImageBlock {
   };
 }
 
-export type ContentBlock = TextBlock | ToolUseBlock | ToolResultBlock | ImageBlock;
+export interface ThinkingBlock {
+  type: "thinking";
+  thinking: string;
+  /** Anthropic extended-thinking 回放签名；第三方 anthropic-compat 端点可能不带。 */
+  signature?: string;
+}
+
+export type ContentBlock = TextBlock | ToolUseBlock | ToolResultBlock | ImageBlock | ThinkingBlock;
 
 // AgentMessage IR — LLM-facing message type (parallel to ChatMessage, never exposed to Panel)
 // system role is constrained to string-only at type level
@@ -44,6 +51,9 @@ export interface ToolDefinition {
 
 export type StreamEvent =
   | { type: "text-delta"; text: string }
+  | { type: "thinking-start"; replay: boolean }
+  | { type: "thinking-delta"; text: string }
+  | { type: "thinking-end"; signature?: string }
   | { type: "tool-call-start"; id: string; index: number; name: string }
   | { type: "tool-call-delta"; index: number; argsDelta: string }
   | { type: "tool-call-end"; index: number }
