@@ -17,6 +17,6 @@
       "@/*": ["src/*"]
     }
   },
-  "include": ["src/**/*", "vite.config.ts"],
+  "include": ["src/**/*", "eval/**/*.ts", "vite.config.ts"],
   "exclude": ["node_modules", "dist"]
 }
