@@ -175,14 +175,14 @@ describe("Moonshot (Kimi) — dual-region registration", () => {
     const meta = getProviderMeta("moonshot")!;
     expect(meta).toBeDefined();
     expect(meta.defaultBaseUrl).toBe("https://api.moonshot.ai");
-    expect(meta.name).toBe("Moonshot (Kimi)");
+    expect(meta.name).toBe("Moonshot(Kimi)");
   });
 
   it("China entry registered with api.moonshot.cn", () => {
     const meta = getProviderMeta("moonshot-cn")!;
     expect(meta).toBeDefined();
     expect(meta.defaultBaseUrl).toBe("https://api.moonshot.cn");
-    expect(meta.name).toBe("Moonshot (Kimi) 中国区");
+    expect(meta.name).toBe("Moonshot(Kimi) China");
   });
 
   it("both regions expose the same model list", () => {

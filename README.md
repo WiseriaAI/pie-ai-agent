@@ -140,7 +140,7 @@ than burning your tokens on a plan you've already disagreed with.
 | ZhiPu (智谱) | OpenAI-compatible |
 | Bailian (百炼) | OpenAI-compatible |
 | MiMo (小米) | Anthropic-compatible |
-| Moonshot (Kimi) | OpenAI-compatible · 国际区 `api.moonshot.ai` / 中国区 `api.moonshot.cn`（新建实例时选对应条目即选区） |
+| Moonshot(Kimi) | OpenAI-compatible · 国际区 `api.moonshot.ai` / 中国区 `api.moonshot.cn`（新建实例时选对应条目即选区；中国区显示名按语言本地化） |
 
 Adding a provider is a registry entry plus a host permission. Local
 Ollama is on the [roadmap](docs/ROADMAP.md).

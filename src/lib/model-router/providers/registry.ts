@@ -149,14 +149,14 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
   },
   {
     id: "moonshot",
-    name: "Moonshot (Kimi)",
+    name: "Moonshot(Kimi)",
     defaultBaseUrl: "https://api.moonshot.ai",
     placeholder: "sk-...",
     models: MOONSHOT_MODELS,
   },
   {
     id: "moonshot-cn",
-    name: "Moonshot (Kimi) 中国区",
+    name: "Moonshot(Kimi) China",
     defaultBaseUrl: "https://api.moonshot.cn",
     placeholder: "sk-...",
     models: MOONSHOT_MODELS,
