@@ -27,3 +27,6 @@ AGENTS.md
 
 # Playwright MCP local debug snapshots / console logs
 .playwright-mcp/
+
+# Eval run artifacts (HAR, traces, profiles — not committed, may contain secrets)
+eval/runs/
