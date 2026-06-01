@@ -12,6 +12,14 @@ export interface DictNode {
   [key: string]: string | DictNode;
 }
 
+// Same key structure as the canonical (English) dictionary, but every leaf is a
+// plain `string` instead of the English string literal. A translation dictionary
+// is typed `satisfies Translations<EnDict>` so it must cover exactly the same keys
+// (parity enforced) while being free to carry any translated string value.
+export type Translations<T> = {
+  [K in keyof T]: T[K] extends string ? string : Translations<T[K]>;
+};
+
 // Derive the dot-path key union from the English dictionary at the call site
 // using `DotPathKey<typeof enDict>`. We export the helper here.
 export type DotPathKey<T, Prefix extends string = ""> = {
