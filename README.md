@@ -54,7 +54,7 @@ providers — encrypted locally, no Pie backend, no telemetry.
 - **Side panel, not pop-up.** Pie lives in Chrome's side panel and stays
   open while you browse — chat, run agent tasks, manage tabs without
   losing context.
-- **BYOK.** Bring your own API key from any of nine LLM providers.
+- **BYOK.** Bring your own API key from any of ten LLM providers.
   Encrypted at rest with AES-GCM in `chrome.storage.local`. No Pie
   backend, no telemetry, no proxy. See [PRIVACY.md](PRIVACY.md).
 
@@ -135,11 +135,12 @@ than burning your tokens on a plan you've already disagreed with.
 | OpenAI | OpenAI `function_calling` |
 | Gemini | Native API |
 | OpenRouter | OpenAI-compatible |
-| DeepSeek | OpenAI-compatible |
-| MiniMax | OpenAI-compatible |
-| ZhiPu (智谱) | OpenAI-compatible |
-| Bailian (百炼) | OpenAI-compatible |
-| MiMo (小米) | Anthropic-compatible |
+| DeepSeek | Anthropic-compatible |
+| MiniMax | Anthropic-compatible |
+| GLM(Zhipu) | OpenAI-compatible |
+| Bailian | OpenAI-compatible |
+| Mimo(Xiaomi) | Anthropic-compatible |
+| Moonshot(Kimi) | OpenAI-compatible · 国际区 `api.moonshot.ai` / 中国区 `api.moonshot.cn`（新建实例时选对应条目即选区；中国区显示名按语言本地化） |
 
 Adding a provider is a registry entry plus a host permission. Local
 Ollama is on the [roadmap](docs/ROADMAP.md).

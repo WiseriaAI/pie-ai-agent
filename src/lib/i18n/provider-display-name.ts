@@ -10,6 +10,10 @@ import type { TParams } from "./types";
 const LOCALIZED_PROVIDER_NAME_KEYS: Record<string, DictKey> = {
   zhipu: "providers.zhipu",
   mimo: "providers.mimo",
+  // Only the China entry is locale-dependent ("China" / "中国区"); the
+  // international `moonshot` entry's registry name ("Moonshot(Kimi)") is
+  // identical across locales, so it falls back to the registry name.
+  "moonshot-cn": "providers.moonshotCn",
 };
 
 /**

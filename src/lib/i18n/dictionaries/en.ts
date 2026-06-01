@@ -208,6 +208,7 @@ export const enDict = {
   providers: {
     zhipu: "GLM(Zhipu)",
     mimo: "Mimo(Xiaomi)",
+    moonshotCn: "Moonshot(Kimi) China",
   },
   newConfigWizard: {
     step1Title: "STEP 1 — SELECT PROVIDER",
