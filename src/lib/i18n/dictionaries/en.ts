@@ -205,6 +205,10 @@ export const enDict = {
     custom: "custom",
     modelIdPlaceholder: "model id",
   },
+  providers: {
+    zhipu: "GLM(Zhipu)",
+    mimo: "Mimo(Xiaomi)",
+  },
   newConfigWizard: {
     step1Title: "STEP 1 — SELECT PROVIDER",
     step2Title: "STEP 2 — {name}",
