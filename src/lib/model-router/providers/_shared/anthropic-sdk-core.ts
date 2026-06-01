@@ -1,7 +1,6 @@
-// Shared transport for Anthropic-wire providers, backed by the official
-// @anthropic-ai/sdk (parallel to ./anthropic-compat-core.ts, which is hand-rolled
-// SSE). Introduced for #91: MiMo adopts this first as a canary; other Anthropic-wire
-// providers can follow once it's proven against real traffic.
+// Shared transport for every Anthropic-wire provider (anthropic / deepseek /
+// minimax / mimo), backed by the official @anthropic-ai/sdk. Replaced the
+// hand-rolled SSE core in #91 after MiMo validated the SDK path against real traffic.
 //
 // Why the SDK is safe in the MV3 service worker (verified): it ships no eval /
 // new Function (CSP-safe), uses fetch / ReadableStream / TextDecoder, and its

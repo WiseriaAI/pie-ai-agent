@@ -10,7 +10,7 @@
     "https://api.anthropic.com/*",
     "https://api.openai.com/*",
     "https://openrouter.ai/*",
-    "https://api.minimax.chat/*",
+    "https://api.minimaxi.com/*",
     "https://open.bigmodel.cn/*",
     "https://dashscope.aliyuncs.com/*",
     "https://generativelanguage.googleapis.com/*",

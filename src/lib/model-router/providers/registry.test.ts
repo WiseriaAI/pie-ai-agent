@@ -91,9 +91,11 @@ describe("ModelMeta capability flags (per-model)", () => {
     expect(getModelMeta("zhipu", "glm-4v-plus")?.maxContextTokens).toBe(16_000);
   });
 
-  it("MiniMax-VL-01 is registered (not MiniMax-VL)", () => {
-    expect(getModelMeta("minimax", "MiniMax-VL-01")).toBeDefined();
-    expect(getModelMeta("minimax", "MiniMax-VL")).toBeUndefined();
+  it("MiniMax-M3 is registered with vision; M2.x is text-only", () => {
+    expect(getModelMeta("minimax", "MiniMax-M3")?.vision).toBe(true);
+    expect(getModelMeta("minimax", "MiniMax-M2")?.vision).toBe(false);
+    // Old OpenAI-compat model ids are gone after the Anthropic-API migration.
+    expect(getModelMeta("minimax", "MiniMax-Text-01")).toBeUndefined();
   });
 
   it("gemini-2.5-pro is registered (not gemini-2.0-pro)", () => {

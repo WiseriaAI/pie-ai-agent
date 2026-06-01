@@ -69,11 +69,17 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
   {
     id: "minimax",
     name: "MiniMax",
-    defaultBaseUrl: "https://api.minimax.chat",
+    defaultBaseUrl: "https://api.minimaxi.com",
     placeholder: "eyJ...",
     models: [
-      { id: "MiniMax-Text-01", vision: false, tools: true, maxContextTokens: 1_000_000 },
-      { id: "MiniMax-VL-01", vision: true, tools: true, maxContextTokens: 256_000 },
+      { id: "MiniMax-M3", vision: true, tools: true, maxContextTokens: 1_000_000 },
+      { id: "MiniMax-M2.7", vision: false, tools: true, maxContextTokens: 204_800 },
+      { id: "MiniMax-M2.7-highspeed", vision: false, tools: true, maxContextTokens: 204_800 },
+      { id: "MiniMax-M2.5", vision: false, tools: true, maxContextTokens: 204_800 },
+      { id: "MiniMax-M2.5-highspeed", vision: false, tools: true, maxContextTokens: 204_800 },
+      { id: "MiniMax-M2.1", vision: false, tools: true, maxContextTokens: 204_800 },
+      { id: "MiniMax-M2.1-highspeed", vision: false, tools: true, maxContextTokens: 204_800 },
+      { id: "MiniMax-M2", vision: false, tools: true, maxContextTokens: 204_800 },
     ],
   },
   {
