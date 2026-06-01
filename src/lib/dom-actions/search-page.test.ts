@@ -1,0 +1,152 @@
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { searchPageInjected, type SearchPageParams } from "./search-page";
+
+function run(overrides: Partial<SearchPageParams>) {
+  const params: SearchPageParams = {
+    queries: [],
+    regex: false,
+    mode: "all",
+    maxResults: 10,
+    ...overrides,
+  };
+  return searchPageInjected(params);
+}
+
+describe("searchPageInjected", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    document
+      .querySelectorAll("[data-pie-idx]")
+      .forEach((el) => el.removeAttribute("data-pie-idx"));
+  });
+
+  it("子串命中,返回 matched + snippet + tag", () => {
+    document.body.innerHTML = `<p>our refund policy is generous</p>`;
+    const r = run({ queries: ["refund"] });
+    expect(r.total).toBe(1);
+    expect(r.matches[0].matched).toBe("refund");
+    expect(r.matches[0].snippet).toContain("refund");
+    expect(r.matches[0].tag).toBe("p");
+  });
+
+  it("大小写不敏感", () => {
+    document.body.innerHTML = `<p>REFUND here</p>`;
+    const r = run({ queries: ["refund"] });
+    expect(r.total).toBe(1);
+  });
+
+  it("多 query OR — 命中任一即算", () => {
+    document.body.innerHTML = `<p>about price</p><div>refund desk</div>`;
+    const r = run({ queries: ["refund", "price"] });
+    expect(r.total).toBe(2);
+  });
+
+  it("命中在可交互元素 → pie_idx 非空 + 等于 read_page 的盖号", () => {
+    document.body.innerHTML = `<button>refund</button>`;
+    const r = run({ queries: ["refund"] });
+    expect(r.matches[0].pieIdx).toBe(0);
+  });
+
+  it("命中在普通文本 → pie_idx 为 null", () => {
+    document.body.innerHTML = `<p>refund</p>`;
+    const r = run({ queries: ["refund"] });
+    expect(r.matches[0].pieIdx).toBeNull();
+  });
+
+  it("文本在不可交互子元素里 → 锚到最近可交互祖先", () => {
+    document.body.innerHTML = `<button><span>refund</span></button>`;
+    const r = run({ queries: ["refund"] });
+    expect(r.matches[0].pieIdx).toBe(0);
+  });
+
+  it("同元素多次出现 → 只产出一条", () => {
+    document.body.innerHTML = `<p>refund refund refund</p>`;
+    const r = run({ queries: ["refund"] });
+    expect(r.total).toBe(1);
+    expect(r.matches.length).toBe(1);
+  });
+
+  it("穿透 open shadow root 搜索 + 锚 idx", () => {
+    document.body.innerHTML = `<div id="host"></div>`;
+    const shadow = document
+      .getElementById("host")!
+      .attachShadow({ mode: "open" });
+    shadow.innerHTML = `<button>shadow-refund</button>`;
+    const r = run({ queries: ["shadow-refund"] });
+    expect(r.total).toBe(1);
+    expect(r.matches[0].pieIdx).not.toBeNull();
+  });
+
+  it("snippet 长文本两端加省略号", () => {
+    const long = "x".repeat(200) + "refund" + "y".repeat(200);
+    document.body.innerHTML = `<p>${long}</p>`;
+    const r = run({ queries: ["refund"] });
+    expect(r.matches[0].snippet.startsWith("…")).toBe(true);
+    expect(r.matches[0].snippet.endsWith("…")).toBe(true);
+    expect(r.matches[0].snippet).toContain("refund");
+  });
+
+  it("mode=interactive 只回 pie_idx 非空命中", () => {
+    document.body.innerHTML = `<button>refund btn</button><p>refund text</p>`;
+    const r = run({ queries: ["refund"], mode: "interactive" });
+    expect(r.matches.every((m) => m.pieIdx !== null)).toBe(true);
+    expect(r.matches.length).toBe(1);
+  });
+
+  it("mode=text 只回 pie_idx 为空命中", () => {
+    document.body.innerHTML = `<button>refund btn</button><p>refund text</p>`;
+    const r = run({ queries: ["refund"], mode: "text" });
+    expect(r.matches.every((m) => m.pieIdx === null)).toBe(true);
+    expect(r.matches.length).toBe(1);
+  });
+
+  it("maxResults 截断 matches 但 total 报全量", () => {
+    document.body.innerHTML = `<p>refund a</p><p>refund b</p><p>refund c</p>`;
+    const r = run({ queries: ["refund"], maxResults: 1 });
+    expect(r.total).toBe(3);
+    expect(r.matches.length).toBe(1);
+  });
+
+  it("regex 命中,matched 是实际匹配文本", () => {
+    document.body.innerHTML = `<p>refund</p>`;
+    const r = run({ queries: ["ref.nd"], regex: true });
+    expect(r.total).toBe(1);
+    expect(r.matches[0].matched).toBe("refund");
+  });
+
+  it("regex 大小写不敏感(gi)", () => {
+    document.body.innerHTML = `<p>REFUND</p>`;
+    const r = run({ queries: ["ref.nd"], regex: true });
+    expect(r.total).toBe(1);
+  });
+
+  it("无效 regex 返回 invalidRegex,不抛", () => {
+    document.body.innerHTML = `<p>refund</p>`;
+    const r = run({ queries: ["("], regex: true });
+    expect(r.invalidRegex).toBeTruthy();
+    expect(r.matches.length).toBe(0);
+  });
+
+  it("能匹配空串的 regex(a*) 不死循环", () => {
+    document.body.innerHTML = `<p>bbb</p>`;
+    const r = run({ queries: ["a*"], regex: true });
+    expect(r.invalidRegex).toBeNull();
+    expect(r.total).toBe(0);
+  });
+
+  it("超时预算触发 timedOut", () => {
+    document.body.innerHTML = `<p>refund a</p><p>refund b</p>`;
+    const spy = vi.spyOn(performance, "now");
+    spy.mockReturnValueOnce(0).mockReturnValue(2000); // startTime=0, loop checks see 2000 (>1500)
+    const r = run({ queries: ["refund"] });
+    expect(r.timedOut).toBe(true);
+    spy.mockRestore();
+  });
+
+  it("无命中返回空 + total 0", () => {
+    document.body.innerHTML = `<p>nothing here</p>`;
+    const r = run({ queries: ["refund"] });
+    expect(r.total).toBe(0);
+    expect(r.matches.length).toBe(0);
+  });
+});
