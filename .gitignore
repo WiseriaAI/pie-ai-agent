@@ -30,3 +30,6 @@ AGENTS.md
 
 # Eval run artifacts (HAR, traces, profiles — not committed, may contain secrets)
 eval/runs/
+
+# Python virtual environment for eval scorer
+eval/.venv/
