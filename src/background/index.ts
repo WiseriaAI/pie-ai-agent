@@ -22,6 +22,12 @@ import {
   safeParseOrigin,
   mergeSessionAgentSnapshot,
 } from "@/lib/agent/loop";
+// Eval harness (dev-only). STATIC import is required: MV3 service workers do
+// NOT support runtime dynamic import(), so the bridge must be in the static
+// module graph (loaded at SW registration). Prod build sets __PIE_EVAL__=false,
+// making `mountEvalBridge()` dead code → tree-shaken out along with this import
+// (verified by scripts/assert-no-eval-bridge.mjs).
+import { mountEvalBridge } from "./eval-bridge";
 import type { RoleViolation } from "@/lib/agent/history-validation";
 import { logHistoryRepaired } from "@/lib/agent/history-validation-telemetry";
 import {
@@ -1563,3 +1569,12 @@ chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
 });
 
 console.log("[Pie] Service worker started");
+
+// --- Eval harness (dev-only) ---
+// __PIE_EVAL__ 由 Vite define 静态替换为字面量。prod=false → 此调用是死代码,
+// 连同顶部的静态 `mountEvalBridge` import 一起被 tree-shake 出 dist/
+// (由 scripts/assert-no-eval-bridge.mjs 兜底验证)。eval build=true → SW 注册时
+// 同步挂载 globalThis.__pieEval(MV3 不支持运行时 dynamic import,故必须静态)。
+if (__PIE_EVAL__) {
+  mountEvalBridge();
+}

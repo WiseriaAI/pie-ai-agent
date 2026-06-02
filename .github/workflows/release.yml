@@ -56,6 +56,12 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Verify eval harness is NOT in the production bundle
+        # Pure Node string-scan of dist/ (no docker / Playwright / Python needed).
+        # The dev-only eval bridge must be tree-shaken out of `pnpm build`; this
+        # guard fails the release if it ever leaks in. See eval/README.md.
+        run: pnpm verify:no-eval-bridge
+
       - name: Verify manifest references compiled assets
         run: |
           node -e "

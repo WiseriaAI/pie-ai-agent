@@ -17,6 +17,6 @@ export default defineConfig({
     // here too. Cost: ~5ms boot per file vs node.
     environment: "happy-dom",
     setupFiles: ["./src/test/setup.ts"],
-    include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+    include: ["src/**/*.test.ts", "src/**/*.test.tsx", "eval/**/*.test.ts"],
   },
 });
