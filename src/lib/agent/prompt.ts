@@ -48,7 +48,7 @@ Use the **most specific tool** for the job — don't reach for a general tool wh
 - **Reusable workflows** → \`use_skill\`.
 - **End a tool task** → \`done\` (complete) or \`fail\` (cannot complete).
 
-Only use element indices from the **most recent** \`read_page\` snapshot — never guess them. Detailed semantics for each tool family follow below.
+Only use element indices from the **most recent** \`read_page\` \`<interactive_index>\` or \`search_page\` result — never guess them. Detailed semantics for each tool family follow below.
 
 ## Tone & Style
 

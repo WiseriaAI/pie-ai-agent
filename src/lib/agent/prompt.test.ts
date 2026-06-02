@@ -312,4 +312,11 @@ describe("Page tools locator guidance (#113)", () => {
     expect(prompt).toContain("textbox");
     expect(prompt).toContain("contenteditable");
   });
+
+  it("allows element indices from the most recent read_page interactive_index or search_page result", () => {
+    const prompt = buildAgentSystemPrompt("reply to this email");
+    expect(prompt).toContain(
+      "most recent** `read_page` `<interactive_index>` or `search_page` result",
+    );
+  });
 });
