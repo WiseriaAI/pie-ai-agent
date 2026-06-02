@@ -20,7 +20,7 @@ describe("serialize", () => {
     expect(r.parameters).toEqual({ type: "object", properties: {}, required: [] });
     // scroll is baseline (read-class + helps replay when demo did not trigger
     // scroll capture); see ALL_KNOWN_BUILT_IN_ALLOWED_TOOL_NAMES + serialize.ts.
-    expect(r.allowedTools).toEqual(["done", "fail", "scroll"]);
+    expect(r.allowedTools).toEqual(["done", "fail", "hover", "scroll"]);
   });
 
   it("renders a single click step in Chinese", () => {
@@ -95,7 +95,7 @@ describe("serialize", () => {
       action({ type: "scroll" }),
     ]);
     expect(new Set(r.allowedTools)).toEqual(
-      new Set(["click", "type", "scroll", "done", "fail"]),
+      new Set(["click", "type", "scroll", "hover", "done", "fail"]),
     );
   });
 
@@ -119,5 +119,28 @@ describe("serialize", () => {
       }),
     ]);
     expect(r.promptTemplate).not.toContain("</untrusted_skill_params>");
+  });
+
+  it("renders checkbox check/uncheck instead of a generic click", () => {
+    const checked = serialize([action({ type: "click", label: "复选框 '同意条款'", checked: true })]);
+    expect(checked.promptTemplate).toContain("第 1 步：勾选复选框 '同意条款'");
+    const unchecked = serialize([action({ type: "click", label: "复选框 '订阅'", checked: false })]);
+    expect(unchecked.promptTemplate).toContain("第 1 步：取消勾选复选框 '订阅'");
+  });
+
+  it("renders a keypress step and maps it to press_key", () => {
+    const r = serialize([action({ type: "keypress", label: "", value: "Enter" })]);
+    expect(r.promptTemplate).toContain("第 1 步：按 Enter 键");
+    expect(r.allowedTools).toContain("press_key");
+  });
+
+  it("header advertises press_key and hover to the replay LLM", () => {
+    const r = serialize([action({ type: "click", label: "按钮 'X'" })]);
+    expect(r.promptTemplate).toContain("press_key");
+    expect(r.promptTemplate).toContain("hover");
+  });
+
+  it("hover is in baseline allowedTools", () => {
+    expect(serialize([]).allowedTools).toContain("hover");
   });
 });

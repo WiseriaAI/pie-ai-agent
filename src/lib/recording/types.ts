@@ -10,7 +10,8 @@ export type RecordedActionType =
   | "select"
   | "scroll"
   | "navigate"
-  | "submit";
+  | "submit"
+  | "keypress";
 
 /**
  * 一条用户操作记录。capture 在用户每次操作时构造，发回 SW。所有字段都已经过
@@ -39,6 +40,9 @@ export interface RecordedAction {
   /** 该 action 是否被 selector 算法标记为不稳定（fallback 到 nth-of-type）。
    *  serialize 在该 step 的 promptTemplate 加 [可能不稳定] 警告。 */
   unstable?: boolean;
+  /** checkbox/radio/switch 勾选后的最终状态。仅 type==="click" 且目标是可勾选
+   *  元素时出现；serialize 据此渲染「勾选/取消勾选」。 */
+  checked?: boolean;
   timestamp: number;
 }
 
@@ -76,4 +80,5 @@ export interface CapturedActionPayload {
   url: string;
   region: string;
   unstable?: boolean;
+  checked?: boolean;
 }
