@@ -8,6 +8,7 @@ function run(overrides: Partial<SearchPageParams>) {
     regex: false,
     mode: "all",
     maxResults: 10,
+    searchBy: "text",
     ...overrides,
   };
   return searchPageInjected(params);
@@ -150,6 +151,47 @@ describe("searchPageInjected", () => {
     expect(r.total).toBe(0);
     expect(r.matches.length).toBe(0);
   });
+
+  it("searchBy=role finds a blank contenteditable textbox", () => {
+    document.body.innerHTML = `<div id="ed" contenteditable="true"></div>`;
+    const ed = document.getElementById("ed") as HTMLElement;
+    Object.defineProperty(ed, "getBoundingClientRect", {
+      value: () => ({ width: 200, height: 40, top: 0, left: 0, right: 200, bottom: 40 }),
+      configurable: true,
+    });
+
+    const r = run({ queries: ["textbox"], searchBy: "role", mode: "interactive" });
+
+    expect(r.total).toBe(1);
+    expect(r.matches[0]).toEqual(expect.objectContaining({
+      pieIdx: 0,
+      tag: "div",
+      role: "textbox",
+      contenteditable: true,
+      matched: "textbox",
+    }));
+  });
+
+  it("searchBy=tag supports virtual contenteditable tag", () => {
+    document.body.innerHTML = `<section><div contenteditable="true"></div></section>`;
+    const r = run({ queries: ["contenteditable"], searchBy: "tag", mode: "interactive" });
+    expect(r.total).toBe(1);
+    expect(r.matches[0].matched).toBe("contenteditable");
+  });
+
+  it("searchBy=attribute supports allowlisted contenteditable=true", () => {
+    document.body.innerHTML = `<div contenteditable="true"></div><button>Send</button>`;
+    const r = run({ queries: ["contenteditable=true"], searchBy: "attribute", mode: "interactive" });
+    expect(r.total).toBe(1);
+    expect(r.matches[0].tag).toBe("div");
+  });
+
+  it("searchBy=attribute rejects unsupported attribute queries without throwing", () => {
+    document.body.innerHTML = `<div data-secret="x"></div>`;
+    const r = run({ queries: ["data-secret=x"], searchBy: "attribute" });
+    expect(r.invalidAttribute).toMatch(/unsupported_attribute/);
+    expect(r.total).toBe(0);
+  });
 });
 
 describe("search_page ↔ read_page idx parity (cross-layer regression)", () => {
@@ -183,7 +225,7 @@ describe("search_page ↔ read_page idx parity (cross-layer regression)", () => 
     fromRead.set("sb", shadow.getElementById("sb")!.getAttribute("data-pie-idx"));
 
     // search_page re-stamps (clears + restamps with the copied algorithm)
-    searchPageInjected({ queries: ["refund"], regex: false, mode: "all", maxResults: 10 });
+    searchPageInjected({ queries: ["refund"], regex: false, mode: "all", maxResults: 10, searchBy: "text" });
     for (const id of ["b0", "a1", "i2"]) {
       expect(document.getElementById(id)!.getAttribute("data-pie-idx")).toBe(
         fromRead.get(id),
