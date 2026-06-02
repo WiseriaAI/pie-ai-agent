@@ -316,6 +316,7 @@ export function searchPageInjected(params: SearchPageParams): SearchPageResult {
     if (eq <= 0) return { error: `invalid_attribute_query:${query}` };
     const name = query.slice(0, eq).trim().toLowerCase();
     const value = query.slice(eq + 1).trim().toLowerCase();
+    if (!value) return { error: `invalid_attribute_query:${query}` };
     if (!ATTRIBUTE_SEARCH_ALLOWLIST.has(name)) return { error: `unsupported_attribute:${name}` };
     return { name, value };
   }

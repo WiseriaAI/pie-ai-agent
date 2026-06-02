@@ -240,6 +240,13 @@ describe("searchPageInjected", () => {
     expect(r.invalidAttribute).toMatch(/unsupported_attribute/);
     expect(r.total).toBe(0);
   });
+
+  it("searchBy=attribute rejects empty attribute values without broad matching", () => {
+    document.body.innerHTML = `<p>Plain</p><button>Send</button>`;
+    const r = run({ queries: ["role="], searchBy: "attribute" });
+    expect(r.invalidAttribute).toMatch(/invalid_attribute_query/);
+    expect(r.total).toBe(0);
+  });
 });
 
 describe("search_page ↔ read_page idx parity (cross-layer regression)", () => {
