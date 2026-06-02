@@ -47,15 +47,34 @@ function elementText(value: string): string {
   return escapeWrapperAttribute(escapeUntrustedWrappers(value));
 }
 
+function interactivePriority(el: PageSnapshotResult["interactiveElements"][number]): number {
+  const tag = el.tag.toLowerCase();
+  const role = el.role.toLowerCase();
+  if (el.contenteditable || tag === "input" || tag === "textarea" || role === "textbox") return 0;
+  if (tag === "select" || role === "combobox" || role === "listbox") return 1;
+  if (tag === "button" || role === "button") return 2;
+  if (tag === "a" || role === "link") return 3;
+  if (role || el.type || el.placeholder || el.label || el.name) return 4;
+  return 5;
+}
+
 function renderInteractiveIndex(
   mode: ReadPageMode,
   frames: Array<{ frameId: number; crossOrigin: boolean; elements: PageSnapshotResult["interactiveElements"] }>,
 ): string {
-  const all = frames.flatMap((f) =>
-    f.elements.map((el) => ({ frameId: f.frameId, crossOrigin: f.crossOrigin, el })),
+  const all = frames.flatMap((f, frameOrder) =>
+    f.elements.map((el, elementOrder) => ({
+      frameId: f.frameId,
+      crossOrigin: f.crossOrigin,
+      el,
+      order: frameOrder * 1_000_000 + elementOrder,
+    })),
+  );
+  const selected = [...all].sort(
+    (a, b) => interactivePriority(a.el) - interactivePriority(b.el) || a.order - b.order,
   );
 
-  const lines = all.slice(0, 300).map(({ frameId, crossOrigin, el }) => {
+  const lines = selected.slice(0, 300).map(({ frameId, crossOrigin, el }) => {
     const attrs = [
       attr("frame_id", frameId),
       attr("pie_idx", el.pieIdx),
@@ -79,6 +98,25 @@ function renderInteractiveIndex(
   const header = [attr("mode", mode), attr("total", all.length)];
   if (all.length > lines.length) header.push(attr("truncated", true));
   return `<interactive_index ${header.join(" ")}>\n${lines.join("\n")}\n</interactive_index>`;
+}
+
+const textEncoder = new TextEncoder();
+
+function utf8ByteLength(value: string): number {
+  return textEncoder.encode(value).byteLength;
+}
+
+function sliceUtf8(value: string, maxBytes: number): string {
+  if (maxBytes <= 0) return "";
+  let used = 0;
+  let result = "";
+  for (const ch of value) {
+    const byteLength = utf8ByteLength(ch);
+    if (used + byteLength > maxBytes) break;
+    result += ch;
+    used += byteLength;
+  }
+  return result;
 }
 
 export const readPageTool: Tool = {
@@ -244,14 +282,15 @@ export const readPageTool: Tool = {
       let body = rewriteIframePlaceholders(f.frameId, data.html);
       const remaining = totalBudgetBytes - used;
       let truncated = false;
-      if (body.length > remaining) {
+      const bodyBytes = utf8ByteLength(body);
+      if (bodyBytes > remaining) {
         // May cut mid-tag — LLM tolerates malformed HTML; truncation tradeoff
         // is documented in the spec.
-        body = remaining > 0 ? body.slice(0, remaining) : "";
+        body = sliceUtf8(body, remaining);
         truncated = true;
         budgetExhausted = true;
       }
-      used += body.length;
+      used += utf8ByteLength(body);
       if (truncated) blockAttrs.push(`truncated="true"`);
 
       blocks.push(
