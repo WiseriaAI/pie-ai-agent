@@ -305,12 +305,12 @@ describe("Page tools locator guidance (#113)", () => {
     expect(prompt).not.toContain("interactive elements stamped `data-pie-idx=\"N\"`");
   });
 
-  it("guides blank editors through search_page role/tag search", () => {
+  it("guides blank editors without premature search_by examples", () => {
     const prompt = buildAgentSystemPrompt("reply to this email");
-    expect(prompt).toContain("search_page");
-    expect(prompt).toContain('search_by:"role"');
-    expect(prompt).toContain("textbox");
-    expect(prompt).toContain("contenteditable");
+    expect(prompt).toContain('read_page({mode:"interactive"})');
+    expect(prompt).toContain("page-search/element-locator");
+    expect(prompt).not.toContain('search_by:"role"');
+    expect(prompt).not.toContain('search_by:"tag"');
   });
 
   it("allows element indices from the most recent read_page interactive_index or search_page result", () => {
