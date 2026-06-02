@@ -3,7 +3,8 @@ import type { ProviderRef, BuiltinProvider, ModelMeta } from "@/lib/model-router
 import { getProviderMeta } from "@/lib/model-router";
 import { useProviderMeta } from "@/sidepanel/hooks/useProviderMeta";
 import { CUSTOM_PREFIX } from "@/lib/custom-providers";
-import { useT } from "@/lib/i18n";
+import { useT, providerDisplayName } from "@/lib/i18n";
+import { type StoredCustomModelMeta } from "@/lib/provider-custom-model-meta";
 import ModelDropdown from "./ModelDropdown";
 
 export interface InstanceFormPayload {
@@ -38,7 +39,9 @@ interface Props {
   onSave: (payload: InstanceFormPayload) => void;
   onTest: (payload: InstanceFormPayload) => void;
   onDelete?: () => void;
-  onAddCustomModel?: (id: string) => void;
+  customModelMetas?: Record<string, StoredCustomModelMeta>;
+  onAddCustomModel?: (id: string, meta: StoredCustomModelMeta) => void;
+  onUpdateCustomModelMeta?: (id: string, meta: StoredCustomModelMeta) => void;
   onRemoveCustomModel?: (id: string) => void;
   /** Receives the form's effective apiKey (just-typed or existing) so the
    *  parent can fetch /v1/models without forcing the user to save first. */
@@ -117,7 +120,7 @@ export default function InstanceForm(props: Props) {
           <div className="h-[38px] animate-pulse rounded border border-line bg-field" />
         ) : (
           <div className="flex items-center gap-2 rounded border border-line bg-field px-3 py-2 text-[12px] text-fg-2">
-            <span className="text-fg-1">{meta?.name ?? props.provider}</span>
+            <span className="text-fg-1">{meta ? providerDisplayName(meta, t) : props.provider}</span>
             <span className="ml-auto font-mono text-[10px] text-fg-3">{t("instanceForm.locked")}</span>
           </div>
         )}
@@ -176,15 +179,17 @@ export default function InstanceForm(props: Props) {
           provider={props.provider}
           value={model}
           customModels={customModels}
+          customModelMetas={props.customModelMetas}
           fetchedModels={effectiveFetchedModels}
           fetchedAt={props.fetchedAt}
           isFetching={props.isFetching}
           onChange={setModel}
-          onAddCustom={isCustomProvider ? undefined : (id) => {
+          onAddCustom={isCustomProvider ? undefined : (id, meta) => {
             setCustomModels((prev) => (prev.includes(id) ? prev : [...prev, id]));
             setModel(id);
-            props.onAddCustomModel?.(id);
+            props.onAddCustomModel?.(id, meta);
           }}
+          onUpdateCustomMeta={isCustomProvider ? undefined : (id, meta) => props.onUpdateCustomModelMeta?.(id, meta)}
           onRemoveCustom={isCustomProvider ? undefined : (id) => {
             setCustomModels((prev) => prev.filter((x) => x !== id));
             if (model === id) setModel("");

@@ -7,16 +7,10 @@
  * 调用它（不走 chrome.scripting.executeScript），mock 掉 chrome.runtime.sendMessage。
  */
 
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { installCaptureListener } from "./capture";
 import { detectSensitive } from "./redact";
 import type { CapturedActionPayload } from "./types";
-
-declare global {
-  interface Window {
-    chrome?: { runtime?: { sendMessage?: (...args: unknown[]) => void } };
-  }
-}
 
 describe("capture.installCaptureListener", () => {
   let captured: Array<{ type: string; payload: CapturedActionPayload }>;
@@ -27,13 +21,17 @@ describe("capture.installCaptureListener", () => {
     captured = [];
     // Reset idempotent install flag so each test starts clean.
     (window as Window & { __pieRecordingInstalled?: boolean }).__pieRecordingInstalled = false;
-    window.chrome = {
+    (window as unknown as { chrome: unknown }).chrome = {
       runtime: {
         sendMessage: vi.fn((msg: unknown) => {
           captured.push(msg as { type: string; payload: CapturedActionPayload });
         }),
       },
     };
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("captures button click with aria-label as label", () => {
@@ -134,6 +132,7 @@ describe("capture.installCaptureListener", () => {
         <button aria-label="Submit form" data-testid="submit-btn">Submit</button>
         <input type="email" name="email" placeholder="you@example.com" />
         <input type="password" id="pwd" />
+        <div onclick="void 0" aria-label="Open card"></div>
       </main>
     `;
     uninstall = installCaptureListener();
@@ -146,14 +145,16 @@ describe("capture.installCaptureListener", () => {
     const pwd = document.querySelector("input[type='password']") as HTMLInputElement;
     pwd.value = "secret";
     pwd.dispatchEvent(new Event("change", { bubbles: true }));
+    const onclickDiv = document.querySelector("[aria-label='Open card']") as HTMLElement;
+    onclickDiv.click();
 
-    expect(captured.length).toBeGreaterThanOrEqual(3);
-    const elements = [btn, emailInput, pwd];
+    expect(captured.length).toBeGreaterThanOrEqual(4);
+    const elements = [btn, emailInput, pwd, onclickDiv];
     elements.forEach((el, idx) => {
       const captureLabel = captured[idx]!.payload.label;
       const captureHint = captured[idx]!.payload.selectorHint;
       const captureUnstable = captured[idx]!.payload.unstable;
-      const region = el.closest("main") ? "main" : "other";
+      const region: string = el.closest("main") ? "main" : "other";
       // Mirror capture.ts's getRegion + querySelectorAll logic for nth fallback.
       const regionRoot =
         region === "main" ? document.querySelector("main") :
@@ -208,6 +209,93 @@ describe("capture.installCaptureListener", () => {
     uninstall();
   });
 
+  it("PARITY: role=checkbox label matches describeElement (deferred capture)", async () => {
+    const { describeElement } = await import("./selector");
+    vi.useFakeTimers();
+    // sole div in <nav> → non-ambiguous
+    document.body.innerHTML = `<nav><div role="checkbox" aria-checked="false" aria-label="夜间模式">●</div></nav>`;
+    const box = document.querySelector('[role="checkbox"]') as HTMLElement;
+    box.addEventListener("click", () => box.setAttribute("aria-checked", "true"));
+    uninstall = installCaptureListener();
+    box.click();
+    vi.advanceTimersByTime(0);
+
+    const rec = captured.find((c) => c.payload.type === "click")!;
+    const ref = describeElement({
+      tag: "div",
+      role: "checkbox",
+      ariaLabel: "夜间模式",
+      text: (box as HTMLElement).innerText ?? "",
+      placeholder: undefined,
+      name: undefined,
+      id: undefined,
+      dataTestId: undefined,
+      autocomplete: undefined,
+      region: "nav",
+      regionSiblingIndex: 0,
+      regionSiblingCount: 1,
+      isSensitive: false,
+    });
+    expect(rec.payload.label).toBe(ref.label);
+    vi.useRealTimers();
+    uninstall();
+  });
+
+  it("PARITY: contenteditable label matches describeElement (debounced capture)", async () => {
+    const { describeElement } = await import("./selector");
+    vi.useFakeTimers();
+    // sole div in <aside> → non-ambiguous
+    document.body.innerHTML = `<aside><div contenteditable="true" aria-label="评论">draft</div></aside>`;
+    const ed = document.querySelector('[contenteditable="true"]') as HTMLElement;
+    uninstall = installCaptureListener();
+    ed.textContent = "hi";
+    ed.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    vi.advanceTimersByTime(500);
+
+    const rec = captured.find((c) => c.payload.type === "type")!;
+    const ref = describeElement({
+      tag: "div",
+      role: undefined,
+      ariaLabel: "评论",
+      text: (ed as HTMLElement).innerText ?? "",
+      placeholder: undefined,
+      name: undefined,
+      id: undefined,
+      dataTestId: undefined,
+      autocomplete: undefined,
+      region: "aside",
+      regionSiblingIndex: 0,
+      regionSiblingCount: 1,
+      isSensitive: false,
+    });
+    expect(rec.payload.label).toBe(ref.label);
+    vi.useRealTimers();
+    uninstall();
+  });
+
+  it("captures a div[onclick] custom control (no text) as a click", () => {
+    // No text content: only the [onclick] token in INTERACTIVE_SELECTOR keeps
+    // this from being dropped as a layout click. Proves the selector addition.
+    document.body.innerHTML = `<main><div onclick="void 0" aria-label="Open card"></div></main>`;
+    uninstall = installCaptureListener();
+    (document.querySelector("[aria-label='Open card']") as HTMLElement).click();
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0]!.payload.type).toBe("click");
+    expect(captured[0]!.payload.label).toContain("Open card");
+    uninstall();
+  });
+
+  it("captures a role=button div as a click", () => {
+    document.body.innerHTML = `<main><div role="button" aria-label="Play">▶</div></main>`;
+    uninstall = installCaptureListener();
+    (document.querySelector('[role="button"]') as HTMLElement).click();
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0]!.payload.label).toContain("Play");
+    uninstall();
+  });
+
   it("idempotent install: a second installCaptureListener() does not double-attach listeners", () => {
     document.body.innerHTML = `<main><button>X</button></main>`;
     const uninstall1 = installCaptureListener();
@@ -220,5 +308,120 @@ describe("capture.installCaptureListener", () => {
     uninstall1(); // tears down for real
     document.querySelector("button")!.click();
     expect(captured).toHaveLength(2); // no further capture
+  });
+
+  it("records native checkbox toggle as click with checked state", () => {
+    document.body.innerHTML = `<main><label>同意<input type="checkbox" name="agree"></label></main>`;
+    uninstall = installCaptureListener();
+    const cb = document.querySelector("input") as HTMLInputElement;
+    cb.checked = true;
+    cb.dispatchEvent(new Event("change", { bubbles: true }));
+
+    const clicks = captured.filter((c) => c.payload.type === "click");
+    expect(clicks).toHaveLength(1);
+    expect(clicks[0]!.payload.checked).toBe(true);
+    expect(captured.some((c) => c.payload.type === "type")).toBe(false);
+    uninstall();
+  });
+
+  it("records custom role=checkbox toggle via deferred aria-checked read", () => {
+    vi.useFakeTimers();
+    document.body.innerHTML = `<main><div role="checkbox" aria-checked="false" aria-label="夜间模式">●</div></main>`;
+    const box = document.querySelector('[role="checkbox"]') as HTMLElement;
+    box.addEventListener("click", () => box.setAttribute("aria-checked", "true"));
+    uninstall = installCaptureListener();
+
+    box.click();
+    vi.advanceTimersByTime(0);
+
+    const clicks = captured.filter((c) => c.payload.type === "click");
+    expect(clicks).toHaveLength(1);
+    expect(clicks[0]!.payload.checked).toBe(true);
+    expect(clicks[0]!.payload.label).toContain("夜间模式");
+    vi.useRealTimers();
+    uninstall();
+  });
+
+  it("coalesces contenteditable typing into one type action after debounce", () => {
+    vi.useFakeTimers();
+    document.body.innerHTML = `<main><div contenteditable="true" aria-label="评论">x</div></main>`;
+    const ed = document.querySelector('[contenteditable="true"]') as HTMLElement;
+    uninstall = installCaptureListener();
+
+    ed.textContent = "你好";
+    ed.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    ed.textContent = "你好世界";
+    ed.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    vi.advanceTimersByTime(500);
+
+    const types = captured.filter((c) => c.payload.type === "type");
+    expect(types).toHaveLength(1);
+    expect(types[0]!.payload.value).toBe("你好世界");
+    expect(types[0]!.payload.label).toContain("评论");
+    vi.useRealTimers();
+    uninstall();
+  });
+
+  it("captures Enter as a keypress", () => {
+    document.body.innerHTML = `<main><input type="search" name="q"></main>`;
+    uninstall = installCaptureListener();
+    const input = document.querySelector("input")!;
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+
+    const keys = captured.filter((c) => c.payload.type === "keypress");
+    expect(keys).toHaveLength(1);
+    expect(keys[0]!.payload.value).toBe("Enter");
+    uninstall();
+  });
+
+  it("captures a modifier combo, ignores plain character keys", () => {
+    document.body.innerHTML = `<main><div contenteditable="true">x</div></main>`;
+    uninstall = installCaptureListener();
+    const ed = document.querySelector("div")!;
+    ed.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true })); // ignored
+    ed.dispatchEvent(new KeyboardEvent("keydown", { key: "b", metaKey: true, bubbles: true })); // recorded
+
+    const keys = captured.filter((c) => c.payload.type === "keypress");
+    expect(keys).toHaveLength(1);
+    expect(keys[0]!.payload.value).toBe("Cmd+B");
+    uninstall();
+  });
+
+  it("does not double-record a label click bound to a native checkbox", () => {
+    document.body.innerHTML = `<main><label>同意条款<input type="checkbox" name="agree"></label></main>`;
+    uninstall = installCaptureListener();
+    const label = document.querySelector("label") as HTMLLabelElement;
+    // Simulate the real browser sequence: clicking the label text triggers a
+    // click on the label, then happy-dom (like a real browser) synthesizes a
+    // click + change on the bound checkbox. Fix 1 suppresses the spurious label
+    // click; only the onChange-recorded click (with checked state) survives.
+    label.click();
+
+    const clicks = captured.filter((c) => c.payload.type === "click");
+    expect(clicks).toHaveLength(1);          // exactly one — the checkbox toggle
+    expect(clicks[0]!.payload.checked).toBe(true);
+    uninstall();
+  });
+
+  it("flags a menuitem click inside a role=menu popup with fromPopup", () => {
+    document.body.innerHTML = `<main><div role="menu"><div role="menuitem" onclick="void 0">导出 CSV</div></div></main>`;
+    uninstall = installCaptureListener();
+    (document.querySelector('[role="menuitem"]') as HTMLElement).click();
+
+    const clicks = captured.filter((c) => c.payload.type === "click");
+    expect(clicks).toHaveLength(1);
+    expect(clicks[0]!.payload.fromPopup).toBe(true);
+    uninstall();
+  });
+
+  it("does not flag a normal button click with fromPopup", () => {
+    document.body.innerHTML = `<main><button aria-label="Save">Save</button></main>`;
+    uninstall = installCaptureListener();
+    (document.querySelector("button") as HTMLElement).click();
+
+    const clicks = captured.filter((c) => c.payload.type === "click");
+    expect(clicks).toHaveLength(1);
+    expect(clicks[0]!.payload.fromPopup).toBeUndefined();
+    uninstall();
   });
 });

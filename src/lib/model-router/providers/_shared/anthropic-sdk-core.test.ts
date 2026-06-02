@@ -28,6 +28,18 @@ const TEXT_THEN_TOOL = [
   'event: message_stop\ndata: {"type":"message_stop"}\n\n',
 ];
 
+// MiMo / MiniMax report input_tokens late: message_start carries 0, the real
+// prompt count only arrives in the terminal message_delta (verified on real
+// wire, #59). Anthropic-official instead fills it in message_start.
+const LATE_INPUT_TOKENS = [
+  'event: message_start\ndata: {"type":"message_start","message":{"id":"m","type":"message","role":"assistant","model":"x","content":[],"stop_reason":null,"usage":{"input_tokens":0,"output_tokens":0}}}\n\n',
+  'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}\n\n',
+  'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hi"}}\n\n',
+  'event: content_block_stop\ndata: {"type":"content_block_stop","index":0}\n\n',
+  'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"input_tokens":9582,"output_tokens":61}}\n\n',
+  'event: message_stop\ndata: {"type":"message_stop"}\n\n',
+];
+
 const config = (over: Partial<ModelConfig> = {}): ModelConfig =>
   ({ provider: "anthropic", model: "claude-x", apiKey: "sk-test", baseUrl: "https://api.anthropic.com", ...over }) as ModelConfig;
 
@@ -56,7 +68,15 @@ describe("anthropic-sdk-core", () => {
     const start = events.find((e) => e.type === "tool-call-start");
     expect(start).toMatchObject({ id: "tu_1", name: "click", index: 1 });
     const done = events.find((e) => e.type === "done");
-    expect(done).toMatchObject({ stopReason: "tool_calls", usage: { outputTokens: 12 } });
+    // input_tokens from message_start (7) must survive a message_delta that omits it.
+    expect(done).toMatchObject({ stopReason: "tool_calls", usage: { inputTokens: 7, outputTokens: 12 } });
+  });
+
+  it("captures input_tokens reported late in message_delta (MiMo/MiniMax wire)", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(sse(LATE_INPUT_TOKENS));
+    const events = await collect(streamChatAnthropicSdk(config(), [{ role: "user", content: "hi" }]));
+    const done = events.find((e) => e.type === "done");
+    expect(done).toMatchObject({ usage: { inputTokens: 9582, outputTokens: 61 } });
   });
 
   it("survives an MV3-service-worker-like env with no process / Buffer globals", async () => {
@@ -138,5 +158,51 @@ describe("anthropic-sdk-core", () => {
     const err = events.find((e) => e.type === "error");
     expect(err).toBeTruthy();
     expect((err as { error: string }).error).toContain("Invalid");
+  });
+});
+
+const THINKING_STREAM = [
+  'event: message_start\ndata: {"type":"message_start","message":{"id":"m","type":"message","role":"assistant","model":"x","content":[],"stop_reason":null,"usage":{"input_tokens":1,"output_tokens":0}}}\n\n',
+  'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}\n\n',
+  'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"let me think"}}\n\n',
+  'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"SIG=="}}\n\n',
+  'event: content_block_stop\ndata: {"type":"content_block_stop","index":0}\n\n',
+  'event: content_block_start\ndata: {"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}\n\n',
+  'event: content_block_delta\ndata: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"answer"}}\n\n',
+  'event: content_block_stop\ndata: {"type":"content_block_stop","index":1}\n\n',
+  'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":5}}\n\n',
+  'event: message_stop\ndata: {"type":"message_stop"}\n\n',
+];
+
+describe("anthropic-sdk thinking", () => {
+  it("maps thinking blocks to thinking events (replay:true) with signature", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(sse(THINKING_STREAM));
+    const ev = await collect(streamChatAnthropicSdk(config(), [{ role: "user", content: "hi" }]));
+    expect(ev.find((e) => e.type === "thinking-start")).toMatchObject({ replay: true });
+    expect(ev.find((e) => e.type === "thinking-delta")).toMatchObject({ text: "let me think" });
+    expect(ev.find((e) => e.type === "thinking-end")).toMatchObject({ signature: "SIG==" });
+    expect(ev.filter((e) => e.type === "text-delta").map((e: any) => e.text).join("")).toBe("answer");
+  });
+
+  it("serializes a thinking ContentBlock back onto the wire, first in content", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(sse(["event: message_stop\ndata: {}\n\n"]));
+    await collect(
+      streamChatAnthropicSdk(
+        config(),
+        [
+          {
+            role: "assistant",
+            content: [
+              { type: "thinking", thinking: "prior", signature: "S1" },
+              { type: "text", text: "ok" },
+            ],
+          },
+          { role: "user", content: "next" },
+        ],
+      ),
+    );
+    const body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string);
+    expect(body.messages[0].content[0]).toEqual({ type: "thinking", thinking: "prior", signature: "S1" });
+    expect(body.messages[0].content[1]).toEqual({ type: "text", text: "ok" });
   });
 });

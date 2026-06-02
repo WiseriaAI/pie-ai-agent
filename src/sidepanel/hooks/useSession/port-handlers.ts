@@ -67,7 +67,24 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
     }
   }
 
+  const buildAssistant = (
+    base: DisplayMessage[],
+    accumulated: string,
+    thinking: string,
+  ): { next: DisplayMessage[]; flushed: boolean } => {
+    if (!accumulated.trim() && !thinking.trim()) return { next: base, flushed: false };
+    const m: DisplayMessage = {
+      role: "assistant",
+      content: accumulated,
+      ...(thinking.trim() ? { thinking } : {}),
+    };
+    return { next: [...base, m], flushed: true };
+  };
+
   const handleMessage = (msg: PortMessageToPanel) => {
+    // pdf:needs-file-access has no sessionId; it is handled by usePdfPermission separately.
+    if (msg.type === "pdf:needs-file-access") return;
+
     const id = msg.sessionId;
 
     if (msg.type === "chat-chunk") {
@@ -77,16 +94,20 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
       });
       return;
     }
+    if (msg.type === "thinking-chunk") {
+      patchSlot(id, (prev) => ({ streamingThinking: prev.streamingThinking + msg.text }));
+      return;
+    }
     if (msg.type === "chat-done") {
       const prev = slotsRef.current.get(id);
       const accumulated = prev?.accumulated ?? "";
+      const thinking = prev?.streamingThinking ?? "";
       const baseMessages = prev?.messages ?? [];
-      const next: DisplayMessage[] = accumulated.trim()
-        ? [...baseMessages, { role: "assistant", content: accumulated }]
-        : baseMessages;
+      const { next } = buildAssistant(baseMessages, accumulated, thinking);
       patchSlot(id, {
         messages: next,
         accumulated: "",
+        streamingThinking: "",
         streamingText: "",
         streaming: false,
         streamFinished: true,
@@ -98,14 +119,14 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
     if (msg.type === "chat-error") {
       const prev = slotsRef.current.get(id);
       const accumulated = prev?.accumulated ?? "";
+      const thinking = prev?.streamingThinking ?? "";
       const baseMessages = prev?.messages ?? [];
-      const next: DisplayMessage[] = accumulated.trim()
-        ? [...baseMessages, { role: "assistant", content: accumulated }]
-        : baseMessages;
+      const { next } = buildAssistant(baseMessages, accumulated, thinking);
       patchSlot(id, {
         error: msg.error,
         messages: next,
         accumulated: "",
+        streamingThinking: "",
         streamingText: "",
         streaming: false,
         streamFinished: true,
@@ -118,18 +139,12 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
       const prev = slotsRef.current.get(id);
       const baseMessages = prev?.messages ?? [];
       const accumulated = prev?.accumulated ?? "";
+      const thinking = prev?.streamingThinking ?? "";
 
-      // 1. Flush pending accumulated text first (legacy behavior preserved
-      //    from useSession.ts:349-365).
-      let nextMessages: DisplayMessage[] = baseMessages;
-      let flushed = false;
-      if (accumulated.trim()) {
-        nextMessages = [
-          ...nextMessages,
-          { role: "assistant", content: accumulated },
-        ];
-        flushed = true;
-      }
+      // 1. Flush pending accumulated text / thinking first (legacy behavior
+      //    preserved from useSession.ts:349-365).
+      const { next: flushedMsgs, flushed } = buildAssistant(baseMessages, accumulated, thinking);
+      let nextMessages: DisplayMessage[] = flushedMsgs;
 
       // 2. Either update the trailing matching step in place, or append.
       const { stepIndex, tool, args, resolvedElement, status, observation, image } = msg;
@@ -160,7 +175,7 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
 
       patchSlot(id, {
         messages: nextMessages,
-        ...(flushed ? { accumulated: "", streamingText: "" } : {}),
+        ...(flushed ? { accumulated: "", streamingText: "", streamingThinking: "" } : {}),
       });
       return;
     }
@@ -180,6 +195,7 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
       patchSlot(id, {
         messages: next,
         accumulated: "",
+        streamingThinking: "",
         streamingText: "",
         streaming: false,
         streamFinished: true,
@@ -280,12 +296,11 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
     return () => {
       const slot = slotsRef.current.get(sessionId);
       if (!slot || slot.streamFinished) return;
-      const next: DisplayMessage[] = slot.accumulated.trim()
-        ? [...slot.messages, { role: "assistant", content: slot.accumulated }]
-        : slot.messages;
+      const { next } = buildAssistant(slot.messages, slot.accumulated, slot.streamingThinking);
       patchSlot(sessionId, {
         messages: next,
         accumulated: "",
+        streamingThinking: "",
         streamingText: "",
         streaming: false,
         streamFinished: true,

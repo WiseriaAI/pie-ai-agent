@@ -26,6 +26,7 @@ BYOK (Bring Your Own Key) Chrome Extension — 用户插入自己的 API key 获
 - `src/lib/instances.ts` — Multi-instance CRUD; `instance_${uuid}` + `instances_index` + `active_instance_id`
 - `src/lib/migration-v2.ts` — V1→V2 silent migration (`provider_*` → `instance_*`)
 - `src/lib/provider-custom-models.ts` — per-provider sticky pool（`pcm_${provider}`）跨 instance 共享自定义 model id
+- `src/lib/provider-custom-model-meta.ts` — per-provider sidecar 属性表（`pcmm_${provider}`），给 builtin 自定义模型挂 `vision`/`maxContextTokens`（`tools` 恒 true、不可配）；与 `pcm_${provider}` 的 id 池一一对应，删模型时两边连带清
 - `src/lib/openrouter-models-fetch.ts` — `/v1/models` 公共 endpoint normaliser
 - `src/types/` — Shared message + agent protocol types
 
@@ -34,7 +35,8 @@ BYOK (Bring Your Own Key) Chrome Extension — 用户插入自己的 API key 获
 - `pnpm dev` — Dev server with HMR
 - `pnpm build` — Production build
 - `pnpm test` / `pnpm test:watch` — vitest run
-- 提交前跑 `pnpm test` 与 `pnpm build`（build-time invariants 在 `tool-names.ts`（每个 tool 必须声明 read/write class）/ `tools.ts`（R-iframe-1 write tool 必须 require frameId）会 throw）
+- `pnpm typecheck` — `tsc --noEmit`（repo-wide 现已 0 错；任何新报错都是真实回归，必须修，别再当噪音忽略）
+- 提交前跑 `pnpm test`、`pnpm typecheck` 与 `pnpm build`（build-time invariants 在 `tool-names.ts`（每个 tool 必须声明 read/write class）/ `tools.ts`（R-iframe-1 write tool 必须 require frameId）会 throw）。注：`tsc` 能跑是靠 tsconfig 的 `ignoreDeprecations: "6.0"`（跨过 `baseUrl` TS5101 硬错）+ `src/global.d.ts` 引用 `chrome`/`vite/client` 类型；移除任一都会让 tsc 退回"哑门禁"
 - 远端 GH 操作前先 `gh auth switch --user WiseriaAI`；默认 active 账号 `wenkang-xie` 在 org 仓库无 admin scope（Pages API / repo settings 会 404）
 
 ## Development
@@ -70,7 +72,7 @@ Workflow 内置 invariant（任一失败则 CI fail，不会上传）：
 - DOM access: `<all_urls>` host_permission + `chrome.scripting.executeScript`（activeTab 不够 side-panel 常驻场景）
 - Streaming: `chrome.runtime.connect()` port，**不用** `sendMessage`；keep-alive 25s `getPlatformInfo()`
 - SSE parser 同时处理 `\n` 和 `\r\n` 行尾
-- Provider registry pattern: 加 provider = registry entry + 模块文件 + manifest host_permission；capability flags (`vision`/`tools`/`maxContextTokens`) 在 `ModelMeta` per-model 维度；id-keyed dispatch 表 `streamChatByProvider`（builtin）或 `dispatchStreamChat`（custom）。Provider 模块基本是薄 wrapper：OpenAI-compat 家族（openai/openrouter/zhipu/bailian）走 `_shared/openai-compat-core.ts`（OpenRouter 用 customHeaders hook）；**所有 Anthropic-wire 家族（anthropic/deepseek/minimax/mimo）走 `_shared/anthropic-sdk-core.ts`** —— 官方 `@anthropic-ai/sdk` 后端（#91 起取代手写 SSE core），hooks: `baseUrlSuffix` / `auth(apiKey\|bearer)` / `stripAnthropicVersion` / `promptCache`。per-provider：anthropic = apiKey + promptCache；deepseek/minimax = baseUrlSuffix `/anthropic` + apiKey（minimax base `api.minimaxi.com`，M3 含图片输入）；mimo = baseUrlSuffix `/anthropic` + bearer + stripAnthropicVersion。Gemini 自带 native module。SDK 在 MV3 service worker 里已验证可用：无 eval（CSP-safe），用 fetch/ReadableStream，`process.*`/`Buffer` 引用全被 runtime 探测或鸭子类型 guard，缺失时不执行
+- Provider registry pattern: 加 provider = registry entry + 模块文件 + manifest host_permission；capability flags (`vision`/`tools`/`maxContextTokens`) 在 `ModelMeta` per-model 维度；id-keyed dispatch 表 `streamChatByProvider`（builtin）或 `dispatchStreamChat`（custom）。Provider 模块基本是薄 wrapper：OpenAI-compat 家族（openai/openrouter/zhipu/bailian/moonshot）走 `_shared/openai-compat-core.ts`（OpenRouter 用 customHeaders hook；moonshot 双区 = moonshot/moonshot-cn 两条 registry 条目共用同一薄 wrapper）；**所有 Anthropic-wire 家族（anthropic/deepseek/minimax/mimo）走 `_shared/anthropic-sdk-core.ts`** —— 官方 `@anthropic-ai/sdk` 后端（#91 起取代手写 SSE core），hooks: `baseUrlSuffix` / `auth(apiKey\|bearer)` / `stripAnthropicVersion` / `promptCache`。per-provider：anthropic = apiKey + promptCache；deepseek/minimax = baseUrlSuffix `/anthropic` + apiKey（minimax base `api.minimaxi.com`，M3 含图片输入）；mimo = baseUrlSuffix `/anthropic` + bearer + stripAnthropicVersion。Gemini 自带 native module。SDK 在 MV3 service worker 里已验证可用：无 eval（CSP-safe），用 fetch/ReadableStream，`process.*`/`Buffer` 引用全被 runtime 探测或鸭子类型 guard，缺失时不执行
 - Custom provider `baseUrl` 在 provider 层定义（`StoredCustomProvider.baseUrl`），instance 不能 override
 - Custom provider 一律走 `_shared/openai-compat-core.ts`（OpenAI-compat wire，不带 hooks）
 - `<all_urls>` host_permission 是 custom provider fetch（`/v1/models` + streaming）的前提

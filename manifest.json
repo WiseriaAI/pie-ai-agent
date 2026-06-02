@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "default_locale": "en",
   "name": "__MSG_extension_name__",
-  "version": "0.18.2",
+  "version": "0.19.1",
   "description": "__MSG_extension_description__",
   "permissions": ["activeTab", "sidePanel", "storage", "tabs", "tabGroups", "scripting", "debugger", "webNavigation", "offscreen", "downloads"],
   "host_permissions": [
@@ -16,6 +16,8 @@
     "https://generativelanguage.googleapis.com/*",
     "https://api.deepseek.com/*",
     "https://api.xiaomimimo.com/*",
+    "https://api.moonshot.ai/*",
+    "https://api.moonshot.cn/*",
     "https://api.tavily.com/*"
   ],
   "content_security_policy": {

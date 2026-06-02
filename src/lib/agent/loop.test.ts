@@ -10,6 +10,7 @@ import {
   chatMessageToAgentMessage,
   resolveFocusedPin,
   readFocusFromStorage,
+  createStepPinView,
   mergeSessionAgentSnapshot,
   mergeContextUsage,
   buildFirstTurnReadPageHint,
@@ -1035,10 +1036,10 @@ describe("v1.5 Task 6 — per-iteration focus refresh (pure-function contract)",
     ];
 
     // The loop's guard pattern: meta wins, ctx is fallback.
-    const refreshedPins = metaSnap?.pinnedTabs ?? ctxPinnedTabs;
+    const refreshedPins = (metaSnap as { pinnedTabs?: Array<{ tabId: number; origin: string }> } | null)?.pinnedTabs ?? ctxPinnedTabs;
     const refreshedFocus = resolveFocusedPin(
       refreshedPins,
-      agentSnap?.currentFocusTabId,
+      (agentSnap as SessionAgentState | null)?.currentFocusTabId,
     );
 
     expect(refreshedFocus).toEqual({ tabId: 10, origin: "https://a.example.com" });
@@ -1308,6 +1309,7 @@ describe("interpretPinnedTabUrl (Issue #50 — navigation transient tolerance)",
       tabId: number,
       expectedOrigin: string,
       timeoutMs: number,
+      signal?: AbortSignal,
     ) => Promise<UrlSettleResult>,
   ) {
     return vi.fn(impl);
@@ -1670,3 +1672,73 @@ describe("Task 3.3 — buildFirstTurnReadPageHint", () => {
   });
 });
 
+
+// ── Issue #110 follow-up — same-turn unpin_tab → close_tabs ──────────────────
+// The per-step pin view that batched tool handlers share. unpin_tab's
+// removePinnedTab must reflect the removal in `pins` SYNCHRONOUSLY (not just in
+// storage), so a close_tabs issued later in the SAME assistant turn sees the
+// tab as no longer pinned and proceeds — instead of erroring until the next
+// iteration's storage refresh. This factory is the tested seam; the loop wires
+// ctx.pinnedTabs = view.pins and ctx.removePinnedTab = view.removePinnedTab.
+describe("createStepPinView (Issue #110 — same-turn unpin reflects immediately)", () => {
+  it("exposes the initial pins", () => {
+    const initial = [
+      { tabId: 10, origin: "https://a.com" },
+      { tabId: 11, origin: "https://b.com" },
+    ];
+    const view = createStepPinView(initial, async () => {});
+    expect(view.pins).toEqual(initial);
+  });
+
+  it("removePinnedTab persists THEN drops the pin from the live view (same tick)", async () => {
+    const persist = vi.fn(async () => {});
+    const view = createStepPinView(
+      [
+        { tabId: 10, origin: "https://a.com" },
+        { tabId: 11, origin: "https://b.com" },
+      ],
+      persist,
+    );
+    await view.removePinnedTab(10);
+    expect(persist).toHaveBeenCalledWith(10);
+    // The removal is visible to a subsequent same-turn reader (close_tabs).
+    expect(view.pins.map((p) => p.tabId)).toEqual([11]);
+  });
+
+  it("a same-turn close after unpin sees the tab as no longer pinned", async () => {
+    // Simulate the loop batch: ctx.pinnedTabs is read fresh per tool call from
+    // view.pins. After unpin_tab(10), a close_tabs reading view.pins must NOT
+    // find 10 → it would be allowed to close it.
+    const view = createStepPinView(
+      [{ tabId: 10, origin: "https://a.com" }],
+      async () => {},
+    );
+    const pinnedBeforeClose = view.pins; // (frozen-snapshot bug would keep 10 here)
+    await view.removePinnedTab(10);
+    const pinnedAtCloseTime = view.pins;
+    expect(pinnedBeforeClose.some((p) => p.tabId === 10)).toBe(true);
+    expect(pinnedAtCloseTime.some((p) => p.tabId === 10)).toBe(false);
+  });
+
+  it("removing an id that is not pinned still persists but leaves pins intact", async () => {
+    const persist = vi.fn(async () => {});
+    const view = createStepPinView([{ tabId: 10, origin: "https://a.com" }], persist);
+    await view.removePinnedTab(999);
+    expect(persist).toHaveBeenCalledWith(999);
+    expect(view.pins.map((p) => p.tabId)).toEqual([10]);
+  });
+
+  it("accumulates multiple removals across the same step", async () => {
+    const view = createStepPinView(
+      [
+        { tabId: 10, origin: "https://a.com" },
+        { tabId: 11, origin: "https://b.com" },
+        { tabId: 12, origin: "https://c.com" },
+      ],
+      async () => {},
+    );
+    await view.removePinnedTab(11);
+    await view.removePinnedTab(10);
+    expect(view.pins.map((p) => p.tabId)).toEqual([12]);
+  });
+});

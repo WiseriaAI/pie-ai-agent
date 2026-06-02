@@ -6,26 +6,23 @@ const mockBlob = new Blob(["fake-jpeg"], { type: "image/jpeg" });
 
 beforeEach(() => {
   vi.restoreAllMocks();
-  // @ts-expect-error mock
-  globalThis.createImageBitmap = vi.fn(async () => mockBitmap);
-  // @ts-expect-error mock
-  globalThis.OffscreenCanvas = vi.fn(function (this: { width: number; height: number }, w: number, h: number) {
+  globalThis.createImageBitmap = vi.fn(async () => mockBitmap) as unknown as typeof createImageBitmap;
+  globalThis.OffscreenCanvas = vi.fn(function (this: OffscreenCanvas, w: number, h: number) {
     this.width = w;
     this.height = h;
-    this.getContext = () => ({
+    (this as unknown as { getContext: () => { drawImage: ReturnType<typeof vi.fn> } }).getContext = () => ({
       drawImage: vi.fn(),
     });
-    this.convertToBlob = vi.fn(async () => mockBlob);
-  });
-  // @ts-expect-error mock
-  globalThis.FileReader = vi.fn(function (this: { result: string; onload: (() => void) | null }) {
-    this.readAsDataURL = function (b: Blob) {
+    (this as unknown as { convertToBlob: ReturnType<typeof vi.fn> }).convertToBlob = vi.fn(async () => mockBlob);
+  }) as unknown as typeof OffscreenCanvas;
+  globalThis.FileReader = vi.fn(function (this: FileReader) {
+    (this as unknown as { readAsDataURL: (b: Blob) => void }).readAsDataURL = function (b: Blob) {
       setTimeout(() => {
-        this.result = "data:image/jpeg;base64,ZmFrZS1qcGVn";
-        this.onload?.();
+        (this as unknown as { result: string }).result = "data:image/jpeg;base64,ZmFrZS1qcGVn";
+        (this as unknown as { onload: (() => void) | null }).onload?.();
       }, 0);
     };
-  });
+  }) as unknown as typeof FileReader;
 });
 
 describe("cropBboxToJpegDataUrl", () => {

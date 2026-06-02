@@ -17,6 +17,7 @@
  */
 
 import type { AgentMessage, ContentBlock } from "../model-router/types";
+import type { ProviderRef } from "../model-router";
 import { resolveModelMeta } from "../model-router/providers/registry";
 import { findReactStartIdx } from "./window";
 
@@ -49,6 +50,7 @@ function extractText(msg: AgentMessage): string {
   for (const b of msg.content as ContentBlock[]) {
     if (b.type === "image") continue;
     if (b.type === "text") parts.push(b.text);
+    else if (b.type === "thinking") parts.push(b.thinking);
     else if (b.type === "tool_use") parts.push(JSON.stringify(b.input));
     else if (b.type === "tool_result") parts.push(b.content);
   }
@@ -130,7 +132,7 @@ export function estimateTokens(messages: AgentMessage[], provider?: string): num
  */
 export async function applyTokenBudget(
   messages: AgentMessage[],
-  provider: string,
+  provider: ProviderRef,
   model: string,
 ): Promise<AgentMessage[]> {
   // Resolve per-model context window limit (issue #76).

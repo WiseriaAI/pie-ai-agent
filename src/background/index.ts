@@ -2,6 +2,7 @@
 
 import type {
   PageContent,
+  ExtractedFrameContent,
   ExtractPageResponse,
   PortMessageToWorker,
   PinnedTabDriftPayload,
@@ -312,7 +313,7 @@ function extractPageContent(): PageContent {
     // Fallback to body, filtering out non-content elements
     const body = document.body;
     if (!body) {
-      return { title, url, description: metaDesc, content: "" };
+      return { title, url, description: metaDesc, content: "", frames: [] };
     }
     const clone = body.cloneNode(true) as HTMLElement;
     const removeTags = [
@@ -354,7 +355,9 @@ function extractPageContent(): PageContent {
         : truncated;
   }
 
-  return { title, url, description: metaDesc, content: text };
+  // frames is not populated by the injected function; handleExtractPage merges
+  // iframe results separately. This initial return satisfies the PageContent type.
+  return { title, url, description: metaDesc, content: text, frames: [] };
 }
 
 async function handleExtractPage(): Promise<ExtractPageResponse> {
@@ -834,7 +837,8 @@ async function handleResumeRequest(
     // reads this through ToolHandlerContext to refuse user-locked pin closes.
     pinMode: getEffectivePinMode(meta, agent),
     // M5 — auto-unpin task-mode pin at task end (resume path).
-    onTaskDone: () => clearTaskPinAtSessionEnd(sessionId),
+    // clearTaskPinAtSessionEnd returns Promise<boolean>; onTaskDone expects Promise<void>.
+    onTaskDone: async () => { await clearTaskPinAtSessionEnd(sessionId); },
     // U4 — same telemetry hook as chat-start path.
     onHistoryRepaired: (violations, rawMessages) => {
       logHistoryRepaired(violations, rawMessages).catch((e) => {
@@ -1198,7 +1202,8 @@ async function handleChatStream(
       // through ToolHandlerContext to refuse user-locked pin closes.
       pinMode: pinModeAtStart,
       // M5 — auto-unpin task-mode pin at task end (chat-start path).
-      onTaskDone: () => clearTaskPinAtSessionEnd(sessionId),
+      // clearTaskPinAtSessionEnd returns Promise<boolean>; onTaskDone expects Promise<void>.
+      onTaskDone: async () => { await clearTaskPinAtSessionEnd(sessionId); },
       // U2 — pass the full (possibly synth-injected) messages array so
       // runAgentLoop can seed a proper multi-turn history instead of the
       // bare [system, user(task)] two-entry seed.
@@ -1440,33 +1445,31 @@ chrome.runtime.onConnect.addListener((port) => {
       handleRecordingDiscard(port, message).catch((e) => {
         console.warn(`[sw] recording-discard failed for session=${message.sessionId}:`, e);
       });
-    } else if (message.type === "picker:start") {
-      void broadcastPickerEnter((message as { tabId: number }).tabId);
-    } else if (message.type === "picker:stop") {
-      void broadcastPickerExit((message as { tabId: number }).tabId);
+    }
+    // The messages below are NOT part of PortMessageToWorker union (they are
+    // out-of-band port messages sent by the panel for picker and CDP onboarding).
+    // Cast to a loose type so TypeScript doesn't narrow to never.
+    const rawMsg = message as { type?: string; tabId?: number; enabled?: unknown; ok?: unknown };
+    if (rawMsg.type === "picker:start") {
+      void broadcastPickerEnter(rawMsg.tabId as number);
+    } else if (rawMsg.type === "picker:stop") {
+      void broadcastPickerExit(rawMsg.tabId as number);
     }
     // CDP input onboarding — panel replies with user's consent choice.
     if (
-      message &&
-      typeof message === "object" &&
-      message.type === "cdp-onboarding-response" &&
-      typeof (message as { enabled?: unknown }).enabled === "boolean"
+      rawMsg.type === "cdp-onboarding-response" &&
+      typeof rawMsg.enabled === "boolean"
     ) {
-      void handleOnboardingResponse(
-        portSessionId,
-        (message as { enabled: boolean }).enabled,
-      );
+      void handleOnboardingResponse(portSessionId, rawMsg.enabled);
     }
     // request_local_file — panel replies with the user's picked file (or a
     // cancel / unsupported reason). Keyed by the trusted port-derived session.
-    if (
-      message &&
-      typeof message === "object" &&
-      (message as { type?: string }).type === "local-file-response"
-    ) {
+    if (rawMsg.type === "local-file-response") {
       handleLocalFileResponse(
         portSessionId,
-        message as
+        // message is narrowed to never at this point (exhausted PortMessageToWorker union);
+        // cast through unknown to reach the out-of-band local-file-response shape.
+        rawMsg as unknown as
           | { ok: true; name: string; mime: string; text: string; truncated: boolean }
           | { ok: false; reason: string },
       );

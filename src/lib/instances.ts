@@ -1,6 +1,5 @@
 import type { ProviderRef, BuiltinProvider, ModelConfig } from "@/lib/model-router";
-import { resolveProviderMeta, getProviderMeta } from "@/lib/model-router/providers/registry";
-import { resolveModelVision } from "@/lib/model-router/providers/registry";
+import { resolveProviderMeta, getProviderMeta, resolveModelVision, resolveModelMeta } from "@/lib/model-router/providers/registry";
 import { getOrCreateEncryptionKey, encrypt, decrypt } from "@/lib/crypto";
 import { getCustomProvider, providerRefToId } from "@/lib/custom-providers";
 
@@ -124,14 +123,20 @@ export async function resolveInstanceToModelConfig(id: string): Promise<ModelCon
   if (!inst) return null;
   const meta = await resolveProviderMeta(inst.provider);
   if (!meta) return null;
-  // For custom providers, resolveModelVision is a no-op (sync BuiltinProvider-only).
-  // #62 — read the user-annotated CustomModelMeta.vision so non-vision custom
-  // models resolve to `false` (and get fail-closed filtered out of the tool
-  // table) instead of `undefined`. Falls back to `undefined` when the model
-  // isn't found in the provider's model list (unknown id → fail-closed too).
-  const vision = inst.provider.startsWith("custom:")
-    ? await resolveCustomModelVision(inst.provider, inst.model)
-    : resolveModelVision(inst.provider as BuiltinProvider, inst.model, inst.fetchedModels);
+  // Custom providers: read the stored CustomModelMeta.vision (#62).
+  // Builtin providers: registry/fetched catalog first; on a miss, consult the
+  // pcmm sidecar (resolveModelMeta) so user-added custom models with vision:true
+  // get screenshot tools. Stays `undefined` when pcmm also misses (truly unknown
+  // → fail-closed downstream, unchanged).
+  let vision: boolean | undefined;
+  if (inst.provider.startsWith("custom:")) {
+    vision = await resolveCustomModelVision(inst.provider, inst.model);
+  } else {
+    vision = resolveModelVision(inst.provider as BuiltinProvider, inst.model, inst.fetchedModels);
+    if (vision === undefined) {
+      vision = (await resolveModelMeta(inst.provider, inst.model))?.vision;
+    }
+  }
   return {
     provider: inst.provider,
     providerName: meta.name,

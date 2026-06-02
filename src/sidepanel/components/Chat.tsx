@@ -6,9 +6,9 @@ import {
   expandSlashCommand,
   normalizeSkillSlashKey,
 } from "@/lib/skills";
-import { resolveModelVision, resolveModelMeta } from "@/lib/model-router/providers/registry";
+import { resolveModelMeta } from "@/lib/model-router/providers/registry";
+import { resolveSupportsVision } from "./chat-vision";
 import ContextRing from "./ContextRing";
-import type { BuiltinProvider } from "@/lib/model-router";
 import { listInstances, getActiveInstance, getInstance, type DecryptedInstance } from "@/lib/instances";
 import type { ImageAttachment } from "@/lib/images";
 import type { FileAttachment } from "@/lib/files/types";
@@ -23,6 +23,7 @@ import { QuoteChip } from "./QuoteChip";
 import { escapeWrapperAttribute } from "@/lib/agent/untrusted-wrappers";
 import type { Quote, TextQuote, ElementQuote } from "@/types";
 import InstanceSelector from "./InstanceSelector";
+import ThinkingSection from "./ThinkingSection";
 import { useT } from "@/lib/i18n";
 import {
   getSessionMeta,
@@ -154,6 +155,7 @@ export default function Chat({
     messages,
     streaming,
     streamingText,
+    streamingThinking,
     error,
     toast,
     pinnedTabs,
@@ -243,9 +245,13 @@ export default function Chat({
     listInstances().then(setInstances).catch(() => setInstances([]));
     if (!sessionId) return;
 
-    // Effective id = per-session pin fallback to global active
+    // Effective id = per-session pin fallback to global active.
+    // sessionId is narrowed to string by the early return above; the async
+    // closure captures the narrowed binding but TypeScript doesn't propagate
+    // that narrowing into nested async functions — capture it explicitly.
+    const sessionIdStr = sessionId as string;
     async function loadEffective() {
-      const meta = await getSessionMeta(sessionId);
+      const meta = await getSessionMeta(sessionIdStr);
       const fallback = meta?.instanceId ?? (await getActiveInstance());
       setCurrentInstanceId(fallback);
     }
@@ -391,7 +397,7 @@ export default function Chat({
     };
     const onUpdated = (
       _tabId: number,
-      changeInfo: chrome.tabs.TabChangeInfo,
+      changeInfo: chrome.tabs.OnUpdatedInfo,
       tab: chrome.tabs.Tab,
     ) => {
       // Refresh on any url OR title change of the active tab. Title alone
@@ -442,7 +448,7 @@ export default function Chat({
     if (pinnedTabIds.size === 0) return;
     const onUpdated = (
       tabId: number,
-      info: chrome.tabs.TabChangeInfo,
+      info: chrome.tabs.OnUpdatedInfo,
       _tab: chrome.tabs.Tab,
     ) => {
       // Only fire for an actual pinned tab navigating — not any other tab,
@@ -485,7 +491,7 @@ export default function Chat({
     void fetchTitle();
     const onUpdated = (
       tabId: number,
-      changeInfo: chrome.tabs.TabChangeInfo,
+      changeInfo: chrome.tabs.OnUpdatedInfo,
       tab: chrome.tabs.Tab,
     ) => {
       if (tabId !== targetTabId) return;
@@ -539,7 +545,9 @@ export default function Chat({
           // fail-closed for unknown ids — a slightly different policy from the
           // loop's screenshot guard (fail-open) because the disabled button
           // is a visible UX cue, while a silent screenshot-tool block is not.
-          setSupportsVision(resolveModelVision(inst.provider as BuiltinProvider, inst.model, inst.fetchedModels) ?? false);
+          setSupportsVision(await resolveSupportsVision(inst.provider, inst.model, inst.fetchedModels));
+          // resolveSupportsVision may also read pcmm (on registry miss); this second
+          // resolveModelMeta is for the context budget — both are cheap in-memory reads.
           const meta = await resolveModelMeta(inst.provider, inst.model);
           setMaxContextTokens(meta?.maxContextTokens);
           return;
@@ -816,7 +824,10 @@ After the skill completes, briefly summarize what was created (the user will see
           if (q.imageDataUrl) {
             const [meta, b64] = q.imageDataUrl.split(",");
             const mediaType = (meta.match(/data:([^;]+)/)?.[1] ?? "image/jpeg") as "image/jpeg" | "image/png";
-            quoteImages.push({ id: `quote-${q.id}`, data: b64, mediaType });
+            // width/height unknown for quote element screenshots; byteLength approximated
+            // from base64 length. These fields are required by ImageAttachment but are
+            // not used for quote images (they are LLM-context-only, not thumbnail-displayed).
+            quoteImages.push({ kind: "image" as const, id: `quote-${q.id}`, data: b64, mediaType, width: 0, height: 0, byteLength: Math.ceil((b64.length * 3) / 4) });
           }
         }
       }
@@ -898,7 +909,10 @@ After the skill completes, briefly summarize what was created (the user will see
             if (q.imageDataUrl) {
               const [meta, b64] = q.imageDataUrl.split(",");
               const mediaType = (meta.match(/data:([^;]+)/)?.[1] ?? "image/jpeg") as "image/jpeg" | "image/png";
-              quoteImages.push({ id: `quote-${q.id}`, data: b64, mediaType });
+              // width/height unknown for quote element screenshots; byteLength approximated
+              // from base64 length. These fields are required by ImageAttachment but are
+              // not used for quote images (they are LLM-context-only, not thumbnail-displayed).
+              quoteImages.push({ kind: "image" as const, id: `quote-${q.id}`, data: b64, mediaType, width: 0, height: 0, byteLength: Math.ceil((b64.length * 3) / 4) });
             }
           }
         }
@@ -1170,9 +1184,10 @@ After the skill completes, briefly summarize what was created (the user will see
               return null;
             })}
 
-            {streaming && streamingText && (
+            {streaming && (streamingText || streamingThinking) && (
               <MessageBubble
-                message={{ role: "assistant", content: streamingText }}
+                message={{ role: "assistant", content: streamingText, thinking: streamingThinking }}
+                thinkingStreaming={!!streamingThinking}
               />
             )}
 
@@ -1182,7 +1197,7 @@ After the skill completes, briefly summarize what was created (the user will see
                 to look to confirm "still working" — covers the gaps between
                 tool calls (last step ok, next LLM round not yet started)
                 where active step spinners alone could feel like a hang. */}
-            {streaming && !streamingText && <WorkingIndicator />}
+            {streaming && !streamingText && !streamingThinking && <WorkingIndicator />}
 
             {error && (
               <div className="rounded-lg border border-warning-line bg-warning-tint px-3 py-2 text-[12px] text-warning">
@@ -1518,8 +1533,10 @@ function PageChangedBanner({ onNewTask }: { onNewTask: () => void }) {
 
 function MessageBubble({
   message,
+  thinkingStreaming = false,
 }: {
   message: Extract<DisplayMessage, { role: "user" | "assistant" }>;
+  thinkingStreaming?: boolean;
 }) {
   const t = useT();
   if (message.role === "user") {
@@ -1614,9 +1631,14 @@ function MessageBubble({
         <div className="h-1 w-1 rounded-full bg-accent" />
         <span className="caps text-fg-2">{t("chat.agent")}</span>
       </div>
-      <div className="text-[13px] leading-5 text-fg-1">
-        <MarkdownContent content={message.content} />
-      </div>
+      {(message.thinking || thinkingStreaming) && (
+        <ThinkingSection thinking={message.thinking ?? ""} streaming={thinkingStreaming} />
+      )}
+      {message.content && (
+        <div className="text-[13px] leading-5 text-fg-1">
+          <MarkdownContent content={message.content} />
+        </div>
+      )}
     </div>
   );
 }

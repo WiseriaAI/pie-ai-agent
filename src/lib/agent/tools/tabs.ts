@@ -367,9 +367,11 @@ function summarizePartial(
 const closeTabsTool: Tool = {
   name: "close_tabs",
   description:
-    "Close one or more tabs by id (batch into one call). Cannot close the agent's " +
-    "pinned tab — ask the user to close the current tab manually instead. Tabs that " +
-    "have navigated to a different origin since the task started are skipped.",
+    "Close one or more tabs by id (batch into one call). Cannot close a tab that is " +
+    "pinned to this conversation: call unpin_tab(id) first to release the pin, then " +
+    "close_tabs(id). (User-pinned tabs can only be released from the PINNED dropdown — " +
+    "ask the user.) Tabs that have navigated to a different origin since the task " +
+    "started are skipped.",
   parameters: {
     type: "object",
     properties: {
@@ -394,24 +396,39 @@ const closeTabsTool: Tool = {
       };
     }
 
-    // K-9 (v1.5): user-locked pin protects ALL pinnedTabs[] entries from agent close.
-    // 'task' mode = the loop captured the pin at chat-start; the user has
-    // K-9: only 'user' mode protects the pinned tab from close;
-    // per-iteration origin check will gracefully abort the task if the
-    // pinned tab disappears (observation: "Page origin changed").
-    // 'user' mode = the user explicitly pinned these tabs via the dropdown;
-    // closing any of them would yank their explicit choice — refuse upfront.
-    // 'auto' mode = no persistent pin (ctx.tabId is the loop's anchor for
-    // this task only; same logic as 'task').
-    if (ctx.pinMode === "user" && ctx.pinnedTabs && ctx.pinnedTabs.length > 0) {
+    // Issue #110 — refuse closing ANY tab pinned to this session, in EVERY
+    // pinMode. Previously only 'user' mode was protected; in 'task'/'auto'
+    // mode the agent could close its own anchored tab (its own open_url tab,
+    // or the chat-start pin) and strand the loop. The advisory per-iteration
+    // origin check tolerates a vanished pin, but the right fix is to stop the
+    // agent shooting its own foot in the first place — and to make close_tabs
+    // honour its own "cannot close the pinned tab" contract.
+    //
+    // Recovery differs by mode:
+    //   - 'user': the user explicitly pinned these via the dropdown; the agent
+    //     must NOT silently undo that choice → tell it to use the dropdown.
+    //   - 'task'/'auto'/undefined: agent-managed pins → the agent unpins via
+    //     unpin_tab first, then retries close_tabs.
+    // Hard refuse on the whole batch (matches the prior K-9 semantics): the
+    // agent must re-issue close_tabs without the pinned id(s), or unpin first.
+    if (ctx.pinnedTabs && ctx.pinnedTabs.length > 0) {
       const pinnedIds = new Set(ctx.pinnedTabs.map((p) => p.tabId));
       const blocked = a.tabIds.filter((id) => pinnedIds.has(id));
       if (blocked.length > 0) {
+        const ids = blocked.join(", ");
+        if (ctx.pinMode === "user") {
+          return {
+            success: false,
+            error:
+              `close_tabs cannot close user-pinned tab(s) [${ids}] (pinMode=user). ` +
+              `Use the PINNED dropdown to clear or change the pin, then retry.`,
+          };
+        }
         return {
           success: false,
           error:
-            `close_tabs cannot close user-pinned tab(s) [${blocked.join(", ")}] (pinMode=user). ` +
-            `Use the PINNED dropdown to clear or change the pin, then retry.`,
+            `close_tabs cannot close pinned tab(s) [${ids}] anchored to this conversation. ` +
+            `Call unpin_tab(id) for each one first, then retry close_tabs.`,
         };
       }
     }
@@ -640,7 +657,8 @@ const groupTabsTool: Tool = {
 
     let newGroupId: number;
     try {
-      newGroupId = await chrome.tabs.group({ tabIds: survivors });
+      // survivors is non-empty (checked above); cast to the required non-empty tuple type.
+      newGroupId = await chrome.tabs.group({ tabIds: survivors as [number, ...number[]] });
       result.ok.push(...survivors);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
@@ -730,7 +748,8 @@ const ungroupTabsTool: Tool = {
     }
 
     try {
-      await chrome.tabs.ungroup(survivors);
+      // survivors is non-empty (checked above); cast to the required non-empty tuple type.
+      await chrome.tabs.ungroup(survivors as [number, ...number[]]);
       result.ok.push(...survivors);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
@@ -902,6 +921,94 @@ const focusTabTool: Tool = {
 
 export { focusTabTool };
 
+// ── Issue #110 — unpin_tab ────────────────────────────────────────────────────
+
+/**
+ * unpin_tab — removes a tab from the session's pinnedTabs[] so the agent can
+ * subsequently close it (close_tabs refuses any still-pinned tab). Low-risk:
+ * mutates only the session's internal pin list, no observable tab/page side
+ * effect. Class = read (mirrors focus_tab).
+ *
+ * Scope:
+ *   - task/auto-mode pins are agent-managed (chat-start anchor + open_url
+ *     additions) → the agent may unpin them itself.
+ *   - user-mode pins are the user's explicit choice → refused; the agent is
+ *     told to ask the user to use the PINNED dropdown.
+ *
+ * After a successful unpin the removal is observed on the NEXT iteration's
+ * pinnedTabs refresh (readFocusFromStorage); if the unpinned tab was the
+ * current focus, resolveFocusedPin falls back to pinnedTabs[0].
+ */
+const unpinTabTool: Tool = {
+  name: "unpin_tab",
+  description:
+    "Release a tab from this conversation's pinned tab list so it can be closed " +
+    "with close_tabs. Typical use: clean up a tab you opened via open_url once " +
+    "you're done — call unpin_tab(id), then close_tabs([id]). Only works on tabs " +
+    "the agent pinned (open_url / chat-start anchor); user-pinned tabs must be " +
+    "cleared from the PINNED dropdown by the user.",
+  parameters: {
+    type: "object",
+    properties: {
+      tabId: {
+        type: "integer",
+        description: "Tab id to remove from this session's pinned tabs.",
+      },
+    },
+    required: ["tabId"],
+    additionalProperties: false,
+  },
+  handler: async (args, ctx) => {
+    const a = (args ?? {}) as { tabId?: unknown };
+    if (typeof a.tabId !== "number") {
+      return { success: false, error: "unpin_tab requires a numeric tabId" };
+    }
+    const tabId = a.tabId;
+    if (!ctx.pinnedTabs || ctx.pinnedTabs.length === 0) {
+      return {
+        success: false,
+        error: "unpin_tab: no pinned tabs in this session (nothing to unpin).",
+      };
+    }
+    const target = ctx.pinnedTabs.find((p) => p.tabId === tabId);
+    if (!target) {
+      const ids = ctx.pinnedTabs.map((p) => p.tabId).join(", ");
+      return {
+        success: false,
+        error: `unpin_tab: tab ${tabId} is not pinned in this session (current pins: [${ids}]).`,
+      };
+    }
+    // user-mode pins are the user's explicit choice — the agent must not
+    // silently undo them. Mirrors close_tabs' user-mode refusal.
+    if (ctx.pinMode === "user") {
+      return {
+        success: false,
+        error:
+          `unpin_tab cannot unpin user-pinned tab ${tabId} (pinMode=user). ` +
+          `Ask the user to clear it from the PINNED dropdown instead.`,
+      };
+    }
+    if (!ctx.removePinnedTab) {
+      return {
+        success: false,
+        error:
+          "unpin_tab: handler context missing removePinnedTab (test/legacy harness).",
+      };
+    }
+    await ctx.removePinnedTab(tabId);
+    return {
+      success: true,
+      observation:
+        `Unpinned tab ${tabId} from this conversation. You can now close it with ` +
+        `close_tabs([${tabId}]) if you no longer need it. The pin list updates on ` +
+        `the next iteration; if this was your focused tab, focus falls back to the ` +
+        `primary pinned tab.`,
+    };
+  },
+};
+
+export { unpinTabTool };
+
 // ── v1.5 Unit 7 — open_url ────────────────────────────────────────────────────
 
 const OPEN_URL_MAX_LEN = 4096;
@@ -1039,5 +1146,6 @@ export const TAB_TOOLS: Tool[] = [
   ungroupTabsTool,
   moveTabsTool,
   focusTabTool,
+  unpinTabTool,
   openUrlTool,
 ];

@@ -19,7 +19,9 @@ export type BuiltinProvider =
   | "bailian"
   | "gemini"
   | "deepseek"
-  | "mimo";
+  | "mimo"
+  | "moonshot"
+  | "moonshot-cn";
 
 export type ProviderRef = BuiltinProvider | `custom:${string}`;
 

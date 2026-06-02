@@ -47,6 +47,7 @@ export const TAB_TOOL_NAMES = [
   "move_tabs",
   "focus_tab", // v1.5 multi-pin
   "open_url",  // v1.5
+  "unpin_tab", // Issue #110 — remove a tab from session pins so it can be closed
 ] as const;
 
 // Phase 5 screenshot tools (always present in BUILT_IN_TOOLS).
@@ -70,6 +71,7 @@ export const SEARCH_TOOL_NAMES = [
 // class=read: reads page DOM structure; no tab/page state mutation.
 export const PAGE_SNAPSHOT_TOOL_NAMES = [
   "read_page",
+  "search_page",
 ] as const;
 
 // PDF tools (always present in BUILT_IN_TOOLS once Task 10 lands).
@@ -169,6 +171,8 @@ export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
   move_tabs: "write",
   focus_tab: "read", // mutates only internal session pointer, no tab state change
   open_url: "write", // creates a new tab; mutates browser state
+  unpin_tab: "read", // Issue #110 — removes a session pin; no tab/page state change
+
   // Phase 2.5 CDP keyboard tools
   dispatch_keyboard_input: "write",
   press_key: "write",
@@ -179,6 +183,7 @@ export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
   search_web: "read",
   // Page snapshot tool — reads page DOM structure, no tab/page state mutation
   read_page: "read",
+  search_page: "read",
   // PDF tools — pure text producers, parse-only, no tab mutation
   read_pdf: "read",
   search_pdf: "read",

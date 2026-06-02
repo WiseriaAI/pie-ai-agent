@@ -205,6 +205,11 @@ export const enDict = {
     custom: "custom",
     modelIdPlaceholder: "model id",
   },
+  providers: {
+    zhipu: "GLM(Zhipu)",
+    mimo: "Mimo(Xiaomi)",
+    moonshotCn: "Moonshot(Kimi) China",
+  },
   newConfigWizard: {
     step1Title: "STEP 1 — SELECT PROVIDER",
     step2Title: "STEP 2 — {name}",
@@ -259,6 +264,10 @@ export const enDict = {
     step: "step",
     steps: "steps",
     done: " done",
+  },
+  thinking: {
+    label: "Thinking",
+    inProgress: "Thinking…",
   },
   agentSummary: {
     doneSteps: "DONE · {count} STEPS",
@@ -376,7 +385,7 @@ export const enDict = {
     escHint: "to cancel · ⏎ to finish · trace becomes a chip in chat",
     awaiting: "AWAITING",
     awaitingHint: "interact with the tab — capture is live",
-    typeLabels: { click: "CLICK", type: "TYPE", select: "SELECT", scroll: "SCROLL", nav: "NAV", submit: "SUBMIT" },
+    typeLabels: { click: "CLICK", type: "TYPE", select: "SELECT", scroll: "SCROLL", nav: "NAV", submit: "SUBMIT", keypress: "Key" },
     metaRedacted: "REDACTED",
     metaUnstable: "UNSTABLE",
   },

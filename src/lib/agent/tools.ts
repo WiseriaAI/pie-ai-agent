@@ -11,6 +11,7 @@ import { SKILL_ACCESS_TOOLS } from "./tools/skill-access";
 import { TAB_TOOLS } from "./tools/tabs";
 import { searchWebTool } from "./tools/search";
 import { readPageTool } from "./tools/read-page";
+import { searchPageTool } from "./tools/search-page";
 import { PDF_TOOLS } from "./tools/pdf";
 import { LOCAL_FILE_TOOLS } from "./tools/files";
 
@@ -52,8 +53,8 @@ export type { MouseToolDeps };
 
 async function execInTab<T extends unknown[]>(
   tabId: number,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  func: (...args: T) => ActionResult,
+  // chrome.scripting.executeScript awaits promise-returning injected functions at runtime.
+  func: (...args: T) => ActionResult | Promise<ActionResult>,
   args: T,
   frameId?: number,
 ): Promise<ActionResult> {
@@ -291,6 +292,7 @@ export const BUILT_IN_TOOLS: Tool[] = [
   },
   searchWebTool,
   readPageTool,
+  searchPageTool,
   ...PDF_TOOLS,
   ...LOCAL_FILE_TOOLS,
 ];

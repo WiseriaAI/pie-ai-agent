@@ -54,6 +54,15 @@ describe("M3-U4 — TOOL_CLASSES registry", () => {
     expect(TOOL_CLASSES.move_tabs).toBe("write");
   });
 
+  it("classifies unpin_tab as read (mutates only the session pin pointer)", () => {
+    // Issue #110 — like focus_tab, unpin_tab changes only internal session
+    // state (removes a pin), never tab/page content, so it is read-class.
+    expect(TOOL_CLASSES.unpin_tab).toBe("read");
+    expect(getToolClass("unpin_tab")).toBe("read");
+    expect(KNOWN_BUILT_IN_TOOL_NAMES).toContain("unpin_tab");
+    expect(TAB_TOOL_NAMES).toContain("unpin_tab");
+  });
+
   it("getToolClass defaults unknown names to read", () => {
     expect(getToolClass("foo_unknown_tool")).toBe("read");
     expect(getToolClass("some-arbitrary-name")).toBe("read");

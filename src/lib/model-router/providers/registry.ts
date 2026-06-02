@@ -1,5 +1,6 @@
 import type { BuiltinProvider, ProviderRef } from "@/lib/model-router";
 import { getCustomProvider } from "@/lib/custom-providers";
+import { getProviderCustomModelMeta } from "@/lib/provider-custom-model-meta";
 
 export interface ModelMeta {
   /** Provider-native model id (sent to API as-is). */
@@ -33,6 +34,16 @@ export interface ProviderMeta {
    */
   modelsEndpoint?: string;
 }
+
+// Kimi (Moonshot) curated models — shared by both the international
+// (api.moonshot.ai) and China (api.moonshot.cn) registry entries so the two
+// stay in lockstep. kimi-k2.x are multimodal; moonshot-v1-* are text fallbacks.
+const MOONSHOT_MODELS: ModelMeta[] = [
+  { id: "kimi-k2.6", vision: true, tools: true, maxContextTokens: 256_000 },
+  { id: "kimi-k2.5", vision: true, tools: true, maxContextTokens: 256_000 },
+  { id: "moonshot-v1-128k", vision: false, tools: true, maxContextTokens: 128_000 },
+  { id: "moonshot-v1-32k", vision: false, tools: true, maxContextTokens: 32_000 },
+];
 
 export const PROVIDER_REGISTRY: ProviderMeta[] = [
   {
@@ -84,18 +95,40 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
   },
   {
     id: "zhipu",
-    name: "ZhiPu (智谱)",
+    name: "GLM(Zhipu)",
     defaultBaseUrl: "https://open.bigmodel.cn/api/paas/v4",
     placeholder: "API key",
+    // Curated from the BigModel model-overview (issue #106). Only chat /
+    // vision models are listed — the agent loop requires tool calling, so
+    // image-gen / video / TTS-ASR / embedding / rerank models are out of
+    // scope. Deprecated lines (GLM-Z1, GLM-4-0520) and the soon-to-retire
+    // GLM-4.5-Flash are intentionally omitted. maxContextTokens = input window.
     models: [
-      { id: "glm-4-plus", vision: false, tools: true, maxContextTokens: 128_000 },
-      { id: "glm-4v-plus", vision: true, tools: true, maxContextTokens: 16_000 },
-      { id: "glm-4-air", vision: false, tools: true, maxContextTokens: 128_000 },
+      // Text
+      { id: "glm-5.1", vision: false, tools: true, maxContextTokens: 200_000 },
+      { id: "glm-5", vision: false, tools: true, maxContextTokens: 200_000 },
+      { id: "glm-5-turbo", vision: false, tools: true, maxContextTokens: 200_000 },
+      { id: "glm-4.7", vision: false, tools: true, maxContextTokens: 200_000 },
+      { id: "glm-4.7-flashx", vision: false, tools: true, maxContextTokens: 200_000 },
+      { id: "glm-4.7-flash", vision: false, tools: true, maxContextTokens: 200_000 },
+      { id: "glm-4.6", vision: false, tools: true, maxContextTokens: 200_000 },
+      { id: "glm-4.5-air", vision: false, tools: true, maxContextTokens: 128_000 },
+      { id: "glm-4.5-airx", vision: false, tools: true, maxContextTokens: 128_000 },
+      { id: "glm-4-long", vision: false, tools: true, maxContextTokens: 1_000_000 },
+      { id: "glm-4-flashx-250414", vision: false, tools: true, maxContextTokens: 128_000 },
+      { id: "glm-4-flash-250414", vision: false, tools: true, maxContextTokens: 128_000 },
+      // Vision
+      { id: "glm-5v-turbo", vision: true, tools: true, maxContextTokens: 200_000 },
+      { id: "glm-4.6v", vision: true, tools: true, maxContextTokens: 128_000 },
+      { id: "glm-4.6v-flash", vision: true, tools: true, maxContextTokens: 128_000 },
+      { id: "glm-4.1v-thinking-flashx", vision: true, tools: true, maxContextTokens: 64_000 },
+      { id: "glm-4.1v-thinking-flash", vision: true, tools: true, maxContextTokens: 64_000 },
+      { id: "glm-4v-flash", vision: true, tools: true, maxContextTokens: 16_000 },
     ],
   },
   {
     id: "bailian",
-    name: "Bailian (百炼)",
+    name: "Bailian",
     defaultBaseUrl: "https://dashscope.aliyuncs.com/compatible-mode",
     placeholder: "sk-...",
     models: [
@@ -126,7 +159,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
   },
   {
     id: "mimo",
-    name: "MiMo (小米)",
+    name: "Mimo(Xiaomi)",
     defaultBaseUrl: "https://api.xiaomimimo.com",
     placeholder: "API key",
     models: [
@@ -136,6 +169,20 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
       { id: "mimo-v2-omni",  vision: true,  tools: true, maxContextTokens: 256_000   },
       { id: "mimo-v2-flash", vision: false, tools: true, maxContextTokens: 256_000   },
     ],
+  },
+  {
+    id: "moonshot",
+    name: "Moonshot(Kimi)",
+    defaultBaseUrl: "https://api.moonshot.ai",
+    placeholder: "sk-...",
+    models: MOONSHOT_MODELS,
+  },
+  {
+    id: "moonshot-cn",
+    name: "Moonshot(Kimi) China",
+    defaultBaseUrl: "https://api.moonshot.cn",
+    placeholder: "sk-...",
+    models: MOONSHOT_MODELS,
   },
 ];
 
@@ -179,22 +226,31 @@ export async function resolveProviderMeta(ref: ProviderRef): Promise<ProviderMet
  * Async version of getModelMeta that works for both builtin and custom providers.
  */
 export async function resolveModelMeta(ref: ProviderRef, modelId: string): Promise<ModelMeta | null> {
-  // Try builtin first
+  // Builtin: registry preset first (preset wins, not overridable)
   if (!ref.startsWith("custom:")) {
-    const hit = getModelMeta(ref as BuiltinProvider, modelId);
+    const builtinRef = ref as BuiltinProvider; // guard above guarantees this
+    const hit = getModelMeta(builtinRef, modelId);
     if (hit) return hit;
+    // Then user-set sidecar meta (pcmm). tools is not user-configurable for
+    // builtin custom models — forced true (loop always sends tools anyway).
+    const stored = await getProviderCustomModelMeta(builtinRef, modelId);
+    if (stored) {
+      return {
+        id: modelId,
+        ...(stored.displayName ? { displayName: stored.displayName } : {}),
+        vision: stored.vision,
+        tools: true,
+        maxContextTokens: stored.maxContextTokens,
+      };
+    }
+    return null;
   }
 
-  // Try custom provider models
-  if (ref.startsWith("custom:")) {
-    const id = ref.slice("custom:".length);
-    const cp = await getCustomProvider(id);
-    if (!cp) return null;
-    const model = cp.models.find((m) => m.id === modelId);
-    return model ?? null;
-  }
-
-  return null;
+  // Custom provider models (unchanged)
+  const id = ref.slice("custom:".length);
+  const cp = await getCustomProvider(id);
+  if (!cp) return null;
+  return cp.models.find((m) => m.id === modelId) ?? null;
 }
 
 /**
@@ -202,17 +258,18 @@ export async function resolveModelMeta(ref: ProviderRef, modelId: string): Promi
  * fallback to per-instance fetched catalogs.
  *
  * Lookup order:
- *   1. Hardcoded registry (covers anthropic, openai, minimax, zhipu, bailian,
- *      gemini, deepseek — `models[]` is non-empty for these).
+ *   1. Hardcoded registry (covers all non-OpenRouter providers — `models[]` is
+ *      non-empty for these; see PROVIDER_REGISTRY).
  *   2. Caller-supplied `fetchedModels` (covers OpenRouter, whose registry
  *      `models: []` is intentionally empty and populated lazily per-instance
  *      via `/v1/models`).
  *
- * Returns `undefined` when the model is unknown to both — callers decide
- * fail-open vs fail-closed for that case. The screenshot vision guard in
- * `runAgentLoop` treats `undefined` as fail-open (let the LLM be the second
- * line of defense) so user-typed custom OpenRouter ids aren't silently locked
- * out of screenshot tools.
+ * Returns `undefined` when the model is unknown to both. The agent loop's
+ * `filterToolsByVision` is fail-CLOSED: only `vision === true` is offered
+ * screenshot tools; `undefined` (and `false`) are excluded. Builtin custom
+ * models carry vision in the pcmm sidecar, so `resolveInstanceToModelConfig`
+ * (and the Chat attach-button via `resolveSupportsVision`) fall back to
+ * `resolveModelMeta` on a miss here before anything sees a bare `undefined`.
  */
 export function resolveModelVision(
   provider: BuiltinProvider,

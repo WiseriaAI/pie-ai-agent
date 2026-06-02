@@ -1,4 +1,5 @@
-import type { ModelConfig, AgentMessage, ContentBlock, ToolDefinition } from "../model-router/types";
+import type { AgentMessage, ContentBlock, ToolDefinition } from "../model-router/types";
+import type { ModelConfig } from "../model-router";
 import type { ChatMessage } from "../model-router";
 import { streamChat } from "../model-router";
 import { addImage, evictSession } from "../../background/image-cache";
@@ -53,12 +54,13 @@ import {
   getSessionAgent,
   setSessionAgent,
 } from "../sessions/storage";
-import { addPinToMeta } from "../sessions/pin-state";
+import { addPinToMeta, removePinFromMeta } from "../sessions/pin-state";
 import { drainPending } from "../sessions/pending-instructions";
 import { buildMidTaskUserMessage } from "./loop-drain";
 import { broadcastInstructionState } from "@/background/instruction-broadcast";
 import { synthesizeAgentTurnText, type TerminationReason } from "./synthesize-agent-turn";
 import { waitForUrlSettle, type UrlSettleResult } from "./wait-for-url-settle";
+import { assembleAssistantBlocks, type ThinkingContentBlock } from "./assistant-blocks";
 // setLastTaskSynth removed from emitDone — lastTaskSynth is now folded into
 // the tombstone write by buildSessionAgentTombstone(synth) to prevent the
 // two-write race on the agent key (AD1 fix). No import needed.
@@ -542,11 +544,14 @@ export function buildSessionAgentSnapshot(
   stepIndex: number,
   hasImageContent: boolean = false,
 ): SessionAgentState {
+  // pendingInstructions is intentionally omitted: mergeSessionAgentSnapshot (non-tombstone
+  // path) spreads existing first so storage's pendingInstructions value is preserved.
+  // The cast satisfies SessionAgentState's type while keeping the field absent at runtime.
   return {
     agentMessages: structuredClone(history),
     stepIndex,
     hasImageContent,
-  };
+  } as SessionAgentState;
 }
 
 /**
@@ -752,6 +757,49 @@ export async function readFocusFromStorage(
   return {
     focused: resolveFocusedPin(refreshedPins, agentSnap?.currentFocusTabId),
     pinnedTabs: refreshedPins,
+  };
+}
+
+export interface StepPinView {
+  /** Live pin list — read fresh by each tool handler's ctx.pinnedTabs. */
+  readonly pins: ReadonlyArray<{ tabId: number; origin: string }>;
+  /** Persist the removal AND drop it from `pins` synchronously. */
+  removePinnedTab: (tabId: number) => Promise<void>;
+}
+
+/**
+ * Issue #110 follow-up — per-step pin view shared by the batched tool handlers
+ * of a single assistant turn.
+ *
+ * The loop's `currentPinnedTabs` is a snapshot taken once per step (from
+ * readFocusFromStorage). close_tabs decides "is this pinned?" from
+ * ctx.pinnedTabs, which points at that snapshot. unpin_tab persists its
+ * removal to storage (SessionMeta) — but storage isn't re-read until the NEXT
+ * step. So a model that batches `[unpin_tab(N), close_tabs([N])]` in ONE turn
+ * would have close_tabs still see N as pinned and refuse, forcing a wasted
+ * extra turn.
+ *
+ * This view fixes that: removePinnedTab updates `pins` in the same tick it
+ * persists, so a later tool call in the same batch (reading view.pins via its
+ * ctx) sees the unpin immediately. Storage stays the source of truth (the next
+ * step's readFocusFromStorage refresh is unaffected); the view only collapses
+ * the within-turn latency. Unlike focus_tab / open_url — which must defer to
+ * the next iteration (they need a fresh page snapshot / tab commit) — unpin
+ * has no reason to defer, so reflecting it immediately is strictly better.
+ */
+export function createStepPinView(
+  initial: ReadonlyArray<{ tabId: number; origin: string }>,
+  persistRemove: (tabId: number) => Promise<void>,
+): StepPinView {
+  let pins = initial;
+  return {
+    get pins() {
+      return pins;
+    },
+    removePinnedTab: async (tabId: number) => {
+      await persistRemove(tabId);
+      pins = pins.filter((p) => p.tabId !== tabId);
+    },
   };
 }
 
@@ -1242,6 +1290,16 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         pinnedOrigin = refreshed.focused.origin;
       }
 
+      // Issue #110 follow-up — per-step pin view. unpin_tab removes through
+      // this so a same-turn close_tabs (reading view.pins via its ctx) sees
+      // the unpin immediately, rather than only after the next step's
+      // storage refresh. Storage stays the source of truth.
+      const stepPinView = createStepPinView(currentPinnedTabs, async (tabId) => {
+        const meta = await getSessionMeta(sessionId);
+        if (!meta) return;
+        await setSessionMeta(removePinFromMeta(meta, tabId));
+      });
+
       // Issue #34 — drain any mid-task instructions submitted during the
       // previous step. Atomic read+clear (drainPending writes session agent
       // state). The push into history happens here, in-memory; the next
@@ -1460,6 +1518,9 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
 
       // Stream from LLM
       let accumulatedText = "";
+      let thinkingAccum = "";
+      let thinkingReplay = false;
+      const thinkingBlocks: ThinkingContentBlock[] = [];
       const openToolCalls = new Map<
         number,
         { id: string; name: string; argsAccum: string }
@@ -1487,6 +1548,21 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           accumulatedText += event.text;
           // Stream text to panel as it arrives (Phase 1 compatible)
           port.postMessage(withSession({ type: "chat-chunk", text: event.text }, sessionId));
+        } else if (event.type === "thinking-start") {
+          thinkingAccum = "";
+          thinkingReplay = event.replay;
+        } else if (event.type === "thinking-delta") {
+          thinkingAccum += event.text;
+          port.postMessage(withSession({ type: "thinking-chunk", text: event.text }, sessionId));
+        } else if (event.type === "thinking-end") {
+          if (thinkingReplay && thinkingAccum) {
+            thinkingBlocks.push({
+              type: "thinking",
+              thinking: thinkingAccum,
+              ...(event.signature ? { signature: event.signature } : {}),
+            });
+          }
+          thinkingAccum = "";
         } else if (event.type === "tool-call-start") {
           openToolCalls.set(event.index, {
             id: event.id,
@@ -1641,19 +1717,12 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         return;
       }
 
-      // Build the assistant message with all tool_use blocks (+ optional text block)
-      const assistantBlocks: ContentBlock[] = [];
-      if (accumulatedText) {
-        assistantBlocks.push({ type: "text", text: accumulatedText });
-      }
-      for (const tc of completedToolCalls) {
-        assistantBlocks.push({
-          type: "tool_use",
-          id: tc.id,
-          name: tc.name,
-          input: tc.args,
-        });
-      }
+      // Build the assistant message with all tool_use blocks (+ optional text + thinking blocks)
+      const assistantBlocks: ContentBlock[] = assembleAssistantBlocks(
+        thinkingBlocks,
+        accumulatedText,
+        completedToolCalls,
+      );
 
       // #61(a)(b) — loop detection BEFORE executing this step's tools. The
       // signature fingerprints all tool calls (name + stable args). detectLoop
@@ -1931,8 +2000,11 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             // focus_tab (Task 6) and open_url (Task 7). Issue #33 —
             // currentPinnedTabs is the per-iteration refreshed array, so
             // focus_tab(newPinId) sees pins appended by open_url in
-            // earlier iterations of the same task.
-            pinnedTabs: currentPinnedTabs,
+            // earlier iterations of the same task. Issue #110 follow-up —
+            // routed through stepPinView so a same-turn unpin_tab is visible
+            // to a later close_tabs in the SAME batch (the getter returns the
+            // live, post-unpin list at ctx-build time).
+            pinnedTabs: stepPinView.pins,
             appendPinnedTab: async (pin) => {
               const meta = await getSessionMeta(sessionId);
               if (!meta) return;
@@ -1943,6 +2015,11 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
               if (!cur) return;
               await setSessionAgent(sessionId, { ...cur, currentFocusTabId: tabId });
             },
+            // Issue #110 — unpin_tab removes a tab from SessionMeta.pinnedTabs[]
+            // (persisted) AND from the live stepPinView (so a same-turn
+            // close_tabs sees it gone). The storage write is also observed on
+            // the next iteration's readFocusFromStorage refresh.
+            removePinnedTab: stepPinView.removePinnedTab,
           });
         } catch (e) {
           result = {
@@ -2066,7 +2143,9 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
     // or unexpected throw before any emit), emit one with a reason-based
     // summary. Pure-text replies skip this — they use chat-done.
     if (!doneEmitted && !normalTextReply) {
-      const reason = cdpSession?.detachedReason ?? null;
+      // TypeScript 6 narrows cdpSession to never in this finally block due to control-flow
+      // analysis of the inner async closure assignment; cast through unknown to recover type.
+      const reason = (cdpSession as CdpSession | null)?.detachedReason ?? null;
       let summary: string;
       switch (reason) {
         case "user-cancelled-via-yellow-bar":

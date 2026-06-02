@@ -1,6 +1,6 @@
 {
   "name": "pie-extension",
-  "version": "0.18.2",
+  "version": "0.19.1",
   "private": true,
   "description": "BYOK Chrome Extension Agent — bring your own API key for page understanding, multi-step task automation, and smart tab management.",
   "type": "module",
@@ -11,6 +11,7 @@
     "icons": "node scripts/build-icons.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
     "build:eval": "pnpm icons && vite build --mode eval",
     "verify:no-eval-bridge": "node scripts/assert-no-eval-bridge.mjs",
     "eval:task": "tsx eval/runner/cli.ts"

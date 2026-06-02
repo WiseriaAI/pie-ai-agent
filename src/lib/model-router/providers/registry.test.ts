@@ -1,6 +1,8 @@
-import { describe, it, expect } from "vitest";
-import { getProviderMeta, getModelMeta, PROVIDER_REGISTRY, resolveModelVision } from "./registry";
+import { describe, it, expect, beforeEach } from "vitest";
+import { getProviderMeta, getModelMeta, PROVIDER_REGISTRY, resolveModelVision, resolveModelMeta } from "./registry";
 import type { ModelMeta } from "./registry";
+import { setProviderCustomModelMeta } from "@/lib/provider-custom-model-meta";
+import { chromeMock } from "@/test/setup";
 
 describe("ProviderMeta schema", () => {
   it("every provider has a defaultBaseUrl, placeholder, and models[]", () => {
@@ -27,7 +29,7 @@ describe("ProviderMeta schema", () => {
   });
 
   it("non-OpenRouter providers have non-empty models[] (hardcoded)", () => {
-    const ids = ["anthropic", "openai", "zhipu", "bailian", "minimax", "gemini", "deepseek", "mimo"] as const;
+    const ids = ["anthropic", "openai", "zhipu", "bailian", "minimax", "gemini", "deepseek", "mimo", "moonshot", "moonshot-cn"] as const;
     for (const id of ids) {
       const meta = getProviderMeta(id)!;
       expect(meta.models.length).toBeGreaterThan(0);
@@ -47,7 +49,7 @@ describe("ProviderMeta schema", () => {
   it("MiMo is registered", () => {
     expect(getProviderMeta("mimo")).toBeDefined();
     expect(getProviderMeta("mimo")!.defaultBaseUrl).toBe("https://api.xiaomimimo.com");
-    expect(getProviderMeta("mimo")!.name).toBe("MiMo (小米)");
+    expect(getProviderMeta("mimo")!.name).toBe("Mimo(Xiaomi)");
   });
 });
 
@@ -64,9 +66,9 @@ describe("ModelMeta capability flags (per-model)", () => {
     expect(getModelMeta("openai", "gpt-4o-mini")?.vision).toBe(true);
   });
 
-  it("ZhiPu glm-4-plus does NOT have vision; glm-4v-plus does", () => {
-    expect(getModelMeta("zhipu", "glm-4-plus")?.vision).toBe(false);
-    expect(getModelMeta("zhipu", "glm-4v-plus")?.vision).toBe(true);
+  it("ZhiPu glm-4.7 does NOT have vision; glm-4.6v does", () => {
+    expect(getModelMeta("zhipu", "glm-4.7")?.vision).toBe(false);
+    expect(getModelMeta("zhipu", "glm-4.6v")?.vision).toBe(true);
   });
 
   it("Bailian qwen-max does NOT have vision; qwen-vl-max does", () => {
@@ -87,8 +89,8 @@ describe("ModelMeta capability flags (per-model)", () => {
     expect(getModelMeta("openai", "o3-mini")?.vision).toBe(false);
   });
 
-  it("glm-4v-plus maxContextTokens is 16K", () => {
-    expect(getModelMeta("zhipu", "glm-4v-plus")?.maxContextTokens).toBe(16_000);
+  it("glm-4v-flash maxContextTokens is 16K", () => {
+    expect(getModelMeta("zhipu", "glm-4v-flash")?.maxContextTokens).toBe(16_000);
   });
 
   it("MiniMax-M3 is registered with vision; M2.x is text-only", () => {
@@ -167,5 +169,78 @@ describe("Per-provider model id uniqueness", () => {
       const unique = new Set(ids);
       expect(unique.size).toBe(ids.length);
     }
+  });
+});
+
+describe("resolveModelMeta + pcmm", () => {
+  beforeEach(() => { chromeMock.storage.local.__store = {}; });
+
+  it("builtin custom id resolves from pcmm with tools forced true", async () => {
+    await setProviderCustomModelMeta("minimax", "MiniMax-Future", { vision: true, maxContextTokens: 1_000_000 });
+    const meta = await resolveModelMeta("minimax", "MiniMax-Future");
+    expect(meta).toMatchObject({ id: "MiniMax-Future", vision: true, tools: true, maxContextTokens: 1_000_000 });
+  });
+
+  it("registry preset wins over pcmm (preset not overridable)", async () => {
+    await setProviderCustomModelMeta("minimax", "MiniMax-M3", { vision: false, maxContextTokens: 1 });
+    const meta = await resolveModelMeta("minimax", "MiniMax-M3");
+    expect(meta?.maxContextTokens).toBe(1_000_000); // preset value, not pcmm's 1
+    expect(meta?.vision).toBe(true);
+  });
+
+  it("unknown id with no pcmm returns null", async () => {
+    expect(await resolveModelMeta("minimax", "no-such-model")).toBeNull();
+  });
+
+  it("pcmm displayName propagates into resolved meta", async () => {
+    await setProviderCustomModelMeta("minimax", "Named-Model", { displayName: "My Model", vision: false, maxContextTokens: 256_000 });
+    const meta = await resolveModelMeta("minimax", "Named-Model");
+    expect(meta?.displayName).toBe("My Model");
+  });
+});
+
+describe("Moonshot (Kimi) — dual-region registration", () => {
+  it("international entry registered with api.moonshot.ai", () => {
+    const meta = getProviderMeta("moonshot")!;
+    expect(meta).toBeDefined();
+    expect(meta.defaultBaseUrl).toBe("https://api.moonshot.ai");
+    expect(meta.name).toBe("Moonshot(Kimi)");
+  });
+
+  it("China entry registered with api.moonshot.cn", () => {
+    const meta = getProviderMeta("moonshot-cn")!;
+    expect(meta).toBeDefined();
+    expect(meta.defaultBaseUrl).toBe("https://api.moonshot.cn");
+    expect(meta.name).toBe("Moonshot(Kimi) China");
+  });
+
+  it("both regions expose the same model list", () => {
+    const intl = getProviderMeta("moonshot")!.models.map((m) => m.id);
+    const cn = getProviderMeta("moonshot-cn")!.models.map((m) => m.id);
+    expect(cn).toEqual(intl);
+    expect(intl).toContain("kimi-k2.6");
+  });
+
+  it("kimi-k2.6 / kimi-k2.5 have vision + tools + 256K context", () => {
+    for (const id of ["kimi-k2.6", "kimi-k2.5"]) {
+      const m = getModelMeta("moonshot", id)!;
+      expect(m.vision).toBe(true);
+      expect(m.tools).toBe(true);
+      expect(m.maxContextTokens).toBe(256_000);
+    }
+  });
+
+  it("moonshot-v1-128k is text-only with tools (128K)", () => {
+    const m = getModelMeta("moonshot", "moonshot-v1-128k")!;
+    expect(m.vision).toBe(false);
+    expect(m.tools).toBe(true);
+    expect(m.maxContextTokens).toBe(128_000);
+  });
+
+  it("moonshot-v1-32k is text-only with tools (32K)", () => {
+    const m = getModelMeta("moonshot", "moonshot-v1-32k")!;
+    expect(m.vision).toBe(false);
+    expect(m.tools).toBe(true);
+    expect(m.maxContextTokens).toBe(32_000);
   });
 });

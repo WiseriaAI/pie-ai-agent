@@ -7,6 +7,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { applyTokenBudget, estimateTokens } from "./window-token-budget";
 import type { AgentMessage } from "../model-router/types";
+import type { ProviderRef } from "@/lib/model-router";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -175,7 +176,7 @@ describe("U5 — applyTokenBudget", () => {
       // history with 30 rounds × 1000 chars CJK 90% would exceed 32k × 0.8 = 25.6k threshold
       const history = buildChatHistory(30, 1_000, 0.9);
       const resultKnown = await applyTokenBudget(history, "openrouter", "any-model");   // known provider, empty static catalog → fallback 32k
-      const resultUnknown = await applyTokenBudget(history, "unknown_provider_xyz", "any-model"); // unknown provider → fallback 32k
+      const resultUnknown = await applyTokenBudget(history, "unknown_provider_xyz" as ProviderRef, "any-model"); // unknown provider → fallback 32k
 
       // Both should drop the same amount (same effective threshold)
       expect(resultUnknown.length).toBe(resultKnown.length);
@@ -183,7 +184,7 @@ describe("U5 — applyTokenBudget", () => {
 
     it("fallback drops are applied just as with an explicit 32k provider", async () => {
       const history = buildChatHistory(30, 1_000, 0.9);
-      const result = await applyTokenBudget(history, "some_future_provider", "any-model");
+      const result = await applyTokenBudget(history, "some_future_provider" as ProviderRef, "any-model");
       // Must still be under budget with the 32k fallback
       expect(estimateTokens(result)).toBeLessThanOrEqual(32_000 * 0.8);
     });
@@ -401,6 +402,40 @@ describe("estimateTokens — image-skip (Phase 5 HARD GATE)", () => {
       },
     ];
     expect(estimateTokens(msgsWithImg, "anthropic")).toBe(1568 + 2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// thinking block — text must count toward token estimate
+// ---------------------------------------------------------------------------
+
+describe("estimateTokens — thinking block counts toward budget", () => {
+  it("a message with a thinking block has a higher estimate than without it", () => {
+    const thinkingText = "A".repeat(400); // 400 chars of reasoning
+    const baseText = "hello"; // 5 chars
+
+    const msgsWithoutThinking: AgentMessage[] = [
+      { role: "assistant", content: [{ type: "text", text: baseText }] },
+    ];
+    const msgsWithThinking: AgentMessage[] = [
+      {
+        role: "assistant",
+        content: [
+          { type: "thinking", thinking: thinkingText },
+          { type: "text", text: baseText },
+        ],
+      },
+    ];
+
+    const tokensWithout = estimateTokens(msgsWithoutThinking);
+    const tokensWith = estimateTokens(msgsWithThinking);
+
+    // thinking text (400 chars) must increase the estimate
+    expect(tokensWith).toBeGreaterThan(tokensWithout);
+    // ceil((400 + 5) / 4) = ceil(405 / 4) = 102 for with-thinking
+    // ceil(5 / 4) = 2 for without-thinking
+    expect(tokensWithout).toBe(2);
+    expect(tokensWith).toBe(102);
   });
 });
 

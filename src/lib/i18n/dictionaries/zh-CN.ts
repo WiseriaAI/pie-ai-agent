@@ -1,4 +1,5 @@
 import type { EnDict } from "./en";
+import type { Translations } from "../types";
 
 export const zhCNDict = {
   common: {
@@ -205,6 +206,11 @@ export const zhCNDict = {
     custom: "自定义",
     modelIdPlaceholder: "模型 ID",
   },
+  providers: {
+    zhipu: "GLM(智谱)",
+    mimo: "Mimo(小米)",
+    moonshotCn: "Moonshot(Kimi) 中国区",
+  },
   newConfigWizard: {
     step1Title: "第 1 步 — 选择 Provider",
     step2Title: "第 2 步 — {name}",
@@ -259,6 +265,10 @@ export const zhCNDict = {
     step: "步",
     steps: "步",
     done: " 完成",
+  },
+  thinking: {
+    label: "思考过程",
+    inProgress: "思考中…",
   },
   agentSummary: {
     doneSteps: "完成 · {count} 步",
@@ -383,6 +393,7 @@ export const zhCNDict = {
       scroll: "滚动",
       nav: "导航",
       submit: "提交",
+      keypress: "按键",
     },
     metaRedacted: "已脱敏",
     metaUnstable: "不稳定",
@@ -430,4 +441,4 @@ export const zhCNDict = {
     openSessionsList: "打开会话列表",
     pendingBadge: "，{count} 个待处理",
   },
-} as const satisfies EnDict;
+} as const satisfies Translations<EnDict>;

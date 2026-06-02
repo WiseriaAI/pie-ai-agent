@@ -68,6 +68,13 @@ function toSdkParams(messages: AgentMessage[]): {
       if (block.type === "tool_use") {
         return { type: "tool_use" as const, id: block.id, name: block.name, input: block.input };
       }
+      if (block.type === "thinking") {
+        return {
+          type: "thinking" as const,
+          thinking: block.thinking,
+          ...(block.signature ? { signature: block.signature } : {}),
+        };
+      }
       return { type: "text" as const, text: block.text };
     });
     out.push({ role: msg.role, content: blocks as Anthropic.ContentBlockParam[] });
@@ -129,6 +136,7 @@ export async function* streamChatAnthropicSdk(
   let usage: { inputTokens: number; outputTokens: number } | undefined;
   let stopReason: "end" | "tool_calls" | "length" | undefined;
   const toolBlocks = new Set<number>();
+  const thinkingSignatures = new Map<number, string>();
 
   try {
     const stream = await client.messages.create(
@@ -156,22 +164,39 @@ export async function* streamChatAnthropicSdk(
             index: event.index,
             name: event.content_block.name,
           };
+        } else if (event.content_block.type === "thinking") {
+          thinkingSignatures.set(event.index, "");
+          yield { type: "thinking-start", replay: true };
         }
       } else if (event.type === "content_block_delta") {
         if (event.delta.type === "text_delta") {
           yield { type: "text-delta", text: event.delta.text };
         } else if (event.delta.type === "input_json_delta") {
           yield { type: "tool-call-delta", index: event.index, argsDelta: event.delta.partial_json };
+        } else if (event.delta.type === "thinking_delta") {
+          yield { type: "thinking-delta", text: event.delta.thinking };
+        } else if (event.delta.type === "signature_delta") {
+          const prev = thinkingSignatures.get(event.index) ?? "";
+          thinkingSignatures.set(event.index, prev + event.delta.signature);
         }
       } else if (event.type === "content_block_stop") {
         if (toolBlocks.has(event.index)) {
           yield { type: "tool-call-end", index: event.index };
           toolBlocks.delete(event.index);
+        } else if (thinkingSignatures.has(event.index)) {
+          const sig = thinkingSignatures.get(event.index)!;
+          yield { type: "thinking-end", ...(sig ? { signature: sig } : {}) };
+          thinkingSignatures.delete(event.index);
         }
       } else if (event.type === "message_delta") {
         stopReason = mapStopReason(event.delta.stop_reason);
+        // MiMo / MiniMax report the real prompt size only in this terminal
+        // delta (message_start carried 0); Anthropic-official sends it up front
+        // and leaves this null. Prefer a positive late value, else keep what
+        // message_start already gave us. (#59)
+        const deltaInput = event.usage.input_tokens;
         usage = {
-          inputTokens: usage?.inputTokens ?? 0,
+          inputTokens: deltaInput != null && deltaInput > 0 ? deltaInput : usage?.inputTokens ?? 0,
           outputTokens: event.usage.output_tokens ?? 0,
         };
       }

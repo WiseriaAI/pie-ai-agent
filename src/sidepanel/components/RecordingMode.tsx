@@ -345,6 +345,7 @@ function SequenceRow({ index, action }: { index: number; action: RecordedAction 
     scroll: tLoc("recording.typeLabels.scroll"),
     navigate: tLoc("recording.typeLabels.nav"),
     submit: tLoc("recording.typeLabels.submit"),
+    keypress: tLoc("recording.typeLabels.keypress"),
   };
   const typeLabel = typeLabels[action.type];
   return (

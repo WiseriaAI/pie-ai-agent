@@ -34,7 +34,7 @@ describe("Gemini wire converter", () => {
       { role: "user", content: "hi" },
     ];
     const wire = _toGeminiContentsForTest(msgs);
-    expect(wire.find((c) => c.role === "system")).toBeUndefined();
+    expect((wire as { role: string }[]).find((c) => c.role === "system")).toBeUndefined();
     expect(wire).toContainEqual({ role: "user", parts: [{ text: "hi" }] });
   });
 

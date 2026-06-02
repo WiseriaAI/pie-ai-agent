@@ -714,7 +714,7 @@ describe("setLastTaskSynth / clearLastTaskSynth — U3 (AD1 fix: agent-state)", 
 
     // AD1: meta must NOT have the field (was the pre-fix location)
     const updatedMeta = await getSessionMeta(meta.id);
-    expect((updatedMeta as Record<string, unknown>)["lastTaskSynth"]).toBeUndefined();
+    expect((updatedMeta as unknown as Record<string, unknown>)["lastTaskSynth"]).toBeUndefined();
   });
 
   it("setLastTaskSynth writes only the agent key (no meta or index update)", async () => {
@@ -753,7 +753,7 @@ describe("setLastTaskSynth / clearLastTaskSynth — U3 (AD1 fix: agent-state)", 
     expect("lastTaskSynth" in after!).toBe(false);
     // Meta must never have had the field
     const afterMeta = await getSessionMeta(meta.id);
-    expect((afterMeta as Record<string, unknown>)["lastTaskSynth"]).toBeUndefined();
+    expect((afterMeta as unknown as Record<string, unknown>)["lastTaskSynth"]).toBeUndefined();
   });
 
   it("clearLastTaskSynth is a no-op when field is already absent", async () => {
@@ -883,7 +883,7 @@ describe("setLastTaskSynth / clearLastTaskSynth — U3 (AD1 fix: agent-state)", 
 
     // Meta must not have lastTaskSynth (AD1 invariant)
     const metaAfter = await getSessionMeta(meta.id);
-    expect((metaAfter as Record<string, unknown>)["lastTaskSynth"]).toBeUndefined();
+    expect((metaAfter as unknown as Record<string, unknown>)["lastTaskSynth"]).toBeUndefined();
   });
 });
 
@@ -1127,7 +1127,7 @@ describe("migrateLastTaskSynthFromMeta — AD1 migration", () => {
 
     // After migration: lastTaskSynth must be stripped from meta
     const updatedMeta = await getSessionMeta(meta.id);
-    expect((updatedMeta as Record<string, unknown>)["lastTaskSynth"]).toBeUndefined();
+    expect((updatedMeta as unknown as Record<string, unknown>)["lastTaskSynth"]).toBeUndefined();
   });
 
   it("is a no-op (returns false) when meta has no lastTaskSynth", async () => {

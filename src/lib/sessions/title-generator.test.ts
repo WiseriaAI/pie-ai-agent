@@ -12,7 +12,7 @@ import { generateTitle } from "./title-generator";
 type CallChat = (msgs: Array<{ role: string; content: string }>) => Promise<string>;
 
 describe("generateTitle", () => {
-  let callChat: ReturnType<typeof vi.fn<Parameters<CallChat>, ReturnType<CallChat>>>;
+  let callChat: ReturnType<typeof vi.fn<CallChat>>;
 
   beforeEach(() => {
     callChat = vi.fn();

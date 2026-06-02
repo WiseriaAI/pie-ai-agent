@@ -171,6 +171,7 @@ export interface UseSession {
   messages: DisplayMessage[];
   streaming: boolean;
   streamingText: string;
+  streamingThinking: string;
   error: string | null;
   /** M2-U2 — transient toast from the SW (e.g. SEC-PLAN-009 flood warn).
    *  Rendered by Chat as a dismissable banner. Not persisted. */
@@ -608,6 +609,7 @@ export function useSession(): UseSession {
         streamFinished: false,
         accumulated: "",
         streamingText: "",
+        streamingThinking: "",
         error: null,
       });
 
@@ -912,6 +914,7 @@ export function useSession(): UseSession {
         toast: null,
         accumulated: "",
         streamingText: "",
+        streamingThinking: "",
         streaming: false,
         streamFinished: true,
         usage: agent?.contextUsage, // Issue #59 — rehydrate context ring data
@@ -1022,6 +1025,7 @@ export function useSession(): UseSession {
     messages: active.messages,
     streaming: active.streaming,
     streamingText: active.streamingText,
+    streamingThinking: active.streamingThinking,
     error: active.error,
     toast: active.toast,
     quotes: active.quotes,

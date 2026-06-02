@@ -3,9 +3,11 @@ import { chromeMock } from "@/test/setup";
 import {
   createInstance, getInstance, listInstances, deleteInstance,
   setActiveInstance, getActiveInstance, resolveActiveInstanceModelConfig,
+  resolveInstanceToModelConfig,
   updateInstance,
 } from "./instances";
 import { saveCustomProvider } from "./custom-providers";
+import { setProviderCustomModelMeta } from "./provider-custom-model-meta";
 
 beforeEach(() => {
   chromeMock.storage.local.__store = {};
@@ -20,7 +22,7 @@ describe("instances CRUD", () => {
       model: "claude-opus-4-7",
     });
     expect(id).toMatch(/^[0-9a-f]{8}-/);
-    const stored = chromeMock.storage.local.__store[`instance_${id}`];
+    const stored = chromeMock.storage.local.__store[`instance_${id}`] as Record<string, unknown>;
     expect(stored.encryptedKey).toBeDefined();
     expect(stored.encryptedKey).not.toContain("sk-ant-secret");
     const idx = chromeMock.storage.local.__store["instances_index"];
@@ -216,5 +218,37 @@ describe("instances CRUD", () => {
         expect(cfg!.vision).toBeUndefined();
       });
     });
+  });
+});
+
+describe("resolveInstanceToModelConfig — builtin custom model vision via pcmm", () => {
+  beforeEach(() => {
+    chromeMock.storage.local.__store = {};
+  });
+
+  it("pcmm vision:true unlocks ModelConfig.vision for a non-registry builtin model", async () => {
+    const id = await createInstance({ provider: "minimax", nickname: "X", apiKey: "k", model: "MyVisionModel" });
+    await setProviderCustomModelMeta("minimax", "MyVisionModel", { vision: true, maxContextTokens: 256_000 });
+    const cfg = await resolveInstanceToModelConfig(id);
+    expect(cfg?.vision).toBe(true);
+  });
+
+  it("pcmm vision:false sets ModelConfig.vision false (present, not omitted)", async () => {
+    const id = await createInstance({ provider: "minimax", nickname: "X", apiKey: "k", model: "MyTextModel" });
+    await setProviderCustomModelMeta("minimax", "MyTextModel", { vision: false, maxContextTokens: 256_000 });
+    const cfg = await resolveInstanceToModelConfig(id);
+    expect(cfg?.vision).toBe(false);
+  });
+
+  it("registry preset still wins (MiniMax-M3 vision true) without pcmm", async () => {
+    const id = await createInstance({ provider: "minimax", nickname: "X", apiKey: "k", model: "MiniMax-M3" });
+    const cfg = await resolveInstanceToModelConfig(id);
+    expect(cfg?.vision).toBe(true);
+  });
+
+  it("unknown builtin model with no pcmm omits vision (undefined → fail-closed)", async () => {
+    const id = await createInstance({ provider: "minimax", nickname: "X", apiKey: "k", model: "no-such-model" });
+    const cfg = await resolveInstanceToModelConfig(id);
+    expect(cfg && "vision" in cfg).toBe(false);
   });
 });

@@ -7,10 +7,9 @@ const memStore = new Map<string, unknown>();
 
 beforeEach(() => {
   memStore.clear();
-  // @ts-expect-error happy-dom doesn't define chrome
   globalThis.chrome = {
     storage: {
-      local: {
+      local: ({
         get: async (keys: string | string[]) => {
           const arr = Array.isArray(keys) ? keys : [keys];
           const out: Record<string, unknown> = {};
@@ -24,9 +23,9 @@ beforeEach(() => {
           const arr = Array.isArray(keys) ? keys : [keys];
           for (const k of arr) memStore.delete(k);
         },
-      },
+      } as unknown as typeof chrome.storage.local),
     },
-  };
+  } as unknown as typeof chrome;
   vi.restoreAllMocks();
 });
 

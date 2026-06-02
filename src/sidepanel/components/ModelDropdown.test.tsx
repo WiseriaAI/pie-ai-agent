@@ -1,6 +1,7 @@
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, within } from "@testing-library/react";
 import { describe, it, expect, vi, afterEach } from "vitest";
 import ModelDropdown from "./ModelDropdown";
+import type { StoredCustomModelMeta } from "@/lib/provider-custom-model-meta";
 
 afterEach(() => {
   cleanup();
@@ -54,5 +55,90 @@ describe("ModelDropdown", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: /select model/i }));
     expect(onRefresh).toHaveBeenCalled();
+  });
+
+  it("custom model with vision meta shows vision badge, never tools badge", () => {
+    const metas: Record<string, StoredCustomModelMeta> = {
+      "my-model": { vision: true, maxContextTokens: 256_000 },
+    };
+    render(
+      <ModelDropdown
+        provider="minimax"
+        value=""
+        customModels={["my-model"]}
+        customModelMetas={metas}
+        onChange={() => {}}
+        onAddCustom={() => {}}
+        onUpdateCustomMeta={() => {}}
+        onRemoveCustom={() => {}}
+        onRefresh={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /select/i }));
+    const row = screen.getByRole("button", { name: /my-model/i });
+    expect(within(row).getByText(/vision/i)).toBeTruthy();
+    expect(within(row).queryByText(/^tools$/i)).toBeNull();
+    // sanity: it IS marked custom
+    expect(within(row).getByText(/^custom$/)).toBeTruthy();
+  });
+
+  it("+add opens ModelMetaEditor modal and save emits (id, meta)", () => {
+    const onAddCustom = vi.fn();
+    render(
+      <ModelDropdown
+        provider="minimax"
+        value=""
+        customModels={[]}
+        customModelMetas={{}}
+        onChange={() => {}}
+        onAddCustom={onAddCustom}
+        onUpdateCustomMeta={() => {}}
+        onRemoveCustom={() => {}}
+        onRefresh={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /select/i }));
+    fireEvent.click(screen.getByText(/add.*custom.*model/i));
+    fireEvent.change(screen.getByPlaceholderText(/model id/i), { target: { value: "m9" } });
+    fireEvent.click(screen.getByText(/save/i));
+    expect(onAddCustom).toHaveBeenCalledWith(
+      "m9",
+      expect.objectContaining({ vision: false, maxContextTokens: 256_000 }),
+    );
+    // modal closes after save
+    expect(screen.queryByPlaceholderText(/model id/i)).toBeNull();
+  });
+
+  it("pencil edit opens modal with id readonly and save calls onUpdateCustomMeta", () => {
+    const onUpdateCustomMeta = vi.fn();
+    const metas: Record<string, StoredCustomModelMeta> = {
+      "edit-me": { vision: false, maxContextTokens: 128_000 },
+    };
+    render(
+      <ModelDropdown
+        provider="minimax"
+        value=""
+        customModels={["edit-me"]}
+        customModelMetas={metas}
+        onChange={() => {}}
+        onAddCustom={() => {}}
+        onUpdateCustomMeta={onUpdateCustomMeta}
+        onRemoveCustom={() => {}}
+        onRefresh={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /select/i }));
+    const row = screen.getByRole("button", { name: /edit-me/i });
+    // vision:false custom model shows no vision badge
+    expect(within(row).queryByText(/vision/i)).toBeNull();
+    fireEvent.click(within(row).getByRole("button", { name: /edit/i }));
+    // modal should be visible with id field readonly (value "edit-me")
+    const idInput = screen.getByDisplayValue("edit-me");
+    expect(idInput).toBeTruthy();
+    fireEvent.click(screen.getByText(/save/i));
+    expect(onUpdateCustomMeta).toHaveBeenCalledWith(
+      "edit-me",
+      expect.objectContaining({ vision: false, maxContextTokens: 128_000 }),
+    );
   });
 });

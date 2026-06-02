@@ -1,13 +1,19 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import type { ProviderRef, BuiltinProvider, ModelMeta } from "@/lib/model-router";
-import { PROVIDER_REGISTRY, getProviderMeta, resolveProviderMeta } from "@/lib/model-router/providers/registry";
+import { PROVIDER_REGISTRY, getProviderMeta } from "@/lib/model-router/providers/registry";
 import {
   getProviderCustomModels,
   addProviderCustomModel,
   removeProviderCustomModel,
 } from "@/lib/provider-custom-models";
+import {
+  getProviderCustomModelMetas,
+  setProviderCustomModelMeta,
+  removeProviderCustomModelMeta,
+  type StoredCustomModelMeta,
+} from "@/lib/provider-custom-model-meta";
 import { listCustomProviders, type StoredCustomProvider, CUSTOM_PREFIX } from "@/lib/custom-providers";
-import { useT } from "@/lib/i18n";
+import { useT, providerDisplayName } from "@/lib/i18n";
 import { fetchOpenRouterModels } from "@/lib/openrouter-models-fetch";
 import InstanceForm, { type InstanceFormPayload } from "./InstanceForm";
 import CustomProviderForm from "./CustomProviderForm";
@@ -24,10 +30,11 @@ export default function NewConfigWizard(props: Props) {
   const [provider, setProvider] = useState<ProviderRef | null>(null);
   const [customProviders, setCustomProviders] = useState<StoredCustomProvider[]>([]);
   const [showCustomForm, setShowCustomForm] = useState(false);
-  const [step2Meta, setStep2Meta] = useState<{ name: string; defaultBaseUrl: string } | null>(null);
   // Provider-level custom models pool — pre-populates the form's dropdown
   // so user sees previously-typed custom ids carry across instances.
   const [pool, setPool] = useState<string[]>([]);
+  // Per-model meta (vision, maxContextTokens) for custom models in this wizard session.
+  const [metas, setMetas] = useState<Record<string, StoredCustomModelMeta>>({});
   // Lazy-fetched OpenRouter model list, scoped to this wizard session.
   // Lives here (not in InstanceForm) so the model list persists even when
   // the user clicks ← provider and navigates back to step 2.
@@ -42,13 +49,15 @@ export default function NewConfigWizard(props: Props) {
   useEffect(() => {
     if (!provider) return;
     getProviderCustomModels(provider).then(setPool).catch(() => setPool([]));
+    // pcmm metas are builtin-scoped; custom providers have none — clear stale builtin metas.
+    if (provider.startsWith(CUSTOM_PREFIX)) {
+      setMetas({});
+    } else {
+      getProviderCustomModelMetas(provider as BuiltinProvider).then(setMetas).catch(() => setMetas({}));
+    }
     // Reset fetched cache when provider changes — different provider, different model list.
     setFetchedModels(undefined);
     setFetchedAt(undefined);
-    // Resolve meta for step 2 header
-    resolveProviderMeta(provider).then((m) => {
-      if (m) setStep2Meta({ name: m.name, defaultBaseUrl: m.defaultBaseUrl });
-    });
     // OpenRouter /v1/models is public — pre-fetch immediately on provider select
     // so the dropdown is populated before the user even opens it.
     if (provider === "openrouter") {
@@ -65,6 +74,15 @@ export default function NewConfigWizard(props: Props) {
         .finally(() => setIsFetching(false));
     }
   }, [provider]);
+
+  // Builtin providers listed alphabetically by their (localized) display name.
+  const sortedProviders = useMemo(
+    () =>
+      [...PROVIDER_REGISTRY].sort((a, b) =>
+        providerDisplayName(a, t).localeCompare(providerDisplayName(b, t)),
+      ),
+    [t],
+  );
 
   if (showCustomForm) {
     return (
@@ -88,14 +106,14 @@ export default function NewConfigWizard(props: Props) {
           <div className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-3">{t("newConfigWizard.step1Title")}</div>
         </div>
         <div className="flex flex-col gap-1.5">
-          {PROVIDER_REGISTRY.map((p) => (
+          {sortedProviders.map((p) => (
             <button
               key={p.id}
               onClick={() => { setProvider(p.id); setStep(2); }}
               className="flex items-center gap-2 rounded border border-line px-3 py-2 text-left hover:bg-field"
             >
               <div className="h-1.5 w-1.5 rounded-full bg-fg-3" />
-              <span className="text-[13px] text-fg-1">{p.name}</span>
+              <span className="text-[13px] text-fg-1">{providerDisplayName(p, t)}</span>
               <span className="ml-auto font-mono text-[10px] text-fg-3">{p.defaultBaseUrl.replace(/^https?:\/\//, "")}</span>
             </button>
           ))}
@@ -138,7 +156,18 @@ export default function NewConfigWizard(props: Props) {
     );
   }
 
-  const metaName = step2Meta?.name ?? provider;
+  // Resolve the display name synchronously from already-loaded state (registry
+  // for builtins, customProviders for custom) so switching providers never
+  // momentarily shows — or seeds the nickname with — the previously-selected
+  // provider's name. (`provider` is non-null here, past the step-1 guard.)
+  // pcmm callbacks are gated to builtin providers in InstanceForm, so this cast is safe.
+  const builtinProvider = provider as BuiltinProvider;
+  const builtinMeta = provider.startsWith(CUSTOM_PREFIX)
+    ? undefined
+    : getProviderMeta(provider as BuiltinProvider);
+  const metaName = builtinMeta
+    ? providerDisplayName(builtinMeta, t)
+    : customProviders.find((c) => `${CUSTOM_PREFIX}${c.id}` === provider)?.name ?? provider;
   return (
     <div className="rounded-lg border border-line bg-canvas">
       <div className="border-b border-line px-3.5 py-2">
@@ -149,19 +178,28 @@ export default function NewConfigWizard(props: Props) {
         provider={provider}
         initialNickname={metaName}
         initialCustomModels={pool}
+        customModelMetas={metas}
         fetchedModels={fetchedModels}
         fetchedAt={fetchedAt}
         isFetching={isFetching}
         saveLabel={t("newConfigWizard.create")}
         onSave={(p) => props.onCreate(provider, p)}
         onTest={(p) => props.onTest(provider, p)}
-        onAddCustomModel={async (id) => {
-          const next = await addProviderCustomModel(provider, id);
-          setPool(next);
+        onAddCustomModel={async (id, meta) => {
+          await addProviderCustomModel(provider, id);
+          await setProviderCustomModelMeta(builtinProvider, id, meta);
+          setPool(await getProviderCustomModels(provider));
+          setMetas(await getProviderCustomModelMetas(builtinProvider));
+        }}
+        onUpdateCustomModelMeta={async (id, meta) => {
+          await setProviderCustomModelMeta(builtinProvider, id, meta);
+          setMetas(await getProviderCustomModelMetas(builtinProvider));
         }}
         onRemoveCustomModel={async (id) => {
-          const next = await removeProviderCustomModel(provider, id);
-          setPool(next);
+          await removeProviderCustomModel(provider, id);
+          await removeProviderCustomModelMeta(builtinProvider, id);
+          setPool(await getProviderCustomModels(provider));
+          setMetas(await getProviderCustomModelMetas(builtinProvider));
         }}
         onRefreshModels={async (apiKey) => {
           // Only OpenRouter has /v1/models lazy fetch; other providers stay hardcoded.
@@ -169,7 +207,7 @@ export default function NewConfigWizard(props: Props) {
           if (provider !== "openrouter") return;
           setIsFetching(true);
           try {
-            const fetched = await fetchOpenRouterModels(step2Meta?.defaultBaseUrl ?? getProviderMeta("openrouter")!.defaultBaseUrl, apiKey || undefined);
+            const fetched = await fetchOpenRouterModels(getProviderMeta("openrouter")!.defaultBaseUrl, apiKey || undefined);
             setFetchedModels(fetched);
             setFetchedAt(Date.now());
           } catch {

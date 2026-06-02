@@ -21,7 +21,6 @@ function fakePort(sessionId: string): FakePort {
 
 beforeEach(() => {
   const data: Record<string, unknown> = {};
-  // @ts-expect-error mock
   global.chrome = {
     storage: {
       local: {
@@ -33,12 +32,11 @@ beforeEach(() => {
         }),
         set: vi.fn((kv) => { Object.assign(data, kv); return Promise.resolve(); }),
         remove: vi.fn(() => Promise.resolve()),
-        onChanged: { addListener: vi.fn(), removeListener: vi.fn() },
+        onChanged: { addListener: vi.fn(), removeListener: vi.fn() } as unknown as typeof chrome.storage.local.onChanged,
       },
-      // @ts-expect-error
-      onChanged: { addListener: vi.fn() },
+      onChanged: { addListener: vi.fn() } as unknown as typeof chrome.storage.onChanged,
     },
-  };
+  } as unknown as typeof chrome;
 });
 
 describe("requestCdpInputConsent", () => {
