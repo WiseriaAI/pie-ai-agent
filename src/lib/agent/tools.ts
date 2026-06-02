@@ -87,17 +87,17 @@ export const BUILT_IN_TOOLS: Tool[] = [
   {
     name: "type",
     description:
-      "Type text into an input/textarea/contenteditable by its data-pie-idx from the most recent read_page. If the element is gone (page changed), returns 'Element not found'; call read_page again to get current indices.",
+      "Type text into an input/textarea/contenteditable by its data-pie-idx from the latest read_page <interactive_index> or search_page result. If the element is gone (page changed), returns 'Element not found'; call read_page or search_page again to get current indices.",
     parameters: {
       type: "object",
       properties: {
         frameId: {
           type: "number",
-          description: "Frame ID from latest read_page.",
+          description: "Frame ID from the latest read_page <interactive_index> or search_page result.",
         },
         elementIndex: {
           type: "number",
-          description: "data-pie-idx of the element.",
+          description: "data-pie-idx of the element from the latest read_page <interactive_index> or search_page result.",
         },
         text: {
           type: "string",
@@ -152,17 +152,17 @@ export const BUILT_IN_TOOLS: Tool[] = [
   {
     name: "select",
     description:
-      "Select an option in a <select> element by its data-pie-idx from the most recent read_page. If the element is gone (page changed), returns 'Element not found'; call read_page again to get current indices.",
+      "Select an option in a <select> element by its data-pie-idx from the latest read_page <interactive_index> or search_page result. If the element is gone (page changed), returns 'Element not found'; call read_page or search_page again to get current indices.",
     parameters: {
       type: "object",
       properties: {
         frameId: {
           type: "number",
-          description: "Frame ID from latest read_page.",
+          description: "Frame ID from the latest read_page <interactive_index> or search_page result.",
         },
         elementIndex: {
           type: "number",
-          description: "data-pie-idx of the <select>.",
+          description: "data-pie-idx of the <select> from the latest read_page <interactive_index> or search_page result.",
         },
         value: {
           type: "string",

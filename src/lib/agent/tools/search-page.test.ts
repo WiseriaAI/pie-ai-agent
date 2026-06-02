@@ -185,4 +185,23 @@ describe("search_page registry", () => {
   it("分类为 read", () => {
     expect(getToolClass("search_page")).toBe("read");
   });
+
+  it("type/select descriptions allow indices from read_page interactive_index or search_page", () => {
+    for (const name of ["type", "select"]) {
+      const tool = BUILT_IN_TOOLS.find((t) => t.name === name);
+      expect(tool?.description).toContain("read_page <interactive_index> or search_page result");
+      const params = tool?.parameters as {
+        properties: {
+          frameId: { description: string };
+          elementIndex: { description: string };
+        };
+      };
+      expect(params.properties.frameId.description).toContain(
+        "read_page <interactive_index> or search_page result",
+      );
+      expect(params.properties.elementIndex.description).toContain(
+        "read_page <interactive_index> or search_page result",
+      );
+    }
+  });
 });

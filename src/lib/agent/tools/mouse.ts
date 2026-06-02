@@ -90,12 +90,18 @@ export function buildHoverTool(deps: MouseToolDeps): Tool {
   return {
     name: "hover",
     description:
-      "Hover the mouse over an element by its data-pie-idx from the most recent read_page. Use this when an element shows new content on mouseover (dropdown menus, tooltips, hover cards). After hovering, call read_page again to see any newly revealed elements.",
+      "Hover the mouse over an element by its data-pie-idx from the latest read_page <interactive_index> or search_page result. Use this when an element shows new content on mouseover (dropdown menus, tooltips, hover cards). After hovering, call read_page again to see any newly revealed elements.",
     parameters: {
       type: "object",
       properties: {
-        frameId: { type: "number", description: "Frame ID from latest read_page." },
-        elementIndex: { type: "number", description: "data-pie-idx of the element." },
+        frameId: {
+          type: "number",
+          description: "Frame ID from the latest read_page <interactive_index> or search_page result.",
+        },
+        elementIndex: {
+          type: "number",
+          description: "data-pie-idx of the element from the latest read_page <interactive_index> or search_page result.",
+        },
       },
       required: ["frameId", "elementIndex"],
       additionalProperties: false,
@@ -141,12 +147,18 @@ export function buildClickTool(deps: MouseToolDeps): Tool {
   return {
     name: "click",
     description:
-      "Click an interactive element by its data-pie-idx from the most recent read_page. Uses real mouse events (CDP). If the element is gone (page changed), returns 'Element not found'; call read_page again to get current indices.",
+      "Click an interactive element by its data-pie-idx from the latest read_page <interactive_index> or search_page result. Uses real mouse events (CDP). If the element is gone (page changed), returns 'Element not found'; call read_page or search_page again to get current indices.",
     parameters: {
       type: "object",
       properties: {
-        frameId: { type: "number", description: "Frame ID from latest read_page." },
-        elementIndex: { type: "number", description: "data-pie-idx of the element." },
+        frameId: {
+          type: "number",
+          description: "Frame ID from the latest read_page <interactive_index> or search_page result.",
+        },
+        elementIndex: {
+          type: "number",
+          description: "data-pie-idx of the element from the latest read_page <interactive_index> or search_page result.",
+        },
       },
       required: ["frameId", "elementIndex"],
       additionalProperties: false,
