@@ -29,7 +29,7 @@ describe("ProviderMeta schema", () => {
   });
 
   it("non-OpenRouter providers have non-empty models[] (hardcoded)", () => {
-    const ids = ["anthropic", "openai", "zhipu", "bailian", "minimax", "gemini", "deepseek", "mimo"] as const;
+    const ids = ["anthropic", "openai", "zhipu", "bailian", "minimax", "gemini", "deepseek", "mimo", "moonshot", "moonshot-cn"] as const;
     for (const id of ids) {
       const meta = getProviderMeta(id)!;
       expect(meta.models.length).toBeGreaterThan(0);
@@ -196,5 +196,51 @@ describe("resolveModelMeta + pcmm", () => {
     await setProviderCustomModelMeta("minimax", "Named-Model", { displayName: "My Model", vision: false, maxContextTokens: 256_000 });
     const meta = await resolveModelMeta("minimax", "Named-Model");
     expect(meta?.displayName).toBe("My Model");
+  });
+});
+
+describe("Moonshot (Kimi) — dual-region registration", () => {
+  it("international entry registered with api.moonshot.ai", () => {
+    const meta = getProviderMeta("moonshot")!;
+    expect(meta).toBeDefined();
+    expect(meta.defaultBaseUrl).toBe("https://api.moonshot.ai");
+    expect(meta.name).toBe("Moonshot(Kimi)");
+  });
+
+  it("China entry registered with api.moonshot.cn", () => {
+    const meta = getProviderMeta("moonshot-cn")!;
+    expect(meta).toBeDefined();
+    expect(meta.defaultBaseUrl).toBe("https://api.moonshot.cn");
+    expect(meta.name).toBe("Moonshot(Kimi) China");
+  });
+
+  it("both regions expose the same model list", () => {
+    const intl = getProviderMeta("moonshot")!.models.map((m) => m.id);
+    const cn = getProviderMeta("moonshot-cn")!.models.map((m) => m.id);
+    expect(cn).toEqual(intl);
+    expect(intl).toContain("kimi-k2.6");
+  });
+
+  it("kimi-k2.6 / kimi-k2.5 have vision + tools + 256K context", () => {
+    for (const id of ["kimi-k2.6", "kimi-k2.5"]) {
+      const m = getModelMeta("moonshot", id)!;
+      expect(m.vision).toBe(true);
+      expect(m.tools).toBe(true);
+      expect(m.maxContextTokens).toBe(256_000);
+    }
+  });
+
+  it("moonshot-v1-128k is text-only with tools (128K)", () => {
+    const m = getModelMeta("moonshot", "moonshot-v1-128k")!;
+    expect(m.vision).toBe(false);
+    expect(m.tools).toBe(true);
+    expect(m.maxContextTokens).toBe(128_000);
+  });
+
+  it("moonshot-v1-32k is text-only with tools (32K)", () => {
+    const m = getModelMeta("moonshot", "moonshot-v1-32k")!;
+    expect(m.vision).toBe(false);
+    expect(m.tools).toBe(true);
+    expect(m.maxContextTokens).toBe(32_000);
   });
 });

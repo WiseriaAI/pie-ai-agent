@@ -209,6 +209,7 @@ export const zhCNDict = {
   providers: {
     zhipu: "GLM(智谱)",
     mimo: "Mimo(小米)",
+    moonshotCn: "Moonshot(Kimi) 中国区",
   },
   newConfigWizard: {
     step1Title: "第 1 步 — 选择 Provider",
