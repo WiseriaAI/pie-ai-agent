@@ -6,9 +6,9 @@ import {
   expandSlashCommand,
   normalizeSkillSlashKey,
 } from "@/lib/skills";
-import { resolveModelVision, resolveModelMeta } from "@/lib/model-router/providers/registry";
+import { resolveModelMeta } from "@/lib/model-router/providers/registry";
+import { resolveSupportsVision } from "./chat-vision";
 import ContextRing from "./ContextRing";
-import type { BuiltinProvider } from "@/lib/model-router";
 import { listInstances, getActiveInstance, getInstance, type DecryptedInstance } from "@/lib/instances";
 import type { ImageAttachment } from "@/lib/images";
 import type { FileAttachment } from "@/lib/files/types";
@@ -545,7 +545,9 @@ export default function Chat({
           // fail-closed for unknown ids — a slightly different policy from the
           // loop's screenshot guard (fail-open) because the disabled button
           // is a visible UX cue, while a silent screenshot-tool block is not.
-          setSupportsVision(resolveModelVision(inst.provider as BuiltinProvider, inst.model, inst.fetchedModels) ?? false);
+          setSupportsVision(await resolveSupportsVision(inst.provider, inst.model, inst.fetchedModels));
+          // resolveSupportsVision may also read pcmm (on registry miss); this second
+          // resolveModelMeta is for the context budget — both are cheap in-memory reads.
           const meta = await resolveModelMeta(inst.provider, inst.model);
           setMaxContextTokens(meta?.maxContextTokens);
           return;

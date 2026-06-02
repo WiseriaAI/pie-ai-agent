@@ -11,8 +11,13 @@ import {
   addProviderCustomModel,
   removeProviderCustomModel,
 } from "@/lib/provider-custom-models";
-import { getProviderMeta } from "@/lib/model-router/providers/registry";
-import { resolveProviderMeta } from "@/lib/model-router/providers/registry";
+import {
+  getProviderCustomModelMetas,
+  setProviderCustomModelMeta,
+  removeProviderCustomModelMeta,
+  type StoredCustomModelMeta,
+} from "@/lib/provider-custom-model-meta";
+import { getProviderMeta, resolveProviderMeta } from "@/lib/model-router/providers/registry";
 import { fetchOpenRouterModels } from "@/lib/openrouter-models-fetch";
 import { isCdpInputEnabled, setCdpInputEnabled } from "@/lib/cdp-input-enabled";
 import {
@@ -45,6 +50,8 @@ export default function Settings({ onBack, onRunSkill }: Props) {
   const [testResult, setTestResult] = useState<Record<string, { ok: boolean; message: string }>>({});
   // Per-provider custom models pool — sticky across instances of the same provider.
   const [providerPools, setProviderPools] = useState<Record<string, string[]>>({});
+  // Per-provider custom model meta (vision, maxContextTokens) keyed by provider then modelId.
+  const [providerMetas, setProviderMetas] = useState<Record<string, Record<string, StoredCustomModelMeta>>>({});
   const [customProviders, setCustomProviders] = useState<StoredCustomProvider[]>([]);
   const [customProviderCounts, setCustomProviderCounts] = useState<Record<string, number>>({});
   const [showCustomProviderForm, setShowCustomProviderForm] = useState(false);
@@ -58,6 +65,12 @@ export default function Settings({ onBack, onRunSkill }: Props) {
     const providers = Array.from(new Set(list.map((i) => i.provider)));
     const pools = await Promise.all(providers.map((p) => getProviderCustomModels(p).then((v) => [p, v] as const)));
     setProviderPools(Object.fromEntries(pools));
+    // pcmm metas are builtin-scoped; filter out custom: providers (the cast is then safe).
+    const builtinProviders = providers.filter((p) => !p.startsWith(CUSTOM_PREFIX));
+    const metas = await Promise.all(
+      builtinProviders.map((p) => getProviderCustomModelMetas(p as BuiltinProvider).then((v) => [p, v] as const)),
+    );
+    setProviderMetas(Object.fromEntries(metas));
     // Reload custom providers and their instance counts
     const cpList = await listCustomProviders();
     setCustomProviders(cpList);
@@ -204,6 +217,9 @@ export default function Settings({ onBack, onRunSkill }: Props) {
                   const mergedCustomModels = Array.from(
                     new Set([...(inst.customModels ?? []), ...pool]),
                   );
+                  // pcmm callbacks only fire for builtin providers (InstanceForm gates them off
+                  // for custom providers), so this narrowing cast is safe.
+                  const bp = inst.provider as BuiltinProvider;
                   return (
                     <>
                       <InstanceForm
@@ -212,6 +228,7 @@ export default function Settings({ onBack, onRunSkill }: Props) {
                         initialNickname={inst.nickname}
                         initialModel={inst.model}
                         initialCustomModels={mergedCustomModels}
+                        customModelMetas={providerMetas[inst.provider] ?? {}}
                         fetchedModels={inst.fetchedModels}
                         fetchedAt={inst.fetchedAt}
                         maskedKey={maskKey(inst.apiKey)}
@@ -219,11 +236,16 @@ export default function Settings({ onBack, onRunSkill }: Props) {
                         onSave={(p) => handleSaveEdit(id, p)}
                         onTest={(p) => handleTest(id, inst.provider, p)}
                         onDelete={() => handleDelete(id)}
-                        onAddCustomModel={async (mid) => {
+                        onAddCustomModel={async (mid, meta) => {
                           // Persist to BOTH the instance (for back-compat) AND the provider pool.
                           const nextInst = [...(inst.customModels ?? []), mid];
                           await updateInstance(id, { customModels: nextInst });
                           await addProviderCustomModel(inst.provider, mid);
+                          await setProviderCustomModelMeta(bp, mid, meta);
+                          await reload();
+                        }}
+                        onUpdateCustomModelMeta={async (mid, meta) => {
+                          await setProviderCustomModelMeta(bp, mid, meta);
                           await reload();
                         }}
                         onRemoveCustomModel={async (mid) => {
@@ -231,6 +253,7 @@ export default function Settings({ onBack, onRunSkill }: Props) {
                           const nextInst = (inst.customModels ?? []).filter((x) => x !== mid);
                           await updateInstance(id, { customModels: nextInst });
                           await removeProviderCustomModel(inst.provider, mid);
+                          await removeProviderCustomModelMeta(bp, mid); // cascade-clear pcmm
                           await reload();
                         }}
                         onRefreshModels={async (apiKey) => {

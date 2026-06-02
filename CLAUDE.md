@@ -26,6 +26,7 @@ BYOK (Bring Your Own Key) Chrome Extension — 用户插入自己的 API key 获
 - `src/lib/instances.ts` — Multi-instance CRUD; `instance_${uuid}` + `instances_index` + `active_instance_id`
 - `src/lib/migration-v2.ts` — V1→V2 silent migration (`provider_*` → `instance_*`)
 - `src/lib/provider-custom-models.ts` — per-provider sticky pool（`pcm_${provider}`）跨 instance 共享自定义 model id
+- `src/lib/provider-custom-model-meta.ts` — per-provider sidecar 属性表（`pcmm_${provider}`），给 builtin 自定义模型挂 `vision`/`maxContextTokens`（`tools` 恒 true、不可配）；与 `pcm_${provider}` 的 id 池一一对应，删模型时两边连带清
 - `src/lib/openrouter-models-fetch.ts` — `/v1/models` 公共 endpoint normaliser
 - `src/types/` — Shared message + agent protocol types
 
