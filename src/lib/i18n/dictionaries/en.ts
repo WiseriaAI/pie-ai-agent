@@ -385,7 +385,7 @@ export const enDict = {
     escHint: "to cancel · ⏎ to finish · trace becomes a chip in chat",
     awaiting: "AWAITING",
     awaitingHint: "interact with the tab — capture is live",
-    typeLabels: { click: "CLICK", type: "TYPE", select: "SELECT", scroll: "SCROLL", nav: "NAV", submit: "SUBMIT" },
+    typeLabels: { click: "CLICK", type: "TYPE", select: "SELECT", scroll: "SCROLL", nav: "NAV", submit: "SUBMIT", keypress: "Key" },
     metaRedacted: "REDACTED",
     metaUnstable: "UNSTABLE",
   },

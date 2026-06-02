@@ -10,6 +10,8 @@
  * Not used directly by replay dispatch — click/type tools are index-based.
  */
 
+import { ROLE_TO_CN, TAG_TO_CN } from "@/lib/dom-actions/_shared/interactive";
+
 interface ElementMetaForDescribe {
   tag: string;
   role: string | undefined;
@@ -35,26 +37,6 @@ interface DescribeResult {
   selectorHint?: string;
   unstable: boolean;
 }
-
-const ROLE_TO_CN: Record<string, string> = {
-  button: "按钮",
-  link: "链接",
-  tab: "标签页",
-  checkbox: "复选框",
-  radio: "单选框",
-  switch: "开关",
-  menuitem: "菜单项",
-  option: "下拉选项",
-};
-
-const TAG_TO_CN: Record<string, string> = {
-  a: "链接",
-  button: "按钮",
-  input: "输入框",
-  textarea: "文本框",
-  select: "下拉框",
-  summary: "折叠标签",
-};
 
 const REGION_TO_CN: Record<string, string> = {
   main: "main",

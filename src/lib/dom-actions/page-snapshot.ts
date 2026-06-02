@@ -61,13 +61,10 @@ export function pageSnapshotInjected(): PageSnapshotResult {
     "gi",
   );
 
-  const INTERACTIVE_SELECTOR = [
-    "a", "button", "input", "select", "textarea",
-    '[role="button"]', '[role="link"]', '[role="tab"]',
-    '[role="checkbox"]', '[role="radio"]', '[role="switch"]',
-    '[role="menuitem"]', '[contenteditable="true"]',
-    "summary", "[onclick]", "[tabindex]:not([tabindex='-1'])",
-  ].join(", ");
+  // VERBATIM copy of _shared/interactive.ts INTERACTIVE_SELECTOR (single string
+  // literal). interactive-parity.test.ts guards this against drift.
+  const INTERACTIVE_SELECTOR =
+    'a, button, input, select, textarea, [role="button"], [role="link"], [role="tab"], [role="checkbox"], [role="radio"], [role="switch"], [role="menuitem"], [contenteditable="true"], summary, [onclick], [tabindex]:not([tabindex=\'-1\'])';
 
   const SCROLL_RATIO_THRESHOLD = 1.2;
 

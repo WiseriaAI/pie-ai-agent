@@ -393,6 +393,7 @@ export const zhCNDict = {
       scroll: "滚动",
       nav: "导航",
       submit: "提交",
+      keypress: "按键",
     },
     metaRedacted: "已脱敏",
     metaUnstable: "不稳定",

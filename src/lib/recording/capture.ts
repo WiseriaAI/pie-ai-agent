@@ -218,11 +218,72 @@ export function installCaptureListener(): () => void {
   const onClick = (e: Event) => {
     const target = e.target as HTMLElement | null;
     if (!target?.tagName) return;
-    const interactive = target.closest(
-      'a, button, input, select, textarea, [role="button"], [role="link"], [role="tab"], [role="checkbox"], [role="radio"], [role="switch"], [role="menuitem"], summary',
-    ) as HTMLElement | null;
+    // VERBATIM copy of _shared/interactive.ts INTERACTIVE_SELECTOR.
+    // interactive-parity.test.ts guards this literal against drift.
+    const INTERACTIVE_SELECTOR =
+      'a, button, input, select, textarea, [role="button"], [role="link"], [role="tab"], [role="checkbox"], [role="radio"], [role="switch"], [role="menuitem"], [contenteditable="true"], summary, [onclick], [tabindex]:not([tabindex=\'-1\'])';
+    const interactive = target.closest(INTERACTIVE_SELECTOR) as HTMLElement | null;
+    // 仅丢弃真正空的纯布局点击。带文本的容器/div 自定义按钮一律保留 ——
+    // recorder 宁可多录也不漏录真实动作（漏录比噪声更糟）。
+    if (!interactive && !(target.innerText?.trim())) return;
+    // 点击绑定原生 checkbox/radio 的 <label>（文本或 for=）：浏览器会再合成一次
+    // 对该 control 的 click，交给 onChange 记录带 checked 的那条；这里跳过，
+    // 否则会双记，且回放时 label 点击 + 勾选两次 toggle 会把最终态弄反。
+    if (!interactive) {
+      const labelEl = target.closest("label") as HTMLLabelElement | null;
+      const labelControl = (labelEl?.control ?? null) as HTMLInputElement | null;
+      const lcType = labelControl?.type?.toLowerCase?.();
+      if (labelControl && (lcType === "checkbox" || lcType === "radio")) {
+        return;
+      }
+    }
     const el = interactive ?? target;
+    // 原生 checkbox/radio 交给 onChange（它能同步拿到翻转后的 checked），
+    // onClick 跳过以免双记。
+    const tagLower = el.tagName.toLowerCase();
+    const inputType = (el as HTMLInputElement).type?.toLowerCase?.();
+    if (tagLower === "input" && (inputType === "checkbox" || inputType === "radio")) {
+      return;
+    }
+    // 自定义可勾选元素（role=checkbox/radio/switch）：状态由页面 bubble handler
+    // 翻转，capture-phase 此刻读到的是旧值，延迟到下一 tick 再读 aria-checked。
+    const role = (el.getAttribute("role") || "").toLowerCase();
+    if (role === "checkbox" || role === "radio" || role === "switch") {
+      const meta = buildLabelFor(el);
+      const region = getRegion(el);
+      setTimeout(() => {
+        send({
+          type: "click",
+          label: meta.label,
+          ...(meta.selectorHint ? { selectorHint: meta.selectorHint } : {}),
+          checked: el.getAttribute("aria-checked") === "true",
+          url: location.href,
+          region,
+          ...(meta.unstable ? { unstable: meta.unstable } : {}),
+        });
+      }, 0);
+      return;
+    }
     const { label, selectorHint, unstable } = buildLabelFor(el);
+    // 落在弹出菜单/下拉里的项（role=menu/listbox/menuitem/option…）：回放时这些项
+    // 往往要先悬停/点击触发器才能露出来。打个 fromPopup 标记，serialize 据此提示 LLM。
+    let fromPopup = false;
+    {
+      let node: Element | null = el;
+      let depth = 0;
+      while (node && node !== document.body && depth < 12) {
+        const r = (node.getAttribute?.("role") || "").toLowerCase();
+        if (
+          r === "menu" || r === "listbox" || r === "menuitem" ||
+          r === "menuitemcheckbox" || r === "menuitemradio" || r === "option"
+        ) {
+          fromPopup = true;
+          break;
+        }
+        node = node.parentElement;
+        depth++;
+      }
+    }
     send({
       type: "click",
       label,
@@ -230,6 +291,7 @@ export function installCaptureListener(): () => void {
       url: location.href,
       region: getRegion(el),
       ...(unstable ? { unstable } : {}),
+      ...(fromPopup ? { fromPopup: true } : {}),
     });
   };
 
@@ -239,6 +301,21 @@ export function installCaptureListener(): () => void {
     const tag = target.tagName.toLowerCase();
     const inputEl = target as HTMLInputElement;
     const { label, selectorHint, unstable } = buildLabelFor(target);
+
+    // 原生 checkbox/radio：记成 click + 最终 checked 态（onClick 已跳过它们）。
+    const inputTypeChange = inputEl.type?.toLowerCase?.();
+    if (tag === "input" && (inputTypeChange === "checkbox" || inputTypeChange === "radio")) {
+      send({
+        type: "click",
+        label,
+        ...(selectorHint ? { selectorHint } : {}),
+        checked: inputEl.checked,
+        url: location.href,
+        region: getRegion(target),
+        ...(unstable ? { unstable } : {}),
+      });
+      return;
+    }
 
     if (tag === "select") {
       send({
@@ -314,6 +391,68 @@ export function installCaptureListener(): () => void {
     }, 500);
   };
 
+  // contenteditable 富文本输入 —— 防抖合并一段编辑为一条 type。input/textarea
+  // 的 input 事件不在此处理（逐键爆量），它们仍由 onChange（blur 时）覆盖。
+  let editTimer: ReturnType<typeof setTimeout> | null = null;
+  let editTarget: HTMLElement | null = null;
+  const flushEdit = () => {
+    if (!editTarget) return;
+    const host = editTarget;
+    editTarget = null;
+    editTimer = null;
+    const sens = detectSensitiveInline(host);
+    const raw = host.innerText ?? host.textContent ?? "";
+    const value = sens.redacted ? sens.placeholderName! : sanitizeText(raw, 200);
+    const { label, selectorHint, unstable } = buildLabelFor(host);
+    send({
+      type: "type",
+      label,
+      ...(selectorHint ? { selectorHint } : {}),
+      value,
+      ...(sens.redacted ? { redacted: true, placeholderName: sens.placeholderName } : {}),
+      url: location.href,
+      region: getRegion(host),
+      ...(unstable ? { unstable } : {}),
+    });
+  };
+  const onInput = (e: Event) => {
+    const t = e.target as HTMLElement | null;
+    const host = t?.closest?.('[contenteditable="true"]') as HTMLElement | null;
+    if (!host) return; // 非 contenteditable（如 input/textarea）忽略，交给 onChange
+    editTarget = host;
+    if (editTimer !== null) clearTimeout(editTimer);
+    editTimer = setTimeout(flushEdit, 500);
+  };
+
+  // 键盘最小集：只记 Enter + 显式修饰组合键；纯字符/Tab/方向键/单独修饰键忽略。
+  const onKeydown = (e: KeyboardEvent) => {
+    if (e.isComposing) return; // IME 组合中，交给 contenteditable input 路径
+    const k = e.key;
+    const hasMod = e.ctrlKey || e.metaKey || e.altKey;
+    const isPlainChar = k.length === 1 && !hasMod;
+    if (isPlainChar) return;
+    if (k === "Shift" || k === "Control" || k === "Meta" || k === "Alt") return;
+    // 注意：contenteditable 里也照记 Enter —— 很多聊天框 Enter = 发送，
+    // 抑制会让回放丢失发送动作；与防抖 type 的轻微冗余可接受。
+    if (!hasMod && k !== "Enter") return; // 无修饰时只放行 Enter
+
+    const parts: string[] = [];
+    if (e.ctrlKey) parts.push("Ctrl");
+    if (e.metaKey) parts.push("Cmd");
+    if (e.altKey) parts.push("Alt");
+    if (e.shiftKey) parts.push("Shift");
+    parts.push(k.length === 1 ? k.toUpperCase() : k);
+    // 注：组合键（Cmd+B 等）作为意图上下文记录；回放的 press_key 工具只执行单键，
+    // 组合键对 distill/回放 LLM 是提示性上下文，非可直接执行的步骤。
+    send({
+      type: "keypress",
+      label: "",
+      value: parts.join("+"),
+      url: location.href,
+      region: "other",
+    });
+  };
+
   document.addEventListener("click", onClick, true);
   document.addEventListener("change", onChange, true);
   document.addEventListener("submit", onSubmit, true);
@@ -321,6 +460,9 @@ export function installCaptureListener(): () => void {
   // window-level scroll catches the common page-scroll case. Attaching to
   // both window and document covers both.
   window.addEventListener("scroll", onScroll, { passive: true });
+  document.addEventListener("input", onInput, true);
+  document.addEventListener("blur", flushEdit, true); // 失焦立即落一条，避免漏尾
+  document.addEventListener("keydown", onKeydown, true);
 
   return () => {
     document.removeEventListener("click", onClick, true);
@@ -328,6 +470,10 @@ export function installCaptureListener(): () => void {
     document.removeEventListener("submit", onSubmit, true);
     window.removeEventListener("scroll", onScroll);
     if (scrollTimer !== null) clearTimeout(scrollTimer);
+    document.removeEventListener("input", onInput, true);
+    document.removeEventListener("blur", flushEdit, true);
+    if (editTimer !== null) clearTimeout(editTimer);
+    document.removeEventListener("keydown", onKeydown, true);
     w.__pieRecordingInstalled = false;
   };
 }
