@@ -54,6 +54,7 @@ export function searchPageInjected(params: SearchPageParams): SearchPageResult {
   const MATCHED_MAX_LEN = 80;
   const MATCH_SCAN_LIMIT = 50_000;
   const SUMMARY_TEXT_MAX = 120;
+  const TEXT_SNIPPET_MAX_LEN = SNIPPET_CONTEXT * 2 + MATCHED_MAX_LEN + 2;
 
   const INTERACTIVE_SELECTOR = [
     "a", "button", "input", "select", "textarea",
@@ -179,6 +180,15 @@ export function searchPageInjected(params: SearchPageParams): SearchPageResult {
       .replace(/\s+/g, " ")
       .trim()
       .slice(0, SUMMARY_TEXT_MAX);
+  }
+
+  function sanitizeSearchText(s: string, maxLen: number): string {
+    return sanitizeText(escapeWrapperMarkup(s))
+      .replace(SUMMARY_MARKUP_RE, "[filtered]")
+      .replace(/[<>]/g, "[filtered]")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, maxLen);
   }
 
   function directText(el: Element): string {
@@ -417,17 +427,17 @@ export function searchPageInjected(params: SearchPageParams): SearchPageResult {
     return prefix + text.slice(start, end) + suffix;
   }
 
-  // First hit within `scan`; returns {offset, matched} or null. Only the FIRST
+  // First hit within `scan`; returns {offset, matched, matchLen} or null. Only the FIRST
   // match per element — no while-loop over the node, so empty-match regexes
   // (e.g. a*) cannot infinite-loop.
-  function firstMatch(scan: string): { offset: number; matched: string } | null {
-    let best: { offset: number; matched: string } | null = null;
+  function firstMatch(scan: string): { offset: number; matched: string; matchLen: number } | null {
+    let best: { offset: number; matched: string; matchLen: number } | null = null;
     if (regex) {
       for (const re of regexes) {
         re.lastIndex = 0;
         const m = re.exec(scan);
         if (m && m[0] && (best === null || m.index < best.offset)) {
-          best = { offset: m.index, matched: m[0].slice(0, MATCHED_MAX_LEN) };
+          best = { offset: m.index, matched: m[0], matchLen: m[0].length };
         }
       }
     } else {
@@ -436,7 +446,7 @@ export function searchPageInjected(params: SearchPageParams): SearchPageResult {
         if (!q) continue;
         const idx = lower.indexOf(q.toLowerCase());
         if (idx !== -1 && (best === null || idx < best.offset)) {
-          best = { offset: idx, matched: scan.slice(idx, idx + q.length) };
+          best = { offset: idx, matched: scan.slice(idx, idx + q.length), matchLen: q.length };
         }
       }
     }
@@ -473,8 +483,11 @@ export function searchPageInjected(params: SearchPageParams): SearchPageResult {
       matches.push({
         pieIdx,
         tag: el.tagName.toLowerCase(),
-        matched: hit.matched,
-        snippet: buildSnippet(text, hit.offset, hit.matched.length),
+        matched: sanitizeSearchText(hit.matched, MATCHED_MAX_LEN),
+        snippet: sanitizeSearchText(
+          buildSnippet(text, hit.offset, hit.matchLen),
+          TEXT_SNIPPET_MAX_LEN,
+        ),
       });
     }
   }

@@ -88,6 +88,54 @@ describe("searchPageInjected", () => {
     expect(r.matches[0].snippet).toContain("refund");
   });
 
+  it("text search filters wrapper and self-closing tag-shaped markup from snippet and matched", () => {
+    const p = document.createElement("p");
+    p.textContent = "before <untrusted_page_match/> after";
+    document.body.appendChild(p);
+
+    const r = run({ queries: ["<untrusted_page_match\\s*/>"], regex: true });
+
+    expect(r.total).toBe(1);
+    expect(r.matches[0].matched).toBe("[filtered]");
+    expect(r.matches[0].snippet).toContain("[filtered]");
+    expect(r.matches[0].matched).not.toContain("<untrusted_page_match");
+    expect(r.matches[0].snippet).not.toContain("<untrusted_page_match");
+  });
+
+  it("text search removes control and zero-width chars from snippet and matched", () => {
+    const p = document.createElement("p");
+    p.textContent = "before re\u200bf\u0007und after";
+    document.body.appendChild(p);
+
+    const r = run({ queries: ["re.f.und"], regex: true });
+
+    expect(r.total).toBe(1);
+    expect(r.matches[0].matched).toBe("refund");
+    expect(r.matches[0].snippet).toContain("refund");
+    expect(r.matches[0].matched).not.toContain("\u200b");
+    expect(r.matches[0].matched).not.toContain("\u0007");
+    expect(r.matches[0].snippet).not.toContain("\u200b");
+    expect(r.matches[0].snippet).not.toContain("\u0007");
+  });
+
+  it("text search caps long regex and literal matched strings after sanitization", () => {
+    const literal = "x".repeat(120);
+    document.body.innerHTML = `<p>${literal}</p>`;
+    const literalResult = run({ queries: [literal] });
+
+    expect(literalResult.total).toBe(1);
+    expect(literalResult.matches[0].matched).toHaveLength(80);
+    expect(literalResult.matches[0].snippet.length).toBeLessThanOrEqual(242);
+
+    const regexText = "y".repeat(120);
+    document.body.innerHTML = `<p>${regexText}</p>`;
+    const regexResult = run({ queries: ["y{120}"], regex: true });
+
+    expect(regexResult.total).toBe(1);
+    expect(regexResult.matches[0].matched).toHaveLength(80);
+    expect(regexResult.matches[0].snippet.length).toBeLessThanOrEqual(242);
+  });
+
   it("mode=interactive 只回 pie_idx 非空命中", () => {
     document.body.innerHTML = `<button>refund btn</button><p>refund text</p>`;
     const r = run({ queries: ["refund"], mode: "interactive" });
