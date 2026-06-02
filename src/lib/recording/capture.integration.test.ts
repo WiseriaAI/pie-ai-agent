@@ -202,6 +202,27 @@ describe("capture.installCaptureListener", () => {
     uninstall();
   });
 
+  it("captures a div[onclick] custom control as a click", () => {
+    document.body.innerHTML = `<main><div onclick="void 0" data-testid="card">Open card</div></main>`;
+    uninstall = installCaptureListener();
+    (document.querySelector("[data-testid='card']") as HTMLElement).click();
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0]!.payload.type).toBe("click");
+    expect(captured[0]!.payload.label).toContain("Open card");
+    uninstall();
+  });
+
+  it("captures a role=button div as a click", () => {
+    document.body.innerHTML = `<main><div role="button" aria-label="Play">▶</div></main>`;
+    uninstall = installCaptureListener();
+    (document.querySelector('[role="button"]') as HTMLElement).click();
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0]!.payload.label).toContain("Play");
+    uninstall();
+  });
+
   it("idempotent install: a second installCaptureListener() does not double-attach listeners", () => {
     document.body.innerHTML = `<main><button>X</button></main>`;
     const uninstall1 = installCaptureListener();

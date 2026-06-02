@@ -218,9 +218,13 @@ export function installCaptureListener(): () => void {
   const onClick = (e: Event) => {
     const target = e.target as HTMLElement | null;
     if (!target?.tagName) return;
-    const interactive = target.closest(
-      'a, button, input, select, textarea, [role="button"], [role="link"], [role="tab"], [role="checkbox"], [role="radio"], [role="switch"], [role="menuitem"], summary',
-    ) as HTMLElement | null;
+    // VERBATIM copy of _shared/interactive.ts INTERACTIVE_SELECTOR.
+    // interactive-parity.test.ts guards this literal against drift.
+    const INTERACTIVE_SELECTOR =
+      'a, button, input, select, textarea, [role="button"], [role="link"], [role="tab"], [role="checkbox"], [role="radio"], [role="switch"], [role="menuitem"], [contenteditable="true"], summary, [onclick], [tabindex]:not([tabindex=\'-1\'])';
+    const interactive = target.closest(INTERACTIVE_SELECTOR) as HTMLElement | null;
+    // 解析不到交互祖先且 target 自身无文本 → 纯布局点击，丢弃防噪。
+    if (!interactive && !(target.innerText?.trim())) return;
     const el = interactive ?? target;
     const { label, selectorHint, unstable } = buildLabelFor(el);
     send({

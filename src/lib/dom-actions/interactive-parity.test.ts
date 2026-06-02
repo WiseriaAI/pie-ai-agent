@@ -18,6 +18,7 @@ import { describe, it, expect } from "vitest";
 import { INTERACTIVE_SELECTOR } from "./_shared/interactive";
 import { pageSnapshotInjected } from "./page-snapshot";
 import { searchPageInjected } from "./search-page";
+import { installCaptureListener } from "@/lib/recording/capture";
 
 describe("INTERACTIVE_SELECTOR parity across injected functions", () => {
   // esbuild-compiled fn.toString() uses double-quote escaping for string literals;
@@ -27,6 +28,7 @@ describe("INTERACTIVE_SELECTOR parity across injected functions", () => {
   for (const [name, fn] of [
     ["pageSnapshotInjected", pageSnapshotInjected],
     ["searchPageInjected", searchPageInjected],
+    ["installCaptureListener", installCaptureListener],
   ] as const) {
     it(`${name} inlines the canonical INTERACTIVE_SELECTOR literal`, () => {
       expect(fn.toString()).toContain(escapedSelector);
