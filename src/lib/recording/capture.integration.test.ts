@@ -236,4 +236,36 @@ describe("capture.installCaptureListener", () => {
     document.querySelector("button")!.click();
     expect(captured).toHaveLength(2); // no further capture
   });
+
+  it("records native checkbox toggle as click with checked state", () => {
+    document.body.innerHTML = `<main><label>同意<input type="checkbox" name="agree"></label></main>`;
+    uninstall = installCaptureListener();
+    const cb = document.querySelector("input") as HTMLInputElement;
+    cb.checked = true;
+    cb.dispatchEvent(new Event("change", { bubbles: true }));
+
+    const clicks = captured.filter((c) => c.payload.type === "click");
+    expect(clicks).toHaveLength(1);
+    expect(clicks[0]!.payload.checked).toBe(true);
+    expect(captured.some((c) => c.payload.type === "type")).toBe(false);
+    uninstall();
+  });
+
+  it("records custom role=checkbox toggle via deferred aria-checked read", () => {
+    vi.useFakeTimers();
+    document.body.innerHTML = `<main><div role="checkbox" aria-checked="false" aria-label="夜间模式">●</div></main>`;
+    const box = document.querySelector('[role="checkbox"]') as HTMLElement;
+    box.addEventListener("click", () => box.setAttribute("aria-checked", "true"));
+    uninstall = installCaptureListener();
+
+    box.click();
+    vi.advanceTimersByTime(0);
+
+    const clicks = captured.filter((c) => c.payload.type === "click");
+    expect(clicks).toHaveLength(1);
+    expect(clicks[0]!.payload.checked).toBe(true);
+    expect(clicks[0]!.payload.label).toContain("夜间模式");
+    vi.useRealTimers();
+    uninstall();
+  });
 });

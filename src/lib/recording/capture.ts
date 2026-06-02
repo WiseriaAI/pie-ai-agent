@@ -226,6 +226,32 @@ export function installCaptureListener(): () => void {
     // 解析不到交互祖先且 target 自身无文本 → 纯布局点击，丢弃防噪。
     if (!interactive && !(target.innerText?.trim())) return;
     const el = interactive ?? target;
+    // 原生 checkbox/radio 交给 onChange（它能同步拿到翻转后的 checked），
+    // onClick 跳过以免双记。
+    const tagLower = el.tagName.toLowerCase();
+    const inputType = (el as HTMLInputElement).type?.toLowerCase?.();
+    if (tagLower === "input" && (inputType === "checkbox" || inputType === "radio")) {
+      return;
+    }
+    // 自定义可勾选元素（role=checkbox/radio/switch）：状态由页面 bubble handler
+    // 翻转，capture-phase 此刻读到的是旧值，延迟到下一 tick 再读 aria-checked。
+    const role = (el.getAttribute("role") || "").toLowerCase();
+    if (role === "checkbox" || role === "radio" || role === "switch") {
+      const meta = buildLabelFor(el);
+      const region = getRegion(el);
+      setTimeout(() => {
+        send({
+          type: "click",
+          label: meta.label,
+          ...(meta.selectorHint ? { selectorHint: meta.selectorHint } : {}),
+          checked: el.getAttribute("aria-checked") === "true",
+          url: location.href,
+          region,
+          ...(meta.unstable ? { unstable: meta.unstable } : {}),
+        });
+      }, 0);
+      return;
+    }
     const { label, selectorHint, unstable } = buildLabelFor(el);
     send({
       type: "click",
@@ -243,6 +269,21 @@ export function installCaptureListener(): () => void {
     const tag = target.tagName.toLowerCase();
     const inputEl = target as HTMLInputElement;
     const { label, selectorHint, unstable } = buildLabelFor(target);
+
+    // 原生 checkbox/radio：记成 click + 最终 checked 态（onClick 已跳过它们）。
+    const inputTypeChange = inputEl.type?.toLowerCase?.();
+    if (tag === "input" && (inputTypeChange === "checkbox" || inputTypeChange === "radio")) {
+      send({
+        type: "click",
+        label,
+        ...(selectorHint ? { selectorHint } : {}),
+        checked: inputEl.checked,
+        url: location.href,
+        region: getRegion(target),
+        ...(unstable ? { unstable } : {}),
+      });
+      return;
+    }
 
     if (tag === "select") {
       send({
