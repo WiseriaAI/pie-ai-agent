@@ -392,6 +392,31 @@ export function installCaptureListener(): () => void {
     editTimer = setTimeout(flushEdit, 500);
   };
 
+  // 键盘最小集：只记 Enter + 显式修饰组合键；纯字符/Tab/方向键/单独修饰键忽略。
+  const onKeydown = (e: KeyboardEvent) => {
+    if (e.isComposing) return; // IME 组合中，交给 contenteditable input 路径
+    const k = e.key;
+    const hasMod = e.ctrlKey || e.metaKey || e.altKey;
+    const isPlainChar = k.length === 1 && !hasMod;
+    if (isPlainChar) return;
+    if (k === "Shift" || k === "Control" || k === "Meta" || k === "Alt") return;
+    if (!hasMod && k !== "Enter") return; // 无修饰时只放行 Enter
+
+    const parts: string[] = [];
+    if (e.ctrlKey) parts.push("Ctrl");
+    if (e.metaKey) parts.push("Cmd");
+    if (e.altKey) parts.push("Alt");
+    if (e.shiftKey) parts.push("Shift");
+    parts.push(k.length === 1 ? k.toUpperCase() : k);
+    send({
+      type: "keypress",
+      label: "",
+      value: parts.join("+"),
+      url: location.href,
+      region: "other",
+    });
+  };
+
   document.addEventListener("click", onClick, true);
   document.addEventListener("change", onChange, true);
   document.addEventListener("submit", onSubmit, true);
@@ -401,6 +426,7 @@ export function installCaptureListener(): () => void {
   window.addEventListener("scroll", onScroll, { passive: true });
   document.addEventListener("input", onInput, true);
   document.addEventListener("blur", flushEdit, true); // 失焦立即落一条，避免漏尾
+  document.addEventListener("keydown", onKeydown, true);
 
   return () => {
     document.removeEventListener("click", onClick, true);
@@ -411,6 +437,7 @@ export function installCaptureListener(): () => void {
     document.removeEventListener("input", onInput, true);
     document.removeEventListener("blur", flushEdit, true);
     if (editTimer !== null) clearTimeout(editTimer);
+    document.removeEventListener("keydown", onKeydown, true);
     w.__pieRecordingInstalled = false;
   };
 }

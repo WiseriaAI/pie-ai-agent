@@ -288,4 +288,29 @@ describe("capture.installCaptureListener", () => {
     vi.useRealTimers();
     uninstall();
   });
+
+  it("captures Enter as a keypress", () => {
+    document.body.innerHTML = `<main><input type="search" name="q"></main>`;
+    uninstall = installCaptureListener();
+    const input = document.querySelector("input")!;
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+
+    const keys = captured.filter((c) => c.payload.type === "keypress");
+    expect(keys).toHaveLength(1);
+    expect(keys[0]!.payload.value).toBe("Enter");
+    uninstall();
+  });
+
+  it("captures a modifier combo, ignores plain character keys", () => {
+    document.body.innerHTML = `<main><div contenteditable="true">x</div></main>`;
+    uninstall = installCaptureListener();
+    const ed = document.querySelector("div")!;
+    ed.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true })); // ignored
+    ed.dispatchEvent(new KeyboardEvent("keydown", { key: "b", metaKey: true, bubbles: true })); // recorded
+
+    const keys = captured.filter((c) => c.payload.type === "keypress");
+    expect(keys).toHaveLength(1);
+    expect(keys[0]!.payload.value).toBe("Cmd+B");
+    uninstall();
+  });
 });
