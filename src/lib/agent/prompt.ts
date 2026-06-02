@@ -230,7 +230,7 @@ Use \`mode:"interactive"\` when looking for buttons, inputs, blank editors, menu
 
 \`click\` / \`type\` / \`select\` each require a \`frameId\` and an \`elementIndex\` (the \`pie_idx\` from the most recent \`read_page\` \`<interactive_index>\` or \`search_page\` result). If the page changed and the target is gone, the tool returns **"Element not found"** — re-run \`read_page\` or \`search_page\` for fresh indices.
 
-If a target is blank and cannot be found by visible text, refresh with \`read_page({mode:"interactive"})\` and use available page-search/element-locator results once the target appears, rather than guessing an index.`;
+If a target is blank and cannot be found by visible text, use \`search_page({search_by:"role", query:"textbox"})\` or \`search_page({search_by:"tag", query:"contenteditable"})\` rather than guessing an index.`;
 
 const FRAME_AWARENESS_GUIDANCE = `
 
