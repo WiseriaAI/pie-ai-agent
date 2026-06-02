@@ -128,6 +128,7 @@ describe("capture.installCaptureListener", () => {
         <button aria-label="Submit form" data-testid="submit-btn">Submit</button>
         <input type="email" name="email" placeholder="you@example.com" />
         <input type="password" id="pwd" />
+        <div onclick="void 0" aria-label="Open card"></div>
       </main>
     `;
     uninstall = installCaptureListener();
@@ -140,9 +141,11 @@ describe("capture.installCaptureListener", () => {
     const pwd = document.querySelector("input[type='password']") as HTMLInputElement;
     pwd.value = "secret";
     pwd.dispatchEvent(new Event("change", { bubbles: true }));
+    const onclickDiv = document.querySelector("[aria-label='Open card']") as HTMLElement;
+    onclickDiv.click();
 
-    expect(captured.length).toBeGreaterThanOrEqual(3);
-    const elements = [btn, emailInput, pwd];
+    expect(captured.length).toBeGreaterThanOrEqual(4);
+    const elements = [btn, emailInput, pwd, onclickDiv];
     elements.forEach((el, idx) => {
       const captureLabel = captured[idx]!.payload.label;
       const captureHint = captured[idx]!.payload.selectorHint;
@@ -199,6 +202,70 @@ describe("capture.installCaptureListener", () => {
       expect(Boolean(captured[idx]!.payload.redacted)).toBe(refRedact.redacted);
       expect(captured[idx]!.payload.placeholderName).toBe(refRedact.placeholderName);
     });
+    uninstall();
+  });
+
+  it("PARITY: role=checkbox label matches describeElement (deferred capture)", async () => {
+    const { describeElement } = await import("./selector");
+    vi.useFakeTimers();
+    // sole div in <nav> → non-ambiguous
+    document.body.innerHTML = `<nav><div role="checkbox" aria-checked="false" aria-label="夜间模式">●</div></nav>`;
+    const box = document.querySelector('[role="checkbox"]') as HTMLElement;
+    box.addEventListener("click", () => box.setAttribute("aria-checked", "true"));
+    uninstall = installCaptureListener();
+    box.click();
+    vi.advanceTimersByTime(0);
+
+    const rec = captured.find((c) => c.payload.type === "click")!;
+    const ref = describeElement({
+      tag: "div",
+      role: "checkbox",
+      ariaLabel: "夜间模式",
+      text: (box as HTMLElement).innerText ?? "",
+      placeholder: undefined,
+      name: undefined,
+      id: undefined,
+      dataTestId: undefined,
+      autocomplete: undefined,
+      region: "nav",
+      regionSiblingIndex: 0,
+      regionSiblingCount: 1,
+      isSensitive: false,
+    });
+    expect(rec.payload.label).toBe(ref.label);
+    vi.useRealTimers();
+    uninstall();
+  });
+
+  it("PARITY: contenteditable label matches describeElement (debounced capture)", async () => {
+    const { describeElement } = await import("./selector");
+    vi.useFakeTimers();
+    // sole div in <aside> → non-ambiguous
+    document.body.innerHTML = `<aside><div contenteditable="true" aria-label="评论">draft</div></aside>`;
+    const ed = document.querySelector('[contenteditable="true"]') as HTMLElement;
+    uninstall = installCaptureListener();
+    ed.textContent = "hi";
+    ed.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    vi.advanceTimersByTime(500);
+
+    const rec = captured.find((c) => c.payload.type === "type")!;
+    const ref = describeElement({
+      tag: "div",
+      role: undefined,
+      ariaLabel: "评论",
+      text: (ed as HTMLElement).innerText ?? "",
+      placeholder: undefined,
+      name: undefined,
+      id: undefined,
+      dataTestId: undefined,
+      autocomplete: undefined,
+      region: "aside",
+      regionSiblingIndex: 0,
+      regionSiblingCount: 1,
+      isSensitive: false,
+    });
+    expect(rec.payload.label).toBe(ref.label);
+    vi.useRealTimers();
     uninstall();
   });
 
