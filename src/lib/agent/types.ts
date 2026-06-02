@@ -61,6 +61,15 @@ export interface ToolHandlerContext {
    * NEXT iteration's snapshot.
    */
   setCurrentFocusTabId?: (tabId: number) => Promise<void>;
+  /**
+   * Issue #110 — write-side hook for unpin_tab. Removes a tab from
+   * SessionMeta.pinnedTabs[] so the agent can subsequently close_tabs it
+   * (close_tabs refuses any still-pinned tab). The removal is observed on the
+   * NEXT iteration's pinnedTabs refresh; if the removed tab was the current
+   * focus, resolveFocusedPin gracefully falls back to pinnedTabs[0].
+   * Loop installs this; tests pass undefined and the tool handles it gracefully.
+   */
+  removePinnedTab?: (tabId: number) => Promise<void>;
 }
 
 export interface Tool {

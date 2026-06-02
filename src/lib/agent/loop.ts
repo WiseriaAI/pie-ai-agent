@@ -54,7 +54,7 @@ import {
   getSessionAgent,
   setSessionAgent,
 } from "../sessions/storage";
-import { addPinToMeta } from "../sessions/pin-state";
+import { addPinToMeta, removePinFromMeta } from "../sessions/pin-state";
 import { drainPending } from "../sessions/pending-instructions";
 import { buildMidTaskUserMessage } from "./loop-drain";
 import { broadcastInstructionState } from "@/background/instruction-broadcast";
@@ -1958,6 +1958,14 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
               const cur = await getSessionAgent(sessionId);
               if (!cur) return;
               await setSessionAgent(sessionId, { ...cur, currentFocusTabId: tabId });
+            },
+            // Issue #110 — unpin_tab removes a tab from SessionMeta.pinnedTabs[]
+            // so the agent can then close_tabs it. The removal is observed on
+            // the next iteration's readFocusFromStorage refresh.
+            removePinnedTab: async (tabId) => {
+              const meta = await getSessionMeta(sessionId);
+              if (!meta) return;
+              await setSessionMeta(removePinFromMeta(meta, tabId));
             },
           });
         } catch (e) {

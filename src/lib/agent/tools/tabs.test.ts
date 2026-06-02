@@ -7,6 +7,7 @@ const focusTabTool = TAB_TOOLS.find((t) => t.name === "focus_tab")!;
 
 const listTabsTool = TAB_TOOLS.find((t) => t.name === "list_tabs")!;
 const closeTabsTool = TAB_TOOLS.find((t) => t.name === "close_tabs")!;
+const unpinTabTool = TAB_TOOLS.find((t) => t.name === "unpin_tab")!;
 
 describe("list_tabs — phantom-tabId filter (Chrome TAB_ID_NONE = -1)", () => {
   it("never surfaces tab.id === -1 to the LLM observation", async () => {
@@ -73,9 +74,13 @@ describe("list_tabs — phantom-tabId filter (Chrome TAB_ID_NONE = -1)", () => {
   });
 });
 
-// ── M5 — close_tabs K-9 (user-locked pin protection only) ───────────────────
+// ── Issue #110 — close_tabs protects ALL session pinned tabs (every mode) ────
+// Previously only pinMode='user' was protected (K-9), so in task/auto mode the
+// agent could close its own pinned tab. Now any tab in ctx.pinnedTabs[] is
+// refused regardless of mode; the refusal message tells the LLM to unpin_tab
+// first (task/auto) or use the PINNED dropdown (user).
 
-describe("close_tabs K-9 (M5/v1.5) — pinMode-aware pinned-tab protection", () => {
+describe("close_tabs (Issue #110) — pinned-tab protection across all modes", () => {
   it("REFUSES close when pinMode='user' and tabId is in pinnedTabs[]", async () => {
     const result = await closeTabsTool.handler(
       { tabIds: [42, 7] },
@@ -90,44 +95,50 @@ describe("close_tabs K-9 (M5/v1.5) — pinMode-aware pinned-tab protection", () 
     expect(result.error).toMatch(/PINNED dropdown/i);
   });
 
-  it("ALLOWS close past K-9 when pinMode='task' (proceeds to origin verify)", async () => {
-    // Stub chrome.tabs.remove so we can detect the path past K-9. We also
-    // populate confirmedTabTargets so verifyConfirmedOrigin succeeds and
-    // the handler reaches chrome.tabs.remove.
-    chromeMock.tabs.__tabsById.set(42, {
-      id: 42,
-      url: "https://example.com/",
-      title: "test",
-      active: true,
-      windowId: 1,
-    });
+  it("REFUSES close when pinMode='task' and tabId is in pinnedTabs[] (directs to unpin_tab)", async () => {
+    // Issue #110 behavior change: task-mode pins are now protected. The agent
+    // must unpin the tab before it can close it — so the call is refused and
+    // chrome.tabs.remove is never reached.
     const removeSpy = vi.fn(async () => undefined);
     (chromeMock.tabs as unknown as { remove: unknown }).remove = removeSpy;
-
-    const confirmedTabTargets = new Map([
-      [42, { origin: "https://example.com", title: "test" }],
-    ]);
 
     const result = await closeTabsTool.handler(
       { tabIds: [42] },
       {
         tabId: 42,
         pinMode: "task",
-        confirmedTabTargets,
         pinnedTabs: [{ tabId: 42, origin: "https://example.com" }],
       },
     );
 
-    // K-9 did NOT fire (task mode doesn't protect)
-    expect(result.error ?? "").not.toMatch(/cannot close user-pinned tab/i);
-    // Handler proceeded to chrome.tabs.remove
-    expect(removeSpy).toHaveBeenCalledWith([42]);
-    expect(result.success).toBe(true);
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/unpin_tab/);
+    expect(removeSpy).not.toHaveBeenCalled();
 
     delete (chromeMock.tabs as unknown as { remove?: unknown }).remove;
   });
 
-  it("ALLOWS close when pinMode='auto' (transient pin, no protection)", async () => {
+  it("REFUSES close when pinMode='auto' and tabId is in pinnedTabs[] (directs to unpin_tab)", async () => {
+    const removeSpy = vi.fn(async () => undefined);
+    (chromeMock.tabs as unknown as { remove: unknown }).remove = removeSpy;
+
+    const result = await closeTabsTool.handler(
+      { tabIds: [99] },
+      {
+        tabId: 99,
+        pinMode: "auto",
+        pinnedTabs: [{ tabId: 99, origin: "https://example.com" }],
+      },
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/unpin_tab/);
+    expect(removeSpy).not.toHaveBeenCalled();
+
+    delete (chromeMock.tabs as unknown as { remove?: unknown }).remove;
+  });
+
+  it("ALLOWS close when the tab is NOT in pinnedTabs[] (auto mode)", async () => {
     chromeMock.tabs.__tabsById.set(99, {
       id: 99,
       url: "https://example.com/",
@@ -146,10 +157,11 @@ describe("close_tabs K-9 (M5/v1.5) — pinMode-aware pinned-tab protection", () 
       {
         tabId: 99,
         pinMode: "auto",
+        // 99 is not in pinnedTabs → not protected
         confirmedTabTargets,
       },
     );
-    expect(result.error ?? "").not.toMatch(/cannot close user-pinned tab/i);
+    expect(result.error ?? "").not.toMatch(/unpin_tab/);
     expect(removeSpy).toHaveBeenCalled();
 
     delete (chromeMock.tabs as unknown as { remove?: unknown }).remove;
@@ -243,6 +255,113 @@ describe("close_tabs K-9 (M5/v1.5) — pinMode-aware pinned-tab protection", () 
     );
     expect(r.success).toBe(false);
     expect(r.error).toMatch(/cannot close user-pinned tab/);
+  });
+});
+
+// ── Issue #110 — unpin_tab handler ──────────────────────────────────────────
+
+describe("unpin_tab (Issue #110) — agent-initiated unpin", () => {
+  it("removes the tab from pinnedTabs via removePinnedTab in task mode", async () => {
+    const removePinnedTab = vi.fn(async () => undefined);
+    const result = await unpinTabTool.handler(
+      { tabId: 10 },
+      {
+        tabId: 10,
+        pinMode: "task",
+        pinnedTabs: [
+          { tabId: 10, origin: "https://a.example.com" },
+          { tabId: 11, origin: "https://b.example.com" },
+        ],
+        removePinnedTab,
+      },
+    );
+    expect(result.success).toBe(true);
+    expect(removePinnedTab).toHaveBeenCalledWith(10);
+    // observation should point the LLM at the follow-up close_tabs.
+    expect(result.observation ?? "").toMatch(/close_tabs/);
+  });
+
+  it("removes the tab in auto mode too", async () => {
+    const removePinnedTab = vi.fn(async () => undefined);
+    const result = await unpinTabTool.handler(
+      { tabId: 10 },
+      {
+        tabId: 10,
+        pinMode: "auto",
+        pinnedTabs: [{ tabId: 10, origin: "https://a.example.com" }],
+        removePinnedTab,
+      },
+    );
+    expect(result.success).toBe(true);
+    expect(removePinnedTab).toHaveBeenCalledWith(10);
+  });
+
+  it("REFUSES unpin in user mode (directs to the PINNED dropdown)", async () => {
+    const removePinnedTab = vi.fn(async () => undefined);
+    const result = await unpinTabTool.handler(
+      { tabId: 10 },
+      {
+        tabId: 10,
+        pinMode: "user",
+        pinnedTabs: [{ tabId: 10, origin: "https://a.example.com" }],
+        removePinnedTab,
+      },
+    );
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/PINNED dropdown/i);
+    expect(removePinnedTab).not.toHaveBeenCalled();
+  });
+
+  it("FAILS when tabId is not one of the session's pinned tabs", async () => {
+    const removePinnedTab = vi.fn(async () => undefined);
+    const result = await unpinTabTool.handler(
+      { tabId: 999 },
+      {
+        tabId: 10,
+        pinMode: "task",
+        pinnedTabs: [{ tabId: 10, origin: "https://a.example.com" }],
+        removePinnedTab,
+      },
+    );
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/not pinned/i);
+    expect(removePinnedTab).not.toHaveBeenCalled();
+  });
+
+  it("FAILS when the session has no pinned tabs", async () => {
+    const result = await unpinTabTool.handler(
+      { tabId: 10 },
+      { tabId: 10, pinMode: "auto", pinnedTabs: [] },
+    );
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/no pinned tabs/i);
+  });
+
+  it("FAILS gracefully when removePinnedTab is absent (test/legacy harness)", async () => {
+    const result = await unpinTabTool.handler(
+      { tabId: 10 },
+      {
+        tabId: 10,
+        pinMode: "task",
+        pinnedTabs: [{ tabId: 10, origin: "https://a.example.com" }],
+        // removePinnedTab intentionally omitted
+      },
+    );
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/missing removePinnedTab/i);
+  });
+
+  it("FAILS when tabId is not a number", async () => {
+    const result = await unpinTabTool.handler(
+      {},
+      {
+        tabId: 10,
+        pinMode: "task",
+        pinnedTabs: [{ tabId: 10, origin: "https://a.example.com" }],
+      },
+    );
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/numeric tabId/i);
   });
 });
 
