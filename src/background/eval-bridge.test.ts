@@ -68,4 +68,21 @@ describe("eval bridge getTrace", () => {
     expect(done.status).toBe("done");
     expect((await bridge.getTrace({ sessionId })).answer).toBe("Answer: 42");
   });
+
+  it("captures raw agentMessages from onStepSnapshot for offline diagnosis", async () => {
+    const fakeMessages = [
+      { role: "system", content: "..." },
+      { role: "user", content: "find price" },
+      { role: "assistant", content: "I'll read the page" },
+    ];
+    fakeRun.mockImplementation(async (ctx: any) => {
+      await ctx.onStepSnapshot({ agentMessages: fakeMessages });
+      ctx.port.postMessage({ type: "agent-done-task", success: true, summary: "$42", stepCount: 1, sessionId: ctx.sessionId });
+    });
+    const bridge = __makeBridgeForTest();
+    const { sessionId } = await bridge.startTask({ goal: "find price" });
+    await bridge.waitForDone({ sessionId, timeoutMs: 1000 });
+    const trace = await bridge.getTrace({ sessionId });
+    expect(trace.agentMessages).toEqual(fakeMessages);
+  });
 });

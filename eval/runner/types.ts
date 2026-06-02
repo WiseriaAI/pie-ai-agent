@@ -24,6 +24,10 @@ export interface EvalTrace {
   startedAt: number;
   endedAt: number;
   error: string | null;
+  /** 完整原始 agent 会话(LLM IR:system/user/assistant + tool 调用 + 观测结果),
+   *  来自 runAgentLoop 的 onStepSnapshot。用于离线诊断 agent 行为/优化。可能很大,
+   *  orchestrator 把它单独写到 agent-trace.json,不进精简的 run.json。 */
+  agentMessages?: unknown[];
 }
 
 export type RunStatus = "done" | "timeout" | "error" | "harness-error";

@@ -9,6 +9,9 @@ interface SessionRun {
   endedAt: number;
   terminal: "done" | "error" | "timeout" | null;
   resolveDone: ((s: "done" | "error" | "timeout") => void) | null;
+  /** 最近一次 step 快照的原始 agentMessages(完整 LLM IR)。用于离线诊断。
+   *  runAgentLoop 每个完成步通过 onStepSnapshot 回传(已 structuredClone)。 */
+  agentMessages: unknown[];
 }
 
 /** 满足 chrome.runtime.Port 形状的最小实现:runAgentLoop 只调 postMessage。 */
@@ -52,7 +55,7 @@ function makeBridge() {
     async startTask(opts: { goal: string }) {
       const sessionId = `eval-${++seq}`;
       const controller = new AbortController();
-      const run: SessionRun = { buffer: [], controller, startedAt: Date.now(), endedAt: 0, terminal: null, resolveDone: null };
+      const run: SessionRun = { buffer: [], controller, startedAt: Date.now(), endedAt: 0, terminal: null, resolveDone: null, agentMessages: [] };
       runs.set(sessionId, run);
 
       const instanceId = seededInstanceId ?? "";
@@ -72,6 +75,10 @@ function makeBridge() {
         sessionId,
         pinnedTabs,
         initialFocusTabId: pinnedTabs[0]?.tabId,
+        // 捕获每个完成步的原始会话(structuredClone'd),供 getTrace 导出诊断。
+        onStepSnapshot: async (snap: { agentMessages?: unknown[] }) => {
+          run.agentMessages = snap.agentMessages ?? [];
+        },
       }).catch((e) => onMessage(sessionId, { type: "chat-error", error: e instanceof Error ? e.message : String(e), sessionId }));
 
       return { sessionId };
@@ -120,6 +127,7 @@ function makeBridge() {
         startedAt: run.startedAt,
         endedAt: run.endedAt || Date.now(),
         error: errMsg?.error ?? null,
+        agentMessages: run.agentMessages,
       };
     },
 

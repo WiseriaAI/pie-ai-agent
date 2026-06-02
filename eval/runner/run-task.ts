@@ -87,8 +87,11 @@ export async function runOneTask(opts: {
   // artifact bundle
   writeFileSync(path.join(runDir, "task.json"), JSON.stringify(opts.task, null, 2));
   if (trace) {
-    writeFileSync(path.join(runDir, "run.json"), JSON.stringify(trace, null, 2));
+    // 把可能很大的原始会话拆到单独的 agent-trace.json,run.json 保持精简可读。
+    const { agentMessages, ...runSummary } = trace;
+    writeFileSync(path.join(runDir, "run.json"), JSON.stringify(runSummary, null, 2));
     writeFileSync(path.join(runDir, "answer.txt"), trace.answer);
+    writeFileSync(path.join(runDir, "agent-trace.json"), JSON.stringify(agentMessages ?? [], null, 2));
   }
   writeFileSync(
     path.join(runDir, "meta.json"),
