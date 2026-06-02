@@ -218,11 +218,12 @@ export async function resolveModelMeta(ref: ProviderRef, modelId: string): Promi
  *      `models: []` is intentionally empty and populated lazily per-instance
  *      via `/v1/models`).
  *
- * Returns `undefined` when the model is unknown to both — callers decide
- * fail-open vs fail-closed for that case. The screenshot vision guard in
- * `runAgentLoop` treats `undefined` as fail-open (let the LLM be the second
- * line of defense) so user-typed custom OpenRouter ids aren't silently locked
- * out of screenshot tools.
+ * Returns `undefined` when the model is unknown to both. The agent loop's
+ * `filterToolsByVision` is fail-CLOSED: only `vision === true` is offered
+ * screenshot tools; `undefined` (and `false`) are excluded. Builtin custom
+ * models carry vision in the pcmm sidecar, so `resolveInstanceToModelConfig`
+ * (and the Chat attach-button via `resolveSupportsVision`) fall back to
+ * `resolveModelMeta` on a miss here before anything sees a bare `undefined`.
  */
 export function resolveModelVision(
   provider: BuiltinProvider,
