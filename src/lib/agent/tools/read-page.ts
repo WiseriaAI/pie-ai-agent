@@ -5,15 +5,80 @@ import { escapeWrapperAttribute, escapeUntrustedWrappers } from "../untrusted-wr
 import { isRestrictedSchemeForGrouping } from "./tabs";
 import { isPdfTab } from "@/lib/pdf/detect";
 
-const TOTAL_BUDGET_BYTES = 50_000;
+const MODE_BUDGETS = {
+  auto: { defaultBytes: 120_000, maxBytes: 300_000 },
+  interactive: { defaultBytes: 60_000, maxBytes: 160_000 },
+  content: { defaultBytes: 160_000, maxBytes: 300_000 },
+  full: { defaultBytes: 220_000, maxBytes: 300_000 },
+} as const;
 
-interface ReadPageArgs { tabId: number; }
+type ReadPageMode = keyof typeof MODE_BUDGETS;
+
+interface ReadPageArgs {
+  tabId: number;
+  mode?: ReadPageMode;
+  max_bytes?: number;
+}
+
+function normalizeMode(mode: unknown): ReadPageMode {
+  return mode === "interactive" || mode === "content" || mode === "full" ? mode : "auto";
+}
+
+function resolveHtmlBudget(mode: ReadPageMode, rawMaxBytes: unknown): number {
+  const cfg = MODE_BUDGETS[mode];
+  if (typeof rawMaxBytes !== "number" || !Number.isFinite(rawMaxBytes)) {
+    return cfg.defaultBytes;
+  }
+  return Math.max(1, Math.min(cfg.maxBytes, Math.floor(rawMaxBytes)));
+}
 
 function classifyUnreachable(url: string, errorOccurred?: boolean): string {
   if (url.startsWith("chrome-extension://")) return "extension-child";
   if (url === "about:blank" && !errorOccurred) return "about-blank";
   if (errorOccurred) return "frame-error";
   return "sandbox";
+}
+
+function attr(name: string, value: string | number | boolean): string {
+  return `${name}="${escapeWrapperAttribute(String(value))}"`;
+}
+
+function elementText(value: string): string {
+  return escapeWrapperAttribute(escapeUntrustedWrappers(value));
+}
+
+function renderInteractiveIndex(
+  mode: ReadPageMode,
+  frames: Array<{ frameId: number; crossOrigin: boolean; elements: PageSnapshotResult["interactiveElements"] }>,
+): string {
+  const all = frames.flatMap((f) =>
+    f.elements.map((el) => ({ frameId: f.frameId, crossOrigin: f.crossOrigin, el })),
+  );
+
+  const lines = all.slice(0, 300).map(({ frameId, crossOrigin, el }) => {
+    const attrs = [
+      attr("frame_id", frameId),
+      attr("pie_idx", el.pieIdx),
+      attr("tag", el.tag),
+      attr("role", el.role),
+    ];
+    if (crossOrigin) attrs.push(attr("cross_origin", true));
+    if (el.name) attrs.push(attr("name", el.name));
+    if (el.placeholder) attrs.push(attr("placeholder", el.placeholder));
+    if (el.label) attrs.push(attr("label", el.label));
+    if (el.section) attrs.push(attr("section", el.section));
+    if (el.type) attrs.push(attr("type", el.type));
+    if (el.contenteditable) attrs.push(attr("contenteditable", true));
+    if (el.disabled) attrs.push(attr("disabled", true));
+    if (el.checked) attrs.push(attr("checked", true));
+    if (el.selected) attrs.push(attr("selected", true));
+    const text = el.text ? elementText(el.text) : "";
+    return `  <interactive_element ${attrs.join(" ")}>${text}</interactive_element>`;
+  });
+
+  const header = [attr("mode", mode), attr("total", all.length)];
+  if (all.length > lines.length) header.push(attr("truncated", true));
+  return `<interactive_index ${header.join(" ")}>\n${lines.join("\n")}\n</interactive_index>`;
 }
 
 export const readPageTool: Tool = {
@@ -27,6 +92,16 @@ export const readPageTool: Tool = {
     type: "object",
     properties: {
       tabId: { type: "integer", description: "Tab id to read." },
+      mode: {
+        type: "string",
+        enum: ["auto", "interactive", "content", "full"],
+        description: "Read mode. auto is default; interactive uses a smaller HTML budget while preserving the interactive index.",
+      },
+      max_bytes: {
+        type: "integer",
+        minimum: 1,
+        description: "Optional HTML/content byte budget hint, clamped by mode-specific hard caps.",
+      },
     },
     required: ["tabId"],
     additionalProperties: false,
@@ -36,6 +111,8 @@ export const readPageTool: Tool = {
     if (typeof a.tabId !== "number") {
       return { success: false, error: "read_page requires a numeric tabId" };
     }
+    const mode = normalizeMode(a.mode);
+    const totalBudgetBytes = resolveHtmlBudget(mode, a.max_bytes);
 
     let tab: chrome.tabs.Tab;
     try {
@@ -103,6 +180,11 @@ export const readPageTool: Tool = {
 
     const sortedFrames = [...frames].sort((a, b) => a.frameId - b.frameId);
     const frameMapLines: string[] = [];
+    const frameInteractive: Array<{
+      frameId: number;
+      crossOrigin: boolean;
+      elements: PageSnapshotResult["interactiveElements"];
+    }> = [];
     const blocks: string[] = [];
     const scrollableLines: string[] = [];
     let used = 0;
@@ -136,6 +218,11 @@ export const readPageTool: Tool = {
       ];
       if (crossOrigin) mapAttrs.push(`cross_origin="true"`);
       frameMapLines.push("  " + mapAttrs.join(" "));
+      frameInteractive.push({
+        frameId: f.frameId,
+        crossOrigin,
+        elements: data.interactiveElements ?? [],
+      });
 
       for (const hint of data.scrollableHints) {
         scrollableLines.push(
@@ -155,7 +242,7 @@ export const readPageTool: Tool = {
       }
 
       let body = rewriteIframePlaceholders(f.frameId, data.html);
-      const remaining = TOTAL_BUDGET_BYTES - used;
+      const remaining = totalBudgetBytes - used;
       let truncated = false;
       if (body.length > remaining) {
         // May cut mid-tag — LLM tolerates malformed HTML; truncation tradeoff
@@ -180,11 +267,17 @@ export const readPageTool: Tool = {
       ...frameMapLines,
       `</frame_map>`,
     ];
-    if (scrollableLines.length > 0) {
-      headerLines.push("", "<scrollable_regions>", ...scrollableLines, "</scrollable_regions>");
-    }
 
-    const observation = headerLines.join("\n") + "\n\n" + blocks.join("\n");
+    const observationParts = [
+      headerLines.join("\n"),
+      renderInteractiveIndex(mode, frameInteractive),
+    ];
+    if (scrollableLines.length > 0) {
+      observationParts.push(`<scrollable_regions>\n${scrollableLines.join("\n")}\n</scrollable_regions>`);
+    }
+    observationParts.push(...blocks);
+
+    const observation = observationParts.join("\n\n");
     return { success: true, observation };
   },
 };
