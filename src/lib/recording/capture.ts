@@ -223,8 +223,20 @@ export function installCaptureListener(): () => void {
     const INTERACTIVE_SELECTOR =
       'a, button, input, select, textarea, [role="button"], [role="link"], [role="tab"], [role="checkbox"], [role="radio"], [role="switch"], [role="menuitem"], [contenteditable="true"], summary, [onclick], [tabindex]:not([tabindex=\'-1\'])';
     const interactive = target.closest(INTERACTIVE_SELECTOR) as HTMLElement | null;
-    // 解析不到交互祖先且 target 自身无文本 → 纯布局点击，丢弃防噪。
+    // 仅丢弃真正空的纯布局点击。带文本的容器/div 自定义按钮一律保留 ——
+    // recorder 宁可多录也不漏录真实动作（漏录比噪声更糟）。
     if (!interactive && !(target.innerText?.trim())) return;
+    // 点击绑定原生 checkbox/radio 的 <label>（文本或 for=）：浏览器会再合成一次
+    // 对该 control 的 click，交给 onChange 记录带 checked 的那条；这里跳过，
+    // 否则会双记，且回放时 label 点击 + 勾选两次 toggle 会把最终态弄反。
+    if (!interactive) {
+      const labelEl = target.closest("label") as HTMLLabelElement | null;
+      const labelControl = (labelEl?.control ?? null) as HTMLInputElement | null;
+      const lcType = labelControl?.type?.toLowerCase?.();
+      if (labelControl && (lcType === "checkbox" || lcType === "radio")) {
+        return;
+      }
+    }
     const el = interactive ?? target;
     // 原生 checkbox/radio 交给 onChange（它能同步拿到翻转后的 checked），
     // onClick 跳过以免双记。
@@ -400,6 +412,8 @@ export function installCaptureListener(): () => void {
     const isPlainChar = k.length === 1 && !hasMod;
     if (isPlainChar) return;
     if (k === "Shift" || k === "Control" || k === "Meta" || k === "Alt") return;
+    // 注意：contenteditable 里也照记 Enter —— 很多聊天框 Enter = 发送，
+    // 抑制会让回放丢失发送动作；与防抖 type 的轻微冗余可接受。
     if (!hasMod && k !== "Enter") return; // 无修饰时只放行 Enter
 
     const parts: string[] = [];

@@ -202,10 +202,12 @@ describe("capture.installCaptureListener", () => {
     uninstall();
   });
 
-  it("captures a div[onclick] custom control as a click", () => {
-    document.body.innerHTML = `<main><div onclick="void 0" data-testid="card">Open card</div></main>`;
+  it("captures a div[onclick] custom control (no text) as a click", () => {
+    // No text content: only the [onclick] token in INTERACTIVE_SELECTOR keeps
+    // this from being dropped as a layout click. Proves the selector addition.
+    document.body.innerHTML = `<main><div onclick="void 0" aria-label="Open card"></div></main>`;
     uninstall = installCaptureListener();
-    (document.querySelector("[data-testid='card']") as HTMLElement).click();
+    (document.querySelector("[aria-label='Open card']") as HTMLElement).click();
 
     expect(captured).toHaveLength(1);
     expect(captured[0]!.payload.type).toBe("click");
@@ -311,6 +313,22 @@ describe("capture.installCaptureListener", () => {
     const keys = captured.filter((c) => c.payload.type === "keypress");
     expect(keys).toHaveLength(1);
     expect(keys[0]!.payload.value).toBe("Cmd+B");
+    uninstall();
+  });
+
+  it("does not double-record a label click bound to a native checkbox", () => {
+    document.body.innerHTML = `<main><label>同意条款<input type="checkbox" name="agree"></label></main>`;
+    uninstall = installCaptureListener();
+    const label = document.querySelector("label") as HTMLLabelElement;
+    // Simulate the real browser sequence: clicking the label text triggers a
+    // click on the label, then happy-dom (like a real browser) synthesizes a
+    // click + change on the bound checkbox. Fix 1 suppresses the spurious label
+    // click; only the onChange-recorded click (with checked state) survives.
+    label.click();
+
+    const clicks = captured.filter((c) => c.payload.type === "click");
+    expect(clicks).toHaveLength(1);          // exactly one — the checkbox toggle
+    expect(clicks[0]!.payload.checked).toBe(true);
     uninstall();
   });
 });
