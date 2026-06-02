@@ -359,6 +359,39 @@ export function installCaptureListener(): () => void {
     }, 500);
   };
 
+  // contenteditable 富文本输入 —— 防抖合并一段编辑为一条 type。input/textarea
+  // 的 input 事件不在此处理（逐键爆量），它们仍由 onChange（blur 时）覆盖。
+  let editTimer: ReturnType<typeof setTimeout> | null = null;
+  let editTarget: HTMLElement | null = null;
+  const flushEdit = () => {
+    if (!editTarget) return;
+    const host = editTarget;
+    editTarget = null;
+    editTimer = null;
+    const sens = detectSensitiveInline(host);
+    const raw = host.innerText ?? host.textContent ?? "";
+    const value = sens.redacted ? sens.placeholderName! : sanitizeText(raw, 200);
+    const { label, selectorHint, unstable } = buildLabelFor(host);
+    send({
+      type: "type",
+      label,
+      ...(selectorHint ? { selectorHint } : {}),
+      value,
+      ...(sens.redacted ? { redacted: true, placeholderName: sens.placeholderName } : {}),
+      url: location.href,
+      region: getRegion(host),
+      ...(unstable ? { unstable } : {}),
+    });
+  };
+  const onInput = (e: Event) => {
+    const t = e.target as HTMLElement | null;
+    const host = t?.closest?.('[contenteditable="true"]') as HTMLElement | null;
+    if (!host) return; // 非 contenteditable（如 input/textarea）忽略，交给 onChange
+    editTarget = host;
+    if (editTimer !== null) clearTimeout(editTimer);
+    editTimer = setTimeout(flushEdit, 500);
+  };
+
   document.addEventListener("click", onClick, true);
   document.addEventListener("change", onChange, true);
   document.addEventListener("submit", onSubmit, true);
@@ -366,6 +399,8 @@ export function installCaptureListener(): () => void {
   // window-level scroll catches the common page-scroll case. Attaching to
   // both window and document covers both.
   window.addEventListener("scroll", onScroll, { passive: true });
+  document.addEventListener("input", onInput, true);
+  document.addEventListener("blur", flushEdit, true); // 失焦立即落一条，避免漏尾
 
   return () => {
     document.removeEventListener("click", onClick, true);
@@ -373,6 +408,9 @@ export function installCaptureListener(): () => void {
     document.removeEventListener("submit", onSubmit, true);
     window.removeEventListener("scroll", onScroll);
     if (scrollTimer !== null) clearTimeout(scrollTimer);
+    document.removeEventListener("input", onInput, true);
+    document.removeEventListener("blur", flushEdit, true);
+    if (editTimer !== null) clearTimeout(editTimer);
     w.__pieRecordingInstalled = false;
   };
 }

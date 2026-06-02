@@ -268,4 +268,24 @@ describe("capture.installCaptureListener", () => {
     vi.useRealTimers();
     uninstall();
   });
+
+  it("coalesces contenteditable typing into one type action after debounce", () => {
+    vi.useFakeTimers();
+    document.body.innerHTML = `<main><div contenteditable="true" aria-label="评论">x</div></main>`;
+    const ed = document.querySelector('[contenteditable="true"]') as HTMLElement;
+    uninstall = installCaptureListener();
+
+    ed.textContent = "你好";
+    ed.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    ed.textContent = "你好世界";
+    ed.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    vi.advanceTimersByTime(500);
+
+    const types = captured.filter((c) => c.payload.type === "type");
+    expect(types).toHaveLength(1);
+    expect(types[0]!.payload.value).toBe("你好世界");
+    expect(types[0]!.payload.label).toContain("评论");
+    vi.useRealTimers();
+    uninstall();
+  });
 });
