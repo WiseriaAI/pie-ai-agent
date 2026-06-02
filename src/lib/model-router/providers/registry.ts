@@ -98,10 +98,32 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     name: "GLM(Zhipu)",
     defaultBaseUrl: "https://open.bigmodel.cn/api/paas/v4",
     placeholder: "API key",
+    // Curated from the BigModel model-overview (issue #106). Only chat /
+    // vision models are listed — the agent loop requires tool calling, so
+    // image-gen / video / TTS-ASR / embedding / rerank models are out of
+    // scope. Deprecated lines (GLM-Z1, GLM-4-0520) and the soon-to-retire
+    // GLM-4.5-Flash are intentionally omitted. maxContextTokens = input window.
     models: [
-      { id: "glm-4-plus", vision: false, tools: true, maxContextTokens: 128_000 },
-      { id: "glm-4v-plus", vision: true, tools: true, maxContextTokens: 16_000 },
-      { id: "glm-4-air", vision: false, tools: true, maxContextTokens: 128_000 },
+      // Text
+      { id: "glm-5.1", vision: false, tools: true, maxContextTokens: 200_000 },
+      { id: "glm-5", vision: false, tools: true, maxContextTokens: 200_000 },
+      { id: "glm-5-turbo", vision: false, tools: true, maxContextTokens: 200_000 },
+      { id: "glm-4.7", vision: false, tools: true, maxContextTokens: 200_000 },
+      { id: "glm-4.7-flashx", vision: false, tools: true, maxContextTokens: 200_000 },
+      { id: "glm-4.7-flash", vision: false, tools: true, maxContextTokens: 200_000 },
+      { id: "glm-4.6", vision: false, tools: true, maxContextTokens: 200_000 },
+      { id: "glm-4.5-air", vision: false, tools: true, maxContextTokens: 128_000 },
+      { id: "glm-4.5-airx", vision: false, tools: true, maxContextTokens: 128_000 },
+      { id: "glm-4-long", vision: false, tools: true, maxContextTokens: 1_000_000 },
+      { id: "glm-4-flashx-250414", vision: false, tools: true, maxContextTokens: 128_000 },
+      { id: "glm-4-flash-250414", vision: false, tools: true, maxContextTokens: 128_000 },
+      // Vision
+      { id: "glm-5v-turbo", vision: true, tools: true, maxContextTokens: 200_000 },
+      { id: "glm-4.6v", vision: true, tools: true, maxContextTokens: 128_000 },
+      { id: "glm-4.6v-flash", vision: true, tools: true, maxContextTokens: 128_000 },
+      { id: "glm-4.1v-thinking-flashx", vision: true, tools: true, maxContextTokens: 64_000 },
+      { id: "glm-4.1v-thinking-flash", vision: true, tools: true, maxContextTokens: 64_000 },
+      { id: "glm-4v-flash", vision: true, tools: true, maxContextTokens: 16_000 },
     ],
   },
   {

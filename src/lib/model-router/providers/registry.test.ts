@@ -66,9 +66,9 @@ describe("ModelMeta capability flags (per-model)", () => {
     expect(getModelMeta("openai", "gpt-4o-mini")?.vision).toBe(true);
   });
 
-  it("ZhiPu glm-4-plus does NOT have vision; glm-4v-plus does", () => {
-    expect(getModelMeta("zhipu", "glm-4-plus")?.vision).toBe(false);
-    expect(getModelMeta("zhipu", "glm-4v-plus")?.vision).toBe(true);
+  it("ZhiPu glm-4.7 does NOT have vision; glm-4.6v does", () => {
+    expect(getModelMeta("zhipu", "glm-4.7")?.vision).toBe(false);
+    expect(getModelMeta("zhipu", "glm-4.6v")?.vision).toBe(true);
   });
 
   it("Bailian qwen-max does NOT have vision; qwen-vl-max does", () => {
@@ -89,8 +89,8 @@ describe("ModelMeta capability flags (per-model)", () => {
     expect(getModelMeta("openai", "o3-mini")?.vision).toBe(false);
   });
 
-  it("glm-4v-plus maxContextTokens is 16K", () => {
-    expect(getModelMeta("zhipu", "glm-4v-plus")?.maxContextTokens).toBe(16_000);
+  it("glm-4v-flash maxContextTokens is 16K", () => {
+    expect(getModelMeta("zhipu", "glm-4v-flash")?.maxContextTokens).toBe(16_000);
   });
 
   it("MiniMax-M3 is registered with vision; M2.x is text-only", () => {
