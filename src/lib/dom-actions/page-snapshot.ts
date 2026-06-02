@@ -1,3 +1,5 @@
+import type { InteractiveElementSummary } from "./interactive-summary";
+
 export interface ScrollableHint {
   region: string;
   pieIdx: number | null;
@@ -7,6 +9,7 @@ export interface ScrollableHint {
 
 export interface PageSnapshotResult {
   html: string;
+  interactiveElements: InteractiveElementSummary[];
   scrollableHints: ScrollableHint[];
 }
 
@@ -136,6 +139,126 @@ export function pageSnapshotInjected(): PageSnapshotResult {
     return s.replace(WRAPPER_TAG_RE, "[filtered]");
   }
 
+  const SUMMARY_TEXT_MAX = 120;
+  const SUMMARY_MARKUP_RE = /<\/?[a-z][a-z0-9_-]*(?:\s[^>]*)?>/gi;
+
+  function cssEscape(s: string): string {
+    const css = window.CSS;
+    if (css?.escape) return css.escape(s);
+    return s.replace(/[\0-\x1f\x7f"'\\#.:,[\]()=<>+~*^$|!]/g, (ch) => `\\${ch}`);
+  }
+
+  function normalizeSpace(s: string): string {
+    return sanitizeText(escapeWrapperMarkup(s))
+      .replace(SUMMARY_MARKUP_RE, "[filtered]")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, SUMMARY_TEXT_MAX);
+  }
+
+  function directText(el: Element): string {
+    let s = "";
+    for (const child of el.childNodes) {
+      if (child.nodeType === Node.TEXT_NODE) s += child.nodeValue ?? "";
+    }
+    return normalizeSpace(s);
+  }
+
+  function textById(id: string): string {
+    const found = document.getElementById(id);
+    return found ? normalizeSpace(found.textContent ?? "") : "";
+  }
+
+  function labelFor(el: Element): string {
+    const id = el.getAttribute("id");
+    if (id) {
+      const label = document.querySelector(`label[for="${cssEscape(id)}"]`);
+      if (label) return normalizeSpace(label.textContent ?? "");
+    }
+    const ancestorLabel = el.closest("label");
+    if (ancestorLabel) return normalizeSpace(ancestorLabel.textContent ?? "");
+    const labelledBy = el.getAttribute("aria-labelledby");
+    if (labelledBy) {
+      return normalizeSpace(labelledBy.split(/\s+/).map(textById).filter(Boolean).join(" "));
+    }
+    return "";
+  }
+
+  function nearestSection(el: Element): string {
+    let node: Element | null = el;
+    while (node && node !== document.body) {
+      const heading = node.querySelector?.("h1,h2,h3,[role='heading']");
+      if (heading && heading !== el) {
+        const text = normalizeSpace(heading.textContent ?? "");
+        if (text) return text;
+      }
+      const aria = node.getAttribute?.("aria-label");
+      const role = node.getAttribute?.("role");
+      if (aria && role && /^(dialog|region|main|form|complementary|navigation)$/i.test(role)) {
+        return normalizeSpace(aria);
+      }
+      node = node.parentElement;
+    }
+    return "";
+  }
+
+  function inferredRole(el: Element): string {
+    const explicit = normalizeSpace(el.getAttribute("role") ?? "");
+    if (explicit) return explicit;
+    const tag = el.tagName.toLowerCase();
+    if (tag === "a") return "link";
+    if (tag === "button") return "button";
+    if (tag === "select") return "combobox";
+    if (tag === "textarea") return "textbox";
+    if (el.getAttribute("contenteditable") === "true") return "textbox";
+    if (tag === "summary") return "button";
+    if (tag === "input") {
+      const type = ((el as HTMLInputElement).type || "text").toLowerCase();
+      if (type === "checkbox") return "checkbox";
+      if (type === "radio") return "radio";
+      if (type === "button" || type === "submit" || type === "reset") return "button";
+      return "textbox";
+    }
+    return "";
+  }
+
+  function accessibleName(el: Element): string {
+    const aria = normalizeSpace(el.getAttribute("aria-label") ?? "");
+    if (aria) return aria;
+    const labelled = el.getAttribute("aria-labelledby");
+    if (labelled) {
+      const text = normalizeSpace(labelled.split(/\s+/).map(textById).filter(Boolean).join(" "));
+      if (text) return text;
+    }
+    const title = normalizeSpace(el.getAttribute("title") ?? "");
+    if (title) return title;
+    const name = normalizeSpace(el.getAttribute("name") ?? "");
+    if (name) return name;
+    return directText(el);
+  }
+
+  function interactiveSummary(el: Element): InteractiveElementSummary {
+    const tag = el.tagName.toLowerCase();
+    const input = el instanceof HTMLInputElement ? el : null;
+    const option = el instanceof HTMLOptionElement ? el : null;
+    const pieIdx = Number(el.getAttribute("data-pie-idx") ?? "-1");
+    return {
+      pieIdx,
+      tag,
+      role: inferredRole(el),
+      name: accessibleName(el),
+      text: directText(el),
+      placeholder: normalizeSpace(el.getAttribute("placeholder") ?? ""),
+      label: labelFor(el),
+      section: nearestSection(el),
+      type: input ? input.type.toLowerCase() : normalizeSpace(el.getAttribute("type") ?? ""),
+      contenteditable: el.getAttribute("contenteditable") === "true",
+      disabled: el.hasAttribute("disabled"),
+      checked: input ? input.checked : el.hasAttribute("checked"),
+      selected: option ? option.selected : el.hasAttribute("selected"),
+    };
+  }
+
   function isAttrAllowed(name: string): boolean {
     if (ATTR_WHITELIST.has(name)) return true;
     if (name.startsWith("aria-")) return true;
@@ -230,6 +353,13 @@ export function pageSnapshotInjected(): PageSnapshotResult {
       el.setAttribute("data-pie-idx", idxStr);
       const cloneEl = liveToCloneMap.get(el);
       if (cloneEl) cloneEl.setAttribute("data-pie-idx", idxStr);
+    }
+  }
+
+  const interactiveElements: InteractiveElementSummary[] = [];
+  for (const el of liveBodyElements) {
+    if (el.hasAttribute("data-pie-idx")) {
+      interactiveElements.push(interactiveSummary(el));
     }
   }
 
@@ -342,5 +472,5 @@ export function pageSnapshotInjected(): PageSnapshotResult {
     });
   }
 
-  return { html, scrollableHints };
+  return { html, interactiveElements, scrollableHints };
 }
