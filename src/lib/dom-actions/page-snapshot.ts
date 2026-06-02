@@ -151,6 +151,7 @@ export function pageSnapshotInjected(): PageSnapshotResult {
   function normalizeSpace(s: string): string {
     return sanitizeText(escapeWrapperMarkup(s))
       .replace(SUMMARY_MARKUP_RE, "[filtered]")
+      .replace(/[<>]/g, "[filtered]")
       .replace(/\s+/g, " ")
       .trim()
       .slice(0, SUMMARY_TEXT_MAX);
@@ -162,6 +163,10 @@ export function pageSnapshotInjected(): PageSnapshotResult {
       if (child.nodeType === Node.TEXT_NODE) s += child.nodeValue ?? "";
     }
     return normalizeSpace(s);
+  }
+
+  function descendantText(el: Element): string {
+    return normalizeSpace(el.textContent ?? "");
   }
 
   function textById(id: string): string {
@@ -234,7 +239,7 @@ export function pageSnapshotInjected(): PageSnapshotResult {
     if (title) return title;
     const name = normalizeSpace(el.getAttribute("name") ?? "");
     if (name) return name;
-    return directText(el);
+    return descendantText(el);
   }
 
   function interactiveSummary(el: Element): InteractiveElementSummary {
