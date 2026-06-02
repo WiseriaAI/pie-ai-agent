@@ -1,0 +1,10 @@
+[
+  {
+    "loginUrl": "http://localhost:7780/admin",
+    "usernameField": "input[name=\"login[username]\"]",
+    "passwordField": "input[name=\"login[password]\"]",
+    "username": "admin",
+    "password": "admin1234",
+    "successUrlContains": "/admin/"
+  }
+]
