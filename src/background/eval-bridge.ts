@@ -76,8 +76,12 @@ function makeBridge() {
         pinnedTabs,
         initialFocusTabId: pinnedTabs[0]?.tabId,
         // 捕获每个完成步的原始会话(structuredClone'd),供 getTrace 导出诊断。
+        // 只在非空时更新:任务 done 时 loop 会再发一个 tombstone 快照,其
+        // agentMessages 为 [](buildSessionAgentTombstone),不能让它清掉已捕获的历史。
         onStepSnapshot: async (snap: { agentMessages?: unknown[] }) => {
-          run.agentMessages = snap.agentMessages ?? [];
+          if (snap.agentMessages && snap.agentMessages.length > 0) {
+            run.agentMessages = snap.agentMessages;
+          }
         },
       }).catch((e) => onMessage(sessionId, { type: "chat-error", error: e instanceof Error ? e.message : String(e), sessionId }));
 

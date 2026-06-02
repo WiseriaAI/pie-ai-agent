@@ -77,6 +77,8 @@ describe("eval bridge getTrace", () => {
     ];
     fakeRun.mockImplementation(async (ctx: any) => {
       await ctx.onStepSnapshot({ agentMessages: fakeMessages });
+      // done 时 loop 发一个空 tombstone 快照 —— 不能清掉已捕获的历史。
+      await ctx.onStepSnapshot({ agentMessages: [] });
       ctx.port.postMessage({ type: "agent-done-task", success: true, summary: "$42", stepCount: 1, sessionId: ctx.sessionId });
     });
     const bridge = __makeBridgeForTest();
