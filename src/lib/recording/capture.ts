@@ -265,6 +265,25 @@ export function installCaptureListener(): () => void {
       return;
     }
     const { label, selectorHint, unstable } = buildLabelFor(el);
+    // 落在弹出菜单/下拉里的项（role=menu/listbox/menuitem/option…）：回放时这些项
+    // 往往要先悬停/点击触发器才能露出来。打个 fromPopup 标记，serialize 据此提示 LLM。
+    let fromPopup = false;
+    {
+      let node: Element | null = el;
+      let depth = 0;
+      while (node && node !== document.body && depth < 12) {
+        const r = (node.getAttribute?.("role") || "").toLowerCase();
+        if (
+          r === "menu" || r === "listbox" || r === "menuitem" ||
+          r === "menuitemcheckbox" || r === "menuitemradio" || r === "option"
+        ) {
+          fromPopup = true;
+          break;
+        }
+        node = node.parentElement;
+        depth++;
+      }
+    }
     send({
       type: "click",
       label,
@@ -272,6 +291,7 @@ export function installCaptureListener(): () => void {
       url: location.href,
       region: getRegion(el),
       ...(unstable ? { unstable } : {}),
+      ...(fromPopup ? { fromPopup: true } : {}),
     });
   };
 

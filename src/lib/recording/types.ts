@@ -43,6 +43,10 @@ export interface RecordedAction {
   /** checkbox/radio/switch 勾选后的最终状态。仅 type==="click" 且目标是可勾选
    *  元素时出现；serialize 据此渲染「勾选/取消勾选」。 */
   checked?: boolean;
+  /** 点击目标落在弹出菜单/下拉容器内（role=menu/listbox/menuitem/option…）。
+   *  serialize 据此追加"回放前可能需先悬停/点击触发器展开"的提示——因为这类项
+   *  在回放快照里常不可见或无 data-pie-idx，LLM 需先揭示才能操作。 */
+  fromPopup?: boolean;
   timestamp: number;
 }
 
@@ -81,4 +85,5 @@ export interface CapturedActionPayload {
   region: string;
   unstable?: boolean;
   checked?: boolean;
+  fromPopup?: boolean;
 }

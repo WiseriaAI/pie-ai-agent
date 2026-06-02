@@ -402,4 +402,26 @@ describe("capture.installCaptureListener", () => {
     expect(clicks[0]!.payload.checked).toBe(true);
     uninstall();
   });
+
+  it("flags a menuitem click inside a role=menu popup with fromPopup", () => {
+    document.body.innerHTML = `<main><div role="menu"><div role="menuitem" onclick="void 0">导出 CSV</div></div></main>`;
+    uninstall = installCaptureListener();
+    (document.querySelector('[role="menuitem"]') as HTMLElement).click();
+
+    const clicks = captured.filter((c) => c.payload.type === "click");
+    expect(clicks).toHaveLength(1);
+    expect(clicks[0]!.payload.fromPopup).toBe(true);
+    uninstall();
+  });
+
+  it("does not flag a normal button click with fromPopup", () => {
+    document.body.innerHTML = `<main><button aria-label="Save">Save</button></main>`;
+    uninstall = installCaptureListener();
+    (document.querySelector("button") as HTMLElement).click();
+
+    const clicks = captured.filter((c) => c.payload.type === "click");
+    expect(clicks).toHaveLength(1);
+    expect(clicks[0]!.payload.fromPopup).toBeUndefined();
+    uninstall();
+  });
 });

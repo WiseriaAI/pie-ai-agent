@@ -143,4 +143,10 @@ describe("serialize", () => {
   it("hover is in baseline allowedTools", () => {
     expect(serialize([]).allowedTools).toContain("hover");
   });
+
+  it("appends a reveal hint for fromPopup clicks", () => {
+    const r = serialize([action({ type: "click", label: "菜单项 '设置'", fromPopup: true })]);
+    expect(r.promptTemplate).toContain("第 1 步：点击菜单项 '设置'");
+    expect(r.promptTemplate).toContain("先悬停或点击其触发器展开");
+  });
 });

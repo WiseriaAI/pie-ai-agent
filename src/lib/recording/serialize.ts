@@ -118,6 +118,9 @@ export function serialize(actions: RecordedAction[]): SerializeResult {
     if (action.unstable) {
       line += " [可能不稳定]";
     }
+    if (action.fromPopup) {
+      line += "（该项在弹出菜单/下拉中，回放前可能需先悬停或点击其触发器展开）";
+    }
     lines.push(line);
   });
 
