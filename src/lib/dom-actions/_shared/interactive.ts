@@ -1,14 +1,14 @@
 /**
- * Canonical source for "what counts as an interactive element" + visibility +
- * Chinese element-kind maps. Shared across the injected snapshot/search/capture
- * functions.
+ * Canonical source for the interactive selector + zh element-kind maps. Shared
+ * across the injected snapshot/search/capture functions.
  *
  * Injected functions (pageSnapshotInjected / searchPageInjected /
  * installCaptureListener) CANNOT import this at runtime — executeScript
  * serializes their bodies. They inline a VERBATIM copy of INTERACTIVE_SELECTOR
- * (single string literal) and isVisible; interactive-parity.test.ts asserts the
- * inlined literal matches this source. Module-side consumers (selector.ts,
- * tests) import directly.
+ * (single string literal); interactive-parity.test.ts asserts the inlined
+ * literal matches this source. isVisible stays inlined inside the injected
+ * snapshot/search functions, guarded by the idx-parity behaviour test.
+ * Module-side consumers (selector.ts, tests) import directly.
  */
 
 // Single-string literal (NOT array.join) so source-text parity checks can match
@@ -16,21 +16,6 @@
 // joined form of page-snapshot.ts INTERACTIVE_SELECTOR, verbatim.
 export const INTERACTIVE_SELECTOR =
   'a, button, input, select, textarea, [role="button"], [role="link"], [role="tab"], [role="checkbox"], [role="radio"], [role="switch"], [role="menuitem"], [contenteditable="true"], summary, [onclick], [tabindex]:not([tabindex=\'-1\'])';
-
-/** Mirrors page-snapshot.ts isVisible exactly. */
-export function isVisible(el: Element): boolean {
-  const rect = el.getBoundingClientRect();
-  if (rect.width <= 0 || rect.height <= 0) return false;
-  const style = window.getComputedStyle(el);
-  if (style.display === "none" || style.visibility === "hidden") return false;
-  if (parseFloat(style.opacity) === 0) return false;
-  const tag = el.tagName.toLowerCase();
-  if ((tag === "input" || tag === "textarea") && (rect.width < 8 || rect.height < 8)) {
-    return false;
-  }
-  if (style.position !== "fixed" && (el as HTMLElement).offsetParent === null) return false;
-  return true;
-}
 
 export const ROLE_TO_CN: Record<string, string> = {
   button: "按钮",

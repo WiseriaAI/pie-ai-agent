@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
   INTERACTIVE_SELECTOR,
-  isVisible,
   ROLE_TO_CN,
   TAG_TO_CN,
 } from "./interactive";
@@ -17,12 +16,6 @@ describe("_shared/interactive", () => {
     ]) {
       expect(INTERACTIVE_SELECTOR).toContain(needle);
     }
-  });
-
-  it("isVisible 对 0 尺寸元素返回 false", () => {
-    document.body.innerHTML = `<button style="display:none">x</button>`;
-    const el = document.querySelector("button")!;
-    expect(isVisible(el)).toBe(false);
   });
 
   it("kind 映射含中文", () => {

@@ -422,6 +422,8 @@ export function installCaptureListener(): () => void {
     if (e.altKey) parts.push("Alt");
     if (e.shiftKey) parts.push("Shift");
     parts.push(k.length === 1 ? k.toUpperCase() : k);
+    // 注：组合键（Cmd+B 等）作为意图上下文记录；回放的 press_key 工具只执行单键，
+    // 组合键对 distill/回放 LLM 是提示性上下文，非可直接执行的步骤。
     send({
       type: "keypress",
       label: "",

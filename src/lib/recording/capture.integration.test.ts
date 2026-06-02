@@ -7,7 +7,7 @@
  * 调用它（不走 chrome.scripting.executeScript），mock 掉 chrome.runtime.sendMessage。
  */
 
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { installCaptureListener } from "./capture";
 import { detectSensitive } from "./redact";
 import type { CapturedActionPayload } from "./types";
@@ -28,6 +28,10 @@ describe("capture.installCaptureListener", () => {
         }),
       },
     };
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("captures button click with aria-label as label", () => {

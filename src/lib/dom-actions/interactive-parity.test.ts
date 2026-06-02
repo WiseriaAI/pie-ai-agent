@@ -3,9 +3,8 @@
  * INTERACTIVE_SELECTOR string literal as the canonical _shared source. They
  * cannot import it (executeScript serializes their bodies), so drift is caught
  * here via source-text inspection of Function.prototype.toString().
- *
- * NOTE: installCaptureListener (recording/capture.ts) is added to this list in
- * a later task once its onClick is switched to the canonical selector.
+ * All three injected functions (pageSnapshotInjected, searchPageInjected,
+ * installCaptureListener) are guarded here.
  *
  * Implementation note: esbuild compiles single-quoted strings with interior
  * double-quotes to double-quoted strings with escaped interior double-quotes
