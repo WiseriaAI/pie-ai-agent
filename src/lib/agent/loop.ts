@@ -760,6 +760,49 @@ export async function readFocusFromStorage(
   };
 }
 
+export interface StepPinView {
+  /** Live pin list — read fresh by each tool handler's ctx.pinnedTabs. */
+  readonly pins: ReadonlyArray<{ tabId: number; origin: string }>;
+  /** Persist the removal AND drop it from `pins` synchronously. */
+  removePinnedTab: (tabId: number) => Promise<void>;
+}
+
+/**
+ * Issue #110 follow-up — per-step pin view shared by the batched tool handlers
+ * of a single assistant turn.
+ *
+ * The loop's `currentPinnedTabs` is a snapshot taken once per step (from
+ * readFocusFromStorage). close_tabs decides "is this pinned?" from
+ * ctx.pinnedTabs, which points at that snapshot. unpin_tab persists its
+ * removal to storage (SessionMeta) — but storage isn't re-read until the NEXT
+ * step. So a model that batches `[unpin_tab(N), close_tabs([N])]` in ONE turn
+ * would have close_tabs still see N as pinned and refuse, forcing a wasted
+ * extra turn.
+ *
+ * This view fixes that: removePinnedTab updates `pins` in the same tick it
+ * persists, so a later tool call in the same batch (reading view.pins via its
+ * ctx) sees the unpin immediately. Storage stays the source of truth (the next
+ * step's readFocusFromStorage refresh is unaffected); the view only collapses
+ * the within-turn latency. Unlike focus_tab / open_url — which must defer to
+ * the next iteration (they need a fresh page snapshot / tab commit) — unpin
+ * has no reason to defer, so reflecting it immediately is strictly better.
+ */
+export function createStepPinView(
+  initial: ReadonlyArray<{ tabId: number; origin: string }>,
+  persistRemove: (tabId: number) => Promise<void>,
+): StepPinView {
+  let pins = initial;
+  return {
+    get pins() {
+      return pins;
+    },
+    removePinnedTab: async (tabId: number) => {
+      await persistRemove(tabId);
+      pins = pins.filter((p) => p.tabId !== tabId);
+    },
+  };
+}
+
 /**
  * M3-U4 — pure helper: collect tab ids that this tool call would write
  * to AND that are pinned by another active session. Returns an empty
@@ -1246,6 +1289,16 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         pinnedTabId = refreshed.focused.tabId;
         pinnedOrigin = refreshed.focused.origin;
       }
+
+      // Issue #110 follow-up — per-step pin view. unpin_tab removes through
+      // this so a same-turn close_tabs (reading view.pins via its ctx) sees
+      // the unpin immediately, rather than only after the next step's
+      // storage refresh. Storage stays the source of truth.
+      const stepPinView = createStepPinView(currentPinnedTabs, async (tabId) => {
+        const meta = await getSessionMeta(sessionId);
+        if (!meta) return;
+        await setSessionMeta(removePinFromMeta(meta, tabId));
+      });
 
       // Issue #34 — drain any mid-task instructions submitted during the
       // previous step. Atomic read+clear (drainPending writes session agent
@@ -1947,8 +2000,11 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             // focus_tab (Task 6) and open_url (Task 7). Issue #33 —
             // currentPinnedTabs is the per-iteration refreshed array, so
             // focus_tab(newPinId) sees pins appended by open_url in
-            // earlier iterations of the same task.
-            pinnedTabs: currentPinnedTabs,
+            // earlier iterations of the same task. Issue #110 follow-up —
+            // routed through stepPinView so a same-turn unpin_tab is visible
+            // to a later close_tabs in the SAME batch (the getter returns the
+            // live, post-unpin list at ctx-build time).
+            pinnedTabs: stepPinView.pins,
             appendPinnedTab: async (pin) => {
               const meta = await getSessionMeta(sessionId);
               if (!meta) return;
@@ -1960,13 +2016,10 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
               await setSessionAgent(sessionId, { ...cur, currentFocusTabId: tabId });
             },
             // Issue #110 — unpin_tab removes a tab from SessionMeta.pinnedTabs[]
-            // so the agent can then close_tabs it. The removal is observed on
+            // (persisted) AND from the live stepPinView (so a same-turn
+            // close_tabs sees it gone). The storage write is also observed on
             // the next iteration's readFocusFromStorage refresh.
-            removePinnedTab: async (tabId) => {
-              const meta = await getSessionMeta(sessionId);
-              if (!meta) return;
-              await setSessionMeta(removePinFromMeta(meta, tabId));
-            },
+            removePinnedTab: stepPinView.removePinnedTab,
           });
         } catch (e) {
           result = {
