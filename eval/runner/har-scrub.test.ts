@@ -33,4 +33,26 @@ describe("scrubHar", () => {
     scrubHar(input, ["shop.webarena.local"]);
     expect(input.log.entries).toHaveLength(2);
   });
+
+  it("matches a port-bearing host (localhost:7780) when allow-list is the bare hostname (localhost)", () => {
+    const har: Har = {
+      log: {
+        entries: [
+          { request: { url: "https://api.deepseek.com/v1/chat", headers: [{ name: "Authorization", value: "Bearer sk-secret" }] }, response: { headers: [] } },
+          { request: { url: "http://localhost:7780/admin/reports/report_sales/bestsellers/", headers: [] }, response: { headers: [] } },
+        ],
+      },
+    };
+    const out = scrubHar(har, ["localhost"]);
+    expect(out.log.entries).toHaveLength(1);
+    expect(out.log.entries[0].request.url).toContain("localhost:7780");
+    expect(JSON.stringify(out)).not.toContain("sk-secret");
+  });
+
+  it("also matches when allow-list includes the port (localhost:7780)", () => {
+    const har: Har = {
+      log: { entries: [{ request: { url: "http://localhost:7780/admin", headers: [] }, response: { headers: [] } }] },
+    };
+    expect(scrubHar(har, ["localhost:7780"]).log.entries).toHaveLength(1);
+  });
 });
