@@ -6,7 +6,7 @@ import { getToolClass } from "../tool-names";
 function frameResult(frameId: number, matches: any[], total: number, extra?: Partial<any>) {
   return {
     frameId,
-    result: { matches, total, timedOut: false, invalidRegex: null, ...extra },
+    result: { matches, total, timedOut: false, invalidRegex: null, invalidAttribute: null, ...extra },
   };
 }
 
@@ -86,6 +86,49 @@ describe("search_page tool", () => {
     expect(call.args[0].queries).toEqual(["a", "b"]);
   });
 
+  it("passes search_by through to injected search and renders summary attrs", async () => {
+    stubChrome({
+      inject: [
+        frameResult(0, [
+          {
+            pieIdx: 4,
+            tag: "div",
+            role: "textbox",
+            name: "Reply <box>",
+            label: "Reply & body",
+            placeholder: "Message",
+            type: "text",
+            contenteditable: true,
+            matched: "textbox",
+            snippet: "contenteditable=true",
+          },
+        ], 1),
+      ],
+    });
+    const r = await searchPageTool.handler(
+      { tabId: 7, query: "textbox", search_by: "role", mode: "interactive" },
+      {} as any,
+    );
+    expect(r.success).toBe(true);
+    expect(r.observation).toContain('search_by="role"');
+    expect(r.observation).toContain('mode="interactive"');
+    expect(r.observation).toContain('role="textbox"');
+    expect(r.observation).toContain('name="Reply &lt;box&gt;"');
+    expect(r.observation).toContain('label="Reply &amp; body"');
+    expect(r.observation).toContain('placeholder="Message"');
+    expect(r.observation).toContain('type="text"');
+    expect(r.observation).toContain('contenteditable="true"');
+    const call = (chrome.scripting.executeScript as any).mock.calls[0][0];
+    expect(call.args[0]).toEqual({
+      queries: ["textbox"],
+      regex: false,
+      mode: "interactive",
+      maxResults: 10,
+      searchBy: "role",
+    });
+    expect(call.args[0]).not.toHaveProperty("search_by");
+  });
+
   it("非数字 tabId → 错误", async () => {
     stubChrome({ inject: [] });
     const r = await searchPageTool.handler({ query: "x" } as any, {} as any);
@@ -151,6 +194,18 @@ describe("search_page tool", () => {
     expect(r.error).toMatch(/invalid_regex/);
   });
 
+  it("invalidAttribute → invalid_attribute_query 错误", async () => {
+    stubChrome({
+      inject: [frameResult(0, [], 0, { invalidAttribute: "unsupported_attribute: data-x" })],
+    });
+    const r = await searchPageTool.handler(
+      { tabId: 7, query: "data-x=y", search_by: "attribute" },
+      {} as any,
+    );
+    expect(r.success).toBe(false);
+    expect(r.error).toMatch(/invalid_attribute_query: unsupported_attribute: data-x/);
+  });
+
   it("timedOut 透传到 observation", async () => {
     stubChrome({
       inject: [frameResult(0, [{ pieIdx: 0, tag: "p", matched: "x", snippet: "x" }], 1, { timedOut: true })],
@@ -171,6 +226,16 @@ describe("search_page tool", () => {
     expect(r.observation).toContain("&lt;/untrusted_page_match&gt;");
   });
 
+  it("default text search behavior is preserved", async () => {
+    stubChrome({
+      inject: [frameResult(0, [{ pieIdx: null, tag: "p", matched: "x", snippet: "x" }], 1)],
+    });
+    const r = await searchPageTool.handler({ tabId: 7, query: "x" }, {} as any);
+    expect(r.observation).toContain('search_by="text"');
+    const call = (chrome.scripting.executeScript as any).mock.calls[0][0];
+    expect(call.args[0].searchBy).toBe("text");
+  });
+
   it("executeScript 抛错 → success false", async () => {
     stubChrome({ injectThrows: true });
     const r = await searchPageTool.handler({ tabId: 7, query: "x" }, {} as any);
@@ -184,5 +249,38 @@ describe("search_page registry", () => {
   });
   it("分类为 read", () => {
     expect(getToolClass("search_page")).toBe("read");
+  });
+
+  it("schema exposes search_by enum and remains strict", () => {
+    const tool = BUILT_IN_TOOLS.find((t) => t.name === "search_page");
+    const params = tool?.parameters as {
+      additionalProperties: boolean;
+      properties: {
+        search_by: { enum: string[]; description: string };
+      };
+    };
+    expect(params.additionalProperties).toBe(false);
+    expect(params.properties.search_by.enum).toEqual(["text", "role", "tag", "attribute"]);
+    expect(params.properties.search_by.description).toContain("role=textbox");
+    expect(params.properties.search_by.description).toContain("tag=contenteditable");
+  });
+
+  it("type/select descriptions allow indices from read_page interactive_index or search_page", () => {
+    for (const name of ["type", "select"]) {
+      const tool = BUILT_IN_TOOLS.find((t) => t.name === name);
+      expect(tool?.description).toContain("read_page <interactive_index> or search_page result");
+      const params = tool?.parameters as {
+        properties: {
+          frameId: { description: string };
+          elementIndex: { description: string };
+        };
+      };
+      expect(params.properties.frameId.description).toContain(
+        "read_page <interactive_index> or search_page result",
+      );
+      expect(params.properties.elementIndex.description).toContain(
+        "read_page <interactive_index> or search_page result",
+      );
+    }
   });
 });

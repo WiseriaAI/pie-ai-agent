@@ -7,12 +7,17 @@ import { isPdfTab } from "@/lib/pdf/detect";
 
 const DEFAULT_MAX = 10;
 
+function escapeSearchPageAttribute(value: string | null | undefined): string {
+  return escapeWrapperAttribute(value).replace(/&(?!(?:amp|lt|gt|quot);)/g, "&amp;");
+}
+
 interface SearchPageArgs {
   tabId?: number;
   query?: string | string[];
   max_results?: number;
   mode?: "all" | "interactive" | "text";
   regex?: boolean;
+  search_by?: "text" | "role" | "tag" | "attribute";
 }
 
 export const searchPageTool: Tool = {
@@ -51,6 +56,12 @@ export const searchPageTool: Tool = {
         type: "boolean",
         description: "Default false (literal substring). true = each term is a regex (flags gi).",
       },
+      search_by: {
+        type: "string",
+        enum: ["text", "role", "tag", "attribute"],
+        description:
+          "text (default) searches visible text. role/tag/attribute search element summaries, useful for blank editors such as role=textbox or tag=contenteditable.",
+      },
     },
     required: ["tabId", "query"],
     additionalProperties: false,
@@ -79,6 +90,10 @@ export const searchPageTool: Tool = {
     const mode: "all" | "interactive" | "text" =
       a.mode === "interactive" || a.mode === "text" ? a.mode : "all";
     const regex = a.regex === true;
+    const searchBy: "text" | "role" | "tag" | "attribute" =
+      a.search_by === "role" || a.search_by === "tag" || a.search_by === "attribute"
+        ? a.search_by
+        : "text";
 
     let tab: chrome.tabs.Tab;
     try {
@@ -101,7 +116,7 @@ export const searchPageTool: Tool = {
       results = (await chrome.scripting.executeScript({
         target: { tabId: a.tabId, allFrames: true },
         func: searchPageInjected,
-        args: [{ queries, regex, mode, maxResults }],
+        args: [{ queries, regex, mode, maxResults, searchBy }],
       })) as chrome.scripting.InjectionResult<SearchPageResult>[];
     } catch (e) {
       return { success: false, error: e instanceof Error ? e.message : "executeScript failed" };
@@ -110,6 +125,11 @@ export const searchPageTool: Tool = {
     for (const r of results) {
       if (r.result?.invalidRegex) {
         return { success: false, error: `invalid_regex: ${r.result.invalidRegex}` };
+      }
+    }
+    for (const r of results) {
+      if (r.result?.invalidAttribute) {
+        return { success: false, error: `invalid_attribute_query: ${r.result.invalidAttribute}` };
       }
     }
 
@@ -130,7 +150,9 @@ export const searchPageTool: Tool = {
     if (total === 0) {
       return {
         success: true,
-        observation: `<search_page total_matches="0" mode="${mode}">no matches</search_page>`,
+        observation:
+          `<search_page total_matches="0" mode="${mode}" search_by="${searchBy}">` +
+          `no matches</search_page>`,
       };
     }
 
@@ -139,14 +161,27 @@ export const searchPageTool: Tool = {
 
     const lines = shown.map((row) => {
       const idxAttr = row.m.pieIdx === null ? "" : String(row.m.pieIdx);
+      const attrs = [
+        `frame_id="${row.frameId}"`,
+        `pie_idx="${idxAttr}"`,
+        `tag="${escapeSearchPageAttribute(row.m.tag)}"`,
+        `matched="${escapeSearchPageAttribute(row.m.matched)}"`,
+      ];
+      if (row.m.role) attrs.push(`role="${escapeSearchPageAttribute(row.m.role)}"`);
+      if (row.m.name) attrs.push(`name="${escapeSearchPageAttribute(row.m.name)}"`);
+      if (row.m.label) attrs.push(`label="${escapeSearchPageAttribute(row.m.label)}"`);
+      if (row.m.placeholder) {
+        attrs.push(`placeholder="${escapeSearchPageAttribute(row.m.placeholder)}"`);
+      }
+      if (row.m.type) attrs.push(`type="${escapeSearchPageAttribute(row.m.type)}"`);
+      if (row.m.contenteditable) attrs.push(`contenteditable="true"`);
       return (
-        `  <untrusted_page_match frame_id="${row.frameId}" pie_idx="${idxAttr}" ` +
-        `tag="${escapeWrapperAttribute(row.m.tag)}" matched="${escapeWrapperAttribute(row.m.matched)}">` +
+        `  <untrusted_page_match ${attrs.join(" ")}>` +
         `${escapeUntrustedWrappers(row.m.snippet)}</untrusted_page_match>`
       );
     });
 
-    const headerAttrs = [`total_matches="${total}"`, `mode="${mode}"`];
+    const headerAttrs = [`total_matches="${total}"`, `mode="${mode}"`, `search_by="${searchBy}"`];
     if (truncated) headerAttrs.push(`truncated="true"`);
     if (timedOut) headerAttrs.push(`timed_out="true"`);
 

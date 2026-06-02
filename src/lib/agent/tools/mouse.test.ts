@@ -96,6 +96,23 @@ describe("hover tool", () => {
     );
   });
 
+  it("description allows indices from read_page interactive_index or search_page", () => {
+    const tool = buildHoverTool(deps());
+    expect(tool.description).toContain("read_page <interactive_index> or search_page result");
+    const params = tool.parameters as {
+      properties: {
+        frameId: { description: string };
+        elementIndex: { description: string };
+      };
+    };
+    expect(params.properties.frameId.description).toContain(
+      "read_page <interactive_index> or search_page result",
+    );
+    expect(params.properties.elementIndex.description).toContain(
+      "read_page <interactive_index> or search_page result",
+    );
+  });
+
   it("returns success observation with mouseMoved dispatched", async () => {
     const session = fakeSession();
     vi.mocked(elementToPagePoint).mockResolvedValue({ x: 100, y: 200 });
@@ -181,6 +198,23 @@ describe("click tool (CDP)", () => {
     expect(tool.name).toBe("click");
     expect((tool.parameters as { required: string[] }).required).toEqual(
       expect.arrayContaining(["frameId", "elementIndex"]),
+    );
+  });
+
+  it("description allows indices from read_page interactive_index or search_page", () => {
+    const tool = buildClickTool(deps());
+    expect(tool.description).toContain("read_page <interactive_index> or search_page result");
+    const params = tool.parameters as {
+      properties: {
+        frameId: { description: string };
+        elementIndex: { description: string };
+      };
+    };
+    expect(params.properties.frameId.description).toContain(
+      "read_page <interactive_index> or search_page result",
+    );
+    expect(params.properties.elementIndex.description).toContain(
+      "read_page <interactive_index> or search_page result",
     );
   });
 

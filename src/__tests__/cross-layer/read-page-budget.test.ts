@@ -7,7 +7,7 @@ describe("read_page budget enforcement", () => {
   });
 
   it("第二 frame 超预算时 unread=budget", async () => {
-    const huge = "x".repeat(55_000);
+    const huge = "x".repeat(140_000);
     vi.stubGlobal("chrome", {
       tabs: {
         get: vi.fn().mockResolvedValue({
@@ -40,7 +40,7 @@ describe("read_page budget enforcement", () => {
     const r = await readPageTool.handler({ tabId: 1 }, {} as any);
     expect(r.success).toBe(true);
 
-    // Frame 0 should be truncated due to budget
+    // Frame 0 should be truncated due to default auto mode budget.
     expect(r.observation).toMatch(/frame_id="0"[\s\S]*truncated="true"/);
 
     // Frame 1 should be marked as unread="budget" because budget already exhausted
