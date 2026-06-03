@@ -1,0 +1,4 @@
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: #FAFBFC; color: #14181D; font-family: system-ui, sans-serif; }
+#app { min-height: 100vh; }
