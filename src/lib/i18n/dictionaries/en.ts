@@ -422,6 +422,9 @@ export const enDict = {
     tools: "Tools",
     vision: "Vision",
     maxContextTokens: "MAX CONTEXT TOKENS",
+    deleteThisProvider: "Delete this provider",
+    sharedBy: "Shared by {count} config(s) — editing affects all",
+    inUseCannotDelete: "In use by {count} config(s) — delete those first",
   },
   topBar: {
     closeSettings: "Close settings",

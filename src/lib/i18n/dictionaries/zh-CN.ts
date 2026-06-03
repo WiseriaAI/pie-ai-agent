@@ -431,6 +431,9 @@ export const zhCNDict = {
     tools: "工具调用",
     vision: "视觉",
     maxContextTokens: "最大上下文 Token",
+    deleteThisProvider: "删除此 Provider",
+    sharedBy: "被 {count} 个配置共用 — 修改将影响全部",
+    inUseCannotDelete: "被 {count} 个配置使用 — 请先删除这些配置",
   },
   topBar: {
     closeSettings: "关闭设置",
