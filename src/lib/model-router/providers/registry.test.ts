@@ -55,7 +55,7 @@ describe("ProviderMeta schema", () => {
   it("StepFun is registered", () => {
     expect(getProviderMeta("stepfun")).toBeDefined();
     expect(getProviderMeta("stepfun")!.defaultBaseUrl).toBe("https://api.stepfun.com");
-    expect(getProviderMeta("stepfun")!.name).toBe("StepFun(阶跃星辰)");
+    expect(getProviderMeta("stepfun")!.name).toBe("StepFun");
   });
 });
 

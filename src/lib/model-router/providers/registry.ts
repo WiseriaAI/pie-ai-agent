@@ -186,7 +186,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
   },
   {
     id: "stepfun",
-    name: "StepFun(阶跃星辰)",
+    name: "StepFun",
     defaultBaseUrl: "https://api.stepfun.com",
     placeholder: "API key",
     // Anthropic-wire (`/v1/messages`, Bearer). step-3.7-flash is the native

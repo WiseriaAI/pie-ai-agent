@@ -146,7 +146,7 @@ shows a drift card before continuing rather than acting on the wrong page.
 | Bailian | OpenAI-compatible |
 | Mimo(Xiaomi) | Anthropic-compatible |
 | Moonshot(Kimi) | OpenAI-compatible · International `api.moonshot.ai` / China `api.moonshot.cn` (pick the matching entry to select region) |
-| StepFun(阶跃星辰) | Anthropic-compatible |
+| StepFun | Anthropic-compatible |
 
 Adding a provider is a registry entry plus a host permission. Local
 Ollama is on the [roadmap](docs/ROADMAP.md).
