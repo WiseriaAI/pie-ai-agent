@@ -278,6 +278,9 @@ export default function CustomProviderForm({ existing, onSaved, onBack, onDelete
               className="w-full rounded border border-line bg-field px-3 py-2 text-[12px] text-fg-1 placeholder:text-fg-3 focus:border-accent-line"
             />
             <div className="flex flex-col gap-0.5">
+              <span className="font-mono text-[10px] text-fg-2">
+                ⓘ {t("customProvider.baseUrlHint")}
+              </span>
               <span className="font-mono text-[10px] text-fg-3">
                 ⓘ {t("customProvider.baseUrlWarning")}
               </span>

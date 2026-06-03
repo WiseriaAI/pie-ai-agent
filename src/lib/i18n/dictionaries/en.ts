@@ -396,6 +396,7 @@ export const enDict = {
     namePlaceholder: "My custom provider",
     baseUrl: "BASE URL",
     baseUrlPlaceholder: "https://api.example.com/v1",
+    baseUrlHint: "Must be an OpenAI-compatible API endpoint, usually ending in /v1",
     baseUrlWarning: "This URL will receive your API key — ensure you trust this service",
     baseUrlWarningHttp: "Unencrypted connection — API key sent in plain text",
     testing: "Testing...",
