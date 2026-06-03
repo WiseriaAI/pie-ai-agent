@@ -138,11 +138,29 @@ function initLang() {
     b.addEventListener("click", () => applyLang(b.dataset.langBtn)));
 }
 
+// ── cursor spotlight (only motion effect; off for reduced-motion / touch) ──
+function initSpotlight() {
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  if (matchMedia("(hover: none)").matches) return;
+  document.querySelectorAll(".dotgrid, .dotgrid-dark").forEach(sec => {
+    sec.classList.add("spotlight");
+    sec.addEventListener("pointermove", e => {
+      const r = sec.getBoundingClientRect();
+      sec.style.setProperty("--mx", (e.clientX - r.left) + "px");
+      sec.style.setProperty("--my", (e.clientY - r.top) + "px");
+    });
+    sec.addEventListener("pointerleave", () => {
+      sec.style.setProperty("--mx", "-999px"); sec.style.setProperty("--my", "-999px");
+    });
+  });
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll("[data-href]").forEach(a => {
     const u = LINKS[a.dataset.href]; if (u) { a.href = u; a.target = "_blank"; a.rel = "noopener"; }
   });
   initLang();
+  initSpotlight();
   // 可选：拉取 GitHub star 数（失败静默）
   fetch("https://api.github.com/repos/WiseriaAI/pie-ai-agent")
     .then(r => r.ok ? r.json() : null)
