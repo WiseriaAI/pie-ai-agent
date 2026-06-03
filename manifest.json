@@ -18,6 +18,7 @@
     "https://api.xiaomimimo.com/*",
     "https://api.moonshot.ai/*",
     "https://api.moonshot.cn/*",
+    "https://api.stepfun.com/*",
     "https://api.tavily.com/*"
   ],
   "content_security_policy": {

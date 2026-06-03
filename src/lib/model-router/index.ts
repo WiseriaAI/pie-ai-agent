@@ -21,7 +21,8 @@ export type BuiltinProvider =
   | "deepseek"
   | "mimo"
   | "moonshot"
-  | "moonshot-cn";
+  | "moonshot-cn"
+  | "stepfun";
 
 export type ProviderRef = BuiltinProvider | `custom:${string}`;
 
