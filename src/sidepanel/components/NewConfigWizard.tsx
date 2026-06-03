@@ -60,12 +60,6 @@ export default function NewConfigWizard(props: Props) {
   const [testing, setTesting] = useState(false);
   const [testError, setTestError] = useState<string | null>(null);
   const [customFetched, setCustomFetched] = useState<ModelMeta[]>([]);
-  // Silence unused-var lint until Task 5 wires CustomProviderFields; these are
-  // intentionally-declared scaffolding read by the next task.
-  void draftModels;
-  void draftMetas;
-  void testing;
-  void customFetched;
 
   useEffect(() => {
     listCustomProviders().then(setCustomProviders).catch(() => setCustomProviders([]));
