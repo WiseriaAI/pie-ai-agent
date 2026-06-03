@@ -187,6 +187,32 @@ export default function NewConfigWizard(props: Props) {
           maxContextTokens: m?.maxContextTokens ?? DEFAULT_CUSTOM_MODEL_MAX_CONTEXT,
         };
       });
+      // Backfill the selected model. Picking a Test-Connection-fetched model
+      // only calls onChange (sets payload.model), never onAddCustom — so it's
+      // absent from draftModels. Without this, saveCustomProvider persists
+      // models:[] while the instance points to an unregistered id (orphaned on
+      // next edit). Prefer fetched meta when available; else a tools-capable
+      // default (custom models are always tools-capable in this codebase).
+      if (payload.model && !models.some((m) => m.id === payload.model)) {
+        const fetched = customFetched.find((m) => m.id === payload.model);
+        models.push(
+          fetched
+            ? {
+                id: fetched.id,
+                displayName: fetched.displayName,
+                vision: fetched.vision,
+                tools: true,
+                maxContextTokens: fetched.maxContextTokens,
+              }
+            : {
+                id: payload.model,
+                displayName: undefined,
+                vision: false,
+                tools: true,
+                maxContextTokens: DEFAULT_CUSTOM_MODEL_MAX_CONTEXT,
+              },
+        );
+      }
       const newId = await saveCustomProvider({
         name: draftName.trim(),
         baseUrl: draftBaseUrl.trim(),

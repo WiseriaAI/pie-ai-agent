@@ -3,7 +3,7 @@ import type { ProviderRef } from "@/lib/model-router";
 import type { ProviderMeta } from "@/lib/model-router/providers/registry";
 import type { StoredCustomProvider } from "@/lib/custom-providers";
 import { CUSTOM_PREFIX } from "@/lib/custom-providers";
-import { useT } from "@/lib/i18n";
+import { useT, providerDisplayName } from "@/lib/i18n";
 
 interface Props {
   value: ProviderRef | null;
@@ -34,7 +34,8 @@ export default function ProviderDropdown(props: Props) {
       );
       return found?.name ?? null;
     }
-    return props.builtinProviders.find((p) => p.id === props.value)?.name ?? null;
+    const found = props.builtinProviders.find((p) => p.id === props.value);
+    return found ? providerDisplayName(found, t) : null;
   })();
 
   // Search filter — case-insensitive substring on name + baseUrl
@@ -44,7 +45,7 @@ export default function ProviderDropdown(props: Props) {
     q.length === 0
       ? props.builtinProviders
       : props.builtinProviders.filter((p) => {
-          const hay = `${p.name} ${p.defaultBaseUrl}`.toLowerCase();
+          const hay = `${providerDisplayName(p, t)} ${p.defaultBaseUrl}`.toLowerCase();
           return hay.includes(q);
         });
 
@@ -100,7 +101,7 @@ export default function ProviderDropdown(props: Props) {
                     }}
                     className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] hover:bg-field ${p.id === props.value ? "bg-field" : ""}`}
                   >
-                    <span className="text-fg-1">{p.name}</span>
+                    <span className="text-fg-1">{providerDisplayName(p, t)}</span>
                     <span className="ml-auto font-mono text-[10px] text-fg-3">
                       {p.defaultBaseUrl.replace(/^https?:\/\//, "")}
                     </span>

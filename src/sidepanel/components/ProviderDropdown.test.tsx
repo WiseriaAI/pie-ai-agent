@@ -83,4 +83,38 @@ describe("ProviderDropdown", () => {
     setup({ value: "anthropic" });
     expect(screen.getByText("Anthropic")).toBeTruthy();
   });
+
+  // BUG 1 regression: builtin providers with a locale-dependent display name
+  // (e.g. zhipu) must render via providerDisplayName(p, t), NOT the raw
+  // registry `name`. The component renders without an I18nProvider, so useT()
+  // falls back to the English dict where providers.zhipu === "GLM(Zhipu)".
+  // We set the fixture's raw `name` to a distinct sentinel so a match on the
+  // dict value proves localization is applied at all three sites.
+  const LOCALIZED_BUILTINS = [
+    { id: "zhipu", name: "Zhipu Raw", defaultBaseUrl: "https://open.bigmodel.cn/api/paas/v4", placeholder: "", models: [] },
+    { id: "openai", name: "OpenAI", defaultBaseUrl: "https://api.openai.com/v1", placeholder: "", models: [] },
+  ] as unknown as ProviderMeta[];
+
+  it("list row uses localized display name, not raw registry name", () => {
+    setup({ builtinProviders: LOCALIZED_BUILTINS });
+    fireEvent.click(screen.getByRole("button", { name: /select provider/i }));
+    // Localized name shown; raw name never rendered.
+    expect(screen.getByText("GLM(Zhipu)")).toBeTruthy();
+    expect(screen.queryByText("Zhipu Raw")).toBeFalsy();
+  });
+
+  it("selected-button label uses localized display name", () => {
+    setup({ builtinProviders: LOCALIZED_BUILTINS, value: "zhipu" });
+    expect(screen.getByText("GLM(Zhipu)")).toBeTruthy();
+    expect(screen.queryByText("Zhipu Raw")).toBeFalsy();
+  });
+
+  it("search filter matches on the localized display name", () => {
+    setup({ builtinProviders: LOCALIZED_BUILTINS });
+    fireEvent.click(screen.getByRole("button", { name: /select provider/i }));
+    // "GLM" only exists in the localized name, not the raw "Zhipu Raw".
+    fireEvent.change(screen.getByPlaceholderText(/search/i), { target: { value: "glm" } });
+    expect(screen.getByText("GLM(Zhipu)")).toBeTruthy();
+    expect(screen.queryByText("OpenAI")).toBeFalsy();
+  });
 });

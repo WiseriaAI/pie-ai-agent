@@ -2,6 +2,7 @@ import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/re
 import { describe, it, expect, vi, afterEach } from "vitest";
 import NewConfigWizard from "./NewConfigWizard";
 import * as cp from "@/lib/custom-providers";
+import * as ocFetch from "@/lib/openai-compat-models-fetch";
 
 // custom-providers reads chrome.storage; stub list to empty for builtin-only tests
 vi.mock("@/lib/custom-providers", async (orig) => {
@@ -68,6 +69,45 @@ describe("NewConfigWizard (custom path)", () => {
     fireEvent.click(screen.getByText("Create", { selector: "button" }));
     await waitFor(() => expect(saveSpy).toHaveBeenCalledWith(expect.objectContaining({ name: "Proxy", baseUrl: "https://proxy/v1" })));
     expect(onCreate).toHaveBeenCalledWith("custom:newid", expect.objectContaining({ apiKey: "sk-x", model: "my-model" }));
+  });
+
+  // BUG 2 regression: selecting a Test-Connection-fetched model (which only
+  // calls onChange, never onAddCustom) must still land in the saved provider's
+  // `models` array. Otherwise saveCustomProvider persists models:[] while the
+  // instance's model points to an unregistered id → orphaned on next edit.
+  it("new custom: fetched model selected (not + add) is backfilled into saved models", async () => {
+    const saveSpy = vi.spyOn(cp, "saveCustomProvider").mockResolvedValue("newid");
+    vi.spyOn(ocFetch, "fetchOpenAICompatModels").mockResolvedValue([
+      { id: "fetched-model", vision: false, tools: true, maxContextTokens: 8192 },
+    ]);
+    const onCreate = vi.fn();
+    render(<NewConfigWizard onCreate={onCreate} onCancel={vi.fn()} onTest={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /select provider/i }));
+    fireEvent.click(screen.getByText(/new custom provider/i));
+    fireEvent.change(screen.getByPlaceholderText(/my custom provider/i), { target: { value: "Proxy" } });
+    fireEvent.change(screen.getByPlaceholderText(/api\.example\.com/i), { target: { value: "https://proxy/v1" } });
+    // Test Connection → fetchOpenAICompatModels resolves → populates dropdown.
+    fireEvent.click(screen.getByRole("button", { name: /test connection/i }));
+    await waitFor(() => expect(ocFetch.fetchOpenAICompatModels).toHaveBeenCalled());
+    // Open the model dropdown and click the fetched row (calls onChange only).
+    fireEvent.click(screen.getByRole("button", { name: /select model/i }));
+    await waitFor(() => expect(screen.getByText("fetched-model")).toBeTruthy());
+    fireEvent.click(screen.getByText("fetched-model"));
+    const keyInput = (await screen.findAllByLabelText(/api key/i)).find(
+      (e) => e.tagName === "INPUT" && e.getAttribute("aria-label") === "api key",
+    )!;
+    fireEvent.change(keyInput, { target: { value: "sk-x" } });
+    fireEvent.click(screen.getByText("Create", { selector: "button" }));
+    await waitFor(() =>
+      expect(saveSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "Proxy",
+          baseUrl: "https://proxy/v1",
+          models: expect.arrayContaining([expect.objectContaining({ id: "fetched-model" })]),
+        }),
+      ),
+    );
+    expect(onCreate).toHaveBeenCalledWith("custom:newid", expect.objectContaining({ model: "fetched-model" }));
   });
 
   it("delete custom: blocks when instances depend on it", async () => {
