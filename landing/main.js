@@ -138,4 +138,17 @@ function initLang() {
     b.addEventListener("click", () => applyLang(b.dataset.langBtn)));
 }
 
-document.addEventListener("DOMContentLoaded", () => { initLang(); });
+document.addEventListener("DOMContentLoaded", () => {
+  document.querySelectorAll("[data-href]").forEach(a => {
+    const u = LINKS[a.dataset.href]; if (u) { a.href = u; a.target = "_blank"; a.rel = "noopener"; }
+  });
+  initLang();
+  // 可选：拉取 GitHub star 数（失败静默）
+  fetch("https://api.github.com/repos/WiseriaAI/pie-ai-agent")
+    .then(r => r.ok ? r.json() : null)
+    .then(d => { if (d && typeof d.stargazers_count === "number") {
+      const el = document.getElementById("gh-stars");
+      el.textContent = d.stargazers_count >= 1000 ? (d.stargazers_count/1000).toFixed(1)+"k" : String(d.stargazers_count);
+      el.hidden = false;
+    }}).catch(()=>{});
+});

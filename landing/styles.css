@@ -42,3 +42,17 @@ img, svg { display:block; }
   html { scroll-behavior:auto; }
   *, *::before, *::after { animation-duration:0.01ms !important; transition-duration:0.01ms !important; }
 }
+
+/* ── topbar ──────────────────────────────────────────────────────────── */
+.topbar { position:sticky; top:0; z-index:50; background:rgba(255,255,255,0.8); backdrop-filter:saturate(180%) blur(12px); border-bottom:1px solid var(--c-line); }
+.topbar-in { display:flex; align-items:center; justify-content:space-between; padding:14px 64px; }
+.brand { display:flex; align-items:center; gap:11px; }
+.brand-word { font-weight:600; font-size:19px; letter-spacing:-0.01em; }
+.nav-right { display:flex; align-items:center; gap:16px; }
+.lang { display:flex; align-items:center; gap:2px; padding:3px; background:var(--c-field); border-radius:9px; }
+.lang-btn { font-family:var(--font-mono); font-size:11px; font-weight:500; padding:5px 11px; border:0; background:transparent; color:var(--c-fg-3); border-radius:7px; cursor:pointer; }
+.lang-btn[aria-pressed="true"] { background:#fff; color:var(--c-fg-1); box-shadow:0 1px 2px rgba(20,24,29,0.06); }
+.ghost.gh-pill { display:flex; align-items:center; gap:8px; padding:9px 14px; border:1px solid var(--c-line); border-radius:10px; font-size:14px; font-weight:500; color:var(--c-fg-2); cursor:pointer; }
+.gh-count { font-size:13px; color:var(--c-fg-3); }
+.btn-ink { display:inline-flex; align-items:center; gap:9px; padding:10px 18px; background:var(--c-fg-1); color:var(--c-canvas); border-radius:10px; font-size:14px; font-weight:600; cursor:pointer; transition:transform 150ms var(--ease); }
+.btn-ink:hover { transform:translateY(-1px); }
