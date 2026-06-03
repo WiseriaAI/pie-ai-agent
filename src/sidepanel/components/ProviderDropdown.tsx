@@ -59,7 +59,7 @@ export default function ProviderDropdown(props: Props) {
   return (
     <div className="flex flex-col gap-1.5">
       <button
-        aria-label={t("providerDropdown.selectProvider")}
+        aria-label={selectedName ?? t("providerDropdown.selectProvider")}
         onClick={() => setOpen(!open)}
         className="flex items-center gap-2 rounded border border-line bg-field px-3 py-2 text-left text-[12px] text-fg-1 hover:border-fg-3"
       >
@@ -85,25 +85,29 @@ export default function ProviderDropdown(props: Props) {
 
           {/* Scrollable list */}
           <div className="flex max-h-[280px] flex-col overflow-y-auto">
-            {/* Built-in group */}
-            <div className="px-3 py-1 text-[9px] font-semibold text-fg-3">
-              {t("providerDropdown.builtinGroup")}
-            </div>
-            {filteredBuiltins.map((p) => (
-              <button
-                key={p.id}
-                onClick={() => {
-                  props.onSelect(p.id);
-                  setOpen(false);
-                }}
-                className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] hover:bg-field ${p.id === props.value ? "bg-field" : ""}`}
-              >
-                <span className="text-fg-1">{p.name}</span>
-                <span className="ml-auto font-mono text-[10px] text-fg-3">
-                  {p.defaultBaseUrl.replace(/^https?:\/\//, "")}
-                </span>
-              </button>
-            ))}
+            {/* Built-in group (only when non-empty after filter) */}
+            {filteredBuiltins.length > 0 && (
+              <>
+                <div className="px-3 py-1 text-[9px] font-semibold text-fg-3">
+                  {t("providerDropdown.builtinGroup")}
+                </div>
+                {filteredBuiltins.map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => {
+                      props.onSelect(p.id);
+                      setOpen(false);
+                    }}
+                    className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] hover:bg-field ${p.id === props.value ? "bg-field" : ""}`}
+                  >
+                    <span className="text-fg-1">{p.name}</span>
+                    <span className="ml-auto font-mono text-[10px] text-fg-3">
+                      {p.defaultBaseUrl.replace(/^https?:\/\//, "")}
+                    </span>
+                  </button>
+                ))}
+              </>
+            )}
 
             {/* Custom group (only when non-empty after filter) */}
             {filteredCustoms.length > 0 && (
@@ -146,6 +150,7 @@ export default function ProviderDropdown(props: Props) {
                         onClick={(e) => {
                           e.stopPropagation();
                           props.onDeleteCustom(cp);
+                          setOpen(false);
                         }}
                         className="shrink-0 text-fg-3 hover:text-warning"
                       >
