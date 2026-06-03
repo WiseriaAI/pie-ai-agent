@@ -17,14 +17,21 @@ import {
   addCustomProviderModel,
   updateCustomProviderModel,
   removeCustomProviderModel,
+  saveCustomProvider,
+  updateCustomProvider,
+  deleteCustomProvider,
+  getInstancesUsingCustomProvider,
   providerRefToId,
   type StoredCustomProvider,
   CUSTOM_PREFIX,
 } from "@/lib/custom-providers";
+import { DEFAULT_CUSTOM_MODEL_MAX_CONTEXT } from "@/lib/provider-custom-model-meta";
 import { useT, providerDisplayName } from "@/lib/i18n";
 import { fetchOpenRouterModels } from "@/lib/openrouter-models-fetch";
+import { fetchOpenAICompatModels } from "@/lib/openai-compat-models-fetch";
 import InstanceForm, { type InstanceFormPayload } from "./InstanceForm";
 import ProviderDropdown from "./ProviderDropdown";
+import CustomProviderFields from "./CustomProviderFields";
 
 interface Props {
   onCreate: (provider: ProviderRef, payload: InstanceFormPayload) => void;
@@ -60,6 +67,9 @@ export default function NewConfigWizard(props: Props) {
   const [testing, setTesting] = useState(false);
   const [testError, setTestError] = useState<string | null>(null);
   const [customFetched, setCustomFetched] = useState<ModelMeta[]>([]);
+  // Edit mode: how many instances reference the provider being edited.
+  // Drives the "shared by N" notice + delete-disabled gating.
+  const [dependentCount, setDependentCount] = useState(0);
 
   useEffect(() => {
     listCustomProviders().then(setCustomProviders).catch(() => setCustomProviders([]));
@@ -124,6 +134,8 @@ export default function NewConfigWizard(props: Props) {
   const builtinProvider = provider as BuiltinProvider;
   // Non-null only for custom providers; routes model persistence to the entity.
   const cpId = provider && provider !== DRAFT_CUSTOM_REF ? providerRefToId(provider) : null;
+  // True while authoring a not-yet-saved custom provider: model edits stay local.
+  const isDraft = provider === DRAFT_CUSTOM_REF;
   const builtinMeta =
     provider && !provider.startsWith(CUSTOM_PREFIX)
       ? getProviderMeta(provider as BuiltinProvider)
@@ -134,6 +146,78 @@ export default function NewConfigWizard(props: Props) {
       : builtinMeta
         ? providerDisplayName(builtinMeta, t)
         : customProviders.find((c) => `${CUSTOM_PREFIX}${c.id}` === provider)?.name ?? provider ?? "";
+
+  // Test connection → fetch /v1/models for the draft/edited custom provider.
+  async function handleCustomTest() {
+    const url = draftBaseUrl.trim().replace(/\/+$/, "");
+    if (!/^https?:\/\//.test(url)) return;
+    setTesting(true);
+    setTestError(null);
+    try {
+      const list = await fetchOpenAICompatModels(url);
+      setCustomFetched(
+        list.map((m) => ({
+          id: m.id,
+          vision: m.vision,
+          tools: m.tools,
+          maxContextTokens: m.maxContextTokens,
+          displayName: m.displayName,
+        })),
+      );
+    } catch (e) {
+      setTestError(e instanceof Error ? e.message : "Connection failed");
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  // Atomic create / persist-on-save. For new custom: materialise the draft
+  // provider entity first, then call onCreate with its real ref. For edit:
+  // persist name/baseUrl edits before onCreate (model edits already persist
+  // immediately via the InstanceForm callbacks).
+  async function handleSubmit(payload: InstanceFormPayload) {
+    if (customMode === "new") {
+      const models = draftModels.map((id) => {
+        const m = draftMetas[id];
+        return {
+          id,
+          displayName: m?.displayName,
+          vision: m?.vision ?? false,
+          tools: true,
+          maxContextTokens: m?.maxContextTokens ?? DEFAULT_CUSTOM_MODEL_MAX_CONTEXT,
+        };
+      });
+      const newId = await saveCustomProvider({
+        name: draftName.trim(),
+        baseUrl: draftBaseUrl.trim(),
+        models,
+      });
+      props.onCreate(`${CUSTOM_PREFIX}${newId}`, payload);
+    } else if (customMode === "edit") {
+      const id = providerRefToId(provider!);
+      if (id) await updateCustomProvider(id, { name: draftName.trim(), baseUrl: draftBaseUrl.trim() });
+      props.onCreate(provider!, payload);
+    } else {
+      props.onCreate(provider!, payload);
+    }
+  }
+
+  // Dependency-checked delete. Blocks (alert) when instances reference the
+  // provider; otherwise removes it, refreshes the list, and resets selection
+  // when the deleted provider was the active one.
+  async function handleDeleteCustom(cp: StoredCustomProvider) {
+    const deps = await getInstancesUsingCustomProvider(cp.id);
+    if (deps.length > 0) {
+      window.alert(t("customProvider.inUseCannotDelete", { count: deps.length }));
+      return;
+    }
+    await deleteCustomProvider(cp.id);
+    setCustomProviders(await listCustomProviders());
+    if (provider === `${CUSTOM_PREFIX}${cp.id}`) {
+      setProvider(null);
+      setCustomMode("none");
+    }
+  }
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-line bg-canvas p-3.5">
@@ -157,31 +241,80 @@ export default function NewConfigWizard(props: Props) {
           setProvider(`${CUSTOM_PREFIX}${cp.id}`);
           setDraftName(cp.name);
           setDraftBaseUrl(cp.baseUrl);
+          // Reset new-draft model state so stale draft entries from a prior
+          // "+ New custom provider" attempt never leak into the edited provider.
+          setDraftModels([]);
+          setDraftMetas({});
+          setCustomFetched([]);
+          setTestError(null);
+          setDependentCount(0);
+          getInstancesUsingCustomProvider(cp.id)
+            .then((d) => setDependentCount(d.length))
+            .catch(() => setDependentCount(0));
         }}
-        onDeleteCustom={(_cp) => {
-          // Task 5 implements dependency-checked delete + atomic remove.
-        }}
+        onDeleteCustom={handleDeleteCustom}
       />
 
-      {/* Task 5 renders <CustomProviderFields .../> here when authoring a custom provider. */}
-      {customMode !== "none" && null}
+      {customMode === "new" && (
+        <CustomProviderFields
+          name={draftName}
+          baseUrl={draftBaseUrl}
+          onNameChange={setDraftName}
+          onBaseUrlChange={setDraftBaseUrl}
+          onTest={handleCustomTest}
+          testing={testing}
+          testError={testError}
+        />
+      )}
+      {customMode === "edit" && (
+        <CustomProviderFields
+          name={draftName}
+          baseUrl={draftBaseUrl}
+          onNameChange={setDraftName}
+          onBaseUrlChange={setDraftBaseUrl}
+          onTest={handleCustomTest}
+          testing={testing}
+          testError={testError}
+          dependentCount={dependentCount}
+          onDelete={() => {
+            const id = providerRefToId(provider!);
+            const cp = customProviders.find((c) => c.id === id);
+            if (cp) handleDeleteCustom(cp);
+          }}
+          deleteDisabled={dependentCount > 0}
+        />
+      )}
 
       {provider && (
         <InstanceForm
+          key={provider}
           hideProviderField
           mode="create"
           provider={provider}
           initialNickname={metaName}
-          initialCustomModels={pool}
-          customModelMetas={metas}
-          fetchedModels={fetchedModels}
+          initialCustomModels={isDraft ? draftModels : pool}
+          customModelMetas={isDraft ? draftMetas : metas}
+          fetchedModels={
+            isDraft
+              ? customFetched
+              : customMode === "edit"
+                ? customFetched.length > 0
+                  ? customFetched
+                  : undefined
+                : fetchedModels
+          }
           fetchedAt={fetchedAt}
           isFetching={isFetching}
           saveLabel={t("newConfigWizard.create")}
-          onSave={(p) => props.onCreate(provider, p)}
+          onSave={handleSubmit}
           onTest={(p) => props.onTest(provider, p)}
           onAddCustomModel={async (id, meta) => {
-            if (cpId) {
+            if (isDraft) {
+              // Draft provider doesn't exist yet — accumulate locally; the
+              // entity is materialised atomically in handleSubmit.
+              setDraftModels((prev) => (prev.includes(id) ? prev : [...prev, id]));
+              setDraftMetas((prev) => ({ ...prev, [id]: meta }));
+            } else if (cpId) {
               await addCustomProviderModel(cpId, {
                 id,
                 displayName: meta.displayName,
@@ -198,7 +331,9 @@ export default function NewConfigWizard(props: Props) {
             }
           }}
           onUpdateCustomModelMeta={async (id, meta) => {
-            if (cpId) {
+            if (isDraft) {
+              setDraftMetas((prev) => ({ ...prev, [id]: meta }));
+            } else if (cpId) {
               await updateCustomProviderModel(cpId, id, {
                 id,
                 displayName: meta.displayName,
@@ -213,7 +348,14 @@ export default function NewConfigWizard(props: Props) {
             }
           }}
           onRemoveCustomModel={async (id) => {
-            if (cpId) {
+            if (isDraft) {
+              setDraftModels((prev) => prev.filter((x) => x !== id));
+              setDraftMetas((prev) => {
+                const next = { ...prev };
+                delete next[id];
+                return next;
+              });
+            } else if (cpId) {
               await removeCustomProviderModel(cpId, id);
               setCustomProviders(await listCustomProviders());
             } else {
@@ -238,34 +380,43 @@ export default function NewConfigWizard(props: Props) {
               setIsFetching(false);
             }
           }}
-          renderActions={({ canSave, triggerSave, triggerTest, saveLabel }) => (
-            <div className="flex flex-wrap items-center gap-1.5 border-t border-line px-3.5 py-3">
-              <div className="flex-1" />
-              <button
-                type="button"
-                onClick={props.onCancel}
-                className="rounded border border-line bg-transparent px-3 py-1.5 text-[11px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
-              >
-                {t("common.cancel")}
-              </button>
-              <button
-                type="button"
-                onClick={triggerTest}
-                disabled={!canSave}
-                className="rounded border border-line bg-transparent px-3 py-1.5 text-[11px] text-fg-2 hover:border-fg-3 disabled:opacity-30"
-              >
-                {t("common.test")}
-              </button>
-              <button
-                type="button"
-                onClick={triggerSave}
-                disabled={!canSave}
-                className="rounded bg-fg-1 px-3 py-1.5 text-[11px] font-medium text-canvas disabled:opacity-30"
-              >
-                {saveLabel}
-              </button>
-            </div>
-          )}
+          renderActions={({ canSave, triggerSave, triggerTest, saveLabel }) => {
+            // In "new" custom mode, also require valid draft name + baseUrl
+            // before the create button is enabled (InstanceForm only gates
+            // on key+model).
+            const effectiveCanSave =
+              canSave &&
+              (customMode !== "new" ||
+                (!!draftName.trim() && /^https?:\/\//.test(draftBaseUrl)));
+            return (
+              <div className="flex flex-wrap items-center gap-1.5 border-t border-line px-3.5 py-3">
+                <div className="flex-1" />
+                <button
+                  type="button"
+                  onClick={props.onCancel}
+                  className="rounded border border-line bg-transparent px-3 py-1.5 text-[11px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
+                >
+                  {t("common.cancel")}
+                </button>
+                <button
+                  type="button"
+                  onClick={triggerTest}
+                  disabled={!effectiveCanSave}
+                  className="rounded border border-line bg-transparent px-3 py-1.5 text-[11px] text-fg-2 hover:border-fg-3 disabled:opacity-30"
+                >
+                  {t("common.test")}
+                </button>
+                <button
+                  type="button"
+                  onClick={triggerSave}
+                  disabled={!effectiveCanSave}
+                  className="rounded bg-fg-1 px-3 py-1.5 text-[11px] font-medium text-canvas disabled:opacity-30"
+                >
+                  {saveLabel}
+                </button>
+              </div>
+            );
+          }}
         />
       )}
 
