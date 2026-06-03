@@ -442,4 +442,13 @@ export const zhCNDict = {
     openSessionsList: "打开会话列表",
     pendingBadge: "，{count} 个待处理",
   },
+  providerDropdown: {
+    selectProvider: "选择 Provider",
+    searchPlaceholder: "搜索 Provider...",
+    builtinGroup: "内置",
+    customGroup: "自定义",
+    editProvider: "编辑 Provider",
+    deleteProvider: "删除 Provider",
+    newCustomProvider: "+ 新建自定义 Provider",
+  },
 } as const satisfies Translations<EnDict>;

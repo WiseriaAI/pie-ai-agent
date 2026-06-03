@@ -433,6 +433,15 @@ export const enDict = {
     openSessionsList: "Open sessions list",
     pendingBadge: ", {count} pending",
   },
+  providerDropdown: {
+    selectProvider: "Select provider",
+    searchPlaceholder: "Search provider...",
+    builtinGroup: "BUILT-IN",
+    customGroup: "CUSTOM",
+    editProvider: "Edit provider",
+    deleteProvider: "Delete provider",
+    newCustomProvider: "+ New custom provider",
+  },
 } as const satisfies DictNode;
 
 export type EnDict = typeof enDict;
