@@ -184,6 +184,21 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     placeholder: "sk-...",
     models: MOONSHOT_MODELS,
   },
+  {
+    id: "stepfun",
+    name: "StepFun(阶跃星辰)",
+    defaultBaseUrl: "https://api.stepfun.com",
+    placeholder: "API key",
+    // Anthropic-wire (`/v1/messages`, Bearer). step-3.7-flash is the native
+    // multimodal flagship (image/video in); step-3.5-flash is the reasoning /
+    // tool-calling flagship, text-only here (vision guard is fail-closed). Both
+    // 256K. step-router-v1 lives on the separate `/step_plan/v1/messages`
+    // channel and has no image support — intentionally omitted.
+    models: [
+      { id: "step-3.7-flash", vision: true, tools: true, maxContextTokens: 256_000 },
+      { id: "step-3.5-flash", vision: false, tools: true, maxContextTokens: 256_000 },
+    ],
+  },
 ];
 
 export function getProviderMeta(id: BuiltinProvider): ProviderMeta | undefined {

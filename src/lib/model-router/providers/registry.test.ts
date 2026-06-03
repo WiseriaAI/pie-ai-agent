@@ -29,7 +29,7 @@ describe("ProviderMeta schema", () => {
   });
 
   it("non-OpenRouter providers have non-empty models[] (hardcoded)", () => {
-    const ids = ["anthropic", "openai", "zhipu", "bailian", "minimax", "gemini", "deepseek", "mimo", "moonshot", "moonshot-cn"] as const;
+    const ids = ["anthropic", "openai", "zhipu", "bailian", "minimax", "gemini", "deepseek", "mimo", "moonshot", "moonshot-cn", "stepfun"] as const;
     for (const id of ids) {
       const meta = getProviderMeta(id)!;
       expect(meta.models.length).toBeGreaterThan(0);
@@ -50,6 +50,12 @@ describe("ProviderMeta schema", () => {
     expect(getProviderMeta("mimo")).toBeDefined();
     expect(getProviderMeta("mimo")!.defaultBaseUrl).toBe("https://api.xiaomimimo.com");
     expect(getProviderMeta("mimo")!.name).toBe("Mimo(Xiaomi)");
+  });
+
+  it("StepFun is registered", () => {
+    expect(getProviderMeta("stepfun")).toBeDefined();
+    expect(getProviderMeta("stepfun")!.defaultBaseUrl).toBe("https://api.stepfun.com");
+    expect(getProviderMeta("stepfun")!.name).toBe("StepFun(阶跃星辰)");
   });
 });
 
@@ -121,6 +127,20 @@ describe("ModelMeta capability flags (per-model)", () => {
 
     expect(getModelMeta("mimo", "mimo-v2-omni")?.vision).toBe(true);
     expect(getModelMeta("mimo", "mimo-v2-omni")?.maxContextTokens).toBe(256_000);
+  });
+
+  it("StepFun model capability flags — 3.7-flash is multimodal, 3.5-flash is text-only", () => {
+    expect(getModelMeta("stepfun", "step-3.7-flash")?.vision).toBe(true);
+    expect(getModelMeta("stepfun", "step-3.7-flash")?.tools).toBe(true);
+    expect(getModelMeta("stepfun", "step-3.7-flash")?.maxContextTokens).toBe(256_000);
+
+    expect(getModelMeta("stepfun", "step-3.5-flash")?.vision).toBe(false);
+    expect(getModelMeta("stepfun", "step-3.5-flash")?.tools).toBe(true);
+    expect(getModelMeta("stepfun", "step-3.5-flash")?.maxContextTokens).toBe(256_000);
+  });
+
+  it("StepFun does NOT expose the step_plan-only router model", () => {
+    expect(getModelMeta("stepfun", "step-router-v1")).toBeUndefined();
   });
 
   it("MiMo does NOT expose TTS models (mimo-v2.5-tts, etc.)", () => {
