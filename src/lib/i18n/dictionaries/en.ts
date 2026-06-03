@@ -217,6 +217,7 @@ export const enDict = {
     customProviders: "CUSTOM PROVIDERS",
     newCustomProvider: "+ New custom provider",
     create: "Create",
+    pickProviderHint: "Select a provider to begin",
   },
   instanceForm: {
     nickname: "nickname",

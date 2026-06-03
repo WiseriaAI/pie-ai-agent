@@ -218,6 +218,7 @@ export const zhCNDict = {
     customProviders: "自定义 Providers",
     newCustomProvider: "+ 新建自定义 Provider",
     create: "创建",
+    pickProviderHint: "先选择一个 Provider",
   },
   instanceForm: {
     nickname: "昵称",
