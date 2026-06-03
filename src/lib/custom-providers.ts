@@ -98,6 +98,41 @@ export async function updateCustomProvider(
   await chrome.storage.local.set({ [ENTITY_KEY(id)]: next });
 }
 
+/** Append a model to a custom provider's model list. Idempotent on model id
+ *  (a duplicate id is ignored, never overwritten — use updateCustomProviderModel
+ *  to change an existing model's meta). */
+export async function addCustomProviderModel(
+  id: string,
+  meta: CustomModelMeta,
+): Promise<void> {
+  const stored = await getCustomProvider(id);
+  if (!stored) throw new Error(`Custom provider ${id} not found`);
+  if (stored.models.some((m) => m.id === meta.id)) return;
+  await updateCustomProvider(id, { models: [...stored.models, meta] });
+}
+
+/** Replace an existing model's meta (matched by id; id itself is preserved).
+ *  No-op when the id is absent. */
+export async function updateCustomProviderModel(
+  id: string,
+  modelId: string,
+  meta: CustomModelMeta,
+): Promise<void> {
+  const stored = await getCustomProvider(id);
+  if (!stored) throw new Error(`Custom provider ${id} not found`);
+  if (!stored.models.some((m) => m.id === modelId)) return;
+  await updateCustomProvider(id, {
+    models: stored.models.map((m) => (m.id === modelId ? { ...meta, id: modelId } : m)),
+  });
+}
+
+/** Remove a model from a custom provider (matched by id). */
+export async function removeCustomProviderModel(id: string, modelId: string): Promise<void> {
+  const stored = await getCustomProvider(id);
+  if (!stored) throw new Error(`Custom provider ${id} not found`);
+  await updateCustomProvider(id, { models: stored.models.filter((m) => m.id !== modelId) });
+}
+
 export async function getInstancesUsingCustomProvider(id: string): Promise<CustomProviderInstanceRef[]> {
   const ref = `${CUSTOM_PREFIX}${id}`;
   const r = await chrome.storage.local.get(INSTANCES_INDEX_KEY);

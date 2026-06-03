@@ -184,13 +184,17 @@ export default function InstanceForm(props: Props) {
           fetchedAt={props.fetchedAt}
           isFetching={props.isFetching}
           onChange={setModel}
-          onAddCustom={isCustomProvider ? undefined : (id, meta) => {
+          onAddCustom={(id, meta) => {
+            // Local state drives immediate dropdown display (the just-added id
+            // appears before any async refresh). Persistence is the parent's
+            // job and is routed by provider type: builtin → pcm/pcmm pool,
+            // custom → the provider entity's own model list.
             setCustomModels((prev) => (prev.includes(id) ? prev : [...prev, id]));
             setModel(id);
             props.onAddCustomModel?.(id, meta);
           }}
-          onUpdateCustomMeta={isCustomProvider ? undefined : (id, meta) => props.onUpdateCustomModelMeta?.(id, meta)}
-          onRemoveCustom={isCustomProvider ? undefined : (id) => {
+          onUpdateCustomMeta={(id, meta) => props.onUpdateCustomModelMeta?.(id, meta)}
+          onRemoveCustom={(id) => {
             setCustomModels((prev) => prev.filter((x) => x !== id));
             if (model === id) setModel("");
             props.onRemoveCustomModel?.(id);

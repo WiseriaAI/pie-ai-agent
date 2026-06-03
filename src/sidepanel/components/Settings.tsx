@@ -22,6 +22,7 @@ import { fetchOpenRouterModels } from "@/lib/openrouter-models-fetch";
 import { isCdpInputEnabled, setCdpInputEnabled } from "@/lib/cdp-input-enabled";
 import {
   listCustomProviders, deleteCustomProvider, getInstancesUsingCustomProvider,
+  addCustomProviderModel, updateCustomProviderModel, removeCustomProviderModel,
   type StoredCustomProvider, CUSTOM_PREFIX, providerRefToId,
 } from "@/lib/custom-providers";
 import SkillsList from "./SkillsList";
@@ -217,9 +218,13 @@ export default function Settings({ onBack, onRunSkill }: Props) {
                   const mergedCustomModels = Array.from(
                     new Set([...(inst.customModels ?? []), ...pool]),
                   );
-                  // pcmm callbacks only fire for builtin providers (InstanceForm gates them off
-                  // for custom providers), so this narrowing cast is safe.
+                  // Custom-provider models live on the provider entity; builtin
+                  // custom models live in the pcm pool + pcmm sidecar. The model
+                  // callbacks below route by provider type. `bp`/`cpId` are only
+                  // dereferenced on their matching branch, so the casts are safe.
+                  const isCustom = inst.provider.startsWith(CUSTOM_PREFIX);
                   const bp = inst.provider as BuiltinProvider;
+                  const cpId = providerRefToId(inst.provider);
                   return (
                     <>
                       <InstanceForm
@@ -237,23 +242,49 @@ export default function Settings({ onBack, onRunSkill }: Props) {
                         onTest={(p) => handleTest(id, inst.provider, p)}
                         onDelete={() => handleDelete(id)}
                         onAddCustomModel={async (mid, meta) => {
-                          // Persist to BOTH the instance (for back-compat) AND the provider pool.
-                          const nextInst = [...(inst.customModels ?? []), mid];
-                          await updateInstance(id, { customModels: nextInst });
-                          await addProviderCustomModel(inst.provider, mid);
-                          await setProviderCustomModelMeta(bp, mid, meta);
+                          if (isCustom && cpId) {
+                            // Custom provider: the new model becomes part of the
+                            // provider's own model list (tools always true).
+                            await addCustomProviderModel(cpId, {
+                              id: mid,
+                              displayName: meta.displayName,
+                              vision: meta.vision,
+                              tools: true,
+                              maxContextTokens: meta.maxContextTokens,
+                            });
+                          } else {
+                            // Builtin: persist to BOTH the instance (back-compat) AND the provider pool.
+                            const nextInst = [...(inst.customModels ?? []), mid];
+                            await updateInstance(id, { customModels: nextInst });
+                            await addProviderCustomModel(inst.provider, mid);
+                            await setProviderCustomModelMeta(bp, mid, meta);
+                          }
                           await reload();
                         }}
                         onUpdateCustomModelMeta={async (mid, meta) => {
-                          await setProviderCustomModelMeta(bp, mid, meta);
+                          if (isCustom && cpId) {
+                            await updateCustomProviderModel(cpId, mid, {
+                              id: mid,
+                              displayName: meta.displayName,
+                              vision: meta.vision,
+                              tools: true,
+                              maxContextTokens: meta.maxContextTokens,
+                            });
+                          } else {
+                            await setProviderCustomModelMeta(bp, mid, meta);
+                          }
                           await reload();
                         }}
                         onRemoveCustomModel={async (mid) => {
-                          // Remove from BOTH layers so the model truly disappears.
-                          const nextInst = (inst.customModels ?? []).filter((x) => x !== mid);
-                          await updateInstance(id, { customModels: nextInst });
-                          await removeProviderCustomModel(inst.provider, mid);
-                          await removeProviderCustomModelMeta(bp, mid); // cascade-clear pcmm
+                          if (isCustom && cpId) {
+                            await removeCustomProviderModel(cpId, mid);
+                          } else {
+                            // Remove from BOTH layers so the model truly disappears.
+                            const nextInst = (inst.customModels ?? []).filter((x) => x !== mid);
+                            await updateInstance(id, { customModels: nextInst });
+                            await removeProviderCustomModel(inst.provider, mid);
+                            await removeProviderCustomModelMeta(bp, mid); // cascade-clear pcmm
+                          }
                           await reload();
                         }}
                         onRefreshModels={async (apiKey) => {

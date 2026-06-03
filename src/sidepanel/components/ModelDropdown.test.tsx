@@ -109,6 +109,40 @@ describe("ModelDropdown", () => {
     expect(screen.queryByPlaceholderText(/model id/i)).toBeNull();
   });
 
+  it("custom provider: + add custom model footer shows when onAddCustom provided", () => {
+    render(
+      <ModelDropdown
+        provider="custom:abc"
+        value=""
+        customModels={[]}
+        customModelMetas={{}}
+        fetchedModels={[]}
+        onChange={() => {}}
+        onAddCustom={() => {}}
+        onUpdateCustomMeta={() => {}}
+        onRemoveCustom={() => {}}
+        onRefresh={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /select/i }));
+    expect(screen.getByText(/add.*custom.*model/i)).toBeTruthy();
+  });
+
+  it("footer hidden when onAddCustom not provided", () => {
+    render(
+      <ModelDropdown
+        provider="custom:abc"
+        value=""
+        customModels={[]}
+        fetchedModels={[]}
+        onChange={() => {}}
+        onRefresh={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /select/i }));
+    expect(screen.queryByText(/add.*custom.*model/i)).toBeNull();
+  });
+
   it("pencil edit opens modal with id readonly and save calls onUpdateCustomMeta", () => {
     const onUpdateCustomMeta = vi.fn();
     const metas: Record<string, StoredCustomModelMeta> = {
