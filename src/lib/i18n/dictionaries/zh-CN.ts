@@ -405,6 +405,7 @@ export const zhCNDict = {
     namePlaceholder: "我的自定义 Provider",
     baseUrl: "BASE URL",
     baseUrlPlaceholder: "https://api.example.com/v1",
+    baseUrlHint: "需填 OpenAI 兼容(OpenAI-compatible)的 API 地址，通常以 /v1 结尾",
     baseUrlWarning: "此 URL 将接收你的 API key — 请确认你信任此服务",
     baseUrlWarningHttp: "未加密连接 — API key 将以明文发送",
     testing: "测试中…",
