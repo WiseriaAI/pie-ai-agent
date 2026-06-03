@@ -44,6 +44,54 @@ export interface RepairResult {
 }
 
 /**
+ * True when `msg` would serialize to an empty message on the wire — no text,
+ * no tool_use, no tool_result, no image, and no thinking block. Strict
+ * providers (e.g. Moonshot/Kimi) reject `{role:"assistant", content:""}` with
+ * a 400 ("message at position N with role 'assistant' must not be empty");
+ * lenient providers silently tolerate it.
+ *
+ * thinking blocks count as meaningful so Anthropic extended-thinking signature
+ * replay is never broken by the drop pass.
+ */
+function isWireEmpty(msg: AgentMessage): boolean {
+  const content = msg.content;
+  if (typeof content === "string") return content.trim() === "";
+  for (const block of content) {
+    if (block.type === "text") {
+      if (block.text.trim() !== "") return false;
+    } else {
+      // tool_use / tool_result / image / thinking — always meaningful.
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Remove wire-empty non-system messages from the history.
+ *
+ * Root-cause fix for the Moonshot/Kimi 400 empty-assistant error: a
+ * reasoning-model turn that emitted thinking but no visible text (then a tool
+ * call) makes the panel persist an assistant bubble with content "" (the
+ * panel's buildAssistant only skips when BOTH text AND thinking are empty).
+ * On the next task that empty assistant string is replayed into the LLM
+ * history; the thinking was already stripped before it got here, so the
+ * message carries zero information and removing it is loss-free.
+ *
+ * Provider-agnostic by design (the user's requirement: "even if other
+ * providers don't error, there shouldn't be empty messages") and heals
+ * already-persisted sessions because it runs in the loop on every call.
+ *
+ * Runs BEFORE `validateAndRepairAdjacentRoles` so any same-role adjacency the
+ * removal creates (e.g. user, <dropped assistant>, user) is repaired by the
+ * sentinel insertion that follows. system messages are never dropped. Input
+ * is not mutated (returns a new array).
+ */
+export function dropEmptyMessages(messages: AgentMessage[]): AgentMessage[] {
+  return messages.filter((m) => m.role === "system" || !isWireEmpty(m));
+}
+
+/**
  * Sentinel content inserted between two adjacent messages of the same role.
  *
  * The content is a plain literal — NOT passed through escapeUntrustedWrappers

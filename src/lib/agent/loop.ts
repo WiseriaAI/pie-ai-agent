@@ -31,6 +31,7 @@ import { compactReactWindow, createDefaultSummarizer } from "./compact-react-win
 import { resolveModelMeta } from "../model-router/providers/registry";
 import {
   validateAndRepairAdjacentRoles,
+  dropEmptyMessages,
   type RoleViolation,
 } from "./history-validation";
 import { isCdpInputEnabled } from "../cdp-input-enabled";
@@ -1467,6 +1468,18 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         modelConfig.model,
       );
 
+      // Drop wire-empty non-system messages before the LLM call. A
+      // reasoning-model turn that emitted thinking but no visible text (then a
+      // tool call) makes the panel persist an assistant bubble with content ""
+      // (buildAssistant only skips when BOTH text AND thinking are empty); on
+      // the next task that empty assistant string is replayed here and strict
+      // providers (Moonshot/Kimi) reject it with a 400. The thinking was
+      // already stripped before it reached the history, so the message carries
+      // no information and removing it is loss-free. Runs BEFORE the
+      // adjacent-role repair so any same-role adjacency the removal creates is
+      // healed by the sentinel pass below.
+      const windowedHistoryNonEmpty = dropEmptyMessages(windowedHistoryRaw);
+
       // U4 — Defense-in-depth: validate role alternation and auto-repair
       // adjacent same-role messages. Normal paths (D2 SW-side synth + U2
       // wrapping) already ensure alternation; this is the last resort for
@@ -1474,9 +1487,9 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // not counted (anthropic.ts joins them). Violations are repaired
       // silently — no error surfaced to the user.
       const { repaired: windowedHistory, violations: historyViolations } =
-        validateAndRepairAdjacentRoles(windowedHistoryRaw);
+        validateAndRepairAdjacentRoles(windowedHistoryNonEmpty);
       if (historyViolations.length > 0 && ctx.onHistoryRepaired) {
-        ctx.onHistoryRepaired(historyViolations, windowedHistoryRaw);
+        ctx.onHistoryRepaired(historyViolations, windowedHistoryNonEmpty);
       }
 
       // Resolve tools — re-read keyboard sim flag every iteration so

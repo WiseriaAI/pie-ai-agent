@@ -16,9 +16,10 @@
  */
 
 import { describe, it, expect } from "vitest";
-import type { AgentMessage } from "@/lib/model-router";
+import type { AgentMessage, ContentBlock } from "@/lib/model-router";
 import {
   validateAndRepairAdjacentRoles,
+  dropEmptyMessages,
   MultiTurnHistoryError,
 } from "./history-validation";
 
@@ -258,5 +259,137 @@ describe("input array is not mutated", () => {
     expect(input).toHaveLength(originalLength); // input unchanged
     expect(repaired).not.toBe(input);           // different reference
     expect(repaired.length).toBeGreaterThan(input.length); // sentinel added
+  });
+});
+
+// ── dropEmptyMessages ─────────────────────────────────────────────────────────
+//
+// Regression for the Moonshot/Kimi 400 "message at position N with role
+// 'assistant' must not be empty". A reasoning-model turn that emitted thinking
+// but no visible text (then a tool call) made the panel persist an assistant
+// bubble with content "" (buildAssistant only skips when BOTH text AND thinking
+// are empty). On the next task that empty assistant string is replayed into the
+// LLM history and strict providers (Moonshot) reject it. dropEmptyMessages is
+// the provider-agnostic hygiene step that removes such wire-empty messages
+// before the LLM call.
+describe("dropEmptyMessages", () => {
+  it("drops an assistant message with empty-string content (the reported bug)", () => {
+    const input: AgentMessage[] = [
+      sys(),
+      user("first task"),
+      assistant(""), // ← reasoning-only turn persisted with no visible text
+      user("second task"),
+    ];
+    const out = dropEmptyMessages(input);
+    expect(out).toEqual([sys(), user("first task"), user("second task")]);
+  });
+
+  it("drops a whitespace-only assistant message", () => {
+    const input: AgentMessage[] = [sys(), user("q"), assistant("   \n  ")];
+    const out = dropEmptyMessages(input);
+    expect(out).toEqual([sys(), user("q")]);
+  });
+
+  it("drops an assistant message whose only block is empty text", () => {
+    const input: AgentMessage[] = [
+      sys(),
+      user("q"),
+      { role: "assistant", content: [{ type: "text", text: "" }] },
+    ];
+    const out = dropEmptyMessages(input);
+    expect(out).toEqual([sys(), user("q")]);
+  });
+
+  it("keeps an assistant message that carries tool_use blocks (not empty)", () => {
+    const toolUse: ContentBlock[] = [
+      { type: "tool_use", id: "t1", name: "read_page", input: {} },
+    ];
+    const input: AgentMessage[] = [
+      sys(),
+      user("q"),
+      { role: "assistant", content: toolUse },
+    ];
+    const out = dropEmptyMessages(input);
+    expect(out).toEqual(input);
+  });
+
+  it("keeps a user message that carries tool_result blocks (not empty)", () => {
+    const toolResult: ContentBlock[] = [
+      { type: "tool_result", toolUseId: "t1", content: "ok" },
+    ];
+    const input: AgentMessage[] = [
+      sys(),
+      { role: "assistant", content: [{ type: "tool_use", id: "t1", name: "x", input: {} }] },
+      { role: "user", content: toolResult },
+    ];
+    const out = dropEmptyMessages(input);
+    expect(out).toEqual(input);
+  });
+
+  it("keeps a user message that carries an image block (not empty)", () => {
+    const img: ContentBlock[] = [
+      { type: "image", source: { type: "base64", mediaType: "image/png", data: "AAAA" } },
+    ];
+    const input: AgentMessage[] = [sys(), { role: "user", content: img }];
+    const out = dropEmptyMessages(input);
+    expect(out).toEqual(input);
+  });
+
+  it("keeps an assistant message whose only block is a thinking block (Anthropic replay safety)", () => {
+    const think: ContentBlock[] = [
+      { type: "thinking", thinking: "reasoning", signature: "sig" },
+    ];
+    const input: AgentMessage[] = [
+      sys(),
+      user("q"),
+      { role: "assistant", content: think },
+    ];
+    const out = dropEmptyMessages(input);
+    expect(out).toEqual(input);
+  });
+
+  it("never drops the system message", () => {
+    // system is always first and always has content; guard against accidental drop.
+    const input: AgentMessage[] = [sys(""), user("q")];
+    const out = dropEmptyMessages(input);
+    expect(out[0]).toEqual(sys(""));
+  });
+
+  it("keeps non-empty assistant text untouched", () => {
+    const input: AgentMessage[] = [sys(), user("q"), assistant("real reply")];
+    const out = dropEmptyMessages(input);
+    expect(out).toEqual(input);
+  });
+
+  it("returns a new array and does not mutate the input", () => {
+    const input: AgentMessage[] = [sys(), user("q"), assistant("")];
+    const before = input.length;
+    const out = dropEmptyMessages(input);
+    expect(input).toHaveLength(before);
+    expect(out).not.toBe(input);
+  });
+
+  it("composes with validateAndRepairAdjacentRoles: empty assistant dropped, no adjacency left", () => {
+    // The exact loop chokepoint order: dropEmptyMessages → validateAndRepairAdjacentRoles.
+    const input: AgentMessage[] = [
+      sys(),
+      user("first task"),
+      assistant(""), // dropped → would leave user,user adjacency
+      user("second task"),
+    ];
+    const cleaned = dropEmptyMessages(input);
+    const { repaired } = validateAndRepairAdjacentRoles(cleaned);
+    // No wire-empty message survives.
+    for (const m of repaired) {
+      if (m.role === "system") continue;
+      if (typeof m.content === "string") {
+        expect(m.content.trim().length).toBeGreaterThan(0);
+      }
+    }
+    // No adjacent same-role non-system pairs.
+    const nonSys = repaired.filter((m) => m.role !== "system");
+    for (let i = 0; i < nonSys.length - 1; i++) {
+      expect(nonSys[i].role).not.toBe(nonSys[i + 1].role);
+    }
   });
 });
