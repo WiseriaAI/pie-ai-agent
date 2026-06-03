@@ -12,7 +12,15 @@ import {
   removeProviderCustomModelMeta,
   type StoredCustomModelMeta,
 } from "@/lib/provider-custom-model-meta";
-import { listCustomProviders, type StoredCustomProvider, CUSTOM_PREFIX } from "@/lib/custom-providers";
+import {
+  listCustomProviders,
+  addCustomProviderModel,
+  updateCustomProviderModel,
+  removeCustomProviderModel,
+  providerRefToId,
+  type StoredCustomProvider,
+  CUSTOM_PREFIX,
+} from "@/lib/custom-providers";
 import { useT, providerDisplayName } from "@/lib/i18n";
 import { fetchOpenRouterModels } from "@/lib/openrouter-models-fetch";
 import InstanceForm, { type InstanceFormPayload } from "./InstanceForm";
@@ -162,6 +170,8 @@ export default function NewConfigWizard(props: Props) {
   // provider's name. (`provider` is non-null here, past the step-1 guard.)
   // pcmm callbacks are gated to builtin providers in InstanceForm, so this cast is safe.
   const builtinProvider = provider as BuiltinProvider;
+  // Non-null only for custom providers; routes model persistence to the entity.
+  const cpId = providerRefToId(provider);
   const builtinMeta = provider.startsWith(CUSTOM_PREFIX)
     ? undefined
     : getProviderMeta(provider as BuiltinProvider);
@@ -186,20 +196,47 @@ export default function NewConfigWizard(props: Props) {
         onSave={(p) => props.onCreate(provider, p)}
         onTest={(p) => props.onTest(provider, p)}
         onAddCustomModel={async (id, meta) => {
-          await addProviderCustomModel(provider, id);
-          await setProviderCustomModelMeta(builtinProvider, id, meta);
-          setPool(await getProviderCustomModels(provider));
-          setMetas(await getProviderCustomModelMetas(builtinProvider));
+          if (cpId) {
+            await addCustomProviderModel(cpId, {
+              id,
+              displayName: meta.displayName,
+              vision: meta.vision,
+              tools: true,
+              maxContextTokens: meta.maxContextTokens,
+            });
+            setCustomProviders(await listCustomProviders());
+          } else {
+            await addProviderCustomModel(provider, id);
+            await setProviderCustomModelMeta(builtinProvider, id, meta);
+            setPool(await getProviderCustomModels(provider));
+            setMetas(await getProviderCustomModelMetas(builtinProvider));
+          }
         }}
         onUpdateCustomModelMeta={async (id, meta) => {
-          await setProviderCustomModelMeta(builtinProvider, id, meta);
-          setMetas(await getProviderCustomModelMetas(builtinProvider));
+          if (cpId) {
+            await updateCustomProviderModel(cpId, id, {
+              id,
+              displayName: meta.displayName,
+              vision: meta.vision,
+              tools: true,
+              maxContextTokens: meta.maxContextTokens,
+            });
+            setCustomProviders(await listCustomProviders());
+          } else {
+            await setProviderCustomModelMeta(builtinProvider, id, meta);
+            setMetas(await getProviderCustomModelMetas(builtinProvider));
+          }
         }}
         onRemoveCustomModel={async (id) => {
-          await removeProviderCustomModel(provider, id);
-          await removeProviderCustomModelMeta(builtinProvider, id);
-          setPool(await getProviderCustomModels(provider));
-          setMetas(await getProviderCustomModelMetas(builtinProvider));
+          if (cpId) {
+            await removeCustomProviderModel(cpId, id);
+            setCustomProviders(await listCustomProviders());
+          } else {
+            await removeProviderCustomModel(provider, id);
+            await removeProviderCustomModelMeta(builtinProvider, id);
+            setPool(await getProviderCustomModels(provider));
+            setMetas(await getProviderCustomModelMetas(builtinProvider));
+          }
         }}
         onRefreshModels={async (apiKey) => {
           // Only OpenRouter has /v1/models lazy fetch; other providers stay hardcoded.

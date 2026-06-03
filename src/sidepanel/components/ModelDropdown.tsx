@@ -165,8 +165,10 @@ export default function ModelDropdown(props: Props) {
             )}
           </div>
 
-          {/* Fixed footer — + 添加自定义模型 (hidden for custom providers since models are defined there) */}
-          {!props.provider.startsWith(CUSTOM_PREFIX) && (
+          {/* Fixed footer — + 添加自定义模型. Shown whenever adding is supported
+              (onAddCustom wired). For custom providers this persists into the
+              provider's own model list; for builtin providers into the pcm pool. */}
+          {props.onAddCustom && (
             <div className="border-t border-line">
               <button
                 onClick={() => { setEditing({}); setOpen(false); }}
