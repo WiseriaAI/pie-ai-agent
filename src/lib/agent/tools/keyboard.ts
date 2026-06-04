@@ -66,72 +66,13 @@ const KEY_MAP: Record<
   ArrowRight: { code: "ArrowRight", windowsVirtualKeyCode: 39 },
   Home: { code: "Home", windowsVirtualKeyCode: 36 },
   End: { code: "End", windowsVirtualKeyCode: 35 },
-  // Letter keys for editor chords (#123): select-all / copy / paste / cut /
-  // undo / redo. Only the shortcut-relevant letters are added (deliberate,
-  // per the comment above) — they are meant to be pressed WITH a modifier;
-  // a bare letter press is rejected by the press_key handler.
-  A: { code: "KeyA", windowsVirtualKeyCode: 65 },
-  C: { code: "KeyC", windowsVirtualKeyCode: 67 },
-  V: { code: "KeyV", windowsVirtualKeyCode: 86 },
-  X: { code: "KeyX", windowsVirtualKeyCode: 88 },
-  Y: { code: "KeyY", windowsVirtualKeyCode: 89 },
-  Z: { code: "KeyZ", windowsVirtualKeyCode: 90 },
 };
 
 // CDP modifier bitmask (Input.dispatchKeyEvent.modifiers field).
-const MODIFIER_BITS = { alt: 1, ctrl: 2, meta: 4, shift: 8 } as const;
-type ModifierName = keyof typeof MODIFIER_BITS;
-
-// Shift bit, used internally by dispatch_keyboard_input for soft-break
-// paragraphs (Shift+Enter in Notion / Feishu / Google Docs).
-const MODIFIER_SHIFT = MODIFIER_BITS.shift;
-
-// `mod` = the platform primary accelerator: Cmd (meta) on macOS, Ctrl
-// elsewhere. The LLM doesn't know the user's OS, so it asks for `mod` and we
-// resolve it here. Cached process-wide (the OS doesn't change); falls back to
-// Ctrl when getPlatformInfo is unavailable (covers Win/Linux, the majority).
-let cachedIsMac: boolean | null = null;
-async function resolveModBit(): Promise<number> {
-  if (cachedIsMac === null) {
-    try {
-      const info = await chrome.runtime.getPlatformInfo();
-      cachedIsMac = info.os === "mac";
-    } catch {
-      cachedIsMac = false;
-    }
-  }
-  return cachedIsMac ? MODIFIER_BITS.meta : MODIFIER_BITS.ctrl;
-}
-
-/** Test-only: clear the cached platform so `mod` re-resolves. The cache is
- *  correct in production (OS never changes mid-session) but must be reset
- *  between unit tests that exercise different platforms. */
-export function __resetModPlatformCacheForTest(): void {
-  cachedIsMac = null;
-}
-
-/** Reduce an LLM-supplied modifiers array to a CDP bitmask. Resolves `mod` to
- *  the platform accelerator. Returns an error string on any unknown value. */
-async function resolveModifiers(
-  modifiers: string[] | undefined,
-): Promise<{ ok: true; bits: number } | { ok: false; reason: string }> {
-  let bits = 0;
-  for (const m of modifiers ?? []) {
-    if (m === "mod") {
-      bits |= await resolveModBit();
-      continue;
-    }
-    const bit = MODIFIER_BITS[m as ModifierName];
-    if (bit === undefined) {
-      return {
-        ok: false,
-        reason: `Unsupported modifier '${m}'. Allowed: mod, ctrl, shift, alt, meta`,
-      };
-    }
-    bits |= bit;
-  }
-  return { ok: true, bits };
-}
+//   Alt = 1, Ctrl = 2, Meta = 4, Shift = 8
+// Only Shift is currently used (soft-break paragraphs in Notion / Feishu /
+// Google Docs require Shift+Enter); other bits intentionally not exposed.
+const MODIFIER_SHIFT = 8;
 
 // Helper: send a paired keyDown/keyUp via CDP. Used internally when
 // expanding \n inside dispatch_keyboard_input — canvas editors (Feishu
@@ -442,23 +383,14 @@ export function buildKeyboardTools(deps: KeyboardToolDeps): Tool[] {
     },
     {
       name: "press_key",
-      description: `Press a control key, optionally with modifiers, via simulated real keyboard (CDP). Use for navigation and editor chords (e.g. select-all before overwriting, undo). Activates Chrome's debugger (yellow bar appears). Allowed keys: ${Object.keys(KEY_MAP).join(", ")}. Note: CDP cannot inject clipboard contents, so mod+V only pastes if the clipboard already holds the target text — use set_editor_value or dispatch_keyboard_input for bulk text.`,
+      description: `Press a single control key via simulated real keyboard (CDP). Use for navigation in canvas-rendered editors. Activates Chrome's debugger (yellow bar appears). Allowed keys: ${Object.keys(KEY_MAP).join(", ")}.`,
       parameters: {
         type: "object",
         properties: {
           key: {
             type: "string",
             enum: Object.keys(KEY_MAP),
-            description: "The key to press. Letter keys must be combined with a modifier.",
-          },
-          modifiers: {
-            type: "array",
-            items: {
-              type: "string",
-              enum: ["mod", "ctrl", "shift", "alt", "meta"],
-            },
-            description:
-              "Optional modifier keys held during the press. Prefer 'mod' (the platform primary accelerator: Cmd on macOS, Ctrl elsewhere) for select-all/copy/undo so it works cross-platform.",
+            description: "The control key to press.",
           },
         },
         required: ["key"],
@@ -474,27 +406,12 @@ export function buildKeyboardTools(deps: KeyboardToolDeps): Tool[] {
         const gate = await requireCdpInput({ sessionId, requestConsent });
         if (!gate.ok) return { success: false, error: gate.error };
         return withActionSettle(ctx.tabId, async () => {
-        const a = args as { key: string; modifiers?: string[] };
+        const a = args as { key: string };
         const mapping = KEY_MAP[a.key];
         if (!mapping) {
           return {
             success: false,
             error: `Unsupported key '${a.key}'. Allowed: ${Object.keys(KEY_MAP).join(", ")}`,
-          };
-        }
-
-        const mods = await resolveModifiers(a.modifiers);
-        if (!mods.ok) {
-          return { success: false, error: mods.reason };
-        }
-
-        // A bare letter press produces no useful effect (we send no `text`,
-        // so it neither types nor acts as a chord). Steer the LLM to the
-        // right tool instead of silently doing nothing.
-        if (/^[A-Z]$/.test(a.key) && mods.bits === 0) {
-          return {
-            success: false,
-            error: `press_key('${a.key}') with no modifiers does nothing useful; use dispatch_keyboard_input to type text, or add a modifier (e.g. modifiers:["mod"] for select-all).`,
           };
         }
 
@@ -520,11 +437,8 @@ export function buildKeyboardTools(deps: KeyboardToolDeps): Tool[] {
           // keyDown + keyUp pair shares a single origin re-check (the
           // two events fire <1ms apart; origin can't realistically
           // change between them, and re-checking would double the
-          // chrome.tabs.get round-trip per press). Modifiers ride on the
-          // key event's `modifiers` field — editors read event.ctrlKey/
-          // metaKey to recognize the chord, so no separate modifier
-          // keyDown/keyUp is needed.
-          await sendKeyPress(session, a.key, mods.bits);
+          // chrome.tabs.get round-trip per press).
+          await sendKeyPress(session, a.key);
         } catch (e) {
           return {
             success: false,
@@ -535,10 +449,9 @@ export function buildKeyboardTools(deps: KeyboardToolDeps): Tool[] {
           };
         }
 
-        const combo = (a.modifiers?.length ? a.modifiers.join("+") + "+" : "") + a.key;
         return {
           success: true,
-          observation: `Pressed ${combo} via keyboard simulation`,
+          observation: `Pressed ${a.key} via keyboard simulation`,
         };
         });
       },
