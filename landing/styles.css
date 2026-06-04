@@ -9,7 +9,7 @@
 :root {
   --c-canvas:#FAFBFC; --c-surface:#FFFFFF; --c-field:#F4F6F8; --c-line:#E4E8EC;
   --c-fg-1:#14181D; --c-fg-2:#5A6470; --c-fg-3:#98A1AC; --c-fg-4:#B8BFC8;
-  --c-accent:#4A5C6E; --c-accent-tint:rgba(74,92,110,0.08); --c-warning:#B85A4D;
+  --c-accent:#4A5C6E; --c-accent-tint:rgba(74,92,110,0.08); --c-warning:#B85A4D; --c-pending:#B040AC;
   --c-dot:rgba(20,24,29,0.05); --c-dot-dark:rgba(232,236,242,0.07);
   --font-sans:"Inter", ui-sans-serif, system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
   --font-mono:"JetBrains Mono", ui-monospace, "SF Mono", Consolas, monospace;
@@ -127,6 +127,19 @@ img, svg { display:block; }
 .pop-desc { font-size:12px; line-height:1.5; color:var(--c-fg-2); }
 .pop-foot { display:flex; gap:14px; padding:6px 14px; border-top:1px solid var(--c-line); background:var(--c-canvas); }
 .pop-foot .caps { letter-spacing:0.08em; color:var(--c-fg-3); }
+/* recording control bar — stylized RecordingMode footer, overlaid bottom-left of s3 result */
+.res-stack { position:relative; }
+.rec-bar { position:absolute; left:-14px; bottom:-20px; z-index:3; display:flex; align-items:center; gap:12px; padding:9px 10px 9px 14px; background:#fff; border:1px solid var(--c-pending); border-radius:12px; box-shadow:0 18px 44px -16px rgba(20,24,29,0.30); }
+.rec-dot { flex:0 0 auto; width:8px; height:8px; border-radius:50%; background:var(--c-pending); box-shadow:0 0 0 4px rgba(176,64,172,0.16); animation:recPulse 2.2s var(--ease) infinite; }
+@keyframes recPulse { 0%,100% { box-shadow:0 0 0 4px rgba(176,64,172,0.16); } 50% { box-shadow:0 0 0 7px rgba(176,64,172,0.05); } }
+.rec-text { font-size:11px; font-weight:600; letter-spacing:0.08em; white-space:nowrap; }
+.rec-label { color:var(--c-fg-1); }
+.rec-sep { color:var(--c-fg-3); font-weight:400; padding:0 8px; }
+.rec-steps { color:var(--c-accent); }
+.rec-btns { display:flex; align-items:center; gap:8px; }
+.rec-cancel { padding:5px 10px; border:1px solid var(--c-line); border-radius:8px; font-size:12px; font-weight:500; color:var(--c-fg-2); white-space:nowrap; }
+.rec-finish { display:inline-flex; align-items:center; gap:6px; padding:5px 12px; background:var(--c-accent); border:1px solid var(--c-accent); border-radius:8px; font-size:12px; font-weight:600; color:var(--c-canvas); white-space:nowrap; }
+.rec-enter { font-size:10px; opacity:0.55; }
 
 /* ── trust strip ─────────────────────────────────────────────────────── */
 .trust { border-top:1px solid var(--c-line); border-bottom:1px solid var(--c-line); background:var(--c-canvas); }
@@ -232,6 +245,7 @@ img, svg { display:block; }
   .h-section { font-size:34px; } .h-section.sm { font-size:30px; }
   .trust-in { flex-wrap:wrap; gap:28px 0; } .trust-item { flex-basis:50%; flex:0 0 50%; padding:0 16px 0 0; } .trust-div { display:none; }
   .cap-cell { flex-basis:100%; }
+  .rec-bar { left:0; bottom:-16px; gap:8px; padding:8px 10px; } .rec-cancel { display:none; }
   .foot-top { flex-direction:column; gap:24px; }
   .nav-right { gap:10px; } .gh-pill { display:none; }
 }
