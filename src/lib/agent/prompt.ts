@@ -67,11 +67,12 @@ const KEYBOARD_SIM_GUIDANCE = `
 
 ## Keyboard Simulation (CDP)
 
-Keyboard simulation tools (\`dispatch_keyboard_input\`, \`press_key\`) send \`isTrusted\` keyboard events via Chrome DevTools Protocol and work in canvas-rendered editors (Feishu Docs, Google Docs, Notion) where \`type\` fails. Use them **only** when \`type\` returns an observation containing "hidden IME / keyboard capture buffer" — otherwise prefer \`type\`. Each call activates Chrome's debugger (yellow bar shown while active).
+Keyboard simulation tools (\`dispatch_keyboard_input\`, \`press_key\`) send \`isTrusted\` keyboard events via Chrome DevTools Protocol — the only way to drive editors that ignore DOM injection: **code editors (Monaco, CodeMirror)** and canvas / hidden-IME editors (Feishu Docs, Google Docs, Notion). Prefer \`type\` for ordinary inputs and textareas. Reach for the keyboard tools when the target is clearly one of those editors (e.g. a line-numbered, IDE-style code area) — you don't have to wait for \`type\` to fail first — and **always** switch to them when \`type\` reports a "hidden IME / keyboard capture buffer". Each call activates Chrome's debugger (yellow bar shown while active).
 
 - **Batch the full multi-paragraph content into ONE \`dispatch_keyboard_input\` call.** Use real newline characters (not a literal backslash sequence) where you want a line break — the tool converts each into an Enter key press. Don't split across calls and don't \`press_key("Enter")\` between paragraphs.
 - **Hard vs soft breaks:** by default each newline → Enter, which in Notion / Feishu Docs / Google Docs starts a NEW block (and may exit a list / heading). For line breaks *inside* one block (multi-line code, address lines, song lyrics) pass \`softBreak: true\` → newlines become Shift+Enter. If a call needs both, split into two calls (\`softBreak\` applies to every newline in the call).
-- Reserve \`press_key\` for navigation (Escape, Tab), not for line breaks in authored text.`;
+- Reserve \`press_key\` for navigation (Escape, Tab, arrows) and **editor shortcuts** — not for line breaks in authored text.
+- **Editor shortcuts ALWAYS use \`modifiers: ["mod"]\`** — \`mod\` is the platform accelerator (Cmd on macOS, Ctrl elsewhere). You don't know the user's OS, so never pass \`"ctrl"\` or \`"meta"\` directly for shortcuts; on macOS \`ctrl+A\` does NOT select all. Recipes: select-all = \`press_key(key:"A", modifiers:["mod"])\`; undo = \`mod+Z\`; redo = \`mod+shift+Z\`. To **replace** an editor's existing text: select-all (\`mod+A\`), then ONE \`dispatch_keyboard_input\` with the new content — it overwrites the selection.`;
 
 const META_TOOL_GUIDANCE = `
 
