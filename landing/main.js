@@ -65,7 +65,7 @@ const I18N = {
     "panel.b2":"网页、PDF、画布编辑器都能搞定。",
     "panel.b3":"讲不清的活儿，演一遍就存成技能，以后直接重放。",
     "panel.input":"问点什么，或者说个任务…",
-    "tour.eyebrow":"怎么用", "tour.title":"说这句，得这个。",
+    "tour.eyebrow":"怎么用", "tour.title":"说句话，就有结果。",
     "tour.sub":"不用写脚本，也不用研究设置。想要啥结果直说，剩下的 Pie 自己搞定。",
     "you":"你说",
     "s1.tag":"· 网页 & PDF 问答", "s1.cmd":"「这页的退款政策是啥？」",
