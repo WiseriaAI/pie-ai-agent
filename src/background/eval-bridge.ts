@@ -1,5 +1,8 @@
 import { runAgentLoop } from "@/lib/agent/loop";
-import { createInstance, setActiveInstance, resolveInstanceToModelConfig } from "@/lib/instances";
+import { createInstance, setActiveInstance, resolveActiveInstanceModelConfig } from "@/lib/instances";
+import { setCdpInputEnabled } from "@/lib/cdp-input-enabled";
+import { setSessionMeta, setSessionAgent } from "@/lib/sessions/storage";
+import type { SessionMeta, SessionAgentState } from "@/lib/sessions/types";
 import type { PortMessageToPanel } from "@/types/messages";
 
 interface SessionRun {
@@ -28,7 +31,6 @@ function makeMockPort(sessionId: string, onMsg: (m: PortMessageToPanel) => void)
 
 function makeBridge() {
   const runs = new Map<string, SessionRun>();
-  let seededInstanceId: string | null = null;
   let seq = 0;
 
   function onMessage(sessionId: string, m: PortMessageToPanel) {
@@ -48,7 +50,11 @@ function makeBridge() {
       // builtin provider 路径(anthropic/openai/...);custom provider baseUrl v1 不支持。
       const id = await createInstance({ provider: cfg.provider as any, nickname: "eval", apiKey: cfg.apiKey, model: cfg.model });
       await setActiveInstance(id);
-      seededInstanceId = id;
+      // Headless harness has no human to grant CDP-input consent — without this,
+      // every click/type tool hits requestCdpInputConsent and fails ("no sidepanel
+      // port"). Pre-grant it, mirroring WebArena's official eval permission
+      // pre-injection. (The flag is persisted; reset() clears it between runs.)
+      await setCdpInputEnabled(true);
       return { instanceId: id };
     },
 
@@ -58,14 +64,52 @@ function makeBridge() {
       const run: SessionRun = { buffer: [], controller, startedAt: Date.now(), endedAt: 0, terminal: null, resolveDone: null, agentMessages: [] };
       runs.set(sessionId, run);
 
-      const instanceId = seededInstanceId ?? "";
-      const modelConfig = await resolveInstanceToModelConfig(instanceId);
+      // Read the seeded config from the PERSISTED active instance (chrome.storage.local),
+      // never from in-memory bridge state: MV3 can evict the service worker between the
+      // orchestrator's seedConfig and startTask calls (e.g. during the page.goto in
+      // between), which would rebuild this closure and lose any in-memory pointer. The
+      // active-instance pointer survives the restart on disk.
+      const modelConfig = await resolveActiveInstanceModelConfig();
       if (!modelConfig) throw new Error("eval bridge: seedConfig must be called before startTask");
 
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       const pinnedTabs = tab?.id != null ? [{ tabId: tab.id, origin: new URL(tab.url ?? "about:blank").origin }] : [];
 
-      const task = `${opts.goal}\n\nWhen the task is complete, call the \`done\` tool with your final answer as its \`result\`.`;
+      // Seed a SessionMeta + SessionAgent keyed by THIS sessionId so the loop's
+      // pinned-tab registry works: open_url persists new tabs via getSessionMeta→
+      // setSessionMeta, and each iteration refreshes pinnedTabs from it
+      // (readFocusFromStorage). Without a meta record both are silent no-ops, so
+      // open_url-created tabs can never be focus_tab'd. pinMode='task' = pinnedTabs[0]
+      // is the chat-start capture, [1..N] are open_url-created tabs.
+      const now = Date.now();
+      const meta: SessionMeta = {
+        id: sessionId,
+        createdAt: now,
+        lastAccessedAt: now,
+        status: "active",
+        messages: [],
+        pinMode: "task",
+        ...(pinnedTabs.length > 0 ? { pinnedTabs } : {}),
+      };
+      await setSessionMeta(meta);
+      const agentState: SessionAgentState = {
+        agentMessages: [],
+        pendingInstructions: [],
+        stepIndex: 0,
+        hasImageContent: false,
+      };
+      await setSessionAgent(sessionId, agentState);
+
+      // WebArena's scorer normalizes the answer and compares it for SET EQUALITY
+      // against the bare expected value (no substring/containment) — a verbose
+      // sentence never matches even when it contains the right value. So instruct
+      // a value-only answer, mirroring WebArena's official `stop [answer]` contract.
+      const task =
+        `${opts.goal}\n\n` +
+        "When the task is complete, call the `done` tool with your final answer as its `result`. " +
+        "The `result` must contain ONLY the precise value(s) the task asks for — a name, number, " +
+        "short phrase, or comma-separated list — with no explanation, no units, no surrounding " +
+        "sentence, and without restating the question. For example, reply `42`, not `The total is 42 items.`";
 
       void runAgentLoop({
         port: makeMockPort(sessionId, (m) => onMessage(sessionId, m)),
@@ -139,7 +183,6 @@ function makeBridge() {
       for (const run of runs.values()) run.controller.abort();
       runs.clear();
       await chrome.storage.local.clear();
-      seededInstanceId = null;
     },
   };
 }

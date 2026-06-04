@@ -6,7 +6,13 @@ vi.mock("@/lib/agent/loop", () => ({ runAgentLoop: (ctx: any) => fakeRun(ctx) })
 vi.mock("@/lib/instances", () => ({
   createInstance: vi.fn(async () => "inst-1"),
   setActiveInstance: vi.fn(async () => {}),
-  resolveInstanceToModelConfig: vi.fn(async () => ({ provider: "anthropic", model: "claude", apiKey: "k" })),
+  resolveActiveInstanceModelConfig: vi.fn(async () => ({ provider: "anthropic", model: "claude", apiKey: "k" })),
+}));
+// Session-meta pre-wiring is covered by eval-bridge-prewire.test.ts; here we
+// no-op it so these getTrace tests stay isolated from real session storage.
+vi.mock("@/lib/sessions/storage", () => ({
+  setSessionMeta: vi.fn(async () => {}),
+  setSessionAgent: vi.fn(async () => {}),
 }));
 
 import { __makeBridgeForTest } from "./eval-bridge";

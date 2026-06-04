@@ -224,17 +224,40 @@ real site → HAR captured → offline deterministic scoring). Design/plan:
 - `docs/specs/2026-06-01-webarena-verified-eval-harness.md`
 - `docs/plans/2026-06-01-webarena-verified-eval-harness.md`
 
-**Agent effectiveness (raising the score) is a separate future iteration**, not a
-harness concern. First E2E on task 0 (shopping_admin, "2022 best-seller") scored
-0.0 — a useful baseline finding, NOT a harness bug:
-- The data is correct (DB confirms `Quest Lumaflex™ Band` is the 2022 #1).
-- The agent reached the Bestsellers report and set the 2022 date filter via URL
-  params, but didn't trigger the report's form submission, saw "0 records", and
-  fell back to an all-time tie — then answered with a verbose paragraph instead
-  of the single expected value.
-- Optimization threads for the future eval-iteration topic: (1) report-form
-  interaction (set filter → click "Show Report"), (2) concise final-answer
-  formatting, (3) larger time budget per task (`PIE_EVAL_TIMEOUT_MS`).
+### Harness hardening (the eval bridge was too thin)
 
-Per-run `agent-trace.json` (full raw LLM IR: reasoning + tool calls + observations)
-is written for exactly this kind of step-by-step diagnosis.
+The thin eval bridge (`src/background/eval-bridge.ts`) drove `runAgentLoop`
+directly but skipped capability pre-wiring the real extension does at chat-start.
+Four harness-layer fixes (each with a regression test in
+`src/background/eval-bridge*.test.ts`):
+
+1. **seedConfig SW-restart robustness** — `startTask` resolves the model config
+   from the *persisted* active instance (`resolveActiveInstanceModelConfig`), not
+   an in-memory pointer. MV3 can evict the SW during the orchestrator's
+   `page.goto` between `seedConfig` and `startTask`; the in-memory pointer didn't
+   survive, the persisted one does.
+2. **CDP input pre-grant** — `seedConfig` sets `cdp_input_enabled = true`. There's
+   no sidepanel in the headless harness, so the click/type tools would otherwise
+   fail at `requestCdpInputConsent` ("no sidepanel port"). Mirrors WebArena's
+   official permission pre-injection.
+3. **SessionMeta pre-seed** — `startTask` writes a `SessionMeta` + `SessionAgent`
+   keyed by the eval `sessionId`, so the pinned-tab registry works: without it,
+   `open_url`'s `appendPinnedTab` is a silent no-op and `focus_tab` can never
+   operate on a newly opened tab.
+4. **Value-only answer directive** — the task prompt instructs a bare-value final
+   answer. The scorer's `AgentResponseEvaluator` compares the normalized answer
+   for **set equality** against the expected value (no substring/containment), so
+   a verbose sentence never matches even when it contains the right value.
+
+With these, the agent can complete the Bestsellers report form interaction
+(`select` year → `type` 2022 → `click` "Show Report") and answer with the bare
+value — capabilities that were physically broken before.
+
+**Remaining gap is agent effectiveness, not harness.** Task 0 still scores 0.0 due
+to model-side browsing variance: across runs the agent has reached the correct
+2022-filtered view and answered `Quest Lumaflex™ Band` (correct value, but once in
+verbose form), and on another run second-guessed itself into a day-granularity
+report and answered the wrong product. Raising the score from here is a separate
+prompt/agent-tuning topic. Per-run `agent-trace.json` (full raw LLM IR: reasoning
++ tool calls + observations) is written for exactly this kind of step-by-step
+diagnosis.
