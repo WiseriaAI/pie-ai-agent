@@ -138,6 +138,19 @@ function initLang() {
     b.addEventListener("click", () => applyLang(b.dataset.langBtn)));
 }
 
+// ── scroll reveal (scenario rows slide in L/R; other blocks fade up) ──────
+function initReveal() {
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  if (!("IntersectionObserver" in window)) return;
+  document.documentElement.classList.add("js-reveal");
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); }
+    });
+  }, { threshold: 0.18, rootMargin: "0px 0px -10% 0px" });
+  document.querySelectorAll(".srow, .reveal-up").forEach(el => io.observe(el));
+}
+
 // ── cursor spotlight (only motion effect; off for reduced-motion / touch) ──
 function initSpotlight() {
   if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
@@ -160,6 +173,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const u = LINKS[a.dataset.href]; if (u) { a.href = u; a.target = "_blank"; a.rel = "noopener"; }
   });
   initLang();
+  initReveal();
   initSpotlight();
   // 可选：拉取 GitHub star 数（失败静默）
   fetch("https://api.github.com/repos/WiseriaAI/pie-ai-agent")

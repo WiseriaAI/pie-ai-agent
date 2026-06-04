@@ -171,15 +171,44 @@ img, svg { display:block; }
 .foot-bottom { display:flex; align-items:center; justify-content:space-between; }
 .foot-bottom .mono { font-size:11px; color:var(--c-fg-3); }
 
-/* ── dot-grid background + cursor spotlight ──────────────────────────── */
+/* ── dot-grid background + ambient drift + cursor spotlight ──────────── */
+/* drift: pan the dot field by whole tiles so the loop is seamless */
+@keyframes dotDrift { from { background-position:0 0; } to { background-position:48px 24px; } }
+@keyframes dotDriftDark { from { background-position:0 0; } to { background-position:52px 26px; } }
+/* spotlight glow gently breathes while it follows the cursor */
+@keyframes spotBreath { 0%,100% { opacity:0.4; } 50% { opacity:0.62; } }
+
 .dotgrid { position:relative; }
-.dotgrid::before { content:""; position:absolute; inset:0; z-index:0; pointer-events:none; background-image:radial-gradient(circle at 1px 1px, var(--c-dot) 1px, transparent 0); background-size:24px 24px; }
+.dotgrid::before { content:""; position:absolute; inset:0; z-index:0; pointer-events:none; background-image:radial-gradient(circle at 1px 1px, var(--c-dot) 1px, transparent 0); background-size:24px 24px; animation:dotDrift 36s linear infinite; }
 .dotgrid > * { position:relative; z-index:1; }
 .dotgrid-dark { position:relative; }
-.dotgrid-dark::before { content:""; position:absolute; inset:0; z-index:0; pointer-events:none; background-image:radial-gradient(circle at 1px 1px, var(--c-dot-dark) 1px, transparent 0); background-size:26px 26px; }
+.dotgrid-dark::before { content:""; position:absolute; inset:0; z-index:0; pointer-events:none; background-image:radial-gradient(circle at 1px 1px, var(--c-dot-dark) 1px, transparent 0); background-size:26px 26px; animation:dotDriftDark 36s linear infinite; }
 .dotgrid-dark > * { position:relative; z-index:1; }
-.dotgrid.spotlight::after, .dotgrid-dark.spotlight::after { content:""; position:absolute; inset:0; z-index:0; pointer-events:none; background-image:radial-gradient(circle at 1px 1px, var(--c-accent) 1px, transparent 0); background-size:24px 24px; -webkit-mask-image:radial-gradient(220px circle at var(--mx,-999px) var(--my,-999px), #000 0%, transparent 70%); mask-image:radial-gradient(220px circle at var(--mx,-999px) var(--my,-999px), #000 0%, transparent 70%); opacity:0.5; transition:opacity 200ms var(--ease); }
-.dotgrid-dark.spotlight::after { background-image:radial-gradient(circle at 1px 1px, #B8C8D6 1px, transparent 0); background-size:26px 26px; }
+/* spotlight: highlighted dots bloom (1.5px) + glow breathes; drifts in lockstep with base layer */
+.dotgrid.spotlight::after, .dotgrid-dark.spotlight::after { content:""; position:absolute; inset:0; z-index:0; pointer-events:none; background-image:radial-gradient(circle at 1px 1px, var(--c-accent) 1.5px, transparent 0); background-size:24px 24px; -webkit-mask-image:radial-gradient(220px circle at var(--mx,-999px) var(--my,-999px), #000 0%, transparent 70%); mask-image:radial-gradient(220px circle at var(--mx,-999px) var(--my,-999px), #000 0%, transparent 70%); opacity:0.5; animation:dotDrift 36s linear infinite, spotBreath 4.5s ease-in-out infinite; }
+.dotgrid-dark.spotlight::after { background-image:radial-gradient(circle at 1px 1px, #B8C8D6 1.5px, transparent 0); background-size:26px 26px; animation:dotDriftDark 36s linear infinite, spotBreath 4.5s ease-in-out infinite; }
+
+/* ── scenario scroll reveal (left command / right result fade in) ─────── */
+/* .js-reveal added by JS only when motion is allowed → no-JS / reduced-motion shows content normally */
+.js-reveal .srow .cmd, .js-reveal .srow .res { opacity:0; transition:opacity 640ms var(--ease), transform 640ms var(--ease); }
+.js-reveal .srow .cmd { transform:translateX(-30px); }
+.js-reveal .srow .res { transform:translateX(30px); transition-delay:90ms; }
+.js-reveal .srow.in .cmd, .js-reveal .srow.in .res { opacity:1; transform:none; }
+
+/* ── page-load entrance (above the fold: topbar + hero, staggered) ────── */
+@keyframes enterUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:none; } }
+.topbar { animation:enterUp 520ms var(--ease) both; }
+.hero-copy > * { animation:enterUp 640ms var(--ease) both; }
+.hero-copy > *:nth-child(1) { animation-delay:60ms; }
+.hero-copy > *:nth-child(2) { animation-delay:130ms; }
+.hero-copy > *:nth-child(3) { animation-delay:200ms; }
+.hero-copy > *:nth-child(4) { animation-delay:270ms; }
+.hero-copy > *:nth-child(5) { animation-delay:340ms; }
+.hero .panel { animation:enterUp 720ms var(--ease) both; animation-delay:280ms; }
+
+/* ── generic scroll reveal for below-the-fold blocks (fade up once) ───── */
+.js-reveal .reveal-up { opacity:0; transform:translateY(18px); transition:opacity 620ms var(--ease), transform 620ms var(--ease); }
+.js-reveal .reveal-up.in { opacity:1; transform:none; }
 
 /* ── focus states (a11y) ─────────────────────────────────────────────── */
 .lang-btn:focus-visible, .btn-ink:focus-visible, .btn-outline:focus-visible, .btn-light:focus-visible, .btn-ghost-dark:focus-visible, .gh-pill:focus-visible, .foot-links a:focus-visible { outline:2px solid var(--c-accent); outline-offset:2px; }
