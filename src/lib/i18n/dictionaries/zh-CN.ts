@@ -48,6 +48,12 @@ export const zhCNDict = {
       optionEn: "English",
       optionZhCN: "中文（简体）",
     },
+    feedback: {
+      sectionTitle: "反馈",
+      githubButton: "在 GitHub 上反馈",
+      githubHint: "打开预填的 issue 页。要反馈某个具体任务的问题，请回到那个会话输入 /report-issue。",
+      emailButton: "邮件反馈",
+    },
     myConfigs: {
       title: "我的配置",
       countSuffix: "条配置",
