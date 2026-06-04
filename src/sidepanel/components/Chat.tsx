@@ -14,6 +14,7 @@ import type { ImageAttachment } from "@/lib/images";
 import type { FileAttachment } from "@/lib/files/types";
 import { processPickedFile } from "@/lib/files/process-picked-file";
 import { fileAttachmentToWrapper } from "@/lib/files/inject";
+import { CollapsibleText } from "./CollapsibleText";
 import { FileChip } from "./FileChip";
 import type { UseSession } from "@/sidepanel/hooks/useSession";
 import AgentStepGroup, { type AgentStepData } from "./AgentStepGroup";
@@ -1551,7 +1552,7 @@ function MessageBubble({
     const hasText = message.content.length > 0;
     return (
       <div className="flex justify-end">
-        <div className="flex max-w-[280px] flex-col gap-2 rounded-[10px_10px_2px_10px] border border-line bg-field px-3.5 py-2.5 text-[13px] leading-5 text-fg-1">
+        <div className="flex min-w-0 max-w-[66%] flex-col gap-2 rounded-[10px_10px_2px_10px] border border-line bg-field px-3.5 py-2.5 text-[13px] leading-5 text-fg-1">
           {hasQuotes && (
             <div className="flex flex-col gap-1.5">
               {message.quotes!.map((q) => (
@@ -1598,7 +1599,7 @@ function MessageBubble({
               ))}
             </div>
           )}
-          {hasText && <div className="whitespace-pre-wrap">{message.content}</div>}
+          {hasText && <CollapsibleText text={message.content} />}
           {visibleAttachments?.map((a) =>
             a.kind === "image" ? (
               <img
