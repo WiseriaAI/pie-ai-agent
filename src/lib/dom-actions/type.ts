@@ -292,12 +292,15 @@ export async function typeByIndex(
   // inside a detected editor AND has trivially small bounding box or low opacity.
   const rect = el.getBoundingClientRect();
   const style = window.getComputedStyle(el);
-  const looksLikeIMEBuffer =
-    isInputOrTextarea &&
-    editorType !== null &&
-    (rect.width < 24 ||
-      rect.height < 24 ||
-      parseFloat(style.opacity) < 0.2);
+  // An <input>/<textarea> nested inside a detected rich/code/canvas editor is
+  // that editor's input / IME buffer, NOT its content surface. Writing to its
+  // `.value` makes `retained` true, but the editor reconciles its own model and
+  // the text never reliably lands — Monaco's `.inputarea` is the canonical case,
+  // and it is full-size + opaque so the old size<24 || opacity<0.2 heuristic
+  // missed it (type then falsely reported success). Treat ANY input/textarea
+  // inside a detected editor as the buffer and hand off to the CDP keyboard
+  // tools, which send real key events the editor actually consumes.
+  const looksLikeIMEBuffer = isInputOrTextarea && editorType !== null;
 
   const diagnostic = {
     editor: editorType,
@@ -315,19 +318,21 @@ export async function typeByIndex(
   if (looksLikeIMEBuffer) {
     return {
       success: false,
-      error: `Element [${index}] appears to be a hidden IME / keyboard capture buffer inside ${editorType} (size: ${diagnostic.elementSize}, opacity: ${diagnostic.opacity}). Text was written to its value property but will not appear in the visible document — this editor uses canvas or custom rendering and only accepts real keyboard events. Suggestion: fail the task and explain that programmatic typing into this editor is not supported via DOM.`,
+      error: `Element [${index}] is the input / IME buffer of ${editorType} (size: ${diagnostic.elementSize}, opacity: ${diagnostic.opacity}), not its content surface. Writing reached the buffer's value but ${editorType} won't render it — this editor only consumes real keyboard events, so 'type' can't work here. Switch to dispatch_keyboard_input to enter text (it sends isTrusted CDP key events). To REPLACE existing content first, press_key(key:"A", modifiers:["mod"]) to select-all, then dispatch_keyboard_input with the new text. Do not fail the task — these keyboard tools are the supported path for this editor.`,
     };
   }
 
   if (!retained) {
     const editorHint = editorType ? ` (editor: ${editorType})` : "";
-    const canvasHint =
-      editorType === "Feishu Docs" || editorType === "Google Docs"
-        ? " This editor likely renders text on a canvas and cannot accept programmatic DOM input — only real keyboard events would work."
-        : " Rich-text editors often reject programmatic insertion; consider asking the user to type manually, or use a different approach.";
+    // type (DOM injection) lost the text. For known editors this almost always
+    // means the editor only accepts real keyboard events — route to the CDP
+    // keyboard tools rather than giving up (see Keyboard Simulation guidance).
+    const recoveryHint = editorType
+      ? ` ${editorType} only consumes real keyboard events — switch to dispatch_keyboard_input to type (to replace existing content, press_key(key:"A", modifiers:["mod"]) to select-all first, then dispatch_keyboard_input).`
+      : " If this is a rich-text or code editor, try dispatch_keyboard_input (sends real CDP key events) instead of type.";
     return {
       success: false,
-      error: `Typed into element [${index}] but the text was not retained${editorHint}. Strategies tried: ${strategies.join(", ")}.${canvasHint}`,
+      error: `Typed into element [${index}] but the text was not retained${editorHint}. Strategies tried: ${strategies.join(", ")}.${recoveryHint}`,
     };
   }
 
