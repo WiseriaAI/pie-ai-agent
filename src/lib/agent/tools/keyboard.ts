@@ -91,7 +91,7 @@ const MODIFIER_SHIFT = MODIFIER_BITS.shift;
 // resolve it here. Cached process-wide (the OS doesn't change); falls back to
 // Ctrl when getPlatformInfo is unavailable (covers Win/Linux, the majority).
 let cachedIsMac: boolean | null = null;
-async function resolveModBit(): Promise<number> {
+async function isMacPlatform(): Promise<boolean> {
   if (cachedIsMac === null) {
     try {
       const info = await chrome.runtime.getPlatformInfo();
@@ -100,7 +100,44 @@ async function resolveModBit(): Promise<number> {
       cachedIsMac = false;
     }
   }
-  return cachedIsMac ? MODIFIER_BITS.meta : MODIFIER_BITS.ctrl;
+  return cachedIsMac;
+}
+async function resolveModBit(): Promise<number> {
+  return (await isMacPlatform()) ? MODIFIER_BITS.meta : MODIFIER_BITS.ctrl;
+}
+
+// macOS routes editing shortcuts (Cmd+A/C/V/X/Z) through the Cocoa text system
+// as named editing commands, NOT through the keydown default action. CDP
+// bypasses that layer: a synthetic Cmd+A sets event.metaKey but never runs
+// native select-all, so on a plain <input>/<textarea> nothing gets selected
+// (the #123 select-all-then-overwrite path silently appended instead). We pass
+// the command explicitly via Input.dispatchKeyEvent.commands so native editable
+// targets respond. Blink runs the command only when the page doesn't
+// preventDefault, so editors that handle the chord in JS (Monaco / CodeMirror)
+// are unaffected — they preventDefault and run their own selectAll.
+//
+// macOS only: on Win/Linux, Blink already maps Ctrl+<key> → command from the
+// key event, and emitting `commands` there would double-fire undo/redo/cut/paste.
+// Ref: Chromium Input.dispatchKeyEvent `commands`; Playwright macEditingCommands.
+const MAC_EDITING_COMMANDS: Record<string, string> = {
+  A: "selectAll",
+  C: "copy",
+  V: "paste",
+  X: "cut",
+  Y: "redo",
+};
+function macEditingCommands(keyName: string, modBits: number): string[] {
+  // The mac editing accelerator is Cmd (meta) alone. Ctrl/Alt+key are
+  // different bindings (e.g. Ctrl+A = move-to-line-start), so don't map them.
+  const metaOnly =
+    (modBits & MODIFIER_BITS.meta) !== 0 &&
+    (modBits & (MODIFIER_BITS.ctrl | MODIFIER_BITS.alt)) === 0;
+  if (!metaOnly) return [];
+  const shift = (modBits & MODIFIER_BITS.shift) !== 0;
+  if (keyName === "Z") return [shift ? "redo" : "undo"];
+  if (shift) return []; // Cmd+Shift+<A/C/V/X> aren't editing commands
+  const cmd = MAC_EDITING_COMMANDS[keyName];
+  return cmd ? [cmd] : [];
 }
 
 /** Test-only: clear the cached platform so `mod` re-resolves. The cache is
@@ -141,6 +178,7 @@ async function sendKeyPress(
   session: CdpSession,
   keyName: string,
   modifiers = 0,
+  commands: string[] = [],
 ): Promise<void> {
   const mapping = KEY_MAP[keyName];
   if (!mapping) throw new Error(`No mapping for key '${keyName}'`);
@@ -151,10 +189,14 @@ async function sendKeyPress(
     nativeVirtualKeyCode: mapping.windowsVirtualKeyCode,
   };
   if (modifiers !== 0) baseParams.modifiers = modifiers;
-  await session.send("Input.dispatchKeyEvent", {
+  const keyDownParams: Record<string, unknown> = {
     type: "keyDown",
     ...baseParams,
-  });
+  };
+  // Editing commands ride on the keyDown only (Blink processes them there);
+  // repeating on keyUp would risk a double-fire.
+  if (commands.length > 0) keyDownParams.commands = commands;
+  await session.send("Input.dispatchKeyEvent", keyDownParams);
   await session.send("Input.dispatchKeyEvent", {
     type: "keyUp",
     ...baseParams,
@@ -442,7 +484,7 @@ export function buildKeyboardTools(deps: KeyboardToolDeps): Tool[] {
     },
     {
       name: "press_key",
-      description: `Press a control key, optionally with modifiers, via simulated real keyboard (CDP). Use for navigation and editor chords (e.g. select-all before overwriting, undo). Activates Chrome's debugger (yellow bar appears). Allowed keys: ${Object.keys(KEY_MAP).join(", ")}. Note: CDP cannot inject clipboard contents, so mod+V only pastes if the clipboard already holds the target text — use set_editor_value or dispatch_keyboard_input for bulk text.`,
+      description: `Press a control key, optionally with modifiers, via simulated real keyboard (CDP). Use for navigation (Escape/Tab/arrows) and editor shortcuts. For shortcuts ALWAYS pass modifiers:["mod"] — 'mod' is the OS accelerator (Cmd on macOS, Ctrl elsewhere); never pass "ctrl"/"meta" directly, because on macOS ctrl+A does NOT select-all. Recipes: select-all = key:"A" modifiers:["mod"]; undo = key:"Z" modifiers:["mod"]; redo = key:"Z" modifiers:["mod","shift"]. To replace an editor's content: select-all (mod+A), then ONE dispatch_keyboard_input with the new text (it overwrites the selection). Activates Chrome's debugger (yellow bar appears). Allowed keys: ${Object.keys(KEY_MAP).join(", ")}. CDP cannot inject clipboard contents, so mod+V only pastes if the clipboard already holds the target text.`,
       parameters: {
         type: "object",
         properties: {
@@ -458,7 +500,7 @@ export function buildKeyboardTools(deps: KeyboardToolDeps): Tool[] {
               enum: ["mod", "ctrl", "shift", "alt", "meta"],
             },
             description:
-              "Optional modifier keys held during the press. Prefer 'mod' (the platform primary accelerator: Cmd on macOS, Ctrl elsewhere) for select-all/copy/undo so it works cross-platform.",
+              "Modifier keys held during the press. For editor shortcuts ALWAYS use ['mod'] — it resolves to the OS accelerator (Cmd on macOS, Ctrl elsewhere). Do NOT pass 'ctrl' or 'meta' directly for shortcuts (on macOS ctrl+A is not select-all). Add 'shift' for redo: ['mod','shift'].",
           },
         },
         required: ["key"],
@@ -523,8 +565,13 @@ export function buildKeyboardTools(deps: KeyboardToolDeps): Tool[] {
           // chrome.tabs.get round-trip per press). Modifiers ride on the
           // key event's `modifiers` field — editors read event.ctrlKey/
           // metaKey to recognize the chord, so no separate modifier
-          // keyDown/keyUp is needed.
-          await sendKeyPress(session, a.key, mods.bits);
+          // keyDown/keyUp is needed. On macOS the modifiers field alone
+          // doesn't run native editing commands (select-all etc.), so we
+          // also attach `commands` for Cmd-based chords (see macEditingCommands).
+          const commands = (await isMacPlatform())
+            ? macEditingCommands(a.key, mods.bits)
+            : [];
+          await sendKeyPress(session, a.key, mods.bits, commands);
         } catch (e) {
           return {
             success: false,

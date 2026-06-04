@@ -225,6 +225,65 @@ describe("press_key — modifiers (#123)", () => {
     expect(keyDowns()[0].params?.modifiers).toBe(CTRL | SHIFT_MODIFIER);
   });
 
+  function keyUps(): SendCall[] {
+    return acquired.calls.filter(
+      (c) => c.method === "Input.dispatchKeyEvent" && c.params?.type === "keyUp",
+    );
+  }
+
+  it("macOS: mod+A attaches the selectAll editing command to keyDown only", async () => {
+    // mac is the default platform in beforeEach. macOS routes Cmd+A through
+    // the Cocoa text system as a named editing command; the modifiers bit
+    // alone does not run native select-all, so we must pass `commands`.
+    const tool = getPressKeyTool();
+    const result = (await tool.handler(
+      { key: "A", modifiers: ["mod"] },
+      ctx(),
+    )) as ActionResult;
+
+    expect(result.success).toBe(true);
+    expect(keyDowns()[0].params?.commands).toEqual(["selectAll"]);
+    // The command rides on keyDown only — keyUp must not repeat it.
+    expect(keyUps()[0].params?.commands).toBeUndefined();
+  });
+
+  it("macOS: mod+Z → undo, mod+shift+Z → redo", async () => {
+    const tool = getPressKeyTool();
+    await tool.handler({ key: "Z", modifiers: ["mod"] }, ctx());
+    await tool.handler({ key: "Z", modifiers: ["mod", "shift"] }, ctx());
+
+    const downs = keyDowns();
+    expect(downs[0].params?.commands).toEqual(["undo"]);
+    expect(downs[1].params?.commands).toEqual(["redo"]);
+  });
+
+  it("macOS: mod+C/V/X map to copy/paste/cut", async () => {
+    const tool = getPressKeyTool();
+    await tool.handler({ key: "C", modifiers: ["mod"] }, ctx());
+    await tool.handler({ key: "V", modifiers: ["mod"] }, ctx());
+    await tool.handler({ key: "X", modifiers: ["mod"] }, ctx());
+
+    const downs = keyDowns();
+    expect(downs[0].params?.commands).toEqual(["copy"]);
+    expect(downs[1].params?.commands).toEqual(["paste"]);
+    expect(downs[2].params?.commands).toEqual(["cut"]);
+  });
+
+  it("non-mac: no editing commands attached (Blink handles Ctrl chords natively)", async () => {
+    chromeMock.runtime.getPlatformInfo.mockResolvedValue({ os: "win" });
+    const tool = getPressKeyTool();
+    await tool.handler({ key: "A", modifiers: ["mod"] }, ctx());
+
+    expect(keyDowns()[0].params?.commands).toBeUndefined();
+  });
+
+  it("macOS: ctrl+A attaches no editing command (Cmd, not Ctrl, is the mac accelerator)", async () => {
+    const tool = getPressKeyTool();
+    await tool.handler({ key: "A", modifiers: ["ctrl"] }, ctx());
+
+    expect(keyDowns()[0].params?.commands).toBeUndefined();
+  });
+
   it("rejects an unknown modifier without attaching CDP", async () => {
     const tool = getPressKeyTool();
     const result = (await tool.handler(
