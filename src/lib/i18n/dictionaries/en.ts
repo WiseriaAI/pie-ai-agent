@@ -47,6 +47,12 @@ export const enDict = {
       optionEn: "English",
       optionZhCN: "中文 (Simplified Chinese)",
     },
+    feedback: {
+      sectionTitle: "FEEDBACK",
+      githubButton: "Report on GitHub",
+      githubHint: "Opens a prefilled issue. To report a problem about a specific task, open that chat and type /report-issue.",
+      emailButton: "Email feedback",
+    },
     myConfigs: {
       title: "MY CONFIGS",
       countSuffix: "configs",
