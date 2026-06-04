@@ -1,0 +1,9 @@
+{
+  "taskId": "13",
+  "goal": "Get the total number of reviews that our store received so far that mention term \"decent\"",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "info-seeking",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

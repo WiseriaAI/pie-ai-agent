@@ -1,6 +1,6 @@
 {
-  "taskId": "0",
-  "goal": "Get the top-1 best-selling product name(s) in 2022",
+  "taskId": "112",
+  "goal": "Return the customer nickname(s) who gave a rating of 3 stars or below for Circe fleece",
   "startUrl": "http://localhost:7780/admin",
   "evalType": "info-seeking",
   "webarenaHosts": [

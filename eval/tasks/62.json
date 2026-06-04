@@ -1,6 +1,6 @@
 {
-  "taskId": "0",
-  "goal": "Get the top-1 best-selling product name(s) in 2022",
+  "taskId": "62",
+  "goal": "Get customer email(s) who completed the most number of orders in the entire history",
   "startUrl": "http://localhost:7780/admin",
   "evalType": "info-seeking",
   "webarenaHosts": [

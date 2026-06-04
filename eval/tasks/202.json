@@ -1,0 +1,9 @@
+{
+  "taskId": "202",
+  "goal": "Get the date of the most recent cancelled order.Return the date in YYYY-MM-DD format or null if not available, without any additional details",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "info-seeking",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

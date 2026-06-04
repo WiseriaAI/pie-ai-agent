@@ -1,6 +1,6 @@
 {
-  "taskId": "0",
-  "goal": "Get the top-1 best-selling product name(s) in 2022",
+  "taskId": "130",
+  "goal": "What's the total number of items sold in the most recent 5 complete orders?",
   "startUrl": "http://localhost:7780/admin",
   "evalType": "info-seeking",
   "webarenaHosts": [

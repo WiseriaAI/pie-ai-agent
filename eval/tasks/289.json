@@ -1,0 +1,9 @@
+{
+  "taskId": "289",
+  "goal": "Get the email address, name, phone number of the customer who has the most cancellations in the history. Return a list of objects with keys \"name\", \"email\", and \"phone_number\".",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "info-seeking",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

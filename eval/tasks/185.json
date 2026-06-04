@@ -1,6 +1,6 @@
 {
-  "taskId": "0",
-  "goal": "Get the top-1 best-selling product name(s) in 2022",
+  "taskId": "185",
+  "goal": "Give me the material of the products that have 3 units left",
   "startUrl": "http://localhost:7780/admin",
   "evalType": "info-seeking",
   "webarenaHosts": [

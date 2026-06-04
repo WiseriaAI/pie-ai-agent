@@ -1,6 +1,6 @@
 {
-  "taskId": "0",
-  "goal": "Get the top-1 best-selling product name(s) in 2022",
+  "taskId": "4",
+  "goal": "Get the top-3 best-selling product name(s) in Jan 2023",
   "startUrl": "http://localhost:7780/admin",
   "evalType": "info-seeking",
   "webarenaHosts": [

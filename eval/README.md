@@ -128,6 +128,50 @@ prints the final `score.json` to stdout.
 
 ---
 
+## Run a multi-task baseline
+
+A single task is statistical noise. To get a measurable pass rate, generate a
+pool of task files from the dataset, run a batch, and aggregate.
+
+**1. Generate task files** from the bundled webarena-verified dataset (`intent`
+is used verbatim as the goal; one `eval/tasks/<id>.json` per task):
+
+```bash
+# all retrieve (info-seeking) tasks for shopping_admin — 86 files
+eval/.venv/bin/python eval/gen-tasks.py --site shopping_admin --type retrieve
+# or all types for a site (retrieve + navigate + mutate)
+eval/.venv/bin/python eval/gen-tasks.py --site shopping_admin
+```
+
+**2. Run a batch** (fault-tolerant: one task failing/timing-out does NOT abort
+the batch; each run dir is recorded and the batch ends with an aggregate report):
+
+```bash
+export PIE_EVAL_PROVIDER=... PIE_EVAL_MODEL=... PIE_EVAL_API_KEY=...
+export PIE_EVAL_ENVIRONMENTS='{"shopping_admin":{"urls":["http://localhost:7780/admin"]}}'
+rm -rf eval/runs/baseline        # for a clean baseline (the batch appends otherwise)
+eval/run-batch.sh eval/runs/baseline eval/tasks/0.json eval/tasks/11.json eval/tasks/41.json
+```
+
+**3. Aggregate** (re-runnable standalone; globs every scored run dir under the
+root, prints a per-task table + pass rate, writes `_summary.json`). The table
+shows the agent answer vs the dataset's ground-truth expected value inline, so
+failure modes are visible at a glance:
+
+```bash
+eval/.venv/bin/python eval/aggregate.py eval/runs/baseline
+```
+
+> **Answer format ↔ scorer coercion.** The evaluator compares `retrieved_data`
+> **element-wise** (set/list equality). The agent is instructed (eval bridge) to
+> reply with a **bare value** for single answers and a **JSON array** for
+> multi-value / per-item answers; the scorer's `coerce_retrieved_data`
+> (`score.py`) parses that JSON so multi-value answers match. A comma-joined
+> string is wrapped as ONE element and will NOT match a multi-value expected set
+> — this is why the JSON-array directive matters.
+
+---
+
 ## Task file format
 
 Files live in `eval/tasks/`. Shape:
@@ -244,20 +288,43 @@ Four harness-layer fixes (each with a regression test in
    keyed by the eval `sessionId`, so the pinned-tab registry works: without it,
    `open_url`'s `appendPinnedTab` is a silent no-op and `focus_tab` can never
    operate on a newly opened tab.
-4. **Value-only answer directive** — the task prompt instructs a bare-value final
-   answer. The scorer's `AgentResponseEvaluator` compares the normalized answer
-   for **set equality** against the expected value (no substring/containment), so
-   a verbose sentence never matches even when it contains the right value.
+4. **Value-only / JSON-array answer directive** — the task prompt instructs a
+   bare value for single answers and a **JSON array** for multi-value / per-item
+   answers. The scorer's `AgentResponseEvaluator` compares the normalized answer
+   for **element-wise set equality** (no substring/containment), so a verbose
+   sentence never matches, and a comma-joined multi-value string is wrapped as one
+   element and never matches a multi-value expected set.
+5. **Scorer answer coercion** (`coerce_retrieved_data` in `score.py`, covered by
+   `eval/scorer/test_score.py`) — the agent's answer is parsed **JSON-first**: a
+   JSON array → a list (matched element-wise), a JSON object/scalar → a
+   one-element list, plain text → a single bare value. The v1 `[answer]` wrapping
+   put the *entire* multi-value/structured answer into one string element, so
+   every such retrieve task was unmatchable even when the content was correct.
 
-With these, the agent can complete the Bestsellers report form interaction
-(`select` year → `type` 2022 → `click` "Show Report") and answer with the bare
-value — capabilities that were physically broken before.
+### Baseline (the methodology fix: measure before tuning)
 
-**Remaining gap is agent effectiveness, not harness.** Task 0 still scores 0.0 due
-to model-side browsing variance: across runs the agent has reached the correct
-2022-filtered view and answered `Quest Lumaflex™ Band` (correct value, but once in
-verbose form), and on another run second-guessed itself into a day-granularity
-report and answered the wrong product. Raising the score from here is a separate
-prompt/agent-tuning topic. Per-run `agent-trace.json` (full raw LLM IR: reasoning
-+ tool calls + observations) is written for exactly this kind of step-by-step
-diagnosis.
+A single task is statistical noise. `eval/gen-tasks.py` + `eval/run-batch.sh` +
+`eval/aggregate.py` turn the dataset into a measurable pass rate. On a 19-task
+shopping_admin retrieve baseline (one task per intent template, model
+`deepseek/deepseek-v4-pro`):
+
+| Stage | Change | Pass rate |
+|-------|--------|-----------|
+| Initial | harness fixes 1–4 only | 11/19 = 57.9% |
+| + coercion (fix 5) | parse the agent's JSON-array answers | 15/19 = 78.9% |
+| + JSON-array directive (fix 4) | multi-value answers emitted parseably | 16/19 = 84.2% |
+| + re-run variance | a "couldn't find email" task succeeded on retry | **17/19 = 89.5%** |
+
+Most of the lift was **harness/scorer-layer**, on the *same* model runs: fixes 4
+and 5 recovered five tasks whose content was already correct but whose format the
+scorer couldn't match. This is the "improve harness capability" goal — measure
+first, then the recovered tasks reveal that the bridge, not the model, was the
+bottleneck.
+
+**Remaining failures are genuine agent effectiveness** (2/19): an aggregation
+task that picked the wrong "most orders" customer (62), and a grid-filter task
+that returned an empty answer (183). The 243 flip (prose-giveup → correct email
+on retry) shows some failures are run-to-run variance, not deterministic — a
+larger sample or self-consistency voting would smooth that. Per-run
+`agent-trace.json` (full raw LLM IR: reasoning + tool calls + observations) is
+written for exactly this kind of step-by-step diagnosis.

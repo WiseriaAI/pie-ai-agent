@@ -1,0 +1,9 @@
+{
+  "taskId": "210",
+  "goal": "Get the customer name and email with phone number 2065555555. Return a list of objects with keys \"name\" and \"email\".",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "info-seeking",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

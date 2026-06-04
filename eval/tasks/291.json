@@ -1,0 +1,9 @@
+{
+  "taskId": "291",
+  "goal": "Get the total spend on products in the most recent cancelled orders excluding shipping and handling of the customer who has the most cancellations in the historyReturn the value as a number (e.g., 10.99) only, without any additional details",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "info-seeking",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

@@ -101,15 +101,20 @@ function makeBridge() {
       await setSessionAgent(sessionId, agentState);
 
       // WebArena's scorer normalizes the answer and compares it for SET EQUALITY
-      // against the bare expected value (no substring/containment) — a verbose
-      // sentence never matches even when it contains the right value. So instruct
-      // a value-only answer, mirroring WebArena's official `stop [answer]` contract.
+      // against the bare expected value(s) (no substring/containment) — a verbose
+      // sentence never matches, and a multi-value answer joined into one comma
+      // string is wrapped as ONE element by the scorer and never matches a
+      // multi-value expected set. So: bare value for singles, JSON array for
+      // multi-value (the scorer's coerce_retrieved_data parses it element-wise).
       const task =
         `${opts.goal}\n\n` +
         "When the task is complete, call the `done` tool with your final answer as its `result`. " +
-        "The `result` must contain ONLY the precise value(s) the task asks for — a name, number, " +
-        "short phrase, or comma-separated list — with no explanation, no units, no surrounding " +
-        "sentence, and without restating the question. For example, reply `42`, not `The total is 42 items.`";
+        "Provide ONLY the precise value(s) the task asks for, with no explanation, no units, no " +
+        "surrounding sentence, and without restating the question. " +
+        "For a single value, reply with the bare value — e.g. `42`, not `The total is 42 items.` " +
+        "For multiple values, or values with per-item fields, reply with a JSON array: a list of " +
+        'strings (e.g. `["Hollister", "Joust Bag"]`), or a list of objects with exactly the ' +
+        'requested fields (e.g. `[{"month": "May", "count": 8}]`).';
 
       void runAgentLoop({
         port: makeMockPort(sessionId, (m) => onMessage(sessionId, m)),

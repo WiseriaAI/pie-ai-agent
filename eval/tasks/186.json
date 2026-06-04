@@ -1,0 +1,9 @@
+{
+  "taskId": "186",
+  "goal": "Give me the product names and the sizes of the products that have 2-3 units left. Return a list of objects with keys \"name\" and \"size\".",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "info-seeking",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

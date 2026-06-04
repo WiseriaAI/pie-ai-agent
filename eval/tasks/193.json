@@ -1,0 +1,9 @@
+{
+  "taskId": "193",
+  "goal": "Get the total payment amount of the last 2 completed orders. Return the value as a number (e.g., 10.99) only, without any additional details.",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "info-seeking",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

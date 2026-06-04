@@ -1,0 +1,9 @@
+{
+  "taskId": "203",
+  "goal": "Get the purchase date and order id of the most recent pending order.Return a list of objects with keys \"purchase_date\" (YYYY-MM-DD format or null if not available) and \"order_id\", without any additional details",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "info-seeking",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

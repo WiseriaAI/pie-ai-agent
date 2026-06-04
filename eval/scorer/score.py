@@ -27,6 +27,33 @@ import sys
 from pathlib import Path
 
 
+def coerce_retrieved_data(answer: str) -> list:
+    """Coerce the agent's free-form answer string into a retrieved_data LIST.
+
+    The webarena-verified AgentResponseEvaluator compares retrieved_data
+    element-wise (set/list equality), so a multi-value or structured answer must
+    arrive as a list — not as the whole answer wrapped into one string element
+    (the v1 `[answer]` behaviour, which made every multi-value/structured retrieve
+    task unmatchable even when the content was correct).
+
+    JSON-first: a JSON array maps straight to a list; a JSON object or scalar maps
+    to a one-element list. Non-JSON text is treated as a single bare value. We do
+    NOT comma-split plain text — splitting is semantically unsafe (a single value
+    may legitimately contain a comma); instead the agent is instructed (in the
+    eval bridge's answer directive) to emit a JSON array for multi-value answers.
+    """
+    a = (answer or "").strip()
+    if not a:
+        return []
+    try:
+        parsed = json.loads(a)
+    except (json.JSONDecodeError, ValueError):
+        return [a]
+    if isinstance(parsed, list):
+        return parsed
+    return [parsed]
+
+
 def main(run_dir: Path) -> int:
     """Score a run directory. Always writes <run_dir>/score.json.
 
@@ -112,11 +139,11 @@ def main(run_dir: Path) -> int:
             status = "SUCCESS" if answer else "FAILURE"
 
         if task_type == "retrieve":
-            # v1: wrap single answer string in a one-element list.
-            # NOTE: multi-value and numeric retrieve tasks may need richer coercion
-            # (e.g. splitting on commas, casting to int/float) guided by the task's
-            # results_schema — this is out of scope for v1.
-            retrieved_data = [answer] if answer else []
+            # Coerce the answer into a proper list (JSON-first; see
+            # coerce_retrieved_data). A multi-value / structured answer the agent
+            # emits as a JSON array is parsed element-wise so the evaluator can
+            # match it; a bare value stays a one-element list.
+            retrieved_data = coerce_retrieved_data(answer or "")
             if not retrieved_data:
                 status = "FAILURE"
         else:
