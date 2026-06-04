@@ -21,16 +21,14 @@ import { getProviderMeta, resolveProviderMeta } from "@/lib/model-router/provide
 import { fetchOpenRouterModels } from "@/lib/openrouter-models-fetch";
 import { isCdpInputEnabled, setCdpInputEnabled } from "@/lib/cdp-input-enabled";
 import {
-  listCustomProviders, deleteCustomProvider, getInstancesUsingCustomProvider,
   addCustomProviderModel, updateCustomProviderModel, removeCustomProviderModel,
-  type StoredCustomProvider, CUSTOM_PREFIX, providerRefToId,
+  CUSTOM_PREFIX, providerRefToId,
 } from "@/lib/custom-providers";
 import SkillsList from "./SkillsList";
 import SearchProviderSection from "./SearchProviderSection";
 import InstanceForm, { type InstanceFormPayload } from "./InstanceForm";
 import InstancesList from "./InstancesList";
 import NewConfigWizard from "./NewConfigWizard";
-import CustomProviderForm from "./CustomProviderForm";
 import { useT, setLocale, type LocaleSetting } from "@/lib/i18n";
 
 interface Props {
@@ -53,10 +51,6 @@ export default function Settings({ onBack, onRunSkill }: Props) {
   const [providerPools, setProviderPools] = useState<Record<string, string[]>>({});
   // Per-provider custom model meta (vision, maxContextTokens) keyed by provider then modelId.
   const [providerMetas, setProviderMetas] = useState<Record<string, Record<string, StoredCustomModelMeta>>>({});
-  const [customProviders, setCustomProviders] = useState<StoredCustomProvider[]>([]);
-  const [customProviderCounts, setCustomProviderCounts] = useState<Record<string, number>>({});
-  const [showCustomProviderForm, setShowCustomProviderForm] = useState(false);
-  const [editingCustomProvider, setEditingCustomProvider] = useState<StoredCustomProvider | null>(null);
 
   const reload = useCallback(async () => {
     const list = await listInstances();
@@ -72,15 +66,6 @@ export default function Settings({ onBack, onRunSkill }: Props) {
       builtinProviders.map((p) => getProviderCustomModelMetas(p as BuiltinProvider).then((v) => [p, v] as const)),
     );
     setProviderMetas(Object.fromEntries(metas));
-    // Reload custom providers and their instance counts
-    const cpList = await listCustomProviders();
-    setCustomProviders(cpList);
-    const counts: Record<string, number> = {};
-    for (const cp of cpList) {
-      const refs = await getInstancesUsingCustomProvider(cp.id);
-      counts[cp.id] = refs.length;
-    }
-    setCustomProviderCounts(counts);
   }, []);
 
   useEffect(() => {
@@ -140,30 +125,6 @@ export default function Settings({ onBack, onRunSkill }: Props) {
     } catch (e) {
       setTestResult((p) => ({ ...p, [key]: { ok: false, message: e instanceof Error ? e.message : "Failed" } }));
     }
-  }
-
-  if (showCustomProviderForm) {
-    return (
-      <div className="flex h-full flex-col">
-        <CustomProviderForm
-          existing={editingCustomProvider}
-          onSaved={() => {
-            setShowCustomProviderForm(false);
-            setEditingCustomProvider(null);
-            void reload();
-          }}
-          onBack={() => {
-            setShowCustomProviderForm(false);
-            setEditingCustomProvider(null);
-          }}
-          onDeleted={() => {
-            setShowCustomProviderForm(false);
-            setEditingCustomProvider(null);
-            void reload();
-          }}
-        />
-      </div>
-    );
   }
 
   return (
@@ -331,52 +292,6 @@ export default function Settings({ onBack, onRunSkill }: Props) {
                 </button>
               )}
             </section>
-
-            {customProviders.length > 0 && (
-              <section className="flex flex-col gap-3.5">
-                <div className="flex items-baseline justify-between">
-                  <span className="caps text-fg-3">{t("settings.customProviders.title")}</span>
-                  <span className="font-mono text-[10px] text-fg-3">{customProviders.length} {t("settings.customProviders.countSuffix")}</span>
-                </div>
-                <div className="flex flex-col gap-px overflow-hidden rounded-lg border border-line bg-line">
-                  {customProviders.map((cp) => (
-                    <div key={cp.id} className="flex items-center gap-3 bg-surface px-3.5 py-3">
-                      <div className="flex-1">
-                        <div className="text-[13px] font-medium text-fg-1">{cp.name}</div>
-                        <div className="font-mono text-[11px] text-fg-2">
-                          {cp.baseUrl} · {cp.models.length} {t("settings.customProviders.modelsLabel")}
-                          {customProviderCounts[cp.id] > 0 && (
-                            <span> · {customProviderCounts[cp.id]} {customProviderCounts[cp.id] > 1 ? t("settings.customProviders.instancesLabel") : t("settings.customProviders.instanceLabel")}</span>
-                          )}
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => {
-                          setEditingCustomProvider(cp);
-                          setShowCustomProviderForm(true);
-                        }}
-                        className="rounded border border-line bg-transparent px-2.5 py-1 text-[11px] text-fg-2 hover:text-fg-1"
-                      >
-                        {t("common.edit")}
-                      </button>
-                      <button
-                        onClick={async () => {
-                          try {
-                            await deleteCustomProvider(cp.id);
-                            await reload();
-                          } catch (e) {
-                            alert(e instanceof Error ? e.message : "Failed to delete");
-                          }
-                        }}
-                        className="rounded border border-warning-line bg-transparent px-2.5 py-1 text-[11px] text-warning hover:bg-warning-tint"
-                      >
-                        {t("common.delete")}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
 
             <CdpInputSection
               state={cdpInput}

@@ -17,14 +17,21 @@ import {
   addCustomProviderModel,
   updateCustomProviderModel,
   removeCustomProviderModel,
+  saveCustomProvider,
+  updateCustomProvider,
+  deleteCustomProvider,
+  getInstancesUsingCustomProvider,
   providerRefToId,
   type StoredCustomProvider,
   CUSTOM_PREFIX,
 } from "@/lib/custom-providers";
+import { DEFAULT_CUSTOM_MODEL_MAX_CONTEXT } from "@/lib/provider-custom-model-meta";
 import { useT, providerDisplayName } from "@/lib/i18n";
 import { fetchOpenRouterModels } from "@/lib/openrouter-models-fetch";
+import { fetchOpenAICompatModels } from "@/lib/openai-compat-models-fetch";
 import InstanceForm, { type InstanceFormPayload } from "./InstanceForm";
-import CustomProviderForm from "./CustomProviderForm";
+import ProviderDropdown from "./ProviderDropdown";
+import CustomProviderFields from "./CustomProviderFields";
 
 interface Props {
   onCreate: (provider: ProviderRef, payload: InstanceFormPayload) => void;
@@ -32,23 +39,37 @@ interface Props {
   onTest: (provider: ProviderRef, payload: InstanceFormPayload) => void;
 }
 
+/** Sentinel ref for a not-yet-saved custom provider being authored in the form. */
+const DRAFT_CUSTOM_REF = "custom:__draft__";
+
 export default function NewConfigWizard(props: Props) {
   const t = useT();
-  const [step, setStep] = useState<1 | 2>(1);
   const [provider, setProvider] = useState<ProviderRef | null>(null);
   const [customProviders, setCustomProviders] = useState<StoredCustomProvider[]>([]);
-  const [showCustomForm, setShowCustomForm] = useState(false);
   // Provider-level custom models pool — pre-populates the form's dropdown
   // so user sees previously-typed custom ids carry across instances.
   const [pool, setPool] = useState<string[]>([]);
   // Per-model meta (vision, maxContextTokens) for custom models in this wizard session.
   const [metas, setMetas] = useState<Record<string, StoredCustomModelMeta>>({});
   // Lazy-fetched OpenRouter model list, scoped to this wizard session.
-  // Lives here (not in InstanceForm) so the model list persists even when
-  // the user clicks ← provider and navigates back to step 2.
+  // Lives here (not in InstanceForm) so the model list persists across
+  // dropdown re-selects.
   const [fetchedModels, setFetchedModels] = useState<ModelMeta[] | undefined>(undefined);
   const [fetchedAt, setFetchedAt] = useState<number | undefined>(undefined);
   const [isFetching, setIsFetching] = useState(false);
+
+  // --- Custom-provider authoring scaffold (logic lands in Task 5) ---
+  const [customMode, setCustomMode] = useState<"none" | "new" | "edit">("none");
+  const [draftName, setDraftName] = useState("");
+  const [draftBaseUrl, setDraftBaseUrl] = useState("");
+  const [draftModels, setDraftModels] = useState<string[]>([]);
+  const [draftMetas, setDraftMetas] = useState<Record<string, StoredCustomModelMeta>>({});
+  const [testing, setTesting] = useState(false);
+  const [testError, setTestError] = useState<string | null>(null);
+  const [customFetched, setCustomFetched] = useState<ModelMeta[]>([]);
+  // Edit mode: how many instances reference the provider being edited.
+  // Drives the "shared by N" notice + delete-disabled gating.
+  const [dependentCount, setDependentCount] = useState(0);
 
   useEffect(() => {
     listCustomProviders().then(setCustomProviders).catch(() => setCustomProviders([]));
@@ -56,6 +77,14 @@ export default function NewConfigWizard(props: Props) {
 
   useEffect(() => {
     if (!provider) return;
+    // The draft custom ref has no persisted models/metas yet.
+    if (provider === DRAFT_CUSTOM_REF) {
+      setPool([]);
+      setMetas({});
+      setFetchedModels(undefined);
+      setFetchedAt(undefined);
+      return;
+    }
     getProviderCustomModels(provider).then(setPool).catch(() => setPool([]));
     // pcmm metas are builtin-scoped; custom providers have none — clear stale builtin metas.
     if (provider.startsWith(CUSTOM_PREFIX)) {
@@ -92,203 +121,345 @@ export default function NewConfigWizard(props: Props) {
     [t],
   );
 
-  if (showCustomForm) {
-    return (
-      <CustomProviderForm
-        onSaved={(saved) => {
-          setShowCustomForm(false);
-          const ref: ProviderRef = `custom:${saved.id}`;
-          setProvider(ref);
-          setStep(2);
-          listCustomProviders().then(setCustomProviders).catch(() => {});
-        }}
-        onBack={() => setShowCustomForm(false)}
-      />
-    );
-  }
-
-  if (step === 1 || !provider) {
-    return (
-      <div className="flex flex-col gap-3 rounded-lg border border-line bg-canvas p-3.5">
-        <div className="flex items-center justify-between">
-          <div className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-3">{t("newConfigWizard.step1Title")}</div>
-        </div>
-        <div className="flex flex-col gap-1.5">
-          {sortedProviders.map((p) => (
-            <button
-              key={p.id}
-              onClick={() => { setProvider(p.id); setStep(2); }}
-              className="flex items-center gap-2 rounded border border-line px-3 py-2 text-left hover:bg-field"
-            >
-              <div className="h-1.5 w-1.5 rounded-full bg-fg-3" />
-              <span className="text-[13px] text-fg-1">{providerDisplayName(p, t)}</span>
-              <span className="ml-auto font-mono text-[10px] text-fg-3">{p.defaultBaseUrl.replace(/^https?:\/\//, "")}</span>
-            </button>
-          ))}
-        </div>
-
-        {customProviders.length > 0 && (
-          <div className="flex flex-col gap-1.5">
-            <span className="caps px-1 text-fg-3">{t("newConfigWizard.customProviders")}</span>
-            {customProviders.map((cp) => (
-              <button
-                key={cp.id}
-                onClick={() => { setProvider(`custom:${cp.id}`); setStep(2); }}
-                className="flex items-center gap-2 rounded border border-line px-3 py-2 text-left hover:bg-field"
-              >
-                <div className="h-1.5 w-1.5 rounded-full bg-fg-3" />
-                <span className="text-[13px] text-fg-1">{cp.name}</span>
-                <span className="ml-auto font-mono text-[10px] text-fg-3">{cp.baseUrl.replace(/^https?:\/\//, "")}</span>
-              </button>
-            ))}
-          </div>
-        )}
-
-        <button
-          onClick={() => setShowCustomForm(true)}
-          className="flex items-center gap-2 self-start rounded border border-dashed border-line bg-transparent px-3 py-2 text-[12px] text-accent hover:bg-field"
-        >
-          {t("newConfigWizard.newCustomProvider")}
-        </button>
-
-        <div className="flex pt-1">
-          <button
-            type="button"
-            onClick={props.onCancel}
-            className="rounded border border-line bg-transparent px-3 py-1.5 text-[11px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
-          >
-             {t("common.cancel")}
-          </button>
-        </div>
-      </div>
-    );
-  }
+  // Selecting a builtin (or existing custom) provider via the dropdown.
+  const handleSelect = (ref: ProviderRef) => {
+    setCustomMode("none");
+    setProvider(ref);
+  };
 
   // Resolve the display name synchronously from already-loaded state (registry
   // for builtins, customProviders for custom) so switching providers never
   // momentarily shows — or seeds the nickname with — the previously-selected
-  // provider's name. (`provider` is non-null here, past the step-1 guard.)
-  // pcmm callbacks are gated to builtin providers in InstanceForm, so this cast is safe.
+  // provider's name.
   const builtinProvider = provider as BuiltinProvider;
   // Non-null only for custom providers; routes model persistence to the entity.
-  const cpId = providerRefToId(provider);
-  const builtinMeta = provider.startsWith(CUSTOM_PREFIX)
-    ? undefined
-    : getProviderMeta(provider as BuiltinProvider);
-  const metaName = builtinMeta
-    ? providerDisplayName(builtinMeta, t)
-    : customProviders.find((c) => `${CUSTOM_PREFIX}${c.id}` === provider)?.name ?? provider;
+  const cpId = provider && provider !== DRAFT_CUSTOM_REF ? providerRefToId(provider) : null;
+  // True while authoring a not-yet-saved custom provider: model edits stay local.
+  const isDraft = provider === DRAFT_CUSTOM_REF;
+  const builtinMeta =
+    provider && !provider.startsWith(CUSTOM_PREFIX)
+      ? getProviderMeta(provider as BuiltinProvider)
+      : undefined;
+  const metaName =
+    provider === DRAFT_CUSTOM_REF
+      ? draftName || t("newConfigWizard.newCustomProvider")
+      : builtinMeta
+        ? providerDisplayName(builtinMeta, t)
+        : customProviders.find((c) => `${CUSTOM_PREFIX}${c.id}` === provider)?.name ?? provider ?? "";
+
+  // Test connection → fetch /v1/models for the draft/edited custom provider.
+  async function handleCustomTest() {
+    const url = draftBaseUrl.trim().replace(/\/+$/, "");
+    if (!/^https?:\/\//.test(url)) return;
+    setTesting(true);
+    setTestError(null);
+    try {
+      const list = await fetchOpenAICompatModels(url);
+      setCustomFetched(
+        list.map((m) => ({
+          id: m.id,
+          vision: m.vision,
+          tools: m.tools,
+          maxContextTokens: m.maxContextTokens,
+          displayName: m.displayName,
+        })),
+      );
+    } catch (e) {
+      setTestError(e instanceof Error ? e.message : "Connection failed");
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  // Atomic create / persist-on-save. For new custom: materialise the draft
+  // provider entity first, then call onCreate with its real ref. For edit:
+  // persist name/baseUrl edits before onCreate (model edits already persist
+  // immediately via the InstanceForm callbacks).
+  async function handleSubmit(payload: InstanceFormPayload) {
+    if (customMode === "new") {
+      const models = draftModels.map((id) => {
+        const m = draftMetas[id];
+        return {
+          id,
+          displayName: m?.displayName,
+          vision: m?.vision ?? false,
+          tools: true,
+          maxContextTokens: m?.maxContextTokens ?? DEFAULT_CUSTOM_MODEL_MAX_CONTEXT,
+        };
+      });
+      // Backfill the selected model. Picking a Test-Connection-fetched model
+      // only calls onChange (sets payload.model), never onAddCustom — so it's
+      // absent from draftModels. Without this, saveCustomProvider persists
+      // models:[] while the instance points to an unregistered id (orphaned on
+      // next edit). Prefer fetched meta when available; else a tools-capable
+      // default (custom models are always tools-capable in this codebase).
+      if (payload.model && !models.some((m) => m.id === payload.model)) {
+        const fetched = customFetched.find((m) => m.id === payload.model);
+        models.push(
+          fetched
+            ? {
+                id: fetched.id,
+                displayName: fetched.displayName,
+                vision: fetched.vision,
+                tools: true,
+                maxContextTokens: fetched.maxContextTokens,
+              }
+            : {
+                id: payload.model,
+                displayName: undefined,
+                vision: false,
+                tools: true,
+                maxContextTokens: DEFAULT_CUSTOM_MODEL_MAX_CONTEXT,
+              },
+        );
+      }
+      const newId = await saveCustomProvider({
+        name: draftName.trim(),
+        baseUrl: draftBaseUrl.trim(),
+        models,
+      });
+      props.onCreate(`${CUSTOM_PREFIX}${newId}`, payload);
+    } else if (customMode === "edit") {
+      const id = providerRefToId(provider!);
+      if (id) await updateCustomProvider(id, { name: draftName.trim(), baseUrl: draftBaseUrl.trim() });
+      props.onCreate(provider!, payload);
+    } else {
+      props.onCreate(provider!, payload);
+    }
+  }
+
+  // Dependency-checked delete. Blocks (alert) when instances reference the
+  // provider; otherwise removes it, refreshes the list, and resets selection
+  // when the deleted provider was the active one.
+  async function handleDeleteCustom(cp: StoredCustomProvider) {
+    const deps = await getInstancesUsingCustomProvider(cp.id);
+    if (deps.length > 0) {
+      window.alert(t("customProvider.inUseCannotDelete", { count: deps.length }));
+      return;
+    }
+    await deleteCustomProvider(cp.id);
+    setCustomProviders(await listCustomProviders());
+    if (provider === `${CUSTOM_PREFIX}${cp.id}`) {
+      setProvider(null);
+      setCustomMode("none");
+    }
+  }
+
   return (
-    <div className="rounded-lg border border-line bg-canvas">
-      <div className="border-b border-line px-3.5 py-2">
-        <div className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-3">{t("newConfigWizard.step2Title", { name: metaName })}</div>
-      </div>
-      <InstanceForm
-        mode="create"
-        provider={provider}
-        initialNickname={metaName}
-        initialCustomModels={pool}
-        customModelMetas={metas}
-        fetchedModels={fetchedModels}
-        fetchedAt={fetchedAt}
-        isFetching={isFetching}
-        saveLabel={t("newConfigWizard.create")}
-        onSave={(p) => props.onCreate(provider, p)}
-        onTest={(p) => props.onTest(provider, p)}
-        onAddCustomModel={async (id, meta) => {
-          if (cpId) {
-            await addCustomProviderModel(cpId, {
-              id,
-              displayName: meta.displayName,
-              vision: meta.vision,
-              tools: true,
-              maxContextTokens: meta.maxContextTokens,
-            });
-            setCustomProviders(await listCustomProviders());
-          } else {
-            await addProviderCustomModel(provider, id);
-            await setProviderCustomModelMeta(builtinProvider, id, meta);
-            setPool(await getProviderCustomModels(provider));
-            setMetas(await getProviderCustomModelMetas(builtinProvider));
-          }
+    <div className="flex flex-col gap-3 rounded-lg border border-line bg-canvas p-3.5">
+      <ProviderDropdown
+        value={provider}
+        builtinProviders={sortedProviders}
+        customProviders={customProviders}
+        onSelect={handleSelect}
+        onCreateCustom={() => {
+          setCustomMode("new");
+          setProvider(DRAFT_CUSTOM_REF);
+          setDraftName("");
+          setDraftBaseUrl("");
+          setDraftModels([]);
+          setDraftMetas({});
+          setCustomFetched([]);
+          setTestError(null);
         }}
-        onUpdateCustomModelMeta={async (id, meta) => {
-          if (cpId) {
-            await updateCustomProviderModel(cpId, id, {
-              id,
-              displayName: meta.displayName,
-              vision: meta.vision,
-              tools: true,
-              maxContextTokens: meta.maxContextTokens,
-            });
-            setCustomProviders(await listCustomProviders());
-          } else {
-            await setProviderCustomModelMeta(builtinProvider, id, meta);
-            setMetas(await getProviderCustomModelMetas(builtinProvider));
-          }
+        onEditCustom={(cp) => {
+          setCustomMode("edit");
+          setProvider(`${CUSTOM_PREFIX}${cp.id}`);
+          setDraftName(cp.name);
+          setDraftBaseUrl(cp.baseUrl);
+          // Reset new-draft model state so stale draft entries from a prior
+          // "+ New custom provider" attempt never leak into the edited provider.
+          setDraftModels([]);
+          setDraftMetas({});
+          setCustomFetched([]);
+          setTestError(null);
+          setDependentCount(0);
+          getInstancesUsingCustomProvider(cp.id)
+            .then((d) => setDependentCount(d.length))
+            .catch(() => setDependentCount(0));
         }}
-        onRemoveCustomModel={async (id) => {
-          if (cpId) {
-            await removeCustomProviderModel(cpId, id);
-            setCustomProviders(await listCustomProviders());
-          } else {
-            await removeProviderCustomModel(provider, id);
-            await removeProviderCustomModelMeta(builtinProvider, id);
-            setPool(await getProviderCustomModels(provider));
-            setMetas(await getProviderCustomModelMetas(builtinProvider));
+        onDeleteCustom={handleDeleteCustom}
+      />
+
+      {customMode === "new" && (
+        <CustomProviderFields
+          name={draftName}
+          baseUrl={draftBaseUrl}
+          onNameChange={setDraftName}
+          onBaseUrlChange={setDraftBaseUrl}
+          onTest={handleCustomTest}
+          testing={testing}
+          testError={testError}
+        />
+      )}
+      {customMode === "edit" && (
+        <CustomProviderFields
+          name={draftName}
+          baseUrl={draftBaseUrl}
+          onNameChange={setDraftName}
+          onBaseUrlChange={setDraftBaseUrl}
+          onTest={handleCustomTest}
+          testing={testing}
+          testError={testError}
+          dependentCount={dependentCount}
+          onDelete={() => {
+            const id = providerRefToId(provider!);
+            const cp = customProviders.find((c) => c.id === id);
+            if (cp) handleDeleteCustom(cp);
+          }}
+          deleteDisabled={dependentCount > 0}
+        />
+      )}
+
+      {provider && (
+        <InstanceForm
+          key={provider}
+          hideProviderField
+          mode="create"
+          provider={provider}
+          initialNickname={metaName}
+          initialCustomModels={isDraft ? draftModels : pool}
+          customModelMetas={isDraft ? draftMetas : metas}
+          fetchedModels={
+            isDraft
+              ? customFetched
+              : customMode === "edit"
+                ? customFetched.length > 0
+                  ? customFetched
+                  : undefined
+                : fetchedModels
           }
-        }}
-        onRefreshModels={async (apiKey) => {
-          // Only OpenRouter has /v1/models lazy fetch; other providers stay hardcoded.
-          // /v1/models is public, so apiKey is optional (passed for parity with edit flow).
-          if (provider !== "openrouter") return;
-          setIsFetching(true);
-          try {
-            const fetched = await fetchOpenRouterModels(getProviderMeta("openrouter")!.defaultBaseUrl, apiKey || undefined);
-            setFetchedModels(fetched);
-            setFetchedAt(Date.now());
-          } catch {
-            // silent for v1; user can retry via ↻ refresh button
-          } finally {
-            setIsFetching(false);
-          }
-        }}
-        renderActions={({ canSave, triggerSave, triggerTest, saveLabel }) => (
-          <div className="flex flex-wrap items-center gap-1.5 border-t border-line px-3.5 py-3">
-            <button
-              type="button"
-              onClick={() => setStep(1)}
-              className="rounded border border-line bg-transparent px-3 py-1.5 text-[11px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
-            >
-              {t("newConfigWizard.changeProvider")}
-            </button>
-            <div className="flex-1" />
+          fetchedAt={fetchedAt}
+          isFetching={isFetching}
+          saveLabel={t("newConfigWizard.create")}
+          onSave={handleSubmit}
+          onTest={(p) => props.onTest(provider, p)}
+          onAddCustomModel={async (id, meta) => {
+            if (isDraft) {
+              // Draft provider doesn't exist yet — accumulate locally; the
+              // entity is materialised atomically in handleSubmit.
+              setDraftModels((prev) => (prev.includes(id) ? prev : [...prev, id]));
+              setDraftMetas((prev) => ({ ...prev, [id]: meta }));
+            } else if (cpId) {
+              await addCustomProviderModel(cpId, {
+                id,
+                displayName: meta.displayName,
+                vision: meta.vision,
+                tools: true,
+                maxContextTokens: meta.maxContextTokens,
+              });
+              setCustomProviders(await listCustomProviders());
+            } else {
+              await addProviderCustomModel(provider, id);
+              await setProviderCustomModelMeta(builtinProvider, id, meta);
+              setPool(await getProviderCustomModels(provider));
+              setMetas(await getProviderCustomModelMetas(builtinProvider));
+            }
+          }}
+          onUpdateCustomModelMeta={async (id, meta) => {
+            if (isDraft) {
+              setDraftMetas((prev) => ({ ...prev, [id]: meta }));
+            } else if (cpId) {
+              await updateCustomProviderModel(cpId, id, {
+                id,
+                displayName: meta.displayName,
+                vision: meta.vision,
+                tools: true,
+                maxContextTokens: meta.maxContextTokens,
+              });
+              setCustomProviders(await listCustomProviders());
+            } else {
+              await setProviderCustomModelMeta(builtinProvider, id, meta);
+              setMetas(await getProviderCustomModelMetas(builtinProvider));
+            }
+          }}
+          onRemoveCustomModel={async (id) => {
+            if (isDraft) {
+              setDraftModels((prev) => prev.filter((x) => x !== id));
+              setDraftMetas((prev) => {
+                const next = { ...prev };
+                delete next[id];
+                return next;
+              });
+            } else if (cpId) {
+              await removeCustomProviderModel(cpId, id);
+              setCustomProviders(await listCustomProviders());
+            } else {
+              await removeProviderCustomModel(provider, id);
+              await removeProviderCustomModelMeta(builtinProvider, id);
+              setPool(await getProviderCustomModels(provider));
+              setMetas(await getProviderCustomModelMetas(builtinProvider));
+            }
+          }}
+          onRefreshModels={async (apiKey) => {
+            // Only OpenRouter has /v1/models lazy fetch; other providers stay hardcoded.
+            // /v1/models is public, so apiKey is optional (passed for parity with edit flow).
+            if (provider !== "openrouter") return;
+            setIsFetching(true);
+            try {
+              const fetched = await fetchOpenRouterModels(getProviderMeta("openrouter")!.defaultBaseUrl, apiKey || undefined);
+              setFetchedModels(fetched);
+              setFetchedAt(Date.now());
+            } catch {
+              // silent for v1; user can retry via ↻ refresh button
+            } finally {
+              setIsFetching(false);
+            }
+          }}
+          renderActions={({ canSave, triggerSave, triggerTest, saveLabel }) => {
+            // In "new" custom mode, also require valid draft name + baseUrl
+            // before the create button is enabled (InstanceForm only gates
+            // on key+model).
+            const effectiveCanSave =
+              canSave &&
+              (customMode !== "new" ||
+                (!!draftName.trim() && /^https?:\/\//.test(draftBaseUrl)));
+            return (
+              <div className="flex flex-wrap items-center gap-1.5 border-t border-line px-3.5 py-3">
+                <div className="flex-1" />
+                <button
+                  type="button"
+                  onClick={props.onCancel}
+                  className="rounded border border-line bg-transparent px-3 py-1.5 text-[11px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
+                >
+                  {t("common.cancel")}
+                </button>
+                <button
+                  type="button"
+                  onClick={triggerTest}
+                  disabled={!effectiveCanSave}
+                  className="rounded border border-line bg-transparent px-3 py-1.5 text-[11px] text-fg-2 hover:border-fg-3 disabled:opacity-30"
+                >
+                  {t("common.test")}
+                </button>
+                <button
+                  type="button"
+                  onClick={triggerSave}
+                  disabled={!effectiveCanSave}
+                  className="rounded bg-fg-1 px-3 py-1.5 text-[11px] font-medium text-canvas disabled:opacity-30"
+                >
+                  {saveLabel}
+                </button>
+              </div>
+            );
+          }}
+        />
+      )}
+
+      {!provider && (
+        <div className="flex flex-col gap-3">
+          <div className="px-1 text-[12px] text-fg-3">{t("newConfigWizard.pickProviderHint")}</div>
+          <div className="flex">
             <button
               type="button"
               onClick={props.onCancel}
               className="rounded border border-line bg-transparent px-3 py-1.5 text-[11px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
             >
-               {t("common.cancel")}
-          </button>
-            <button
-              type="button"
-              onClick={triggerTest}
-              disabled={!canSave}
-              className="rounded border border-line bg-transparent px-3 py-1.5 text-[11px] text-fg-2 hover:border-fg-3 disabled:opacity-30"
-            >
-              {t("common.test")}
-            </button>
-            <button
-              type="button"
-              onClick={triggerSave}
-              disabled={!canSave}
-              className="rounded bg-fg-1 px-3 py-1.5 text-[11px] font-medium text-canvas disabled:opacity-30"
-            >
-              {saveLabel}
+              {t("common.cancel")}
             </button>
           </div>
-        )}
-      />
+        </div>
+      )}
     </div>
   );
 }

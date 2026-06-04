@@ -51,6 +51,9 @@ interface Props {
    *  When provided, InstanceForm renders ONLY the form fields; the parent
    *  is responsible for rendering action buttons via the supplied api. */
   renderActions?: (api: InstanceFormActionsApi) => React.ReactNode;
+  /** When true, hides the built-in read-only provider field.
+   *  Used by NewConfigWizard where provider is managed by ProviderDropdown above. */
+  hideProviderField?: boolean;
 }
 
 export default function InstanceForm(props: Props) {
@@ -115,16 +118,18 @@ export default function InstanceForm(props: Props) {
         />
       </Field>
 
-      <Field label={t("instanceForm.provider")} hint={metaLoading && isCustomProvider ? undefined : meta?.defaultBaseUrl}>
-        {metaLoading && isCustomProvider ? (
-          <div className="h-[38px] animate-pulse rounded border border-line bg-field" />
-        ) : (
-          <div className="flex items-center gap-2 rounded border border-line bg-field px-3 py-2 text-[12px] text-fg-2">
-            <span className="text-fg-1">{meta ? providerDisplayName(meta, t) : props.provider}</span>
-            <span className="ml-auto font-mono text-[10px] text-fg-3">{t("instanceForm.locked")}</span>
-          </div>
-        )}
-      </Field>
+      {!props.hideProviderField && (
+        <Field label={t("instanceForm.provider")} hint={metaLoading && isCustomProvider ? undefined : meta?.defaultBaseUrl}>
+          {metaLoading && isCustomProvider ? (
+            <div className="h-[38px] animate-pulse rounded border border-line bg-field" />
+          ) : (
+            <div className="flex items-center gap-2 rounded border border-line bg-field px-3 py-2 text-[12px] text-fg-2">
+              <span className="text-fg-1">{meta ? providerDisplayName(meta, t) : props.provider}</span>
+              <span className="ml-auto font-mono text-[10px] text-fg-3">{t("instanceForm.locked")}</span>
+            </div>
+          )}
+        </Field>
+      )}
 
       <Field label={t("instanceForm.apiKey")} hint={t("instanceForm.aesGcmLocal")}>
         {!replacing && props.existingApiKey ? (

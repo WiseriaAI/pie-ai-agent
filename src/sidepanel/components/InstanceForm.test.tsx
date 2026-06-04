@@ -101,4 +101,33 @@ describe("InstanceForm", () => {
     );
     expect(input).toBeTruthy();
   });
+
+  it("hides provider field when hideProviderField is set", () => {
+    render(
+      <InstanceForm
+        mode="create"
+        provider="anthropic"
+        initialNickname="Anthropic"
+        hideProviderField
+        onSave={() => {}}
+        onTest={() => {}}
+      />,
+    );
+    // The PROVIDER field label must be gone
+    expect(screen.queryByText(/^PROVIDER$/)).toBeFalsy();
+    expect(screen.queryByText(/LOCKED/)).toBeFalsy();
+  });
+
+  it("still renders provider field by default (edit-instance unchanged)", () => {
+    render(
+      <InstanceForm
+        mode="create"
+        provider="anthropic"
+        initialNickname="Anthropic"
+        onSave={() => {}}
+        onTest={() => {}}
+      />,
+    );
+    expect(screen.getByText(/LOCKED/)).toBeTruthy();
+  });
 });
