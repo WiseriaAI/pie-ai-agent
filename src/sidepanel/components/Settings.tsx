@@ -29,7 +29,8 @@ import SearchProviderSection from "./SearchProviderSection";
 import InstanceForm, { type InstanceFormPayload } from "./InstanceForm";
 import InstancesList from "./InstancesList";
 import NewConfigWizard from "./NewConfigWizard";
-import { useT, setLocale, type LocaleSetting } from "@/lib/i18n";
+import { useT, setLocale, getLocale, type LocaleSetting } from "@/lib/i18n";
+import { buildGithubNewIssueUrl, buildFeedbackMailto, type FeedbackEnv } from "@/lib/feedback";
 
 interface Props {
   onBack: () => void;
@@ -322,6 +323,8 @@ export default function Settings({ onBack, onRunSkill }: Props) {
                 </select>
               </label>
             </section>
+
+            <FeedbackSection activeInstance={instances.find((i) => i.id === activeId)} />
           </div>
         ) : tab === "skills" ? (
           <SkillsList onRunSkill={onRunSkill ?? (() => {})} />
@@ -398,6 +401,44 @@ function SegmentedTabs({
         );
       })}
     </div>
+  );
+}
+
+function FeedbackSection({ activeInstance }: { activeInstance: DecryptedInstance | undefined }) {
+  const t = useT();
+  const env: FeedbackEnv = {
+    version: chrome.runtime.getManifest().version,
+    userAgent: navigator.userAgent,
+    providerModel: activeInstance
+      ? `${activeInstance.provider} · ${activeInstance.model}`
+      : "(no active config)",
+    locale: getLocale(),
+  };
+  return (
+    <section className="flex flex-col gap-3.5">
+      <div className="caps text-fg-3">{t("settings.feedback.sectionTitle")}</div>
+      <div className="flex flex-col gap-2.5 rounded-lg border border-line bg-surface p-3.5">
+        <p className="text-[11px] leading-[16px] text-fg-3">{t("settings.feedback.githubHint")}</p>
+        <div className="flex gap-2">
+          {/* Native anchors: target=_blank opens a tab for GitHub; mailto is
+              intercepted by the browser and won't navigate the side panel. */}
+          <a
+            href={buildGithubNewIssueUrl(env)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 rounded border border-line bg-transparent px-3.5 py-2 text-[12px] text-accent hover:bg-field"
+          >
+            {t("settings.feedback.githubButton")}
+          </a>
+          <a
+            href={buildFeedbackMailto(env)}
+            className="flex items-center gap-2 rounded border border-line bg-transparent px-3.5 py-2 text-[12px] text-fg-2 hover:bg-field"
+          >
+            {t("settings.feedback.emailButton")}
+          </a>
+        </div>
+      </div>
+    </section>
   );
 }
 
