@@ -4,11 +4,11 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Pie — Tell your browser what to do.</title>
-  <meta name="description" content="A browser-automation agent that runs on your own API key. Free, open-source, no telemetry." />
+  <meta name="description" content="An open-source AI agent in your browser. Say what you want in plain language — Pie plans the steps and does the work. Free, no telemetry." />
   <meta name="theme-color" content="#FAFBFC" />
   <meta property="og:type" content="website" />
   <meta property="og:title" content="Pie — Tell your browser what to do." />
-  <meta property="og:description" content="A browser-automation agent that runs on your own API key. Free, open-source, no telemetry." />
+  <meta property="og:description" content="An open-source AI agent in your browser. Say what you want in plain language — Pie plans the steps and does the work." />
   <meta property="og:image" content="/og-image.png" />
   <meta name="twitter:card" content="summary_large_image" />
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
@@ -132,7 +132,7 @@
             <div class="prompt"><span class="caps you" data-i18n="you">You say</span><span class="prompt-q" data-i18n="s3.cmd"></span></div>
             <p class="srow-out" data-i18n="s3.out"></p>
           </div>
-          <div class="res">
+          <div class="res res-stack">
             <div class="popover">
               <div class="pop-head"><span class="mono pop-q">/weekly</span><span class="pop-count" data-i18n="pop.count">2 skills</span></div>
               <div class="pop-item sel">
@@ -144,6 +144,14 @@
                 <span class="pop-desc" data-i18n="pop.d2"></span>
               </div>
               <div class="pop-foot"><span class="caps" data-i18n="pop.nav">↑↓ navigate</span><span class="caps" data-i18n="pop.run">↵ run</span><span class="caps" data-i18n="pop.esc">esc</span></div>
+            </div>
+            <div class="rec-bar" aria-hidden="true">
+              <span class="rec-dot"></span>
+              <span class="rec-text mono"><span class="rec-label" data-i18n="rec.label">RECORDING</span><span class="rec-sep">·</span><span class="rec-steps tabular" data-i18n="rec.steps">8 STEPS</span></span>
+              <span class="rec-btns">
+                <span class="rec-cancel" data-i18n="rec.cancel">Cancel</span>
+                <span class="rec-finish"><span data-i18n="rec.finish">Finish</span><span class="rec-enter mono">⏎</span></span>
+              </span>
             </div>
           </div>
         </div>
