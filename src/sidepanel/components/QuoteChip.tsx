@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useT } from "@/lib/i18n";
 import type { Quote } from "@/types";
+import { QuoteGlyph } from "./icons";
 
 type Props = {
   quote: Quote;
@@ -23,24 +24,24 @@ export function QuoteChip({ quote, onRemove }: Props) {
 
   return (
     <span
-      className="relative flex max-w-full items-center gap-2.5 rounded-lg border border-line bg-surface py-1.5 pl-2 pr-2.5 text-[11px]"
+      className="relative flex max-w-full items-center gap-2 rounded-[10px] bg-accent-tint py-1 pl-1 pr-2.5 text-[11px]"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <span aria-hidden className="h-4 w-0.5 shrink-0 rounded-sm bg-accent" />
-      {!isText && (
+      {isText ? (
         <span
           aria-hidden
-          className="flex h-5 w-8 shrink-0 items-center justify-center rounded border border-line bg-canvas font-mono text-[8px] text-fg-3"
+          className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[7px] bg-accent text-canvas"
         >
-          {quote.imageDataUrl ? (
-            <img
-              src={quote.imageDataUrl}
-              alt=""
-              className="h-full w-full rounded-[3px] object-cover"
-            />
-          ) : (
-            "img"
+          <QuoteGlyph />
+        </span>
+      ) : (
+        <span
+          aria-hidden
+          className="flex h-[22px] w-[22px] shrink-0 items-center justify-center overflow-hidden rounded-[7px] border border-line bg-canvas"
+        >
+          {quote.imageDataUrl && (
+            <img src={quote.imageDataUrl} alt="" className="h-full w-full object-cover" />
           )}
         </span>
       )}
@@ -64,7 +65,7 @@ export function QuoteChip({ quote, onRemove }: Props) {
         type="button"
         aria-label={t("quoteChip.removeQuote")}
         onClick={() => onRemove(quote.id)}
-        className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-line bg-canvas text-[10px] leading-none text-fg-2 hover:border-fg-3 hover:text-fg-1"
+        className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[13px] leading-none text-fg-3 hover:text-fg-1"
       >
         ×
       </button>
