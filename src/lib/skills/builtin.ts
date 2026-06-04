@@ -147,6 +147,45 @@ Constraints:
 - Do not call any tool other than create_skill / done / fail.`,
     { tools: ["create_skill"] },
   ),
+
+  pkg(
+    "report_issue",
+    "Report Issue",
+    "Draft a bug report from the current conversation and open a prefilled GitHub issue for the user to review and submit.",
+    `Goal: turn the current session into a clear, public GitHub issue the user can submit.
+
+The user typed /report-issue in the chat where something went wrong, so the
+relevant context is already in this conversation.
+
+Steps:
+1. Review THIS conversation and write a concise summary: what the user was
+   trying to do, what went wrong, steps to reproduce, expected vs. actual.
+2. Privacy boundary — this issue is PUBLIC. Write a SUMMARY only. Do NOT paste
+   raw <untrusted_*> page snapshots, and never include secrets (passwords,
+   tokens, API keys) or personal data even if they appeared in the session.
+3. Compose a Markdown body with these sections:
+   ## What happened
+   ## Steps to reproduce
+   ## Expected
+   ## Actual
+   ## Environment
+   Under Environment, include what you can tell from the session (provider,
+   model, page URL/domain) and add the line "version: (please confirm)" —
+   you cannot read the extension version, so the user fills it on review.
+4. Build the URL by percent-encoding the title and body:
+   https://github.com/WiseriaAI/pie-ai-agent/issues/new?labels=user-report&title=<encoded-title>&body=<encoded-body>
+   Call open_url with that URL.
+5. Call done with a one-line note: "Opened a prefilled GitHub issue — please
+   review and submit." Do NOT try to submit it yourself; the user reviews and
+   clicks Submit (they are already logged into GitHub).
+
+Constraints:
+- Never fill or submit the GitHub form via DOM actions — only open_url the
+  prefilled page.
+- If the conversation has no signs of a problem to report, ask the user what
+  went wrong instead of inventing an issue.`,
+    { tools: ["open_url"] },
+  ),
 ];
 
 // ── Import-time assertion — builtIn guard ────────────────────────────────────
@@ -170,6 +209,7 @@ const EXPECTED_BUILT_IN_SKILL_IDS = new Set([
   "close_inactive_tabs",
   "create_skill_from_recording",
   "extract_structured_data",
+  "report_issue",
 ]);
 
 const actualIds = new Set(BUILT_IN_SKILL_PACKAGES.map((p) => p.id));
