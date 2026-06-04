@@ -16,6 +16,7 @@ import { processPickedFile } from "@/lib/files/process-picked-file";
 import { fileAttachmentToWrapper } from "@/lib/files/inject";
 import { CollapsibleText } from "./CollapsibleText";
 import { FileChip } from "./FileChip";
+import { QuoteGlyph } from "./icons";
 import type { UseSession } from "@/sidepanel/hooks/useSession";
 import AgentStepGroup, { type AgentStepData } from "./AgentStepGroup";
 import PinnedTabDropdown from "./PinnedTabDropdown";
@@ -1556,24 +1557,28 @@ function MessageBubble({
           {hasQuotes && (
             <div className="flex flex-col gap-1.5">
               {message.quotes!.map((q) => (
-                <div key={q.id} className="flex items-center gap-2">
-                  <span
-                    aria-hidden
-                    className="h-[18px] w-0.5 shrink-0 rounded-sm bg-accent"
-                  />
-                  {q.kind === "element" && (
+                <div
+                  key={q.id}
+                  className="flex items-center gap-2 rounded-lg bg-accent-tint py-1 pl-1 pr-2.5"
+                >
+                  {q.kind === "text" ? (
                     <span
                       aria-hidden
-                      className="flex h-5 w-8 shrink-0 items-center justify-center overflow-hidden rounded border border-line bg-canvas font-mono text-[8px] text-fg-3"
+                      className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-accent text-canvas"
                     >
-                      {q.imageDataUrl ? (
+                      <QuoteGlyph size={11} />
+                    </span>
+                  ) : (
+                    <span
+                      aria-hidden
+                      className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-md border border-line bg-canvas"
+                    >
+                      {q.imageDataUrl && (
                         <img
                           src={q.imageDataUrl}
                           alt=""
                           className="h-full w-full object-cover"
                         />
-                      ) : (
-                        "img"
                       )}
                     </span>
                   )}
