@@ -28,11 +28,10 @@ export default function ModelMetaEditor({ initial, showTools, modelIdReadonly, m
     tools: initial?.tools ?? true,
     maxContextTokens: initial?.maxContextTokens ?? DEFAULT_CUSTOM_MODEL_MAX_CONTEXT,
   });
-  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="flex max-w-sm flex-col gap-3 rounded-lg border border-line bg-surface p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="flex w-full max-w-md flex-col gap-3 rounded-lg border border-line bg-surface p-4">
         <span className="caps text-fg-1">
           {modelIdReadonly
             ? t("customProvider.editModelCaps")
@@ -58,56 +57,39 @@ export default function ModelMetaEditor({ initial, showTools, modelIdReadonly, m
           />
         </Field>
 
-        <button
-          onClick={() => setAdvancedOpen((prev) => !prev)}
-          className="flex items-center gap-1 self-start text-[11px] text-fg-3 hover:text-fg-1"
-        >
-          <svg
-            width="10"
-            height="10"
-            viewBox="0 0 10 10"
-            fill="none"
-            className={`transition-transform ${advancedOpen ? "rotate-90" : ""}`}
-          >
-            <path d="M3 1L7 5L3 9" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" />
-          </svg>
-          {t("customProvider.advanced")}
-        </button>
+        <Field label={t("customProvider.maxContextTokens")}>
+          <input
+            type="number"
+            min={0}
+            step={1000}
+            value={draft.maxContextTokens}
+            onChange={(e) =>
+              setDraft((prev) => ({ ...prev, maxContextTokens: Number(e.target.value) || 0 }))
+            }
+            className="w-full rounded border border-line bg-field px-3 py-2 text-[12px] text-fg-1 focus:border-accent-line"
+          />
+        </Field>
 
-        {advancedOpen && (
-          <div className="flex flex-col gap-3 pl-2">
-            {showTools && (
-              <label className="flex items-center gap-2 text-[12px] text-fg-1">
-                <input
-                  type="checkbox"
-                  checked={draft.tools}
-                  onChange={(e) => setDraft((prev) => ({ ...prev, tools: e.target.checked }))}
-                />
-                {t("customProvider.tools")}
-              </label>
-            )}
+        <div className="flex items-center gap-5 pt-0.5">
+          <label className="flex items-center gap-2 text-[12px] text-fg-1">
+            <input
+              type="checkbox"
+              checked={draft.vision}
+              onChange={(e) => setDraft((prev) => ({ ...prev, vision: e.target.checked }))}
+            />
+            {t("customProvider.vision")}
+          </label>
+          {showTools && (
             <label className="flex items-center gap-2 text-[12px] text-fg-1">
               <input
                 type="checkbox"
-                checked={draft.vision}
-                onChange={(e) => setDraft((prev) => ({ ...prev, vision: e.target.checked }))}
+                checked={draft.tools}
+                onChange={(e) => setDraft((prev) => ({ ...prev, tools: e.target.checked }))}
               />
-              {t("customProvider.vision")}
+              {t("customProvider.tools")}
             </label>
-            <Field label={t("customProvider.maxContextTokens")}>
-              <input
-                type="number"
-                min={0}
-                step={1000}
-                value={draft.maxContextTokens}
-                onChange={(e) =>
-                  setDraft((prev) => ({ ...prev, maxContextTokens: Number(e.target.value) || 0 }))
-                }
-                className="w-full rounded border border-line bg-field px-3 py-2 text-[12px] text-fg-1 focus:border-accent-line"
-              />
-            </Field>
-          </div>
-        )}
+          )}
+        </div>
 
         <div className="flex justify-end gap-2 pt-1">
           <button

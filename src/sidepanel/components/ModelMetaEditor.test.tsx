@@ -5,16 +5,22 @@ import ModelMetaEditor from "./ModelMetaEditor";
 afterEach(() => { cleanup(); });
 
 describe("ModelMetaEditor", () => {
+  it("shows all fields inline without an Advanced toggle", () => {
+    render(<ModelMetaEditor showTools={false} onSave={() => {}} onCancel={() => {}} />);
+    // No folding — capability + context fields are visible immediately.
+    expect(screen.queryByText(/advanced/i)).toBeNull();
+    expect(screen.getByText(/vision/i)).toBeTruthy();
+    expect(screen.getByText(/max context/i)).toBeTruthy();
+  });
+
   it("hides tools field when showTools=false", () => {
     render(<ModelMetaEditor showTools={false} onSave={() => {}} onCancel={() => {}} />);
-    fireEvent.click(screen.getByText(/advanced/i));
     expect(screen.queryByText(/tools/i)).toBeNull();
     expect(screen.getByText(/vision/i)).toBeTruthy();
   });
 
   it("shows tools field when showTools=true (custom provider parity)", () => {
     render(<ModelMetaEditor showTools onSave={() => {}} onCancel={() => {}} />);
-    fireEvent.click(screen.getByText(/advanced/i));
     expect(screen.getByText(/tools/i)).toBeTruthy();
   });
 

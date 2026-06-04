@@ -395,7 +395,6 @@ export const enDict = {
     modelIdPlaceholder: "gpt-4o-mini",
     displayName: "DISPLAY NAME",
     displayNamePlaceholder: "GPT-4o Mini",
-    advanced: "▸ Advanced",
     tools: "Tools",
     vision: "Vision",
     maxContextTokens: "MAX CONTEXT TOKENS",

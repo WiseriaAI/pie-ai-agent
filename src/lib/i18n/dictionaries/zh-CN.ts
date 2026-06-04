@@ -404,7 +404,6 @@ export const zhCNDict = {
     modelIdPlaceholder: "gpt-4o-mini",
     displayName: "显示名称",
     displayNamePlaceholder: "GPT-4o Mini",
-    advanced: "▸ 高级",
     tools: "工具调用",
     vision: "视觉",
     maxContextTokens: "最大上下文 Token",
