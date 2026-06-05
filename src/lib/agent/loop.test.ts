@@ -6,6 +6,7 @@ import type { SessionAgentState, SessionMeta } from "@/lib/sessions/types";
 import {
   buildSessionAgentSnapshot,
   buildSessionAgentTombstone,
+  buildDoneSnapshot,
   collectCrossSessionConflicts,
   chatMessageToAgentMessage,
   resolveFocusedPin,
@@ -225,6 +226,42 @@ describe("buildSessionAgentSnapshot", () => {
   it("defaults hasImageContent to false when omitted", () => {
     const snap = buildSessionAgentSnapshot([], 0);
     expect(snap.hasImageContent).toBe(false);
+  });
+});
+
+describe("buildDoneSnapshot — abort preserves history, others tombstone", () => {
+  it("abort (no image) → returns null so emitDone skips the write (history preserved)", () => {
+    expect(buildDoneSnapshot("abort", /*hasImageContent*/ false, null, undefined)).toBeNull();
+  });
+
+  it("abort WITH image → still tombstones (R14: image bytes not in storage, no resume)", () => {
+    const snap = buildDoneSnapshot("abort", /*hasImageContent*/ true, "[任务中断] 任务已取消", undefined);
+    expect(snap).not.toBeNull();
+    expect(snap!.agentMessages).toEqual([]);
+    expect(snap!.stepIndex).toBe(0);
+  });
+
+  it("success → tombstone carrying the synth summary", () => {
+    const snap = buildDoneSnapshot("success", false, "<untrusted_prior_task_summary>已完成: x</untrusted_prior_task_summary>", undefined);
+    expect(snap!.agentMessages).toEqual([]);
+    expect(snap!.stepIndex).toBe(0);
+    expect(snap!.lastTaskSynth).toContain("已完成");
+  });
+
+  it("fail / max-steps → tombstone (non-null)", () => {
+    expect(buildDoneSnapshot("fail", false, "s", undefined)).not.toBeNull();
+    expect(buildDoneSnapshot("max-steps", false, "s", undefined)).not.toBeNull();
+  });
+
+  it("carries contextUsage through to the tombstone", () => {
+    const usage = {
+      lastInputTokens: 10,
+      lastOutputTokens: 2,
+      totalInputTokens: 10,
+      totalOutputTokens: 2,
+    } as SessionAgentState["contextUsage"];
+    const snap = buildDoneSnapshot("success", false, "s", usage);
+    expect(snap!.contextUsage).toEqual(usage);
   });
 });
 

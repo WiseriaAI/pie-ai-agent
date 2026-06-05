@@ -597,6 +597,28 @@ export function buildSessionAgentTombstone(
 }
 
 /**
+ * B（abort 保留历史）— 决定一次任务终止应写入 `session_${id}_agent` 的快照。
+ *
+ * - abort 且非 image 任务 → 返回 null：emitDone 跳过写入，保留最后一次
+ *   per-step snapshot（完整 round-trip history + stepIndex>0），供下次
+ *   chat-start 以 resume 风格续接（见 planAbortResumeSeed）。
+ * - 其它（success / fail / max-steps，或 abort 但 hasImageContent）→ 写
+ *   tombstone 清空历史 + 折叠 synth 摘要，维持既有压缩行为。R14：image-bearing
+ *   in-flight 不可 resume（字节不在 storage），故 abort+image 仍走压缩。
+ *
+ * 纯函数，便于单测（emitDone 闭包本身耦合 Chrome 不可单测）。
+ */
+export function buildDoneSnapshot(
+  terminationReason: TerminationReason,
+  hasImageContent: boolean,
+  synth: string | null,
+  carryUsage: SessionAgentState["contextUsage"] | undefined,
+): SessionAgentState | null {
+  if (terminationReason === "abort" && !hasImageContent) return null;
+  return buildSessionAgentTombstone(synth ?? undefined, carryUsage);
+}
+
+/**
  * v1.5 — pure helper: merge a fresh per-step snapshot with the existing
  * persisted SessionAgentState so fields written between snapshots survive
  * the per-step boundary.
@@ -1021,7 +1043,8 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
     // forces the SW write to land first; panel's chat-done arrives via
     // chrome.runtime IPC after this returns, so its persistMessages reads
     // the already-cleared meta.
-    if (ctx.onTaskDone) {
+    // B — abort 保留 task-mode pin，使续接落在原任务 tab。其它终止照常降级。
+    if (ctx.onTaskDone && terminationReason !== "abort") {
       try {
         await ctx.onTaskDone();
       } catch (e) {
@@ -1056,18 +1079,20 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
     });
 
     if (ctx.onStepSnapshot) {
-      // Pass the synth (may be null) into the tombstone builder.
-      // buildSessionAgentTombstone omits the field when null, ensuring the
-      // next chat-start's "is lastTaskSynth present?" check is unambiguous.
-      // Issue #59 — carry over contextUsage to the tombstone so token counts
-      // survive across tasks.
       const prev = await getSessionAgent(sessionId);
-      ctx.onStepSnapshot(buildSessionAgentTombstone(synth, prev?.contextUsage)).catch((e) => {
-        console.warn(
-          `[agent] tombstone snapshot failed for session=${ctx.sessionId}:`,
-          e,
-        );
-      });
+      // B — abort（非 image）返回 null：跳过写入，保留最后 step snapshot 的
+      // 完整 history，供续接。其它返回 tombstone（清空 + synth 折叠）。
+      const doneSnapshot = buildDoneSnapshot(
+        terminationReason,
+        hasImageContent,
+        synth,
+        prev?.contextUsage,
+      );
+      if (doneSnapshot) {
+        ctx.onStepSnapshot(doneSnapshot).catch((e) => {
+          console.warn(`[agent] done snapshot failed for session=${ctx.sessionId}:`, e);
+        });
+      }
     }
   };
   // M2-U2 P1-11 — session-bound sendAgentStep that auto-injects sessionId.
