@@ -239,6 +239,7 @@ describe("buildDoneSnapshot — abort preserves history, others tombstone", () =
     expect(snap).not.toBeNull();
     expect(snap!.agentMessages).toEqual([]);
     expect(snap!.stepIndex).toBe(0);
+    expect(snap!.lastTaskSynth).toBe("[任务中断] 任务已取消");
   });
 
   it("success → tombstone carrying the synth summary", () => {

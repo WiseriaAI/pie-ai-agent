@@ -597,7 +597,7 @@ export function buildSessionAgentTombstone(
 }
 
 /**
- * B（abort 保留历史）— 决定一次任务终止应写入 `session_${id}_agent` 的快照。
+ * B（abort 保留历史）— 决定一次任务终止应写入 `session_${id}_agent` 的快照。（plan: docs/plans/2026-06-06-abort-preserve-history.md Task 1）
  *
  * - abort 且非 image 任务 → 返回 null：emitDone 跳过写入，保留最后一次
  *   per-step snapshot（完整 round-trip history + stepIndex>0），供下次
@@ -1044,6 +1044,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
     // chrome.runtime IPC after this returns, so its persistMessages reads
     // the already-cleared meta.
     // B — abort 保留 task-mode pin，使续接落在原任务 tab。其它终止照常降级。
+    // Skip applies to every abort flavor (in-flight cancel AND pre-pin early-exit); neither should downgrade a pin.
     if (ctx.onTaskDone && terminationReason !== "abort") {
       try {
         await ctx.onTaskDone();
