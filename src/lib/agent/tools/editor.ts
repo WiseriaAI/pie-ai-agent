@@ -86,8 +86,37 @@ function adapterFragment(): string {
       if (!ed) try {
         const h6 = el.closest(".cm-editor");
         if (h6) {
-          const EV = win.EditorView || (win.CM && win.CM.EditorView);
-          const view = EV && EV.findFromDOM ? EV.findFromDOM(h6) : null;
+          // CM6 has no global registry. The EditorView is reachable via an
+          // expando CM6 attaches to a managed host node — but the property
+          // name is version-dependent (cmView / cmTile / ...). Instead of
+          // hardcoding it, duck-type: scan own-props of the few candidate
+          // host nodes for anything that IS an EditorView (.state.doc) or
+          // wraps one (.view / .rootView.view). Falls back to the global
+          // EditorView.findFromDOM if the page happens to expose the class.
+          const isView = function (o) {
+            return o && typeof o === "object" && o.state && o.state.doc &&
+              typeof o.state.doc.toString === "function";
+          };
+          let view = null;
+          const cands = [h6.querySelector(".cm-content"), h6.querySelector(".cm-scroller"), h6];
+          for (let ci = 0; ci < cands.length && !view; ci++) {
+            const n = cands[ci];
+            if (!n) continue;
+            const keys = Object.getOwnPropertyNames(n);
+            for (let ki = 0; ki < keys.length; ki++) {
+              let v;
+              try { v = n[keys[ki]]; } catch (e) { continue; }
+              if (isView(v)) { view = v; break; }
+              if (v && typeof v === "object") {
+                if (isView(v.view)) { view = v.view; break; }
+                if (v.rootView && isView(v.rootView.view)) { view = v.rootView.view; break; }
+              }
+            }
+          }
+          if (!view) {
+            const EV = win.EditorView || (win.CM && win.CM.EditorView);
+            if (EV && EV.findFromDOM) view = EV.findFromDOM(h6);
+          }
           if (view) ed = {
             engine: "cm6",
             get: function () { return view.state.doc.toString(); },

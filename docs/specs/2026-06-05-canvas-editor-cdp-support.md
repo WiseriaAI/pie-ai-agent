@@ -157,7 +157,7 @@ interface EditorToolDeps {
 
 ## 8. 风险与未决
 
-- **CM6 实例发现（高）**：无标准注册表，是最大不确定点。实现期第一步即验证；无通用解则 CM6 read/set 降级（检测+登记仍保留）。
+- **CM6 实例发现（高→已缓解）**：CM6 无全局注册表；实测 `EditorView.findFromDOM` 需页面暴露 `EditorView`（真实站点几乎不暴露），且 DOM expando 名随版本变（codemirror.net 实测为 `.cm-content` 的 `cmTile.view`，非旧版 `cmView`）。最终方案：**鸭子类型多路径发现**——对 `.cm-content`/`.cm-scroller`/`.cm-editor` 三候选宿主节点扫 own-props，取任何 `isView`(带 `.state.doc`) 或其 `.view`/`.rootView.view`，全 miss 再退回全局 `findFromDOM`，仍 miss 才 `cm6_no_view` 降级。抗版本改名；Monaco(`getEditors()`)/CM5(`.CodeMirror`) 始终可靠。
 - **逐 context 探测的 context 数量**：v1 检测性遍历（detection-only walk）仅在顶层未命中时启动，且只做 `querySelector` 存在性判断，开销低；极端场景如成问题，再加 frame 数量限制。
 - **context 生命周期**：现采现用、不缓存，规避导航/reload 导致 context 失效。
 - **CDP `Runtime.evaluate` 大字符串**：`returnByValue` 对大文档的序列化上限实现期验证（一般数百 KB 无虞）。
