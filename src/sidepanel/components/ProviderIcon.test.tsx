@@ -23,10 +23,10 @@ describe("ProviderIcon", () => {
     expect(img.getAttribute("data-icon-url")).toContain("provider-icons/anthropic.svg");
   });
 
-  it("renders a monogram for a builtin provider without iconAsset (bailian)", () => {
+  it("renders a masked icon for another builtin provider with iconAsset (bailian)", () => {
     render(<ProviderIcon provider="bailian" size={22} />);
-    expect(screen.queryByTestId("provider-icon-img")).toBeNull();
-    expect(screen.getByText("B")).toBeTruthy(); // name "Bailian" → B
+    const img = screen.getByTestId("provider-icon-img");
+    expect(img.getAttribute("data-icon-url")).toContain("provider-icons/bailian.svg");
   });
 
   it("renders a monogram for any custom provider", () => {
