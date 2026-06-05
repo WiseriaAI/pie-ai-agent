@@ -26,7 +26,6 @@ describe("InstanceForm", () => {
         mode="edit"
         provider="openai"
         initialNickname="Work"
-        initialModel="gpt-4o"
         onSave={() => {}}
         onTest={() => {}}
         onDelete={() => {}}
@@ -45,7 +44,6 @@ describe("InstanceForm", () => {
         mode="create"
         provider="anthropic"
         initialNickname="Anthropic"
-        initialModel="claude-opus-4-7"
         onSave={onSave}
         onTest={() => {}}
       />,
@@ -66,7 +64,6 @@ describe("InstanceForm", () => {
         mode="edit"
         provider="anthropic"
         initialNickname="Anthropic"
-        initialModel="claude-opus-4-7"
         existingApiKey="sk-ant-1234567890abcdefXYZ"
         onSave={onSave}
         onTest={() => {}}
@@ -87,7 +84,6 @@ describe("InstanceForm", () => {
         mode="edit"
         provider="anthropic"
         initialNickname="Anthropic"
-        initialModel="claude-opus-4-7"
         existingApiKey="sk-ant-1234567890abcdefXYZ"
         onSave={() => {}}
         onTest={() => {}}
