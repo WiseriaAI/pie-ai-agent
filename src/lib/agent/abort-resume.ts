@@ -39,6 +39,12 @@ export function planAbortResumeSeed(
   const last = messages[messages.length - 1];
   if (!last || last.role !== "user" || typeof last.content !== "string") return null;
 
+  // Known limitation: only the text of the continuation message is carried —
+  // any `last.attachments` (e.g. a screenshot sent with the continuation) is
+  // dropped (the normal non-resume path handles attachments via
+  // chatMessageToAgentMessage + hydrateAttachments). Low impact: the attach
+  // button is hidden while streaming, so an image continuation mid-task is rare.
+  // To support it, build a real PendingInstruction carrying attachments instead.
   const appended = buildMidTaskUserMessage([
     { chatMessageId: "abort-resume", content: last.content, createdAt: 0 },
   ]);
