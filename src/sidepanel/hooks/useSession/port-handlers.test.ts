@@ -216,6 +216,39 @@ describe("agent-done-task", () => {
       [{ role: "agent-summary", success: true, summary: "ok", stepCount: 3 }],
     );
   });
+
+  it("flushes in-flight streamed text/thinking before the summary on mid-stream abort", () => {
+    const deps = makeDeps();
+    deps.slotsRef.current.set("s1", {
+      ...EMPTY_SLOT,
+      accumulated: "partial answer",
+      streamingText: "partial answer",
+      streamingThinking: "was thinking",
+      streaming: true,
+      streamFinished: false,
+    });
+    const { handleMessage } = createPortHandlers(deps);
+    handleMessage({
+      type: "agent-done-task",
+      sessionId: "s1",
+      success: false,
+      summary: "任务已取消",
+      stepCount: 2,
+    } as PortMessageToPanel);
+    const slot = deps.slotsRef.current.get("s1")!;
+    // The streamed assistant turn must survive — not be discarded by the reset.
+    expect(slot.messages).toEqual([
+      { role: "assistant", content: "partial answer", thinking: "was thinking" },
+      { role: "agent-summary", success: false, summary: "任务已取消", stepCount: 2 },
+    ]);
+    expect(slot.accumulated).toBe("");
+    expect(slot.streamingText).toBe("");
+    expect(slot.streamingThinking).toBe("");
+    expect(deps.persistMessages).toHaveBeenCalledWith("s1", [
+      { role: "assistant", content: "partial answer", thinking: "was thinking" },
+      { role: "agent-summary", success: false, summary: "任务已取消", stepCount: 2 },
+    ]);
+  });
 });
 
 describe("session-confirm-request", () => {
