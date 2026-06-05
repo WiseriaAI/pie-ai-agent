@@ -15,7 +15,7 @@
     "https://dashscope.aliyuncs.com/*",
     "https://generativelanguage.googleapis.com/*",
     "https://api.deepseek.com/*",
-    "https://api.xiaomimimo.com/*",
+    "https://token-plan-cn.xiaomimimo.com/*",
     "https://api.moonshot.ai/*",
     "https://api.moonshot.cn/*",
     "https://api.stepfun.com/*",

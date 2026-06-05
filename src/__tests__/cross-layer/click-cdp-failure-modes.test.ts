@@ -77,13 +77,13 @@ describe("click CDP failure modes — error message templates", () => {
     });
   });
 
-  it("cdp-disabled wording when flag=false", async () => {
+  it("declined-consent wording when flag=false and user declines re-prompt", async () => {
     await setCdpInputEnabled(false);
-    const tool = buildClickTool(deps());
+    const tool = buildClickTool(deps({ requestConsent: async () => false }));
     const r = await tool.handler({ frameId: 0, elementIndex: 9 }, { tabId: 7 });
     expect(r).toMatchObject({
       success: false,
-      error: expect.stringMatching(/CDP input is disabled in Settings/),
+      error: expect.stringMatching(/declined|not enabled/i),
     });
   });
 

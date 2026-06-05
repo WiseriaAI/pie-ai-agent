@@ -111,6 +111,14 @@ export const KNOWN_KEYBOARD_TOOL_NAMES = [
   "press_key",
 ] as const;
 
+// Editor tools (CDP getValue/setValue against Monaco/CodeMirror).
+//   read_editor — read (extracts full editor text; no page mutation).
+//   set_editor_value — write (replaces editor content).
+export const KNOWN_EDITOR_TOOL_NAMES = [
+  "read_editor",
+  "set_editor_value",
+] as const;
+
 // ── M3-U4 — Tool class registry ─────────────────────────────────────────────
 //
 // Every built-in tool declares whether it is a `read` or `write` operation
@@ -192,6 +200,9 @@ export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
   save_to_downloads: "write",
   read_local_file: "read",
   request_local_file: "read",
+  // Editor tools — CDP main-context getValue/setValue
+  read_editor: "read",
+  set_editor_value: "write",
 };
 
 // Build-time exhaustive check — every known tool name MUST have a class
@@ -209,6 +220,7 @@ export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
 for (const name of [
   ...KNOWN_BUILT_IN_TOOL_NAMES,
   ...KNOWN_KEYBOARD_TOOL_NAMES,
+  ...KNOWN_EDITOR_TOOL_NAMES,
 ]) {
   if (!(name in TOOL_CLASSES)) {
     throw new Error(

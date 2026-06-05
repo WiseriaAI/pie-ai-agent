@@ -172,7 +172,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     id: "mimo",
     name: "Mimo(Xiaomi)",
     iconAsset: "provider-icons/mimo.svg",
-    defaultBaseUrl: "https://api.xiaomimimo.com",
+    defaultBaseUrl: "https://token-plan-cn.xiaomimimo.com",
     placeholder: "API key",
     models: [
       { id: "mimo-v2.5-pro", vision: false, tools: true, maxContextTokens: 1_000_000 },

@@ -21,7 +21,7 @@ describe("mimo wrapper", () => {
       provider: "mimo",
       model: "mimo-v2.5-pro",
       apiKey: "mk-test",
-      baseUrl: "https://api.xiaomimimo.com",
+      baseUrl: "https://token-plan-cn.xiaomimimo.com",
     } as ModelConfig;
     const messages: AgentMessage[] = [
       { role: "system", content: "you are an agent" },
@@ -35,7 +35,7 @@ describe("mimo wrapper", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0]!;
-    expect(String(url)).toBe("https://api.xiaomimimo.com/anthropic/v1/messages");
+    expect(String(url)).toBe("https://token-plan-cn.xiaomimimo.com/anthropic/v1/messages");
 
     // The SDK passes headers as a Headers instance, so read via .get() (transport-agnostic).
     const headers = new Headers((init as RequestInit).headers as HeadersInit);

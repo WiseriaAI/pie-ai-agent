@@ -208,19 +208,16 @@ export async function requireCdpInput(
 ): Promise<CdpGateResult> {
   const flag = await isCdpInputEnabled();
   if (flag === true) return { ok: true };
-  if (flag === false) {
-    return {
-      ok: false,
-      error: "CDP input is disabled in Settings. Cannot click/hover.",
-    };
-  }
-  // undefined — request consent
+  // undefined (never configured) OR false (previously disabled) — both prompt
+  // the user to enable CDP input now. Re-prompting on `false` is intentional:
+  // when a task genuinely needs CDP we let the user authorize on the spot
+  // instead of dead-ending and asking them to go dig through Settings.
   try {
     const granted = await args.requestConsent(args.sessionId);
     if (granted) return { ok: true };
     return {
       ok: false,
-      error: "CDP input is disabled in Settings. Cannot click/hover.",
+      error: "CDP input not enabled — the user declined. This action requires CDP and can't be performed otherwise.",
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

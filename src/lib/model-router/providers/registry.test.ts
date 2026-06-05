@@ -48,7 +48,7 @@ describe("ProviderMeta schema", () => {
 
   it("MiMo is registered", () => {
     expect(getProviderMeta("mimo")).toBeDefined();
-    expect(getProviderMeta("mimo")!.defaultBaseUrl).toBe("https://api.xiaomimimo.com");
+    expect(getProviderMeta("mimo")!.defaultBaseUrl).toBe("https://token-plan-cn.xiaomimimo.com");
     expect(getProviderMeta("mimo")!.name).toBe("Mimo(Xiaomi)");
   });
 

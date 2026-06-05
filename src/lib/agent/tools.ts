@@ -6,6 +6,7 @@ import { wait } from "../dom-actions/wait";
 import type { ActionResult } from "../dom-actions/types";
 import type { Tool, ToolHandlerContext } from "./types";
 import { buildKeyboardTools, type KeyboardToolDeps } from "./tools/keyboard";
+import { buildEditorTools, type EditorToolDeps } from "./tools/editor";
 import { SKILL_META_TOOLS } from "./tools/skill-meta";
 import { SKILL_ACCESS_TOOLS } from "./tools/skill-access";
 import { TAB_TOOLS } from "./tools/tabs";
@@ -48,6 +49,17 @@ export function getMouseTools(deps: MouseToolDeps): Tool[] {
 }
 
 export type { MouseToolDeps };
+
+/**
+ * Editor tools (read_editor + set_editor_value). Returned only when CDP is
+ * available (handlers also gate via requireCdpInput). Deps are task-scoped,
+ * mirroring getKeyboardTools.
+ */
+export function getEditorTools(deps: EditorToolDeps): Tool[] {
+  return buildEditorTools(deps);
+}
+
+export type { EditorToolDeps };
 
 // ── Helper: run a self-contained function in the target tab ──────────────────
 
