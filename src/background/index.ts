@@ -16,7 +16,8 @@ import type {
   ContentBlock,
   ModelConfig,
 } from "@/lib/model-router";
-import { getActiveInstance, resolveInstanceToModelConfig } from "@/lib/instances";
+import { resolveModelConfig } from "@/lib/instances";
+import { resolveSelection } from "@/lib/model-selection-resolver";
 import {
   runAgentLoop,
   safeParseOrigin,
@@ -770,8 +771,8 @@ async function handleResumeRequest(
   }
 
   // Drift OK — resolve instance config, then flip the session back to `active`.
-  const resumeInstanceId = meta.instanceId ?? (await getActiveInstance());
-  if (!resumeInstanceId) {
+  const resumeSel = await resolveSelection({ instanceId: meta.instanceId, model: meta.model });
+  if (!resumeSel) {
     port.postMessage({
       type: "chat-error",
       error: "No config selected. Open Settings to create one.",
@@ -779,7 +780,7 @@ async function handleResumeRequest(
     });
     return;
   }
-  const resumeModelConfig = await resolveInstanceToModelConfig(resumeInstanceId);
+  const resumeModelConfig = await resolveModelConfig(resumeSel.instanceId, resumeSel.model);
   if (!resumeModelConfig) {
     port.postMessage({
       type: "chat-error",
@@ -795,7 +796,7 @@ async function handleResumeRequest(
   await setSessionMeta({
     ...meta,
     status: "active",
-    ...(meta.instanceId ? {} : { instanceId: resumeInstanceId }),
+    ...(meta.instanceId ? {} : { instanceId: resumeSel.instanceId, model: resumeSel.model }),
   });
 
   // Phase 5 — Task 12: mint a fresh taskId for the resumed loop so the
@@ -985,8 +986,8 @@ async function handleChatStream(
   try {
     // Resolve instance config for this session (per-session pin → global fallback).
     const chatSessionMeta = await getSessionMeta(sessionId);
-    const chatInstanceId = chatSessionMeta?.instanceId ?? (await getActiveInstance());
-    if (!chatInstanceId) {
+    const chatSel = await resolveSelection({ instanceId: chatSessionMeta?.instanceId, model: chatSessionMeta?.model });
+    if (!chatSel) {
       port.postMessage({
         type: "chat-error",
         error: "No config selected. Open Settings to create one.",
@@ -994,7 +995,7 @@ async function handleChatStream(
       });
       return;
     }
-    const chatModelConfig = await resolveInstanceToModelConfig(chatInstanceId);
+    const chatModelConfig = await resolveModelConfig(chatSel.instanceId, chatSel.model);
     if (!chatModelConfig) {
       port.postMessage({
         type: "chat-error",
@@ -1132,8 +1133,8 @@ async function handleChatStream(
     // future chat-starts for this session don't depend on global active changing.
     // Placed AFTER upgradeAutoToTaskAtChatStart to avoid clobbering the
     // upgraded pinMode='task' + pinnedTabs[] (lost-update fix).
-    if (synthMeta && !synthMeta.instanceId && chatInstanceId) {
-      await setSessionMeta({ ...synthMeta, instanceId: chatInstanceId }).catch((e) => {
+    if (synthMeta && !synthMeta.instanceId && chatSel) {
+      await setSessionMeta({ ...synthMeta, instanceId: chatSel.instanceId, model: chatSel.model }).catch((e) => {
         console.warn(`[sw] instanceId pin failed for session=${sessionId}:`, e);
       });
     }
