@@ -82,7 +82,7 @@ describe("consent gating end-to-end", () => {
     const tool = buildClickTool(deps);
     const r = await tool.handler({ frameId: 0, elementIndex: 1 }, { tabId: 7 });
     expect(r.success).toBe(false);
-    expect(r.error).toMatch(/CDP input is disabled/);
+    expect(r.error).toMatch(/declined|not enabled/i);
     expect(await isCdpInputEnabled()).toBe(false);
   });
 
@@ -100,9 +100,9 @@ describe("consent gating end-to-end", () => {
     expect(requestConsent).not.toHaveBeenCalled();
   });
 
-  it("once flag=false, subsequent calls do not invoke requestConsent (must use Settings to re-enable)", async () => {
+  it("flag=false re-invokes requestConsent each call (re-prompt to enable on the spot)", async () => {
     await chrome.storage.local.set({ [CDP_INPUT_ENABLED_STORAGE_KEY]: false });
-    const requestConsent = vi.fn();
+    const requestConsent = vi.fn().mockResolvedValue(false);
     const deps: MouseToolDeps = {
       acquireSession: vi.fn(),
       sessionId: "S1",
@@ -111,6 +111,6 @@ describe("consent gating end-to-end", () => {
     const tool = buildClickTool(deps);
     const r = await tool.handler({ frameId: 0, elementIndex: 1 }, { tabId: 7 });
     expect(r.success).toBe(false);
-    expect(requestConsent).not.toHaveBeenCalled();
+    expect(requestConsent).toHaveBeenCalled();
   });
 });
