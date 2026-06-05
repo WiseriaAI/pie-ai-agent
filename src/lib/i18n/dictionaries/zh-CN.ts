@@ -209,6 +209,14 @@ export const zhCNDict = {
     custom: "自定义",
     modelIdPlaceholder: "模型 ID",
   },
+  modelPicker: {
+    none: "（选择模型）",
+    title: "选择模型",
+    providersSuffix: "个 provider",
+    searchSuffix: "模型…",
+    noModels: "（无模型 — 去设置页添加）",
+    manage: "管理 Provider / 模型",
+  },
   providers: {
     zhipu: "GLM(智谱)",
     mimo: "Mimo(小米)",

@@ -208,6 +208,14 @@ export const enDict = {
     custom: "custom",
     modelIdPlaceholder: "model id",
   },
+  modelPicker: {
+    none: "(select model)",
+    title: "SELECT MODEL",
+    providersSuffix: "providers",
+    searchSuffix: "models…",
+    noModels: "(no models — add in Settings)",
+    manage: "Manage providers / models",
+  },
   providers: {
     zhipu: "GLM(Zhipu)",
     mimo: "Mimo(Xiaomi)",
