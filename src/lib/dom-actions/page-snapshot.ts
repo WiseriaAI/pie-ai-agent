@@ -54,6 +54,7 @@ export function pageSnapshotInjected(): PageSnapshotResult {
     "untrusted_pdf_outline_entry",
     "untrusted_page_match",
     "untrusted_local_file",
+    "untrusted_editor_content",
   ];
   const WRAPPER_TAGS = new Set(WRAPPER_TAGS_LIST);
 
