@@ -29,7 +29,7 @@ describe("migrateV1toV2", () => {
     expect(list).toHaveLength(2);
     const openai = list.find((i) => i.provider === "openai")!;
     expect(openai.apiKey).toBe("sk-y");
-    expect(openai.model).toBe("gpt-4o");
+    expect(openai.customModels).toEqual(["gpt-4o"]); // V1 model preserved in customModels[0]
     // user's baseUrl override silently dropped
     expect(("baseUrl" in (openai as object))).toBe(false);
 
@@ -58,7 +58,6 @@ describe("migrateV1toV2", () => {
     await migrateV1toV2();
     const list = await listInstances();
     const inst = list[0]!;
-    expect(inst.model).toBe("gpt-5-experimental");
     expect(inst.customModels).toEqual(["gpt-5-experimental"]);
   });
 

@@ -33,6 +33,10 @@ export interface ProviderMeta {
    * caches per instance.
    */
   modelsEndpoint?: string;
+  /** 图标资源路径（相对扩展根；public/ 在 build 期拷到 dist/）。缺省时 UI 走
+   *  monogram fallback（见 ProviderIcon）。svg 已用 fill="currentColor"，由
+   *  组件按主题给色。 */
+  iconAsset?: string;
 }
 
 // Kimi (Moonshot) curated models — shared by both the international
@@ -49,6 +53,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
   {
     id: "anthropic",
     name: "Anthropic",
+    iconAsset: "provider-icons/anthropic.svg",
     defaultBaseUrl: "https://api.anthropic.com",
     placeholder: "sk-ant-...",
     models: [
@@ -60,6 +65,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
   {
     id: "openai",
     name: "OpenAI",
+    iconAsset: "provider-icons/openai.svg",
     defaultBaseUrl: "https://api.openai.com",
     placeholder: "sk-...",
     models: [
@@ -72,6 +78,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
   {
     id: "openrouter",
     name: "OpenRouter",
+    iconAsset: "provider-icons/openrouter.svg",
     defaultBaseUrl: "https://openrouter.ai/api",
     placeholder: "sk-or-...",
     models: [],
@@ -80,6 +87,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
   {
     id: "minimax",
     name: "MiniMax",
+    iconAsset: "provider-icons/minimax.svg",
     defaultBaseUrl: "https://api.minimaxi.com",
     placeholder: "eyJ...",
     models: [
@@ -96,6 +104,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
   {
     id: "zhipu",
     name: "GLM(Zhipu)",
+    iconAsset: "provider-icons/zhipu.svg",
     defaultBaseUrl: "https://open.bigmodel.cn/api/paas/v4",
     placeholder: "API key",
     // Curated from the BigModel model-overview (issue #106). Only chat /
@@ -129,6 +138,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
   {
     id: "bailian",
     name: "Bailian",
+    iconAsset: "provider-icons/bailian.svg",
     defaultBaseUrl: "https://dashscope.aliyuncs.com/compatible-mode",
     placeholder: "sk-...",
     models: [
@@ -140,6 +150,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
   {
     id: "gemini",
     name: "Google Gemini",
+    iconAsset: "provider-icons/gemini.svg",
     defaultBaseUrl: "https://generativelanguage.googleapis.com",
     placeholder: "AIza...",
     models: [
@@ -150,6 +161,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
   {
     id: "deepseek",
     name: "DeepSeek",
+    iconAsset: "provider-icons/deepseek.svg",
     defaultBaseUrl: "https://api.deepseek.com",
     placeholder: "sk-...",
     models: [
@@ -160,6 +172,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
   {
     id: "mimo",
     name: "Mimo(Xiaomi)",
+    iconAsset: "provider-icons/mimo.svg",
     defaultBaseUrl: "https://token-plan-cn.xiaomimimo.com",
     placeholder: "API key",
     models: [
@@ -173,6 +186,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
   {
     id: "moonshot",
     name: "Moonshot(Kimi)",
+    iconAsset: "provider-icons/moonshot.svg",
     defaultBaseUrl: "https://api.moonshot.ai",
     placeholder: "sk-...",
     models: MOONSHOT_MODELS,
@@ -180,6 +194,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
   {
     id: "moonshot-cn",
     name: "Moonshot(Kimi) China",
+    iconAsset: "provider-icons/moonshot.svg",
     defaultBaseUrl: "https://api.moonshot.cn",
     placeholder: "sk-...",
     models: MOONSHOT_MODELS,
@@ -187,6 +202,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
   {
     id: "stepfun",
     name: "StepFun",
+    iconAsset: "provider-icons/stepfun.svg",
     defaultBaseUrl: "https://api.stepfun.com",
     placeholder: "API key",
     // Anthropic-wire (`/v1/messages`, Bearer). step-3.7-flash is the native

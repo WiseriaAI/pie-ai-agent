@@ -15,6 +15,7 @@ export async function migrateV1toV2(): Promise<void> {
   const oldActive = oldActiveResult.active_provider as Provider | undefined;
 
   const mapping: Record<string, string> = {};
+  const modelByNewId: Record<string, string> = {};
   const instancesIndex: string[] = [];
   const writes: Record<string, unknown> = {};
   const removes: string[] = [];
@@ -35,24 +36,32 @@ export async function migrateV1toV2(): Promise<void> {
     }
 
     const newId = crypto.randomUUID();
-    const inRegistry = p.models.some((m) => m.id === old.model);
+    // Model decoupled from instance: V1's model is preserved in customModels[0]
+    // so firstModelForProvider (which prefers customModels[0]) keeps the user's
+    // model after upgrade. No instance.model field anymore.
     const stored: StoredInstance = {
       id: newId,
       provider: p.id,
       nickname: p.name,
       encryptedKey: await encrypt(plain, key),
-      model: old.model,
-      ...(inRegistry ? {} : { customModels: [old.model] }),
+      customModels: [old.model],
       createdAt: Date.now(),
     };
     writes[`instance_${newId}`] = stored;
     instancesIndex.push(newId);
     mapping[p.id] = newId;
+    modelByNewId[newId] = old.model;
     removes.push(`provider_${p.id}`);
   }
 
   writes["instances_index"] = instancesIndex;
-  if (oldActive && mapping[oldActive]) writes["active_instance_id"] = mapping[oldActive];
+  if (oldActive && mapping[oldActive]) {
+    const activeNewId = mapping[oldActive];
+    writes["active_instance_id"] = activeNewId;
+    // Seed last_model_selection so the first post-upgrade session inherits the
+    // V1 active provider's model (continuity with the new Composer picker).
+    writes["last_model_selection"] = { instanceId: activeNewId, model: modelByNewId[activeNewId] };
+  }
   writes[SCHEMA_VERSION_KEY] = 2;
   writes[MAPPING_KEY] = mapping;
 

@@ -3,8 +3,7 @@ import { chromeMock } from "@/test/setup";
 import {
   createInstance, getInstance, listInstances, deleteInstance,
   setActiveInstance, getActiveInstance, resolveActiveInstanceModelConfig,
-  resolveInstanceToModelConfig,
-  updateInstance,
+  resolveModelConfig, firstModelForProvider, updateInstance,
 } from "./instances";
 import { saveCustomProvider } from "./custom-providers";
 import { setProviderCustomModelMeta } from "./provider-custom-model-meta";
@@ -15,39 +14,34 @@ beforeEach(() => {
 
 describe("instances CRUD", () => {
   it("createInstance writes encrypted, registers in instances_index, returns uuid", async () => {
-    const id = await createInstance({
-      provider: "anthropic",
-      nickname: "Anthropic",
-      apiKey: "sk-ant-secret",
-      model: "claude-opus-4-7",
-    });
+    const id = await createInstance({ provider: "anthropic", nickname: "Anthropic", apiKey: "sk-ant-secret" });
     expect(id).toMatch(/^[0-9a-f]{8}-/);
     const stored = chromeMock.storage.local.__store[`instance_${id}`] as Record<string, unknown>;
     expect(stored.encryptedKey).toBeDefined();
     expect(stored.encryptedKey).not.toContain("sk-ant-secret");
-    const idx = chromeMock.storage.local.__store["instances_index"];
-    expect(idx).toContain(id);
+    expect(stored.model).toBeUndefined(); // model decoupled from instance
+    expect(chromeMock.storage.local.__store["instances_index"]).toContain(id);
   });
 
-  it("getInstance round-trips with decrypted apiKey", async () => {
-    const id = await createInstance({ provider: "openai", nickname: "Work", apiKey: "sk-test", model: "gpt-4o" });
+  it("getInstance round-trips with decrypted apiKey (no model field)", async () => {
+    const id = await createInstance({ provider: "openai", nickname: "Work", apiKey: "sk-test" });
     const inst = await getInstance(id);
     expect(inst!.apiKey).toBe("sk-test");
     expect(inst!.provider).toBe("openai");
     expect(inst!.nickname).toBe("Work");
-    expect(inst!.model).toBe("gpt-4o");
+    expect((inst as unknown as { model?: string }).model).toBeUndefined();
   });
 
   it("listInstances returns all registered, in instances_index order", async () => {
-    const a = await createInstance({ provider: "anthropic", nickname: "A", apiKey: "k1", model: "claude-opus-4-7" });
-    const b = await createInstance({ provider: "openai", nickname: "B", apiKey: "k2", model: "gpt-4o" });
+    const a = await createInstance({ provider: "anthropic", nickname: "A", apiKey: "k1" });
+    const b = await createInstance({ provider: "openai", nickname: "B", apiKey: "k2" });
     const list = await listInstances();
     expect(list.map((i) => i.id)).toEqual([a, b]);
   });
 
   it("deleteInstance removes storage + index entry; if active, picks next", async () => {
-    const a = await createInstance({ provider: "anthropic", nickname: "A", apiKey: "k1", model: "claude-opus-4-7" });
-    const b = await createInstance({ provider: "openai", nickname: "B", apiKey: "k2", model: "gpt-4o" });
+    const a = await createInstance({ provider: "anthropic", nickname: "A", apiKey: "k1" });
+    const b = await createInstance({ provider: "openai", nickname: "B", apiKey: "k2" });
     await setActiveInstance(a);
     await deleteInstance(a);
     expect(chromeMock.storage.local.__store[`instance_${a}`]).toBeUndefined();
@@ -56,14 +50,46 @@ describe("instances CRUD", () => {
   });
 
   it("deleting last instance clears active_instance_id", async () => {
-    const a = await createInstance({ provider: "anthropic", nickname: "A", apiKey: "k1", model: "claude-opus-4-7" });
+    const a = await createInstance({ provider: "anthropic", nickname: "A", apiKey: "k1" });
     await setActiveInstance(a);
     await deleteInstance(a);
     expect(await getActiveInstance()).toBeNull();
   });
 
-  it("resolveActiveInstanceModelConfig returns ModelConfig with resolved baseUrl", async () => {
-    const id = await createInstance({ provider: "anthropic", nickname: "A", apiKey: "sk-test", model: "claude-opus-4-7" });
+  it("createInstance stores explicit customModels", async () => {
+    const id = await createInstance({ provider: "deepseek", nickname: "DS", apiKey: "sk-test", customModels: ["deepseek-coder", "deepseek-chat"] });
+    const inst = await getInstance(id);
+    expect(inst!.customModels).toEqual(["deepseek-coder", "deepseek-chat"]);
+  });
+
+  it("createInstance without customModels leaves it undefined", async () => {
+    const id = await createInstance({ provider: "anthropic", nickname: "A", apiKey: "sk-test" });
+    const inst = await getInstance(id);
+    expect(inst!.customModels).toBeUndefined();
+  });
+});
+
+describe("firstModelForProvider", () => {
+  it("returns registry[0] for a provider with no customModels", async () => {
+    const id = await createInstance({ provider: "anthropic", nickname: "A", apiKey: "k" });
+    expect(await firstModelForProvider("anthropic", id)).toBe("claude-opus-4-7");
+  });
+
+  it("prefers instance.customModels[0] when present", async () => {
+    const id = await createInstance({ provider: "openai", nickname: "O", apiKey: "k", customModels: ["my-ft"] });
+    expect(await firstModelForProvider("openai", id)).toBe("my-ft");
+  });
+
+  it("falls back to fetched[0] for lazy provider with no registry/custom", async () => {
+    const id = await createInstance({ provider: "openrouter", nickname: "OR", apiKey: "k" });
+    await updateInstance(id, { fetchedModels: [{ id: "x/y", vision: false, tools: true, maxContextTokens: 8000 }] });
+    expect(await firstModelForProvider("openrouter", id)).toBe("x/y");
+  });
+});
+
+describe("resolveActiveInstanceModelConfig", () => {
+  it("returns ModelConfig with resolved baseUrl + provider's first model", async () => {
+    const id = await createInstance({ provider: "anthropic", nickname: "A", apiKey: "sk-test" });
     await setActiveInstance(id);
     const cfg = await resolveActiveInstanceModelConfig();
     expect(cfg).toMatchObject({
@@ -73,182 +99,102 @@ describe("instances CRUD", () => {
       baseUrl: "https://api.anthropic.com",
     });
   });
+});
 
-  it("createInstance auto-pushes model to customModels when not in registry", async () => {
-    const id = await createInstance({
-      provider: "deepseek",
-      nickname: "DS",
-      apiKey: "sk-test",
-      model: "deepseek-chat", // not in registry seed (only v4-flash, v4-pro)
-    });
-    const inst = await getInstance(id);
-    expect(inst!.customModels).toEqual(["deepseek-chat"]);
+// Issue #35 / #39 regression — vision capability is per-model, resolved at
+// task start so the screenshot guard (loop.ts) acts on the right model.
+describe("resolveModelConfig — vision per model (#35 / #39)", () => {
+  it("registry vision-capable model: vision === true", async () => {
+    const id = await createInstance({ provider: "anthropic", nickname: "A", apiKey: "k" });
+    const cfg = await resolveModelConfig(id, "claude-opus-4-7");
+    expect(cfg!.vision).toBe(true);
   });
 
-  it("createInstance respects explicit customModels and ensures selected model is included", async () => {
-    const id = await createInstance({
-      provider: "deepseek",
-      nickname: "DS",
-      apiKey: "sk-test",
-      model: "deepseek-chat",
-      customModels: ["deepseek-coder", "deepseek-chat"],
-    });
-    const inst = await getInstance(id);
-    expect(inst!.customModels).toEqual(["deepseek-coder", "deepseek-chat"]);
+  it("registry text-only model: vision === false (guard correctly fires)", async () => {
+    const id = await createInstance({ provider: "openai", nickname: "O", apiKey: "k" });
+    const cfg = await resolveModelConfig(id, "o3-mini");
+    expect(cfg!.vision).toBe(false);
   });
 
-  it("createInstance with registry model leaves customModels undefined", async () => {
-    const id = await createInstance({
-      provider: "anthropic",
-      nickname: "A",
-      apiKey: "sk-test",
-      model: "claude-opus-4-7", // in registry
+  it("OpenRouter (registry empty) with fetchedModels: vision from per-instance fetch", async () => {
+    const id = await createInstance({ provider: "openrouter", nickname: "OR", apiKey: "k", customModels: ["anthropic/claude-sonnet-4"] });
+    await updateInstance(id, {
+      fetchedModels: [
+        { id: "anthropic/claude-sonnet-4", vision: true, tools: true, maxContextTokens: 200_000 },
+        { id: "meta-llama/llama-3-70b", vision: false, tools: true, maxContextTokens: 8_000 },
+      ],
+      fetchedAt: Date.now(),
     });
-    const inst = await getInstance(id);
-    expect(inst!.customModels).toBeUndefined();
+    const cfg = await resolveModelConfig(id, "anthropic/claude-sonnet-4");
+    expect(cfg!.vision).toBe(true);
   });
 
-  // Issue #35 / #39 regression — vision capability is per-model, resolved at
-  // task start so the screenshot guard (loop.ts) doesn't fall back to the
-  // stale ProviderMeta.supportsVision lookup.
-  describe("ModelConfig.vision (issue #35 / #39 regression)", () => {
-    it("registry-known vision-capable model: ModelConfig.vision === true", async () => {
-      const id = await createInstance({ provider: "anthropic", nickname: "A", apiKey: "k", model: "claude-opus-4-7" });
-      await setActiveInstance(id);
-      const cfg = await resolveActiveInstanceModelConfig();
+  it("OpenRouter without fetchedModels: vision undefined (loop guard fail-opens)", async () => {
+    const id = await createInstance({ provider: "openrouter", nickname: "OR", apiKey: "k", customModels: ["anthropic/claude-sonnet-4"] });
+    const cfg = await resolveModelConfig(id, "anthropic/claude-sonnet-4");
+    expect(cfg!.vision).toBeUndefined();
+  });
+
+  describe("custom provider vision wired from CustomModelMeta (#62)", () => {
+    it("custom vision-capable model: vision === true", async () => {
+      const cpId = await saveCustomProvider({
+        name: "MyLLM", baseUrl: "https://api.myllm.test/v1",
+        models: [
+          { id: "vlm-1", vision: true, tools: true, maxContextTokens: 128_000 },
+          { id: "text-1", vision: false, tools: true, maxContextTokens: 128_000 },
+        ],
+      });
+      const id = await createInstance({ provider: `custom:${cpId}`, nickname: "Custom", apiKey: "k" });
+      const cfg = await resolveModelConfig(id, "vlm-1");
       expect(cfg!.vision).toBe(true);
     });
 
-    it("registry-known text-only model: ModelConfig.vision === false (guard correctly fires)", async () => {
-      const id = await createInstance({ provider: "openai", nickname: "O", apiKey: "k", model: "o3-mini" });
-      await setActiveInstance(id);
-      const cfg = await resolveActiveInstanceModelConfig();
+    it("custom text-only model: vision === false", async () => {
+      const cpId = await saveCustomProvider({
+        name: "MyLLM", baseUrl: "https://api.myllm.test/v1",
+        models: [{ id: "text-1", vision: false, tools: true, maxContextTokens: 128_000 }],
+      });
+      const id = await createInstance({ provider: `custom:${cpId}`, nickname: "Custom", apiKey: "k" });
+      const cfg = await resolveModelConfig(id, "text-1");
       expect(cfg!.vision).toBe(false);
     });
 
-    it("OpenRouter (registry empty) with fetchedModels catalog: vision resolved from per-instance fetch", async () => {
-      const id = await createInstance({
-        provider: "openrouter",
-        nickname: "OR",
-        apiKey: "k",
-        model: "anthropic/claude-sonnet-4",
-        customModels: ["anthropic/claude-sonnet-4"],
+    it("custom model id not in provider's model list: vision undefined (fail-closed)", async () => {
+      const cpId = await saveCustomProvider({
+        name: "MyLLM", baseUrl: "https://api.myllm.test/v1",
+        models: [{ id: "text-1", vision: false, tools: true, maxContextTokens: 128_000 }],
       });
-      await updateInstance(id, {
-        fetchedModels: [
-          { id: "anthropic/claude-sonnet-4", vision: true, tools: true, maxContextTokens: 200_000 },
-          { id: "meta-llama/llama-3-70b", vision: false, tools: true, maxContextTokens: 8_000 },
-        ],
-        fetchedAt: Date.now(),
-      });
-      await setActiveInstance(id);
-      const cfg = await resolveActiveInstanceModelConfig();
-      expect(cfg!.vision).toBe(true);
-    });
-
-    it("OpenRouter without fetchedModels: ModelConfig.vision is undefined (loop guard fail-opens)", async () => {
-      const id = await createInstance({
-        provider: "openrouter",
-        nickname: "OR",
-        apiKey: "k",
-        model: "anthropic/claude-sonnet-4",
-        customModels: ["anthropic/claude-sonnet-4"],
-      });
-      await setActiveInstance(id);
-      const cfg = await resolveActiveInstanceModelConfig();
+      const id = await createInstance({ provider: `custom:${cpId}`, nickname: "Custom", apiKey: "k" });
+      const cfg = await resolveModelConfig(id, "ghost-model");
       expect(cfg!.vision).toBeUndefined();
-    });
-
-    // #62 follow-up — custom provider models carry a user-annotated
-    // CustomModelMeta.vision; wire it into ModelConfig.vision so the
-    // fail-closed tool-table filter (loop.ts) can act on it.
-    describe("custom provider vision wired from CustomModelMeta (#62)", () => {
-      it("custom vision-capable model: ModelConfig.vision === true", async () => {
-        const cpId = await saveCustomProvider({
-          name: "MyLLM",
-          baseUrl: "https://api.myllm.test/v1",
-          models: [
-            { id: "vlm-1", vision: true, tools: true, maxContextTokens: 128_000 },
-            { id: "text-1", vision: false, tools: true, maxContextTokens: 128_000 },
-          ],
-        });
-        const id = await createInstance({
-          provider: `custom:${cpId}`,
-          nickname: "Custom",
-          apiKey: "k",
-          model: "vlm-1",
-        });
-        await setActiveInstance(id);
-        const cfg = await resolveActiveInstanceModelConfig();
-        expect(cfg!.vision).toBe(true);
-      });
-
-      it("custom text-only model: ModelConfig.vision === false (gets fail-closed filtered)", async () => {
-        const cpId = await saveCustomProvider({
-          name: "MyLLM",
-          baseUrl: "https://api.myllm.test/v1",
-          models: [{ id: "text-1", vision: false, tools: true, maxContextTokens: 128_000 }],
-        });
-        const id = await createInstance({
-          provider: `custom:${cpId}`,
-          nickname: "Custom",
-          apiKey: "k",
-          model: "text-1",
-        });
-        await setActiveInstance(id);
-        const cfg = await resolveActiveInstanceModelConfig();
-        expect(cfg!.vision).toBe(false);
-      });
-
-      it("custom model id not in provider's model list: ModelConfig.vision undefined (fail-closed)", async () => {
-        const cpId = await saveCustomProvider({
-          name: "MyLLM",
-          baseUrl: "https://api.myllm.test/v1",
-          models: [{ id: "text-1", vision: false, tools: true, maxContextTokens: 128_000 }],
-        });
-        const id = await createInstance({
-          provider: `custom:${cpId}`,
-          nickname: "Custom",
-          apiKey: "k",
-          model: "ghost-model",
-          customModels: ["ghost-model"],
-        });
-        await setActiveInstance(id);
-        const cfg = await resolveActiveInstanceModelConfig();
-        expect(cfg!.vision).toBeUndefined();
-      });
     });
   });
 });
 
-describe("resolveInstanceToModelConfig — builtin custom model vision via pcmm", () => {
-  beforeEach(() => {
-    chromeMock.storage.local.__store = {};
-  });
-
-  it("pcmm vision:true unlocks ModelConfig.vision for a non-registry builtin model", async () => {
-    const id = await createInstance({ provider: "minimax", nickname: "X", apiKey: "k", model: "MyVisionModel" });
+describe("resolveModelConfig — builtin custom model vision via pcmm", () => {
+  it("pcmm vision:true unlocks vision for a non-registry builtin model", async () => {
+    const id = await createInstance({ provider: "minimax", nickname: "X", apiKey: "k", customModels: ["MyVisionModel"] });
     await setProviderCustomModelMeta("minimax", "MyVisionModel", { vision: true, maxContextTokens: 256_000 });
-    const cfg = await resolveInstanceToModelConfig(id);
+    const cfg = await resolveModelConfig(id, "MyVisionModel");
     expect(cfg?.vision).toBe(true);
   });
 
-  it("pcmm vision:false sets ModelConfig.vision false (present, not omitted)", async () => {
-    const id = await createInstance({ provider: "minimax", nickname: "X", apiKey: "k", model: "MyTextModel" });
+  it("pcmm vision:false sets vision false (present, not omitted)", async () => {
+    const id = await createInstance({ provider: "minimax", nickname: "X", apiKey: "k", customModels: ["MyTextModel"] });
     await setProviderCustomModelMeta("minimax", "MyTextModel", { vision: false, maxContextTokens: 256_000 });
-    const cfg = await resolveInstanceToModelConfig(id);
+    const cfg = await resolveModelConfig(id, "MyTextModel");
     expect(cfg?.vision).toBe(false);
   });
 
   it("registry preset still wins (MiniMax-M3 vision true) without pcmm", async () => {
-    const id = await createInstance({ provider: "minimax", nickname: "X", apiKey: "k", model: "MiniMax-M3" });
-    const cfg = await resolveInstanceToModelConfig(id);
+    const id = await createInstance({ provider: "minimax", nickname: "X", apiKey: "k" });
+    const cfg = await resolveModelConfig(id, "MiniMax-M3");
     expect(cfg?.vision).toBe(true);
   });
 
   it("unknown builtin model with no pcmm omits vision (undefined → fail-closed)", async () => {
-    const id = await createInstance({ provider: "minimax", nickname: "X", apiKey: "k", model: "no-such-model" });
-    const cfg = await resolveInstanceToModelConfig(id);
+    const id = await createInstance({ provider: "minimax", nickname: "X", apiKey: "k" });
+    const cfg = await resolveModelConfig(id, "no-such-model");
     expect(cfg && "vision" in cfg).toBe(false);
   });
 });
