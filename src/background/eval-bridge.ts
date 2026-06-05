@@ -48,7 +48,10 @@ function makeBridge() {
   return {
     async seedConfig(cfg: { provider: string; model: string; apiKey: string }) {
       // builtin provider 路径(anthropic/openai/...);custom provider baseUrl v1 不支持。
-      const id = await createInstance({ provider: cfg.provider as any, nickname: "eval", apiKey: cfg.apiKey, model: cfg.model });
+      // Model decoupled from instance: stash the eval's target model in
+      // customModels[0] so firstModelForProvider (used by
+      // resolveActiveInstanceModelConfig) resolves to exactly cfg.model.
+      const id = await createInstance({ provider: cfg.provider as any, nickname: "eval", apiKey: cfg.apiKey, customModels: [cfg.model] });
       await setActiveInstance(id);
       // Headless harness has no human to grant CDP-input consent — without this,
       // every click/type tool hits requestCdpInputConsent and fails ("no sidepanel

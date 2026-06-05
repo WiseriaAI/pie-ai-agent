@@ -8,7 +8,6 @@ export interface StoredInstance {
   provider: ProviderRef;
   nickname: string;
   encryptedKey: string;
-  model: string;
   customModels?: string[];
   fetchedModels?: { id: string; vision: boolean; tools: boolean; maxContextTokens: number }[];
   fetchedAt?: number;
@@ -28,40 +27,24 @@ export async function createInstance(input: {
   provider: ProviderRef;
   nickname: string;
   apiKey: string;
-  model: string;
-  /** Optional. Custom model ids the user added during the form session.
-   *  When omitted, auto-detects: if `model` isn't in the registry, push it
-   *  to customModels so it survives as a dropdown entry on next edit. */
+  /** Optional. Provider-level custom model ids associated with this instance
+   *  (back-compat pool). Model selection itself lives in the Composer, not here. */
   customModels?: string[];
 }): Promise<string> {
   if (!input.apiKey.trim()) throw new Error("API key cannot be empty");
   const id = crypto.randomUUID();
   const key = await getOrCreateEncryptionKey();
-  const meta = getProviderMeta(input.provider as BuiltinProvider);
-  const inRegistry = meta?.models.some((m) => m.id === input.model) ?? false;
-  // Resolve customModels: explicit > auto-detect (model not in registry)
-  let resolvedCustomModels: string[] | undefined;
-  if (input.customModels && input.customModels.length > 0) {
-    // Ensure the selected model is included if it's custom
-    resolvedCustomModels = inRegistry
-      ? input.customModels
-      : Array.from(new Set([...input.customModels, input.model]));
-  } else if (!inRegistry) {
-    resolvedCustomModels = [input.model];
-  }
   const stored: StoredInstance = {
     id,
     provider: input.provider,
     nickname: input.nickname,
     encryptedKey: await encrypt(input.apiKey, key),
-    model: input.model,
-    ...(resolvedCustomModels && { customModels: resolvedCustomModels }),
+    ...(input.customModels && input.customModels.length > 0 && { customModels: input.customModels }),
     createdAt: Date.now(),
   };
   const idx = await readIndex();
   idx.push(id);
   await chrome.storage.local.set({ [INSTANCE_KEY(id)]: stored, [INDEX_KEY]: idx });
-  if (idx.length === 1 && !(await getActiveInstance())) await setActiveInstance(id);
   return id;
 }
 
@@ -118,8 +101,8 @@ async function resolveCustomModelVision(
   return cp?.models.find((m) => m.id === model)?.vision;
 }
 
-export async function resolveInstanceToModelConfig(id: string): Promise<ModelConfig | null> {
-  const inst = await getInstance(id);
+export async function resolveModelConfig(instanceId: string, model: string): Promise<ModelConfig | null> {
+  const inst = await getInstance(instanceId);
   if (!inst) return null;
   const meta = await resolveProviderMeta(inst.provider);
   if (!meta) return null;
@@ -130,17 +113,17 @@ export async function resolveInstanceToModelConfig(id: string): Promise<ModelCon
   // → fail-closed downstream, unchanged).
   let vision: boolean | undefined;
   if (inst.provider.startsWith("custom:")) {
-    vision = await resolveCustomModelVision(inst.provider, inst.model);
+    vision = await resolveCustomModelVision(inst.provider, model);
   } else {
-    vision = resolveModelVision(inst.provider as BuiltinProvider, inst.model, inst.fetchedModels);
+    vision = resolveModelVision(inst.provider as BuiltinProvider, model, inst.fetchedModels);
     if (vision === undefined) {
-      vision = (await resolveModelMeta(inst.provider, inst.model))?.vision;
+      vision = (await resolveModelMeta(inst.provider, model))?.vision;
     }
   }
   return {
     provider: inst.provider,
     providerName: meta.name,
-    model: inst.model,
+    model,
     apiKey: inst.apiKey,
     baseUrl: meta.defaultBaseUrl,
     ...(inst.maxTokens != null && { maxTokens: inst.maxTokens }),
@@ -148,10 +131,27 @@ export async function resolveInstanceToModelConfig(id: string): Promise<ModelCon
   };
 }
 
+/** provider 的「第一个可用 model」：instance.customModels[0]（用户/eval 显式）
+ *  → registry[0] → fetched[0]。用于 D3 兜底（普通 instance 无 customModels →
+ *  registry[0]）与 eval（把指定 model 存进 customModels）。 */
+export async function firstModelForProvider(provider: ProviderRef, instanceId?: string): Promise<string | null> {
+  const inst = instanceId
+    ? await getInstance(instanceId)
+    : (await listInstances()).find((i) => i.provider === provider);
+  if (inst?.customModels && inst.customModels.length > 0) return inst.customModels[0]!;
+  const meta = getProviderMeta(provider as BuiltinProvider);
+  if (meta && meta.models.length > 0) return meta.models[0]!.id;
+  return inst?.fetchedModels?.[0]?.id ?? null;
+}
+
 export async function resolveActiveInstanceModelConfig(): Promise<ModelConfig | null> {
   const id = await getActiveInstance();
   if (!id) return null;
-  return resolveInstanceToModelConfig(id);
+  const inst = await getInstance(id);
+  if (!inst) return null;
+  const model = await firstModelForProvider(inst.provider, id);
+  if (!model) return null;
+  return resolveModelConfig(id, model);
 }
 
 async function readIndex(): Promise<string[]> {
@@ -162,7 +162,6 @@ async function readIndex(): Promise<string[]> {
 export async function updateInstance(id: string, patch: Partial<{
   nickname: string;
   apiKey: string;
-  model: string;
   customModels: string[];
   fetchedModels: StoredInstance["fetchedModels"];
   fetchedAt: number;
@@ -177,7 +176,6 @@ export async function updateInstance(id: string, patch: Partial<{
     const key = await getOrCreateEncryptionKey();
     next.encryptedKey = await encrypt(patch.apiKey, key);
   }
-  if (patch.model !== undefined) next.model = patch.model;
   if (patch.customModels !== undefined) next.customModels = patch.customModels;
   if (patch.fetchedModels !== undefined) next.fetchedModels = patch.fetchedModels;
   if (patch.fetchedAt !== undefined) next.fetchedAt = patch.fetchedAt;
