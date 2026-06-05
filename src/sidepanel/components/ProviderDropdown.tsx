@@ -4,6 +4,7 @@ import type { ProviderMeta } from "@/lib/model-router/providers/registry";
 import type { StoredCustomProvider } from "@/lib/custom-providers";
 import { CUSTOM_PREFIX } from "@/lib/custom-providers";
 import { useT, providerDisplayName } from "@/lib/i18n";
+import ProviderIcon from "./ProviderIcon";
 
 interface Props {
   value: ProviderRef | null;
@@ -64,9 +65,8 @@ export default function ProviderDropdown(props: Props) {
         onClick={() => setOpen(!open)}
         className="flex items-center gap-2 rounded border border-line bg-field px-3 py-2 text-left text-[12px] text-fg-1 hover:border-fg-3"
       >
-        <span className="font-mono">
-          {selectedName ?? t("providerDropdown.selectProvider")}
-        </span>
+        {props.value && <ProviderIcon provider={props.value} size={16} className="text-fg-1" />}
+        <span>{selectedName ?? t("providerDropdown.selectProvider")}</span>
         <span className="ml-auto text-fg-3">{open ? "▴" : "▾"}</span>
       </button>
 
@@ -101,6 +101,7 @@ export default function ProviderDropdown(props: Props) {
                     }}
                     className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] hover:bg-field ${p.id === props.value ? "bg-field" : ""}`}
                   >
+                    <ProviderIcon provider={p.id} size={18} className="text-fg-2" />
                     <span className="text-fg-1">{providerDisplayName(p, t)}</span>
                     <span className="ml-auto font-mono text-[10px] text-fg-3">
                       {p.defaultBaseUrl.replace(/^https?:\/\//, "")}
@@ -130,6 +131,7 @@ export default function ProviderDropdown(props: Props) {
                           setOpen(false);
                         }}
                       >
+                        <ProviderIcon provider={ref} size={18} className="text-fg-2" />
                         <span className="text-fg-1">{cp.name}</span>
                         <span className="ml-auto font-mono text-[10px] text-fg-3">
                           {cp.baseUrl.replace(/^https?:\/\//, "")}

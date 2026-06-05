@@ -5,16 +5,16 @@ import { CUSTOM_PREFIX } from "@/lib/custom-providers";
 
 interface Props {
   provider: ProviderRef;
-  /** 方块边长 px */
+  /** 图标边长 px */
   size: number;
-  /** 当前选中态可传 accent 色（如 "text-accent"）；默认 text-fg-2 */
+  /** 颜色（如 "text-accent"）；默认 text-fg-2。单色 svg 随之着色。 */
   className?: string;
 }
 
 /**
- * 内置 provider 图标；缺图标 / custom provider 回退到首字母 monogram。
- * 单色 svg 通过 CSS mask + `background-color: currentColor` 着色，由 `color`
- * （className / 继承）控制主题色 —— 深色主题给浅色 logo，浅色主题给深色 logo。
+ * 内置 provider 图标（无外框，直接显示在名字旁）；缺图标 / custom provider 回退
+ * 到首字母 monogram。单色 svg 通过 CSS mask + currentColor 着色，由 `color`
+ * （className / 继承）控制主题色。
  */
 export default function ProviderIcon({ provider, size, className }: Props) {
   const isCustom = provider.startsWith(CUSTOM_PREFIX);
@@ -23,8 +23,7 @@ export default function ProviderIcon({ provider, size, className }: Props) {
   const wrap: CSSProperties = {
     width: box,
     height: box,
-    borderRadius: Math.max(4, Math.round(box * 0.27)),
-    display: "flex",
+    display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
     flexShrink: 0,
@@ -32,16 +31,15 @@ export default function ProviderIcon({ provider, size, className }: Props) {
 
   if (meta?.iconAsset) {
     const url = chrome.runtime.getURL(meta.iconAsset);
-    const inner = Math.round(box * 0.62);
     return (
-      <span style={wrap} className={`bg-field border border-line ${className ?? "text-fg-2"}`}>
+      <span style={wrap} className={className ?? "text-fg-2"}>
         <span
           data-testid="provider-icon-img"
           data-icon-url={url}
           aria-hidden
           style={{
-            width: inner,
-            height: inner,
+            width: box,
+            height: box,
             backgroundColor: "currentColor",
             WebkitMaskImage: `url(${url})`,
             maskImage: `url(${url})`,
@@ -58,8 +56,8 @@ export default function ProviderIcon({ provider, size, className }: Props) {
   }
 
   return (
-    <span style={wrap} className={`bg-field border border-line ${className ?? "text-fg-2"}`}>
-      <span className="font-semibold leading-none" style={{ fontSize: Math.round(box * 0.5) }}>
+    <span style={wrap} className={className ?? "text-fg-2"}>
+      <span className="font-semibold leading-none" style={{ fontSize: Math.round(box * 0.7) }}>
         {monogram(provider, meta?.name)}
       </span>
     </span>
