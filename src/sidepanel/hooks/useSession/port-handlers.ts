@@ -183,8 +183,15 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
     if (msg.type === "agent-done-task") {
       const prev = slotsRef.current.get(id);
       const baseMessages = prev?.messages ?? [];
+      // Mid-stream abort lands here (not chat-done): the loop is cut off while
+      // assistant text/thinking is still streaming. Flush that in-flight turn
+      // into a real message first — same as chat-done / agent-step / disconnect —
+      // otherwise the reset below discards what the user just saw on screen.
+      const accumulated = prev?.accumulated ?? "";
+      const thinking = prev?.streamingThinking ?? "";
+      const { next: flushedMsgs } = buildAssistant(baseMessages, accumulated, thinking);
       const next: DisplayMessage[] = [
-        ...baseMessages,
+        ...flushedMsgs,
         {
           role: "agent-summary",
           success: msg.success,

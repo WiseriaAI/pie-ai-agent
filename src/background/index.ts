@@ -23,6 +23,7 @@ import {
   safeParseOrigin,
   mergeSessionAgentSnapshot,
 } from "@/lib/agent/loop";
+import { planAbortResumeSeed } from "@/lib/agent/abort-resume";
 // Eval harness (dev-only). STATIC import is required: MV3 service workers do
 // NOT support runtime dynamic import(), so the bridge must be in the static
 // module graph (loaded at SW registration). Prod build sets __PIE_EVAL__=false,
@@ -1141,8 +1142,13 @@ async function handleChatStream(
 
     const lastTaskSynth = synthAgent?.lastTaskSynth ?? null;
 
+    // B — abort 续接：若 synthAgent 是一个 abort 留下的 in-flight 中断点，
+    // 以完整 raw 历史续接（在末尾追加用户新消息），而非从 panel 文本重建。
+    // 与 lastTaskSynth 互斥：abort 不生成 synth；success/fail 清空历史。
+    const abortResume = planAbortResumeSeed(synthAgent ?? null, messages);
+
     let effectiveMessages = messages;
-    if (lastTaskSynth) {
+    if (!abortResume && lastTaskSynth) {
       // Insert the synth assistant turn before the last user message.
       // Build a new array — never mutate the input.
       effectiveMessages = [
@@ -1210,10 +1216,15 @@ async function handleChatStream(
       // M5 — auto-unpin task-mode pin at task end (chat-start path).
       // clearTaskPinAtSessionEnd returns Promise<boolean>; onTaskDone expects Promise<void>.
       onTaskDone: async () => { await clearTaskPinAtSessionEnd(sessionId); },
-      // U2 — pass the full (possibly synth-injected) messages array so
-      // runAgentLoop can seed a proper multi-turn history instead of the
-      // bare [system, user(task)] two-entry seed.
-      messages: effectiveMessages,
+      // B — abort 続接走 resume 风格 seed（完整 raw 历史 + 追加新 user turn）；
+      // 否则走多轮重建（effectiveMessages，可能含 lastTaskSynth 注入）。
+      ...(abortResume
+        ? {
+            resumedAgentMessages: abortResume.resumedAgentMessages,
+            resumedFromStep: abortResume.resumedFromStep,
+            resumedHasImageContent: abortResume.resumedHasImageContent,
+          }
+        : { messages: effectiveMessages }),
       // U4 — telemetry: fire-and-forget; crypto.subtle may be async but
       // must not stall the LLM call.
       onHistoryRepaired: (violations, rawMessages) => {
