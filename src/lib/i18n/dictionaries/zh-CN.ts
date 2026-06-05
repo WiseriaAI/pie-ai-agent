@@ -244,18 +244,6 @@ export const zhCNDict = {
     save: "保存",
     forgetConfig: "删除配置",
   },
-  instancesList: {
-    active: "当前使用",
-    activate: "启用",
-  },
-  instanceSelector: {
-    newConfigOrManage: "+ 新建配置 / 管理配置",
-    selectConfig: "选择配置",
-    none: "(无)",
-    switchConfig: "切换配置",
-    active: "当前使用",
-    manageConfigs: "管理配置",
-  },
   agentStep: {
     callingToolPrefix: "正在调用",
     collapse: "收起",

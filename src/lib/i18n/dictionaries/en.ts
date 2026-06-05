@@ -243,18 +243,6 @@ export const enDict = {
     save: "Save",
     forgetConfig: "Forget config",
   },
-  instancesList: {
-    active: "ACTIVE",
-    activate: "Activate",
-  },
-  instanceSelector: {
-    newConfigOrManage: "+ New config / Manage configs",
-    selectConfig: "select config",
-    none: "(none)",
-    switchConfig: "SWITCH CONFIG",
-    active: "ACTIVE",
-    manageConfigs: "Manage configs",
-  },
   agentStep: {
     callingToolPrefix: "Calling",
     collapse: "Collapse",
