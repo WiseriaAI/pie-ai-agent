@@ -13,7 +13,7 @@ import {
   isKeyboardToolName,
 } from "./tools";
 import type { Tool } from "./types";
-import { getToolClass, SCREENSHOT_TOOL_NAMES } from "./tool-names";
+import { getToolClass, isCdpGatedToolName, SCREENSHOT_TOOL_NAMES } from "./tool-names";
 import {
   detectLoop,
   recordStep,
@@ -1816,7 +1816,12 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         const tool = allTools.find((t) => t.name === tc.name);
 
         if (!tool) {
-          const errorMsg = `Unknown tool: ${tc.name}`;
+          // A CDP-gated tool (click/hover/keyboard/editor) is absent only when
+          // the user disabled CDP input — give a precise, actionable reason
+          // instead of a bare "Unknown tool" so the model can tell the user.
+          const errorMsg = isCdpGatedToolName(tc.name)
+            ? `Tool "${tc.name}" requires CDP input, which is disabled in the user's Settings. Clicking, keyboard input, and code-editor read/write (read_editor/set_editor_value) all need it and have no workaround. Tell the user to enable "CDP input" in the extension Settings, then stop (call fail with that reason).`
+            : `Unknown tool: ${tc.name}`;
           toolResultBlocks.push({
             type: "tool_result",
             toolUseId: tc.id,

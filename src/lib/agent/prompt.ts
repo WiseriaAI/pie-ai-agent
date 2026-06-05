@@ -257,6 +257,18 @@ export function buildSkillCatalogBlock(entries: SkillCatalogEntry[]): string {
   return `\n\nAvailable skills (reusable playbooks). When the user's request matches one, call use_skill({skillId}) to load its instructions, then carry out the task with the regular tools as directed. Skills take no business parameters — infer needed inputs from context. If a loaded skill lists reference files, fetch them with read_skill_file.\n${lines}`;
 }
 
+// Shown ONLY when CDP input is disabled (hasKeyboardTools=false). Corrects the
+// static prompt above (which assumes click is available) and tells the model to
+// route the user to Settings instead of attempting CDP-only actions or calling
+// tools that aren't in this session's tool set.
+const CDP_DISABLED_GUIDANCE = `
+
+## CDP Input Disabled
+
+"CDP input" is DISABLED in the user's Settings, so this session has **no** \`click\`, \`hover\`, \`dispatch_keyboard_input\`, \`press_key\`, \`read_editor\`, or \`set_editor_value\` tools — ignore any mention of them above and do not call them. You can still \`read_page\`/\`search_page\`, \`type\`/\`select\`/\`scroll\`, switch tabs, and read PDFs.
+
+If the task needs clicking a button/link, keyboard shortcuts, or reading/writing a code editor (Monaco/CodeMirror), there is **no workaround**. Do not try other tools to approximate it — state plainly that it requires **CDP input**, ask the user to enable it in the extension Settings, and call \`fail\` with that reason. Exit quickly so the user knows the cause.`;
+
 export function buildAgentSystemPrompt(
   task: string,
   hasKeyboardTools = false,
@@ -267,12 +279,13 @@ export function buildAgentSystemPrompt(
 ): string {
   const keyboardGuidance = hasKeyboardTools ? KEYBOARD_SIM_GUIDANCE : "";
   const editorGuidance = hasKeyboardTools ? EDITOR_TOOLS_GUIDANCE : "";
+  const cdpDisabledGuidance = hasKeyboardTools ? "" : CDP_DISABLED_GUIDANCE;
   const metaGuidance = hasMetaTools ? META_TOOL_GUIDANCE : "";
   const skillCatalogBlock = buildSkillCatalogBlock(skillCatalog);
   const tabGuidance = TAB_TOOLS_GUIDANCE;
   const pinnedContext = buildPinnedContextBlock(pinnedTabs, currentFocusTabId);
   return (
-    `${STATIC_AGENT_SYSTEM_PROMPT}${READ_PAGE_GUIDANCE}${FRAME_AWARENESS_GUIDANCE}${keyboardGuidance}${editorGuidance}${metaGuidance}${skillCatalogBlock}${tabGuidance}${SEARCH_TOOL_GUIDANCE}${PDF_TOOLS_GUIDANCE}${pinnedContext}\n\n<user_task>${task}</user_task>\n\n${R15_IMAGE_UNTRUSTED}`
+    `${STATIC_AGENT_SYSTEM_PROMPT}${READ_PAGE_GUIDANCE}${FRAME_AWARENESS_GUIDANCE}${keyboardGuidance}${editorGuidance}${cdpDisabledGuidance}${metaGuidance}${skillCatalogBlock}${tabGuidance}${SEARCH_TOOL_GUIDANCE}${PDF_TOOLS_GUIDANCE}${pinnedContext}\n\n<user_task>${task}</user_task>\n\n${R15_IMAGE_UNTRUSTED}`
   );
 }
 

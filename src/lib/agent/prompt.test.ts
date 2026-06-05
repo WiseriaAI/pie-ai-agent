@@ -71,6 +71,23 @@ describe("buildAgentSystemPrompt — M3-U2 pinned-context block (single-pin back
   });
 });
 
+describe("buildAgentSystemPrompt — CDP-disabled guidance", () => {
+  it("when CDP is OFF (hasKeyboardTools=false): adds the disabled notice telling the model to route the user to Settings", () => {
+    const prompt = buildAgentSystemPrompt("do the thing", false, true);
+    expect(prompt).toContain("CDP Input Disabled");
+    expect(prompt).toContain("no workaround");
+    expect(prompt).toMatch(/enable it in the extension Settings/i);
+    expect(prompt).toContain("read_editor");
+    expect(prompt).toContain("set_editor_value");
+  });
+
+  it("when CDP is ON (hasKeyboardTools=true): no disabled notice, editor guidance present instead", () => {
+    const prompt = buildAgentSystemPrompt("do the thing", true, true);
+    expect(prompt).not.toContain("CDP Input Disabled");
+    expect(prompt).toContain("read_editor");
+  });
+});
+
 describe("buildAgentSystemPrompt — v1.5 multi-pin block", () => {
   it("multi-pin: lists all tabs and marks the current focus tab", () => {
     const prompt = buildAgentSystemPrompt(
