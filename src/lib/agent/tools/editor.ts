@@ -190,7 +190,41 @@ export function buildEditorTools(deps: EditorToolDeps): Tool[] {
         return { success: true, observation: wrapped };
       },
     },
-    // set_editor_value added in Task 5
+    {
+      name: "set_editor_value",
+      description:
+        "Replace the ENTIRE content of a code editor (Monaco / CodeMirror) by its data-pie-idx from read_page (role=\"editor\"). Writes via the editor's model API in one shot — no per-character typing, no IME issues, no length truncation. Use this to fill editors with large code/SQL. Reads back to verify. For canvas editors (e.g. Google Docs) it errors; write those via dispatch_keyboard_input after clicking to focus.",
+      parameters: {
+        type: "object",
+        properties: {
+          elementIndex: {
+            type: "number",
+            description: "data-pie-idx of the editor host (role=\"editor\") from the latest read_page.",
+          },
+          text: {
+            type: "string",
+            description: `Full replacement content. Max ${MAX_SET_TEXT_LENGTH} characters.`,
+          },
+        },
+        required: ["elementIndex", "text"],
+        additionalProperties: false,
+      },
+      handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
+        const a = args as { elementIndex: number; text: string };
+        if (a.text.length > MAX_SET_TEXT_LENGTH) {
+          return { success: false, error: `text length ${a.text.length} exceeds ${MAX_SET_TEXT_LENGTH} character cap` };
+        }
+        const acq = await acquire(deps, ctx);
+        if ("error" in acq) return { success: false, error: acq.error };
+        const out = await evaluate(acq.session, buildSetEditorExpression(a.elementIndex, a.text));
+        if ("evalError" in out) return { success: false, error: `set_editor_value failed: ${out.evalError}` };
+        if (!out.ok) return { success: false, error: reasonToError(out.reason) };
+        if (!out.verified) {
+          return { success: false, error: "set_editor_value wrote but read-back did not match — the page may intercept input or use a controlled component that rolled back. Try dispatch_keyboard_input after clicking to focus." };
+        }
+        return { success: true, observation: `Set ${a.text.length} chars into ${out.engine} editor [${a.elementIndex}] (verified).` };
+      },
+    },
   ];
 }
 

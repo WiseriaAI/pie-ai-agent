@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { buildEditorTools, buildReadEditorExpression } from "./editor";
+import { buildEditorTools, buildReadEditorExpression, buildSetEditorExpression } from "./editor";
 import type { CdpSession } from "../../../background/cdp-session";
 
 function fakeSession(evalResult: unknown): CdpSession {
@@ -85,5 +85,49 @@ describe("read_editor", () => {
     );
     expect(res.success).toBe(false);
     expect(res.error).toMatch(/read_page|changed/i);
+  });
+});
+
+describe("buildSetEditorExpression", () => {
+  it("embeds idx and JSON-escaped text and references setValue", async () => {
+    const expr = buildSetEditorExpression(3, 'a"b\n</x>');
+    expect(expr).toContain('[data-pie-idx="3"]');
+    expect(expr).toContain(JSON.stringify('a"b\n</x>'));
+    expect(expr).toContain(".set(");
+  });
+});
+
+describe("set_editor_value", () => {
+  it("succeeds and reports verified when read-back matches", async () => {
+    const session = fakeSession({ result: { value: { ok: true, engine: "monaco", verified: true } } });
+    const tools = buildEditorTools(deps(session));
+    const res = await getTool(tools, "set_editor_value").handler(
+      { elementIndex: 3, text: "SELECT 1" },
+      { tabId: 1 } as never,
+    );
+    expect(res.success).toBe(true);
+    expect(res.observation).toMatch(/monaco/);
+  });
+
+  it("fails when read-back does not match (page intercepted / controlled rollback)", async () => {
+    const session = fakeSession({ result: { value: { ok: true, engine: "cm5", verified: false } } });
+    const tools = buildEditorTools(deps(session));
+    const res = await getTool(tools, "set_editor_value").handler(
+      { elementIndex: 3, text: "SELECT 1" },
+      { tabId: 1 } as never,
+    );
+    expect(res.success).toBe(false);
+    expect(res.error).toMatch(/verif|not match|rollback/i);
+  });
+
+  it("rejects text over the cap", async () => {
+    const session = fakeSession({ result: { value: { ok: true, engine: "monaco", verified: true } } });
+    const tools = buildEditorTools(deps(session));
+    const res = await getTool(tools, "set_editor_value").handler(
+      { elementIndex: 3, text: "x".repeat(500_001) },
+      { tabId: 1 } as never,
+    );
+    expect(res.success).toBe(false);
+    expect(res.error).toMatch(/length|cap|exceeds/i);
   });
 });
