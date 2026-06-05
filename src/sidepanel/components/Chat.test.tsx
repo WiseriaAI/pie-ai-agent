@@ -71,9 +71,22 @@ vi.mock("@/lib/files/inject", () => ({
 
 // ── Mock @/lib/instances so checkConfig never touches real crypto ─────────────
 vi.mock("@/lib/instances", () => ({
-  listInstances: vi.fn().mockResolvedValue([{ id: "inst-1", provider: "anthropic", model: "claude-opus-4-7", nickname: "My Anthropic", apiKey: "sk-test", createdAt: 0 }]),
+  listInstances: vi.fn().mockResolvedValue([{ id: "inst-1", provider: "anthropic", nickname: "My Anthropic", apiKey: "sk-test", createdAt: 0 }]),
   getActiveInstance: vi.fn().mockResolvedValue("inst-1"),
-  getInstance: vi.fn().mockResolvedValue({ id: "inst-1", provider: "anthropic", model: "claude-opus-4-7", nickname: "My Anthropic", apiKey: "sk-test", createdAt: 0 }),
+  getInstance: vi.fn().mockResolvedValue({ id: "inst-1", provider: "anthropic", nickname: "My Anthropic", apiKey: "sk-test", createdAt: 0 }),
+  updateInstance: vi.fn().mockResolvedValue(undefined),
+  firstModelForProvider: vi.fn().mockResolvedValue("claude-opus-4-7"),
+}));
+
+// resolveSelection drives the composer chip + vision checks; stub it so tests
+// don't depend on the real instance/last-selection resolution chain.
+vi.mock("@/lib/model-selection-resolver", () => ({
+  resolveSelection: vi.fn().mockResolvedValue({ instanceId: "inst-1", model: "claude-opus-4-7" }),
+}));
+
+// Composer's openrouter lazy fetch — never hit the network in tests.
+vi.mock("@/lib/openrouter-models-fetch", () => ({
+  fetchOpenRouterModels: vi.fn().mockResolvedValue([]),
 }));
 
 // Also need to mock @/lib/sessions/storage for InstanceSelector sub-component
@@ -85,6 +98,7 @@ vi.mock("@/lib/sessions/storage", () => ({
 
 // Import the mocked instances so individual tests can override return values.
 import { listInstances, getActiveInstance, getInstance } from "@/lib/instances";
+import { resolveSelection } from "@/lib/model-selection-resolver";
 // Import the mocked sessions/storage so individual tests can override getSessionMeta.
 import { getSessionMeta } from "@/lib/sessions/storage";
 
@@ -132,10 +146,11 @@ const PROVIDER_DEFAULT_MODELS: Record<string, string> = {
 // Configure the mocked instances so checkConfig() resolves with the given provider.
 function seedProvider(providerId: string, modelOverride?: string) {
   const model = modelOverride ?? PROVIDER_DEFAULT_MODELS[providerId] ?? "test-model";
-  const inst = { id: "inst-1", provider: providerId as import("@/lib/model-router").Provider, model, nickname: "Test", apiKey: "sk-test", createdAt: 0 };
+  const inst = { id: "inst-1", provider: providerId as import("@/lib/model-router").Provider, nickname: "Test", apiKey: "sk-test", createdAt: 0 };
   vi.mocked(listInstances).mockResolvedValue([inst] as import("@/lib/instances").DecryptedInstance[]);
   vi.mocked(getActiveInstance).mockResolvedValue("inst-1");
   vi.mocked(getInstance).mockResolvedValue(inst as import("@/lib/instances").DecryptedInstance);
+  vi.mocked(resolveSelection).mockResolvedValue({ instanceId: "inst-1", model });
 }
 
 // Chrome tabs mock extension — Chat.tsx uses chrome.tabs.onActivated,
@@ -1103,25 +1118,21 @@ describe("Chat — M5 pinMode behavior", () => {
   });
 });
 
-// ── Regression: InstanceSelector chip fallback for new sessions ───────────────
+// ── Regression: ModelPicker chip fallback for new sessions ────────────────────
 
-describe("Chat — InstanceSelector chip fallback (new session no pin)", () => {
-  it("chip displays active instance nickname when session has no per-session pin", async () => {
-    // Session meta has no instanceId (new session)
+describe("Chat — ModelPicker chip fallback (new session no pin)", () => {
+  it("chip displays the resolved provider + model when session has no per-session pin", async () => {
     vi.mocked(getSessionMeta).mockResolvedValue(null);
-    // Global active instance
-    vi.mocked(getActiveInstance).mockResolvedValue("active-1");
-    // One instance with that id
     const inst = {
       id: "active-1",
       provider: "anthropic" as import("@/lib/model-router").Provider,
-      model: "claude-opus-4-7",
       nickname: "My Work Key",
       apiKey: "sk-test",
       createdAt: 0,
     };
     vi.mocked(listInstances).mockResolvedValue([inst] as import("@/lib/instances").DecryptedInstance[]);
     vi.mocked(getInstance).mockResolvedValue(inst as import("@/lib/instances").DecryptedInstance);
+    vi.mocked(resolveSelection).mockResolvedValue({ instanceId: "active-1", model: "claude-opus-4-7" });
 
     await act(async () => {
       render(
@@ -1133,10 +1144,8 @@ describe("Chat — InstanceSelector chip fallback (new session no pin)", () => {
       );
     });
 
-    // InstanceSelector should show the active instance's nickname, not "(none)"
-    // The chip label includes nickname · model
-    expect(await screen.findByText(/My Work Key/)).toBeTruthy();
-    expect(screen.queryByText(/\(none\)/)).toBeNull();
+    // ModelPicker chip shows the provider name + short model (not an empty state).
+    expect(await screen.findByText(/Anthropic · opus-4-7/)).toBeTruthy();
   });
 });
 

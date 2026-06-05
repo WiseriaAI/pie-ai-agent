@@ -6,10 +6,13 @@ import {
   expandSlashCommand,
   normalizeSkillSlashKey,
 } from "@/lib/skills";
-import { resolveModelMeta } from "@/lib/model-router/providers/registry";
+import { resolveModelMeta, getProviderMeta } from "@/lib/model-router/providers/registry";
 import { resolveSupportsVision } from "./chat-vision";
 import ContextRing from "./ContextRing";
-import { listInstances, getActiveInstance, getInstance, type DecryptedInstance } from "@/lib/instances";
+import { listInstances, getInstance, updateInstance, type DecryptedInstance } from "@/lib/instances";
+import { resolveSelection } from "@/lib/model-selection-resolver";
+import { setLastModelSelection } from "@/lib/last-model-selection";
+import { fetchOpenRouterModels } from "@/lib/openrouter-models-fetch";
 import type { ImageAttachment } from "@/lib/images";
 import type { FileAttachment } from "@/lib/files/types";
 import { processPickedFile } from "@/lib/files/process-picked-file";
@@ -24,7 +27,7 @@ import type { DisplayMessage } from "@/types";
 import { QuoteChip } from "./QuoteChip";
 import { escapeWrapperAttribute } from "@/lib/agent/untrusted-wrappers";
 import type { Quote, TextQuote, ElementQuote } from "@/types";
-import InstanceSelector from "./InstanceSelector";
+import ModelPicker from "./ModelPicker";
 import ThinkingSection from "./ThinkingSection";
 import { useT } from "@/lib/i18n";
 import {
@@ -225,12 +228,13 @@ export default function Chat({
   // InstanceSelector state — list of configured instances + per-session current
   const [instances, setInstances] = useState<DecryptedInstance[]>([]);
   const [currentInstanceId, setCurrentInstanceId] = useState<string | null>(null);
+  const [currentModel, setCurrentModel] = useState<string | null>(null);
 
-  // Helper to persist instanceId to session meta
-  async function persistSessionInstanceId(sessionId: string, id: string) {
+  // Helper to persist the (instanceId, model) selection to session meta
+  async function persistSelection(sessionId: string, id: string, model: string) {
     const existing = await getSessionMeta(sessionId);
     if (!existing) return;
-    await setSessionMeta({ ...existing, instanceId: id });
+    await setSessionMeta({ ...existing, instanceId: id, model });
   }
 
   // Load instances list + current session's instanceId on mount / sessionId change
@@ -254,22 +258,24 @@ export default function Chat({
     const sessionIdStr = sessionId as string;
     async function loadEffective() {
       const meta = await getSessionMeta(sessionIdStr);
-      const fallback = meta?.instanceId ?? (await getActiveInstance());
-      setCurrentInstanceId(fallback);
+      const sel = await resolveSelection({ instanceId: meta?.instanceId, model: meta?.model });
+      setCurrentInstanceId(sel?.instanceId ?? null);
+      setCurrentModel(sel?.model ?? null);
     }
-    loadEffective().catch(() => setCurrentInstanceId(null));
+    loadEffective().catch(() => { setCurrentInstanceId(null); setCurrentModel(null); });
 
     const sessionMetaKey = metaKey(sessionId);
     const onChanged = (changes: Record<string, chrome.storage.StorageChange>) => {
       if (sessionMetaKey in changes) {
-        const newMeta = changes[sessionMetaKey]?.newValue as { instanceId?: string } | undefined;
+        const newMeta = changes[sessionMetaKey]?.newValue as { instanceId?: string; model?: string } | undefined;
         if (newMeta && newMeta.instanceId !== undefined) {
           setCurrentInstanceId(newMeta.instanceId);
+          if (newMeta.model !== undefined) setCurrentModel(newMeta.model);
           return;
         }
       }
-      // Global active changed AND session has no own pin → re-compute fallback
-      if (changes.active_instance_id) {
+      // Global last selection changed AND session has no own pin → re-compute fallback
+      if (changes.last_model_selection) {
         loadEffective().catch(() => {});
       }
     };
@@ -281,8 +287,9 @@ export default function Chat({
     checkConfig();
     const listener = (changes: Record<string, chrome.storage.StorageChange>) => {
       if (
-        changes.active_instance_id ||
+        changes.last_model_selection ||
         changes.instances_index ||
+        (sessionId && metaKey(sessionId) in changes) ||
         Object.keys(changes).some((k) => k.startsWith("instance_"))
       ) {
         checkConfig();
@@ -290,7 +297,7 @@ export default function Chat({
     };
     chrome.storage.local.onChanged.addListener(listener);
     return () => chrome.storage.local.onChanged.removeListener(listener);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // R9 sub-path b — clear pending image attachments when the user switches
   // to a provider that lacks vision support. The dependency array intentionally
@@ -537,21 +544,20 @@ export default function Chat({
         return;
       }
       setHasConfig(true);
-      // Vision support is per-model, resolved from the active instance.
-      const activeId = await getActiveInstance();
-      if (activeId) {
-        const inst = await getInstance(activeId);
+      // Vision support is per-(instance, model), resolved from the current
+      // selection (session pin → last_model_selection → first instance).
+      const cfgMeta = sessionId ? await getSessionMeta(sessionId) : null;
+      const sel = await resolveSelection({ instanceId: cfgMeta?.instanceId, model: cfgMeta?.model });
+      if (sel) {
+        const inst = await getInstance(sel.instanceId);
         if (inst) {
           // Vision lookup consults registry first, then instance.fetchedModels
-          // (OpenRouter lazy catalog). `?? false` keeps the attach-button
-          // fail-closed for unknown ids — a slightly different policy from the
-          // loop's screenshot guard (fail-open) because the disabled button
-          // is a visible UX cue, while a silent screenshot-tool block is not.
-          setSupportsVision(await resolveSupportsVision(inst.provider, inst.model, inst.fetchedModels));
-          // resolveSupportsVision may also read pcmm (on registry miss); this second
-          // resolveModelMeta is for the context budget — both are cheap in-memory reads.
-          const meta = await resolveModelMeta(inst.provider, inst.model);
-          setMaxContextTokens(meta?.maxContextTokens);
+          // (OpenRouter lazy catalog). Fail-closed for unknown ids — the disabled
+          // attach button is a visible UX cue (a different policy from the loop's
+          // screenshot guard, which fail-opens).
+          setSupportsVision(await resolveSupportsVision(inst.provider, sel.model, inst.fetchedModels));
+          const mm = await resolveModelMeta(inst.provider, sel.model);
+          setMaxContextTokens(mm?.maxContextTokens);
           return;
         }
       }
@@ -1474,11 +1480,24 @@ After the skill completes, briefly summarize what was created (the user will see
         recordingDisabled={pendingRecording !== null}
         instances={instances}
         currentInstanceId={currentInstanceId}
-        onInstanceChange={async (id) => {
+        currentModel={currentModel}
+        onSelect={async (id, model) => {
           setCurrentInstanceId(id);
-          if (sessionId) await persistSessionInstanceId(sessionId, id);
+          setCurrentModel(model);
+          if (sessionId) await persistSelection(sessionId, id, model);
+          void setLastModelSelection({ instanceId: id, model });
         }}
         onManageInstances={onOpenSettings}
+        onRefreshModels={async (id) => {
+          const inst = instances.find((i) => i.id === id);
+          if (inst?.provider !== "openrouter") return;
+          const orMeta = getProviderMeta("openrouter")!;
+          try {
+            const fetched = await fetchOpenRouterModels(orMeta.defaultBaseUrl, inst.apiKey || undefined);
+            await updateInstance(id, { fetchedModels: fetched, fetchedAt: Date.now() });
+            await listInstances().then(setInstances);
+          } catch { /* silent; user can retry from Settings */ }
+        }}
         usage={usage}
         maxContextTokens={maxContextTokens}
         pendingItems={pendingItems}
@@ -1691,8 +1710,10 @@ function Composer({
   onPickElement,
   instances,
   currentInstanceId,
-  onInstanceChange,
+  currentModel,
+  onSelect,
   onManageInstances,
+  onRefreshModels,
   usage,
   maxContextTokens,
   pendingItems,
@@ -1730,8 +1751,10 @@ function Composer({
   onPickElement?: () => void;
   instances: DecryptedInstance[];
   currentInstanceId: string | null;
-  onInstanceChange: (id: string) => void;
+  currentModel: string | null;
+  onSelect: (instanceId: string, model: string) => void;
   onManageInstances: () => void;
+  onRefreshModels?: (instanceId: string) => void;
   usage?: import("@/lib/sessions/types").SessionAgentState["contextUsage"];
   maxContextTokens?: number;
   /** Issue #34 — pending instructions queued for the next agent turn. */
@@ -1841,12 +1864,14 @@ function Composer({
               recordingDisabled={recordingDisabled || streaming}
             />
             <div className="flex-1" />
-            <InstanceSelector
+            <ModelPicker
               instances={instances}
-              currentId={currentInstanceId}
+              currentInstanceId={currentInstanceId}
+              currentModel={currentModel}
               locked={streaming}
-              onChange={onInstanceChange}
+              onSelect={onSelect}
               onManage={onManageInstances}
+              onRefreshModels={onRefreshModels}
             />
             <ContextRing
               lastInputTokens={usage?.lastInputTokens}
