@@ -53,4 +53,8 @@ describe("planAbortResumeSeed", () => {
   it("returns null when last message is not a user string", () => {
     expect(planAbortResumeSeed(agent(), [{ role: "assistant", content: "x" }])).toBeNull();
   });
+
+  it("returns null when savedAgent still carries lastTaskSynth (compress-on-done path)", () => {
+    expect(planAbortResumeSeed(agent({ lastTaskSynth: "<untrusted_prior_task_summary>x</untrusted_prior_task_summary>" }), newMsg)).toBeNull();
+  });
 });

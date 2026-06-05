@@ -15,6 +15,9 @@ export interface AbortResumeSeed {
  * 末尾追加一条 wrapped user turn（携带用户新消息）。否则返回 null，调用方走正常
  * 新 task 路径。
  *
+ * - lastTaskSynth != null → null：synth 是 compress-on-done（success/fail）路径
+ *   的产物，不是 abort 中断点；交给 chat-start 的 synth-bridge 处理（abort 不写
+ *   synth，故此为 belt-and-suspenders 防御，与 synth-bridge 自我互斥）。
  * - hasImageContent → null：image bytes 不在 storage，无法续接（R14）。
  * - 新消息用 buildMidTaskUserMessage 包成 <untrusted_user_message>，与 #34
  *   drain 注入同一 wrapper（prompt-injection 防御）。
@@ -26,6 +29,10 @@ export function planAbortResumeSeed(
   messages: ChatMessage[],
 ): AbortResumeSeed | null {
   if (!savedAgent) return null;
+  // Defensive: a lastTaskSynth means this was a compress-on-done path (success/
+  // fail), not an abort interruption. Never resume over a synth — let chat-start's
+  // synth-bridge handle it. abort never writes synth, so this is belt-and-suspenders.
+  if (savedAgent.lastTaskSynth != null) return null;
   if (savedAgent.agentMessages.length === 0 || savedAgent.stepIndex <= 0) return null;
   if (savedAgent.hasImageContent) return null;
 
