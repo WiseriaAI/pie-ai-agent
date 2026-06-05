@@ -5,12 +5,11 @@ import { useProviderMeta } from "@/sidepanel/hooks/useProviderMeta";
 import { CUSTOM_PREFIX } from "@/lib/custom-providers";
 import { useT, providerDisplayName } from "@/lib/i18n";
 import { type StoredCustomModelMeta } from "@/lib/provider-custom-model-meta";
-import ModelDropdown from "./ModelDropdown";
+import ProviderModelList from "./ProviderModelList";
 
 export interface InstanceFormPayload {
   nickname: string;
   apiKey: string;
-  model: string;
   customModels: string[];
 }
 
@@ -29,7 +28,6 @@ interface Props {
   mode: "create" | "edit";
   provider: ProviderRef;
   initialNickname: string;
-  initialModel?: string;
   initialCustomModels?: string[];
   fetchedModels?: ModelMeta[];
   fetchedAt?: number;
@@ -71,7 +69,6 @@ export default function InstanceForm(props: Props) {
   const [nickname, setNickname] = useState(props.initialNickname);
   const [apiKey, setApiKey] = useState("");
   const [showKey, setShowKey] = useState(false);
-  const [model, setModel] = useState(props.initialModel ?? "");
   // Locally-tracked custom models. Initialised from initialCustomModels but
   // accumulates user's "+ 添加自定义模型" entries during the form session so
   // they appear in the dropdown immediately AND get carried to onSave.
@@ -102,9 +99,9 @@ export default function InstanceForm(props: Props) {
   const [replacing, setReplacing] = useState(props.mode === "create" || !props.existingApiKey);
 
   const requireApiKey = props.mode === "create" || replacing;
-  const canSave = (!requireApiKey || apiKey.trim().length > 0) && model.trim().length > 0;
+  const canSave = !requireApiKey || apiKey.trim().length > 0;
 
-  const payload: InstanceFormPayload = { nickname, apiKey, model, customModels };
+  const payload: InstanceFormPayload = { nickname, apiKey, customModels };
 
   return (
     <div className="flex flex-col">
@@ -179,29 +176,24 @@ export default function InstanceForm(props: Props) {
         )}
       </Field>
 
-      <Field label={t("instanceForm.model")}>
-        <ModelDropdown
+      <Field label={t("instanceForm.models")}>
+        <ProviderModelList
           provider={props.provider}
-          value={model}
           customModels={customModels}
           customModelMetas={props.customModelMetas}
           fetchedModels={effectiveFetchedModels}
           fetchedAt={props.fetchedAt}
           isFetching={props.isFetching}
-          onChange={setModel}
           onAddCustom={(id, meta) => {
-            // Local state drives immediate dropdown display (the just-added id
-            // appears before any async refresh). Persistence is the parent's
-            // job and is routed by provider type: builtin → pcm/pcmm pool,
-            // custom → the provider entity's own model list.
+            // Local state drives immediate display (the just-added id appears
+            // before any async refresh). Persistence is the parent's job, routed
+            // by provider type: builtin → pcm/pcmm pool, custom → entity models.
             setCustomModels((prev) => (prev.includes(id) ? prev : [...prev, id]));
-            setModel(id);
             props.onAddCustomModel?.(id, meta);
           }}
           onUpdateCustomMeta={(id, meta) => props.onUpdateCustomModelMeta?.(id, meta)}
           onRemoveCustom={(id) => {
             setCustomModels((prev) => prev.filter((x) => x !== id));
-            if (model === id) setModel("");
             props.onRemoveCustomModel?.(id);
           }}
           onRefresh={() => {
