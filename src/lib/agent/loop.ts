@@ -9,6 +9,7 @@ import {
   BUILT_IN_TOOLS,
   getKeyboardTools,
   getMouseTools,
+  getEditorTools,
   isKeyboardToolName,
 } from "./tools";
 import type { Tool } from "./types";
@@ -1516,6 +1517,14 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             requestConsent: requestCdpInputConsent,
           })
         : [];
+      const editorTools = cdpAvailable
+        ? getEditorTools({
+            acquireSession: acquireSessionForTask,
+            pinnedOrigin,
+            sessionId,
+            requestConsent: requestCdpInputConsent,
+          })
+        : [];
       // #62 — fail-closed vision gating (see filterToolsByVision). Screenshot
       // tools are only offered to models KNOWN to support vision; non-vision
       // and unknown-vision models never see them.
@@ -1524,7 +1533,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         requestFile: requestLocalFileFromPanel,
       });
       const allTools = filterToolsByVision(
-        [...BUILT_IN_TOOLS, ...mouseTools, ...keyboardTools, requestLocalFileTool],
+        [...BUILT_IN_TOOLS, ...mouseTools, ...keyboardTools, ...editorTools, requestLocalFileTool],
         modelConfig.vision,
       );
       const toolDefinitions = toolsToDefinitions(allTools);
