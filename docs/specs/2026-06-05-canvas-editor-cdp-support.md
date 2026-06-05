@@ -95,11 +95,14 @@ read_editor(idx) / set_editor_value(idx, text)
 
 ### 4.4 editor-bridge：实例发现 + 逐 context 定位（main context）
 
-**逐 context 定位（绕开 frameId 映射）**
+**同源帧遍历定位（绕开 frameId 映射与 context 管理）**
 
-- CDP `Runtime.enable` 后接收 `Runtime.executionContextCreated` 事件，收集所有 main-world context（含 same-origin iframe 的 context，同进程可见）。
-- **现采现用、不跨调用缓存**：对每个 context 跑 `document.querySelector('[data-pie-idx="N"]')`，命中（非 null）的 context 即目标 frame 的 context。
-- 由于 `data-pie-idx` 是 DOM attribute、各 frame document 独立，只有目标元素所在 frame 命中 → **无需 webNavigation↔CDP↔contextId 三层映射**。
+> 实现期订正：采用「单次 `Runtime.evaluate` + 同源帧递归遍历」，取代早稿的「`Runtime.enable` + 收集 executionContext + 逐 context evaluate」。两者外部范围完全相同（主帧 + same-origin iframe，cross-origin 仍降级），但前者无需事件订阅、契合现有无状态 `session.send()`，风险更低。
+
+- 一次 `session.send("Runtime.evaluate", { expression, returnByValue: true })` 在**顶层 frame 的 main context** 执行。
+- expression 内递归遍历同源帧：先在顶层 `document` 找 `[data-pie-idx="N"]`，未命中则对每个 `window.frames[i]` 尝试访问 `.document`（同源可达；cross-origin 抛 `SecurityError`，`try/catch` 跳过——这些正是降级的 OOPIF）。
+- 命中元素后，**用该元素所属 frame 的 `window`** 找编辑器实例（如 same-origin iframe 内的 `iframe.contentWindow.monaco`），调 `getValue/setValue`。
+- 由于 `data-pie-idx` 是 DOM attribute、各 frame document 独立，只有目标元素所在 frame 命中 → **无需 webNavigation↔CDP↔contextId 三层映射**，也无需缓存任何 context（导航/reload 天然无状态）。
 - `data-pie-idx` 由 read_page 的 isolated 注入所打，main-world CDP 脚本经共享 DOM 可读到。
 
 **实例发现（per-engine，在命中 context 内执行）**
