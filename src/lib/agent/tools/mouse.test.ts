@@ -127,12 +127,14 @@ describe("hover tool", () => {
     );
   });
 
-  it("returns cdp-disabled error when flag=false", async () => {
+  it("flag=false re-prompts consent; declined → error", async () => {
     await setCdpInputEnabled(false);
-    const tool = buildHoverTool(deps());
+    const requestConsent = vi.fn().mockResolvedValue(false);
+    const tool = buildHoverTool(deps({ requestConsent }));
     const result = await tool.handler({ frameId: 0, elementIndex: 3 }, { tabId: 7 });
+    expect(requestConsent).toHaveBeenCalled();
     expect(result.success).toBe(false);
-    expect(result.error).toMatch(/CDP input is disabled/);
+    expect(result.error).toMatch(/declined|not enabled/i);
   });
 
   it("returns element-not-found error from geometry", async () => {
@@ -240,12 +242,14 @@ describe("click tool (CDP)", () => {
     expect(result.observation).toMatch(/150.*250/);
   });
 
-  it("returns cdp-disabled error when flag=false", async () => {
+  it("flag=false re-prompts consent; declined → error", async () => {
     await setCdpInputEnabled(false);
-    const tool = buildClickTool(deps());
+    const requestConsent = vi.fn().mockResolvedValue(false);
+    const tool = buildClickTool(deps({ requestConsent }));
     const result = await tool.handler({ frameId: 0, elementIndex: 5 }, { tabId: 7 });
+    expect(requestConsent).toHaveBeenCalled();
     expect(result.success).toBe(false);
-    expect(result.error).toMatch(/CDP input is disabled/);
+    expect(result.error).toMatch(/declined|not enabled/i);
   });
 
   it("returns cdp-attach-conflict on debugger conflict", async () => {
@@ -273,13 +277,12 @@ describe("requireCdpInput", () => {
     expect(result.ok).toBe(true);
   });
 
-  it("returns cdp-disabled error when flag=false", async () => {
+  it("flag=false re-prompts consent (granted → ok)", async () => {
     await setCdpInputEnabled(false);
-    const result = await requireCdpInput({ sessionId: "S1", requestConsent: async () => true });
-    expect(result).toEqual({
-      ok: false,
-      error: "CDP input is disabled in Settings. Cannot click/hover.",
-    });
+    const requestConsent = vi.fn().mockResolvedValue(true);
+    const result = await requireCdpInput({ sessionId: "S1", requestConsent });
+    expect(requestConsent).toHaveBeenCalledWith("S1");
+    expect(result.ok).toBe(true);
   });
 
   it("calls requestConsent when flag=undefined and resolves true → ok", async () => {
@@ -289,14 +292,14 @@ describe("requireCdpInput", () => {
     expect(result.ok).toBe(true);
   });
 
-  it("returns cdp-disabled error when consent declined", async () => {
+  it("returns declined error when consent declined", async () => {
     const result = await requireCdpInput({
       sessionId: "S1",
       requestConsent: async () => false,
     });
     expect(result).toEqual({
       ok: false,
-      error: "CDP input is disabled in Settings. Cannot click/hover.",
+      error: "CDP input not enabled — the user declined. This action requires CDP and can't be performed otherwise.",
     });
   });
 

@@ -119,22 +119,6 @@ export const KNOWN_EDITOR_TOOL_NAMES = [
   "set_editor_value",
 ] as const;
 
-// Tools that exist ONLY when CDP input is enabled. When the user disables CDP
-// in Settings these are removed from the per-iteration tool set (loop.ts gates
-// mouse/keyboard/editor on cdpAvailable). If the model still calls one (e.g.
-// because the system prompt mentioned click), the loop's dispatch uses this to
-// return a precise "enable CDP" message instead of a bare "Unknown tool".
-export const CDP_GATED_TOOL_NAMES = [
-  "click",
-  "hover",
-  ...KNOWN_KEYBOARD_TOOL_NAMES,
-  ...KNOWN_EDITOR_TOOL_NAMES,
-] as const;
-
-export function isCdpGatedToolName(name: string): boolean {
-  return (CDP_GATED_TOOL_NAMES as readonly string[]).includes(name);
-}
-
 // ── M3-U4 — Tool class registry ─────────────────────────────────────────────
 //
 // Every built-in tool declares whether it is a `read` or `write` operation
