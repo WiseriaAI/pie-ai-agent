@@ -125,6 +125,13 @@ export interface SessionMeta {
    * happens in getSessionMeta when migration_v2_mapping is present.
    */
   instanceId?: string;
+  /**
+   * 本会话选中的 model（与 instanceId 配对）。Composer 选模型时写入。
+   * 缺省（老 session / 仅 instanceId）→ 由 model-selection-resolver 按
+   * provider 第一个 registry model 兜底（D3）。task start 时 (instanceId,
+   * model) snapshot 进 checkpoint（C1 不变量）。
+   */
+  model?: string;
 }
 
 /**
