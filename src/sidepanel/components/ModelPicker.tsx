@@ -135,7 +135,7 @@ export default function ModelPicker(props: Props) {
             transform: shown ? "translateY(0)" : "translateY(8px)",
             transition: "opacity 0.18s ease, transform 0.18s ease",
           }}
-          className="absolute bottom-full left-0 mb-2 w-[300px] rounded-lg border border-line bg-surface shadow-[0_8px_24px_rgba(0,0,0,0.24)]"
+          className="absolute bottom-full right-0 mb-2 w-[300px] max-w-[calc(100vw-1.5rem)] rounded-lg border border-line bg-surface shadow-[0_8px_24px_rgba(0,0,0,0.24)]"
         >
           <div className="flex items-baseline justify-between px-3.5 pt-2.5 pb-1.5">
             <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-fg-3">{t("modelPicker.title")}</span>
