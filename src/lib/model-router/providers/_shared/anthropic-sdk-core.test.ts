@@ -111,7 +111,7 @@ describe("anthropic-sdk-core", () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(sse(TEXT_THEN_TOOL));
     await collect(
       streamChatAnthropicSdk(
-        config({ baseUrl: "https://api.xiaomimimo.com", apiKey: "mk" }),
+        config({ baseUrl: "https://token-plan-cn.xiaomimimo.com", apiKey: "mk" }),
         [{ role: "user", content: "hi" }],
         undefined,
         undefined,
@@ -119,7 +119,7 @@ describe("anthropic-sdk-core", () => {
       ),
     );
     const [url, init] = fetchMock.mock.calls[0]!;
-    expect(String(url)).toBe("https://api.xiaomimimo.com/anthropic/v1/messages");
+    expect(String(url)).toBe("https://token-plan-cn.xiaomimimo.com/anthropic/v1/messages");
     const h = new Headers((init as RequestInit).headers as HeadersInit);
     expect(h.get("authorization")).toBe("Bearer mk");
     expect(h.get("x-api-key")).toBeNull();
