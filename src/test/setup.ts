@@ -170,6 +170,7 @@ const runtime = {
     return port;
   }),
   getPlatformInfo: vi.fn().mockResolvedValue({ os: "mac" }),
+  getURL: vi.fn((p: string) => `chrome-extension://test/${p}`),
   onStartup: { addListener: vi.fn() },
   onInstalled: { addListener: vi.fn() },
   onConnect: { addListener: vi.fn() },

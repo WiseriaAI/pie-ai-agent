@@ -16,7 +16,8 @@ import type {
   ContentBlock,
   ModelConfig,
 } from "@/lib/model-router";
-import { getActiveInstance, resolveInstanceToModelConfig } from "@/lib/instances";
+import { resolveModelConfig } from "@/lib/instances";
+import { resolveSelection } from "@/lib/model-selection-resolver";
 import {
   runAgentLoop,
   safeParseOrigin,
@@ -89,6 +90,7 @@ import {
 } from "./recording-orchestrator";
 import type { RecordingSession } from "@/lib/recording/types";
 import { migrateV1toV2 } from "@/lib/migration-v2";
+import { migrateInstanceModel } from "@/lib/migrate-instance-model";
 import {
   createAbortRotation,
   rotateAbortController,
@@ -111,8 +113,12 @@ import { mergeCarryoverIntoMessages } from "@/lib/agent/loop-drain";
 import type { ChatInstructionRejectedMessage } from "@/types/messages";
 import { isFilePdfUrl } from "@/lib/pdf/detect";
 
-// Run V1→V2 migration once on SW load (idempotent via schema_version sentinel).
-migrateV1toV2().catch((e) => console.error("migration v2 failed", e));
+// Run V1→V2 migration once on SW load (idempotent via schema_version sentinel),
+// then the V2-internal instance/model decouple migration (merges same-provider
+// instances + strips instance.model into last_model_selection).
+migrateV1toV2()
+  .then(() => migrateInstanceModel())
+  .catch((e) => console.error("migration v2 failed", e));
 cleanupLegacySkipPermissions().catch((e) =>
   console.error("legacy skip-permissions cleanup failed", e),
 );
@@ -766,8 +772,8 @@ async function handleResumeRequest(
   }
 
   // Drift OK — resolve instance config, then flip the session back to `active`.
-  const resumeInstanceId = meta.instanceId ?? (await getActiveInstance());
-  if (!resumeInstanceId) {
+  const resumeSel = await resolveSelection({ instanceId: meta.instanceId, model: meta.model });
+  if (!resumeSel) {
     port.postMessage({
       type: "chat-error",
       error: "No config selected. Open Settings to create one.",
@@ -775,7 +781,7 @@ async function handleResumeRequest(
     });
     return;
   }
-  const resumeModelConfig = await resolveInstanceToModelConfig(resumeInstanceId);
+  const resumeModelConfig = await resolveModelConfig(resumeSel.instanceId, resumeSel.model);
   if (!resumeModelConfig) {
     port.postMessage({
       type: "chat-error",
@@ -791,7 +797,7 @@ async function handleResumeRequest(
   await setSessionMeta({
     ...meta,
     status: "active",
-    ...(meta.instanceId ? {} : { instanceId: resumeInstanceId }),
+    ...(meta.instanceId ? {} : { instanceId: resumeSel.instanceId, model: resumeSel.model }),
   });
 
   // Phase 5 — Task 12: mint a fresh taskId for the resumed loop so the
@@ -981,8 +987,8 @@ async function handleChatStream(
   try {
     // Resolve instance config for this session (per-session pin → global fallback).
     const chatSessionMeta = await getSessionMeta(sessionId);
-    const chatInstanceId = chatSessionMeta?.instanceId ?? (await getActiveInstance());
-    if (!chatInstanceId) {
+    const chatSel = await resolveSelection({ instanceId: chatSessionMeta?.instanceId, model: chatSessionMeta?.model });
+    if (!chatSel) {
       port.postMessage({
         type: "chat-error",
         error: "No config selected. Open Settings to create one.",
@@ -990,7 +996,7 @@ async function handleChatStream(
       });
       return;
     }
-    const chatModelConfig = await resolveInstanceToModelConfig(chatInstanceId);
+    const chatModelConfig = await resolveModelConfig(chatSel.instanceId, chatSel.model);
     if (!chatModelConfig) {
       port.postMessage({
         type: "chat-error",
@@ -1128,8 +1134,8 @@ async function handleChatStream(
     // future chat-starts for this session don't depend on global active changing.
     // Placed AFTER upgradeAutoToTaskAtChatStart to avoid clobbering the
     // upgraded pinMode='task' + pinnedTabs[] (lost-update fix).
-    if (synthMeta && !synthMeta.instanceId && chatInstanceId) {
-      await setSessionMeta({ ...synthMeta, instanceId: chatInstanceId }).catch((e) => {
+    if (synthMeta && !synthMeta.instanceId && chatSel) {
+      await setSessionMeta({ ...synthMeta, instanceId: chatSel.instanceId, model: chatSel.model }).catch((e) => {
         console.warn(`[sw] instanceId pin failed for session=${sessionId}:`, e);
       });
     }

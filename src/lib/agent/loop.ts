@@ -9,6 +9,7 @@ import {
   BUILT_IN_TOOLS,
   getKeyboardTools,
   getMouseTools,
+  getEditorTools,
   isKeyboardToolName,
 } from "./tools";
 import type { Tool } from "./types";
@@ -1195,11 +1196,6 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
     return session;
   };
 
-  // Read CDP input flag at task start. Tool list is re-resolved each
-  // iteration (so toggling ON mid-task adds tools next round; toggling
-  // OFF triggers kill-switch + abort).
-  const cdpInputAtStart = await isCdpInputEnabled();
-  const cdpAvailableAtStart = cdpInputAtStart !== false; // true OR undefined → available
 
   // 2. Initial history
   // Structure: [system, user(initial-task)]
@@ -1234,7 +1230,9 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
     role: "system",
     content: buildAgentSystemPrompt(
       task,
-      cdpAvailableAtStart,
+      // CDP tools are always offered (calling while disabled prompts the user
+      // to enable), so always include the keyboard/editor usage guidance.
+      /* hasKeyboardTools */ true,
       /* hasMetaTools */ true,
       // v1.5 M3-U2 — pass the full pinnedTabs array + initial focus.
       // Single-entry: back-compat phrasing ("a specific browser tab").
@@ -1525,6 +1523,11 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // built-in use_skill / read_skill_file mediation tools (already in
       // BUILT_IN_TOOLS), advertised through the system-prompt skill catalog.
       const currentCdpInput = await isCdpInputEnabled();
+      // CDP tools (mouse/keyboard/editor) are ALWAYS offered, even when CDP
+      // input is disabled. Calling one while disabled (or never-configured)
+      // triggers the consent prompt via requireCdpInput → the user can
+      // authorize on the spot. `cdpAvailable` is kept only for the type-tool
+      // IME hint below; it no longer gates tool availability.
       const cdpAvailable = currentCdpInput !== false;
 
       const mouseDeps: import("./tools").MouseToolDeps = {
@@ -1532,16 +1535,19 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         sessionId,
         requestConsent: requestCdpInputConsent,
       };
-      const mouseTools = cdpAvailable ? getMouseTools(mouseDeps) : [];
+      const mouseTools = getMouseTools(mouseDeps);
 
-      const keyboardTools = cdpAvailable
-        ? getKeyboardTools({
-            acquireSession: acquireSessionForTask,
-            pinnedOrigin,
-            sessionId,
-            requestConsent: requestCdpInputConsent,
-          })
-        : [];
+      const keyboardTools = getKeyboardTools({
+        acquireSession: acquireSessionForTask,
+        pinnedOrigin,
+        sessionId,
+        requestConsent: requestCdpInputConsent,
+      });
+      const editorTools = getEditorTools({
+        acquireSession: acquireSessionForTask,
+        sessionId,
+        requestConsent: requestCdpInputConsent,
+      });
       // #62 — fail-closed vision gating (see filterToolsByVision). Screenshot
       // tools are only offered to models KNOWN to support vision; non-vision
       // and unknown-vision models never see them.
@@ -1550,7 +1556,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         requestFile: requestLocalFileFromPanel,
       });
       const allTools = filterToolsByVision(
-        [...BUILT_IN_TOOLS, ...mouseTools, ...keyboardTools, requestLocalFileTool],
+        [...BUILT_IN_TOOLS, ...mouseTools, ...keyboardTools, ...editorTools, requestLocalFileTool],
         modelConfig.vision,
       );
       const toolDefinitions = toolsToDefinitions(allTools);

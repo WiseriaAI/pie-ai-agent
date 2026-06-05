@@ -208,6 +208,14 @@ export const enDict = {
     custom: "custom",
     modelIdPlaceholder: "model id",
   },
+  modelPicker: {
+    none: "(select model)",
+    title: "SELECT MODEL",
+    providersSuffix: "providers",
+    searchSuffix: "models…",
+    noModels: "(no models — add in Settings)",
+    manage: "Manage providers / models",
+  },
   providers: {
     zhipu: "GLM(Zhipu)",
     mimo: "Mimo(Xiaomi)",
@@ -230,21 +238,10 @@ export const enDict = {
     showKey: "Show",
     cancelKeepKey: "Cancel — keep current key",
     model: "MODEL",
+    models: "MODELS",
     test: "Test",
     save: "Save",
     forgetConfig: "Forget config",
-  },
-  instancesList: {
-    active: "ACTIVE",
-    activate: "Activate",
-  },
-  instanceSelector: {
-    newConfigOrManage: "+ New config / Manage configs",
-    selectConfig: "select config",
-    none: "(none)",
-    switchConfig: "SWITCH CONFIG",
-    active: "ACTIVE",
-    manageConfigs: "Manage configs",
   },
   agentStep: {
     callingToolPrefix: "Calling",

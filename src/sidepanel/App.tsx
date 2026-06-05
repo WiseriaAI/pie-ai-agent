@@ -6,7 +6,8 @@ import TopBarListButton from "@/sidepanel/components/TopBarListButton";
 import TopBarNewSessionButton from "@/sidepanel/components/TopBarNewSessionButton";
 import TopBarSettingsButton from "@/sidepanel/components/TopBarSettingsButton";
 import TopBarThemeButton, { type ThemeMode } from "@/sidepanel/components/TopBarThemeButton";
-import { getActiveInstance, getInstance } from "@/lib/instances";
+import { getInstance } from "@/lib/instances";
+import { resolveSelection } from "@/lib/model-selection-resolver";
 import { normalizeSkillSlashKey } from "@/lib/skills";
 import { useSession } from "@/sidepanel/hooks/useSession";
 import { useRecording } from "@/sidepanel/hooks/useRecording";
@@ -138,9 +139,9 @@ export default function App() {
     loadProviderLabel();
 
     const listener = (changes: { [key: string]: chrome.storage.StorageChange }) => {
-      // Refresh provider label if instance config changed
+      // Refresh provider label if the selection or instance config changed
       if (
-        changes.active_instance_id ||
+        changes.last_model_selection ||
         changes.instances_index ||
         Object.keys(changes).some((k) => k.startsWith("instance_"))
       ) {
@@ -170,14 +171,14 @@ export default function App() {
 
   async function loadProviderLabel() {
     try {
-      const activeId = await getActiveInstance();
-      if (!activeId) {
+      const sel = await resolveSelection({});
+      if (!sel) {
         setProviderLabel(null);
         return;
       }
-      const inst = await getInstance(activeId);
+      const inst = await getInstance(sel.instanceId);
       if (inst) {
-        setProviderLabel(`${inst.nickname.toUpperCase()} · ${inst.model}`);
+        setProviderLabel(`${inst.nickname.toUpperCase()} · ${sel.model}`);
       } else {
         setProviderLabel(null);
       }

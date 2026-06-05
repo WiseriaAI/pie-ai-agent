@@ -209,6 +209,14 @@ export const zhCNDict = {
     custom: "自定义",
     modelIdPlaceholder: "模型 ID",
   },
+  modelPicker: {
+    none: "（选择模型）",
+    title: "选择模型",
+    providersSuffix: "个 provider",
+    searchSuffix: "模型…",
+    noModels: "（无模型 — 去设置页添加）",
+    manage: "管理 Provider / 模型",
+  },
   providers: {
     zhipu: "GLM(智谱)",
     mimo: "Mimo(小米)",
@@ -231,21 +239,10 @@ export const zhCNDict = {
     showKey: "显示",
     cancelKeepKey: "取消 — 保留当前 Key",
     model: "模型",
+    models: "模型列表",
     test: "测试",
     save: "保存",
     forgetConfig: "删除配置",
-  },
-  instancesList: {
-    active: "当前使用",
-    activate: "启用",
-  },
-  instanceSelector: {
-    newConfigOrManage: "+ 新建配置 / 管理配置",
-    selectConfig: "选择配置",
-    none: "(无)",
-    switchConfig: "切换配置",
-    active: "当前使用",
-    manageConfigs: "管理配置",
   },
   agentStep: {
     callingToolPrefix: "正在调用",
