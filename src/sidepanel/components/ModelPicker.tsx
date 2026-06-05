@@ -237,16 +237,18 @@ function ExpandedModels(props: {
             <button
               key={r.id}
               onClick={() => props.onPick(r.id)}
-              className={`flex items-center gap-2 px-3.5 py-1.5 pl-11 text-left hover:bg-surface ${r.id === props.currentModel ? "bg-surface" : ""}`}
+              className={`flex items-center gap-2 px-3.5 py-1.5 pl-7 text-left hover:bg-surface ${r.id === props.currentModel ? "bg-surface" : ""}`}
             >
+              <span className="flex shrink-0 items-center justify-center" style={{ width: 13 }} aria-hidden>
+                {r.id === props.currentModel && (
+                  <svg width="11" height="11" viewBox="0 0 11 11">
+                    <path d="M2 5.5L4.5 8L9 3" fill="none" stroke="#B8C8D6" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                )}
+              </span>
               <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-fg-1">{r.id}</span>
               {r.meta?.vision && <span className="rounded bg-line px-1 text-[9px] text-fg-3">{t("modelDropdown.vision")}</span>}
               {r.meta?.tools && <span className="rounded bg-line px-1 text-[9px] text-fg-3">{t("modelDropdown.tools")}</span>}
-              {r.id === props.currentModel && (
-                <svg width="11" height="11" viewBox="0 0 11 11" aria-hidden style={{ flexShrink: 0 }}>
-                  <path d="M2 5.5L4.5 8L9 3" fill="none" stroke="#B8C8D6" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              )}
             </button>
           ))
         )}
