@@ -70,6 +70,18 @@ export function pageSnapshotInjected(): PageSnapshotResult {
   const INTERACTIVE_SELECTOR =
     'a, button, input, select, textarea, [role="button"], [role="link"], [role="tab"], [role="checkbox"], [role="radio"], [role="switch"], [role="menuitem"], [contenteditable="true"], summary, [onclick], [tabindex]:not([tabindex=\'-1\'])';
 
+  // Code editors render virtualized DOM (off-screen lines absent) and aren't
+  // matched by INTERACTIVE_SELECTOR. We register the HOST so the agent can
+  // discover it, click-focus it, and target read_editor / set_editor_value.
+  const EDITOR_SELECTOR = ".monaco-editor, .cm-editor, .CodeMirror";
+
+  function editorEngineOf(el: Element): string | null {
+    if (el.matches?.(".monaco-editor")) return "Monaco";
+    if (el.matches?.(".cm-editor")) return "CodeMirror"; // CM6
+    if (el.matches?.(".CodeMirror")) return "CodeMirror"; // CM5
+    return null;
+  }
+
   const SCROLL_RATIO_THRESHOLD = 1.2;
 
   // Control characters to strip from text nodes (ASCII-clean \uXXXX escapes).
@@ -206,6 +218,7 @@ export function pageSnapshotInjected(): PageSnapshotResult {
   }
 
   function inferredRole(el: Element): string {
+    if (editorEngineOf(el)) return "editor";
     const explicit = normalizeSpace(el.getAttribute("role") ?? "");
     if (explicit) return explicit;
     const tag = el.tagName.toLowerCase();
@@ -226,6 +239,8 @@ export function pageSnapshotInjected(): PageSnapshotResult {
   }
 
   function accessibleName(el: Element): string {
+    const engine = editorEngineOf(el);
+    if (engine) return `${engine} editor — use read_editor / set_editor_value`;
     const aria = normalizeSpace(el.getAttribute("aria-label") ?? "");
     if (aria) return aria;
     const labelled = el.getAttribute("aria-labelledby");
@@ -349,9 +364,18 @@ export function pageSnapshotInjected(): PageSnapshotResult {
     liveToCloneMap.set(liveBodyElements[i], cloneBodyElements[i]);
   }
 
+  // Editor hosts: stamp the host itself and skip its interactive descendants
+  // (e.g. Monaco's hidden .inputarea) so the editor surfaces as ONE entry.
+  const editorHosts = liveBodyElements.filter(
+    (el) => el.matches?.(EDITOR_SELECTOR) && isVisible(el),
+  );
+
   let stampIdx = 0;
   for (const el of liveBodyElements) {
-    if (el.matches?.(INTERACTIVE_SELECTOR) && isVisible(el)) {
+    const isEditorHost = editorHosts.includes(el);
+    const insideEditor = !isEditorHost && editorHosts.some((h) => h.contains(el));
+    if (insideEditor) continue;
+    if ((isEditorHost || el.matches?.(INTERACTIVE_SELECTOR)) && isVisible(el)) {
       const idxStr = String(stampIdx++);
       el.setAttribute("data-pie-idx", idxStr);
       const cloneEl = liveToCloneMap.get(el);
