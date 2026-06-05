@@ -3,7 +3,7 @@ import type { ProviderRef, BuiltinProvider } from "@/lib/model-router";
 import { chat } from "@/lib/model-router";
 import {
   createInstance, listInstances, deleteInstance,
-  setActiveInstance, getActiveInstance, updateInstance,
+  updateInstance, firstModelForProvider,
   type DecryptedInstance,
 } from "@/lib/instances";
 import {
@@ -43,7 +43,6 @@ export default function Settings({ onBack, onRunSkill }: Props) {
   const t = useT();
   const [tab, setTab] = useState<Tab>("configs");
   const [instances, setInstances] = useState<DecryptedInstance[]>([]);
-  const [activeId, setActiveId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showWizard, setShowWizard] = useState(false);
   const [cdpInput, setCdpInput] = useState<boolean | undefined>(undefined);
@@ -56,7 +55,6 @@ export default function Settings({ onBack, onRunSkill }: Props) {
   const reload = useCallback(async () => {
     const list = await listInstances();
     setInstances(list);
-    setActiveId(await getActiveInstance());
     // Refresh pool for every provider currently represented in the instance list.
     const providers = Array.from(new Set(list.map((i) => i.provider)));
     const pools = await Promise.all(providers.map((p) => getProviderCustomModels(p).then((v) => [p, v] as const)));
@@ -81,9 +79,8 @@ export default function Settings({ onBack, onRunSkill }: Props) {
   }
 
   async function handleSaveEdit(id: string, payload: InstanceFormPayload) {
-    const patch: { nickname: string; model: string; apiKey?: string } = {
+    const patch: { nickname: string; apiKey?: string } = {
       nickname: payload.nickname,
-      model: payload.model,
     };
     // Only re-encrypt the key if the user actually typed a new one.
     // An empty apiKey means "keep existing" — do NOT pass it to updateInstance.
@@ -107,9 +104,12 @@ export default function Settings({ onBack, onRunSkill }: Props) {
       setTestResult((p) => ({ ...p, [key]: { ok: false, message: `Unknown provider: ${provider}` } }));
       return;
     }
+    // Model decoupled from instance: connection test uses the provider's first
+    // available model (registry[0] / custom[0]).
+    const model = (await firstModelForProvider(provider, id ?? undefined)) ?? "";
     const cfg = {
       provider,
-      model: payload.model,
+      model,
       // If apiKey is empty (edit mode, user didn't retype), fall back to instance's stored key
       apiKey: payload.apiKey.trim() || (() => {
         if (!id) return payload.apiKey;
@@ -154,8 +154,6 @@ export default function Settings({ onBack, onRunSkill }: Props) {
       <div className="flex-1 overflow-y-auto px-4 py-6">
         {tab === "configs" ? (
           <div className="flex flex-col gap-7">
-            <ActiveSection instances={instances} activeId={activeId} />
-
             <section className="flex flex-col gap-3.5">
               <div className="flex items-baseline justify-between">
                 <span className="caps text-fg-3">{t("settings.myConfigs.title")}</span>
@@ -166,10 +164,8 @@ export default function Settings({ onBack, onRunSkill }: Props) {
 
               <InstancesList
                 instances={instances}
-                activeId={activeId}
                 expandedId={expandedId}
                 onToggleExpand={(id) => setExpandedId(expandedId === id ? null : id)}
-                onSetActive={async (id) => { await setActiveInstance(id); await reload(); }}
                 renderForm={(id) => {
                   const inst = instances.find((i) => i.id === id)!;
                   const result = testResult[id];
@@ -193,7 +189,6 @@ export default function Settings({ onBack, onRunSkill }: Props) {
                         mode="edit"
                         provider={inst.provider}
                         initialNickname={inst.nickname}
-                        initialModel={inst.model}
                         initialCustomModels={mergedCustomModels}
                         customModelMetas={providerMetas[inst.provider] ?? {}}
                         fetchedModels={inst.fetchedModels}
@@ -324,7 +319,7 @@ export default function Settings({ onBack, onRunSkill }: Props) {
               </label>
             </section>
 
-            <FeedbackSection activeInstance={instances.find((i) => i.id === activeId)} />
+            <FeedbackSection activeInstance={instances[0]} />
           </div>
         ) : tab === "skills" ? (
           <SkillsList onRunSkill={onRunSkill ?? (() => {})} />
@@ -333,33 +328,6 @@ export default function Settings({ onBack, onRunSkill }: Props) {
         )}
       </div>
     </div>
-  );
-}
-
-function ActiveSection({
-  instances,
-  activeId,
-}: {
-  instances: DecryptedInstance[];
-  activeId: string | null;
-}) {
-  const t = useT();
-  const active = instances.find((i) => i.id === activeId);
-  if (!active) {
-    return (
-      <section className="rounded-lg border border-warning-line bg-warning-tint px-3 py-2.5 text-[12px] text-warning">
-        {t("settings.noActiveConfig")}
-      </section>
-    );
-  }
-  return (
-    <section className="flex flex-col gap-2">
-      <div className="caps text-fg-3">{t("settings.active")}</div>
-      <div className="flex items-baseline justify-between">
-        <div className="text-[14px] font-semibold text-fg-1">{active.nickname}</div>
-        <div className="font-mono text-[11px] text-accent">{active.model}</div>
-      </div>
-    </section>
   );
 }
 
@@ -409,9 +377,7 @@ function FeedbackSection({ activeInstance }: { activeInstance: DecryptedInstance
   const env: FeedbackEnv = {
     version: chrome.runtime.getManifest().version,
     userAgent: navigator.userAgent,
-    providerModel: activeInstance
-      ? `${activeInstance.provider} · ${activeInstance.model}`
-      : "(no active config)",
+    providerModel: activeInstance ? activeInstance.provider : "(no config)",
     locale: getLocale(),
   };
   return (
