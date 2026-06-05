@@ -88,6 +88,7 @@ import {
 } from "./recording-orchestrator";
 import type { RecordingSession } from "@/lib/recording/types";
 import { migrateV1toV2 } from "@/lib/migration-v2";
+import { migrateInstanceModel } from "@/lib/migrate-instance-model";
 import {
   createAbortRotation,
   rotateAbortController,
@@ -110,8 +111,12 @@ import { mergeCarryoverIntoMessages } from "@/lib/agent/loop-drain";
 import type { ChatInstructionRejectedMessage } from "@/types/messages";
 import { isFilePdfUrl } from "@/lib/pdf/detect";
 
-// Run V1→V2 migration once on SW load (idempotent via schema_version sentinel).
-migrateV1toV2().catch((e) => console.error("migration v2 failed", e));
+// Run V1→V2 migration once on SW load (idempotent via schema_version sentinel),
+// then the V2-internal instance/model decouple migration (merges same-provider
+// instances + strips instance.model into last_model_selection).
+migrateV1toV2()
+  .then(() => migrateInstanceModel())
+  .catch((e) => console.error("migration v2 failed", e));
 cleanupLegacySkipPermissions().catch((e) =>
   console.error("legacy skip-permissions cleanup failed", e),
 );
