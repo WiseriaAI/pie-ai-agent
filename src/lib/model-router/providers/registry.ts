@@ -138,6 +138,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
   {
     id: "bailian",
     name: "Bailian",
+    iconAsset: "provider-icons/bailian.svg",
     defaultBaseUrl: "https://dashscope.aliyuncs.com/compatible-mode",
     placeholder: "sk-...",
     models: [
