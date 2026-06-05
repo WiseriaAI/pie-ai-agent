@@ -104,7 +104,7 @@ export default function ModelPicker(props: Props) {
             <path d="M3 5V3.5C3 2.4 3.9 1.5 5 1.5C6.1 1.5 7 2.4 7 3.5V5M2.5 5H7.5V8.5H2.5V5Z" stroke="currentColor" strokeWidth="0.9" strokeLinecap="round" />
           </svg>
         ) : (
-          <svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden className="text-fg-3" style={{ transform: open ? "rotate(180deg)" : "none" }}>
+          <svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden className="text-fg-3" style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform 0.2s ease" }}>
             <path d="M3.5 5.5L7 9L10.5 5.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         )}
@@ -131,21 +131,30 @@ export default function ModelPicker(props: Props) {
                     {!isExpanded && isCurrentProvider && props.currentModel && (
                       <span className="font-mono text-[10px] text-accent">{shortModel(props.currentModel)}</span>
                     )}
-                    <svg width="8" height="8" viewBox="0 0 8 8" aria-hidden style={{ transform: isExpanded ? "rotate(90deg)" : "none", flexShrink: 0 }}>
+                    <svg width="8" height="8" viewBox="0 0 8 8" aria-hidden style={{ transform: isExpanded ? "rotate(90deg)" : "none", flexShrink: 0, transition: "transform 0.2s ease" }}>
                       <path d="M3 2L5 4L3 6" fill="none" stroke="#8A929E" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
                   </button>
-                  {isExpanded && (
-                    <ExpandedModels
-                      inst={inst}
-                      query={query}
-                      setQuery={setQuery}
-                      currentModel={isCurrentProvider ? props.currentModel : null}
-                      onPick={(model) => { props.onSelect(inst.id, model); setOpen(false); }}
-                      placeholder={`${providerName(inst)} ${t("modelPicker.searchSuffix")}`}
-                      emptyText={t("modelPicker.noModels")}
-                    />
-                  )}
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateRows: isExpanded ? "1fr" : "0fr",
+                      transition: "grid-template-rows 0.22s ease",
+                    }}
+                  >
+                    <div style={{ overflow: "hidden" }}>
+                      <ExpandedModels
+                        inst={inst}
+                        isExpanded={isExpanded}
+                        query={query}
+                        setQuery={setQuery}
+                        currentModel={isCurrentProvider ? props.currentModel : null}
+                        onPick={(model) => { props.onSelect(inst.id, model); setOpen(false); }}
+                        placeholder={`${providerName(inst)} ${t("modelPicker.searchSuffix")}`}
+                        emptyText={t("modelPicker.noModels")}
+                      />
+                    </div>
+                  </div>
                 </div>
               );
             })}
@@ -164,6 +173,7 @@ export default function ModelPicker(props: Props) {
 
 function ExpandedModels(props: {
   inst: DecryptedInstance;
+  isExpanded: boolean;
   query: string;
   setQuery: (q: string) => void;
   currentModel: string | null;
@@ -171,6 +181,14 @@ function ExpandedModels(props: {
   placeholder: string;
   emptyText: string;
 }) {
+  const t = useT();
+  const inputRef = useRef<HTMLInputElement>(null);
+  // Focus the search box when this provider becomes the expanded one (the
+  // accordion keeps all rows mounted for the open/close height animation, so we
+  // can't rely on autoFocus — that would fight across rows).
+  useEffect(() => {
+    if (props.isExpanded) inputRef.current?.focus();
+  }, [props.isExpanded]);
   const rows = modelsFor(props.inst);
   const q = props.query.trim().toLowerCase();
   const list = q
@@ -179,7 +197,8 @@ function ExpandedModels(props: {
   return (
     <div className="flex flex-col pb-1">
       <input
-        autoFocus
+        ref={inputRef}
+        aria-label={props.placeholder}
         value={props.query}
         onChange={(e) => props.setQuery(e.target.value)}
         placeholder={props.placeholder}
@@ -196,8 +215,8 @@ function ExpandedModels(props: {
               className={`flex items-center gap-2 px-3.5 py-1.5 pl-11 text-left hover:bg-surface ${r.id === props.currentModel ? "bg-surface" : ""}`}
             >
               <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-fg-1">{r.id}</span>
-              {r.meta?.vision && <span className="rounded bg-line px-1 text-[9px] text-fg-3">vision</span>}
-              {r.meta?.tools && <span className="rounded bg-line px-1 text-[9px] text-fg-3">tools</span>}
+              {r.meta?.vision && <span className="rounded bg-line px-1 text-[9px] text-fg-3">{t("modelDropdown.vision")}</span>}
+              {r.meta?.tools && <span className="rounded bg-line px-1 text-[9px] text-fg-3">{t("modelDropdown.tools")}</span>}
               {r.id === props.currentModel && (
                 <svg width="11" height="11" viewBox="0 0 11 11" aria-hidden style={{ flexShrink: 0 }}>
                   <path d="M2 5.5L4.5 8L9 3" fill="none" stroke="#B8C8D6" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />

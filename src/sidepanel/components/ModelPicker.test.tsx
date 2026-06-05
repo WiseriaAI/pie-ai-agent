@@ -47,7 +47,9 @@ describe("ModelPicker", () => {
     renderPicker();
     openPicker();
     fireEvent.click(screen.getByText("OpenAI"));
-    fireEvent.change(screen.getByRole("textbox"), { target: { value: "mini" } });
+    // Accordion keeps all rows mounted (for the open/close animation), so each
+    // provider has its own search box — target OpenAI's by its aria-label.
+    fireEvent.change(screen.getByRole("textbox", { name: /OpenAI/i }), { target: { value: "mini" } });
     expect(screen.getByText("gpt-4o-mini")).toBeTruthy();
     expect(screen.queryByText("gpt-4o")).toBeNull(); // non-match hidden
   });
