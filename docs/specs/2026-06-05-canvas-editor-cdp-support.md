@@ -38,7 +38,8 @@ Monaco / CodeMirror 这类代码编辑器对 Agent 是「半盲」状态：
 
 - 真·canvas 编辑器（Google Docs canvas 等，无标准 model API）→ 截图+vision（读）/ keyboard（写）。
 - cross-origin OOPIF 内的编辑器（需 `Target.setAutoAttach` 子 target 管理）→ keyboard/vision 降级。
-- 不替换 `dispatch_keyboard_input`；它继续作为 canvas / OOPIF / 探测失败时的写入降级。
+- **same-origin iframe 内的编辑器（v1 DEFERRED）**：v1 只做顶层 frame 执行。同源子帧内的编辑器会被检测到（detection-only walk 返回 `in_subframe` reason），并以明确错误降级到 keyboard/vision；正式支持留待后续版本（需补 frameId + 子帧定向执行，TODO hook 已在 locator 检测分支预留）。
+- 不替换 `dispatch_keyboard_input`；它继续作为 canvas / OOPIF / iframe / 探测失败时的写入降级。
 
 ## 3. 架构总览
 
@@ -93,17 +94,21 @@ read_editor(idx) / set_editor_value(idx, text)
 - 流程同上，执行 `editor.setValue(text)` 后**回读 `getValue()` 校验**；不一致返回错误（区分「页面拦截/受控组件回滚」与「写入成功」）。
 - `text` 不设逐字符上限（一步 setValue），但保留合理上限防滥用（具体值实现期定，远大于 keyboard 的 5000）。
 
-### 4.4 editor-bridge：实例发现 + 逐 context 定位（main context）
+### 4.4 editor-bridge：实例发现 + 定位（main context）
 
-**同源帧遍历定位（绕开 frameId 映射与 context 管理）**
+**v1：顶层 frame 执行 + 检测性同源帧遍历**
 
-> 实现期订正：采用「单次 `Runtime.evaluate` + 同源帧递归遍历」，取代早稿的「`Runtime.enable` + 收集 executionContext + 逐 context evaluate」。两者外部范围完全相同（主帧 + same-origin iframe，cross-origin 仍降级），但前者无需事件订阅、契合现有无状态 `session.send()`，风险更低。
+一次 `session.send("Runtime.evaluate", { expression, returnByValue: true })` 在**顶层 frame 的 main context** 执行。
 
-- 一次 `session.send("Runtime.evaluate", { expression, returnByValue: true })` 在**顶层 frame 的 main context** 执行。
-- expression 内递归遍历同源帧：先在顶层 `document` 找 `[data-pie-idx="N"]`，未命中则对每个 `window.frames[i]` 尝试访问 `.document`（同源可达；cross-origin 抛 `SecurityError`，`try/catch` 跳过——这些正是降级的 OOPIF）。
-- 命中元素后，**用该元素所属 frame 的 `window`** 找编辑器实例（如 same-origin iframe 内的 `iframe.contentWindow.monaco`），调 `getValue/setValue`。
-- 由于 `data-pie-idx` 是 DOM attribute、各 frame document 独立，只有目标元素所在 frame 命中 → **无需 webNavigation↔CDP↔contextId 三层映射**，也无需缓存任何 context（导航/reload 天然无状态）。
-- `data-pie-idx` 由 read_page 的 isolated 注入所打，main-world CDP 脚本经共享 DOM 可读到。
+定位逻辑（v1）：
+1. 先在顶层 `document` 查询 `[data-pie-idx="N"]`（`document.querySelector`）。若命中，用顶层 `window` 做引擎发现，执行 `getValue/setValue`。
+2. 若顶层未命中，运行**检测性**同源帧递归遍历（`inSubframe(window)`），对每个 `window.frames[i]` 尝试访问 `.document`（同源可达；cross-origin 抛 `SecurityError`，`try/catch` 跳过）。**此分支只做存在性检测，不对元素执行任何操作。**
+3. 检测到编辑器在同源子帧中 → 返回 `{ ok: false, reason: "in_subframe" }` → 工具层报错，引导使用 keyboard/vision 降级。
+4. 完全未命中 → 返回 `{ ok: false, reason: "not_found" }` → 提示重新 read_page。
+
+v1 不在子帧内执行操作，是因为 `data-pie-idx` 各 frame document 独立（per-frame 编号从 0 重新开始），在顶层执行对同源子帧的 idx 会命中错误元素。后续版本支持路径：read_page 对子帧中的编辑器附加 `frameId`，工具层使用 `frameId` 定向执行（CDP `Runtime.evaluate` + `frameId` 映射），当前检测分支即为该 TODO hook。
+
+`data-pie-idx` 由 read_page 的 isolated 注入所打，main-world CDP 脚本经共享 DOM 可读到。无需 webNavigation↔CDP↔contextId 三层映射，也无需缓存任何 context（导航/reload 天然无状态）。
 
 **实例发现（per-engine，在命中 context 内执行）**
 
@@ -114,11 +119,11 @@ read_editor(idx) / set_editor_value(idx, text)
 **共享 deps（复用 keyboard 工厂模式）**
 
 ```ts
-interface EditorToolDeps {           // 形态对齐 KeyboardToolDeps
+interface EditorToolDeps {
   acquireSession: (tabId: number) => Promise<CdpSession>;
-  pinnedOrigin: string;
   requestConsent: (sessionId: string) => Promise<boolean>;
   sessionId: string;
+  // pinnedOrigin removed — editor tools do not implement per-call origin recheck
 }
 ```
 
@@ -129,7 +134,7 @@ interface EditorToolDeps {           // 形态对齐 KeyboardToolDeps
 - CDP 在 page main context 执行 = **信任页面 JS**（页面可 hook/伪造 `getValue`）。`read_editor` 返回内容**必须**裹 `untrusted_editor_content`，**绝不**进 system role；走 `untrusted-wrappers.ts` 唯一 escape 入口。
 - **新 wrapper 双清单登记**（dual-list invariant）：`untrusted_editor_content` 同时加入 `untrusted-wrappers.ts` 的 `UNTRUSTED_WRAPPER_TAGS` 与 `page-snapshot.ts` 的 `WRAPPER_TAGS_LIST`；由 parity 测试守护。
 - CDP consent：复用现有 `requireCdpInput` gate；未授权时触发现有 sidepanel consent 流程，不另设计。
-- origin 重检：复用 keyboard 的 per-CDP-call origin/active-tab 重检（`pinnedOrigin`）。
+- origin 保护：editor 工具不做 per-CDP-call origin 重检（与 mouse 工具一致，`pinnedOrigin` 已从 `EditorToolDeps` 移除）；origin 保护由上层 loop 任务级机制承担。
 - ownerToken / per-session 锁：经 `acquireSession`（任务级 `acquireSessionForTask`）继承现有 R7 跨 session 隔离，无新增。
 
 ## 6. Tool 注册与分类
@@ -140,20 +145,23 @@ interface EditorToolDeps {           // 形态对齐 KeyboardToolDeps
 
 ## 7. 错误处理与降级（fail-closed）
 
-| 情形 | 行为 |
-|---|---|
-| 探测不到 model 入口（真 canvas / 未知编辑器 / CM6 无法发现实例） | 返回明确错误：读→「无法提取，请截图后用 vision」；写→「请 click 聚焦后用 dispatch_keyboard_input」 |
-| cross-origin OOPIF 内编辑器（逐 context 看不到其 context） | 同上降级；read_page 仍登记该编辑器（isolated allFrames 可见），Agent 可 click 聚焦 + keyboard/vision |
-| CDP 未授权 | 现有 consent 流程提示用户授权 |
-| setValue 后回读不一致 | 返回错误（页面拦截/受控回滚），不谎报成功 |
-| elementIndex 失效（DOM 已变） | 逐 context 全 miss → 明确错误，提示重新 read_page |
+| 情形 | reason | 行为 |
+|---|---|---|
+| 探测不到 model 入口（真 canvas / 未知编辑器 / CM6 无法发现实例） | `no_engine` | 返回明确错误：读→「无法提取，请截图后用 vision」；写→「请 click 聚焦后用 dispatch_keyboard_input」 |
+| same-origin iframe 内的编辑器（v1 DEFERRED） | `in_subframe` | 返回明确错误，提示使用 keyboard/vision 降级；read_page 在孤立 world 仍可见该编辑器 |
+| cross-origin OOPIF 内编辑器（`.document` 访问抛 SecurityError） | `not_found`（无法区分） | 同上降级；read_page 仍登记该编辑器（isolated allFrames 可见），Agent 可 click 聚焦 + keyboard/vision |
+| CDP 未授权 | — | 现有 consent 流程提示用户授权 |
+| setValue 后回读不一致 | — | 返回错误（页面拦截/受控回滚），不谎报成功 |
+| elementIndex 失效（DOM 已变） | `not_found` | 顶层+检测全 miss → 明确错误，提示重新 read_page |
+| CM6 EditorView 无法发现 | `cm6_no_view` | 返回明确错误，引导 keyboard/vision |
 
 ## 8. 风险与未决
 
 - **CM6 实例发现（高）**：无标准注册表，是最大不确定点。实现期第一步即验证；无通用解则 CM6 read/set 降级（检测+登记仍保留）。
-- **逐 context 探测的 context 数量**：极端页面 iframe 很多时逐个 querySelector 有开销；实测若成问题再加 frame 提示优化。但 context 通常个位数，预期可忽略。
-- **context 生命周期**：现采现用、不缓存，规避导航/reload 导致 context 失效；`Runtime.enable` 在调用内开启即可。
+- **逐 context 探测的 context 数量**：v1 检测性遍历（detection-only walk）仅在顶层未命中时启动，且只做 `querySelector` 存在性判断，开销低；极端场景如成问题，再加 frame 数量限制。
+- **context 生命周期**：现采现用、不缓存，规避导航/reload 导致 context 失效。
 - **CDP `Runtime.evaluate` 大字符串**：`returnByValue` 对大文档的序列化上限实现期验证（一般数百 KB 无虞）。
+- **origin 重检已去除（editor 工具）**：editor 工具不实现 keyboard 风格的 per-call origin 重检，与 mouse 工具一致。`pinnedOrigin` 字段已从 `EditorToolDeps` 接口移除，避免暗示一个实际不存在的安全保证。origin 保护由上层 loop（任务级 pinnedOrigin + 每轮 interpretPinnedTabUrl）承担。
 
 ## 9. 测试策略
 

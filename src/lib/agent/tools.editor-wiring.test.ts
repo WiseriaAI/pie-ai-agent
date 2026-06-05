@@ -5,7 +5,6 @@ describe("getEditorTools wiring", () => {
   it("returns read_editor and set_editor_value", () => {
     const tools = getEditorTools({
       acquireSession: async () => ({}) as never,
-      pinnedOrigin: "https://example.com",
       requestConsent: async () => true,
       sessionId: "s1",
     });

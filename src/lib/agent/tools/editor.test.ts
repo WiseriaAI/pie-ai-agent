@@ -17,7 +17,6 @@ function fakeSession(evalResult: unknown): CdpSession {
 
 const deps = (session: CdpSession) => ({
   acquireSession: async () => session,
-  pinnedOrigin: "https://example.com",
   requestConsent: async () => true,
   sessionId: "s1",
 });
@@ -29,11 +28,11 @@ function getTool(tools: ReturnType<typeof buildEditorTools>, name: string) {
 }
 
 describe("buildReadEditorExpression", () => {
-  it("embeds the element index and references getValue", () => {
+  it("embeds the element index, detection walk, and getValue", () => {
     const expr = buildReadEditorExpression(7);
     expect(expr).toContain('[data-pie-idx="7"]');
     expect(expr).toContain("getValue");
-    expect(expr).toContain("window.frames"); // same-origin frame walk
+    expect(expr).toContain("in_subframe"); // detection branch for same-origin subframes
   });
 });
 
@@ -86,14 +85,26 @@ describe("read_editor", () => {
     expect(res.success).toBe(false);
     expect(res.error).toMatch(/read_page|changed/i);
   });
+
+  it("degrades with iframe message when editor is in a same-origin subframe", async () => {
+    const session = fakeSession({ result: { value: { ok: false, reason: "in_subframe" } } });
+    const tools = buildEditorTools(deps(session));
+    const res = await getTool(tools, "read_editor").handler(
+      { elementIndex: 5 },
+      { tabId: 1 } as never,
+    );
+    expect(res.success).toBe(false);
+    expect(res.error).toMatch(/iframe/i);
+  });
 });
 
 describe("buildSetEditorExpression", () => {
-  it("embeds idx and JSON-escaped text and references setValue", async () => {
+  it("embeds idx, JSON-escaped text, detection walk, and references set", async () => {
     const expr = buildSetEditorExpression(3, 'a"b\n</x>');
     expect(expr).toContain('[data-pie-idx="3"]');
     expect(expr).toContain(JSON.stringify('a"b\n</x>'));
     expect(expr).toContain(".set(");
+    expect(expr).toContain("in_subframe"); // detection branch for same-origin subframes
   });
 });
 

@@ -30,6 +30,7 @@ describe("read_page editor detection", () => {
     expect(editor).toBeDefined();
     expect(editor!.name).toContain("Monaco");
     expect(editor!.name).toContain("read_editor");
+    expect(editor!.name).toContain("idx");
     expect(host.getAttribute("data-pie-idx")).toBe(String(editor!.pieIdx));
   });
 

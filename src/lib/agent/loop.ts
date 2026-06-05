@@ -1520,7 +1520,6 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       const editorTools = cdpAvailable
         ? getEditorTools({
             acquireSession: acquireSessionForTask,
-            pinnedOrigin,
             sessionId,
             requestConsent: requestCdpInputConsent,
           })

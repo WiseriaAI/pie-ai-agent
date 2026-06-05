@@ -1,9 +1,12 @@
 // Editor tools — read_editor / set_editor_value. CDP Runtime.evaluate in the
 // top frame's MAIN context drives Monaco / CodeMirror model APIs (getValue /
 // setValue) so the agent can read off-screen virtualized lines and write large
-// content in one shot. A same-origin frame walk inside the expression reaches
-// editors in same-origin iframes; cross-origin frames throw on .document and
-// are skipped (OOPIF — degraded to keyboard/vision).
+// content in one shot.
+//
+// v1 scope: TOP-FRAME editors only. Same-origin iframe editors are DETECTED
+// (detection-only subframe walk) but degrade with "in_subframe" — a precise
+// error guiding the user to keyboard/vision. Cross-origin OOPIFs throw on
+// .document and are silently skipped (also degrade).
 //
 // Security: CDP runs in the page's own JS context (page can hook getValue), so
 // returned text is UNTRUSTED — wrapped in <untrusted_editor_content> and never
@@ -19,7 +22,6 @@ import type { ActionResult } from "../../dom-actions/types";
 
 export interface EditorToolDeps {
   acquireSession: (tabId: number) => Promise<CdpSession>;
-  pinnedOrigin: string;
   requestConsent: (sessionId: string) => Promise<boolean>;
   sessionId: string;
 }
@@ -34,35 +36,40 @@ interface BridgeResult {
 
 const MAX_SET_TEXT_LENGTH = 500_000;
 
-// Shared same-origin element locator (string fragment injected into both
-// expressions). Returns { el, win } for the matched element or null.
+// Top-frame locator fragment. Queries ONLY the top document.
+// If the element is not found in the top frame, runs a DETECTION-ONLY
+// recursive same-origin walk to check whether the idx exists in a subframe
+// (so we can return "in_subframe" instead of "not_found"). Cross-origin
+// OOPIFs throw on .document and are silently skipped.
+// Returns: { el, win } if found in top frame; or the string reason
+// "in_subframe" / "not_found" as a sentinel (checked by callers before use).
 function locatorFragment(idx: number): string {
   return `
     const SEL = '[data-pie-idx="${idx}"]';
-    // Walk same-origin frames recursively. Cross-origin OOPIFs throw on .document
-    // and are skipped. Top-level walk starts at window.frames.
-    function findHit(doc, frames, win) {
-      const el = doc.querySelector(SEL);
-      if (el) return { el: el, win: win };
-      for (let i = 0; i < frames.length; i++) {
+    const el = document.querySelector(SEL);
+    const win = window;
+    // Detection-only subframe walk — MUST NOT act on the element, only test existence.
+    function inSubframe(w) {
+      const fs = w.frames;
+      for (let i = 0; i < fs.length; i++) {
         try {
-          const hit = findHit(frames[i].document, frames[i].frames, frames[i]);
-          if (hit) return hit;
+          if (fs[i].document.querySelector(SEL)) return true;
+          if (inSubframe(fs[i])) return true;
         } catch (e) { /* cross-origin OOPIF — skip */ }
       }
-      return null;
+      return false;
     }
-    const hit = findHit(document, window.frames, window);
+    const _locatorReason = el ? null : (inSubframe(window) ? "in_subframe" : "not_found");
   `;
 }
 
-// Engine-resolution fragment: given `hit` ({el, win}) sets `ed` to a small
+// Engine-resolution fragment: given `el` and `win` (already resolved by the
+// locator — only called when el is non-null), sets `ed` to a small
 // adapter { engine, get(), set(text) } or leaves it null.
 function adapterFragment(): string {
   return `
     let ed = null;
-    if (hit) {
-      const el = hit.el, win = hit.win;
+    if (el) {
       try {
         if (win.monaco && win.monaco.editor && win.monaco.editor.getEditors) {
           const m = win.monaco.editor.getEditors().find(function (e) {
@@ -96,7 +103,7 @@ function adapterFragment(): string {
 export function buildReadEditorExpression(idx: number): string {
   return `(function () {
     ${locatorFragment(idx)}
-    if (!hit) return { ok: false, reason: "not_found" };
+    if (_locatorReason) return { ok: false, reason: _locatorReason };
     ${adapterFragment()}
     if (!ed) return { ok: false, reason: "no_engine" };
     if (!ed.get) return { ok: false, reason: "cm6_no_view" };
@@ -108,7 +115,7 @@ export function buildSetEditorExpression(idx: number, text: string): string {
   return `(function () {
     const TEXT = ${JSON.stringify(text)};
     ${locatorFragment(idx)}
-    if (!hit) return { ok: false, reason: "not_found" };
+    if (_locatorReason) return { ok: false, reason: _locatorReason };
     ${adapterFragment()}
     if (!ed) return { ok: false, reason: "no_engine" };
     if (!ed.set) return { ok: false, reason: "cm6_no_view" };
@@ -122,6 +129,8 @@ function reasonToError(reason: string | undefined): string {
   switch (reason) {
     case "not_found":
       return "Editor element not found — the page may have changed. Call read_page again for fresh indices.";
+    case "in_subframe":
+      return "Editor is inside an iframe — iframe editors aren't supported yet. Click the editor to focus, then use dispatch_keyboard_input (write) or screenshot + vision (read).";
     case "no_engine":
       return "No supported editor (Monaco/CodeMirror) at this index. If it's a canvas editor (e.g. Google Docs), read via screenshot + vision, or write via dispatch_keyboard_input after clicking to focus.";
     case "cm6_no_view":
@@ -228,5 +237,4 @@ export function buildEditorTools(deps: EditorToolDeps): Tool[] {
   ];
 }
 
-// MAX_SET_TEXT_LENGTH and buildSetEditorExpression are exported for Task 5
 export { MAX_SET_TEXT_LENGTH };

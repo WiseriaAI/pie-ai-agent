@@ -240,7 +240,7 @@ export function pageSnapshotInjected(): PageSnapshotResult {
 
   function accessibleName(el: Element): string {
     const engine = editorEngineOf(el);
-    if (engine) return `${engine} editor — use read_editor / set_editor_value`;
+    if (engine) return `${engine} editor — use read_editor / set_editor_value (idx ${el.getAttribute("data-pie-idx") ?? "?"})`;
     const aria = normalizeSpace(el.getAttribute("aria-label") ?? "");
     if (aria) return aria;
     const labelled = el.getAttribute("aria-labelledby");
