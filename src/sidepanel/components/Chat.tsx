@@ -1940,6 +1940,10 @@ function ToolsMenu({
 }) {
   const t = useT();
   const [open, setOpen] = useState(false);
+  // Popover slide-in/out (same pattern as ModelPicker): `mounted` controls
+  // render, `shown` the transition target; unmount on exit-transition end.
+  const [mounted, setMounted] = useState(false);
+  const [shown, setShown] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -1949,6 +1953,15 @@ function ToolsMenu({
     };
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  useEffect(() => {
+    if (open) {
+      setMounted(true);
+      const r = requestAnimationFrame(() => requestAnimationFrame(() => setShown(true)));
+      return () => cancelAnimationFrame(r);
+    }
+    setShown(false);
   }, [open]);
 
   // Attach file is always enabled — image-specific limits (no vision / cap exceeded)
@@ -1972,8 +1985,16 @@ function ToolsMenu({
           <path d="M550.4 550.4v332.8c0 21.207-17.193 38.4-38.4 38.4s-38.4-17.193-38.4-38.4v-332.8h-332.8c-21.207 0-38.4-17.193-38.4-38.4s17.193-38.4 38.4-38.4h332.8v-332.8c0-21.207 17.193-38.4 38.4-38.4s38.4 17.193 38.4 38.4v332.8h332.8c21.207 0 38.4 17.193 38.4 38.4s-17.193 38.4-38.4 38.4h-332.8z" />
         </svg>
       </button>
-      {open && (
-        <div className="absolute bottom-full left-0 z-20 mb-2 w-max whitespace-nowrap overflow-hidden rounded-[10px] border border-line bg-surface shadow-[0_8px_24px_rgba(0,0,0,0.12)]">
+      {mounted && (
+        <div
+          onTransitionEnd={() => { if (!shown) setMounted(false); }}
+          style={{
+            opacity: shown ? 1 : 0,
+            transform: shown ? "translateY(0)" : "translateY(8px)",
+            transition: "opacity 0.18s ease, transform 0.18s ease",
+          }}
+          className="absolute bottom-full left-0 z-20 mb-2 w-max whitespace-nowrap overflow-hidden rounded-[10px] border border-line bg-surface shadow-[0_8px_24px_rgba(0,0,0,0.12)]"
+        >
           {onPickElement && (
             <button
               type="button"
