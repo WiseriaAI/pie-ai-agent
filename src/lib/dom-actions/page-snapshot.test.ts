@@ -261,6 +261,27 @@ describe("pageSnapshotInjected", () => {
       expect(result.html).not.toMatch(/<label[^>]*data-pie-idx/);
     });
 
+    it("the rescued entry reads as a checkbox with the control's state", () => {
+      document.body.innerHTML = `
+        <div class="switch">
+          <input type="checkbox" id="st2" name="product[status]" checked>
+          <label class="lbl" for="st2">Enable</label>
+        </div>`;
+      const cb = document.getElementById("st2") as HTMLInputElement;
+      Object.defineProperty(cb, "getBoundingClientRect", {
+        value: () => ({ width: 1, height: 1, top: 0, left: 0, right: 1, bottom: 1 }),
+        configurable: true,
+      });
+
+      const entry = pageSnapshotInjected().interactiveElements.find((e) => e.pieIdx === 0);
+
+      expect(entry).toBeDefined();
+      expect(entry!.role).toBe("checkbox");      // from the control, not the <label>
+      expect(entry!.type).toBe("checkbox");
+      expect(entry!.checked).toBe(true);          // reflects input.checked
+      expect(entry!.name).toBe("product[status]"); // identifies the control
+    });
+
     it("does NOT rescue when the label is also hidden (genuinely unreachable)", () => {
       document.body.innerHTML = `
         <input type="checkbox" id="h" name="hh">
