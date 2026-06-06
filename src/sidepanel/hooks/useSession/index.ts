@@ -478,6 +478,38 @@ export function useSession(): UseSession {
     };
   }, [connectPortFor]);
 
+  // Bug-fix — quote reconnect nudge. When the user captures a page quote while
+  // this panel is still mounted on its current session but the SW idled/restarted
+  // (silently killing the streaming port — panel only reconnects lazily on the
+  // next send), the SW has no live port to deliver to, stashes the quote, and
+  // broadcasts `quote-needs-reconnect` over runtime messaging (which survives the
+  // dead port). We respond by force-reconnecting the *current* session's port:
+  // since the SW stashed only because it had zero live ports, our cached handle
+  // is stale, so we drop it and reconnect. The SW's onConnect then drains the
+  // pending quote into THIS session — where the user is actually looking —
+  // instead of leaking it into the next (often blank) session that connects.
+  useEffect(() => {
+    const onRuntimeMessage = (msg: unknown) => {
+      if (
+        typeof msg !== "object" ||
+        msg === null ||
+        (msg as { type?: unknown }).type !== "quote-needs-reconnect"
+      ) {
+        return;
+      }
+      const id = sessionIdRef.current;
+      if (!id) return;
+      const stale = portsRef.current.get(id);
+      if (stale) {
+        try { stale.disconnect(); } catch {}
+        portsRef.current.delete(id);
+      }
+      portsRef.current.set(id, connectPortFor(id));
+    };
+    chrome.runtime.onMessage.addListener(onRuntimeMessage);
+    return () => chrome.runtime.onMessage.removeListener(onRuntimeMessage);
+  }, [connectPortFor]);
+
   // M1-U5 — track status changes from SW writes (cold-start
   // detectAndMarkPaused, post-resume markActive). Without this, the
   // panel would never see the SW transition from `active` to `paused`

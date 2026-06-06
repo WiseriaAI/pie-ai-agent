@@ -171,9 +171,25 @@ const runtime = {
   }),
   getPlatformInfo: vi.fn().mockResolvedValue({ os: "mac" }),
   getURL: vi.fn((p: string) => `chrome-extension://test/${p}`),
+  sendMessage: vi.fn().mockResolvedValue(undefined),
   onStartup: { addListener: vi.fn() },
   onInstalled: { addListener: vi.fn() },
   onConnect: { addListener: vi.fn() },
+  // runtime.onMessage — capture listeners so tests can fire SW→panel runtime
+  // broadcasts (e.g. quote-needs-reconnect). __emitMessage drives them.
+  __messageListeners: [] as Array<Listener<unknown>>,
+  onMessage: {
+    addListener: (l: Listener<unknown>) => {
+      runtime.__messageListeners.push(l);
+    },
+    removeListener: (l: Listener<unknown>) => {
+      const i = runtime.__messageListeners.indexOf(l);
+      if (i >= 0) runtime.__messageListeners.splice(i, 1);
+    },
+  },
+  __emitMessage: (msg: unknown) => {
+    for (const l of [...runtime.__messageListeners]) l(msg);
+  },
 };
 
 // chrome.tabs mock — minimum surface for M3-U2 pin capture / pinned-tab
@@ -285,7 +301,9 @@ beforeEach(() => {
   local.__store = {};
   local.__changedListeners = [];
   runtime.__ports = [];
+  runtime.__messageListeners = [];
   runtime.connect.mockClear();
+  runtime.sendMessage.mockClear();
   tabs.__activeTab = null;
   tabs.__tabsById.clear();
   tabs.query.mockClear();

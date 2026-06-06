@@ -136,6 +136,30 @@ migrateSkillsToPackages().catch((e) =>
 // for broadcasting recording-action-broadcast back to the panel.
 const portsBySession = new Map<string, chrome.runtime.Port>();
 
+// R7 cross-session pinned-tab lock — set of session ids that currently have a
+// *live, in-flight agent loop* (added at chat-start/resume-task dispatch,
+// removed in the dispatch finally). The lock only honors pins owned by a
+// session in this set: an idle/historical owner (an aborted task that kept its
+// pin per #139, or an SW-restart `paused` session) keeps its pins in storage
+// for resume but must NOT block a foreground session's close_tabs. Module-level
+// (not per-port) so a loop running in a sibling sidepanel is visible too.
+const runningSessionIds = new Set<string>();
+
+// Bug-fix — when a quote is stashed because the SW has no live streaming port
+// (it idled/restarted while the side panel stayed mounted on the user's current
+// session, and the panel only reconnects lazily on the next send), nudge the
+// still-open panel document via a runtime broadcast (which does NOT need the
+// dead port). The panel responds by reconnecting *its current session's* port,
+// so the SW's onConnect drain delivers the quote where the user is actually
+// looking — instead of it sitting in `pending` until an unrelated/blank session
+// connects. Fire-and-forget; "no receiving end" (panel truly closed) is fine —
+// that case is already handled by sidePanel.open + onConnect drain.
+function wakePanelToReconnectForQuote(): void {
+  chrome.runtime.sendMessage({ type: "quote-needs-reconnect" }).catch(() => {
+    /* no panel/extension page open to receive — expected, ignore */
+  });
+}
+
 function findRecordingSessionByTabId(tabId: number | undefined): RecordingSession | null {
   if (tabId === undefined) return null;
   for (const sess of recordingState.values()) {
@@ -534,8 +558,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       // 每个 port 绑定一个 sessionId（port name = chat-stream-${sessionId}）。
       // 派发时为每个 port 注入它自己的 sessionId，panel 的 port handler 才能
       // 路由到对应 slot。如果 ports 为空（bubble click 触发 sidePanel.open
-      // 但 panel 还在 mount），dispatchQuoteAdded 会 stash，onConnect 时 drain。
-      dispatchQuoteAdded(out, portsBySession);
+      // 但 panel 还在 mount，或 SW idle 后 panel 仍开着但 port 已死），
+      // dispatchQuoteAdded 会 stash 并返回 true，唤醒 panel 重连当前会话的 port。
+      if (dispatchQuoteAdded(out, portsBySession)) wakePanelToReconnectForQuote();
     })();
     return;
   }
@@ -592,7 +617,7 @@ chrome.commands.onCommand.addListener((command) => {
       payload,
     );
     if (!out) return;
-    dispatchQuoteAdded(out, portsBySession);
+    if (dispatchQuoteAdded(out, portsBySession)) wakePanelToReconnectForQuote();
   })();
 });
 
@@ -839,7 +864,8 @@ async function handleResumeRequest(
     // Phase 5 — per-task screenshot budget key.
     taskId: resumeTaskId,
     // M3-U4 (TOCTOU fix) — refresh per dispatch; see chat-start twin.
-    refreshCrossSessionPinnedTabIds: () => getCrossSessionPinnedTabIds(sessionId),
+    refreshCrossSessionPinnedTabIds: () =>
+      getCrossSessionPinnedTabIds(sessionId, runningSessionIds),
     // M5 — pin mode frozen at chat-start (here: resume start). close_tabs K-9
     // reads this through ToolHandlerContext to refuse user-locked pin closes.
     pinMode: getEffectivePinMode(meta, agent),
@@ -855,6 +881,7 @@ async function handleResumeRequest(
   });
   } finally {
     inFlightSessionIds.delete(sessionId);
+    runningSessionIds.delete(sessionId);
     keepAlive.maybeStop();
   }
 }
@@ -1209,7 +1236,8 @@ async function handleChatStream(
       // M3-U4 (TOCTOU fix) — refresh the cross-session pinned-tab
       // registry per tool dispatch. The frozen snapshot here would miss
       // sessions created mid-loop.
-      refreshCrossSessionPinnedTabIds: () => getCrossSessionPinnedTabIds(sessionId),
+      refreshCrossSessionPinnedTabIds: () =>
+        getCrossSessionPinnedTabIds(sessionId, runningSessionIds),
       // M5 — pin mode frozen at chat-start. close_tabs K-9 reads this
       // through ToolHandlerContext to refuse user-locked pin closes.
       pinMode: pinModeAtStart,
@@ -1242,6 +1270,7 @@ async function handleChatStream(
     });
   } finally {
     inFlightSessionIds.delete(sessionId);
+    runningSessionIds.delete(sessionId);
     keepAlive.maybeStop();
   }
 }
@@ -1342,6 +1371,7 @@ chrome.runtime.onConnect.addListener((port) => {
       // rotate helper aborts it.
       rotateAbortController(abortRotation, () => {});
       inFlightSessionIds.add(message.sessionId);
+      runningSessionIds.add(message.sessionId);
       keepAlive.ensure();
       handleChatStream(
         port,
@@ -1413,6 +1443,7 @@ chrome.runtime.onConnect.addListener((port) => {
       // signal.
       rotateAbortController(abortRotation, () => {});
       inFlightSessionIds.add(message.sessionId);
+      runningSessionIds.add(message.sessionId);
       keepAlive.ensure();
       handleResumeRequest(
         port,
