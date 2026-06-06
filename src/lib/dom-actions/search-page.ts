@@ -128,6 +128,22 @@ export function searchPageInjected(params: SearchPageParams): SearchPageResult {
     return true;
   }
 
+  function isRescuableControl(el: Element): boolean {
+    const tag = el.tagName.toLowerCase();
+    if (tag !== "input" && tag !== "select" && tag !== "textarea") return false;
+    if (tag === "input" && (el as HTMLInputElement).type === "hidden") return false;
+    return true;
+  }
+
+  function visibleLabelFor(el: Element): HTMLLabelElement | null {
+    const labels = (el as HTMLInputElement).labels;
+    if (!labels) return null;
+    for (const l of labels) {
+      if (isVisible(l)) return l;
+    }
+    return null;
+  }
+
   // ── stamp data-pie-idx (copied from page-snapshot.ts Step C) ──
   const liveBodyElements = [...walkDeep(document.body)];
   for (const el of liveBodyElements) {
@@ -137,6 +153,15 @@ export function searchPageInjected(params: SearchPageParams): SearchPageResult {
   for (const el of liveBodyElements) {
     if (el.matches?.(INTERACTIVE_SELECTOR) && isVisible(el)) {
       el.setAttribute("data-pie-idx", String(stampIdx++));
+    } else if (
+      el.matches?.(INTERACTIVE_SELECTOR) &&
+      isRescuableControl(el) &&
+      !isVisible(el)
+    ) {
+      const label = visibleLabelFor(el);
+      if (label && !label.hasAttribute("data-pie-idx")) {
+        label.setAttribute("data-pie-idx", String(stampIdx++));
+      }
     }
   }
 
