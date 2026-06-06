@@ -139,7 +139,7 @@ export const zhCNDict = {
       imageProcessingFailed: "图片处理失败。",
     },
     files: { attachFile: "附加文件", truncated: "已截断", remove: "移除文件", fileAttachments: "文件附件", tooLarge: "{name} 超过 5MB 上限", unsupported: "{name}：不支持的文件类型", processingFailed: "无法读取该文件", requestTitle: "Pie 想读取一个本地文本或 PDF 文件", requestBody: "选择一个文本或 PDF 文件,把内容交给 agent。图片请改用 + 菜单。", requestChoose: "选择文件", requestCancel: "取消" },
-    output: { download: "下载", expired: "文件已过期" },
+    output: { download: "下载", expired: "已过期 · 让助手重新生成" },
     stepCount: { one: "步", other: "步" },
     noApiKey: "没有 API Key",
     noApiKeyDescription: "从任一支持的 provider 添加 API key 即可开始使用 Agent。",
