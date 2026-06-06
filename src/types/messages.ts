@@ -245,6 +245,16 @@ export type DisplayMessage =
        *  the button and dim the card so a duplicate click doesn't
        *  send another discard message. */
       resolved?: "discarded";
+    }
+  | {
+      /** output_file — download card. Full content lives in the SW
+       *  output-cache; this carries only display fields + the artifactId the
+       *  panel sends back via download-output. */
+      role: "file-output";
+      artifactId: string;
+      filename: string;
+      mime: string;
+      size: number;
     };
 
 // --- Agent: resolved element info (from snapshot, not LLM) ---
@@ -502,6 +512,27 @@ export interface PdfNeedsFileAccessMessage {
   tabId: number;
 }
 
+/** output_file — SW tells the panel to render a download card. */
+export interface FileOutputMessage {
+  type: "file-output";
+  artifactId: string;
+  filename: string;
+  mime: string;
+  size: number;
+  /** M2-U2 — session routing. */
+  sessionId: string;
+}
+
+/** output_file — SW replies to a panel download-output request so the panel
+ *  can resolve its pending promise (ok = chrome.downloads started; expired =
+ *  artifact evicted from cache; error = chrome.downloads threw). */
+export interface FileOutputResultMessage {
+  type: "file-output-result";
+  artifactId: string;
+  status: "ok" | "expired" | "error";
+  sessionId: string;
+}
+
 // --- Discriminated Unions ---
 
 export type PortMessageToWorker =
@@ -533,4 +564,6 @@ export type PortMessageToPanel =
   | QuoteAddedMessage                  // issue #38
   | ChatInstructionStateMessage        // Issue #34
   | ChatInstructionRejectedMessage    // Issue #34
-  | PdfNeedsFileAccessMessage;        // PDF local file access card
+  | PdfNeedsFileAccessMessage         // PDF local file access card
+  | FileOutputMessage                 // output_file download card
+  | FileOutputResultMessage;          // output_file download result
