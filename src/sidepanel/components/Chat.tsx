@@ -92,6 +92,7 @@ import { useLocalFileRequest } from "../hooks/useLocalFileRequest";
 import { LocalFileRequestCard } from "./LocalFileRequestCard";
 import { usePdfPermission } from "../hooks/usePdfPermission";
 import { PdfPermissionCard } from "./PdfPermissionCard";
+import { FileOutputCard } from "./FileOutputCard";
 
 interface ChatProps {
   providerLabel: string | null;
@@ -1185,6 +1186,19 @@ After the skill completes, briefly summarize what was created (the user will see
                       payload={msg.payload}
                       resolved={msg.resolved}
                       onDiscard={() => session.discardTask(msg.confirmationId)}
+                    />
+                  </div>
+                );
+              }
+              if (msg.role === "file-output") {
+                return (
+                  <div key={firstIndex} className="bubble-in">
+                    <FileOutputCard
+                      artifactId={msg.artifactId}
+                      filename={msg.filename}
+                      mime={msg.mime}
+                      size={msg.size}
+                      onDownload={session.downloadOutput}
                     />
                   </div>
                 );
