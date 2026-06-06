@@ -52,11 +52,13 @@ export function buildOutputFileTool(deps: OutputFileDeps): Tool {
     handler: async (args: unknown, _ctx: ToolHandlerContext): Promise<ActionResult> => {
       const a = (args ?? {}) as OutputArgs;
       if (typeof a.content !== "string") return { success: false, error: "content is required (string)" };
-      if (a.content.length > MAX_CONTENT_BYTES) return { success: false, error: `content_too_large: max ${MAX_CONTENT_BYTES / 1024 / 1024}MB` };
+      // Cap on actual UTF-8 byte size (not UTF-16 code-unit count) so the 5MB
+      // limit is byte-accurate for multibyte content; byteLength is reused below.
+      const byteLength = new Blob([a.content]).size;
+      if (byteLength > MAX_CONTENT_BYTES) return { success: false, error: `content_too_large: max ${MAX_CONTENT_BYTES / 1024 / 1024}MB` };
       const rawFilename = typeof a.filename === "string" ? a.filename : "";
       const filename = sanitizeDownloadName(rawFilename);
       const mime = typeof a.mime === "string" && SAFE_MIME.test(a.mime) ? a.mime : "text/plain";
-      const byteLength = new Blob([a.content]).size;
       const id = crypto.randomUUID();
       deps.store({ id, sessionId: deps.sessionId, filename, mime, content: a.content, byteLength, addedAt: Date.now() });
       const renameNote =
