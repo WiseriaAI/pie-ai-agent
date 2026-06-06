@@ -24,12 +24,11 @@ export interface OutputFileDeps {
 }
 
 /**
- * output_file — produce a downloadable text artifact. Unlike the old
- * save_to_downloads (which wrote to disk immediately), this only stores the
- * content in the SW output-cache and returns `fileOutput` so the panel can
- * render a card; the actual chrome.downloads call happens later when the user
- * clicks the card's download button (SW routes `download-output`). Dep-injected
- * with sessionId + store because it needs runtime state — NOT in the static
+ * output_file — produce a downloadable text artifact. Stores content in the
+ * SW output-cache and returns `fileOutput` so the panel can render a card;
+ * the actual chrome.downloads call happens later when the user clicks the
+ * card's download button (SW routes `download-output`). Dep-injected with
+ * sessionId + store because it needs runtime state — NOT in the static
  * LOCAL_FILE_TOOLS array (mirrors buildRequestLocalFileTool).
  */
 export function buildOutputFileTool(deps: OutputFileDeps): Tool {

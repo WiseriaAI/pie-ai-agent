@@ -86,10 +86,11 @@ export const PDF_TOOL_NAMES = [
 ] as const;
 
 // Local file I/O tools.
-//   save_to_downloads — write (creates a file in the user's Downloads).
-//   read_local_file / request_local_file — read (added in later phases).
+//   output_file — read (produces an in-memory artifact + side-panel card;
+//     no disk write at call time — the user triggers download later).
+//   read_local_file / request_local_file — read.
 export const LOCAL_FILE_TOOL_NAMES = [
-  "save_to_downloads",
+  "output_file",
   "read_local_file",
   "request_local_file",
 ] as const;
@@ -197,7 +198,7 @@ export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
   search_pdf: "read",
   get_pdf_outline: "read",
   // Local file I/O
-  save_to_downloads: "write",
+  output_file: "read",
   read_local_file: "read",
   request_local_file: "read",
   // Editor tools — CDP main-context getValue/setValue
