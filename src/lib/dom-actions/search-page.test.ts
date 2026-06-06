@@ -266,6 +266,7 @@ describe("search finds label-rescued hidden controls", () => {
     const hit = r.matches.find((m) => /Enable Product/i.test(m.snippet));
     expect(hit).toBeDefined();
     expect(hit!.pieIdx).toBe(0); // the rescued label carries pie_idx 0
+    expect(document.getElementById("st")!.hasAttribute("data-pie-idx")).toBe(false);
   });
 });
 

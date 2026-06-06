@@ -151,13 +151,10 @@ export function searchPageInjected(params: SearchPageParams): SearchPageResult {
   }
   let stampIdx = 0;
   for (const el of liveBodyElements) {
-    if (el.matches?.(INTERACTIVE_SELECTOR) && isVisible(el)) {
+    const isInteractive = el.matches?.(INTERACTIVE_SELECTOR);
+    if (isInteractive && isVisible(el)) {
       el.setAttribute("data-pie-idx", String(stampIdx++));
-    } else if (
-      el.matches?.(INTERACTIVE_SELECTOR) &&
-      isRescuableControl(el) &&
-      !isVisible(el)
-    ) {
+    } else if (isInteractive && isRescuableControl(el)) {
       const label = visibleLabelFor(el);
       if (label && !label.hasAttribute("data-pie-idx")) {
         label.setAttribute("data-pie-idx", String(stampIdx++));
