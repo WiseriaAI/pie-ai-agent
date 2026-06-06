@@ -1,66 +1,66 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import { saveToDownloadsTool, readLocalFileTool, buildRequestLocalFileTool } from "./files";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { buildOutputFileTool, readLocalFileTool, buildRequestLocalFileTool } from "./files";
+import type { FileArtifact } from "@/background/output-cache";
 import { sendToOffscreen } from "@/background/offscreen-manager";
 vi.mock("@/background/offscreen-manager", () => ({ sendToOffscreen: vi.fn() }));
 
-const ctx = { tabId: 1 } as Parameters<typeof saveToDownloadsTool.handler>[1];
+describe("output_file tool", () => {
+  const ctx = { tabId: 1 } as Parameters<ReturnType<typeof buildOutputFileTool>["handler"]>[1];
+  let originalChrome: typeof globalThis.chrome;
+  beforeEach(() => { originalChrome = globalThis.chrome; });
+  afterEach(() => { globalThis.chrome = originalChrome; });
+  function build() {
+    const stored: FileArtifact[] = [];
+    const tool = buildOutputFileTool({ sessionId: "s1", store: (a) => stored.push(a) });
+    return { tool, stored };
+  }
 
-describe("save_to_downloads tool", () => {
-  beforeEach(() => vi.clearAllMocks());
+  it("is named output_file and read-class-shaped (no save_as param)", () => {
+    const { tool } = build();
+    expect(tool.name).toBe("output_file");
+    expect(JSON.stringify(tool.parameters)).not.toContain("save_as");
+  });
 
-  it("writes content under pie/ via chrome.downloads with a data: URL", async () => {
-    const r = await saveToDownloadsTool.handler(
-      { filename: "notes/summary.md", content: "# Hello\nworld" }, ctx,
-    );
+  it("stores an artifact and returns fileOutput (does NOT call chrome.downloads)", async () => {
+    const dl = vi.fn();
+    // @ts-expect-error test global
+    globalThis.chrome = { downloads: { download: dl } };
+    const { tool, stored } = build();
+    const r = await tool.handler({ filename: "report.md", content: "# hi", mime: "text/markdown" }, ctx);
     expect(r.success).toBe(true);
-    expect(chrome.downloads.download).toHaveBeenCalledTimes(1);
-    const opts = (chrome.downloads.download as ReturnType<typeof vi.fn>).mock.calls[0][0];
-    expect(opts.filename).toBe("pie/notes/summary.md");
-    expect(opts.conflictAction).toBe("uniquify");
-    expect(opts.saveAs).toBe(false);
-    expect(opts.url).toMatch(/^data:text\/plain;charset=utf-8,/);
-    expect(decodeURIComponent(opts.url.split(",")[1])).toBe("# Hello\nworld");
-    expect(r.observation).toContain("pie/notes/summary.md");
+    expect(dl).not.toHaveBeenCalled();
+    expect(stored).toHaveLength(1);
+    expect(stored[0].filename).toBe("pie/report.md");
+    expect(stored[0].content).toBe("# hi");
+    expect(r.fileOutput).toMatchObject({ filename: "pie/report.md", mime: "text/markdown", size: stored[0].byteLength });
+    expect(r.fileOutput?.id).toBe(stored[0].id);
   });
 
-  it("passes save_as:true through (wire format)", async () => {
-    await saveToDownloadsTool.handler({ filename: "x.txt", content: "hi", save_as: true }, ctx);
-    const opts = (chrome.downloads.download as ReturnType<typeof vi.fn>).mock.calls[0][0];
-    expect(opts.saveAs).toBe(true);
-  });
-
-  it("uses provided mime in the data URL", async () => {
-    await saveToDownloadsTool.handler({ filename: "a.json", content: "{}", mime: "application/json" }, ctx);
-    const opts = (chrome.downloads.download as ReturnType<typeof vi.fn>).mock.calls[0][0];
-    expect(opts.url).toMatch(/^data:application\/json;charset=utf-8,/);
-  });
-
-  it("falls back to text/plain for a disallowed mime", async () => {
-    await saveToDownloadsTool.handler({ filename: "a.html", content: "<b>hi</b>", mime: "text/html" }, ctx);
-    const opts = (chrome.downloads.download as ReturnType<typeof vi.fn>).mock.calls[0][0];
-    expect(opts.url).toMatch(/^data:text\/plain;charset=utf-8,/);
-  });
-
-  it("rejects content over 5MB without calling download", async () => {
-    const big = "x".repeat(5 * 1024 * 1024 + 1);
-    const r = await saveToDownloadsTool.handler({ filename: "big.txt", content: big }, ctx);
+  it("rejects content over 5MB before storing", async () => {
+    const { tool, stored } = build();
+    const r = await tool.handler({ filename: "big.txt", content: "x".repeat(5 * 1024 * 1024 + 1) }, ctx);
     expect(r.success).toBe(false);
-    expect(r.error).toContain("content_too_large");
-    expect(chrome.downloads.download).not.toHaveBeenCalled();
+    expect(r.error).toMatch(/content_too_large/);
+    expect(stored).toHaveLength(0);
   });
 
-  it("notes when the filename was sanitized to the fallback", async () => {
-    const r = await saveToDownloadsTool.handler({ filename: "../..", content: "hi" }, ctx);
+  it("forces text/plain for non-allowlisted mime (e.g. text/html)", async () => {
+    const { tool, stored } = build();
+    await tool.handler({ filename: "a.html", content: "<b>hi</b>", mime: "text/html" }, ctx);
+    expect(stored[0].mime).toBe("text/plain");
+  });
+
+  it("sanitizes path traversal to pie/untitled.txt", async () => {
+    const { tool, stored } = build();
+    const r = await tool.handler({ filename: "../..", content: "hi" }, ctx);
     expect(r.success).toBe(true);
-    const opts = (chrome.downloads.download as ReturnType<typeof vi.fn>).mock.calls[0][0];
-    expect(opts.filename).toBe("pie/untitled.txt");
-    expect(r.observation).toContain("sanitized to untitled.txt");
+    expect(stored[0].filename).toBe("pie/untitled.txt");
   });
 
-  it("fails when content is missing", async () => {
-    const r = await saveToDownloadsTool.handler({ filename: "a.txt" }, ctx);
+  it("requires content", async () => {
+    const { tool } = build();
+    const r = await tool.handler({ filename: "a.txt" }, ctx);
     expect(r.success).toBe(false);
-    expect(chrome.downloads.download).not.toHaveBeenCalled();
   });
 });
 
