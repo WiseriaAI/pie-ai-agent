@@ -1,0 +1,9 @@
+{
+  "taskId": "775",
+  "goal": "Delete all reviews from the scammer Arden",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

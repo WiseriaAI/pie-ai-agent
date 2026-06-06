@@ -1,0 +1,9 @@
+{
+  "taskId": "548",
+  "goal": "Add a new color blue to size S and M of Frankie Sweatshirt",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

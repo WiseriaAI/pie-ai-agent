@@ -1,0 +1,9 @@
+{
+  "taskId": "770",
+  "goal": "We've received 12 white Cora parachute pant of size 28 and 56 blue of size 29, update the inventory",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

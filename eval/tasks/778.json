@@ -1,0 +1,9 @@
+{
+  "taskId": "778",
+  "goal": "Reduce the price of size 28 Sahara leggings by 13.5%",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

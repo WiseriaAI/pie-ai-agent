@@ -1,0 +1,9 @@
+{
+  "taskId": "494",
+  "goal": "Notify Alex Thomas in their most recent pending order with message \"Yo, your order will be shipped soon!\"",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

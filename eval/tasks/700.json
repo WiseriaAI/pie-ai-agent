@@ -1,0 +1,9 @@
+{
+  "taskId": "700",
+  "goal": "Create a new marketing price rule called \"fall discount\" for all registered customers that offers $10 discount on checkout",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

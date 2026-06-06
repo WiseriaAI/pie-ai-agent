@@ -1,0 +1,9 @@
+{
+  "taskId": "774",
+  "goal": "Delete all pending reviews with less than 4 stars",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "taskId": "551",
+  "goal": "Add new size 30 and 31 to all color variants of Diana Tights",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

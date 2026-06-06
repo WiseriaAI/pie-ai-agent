@@ -1,0 +1,9 @@
+{
+  "taskId": "547",
+  "goal": "Add a new color option brown to the size S of Phoebe Zipper Sweatshirt",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

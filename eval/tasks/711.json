@@ -1,0 +1,9 @@
+{
+  "taskId": "711",
+  "goal": "Show the product view report from July 5, 2021 to May 31, 2023.",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

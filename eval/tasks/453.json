@@ -1,0 +1,9 @@
+{
+  "taskId": "453",
+  "goal": "Disable Teton pullover hoodie from the site, they are facing some quality issues.",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

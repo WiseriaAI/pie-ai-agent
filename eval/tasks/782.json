@@ -1,0 +1,9 @@
+{
+  "taskId": "782",
+  "goal": "Increase the price of all blue running tshirts in extra small and small sizes by 23%",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

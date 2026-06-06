@@ -1,0 +1,9 @@
+{
+  "taskId": "695",
+  "goal": "Add a simple product named \"Energy-Bulk Man Yoga Pant\" with 50 in stock, available in size 38 and color yellow, priced at $69.99 using the appropriate attribute set.",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

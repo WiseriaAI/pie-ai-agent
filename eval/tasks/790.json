@@ -1,0 +1,9 @@
+{
+  "taskId": "790",
+  "goal": "Delete all negative reviews for Sybil running short",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

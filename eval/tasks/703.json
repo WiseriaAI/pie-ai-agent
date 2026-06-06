@@ -1,0 +1,9 @@
+{
+  "taskId": "703",
+  "goal": "Create a new marketing price rule called \"Thanks giving sale\" for all registered customers that offers $40 discount on all their purchase",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

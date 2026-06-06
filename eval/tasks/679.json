@@ -1,0 +1,9 @@
+{
+  "taskId": "679",
+  "goal": "Go to the list of orders that are completed",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

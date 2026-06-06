@@ -1,0 +1,9 @@
+{
+  "taskId": "500",
+  "goal": "Update order #301 with the DHL tracking number 239028439840",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

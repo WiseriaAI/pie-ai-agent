@@ -1,0 +1,9 @@
+{
+  "taskId": "490",
+  "goal": "Change the page title of \"About us\" page on my site to \"Secret\".",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

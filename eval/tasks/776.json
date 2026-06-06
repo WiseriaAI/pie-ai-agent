@@ -1,0 +1,9 @@
+{
+  "taskId": "776",
+  "goal": "Delete all reviews from the scammer Carlo",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

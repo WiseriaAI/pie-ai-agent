@@ -1,0 +1,9 @@
+{
+  "taskId": "704",
+  "goal": "Show the sales order report for for last months (today is March 15, 2023).",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "taskId": "712",
+  "goal": "Show the coupons report from May 1, 2021 to May 15, 2023.",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

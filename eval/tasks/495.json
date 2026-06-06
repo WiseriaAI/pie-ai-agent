@@ -1,0 +1,9 @@
+{
+  "taskId": "495",
+  "goal": "Notify Lily Potter in their most recent pending order with message \"Thanks, your order is ready to be shipped!\"",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

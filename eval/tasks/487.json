@@ -1,0 +1,9 @@
+{
+  "taskId": "487",
+  "goal": "Change the page title of \"Enable Cookies\" page on my site to \"Cookie monster coming to your place\".",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}
