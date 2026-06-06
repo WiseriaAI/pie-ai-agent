@@ -1,0 +1,9 @@
+{
+  "taskId": "2",
+  "goal": "Get the top-1 best-selling product type name(s) in Quarter 1 2022",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "info-seeking",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

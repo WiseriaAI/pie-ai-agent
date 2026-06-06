@@ -1,0 +1,9 @@
+{
+  "taskId": "502",
+  "goal": "Mark all Gobi HeatTec Tee as out of stock",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

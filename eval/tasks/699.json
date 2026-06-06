@@ -1,0 +1,9 @@
+{
+  "taskId": "699",
+  "goal": "Create a new marketing price rule called \"spring sale\" for all registered customers that offers a 20 percent discount site-wide",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

@@ -50,5 +50,9 @@ describe("eval bridge pre-wires the headless harness (no human, no sidepanel)", 
     // equality against the bare expected value — a verbose sentence never matches.
     expect(ctx.task).toContain("ONLY the precise value");
     expect(ctx.task).toContain("no explanation");
+    // Multi-value answers must be emitted as a JSON array so the scorer's
+    // coerce_retrieved_data parses them element-wise (a comma-joined string is
+    // wrapped as ONE element and never matches a multi-value expected set).
+    expect(ctx.task).toContain("JSON array");
   });
 });

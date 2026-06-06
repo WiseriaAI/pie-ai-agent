@@ -1,0 +1,9 @@
+{
+  "taskId": "698",
+  "goal": "Add a simple product named \"Lelelumon Yoga Mat\" with 42 in stock, available in size uni-size and color black, priced at $769.99 using the appropriate attribute set.",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

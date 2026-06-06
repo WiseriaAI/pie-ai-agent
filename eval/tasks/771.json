@@ -1,0 +1,9 @@
+{
+  "taskId": "771",
+  "goal": "Approve reviews with four stars or higher to display in our store.",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

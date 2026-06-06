@@ -1,0 +1,9 @@
+{
+  "taskId": "541",
+  "goal": "Modify the address of order #125 to 654 Elm Drive, Apartment 12, Miami, FL, 33101",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

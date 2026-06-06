@@ -1,0 +1,9 @@
+{
+  "taskId": "110",
+  "goal": "Get the monthly count of completed orders from Jan 2022 through Nov 2022, inclusive. Return a list of objects with keys \"month\" (month name) and \"count\" (as integer) only, without any additional details.",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "info-seeking",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

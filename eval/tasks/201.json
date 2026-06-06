@@ -1,0 +1,9 @@
+{
+  "taskId": "201",
+  "goal": "Get the customer email of the earliest fraud suspect order.",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "info-seeking",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

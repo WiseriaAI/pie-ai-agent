@@ -1,0 +1,9 @@
+{
+  "taskId": "501",
+  "goal": "Mark all Taurus Elements Shell as out of stock",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

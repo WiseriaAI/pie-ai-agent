@@ -1,0 +1,9 @@
+{
+  "taskId": "539",
+  "goal": "Modify the address of order #65 to 789 Pine Lane, San Francisco, CA, 94102",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

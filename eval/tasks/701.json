@@ -1,0 +1,9 @@
+{
+  "taskId": "701",
+  "goal": "Create a new marketing price rule called \"Mother's day sale\" for all registered customers that offers 15% discount on checkout on all their cart",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

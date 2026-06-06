@@ -1,0 +1,9 @@
+{
+  "taskId": "504",
+  "goal": "Mark all Selene yoga hoodie as out of stock",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

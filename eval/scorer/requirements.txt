@@ -1,1 +1,2 @@
 git+https://github.com/ServiceNow/webarena-verified.git
+pytest>=8

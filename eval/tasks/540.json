@@ -1,0 +1,9 @@
+{
+  "taskId": "540",
+  "goal": "Modify the address of order #301 to 321 Birch Boulevard, Suite 200, Dallas, TX, 75201",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

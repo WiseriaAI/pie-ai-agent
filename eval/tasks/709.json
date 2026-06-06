@@ -1,0 +1,9 @@
+{
+  "taskId": "709",
+  "goal": "Show the orders report from May 1, 2021 to March 31, 2022.",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

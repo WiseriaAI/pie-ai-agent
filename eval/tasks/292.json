@@ -1,0 +1,9 @@
+{
+  "taskId": "292",
+  "goal": "Get the total number of cancellations of the customer who has the most cancellations in the history",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "info-seeking",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

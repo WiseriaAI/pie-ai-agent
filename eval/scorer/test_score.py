@@ -18,6 +18,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parent))
+from score import coerce_retrieved_data  # noqa: E402
+
 # ---------------------------------------------------------------------------
 # Minimal valid HAR (≥1 entry required by the evaluator).
 # For retrieve tasks, the HAR is not used for scoring (AgentResponseEvaluator
@@ -154,3 +157,54 @@ def test_wrong_answer_scores_0(tmp_path: Path) -> None:
 
     assert score["status"] == "scored", f"Expected 'scored', got: {score}"
     assert score["score"] == 0.0, f"Expected score=0.0, got: {score['score']}"
+
+
+# ---------------------------------------------------------------------------
+# coerce_retrieved_data — answer → retrieved_data coercion
+#
+# The evaluator compares retrieved_data element-wise (set/list equality), so a
+# multi-value or structured answer must arrive as a LIST, not as one wrapped
+# string. The agent already emits JSON arrays for structured answers; the scorer
+# must parse them. Comma-joined plain strings are intentionally NOT split —
+# splitting is semantically fragile (a single value may contain a comma), so the
+# agent is instructed to emit a JSON array for multi-value answers instead.
+# ---------------------------------------------------------------------------
+
+
+def test_coerce_bare_string_stays_single() -> None:
+    assert coerce_retrieved_data("Quest Lumaflex™ Band") == ["Quest Lumaflex™ Band"]
+
+
+def test_coerce_json_array_of_strings_becomes_list() -> None:
+    assert coerce_retrieved_data('["Hollister", "Joust Bag", "Antonia Racer Tank"]') == [
+        "Hollister",
+        "Joust Bag",
+        "Antonia Racer Tank",
+    ]
+
+
+def test_coerce_json_array_of_objects_becomes_list_of_dicts() -> None:
+    assert coerce_retrieved_data('[{"month": "May", "count": 8}, {"month": "June", "count": 13}]') == [
+        {"month": "May", "count": 8},
+        {"month": "June", "count": 13},
+    ]
+
+
+def test_coerce_json_object_wrapped_in_list() -> None:
+    assert coerce_retrieved_data('{"name": "John Smith", "email": "a@b.com"}') == [
+        {"name": "John Smith", "email": "a@b.com"}
+    ]
+
+
+def test_coerce_json_scalar_number_wrapped_in_list() -> None:
+    assert coerce_retrieved_data("6") == [6]
+
+
+def test_coerce_empty_answer_is_empty_list() -> None:
+    assert coerce_retrieved_data("") == []
+    assert coerce_retrieved_data("   ") == []
+
+
+def test_coerce_bare_string_with_comma_is_not_split() -> None:
+    # A single value containing a comma must stay one element — never comma-split.
+    assert coerce_retrieved_data("Smith, John") == ["Smith, John"]

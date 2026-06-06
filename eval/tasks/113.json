@@ -1,0 +1,9 @@
+{
+  "taskId": "113",
+  "goal": "Return the customer nickname(s) who gave a rating of 3 stars or below for Olivia zip jacket",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "info-seeking",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

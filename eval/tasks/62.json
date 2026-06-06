@@ -1,0 +1,9 @@
+{
+  "taskId": "62",
+  "goal": "Get customer email(s) who completed the most number of orders in the entire history",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "info-seeking",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

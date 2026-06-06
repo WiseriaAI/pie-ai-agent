@@ -1,0 +1,9 @@
+{
+  "taskId": "348",
+  "goal": "How many reviews did our shop receive in May 2023?",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "info-seeking",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "taskId": "245",
+  "goal": "Get the name of the customer who is the most unhappy with Antonia racer tank",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "info-seeking",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

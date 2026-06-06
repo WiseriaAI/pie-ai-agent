@@ -1,0 +1,9 @@
+{
+  "taskId": "185",
+  "goal": "Give me the material of the products that have 3 units left",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "info-seeking",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "taskId": "496",
+  "goal": "Update order #299 with the Federal Express tracking number 8974568499",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

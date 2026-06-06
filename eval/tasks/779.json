@@ -1,0 +1,9 @@
+{
+  "taskId": "779",
+  "goal": "Reduce the price of yellow shirts from Gwyn Endurance in all sizes below L by 15%",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

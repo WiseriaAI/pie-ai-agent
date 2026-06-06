@@ -1,0 +1,9 @@
+{
+  "taskId": "706",
+  "goal": "Show the refund report for for Q1 (today is March 15, 2023).",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

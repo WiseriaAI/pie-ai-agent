@@ -1,0 +1,9 @@
+{
+  "taskId": "492",
+  "goal": "Notify Jane Doe in their most recent pending order with message \"sorry we are out of stock, please reorder\"",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

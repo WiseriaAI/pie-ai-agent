@@ -1,0 +1,9 @@
+{
+  "taskId": "64",
+  "goal": "Get customer email(s) who have 2 orders in any state in the entire history",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "info-seeking",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "taskId": "550",
+  "goal": "Add a new size XXS to blue and purple Nona Fitness Tank",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

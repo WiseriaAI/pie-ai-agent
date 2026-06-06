@@ -1,0 +1,9 @@
+{
+  "taskId": "243",
+  "goal": "Get the email address of the customer who is the most unhappy with Circe fleece",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "info-seeking",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

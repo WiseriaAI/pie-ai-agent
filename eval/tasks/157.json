@@ -1,0 +1,9 @@
+{
+  "taskId": "157",
+  "goal": "View the details of all customers",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

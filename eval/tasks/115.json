@@ -1,0 +1,9 @@
+{
+  "taskId": "115",
+  "goal": "Return the customer nickname(s) who gave a rating of 3 stars or below for Chloe tank",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "info-seeking",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

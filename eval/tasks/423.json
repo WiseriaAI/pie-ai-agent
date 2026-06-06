@@ -1,0 +1,9 @@
+{
+  "taskId": "423",
+  "goal": "Set all Hollister shirts to on-sale status",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

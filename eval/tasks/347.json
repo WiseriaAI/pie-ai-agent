@@ -1,0 +1,9 @@
+{
+  "taskId": "347",
+  "goal": "How many reviews did our shop receive from the beginning of the shop?",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "info-seeking",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

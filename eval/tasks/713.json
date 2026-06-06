@@ -1,0 +1,9 @@
+{
+  "taskId": "713",
+  "goal": "Show the best sellers report from May 1, 2022 to May 31, 2023.",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

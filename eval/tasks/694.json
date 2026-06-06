@@ -1,0 +1,9 @@
+{
+  "taskId": "694",
+  "goal": "Add a simple product named \"Energy-Bulk Women Shirt\" with 50 in stock, available in size S and color blue, priced at $60 using the appropriate attribute set.",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

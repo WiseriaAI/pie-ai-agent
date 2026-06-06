@@ -1,0 +1,9 @@
+{
+  "taskId": "184",
+  "goal": "Give me the name and color of the products that have 0 units left. Return a list of objects with keys \"name\" and \"color\".",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "info-seeking",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

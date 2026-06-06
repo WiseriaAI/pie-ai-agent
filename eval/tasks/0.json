@@ -1,7 +1,9 @@
 {
   "taskId": "0",
-  "goal": "What is the top-1 best-selling product in 2022?",
+  "goal": "Get the top-1 best-selling product name(s) in 2022",
   "startUrl": "http://localhost:7780/admin",
   "evalType": "info-seeking",
-  "webarenaHosts": ["localhost"]
+  "webarenaHosts": [
+    "localhost"
+  ]
 }

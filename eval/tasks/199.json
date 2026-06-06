@@ -1,0 +1,9 @@
+{
+  "taskId": "199",
+  "goal": "Get the order ID of the newest pending order.",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "info-seeking",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

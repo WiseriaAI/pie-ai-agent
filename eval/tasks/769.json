@@ -1,0 +1,9 @@
+{
+  "taskId": "769",
+  "goal": "We've received 378 brown Aero daily fitness tee in every size, please update the inventory",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

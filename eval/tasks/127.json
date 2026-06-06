@@ -1,0 +1,9 @@
+{
+  "taskId": "127",
+  "goal": "Get the top 3 search terms that match available products in the store.",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "info-seeking",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

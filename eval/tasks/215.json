@@ -1,0 +1,9 @@
+{
+  "taskId": "215",
+  "goal": "Get the title and rating for all reviews with 3 stars or below for Circe ice fleece. Return a list of objects with keys \"title\" and \"rating\".",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "info-seeking",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

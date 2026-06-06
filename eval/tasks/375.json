@@ -1,0 +1,9 @@
+{
+  "taskId": "375",
+  "goal": "Go to the Magento Luma theme settings page",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

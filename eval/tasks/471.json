@@ -1,0 +1,9 @@
+{
+  "taskId": "471",
+  "goal": "Cancel order 307",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

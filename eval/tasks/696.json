@@ -1,0 +1,9 @@
+{
+  "taskId": "696",
+  "goal": "Add a simple product named \"FancyBoy Man Causal Jeans\" with 42 in stock, available in size 34 and color Blue, priced at $169.99 using the appropriate attribute set.",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "taskId": "498",
+  "goal": "Update order #306 with the UPS tracking number 55591023930",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

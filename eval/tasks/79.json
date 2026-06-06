@@ -1,0 +1,9 @@
+{
+  "taskId": "79",
+  "goal": "Get the total number of Not Approved reviews amongst all the reviews",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "info-seeking",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

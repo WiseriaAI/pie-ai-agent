@@ -1,0 +1,9 @@
+{
+  "taskId": "680",
+  "goal": "Go to the list of orders that are on hold",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

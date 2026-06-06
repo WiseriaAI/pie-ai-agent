@@ -1,0 +1,9 @@
+{
+  "taskId": "538",
+  "goal": "Modify the address of order #299 to 456 Oak Avenue, Apartment 5B, New York, NY, 10001",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

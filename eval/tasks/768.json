@@ -1,0 +1,9 @@
+{
+  "taskId": "768",
+  "goal": "5 blue Cronus yoga pants with size 33 arrived, update the stock",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "taskId": "549",
+  "goal": "Add a new size XXXL to green Minerva LumaTech V-Tee",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

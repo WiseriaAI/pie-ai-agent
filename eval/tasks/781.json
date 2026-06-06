@@ -1,0 +1,9 @@
+{
+  "taskId": "781",
+  "goal": "Increase the price of black fitness tshirts from Desiree with size XS by 37%",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

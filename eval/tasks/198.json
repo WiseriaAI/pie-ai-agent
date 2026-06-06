@@ -1,0 +1,9 @@
+{
+  "taskId": "198",
+  "goal": "Get the customer email of the most recent cancelled order.",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "info-seeking",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

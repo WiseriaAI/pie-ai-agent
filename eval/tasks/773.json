@@ -1,0 +1,9 @@
+{
+  "taskId": "773",
+  "goal": "Delete all pending negative reviews",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

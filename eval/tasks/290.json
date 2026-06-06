@@ -1,0 +1,9 @@
+{
+  "taskId": "290",
+  "goal": "Get the product SKUs in the most recent cancelled orders of the customer who has the most cancellations in the history",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "info-seeking",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

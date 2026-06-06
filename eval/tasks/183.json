@@ -1,0 +1,9 @@
+{
+  "taskId": "183",
+  "goal": "Give me the SKU of the products that have 10 units left",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "info-seeking",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

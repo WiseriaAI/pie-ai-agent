@@ -1,0 +1,9 @@
+{
+  "taskId": "200",
+  "goal": "Get the billing name of the oldest complete order.",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "info-seeking",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

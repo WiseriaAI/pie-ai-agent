@@ -1,0 +1,9 @@
+{
+  "taskId": "488",
+  "goal": "Change the page title of \"Home Page\" page on my site to \"This is the home page!! Leave here!!\".",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

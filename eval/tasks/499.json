@@ -1,0 +1,9 @@
+{
+  "taskId": "499",
+  "goal": "Update order #304 with the USPS tracking number 13849373987",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

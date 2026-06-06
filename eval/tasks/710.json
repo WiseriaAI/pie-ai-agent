@@ -1,0 +1,9 @@
+{
+  "taskId": "710",
+  "goal": "Show the shipping report from August 5, 2022 to March 1, 2023.",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

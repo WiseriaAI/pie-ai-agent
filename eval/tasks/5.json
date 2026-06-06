@@ -1,0 +1,9 @@
+{
+  "taskId": "5",
+  "goal": "Get the top-1 best-selling product type name(s) in Jan 2023",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "info-seeking",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "taskId": "458",
+  "goal": "Reduce the price of the product on the current page by $5",
+  "startUrl": "http://localhost:7780/admin/catalog/product/edit/id/1481/",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

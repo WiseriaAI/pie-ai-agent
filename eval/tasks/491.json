@@ -1,0 +1,9 @@
+{
+  "taskId": "491",
+  "goal": "Notify Sarah Miller in their most recent pending order with message \"the order is ready to be shipped soon!\"",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

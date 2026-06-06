@@ -1,0 +1,9 @@
+{
+  "taskId": "128",
+  "goal": "What's the total number of items sold in the most recent 2 complete orders?",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "info-seeking",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

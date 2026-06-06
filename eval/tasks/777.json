@@ -1,0 +1,9 @@
+{
+  "taskId": "777",
+  "goal": "Reduce the price of green Hollister backyard sweatshirt in all sizes by $5",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

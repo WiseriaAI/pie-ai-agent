@@ -1,0 +1,9 @@
+{
+  "taskId": "374",
+  "goal": "Go to the Magento Blank theme settings page",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "state-changing",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}

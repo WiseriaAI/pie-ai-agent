@@ -1,0 +1,9 @@
+{
+  "taskId": "122",
+  "goal": "Get title and rating for all reviews with 4 stars or above for Olivia zip jacket. Return a list of objects with keys \"title\" and \"rating\".",
+  "startUrl": "http://localhost:7780/admin",
+  "evalType": "info-seeking",
+  "webarenaHosts": [
+    "localhost"
+  ]
+}
