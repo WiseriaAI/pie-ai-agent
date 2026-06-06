@@ -74,7 +74,7 @@ for (const el of liveBodyElements) {
 
 辅助函数(内联进注入函数,自包含):
 
-- `isRescuableControl(el)`：`tag ∈ {input, select, textarea}` 且 `type !== "hidden"`。
+- `isRescuableControl(el)`：仅 `input[type=checkbox]` / `input[type=radio]`。**收紧理由(实现期 review 定稿)**:救援把 `pie_idx` 盖在 `<label>` 上,而 checkbox/radio 的"单击 label = 原生 toggle/select = 完整交互";`select`/`textarea`/text input 即便救援,`select_option`/`type` 也会拒绝 `<label>` 目标 → 变成"可发现但不可操作"的误导条目,故排除。
 - `visibleLabelFor(el)`：`Array.from(el.labels ?? []).find(isVisible)`。`HTMLInputElement/Select/TextArea.labels` 原生覆盖 `for=` 关联与 `<label>` 包裹两种形式。
 
 **为什么盖在 label 而非 input:** `click` 是 CDP 按坐标点击(`mouse.ts` → `elementToPagePoint` 取 `getBoundingClientRect` 中心),对 1×1 的 input 会因零尺寸报 `element-not-visible`。label 有真实几何,坐标点击命中 → 原生 label→input 联动 → 框架驱动。
