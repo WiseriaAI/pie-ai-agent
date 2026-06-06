@@ -3,6 +3,7 @@ import type { ModelConfig } from "../model-router";
 import type { ChatMessage } from "../model-router";
 import { streamChat } from "../model-router";
 import { addImage, evictSession } from "../../background/image-cache";
+import { addArtifact } from "../../background/output-cache";
 import { resetTaskBudget, dispatchCaptureVisibleTab, dispatchCaptureFullPageTab, type CdpAcquirer } from "./tools/screenshot";
 import { hydrateAttachments } from "./image-hydration";
 import {
@@ -38,7 +39,7 @@ import {
 import { isCdpInputEnabled } from "../cdp-input-enabled";
 import { requestCdpInputConsent } from "../cdp-input-onboarding";
 import { requestLocalFileFromPanel } from "../local-file-request";
-import { buildRequestLocalFileTool } from "./tools/files";
+import { buildRequestLocalFileTool, buildOutputFileTool } from "./tools/files";
 import { getEnabledSkillPackages } from "../skills";
 import { isFilePdfUrl } from "../pdf/detect";
 import {
@@ -1555,8 +1556,12 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         sessionId,
         requestFile: requestLocalFileFromPanel,
       });
+      const outputFileTool = buildOutputFileTool({
+        sessionId,
+        store: (a) => addArtifact(sessionId, a),
+      });
       const allTools = filterToolsByVision(
-        [...BUILT_IN_TOOLS, ...mouseTools, ...keyboardTools, ...editorTools, requestLocalFileTool],
+        [...BUILT_IN_TOOLS, ...mouseTools, ...keyboardTools, ...editorTools, requestLocalFileTool, outputFileTool],
         modelConfig.vision,
       );
       const toolDefinitions = toolsToDefinitions(allTools);
@@ -2105,6 +2110,23 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           status: result.success ? "ok" : "error",
           observation,
         });
+
+        // output_file — hand the panel a download card. The agent-step above
+        // keeps the call visible in the step stream; this drives the card.
+        if (result.fileOutput) {
+          port.postMessage(
+            withSession(
+              {
+                type: "file-output",
+                artifactId: result.fileOutput.id,
+                filename: result.fileOutput.filename,
+                mime: result.fileOutput.mime,
+                size: result.fileOutput.size,
+              },
+              sessionId,
+            ),
+          );
+        }
 
         // Check for terminal tools
         if (tc.name === "done" && result.success) {
