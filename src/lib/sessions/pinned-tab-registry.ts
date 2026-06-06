@@ -83,16 +83,31 @@ export async function getActivePinnedTabs(): Promise<ActivePinnedTab[]> {
  * The "excludeSessionId" carve-out is what makes this useful at runtime:
  * the calling session's own pinnedTabId is not a conflict for itself.
  *
+ * `runningSessionIds` (optional) narrows the lock to sessions that
+ * currently have a *live, in-flight agent loop*. The R7 lock exists to
+ * stop a session from yanking a tab out from under another session
+ * *while that session is actively using it* — not to permanently shelve
+ * tabs behind idle/historical sessions. Pins survive in storage for
+ * resume (an aborted task keeps its pinnedTabs per #139, SW-restart
+ * leaves a session `paused`), but an idle owner must NOT block a
+ * foreground session from managing those tabs (that produced the
+ * "Tab(s) … are reserved by another active session" refusal on
+ * close_tabs from a brand-new session). When provided, only sessions in
+ * this set can own the lock; when omitted, the legacy "every
+ * active/paused session owns its pin" behavior is preserved.
+ *
  * Returns an empty set when nothing else is pinned (the common single-
  * session case).
  */
 export async function getCrossSessionPinnedTabIds(
   excludeSessionId: string,
+  runningSessionIds?: ReadonlySet<string>,
 ): Promise<Set<number>> {
   const all = await getActivePinnedTabs();
   const out = new Set<number>();
   for (const entry of all) {
     if (entry.sessionId === excludeSessionId) continue;
+    if (runningSessionIds && !runningSessionIds.has(entry.sessionId)) continue;
     out.add(entry.tabId);
   }
   return out;

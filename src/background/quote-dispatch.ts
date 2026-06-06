@@ -19,17 +19,32 @@ const PENDING_LIMIT = 8;
 
 const pending: PendingQuote[] = [];
 
+/**
+ * Returns `true` when the quote was stashed (no live port to deliver to),
+ * `false` when it was broadcast to at least one connected port.
+ *
+ * The stashed signal lets the caller wake an *already-open but
+ * port-dead* panel: when the SW idles/restarts, the side panel document
+ * stays mounted on the user's current session but its streaming port is
+ * silently dropped (lazy-reconnect only fires on the next send). A quote
+ * captured in that window would otherwise sit in `pending` until some
+ * unrelated port connects (typically a freshly-opened blank session) and
+ * drains it to the wrong place. The caller broadcasts a runtime message
+ * (which does NOT need the dead port) so the live panel reconnects its
+ * current session's port and the drain lands where the user is looking.
+ */
 export function dispatchQuoteAdded(
   out: PendingQuote,
   ports: Map<string, chrome.runtime.Port>,
-): void {
+): boolean {
   if (ports.size === 0) {
     if (pending.length < PENDING_LIMIT) pending.push(out);
-    return;
+    return true;
   }
   for (const [sessionId, port] of ports.entries()) {
     try { port.postMessage({ ...out, sessionId }); } catch { /* port closed */ }
   }
+  return false;
 }
 
 export function drainPendingQuotesToPort(

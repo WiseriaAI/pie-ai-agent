@@ -126,6 +126,51 @@ describe("pinned-tab-registry — getCrossSessionPinnedTabIds", () => {
   });
 });
 
+describe("pinned-tab-registry — R7 lock gated on currently-running sessions", () => {
+  beforeEach(() => chrome.storage.local.clear());
+
+  it("only counts tabs owned by sessions in runningSessionIds", async () => {
+    await chrome.storage.local.set({
+      session_index: [
+        { id: "self", lastAccessedAt: 1, status: "active", pinnedTabIds: [10], messageCount: 1 },
+        { id: "running", lastAccessedAt: 2, status: "active", pinnedTabIds: [20], messageCount: 1 },
+        // idle: status active (e.g. an aborted task that kept its pin) but
+        // NOT currently executing a loop → must not block the foreground session.
+        { id: "idle", lastAccessedAt: 3, status: "active", pinnedTabIds: [30], messageCount: 1 },
+        // paused historical session (SW restart) — also not running.
+        { id: "paused", lastAccessedAt: 4, status: "paused", pinnedTabIds: [40], messageCount: 1 },
+      ],
+    });
+    const set = await getCrossSessionPinnedTabIds("self", new Set(["running"]));
+    expect(set.has(20)).toBe(true);
+    expect(set.has(30)).toBe(false); // idle owner no longer locks
+    expect(set.has(40)).toBe(false); // paused owner no longer locks
+    expect(set.has(10)).toBe(false); // caller always excluded
+  });
+
+  it("empty runningSessionIds means no cross-session locks at all", async () => {
+    await chrome.storage.local.set({
+      session_index: [
+        { id: "self", lastAccessedAt: 1, status: "active", pinnedTabIds: [10], messageCount: 1 },
+        { id: "other", lastAccessedAt: 2, status: "active", pinnedTabIds: [20], messageCount: 1 },
+      ],
+    });
+    const set = await getCrossSessionPinnedTabIds("self", new Set());
+    expect(set.size).toBe(0);
+  });
+
+  it("omitting runningSessionIds preserves legacy all-active/paused behavior", async () => {
+    await chrome.storage.local.set({
+      session_index: [
+        { id: "self", lastAccessedAt: 1, status: "active", pinnedTabIds: [10], messageCount: 1 },
+        { id: "other", lastAccessedAt: 2, status: "active", pinnedTabIds: [20], messageCount: 1 },
+      ],
+    });
+    const set = await getCrossSessionPinnedTabIds("self");
+    expect(set).toEqual(new Set([20]));
+  });
+});
+
 describe("v1.5 multi-pin registry", () => {
   beforeEach(() => chrome.storage.local.clear());
 

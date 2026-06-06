@@ -72,6 +72,17 @@ describe("dispatchQuoteAdded", () => {
     expect(__pendingLengthForTest()).toBe(8);
   });
 
+  it("returns true when stashed (ports empty) and false when delivered", () => {
+    expect(
+      dispatchQuoteAdded({ type: "quote-added", quote: fakeQuote("q1") }, new Map()),
+    ).toBe(true);
+
+    const ports = new Map<string, chrome.runtime.Port>([["s1", fakePort()]]);
+    expect(
+      dispatchQuoteAdded({ type: "quote-added", quote: fakeQuote("q2") }, ports),
+    ).toBe(false);
+  });
+
   it("survives a port whose postMessage throws (other ports still receive)", () => {
     const portA = fakePort();
     portA.postMessage.mockImplementation(() => {

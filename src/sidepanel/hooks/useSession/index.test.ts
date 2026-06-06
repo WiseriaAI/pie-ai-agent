@@ -1111,3 +1111,35 @@ describe("port lifecycle — SW idle-out / disconnect recovery", () => {
     void idA; // silence unused
   });
 });
+
+describe("useSession — quote-needs-reconnect nudge", () => {
+  it("force-reconnects the current session's port so the SW can drain the stashed quote", async () => {
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    const sid = result.current.sessionId!;
+    expect(chromeMock.runtime.__ports).toHaveLength(1);
+    const firstPort = chromeMock.runtime.__ports[0]!;
+
+    // SW broadcasts the nudge (its streaming port is dead after an idle/restart
+    // while the panel stayed mounted). The panel must drop its stale port and
+    // reconnect the SAME session so onConnect drains the pending quote here.
+    act(() => chromeMock.runtime.__emitMessage({ type: "quote-needs-reconnect" }));
+
+    expect(firstPort.disconnect).toHaveBeenCalled();
+    expect(chromeMock.runtime.__ports).toHaveLength(2);
+    expect(chromeMock.runtime.connect).toHaveBeenLastCalledWith({
+      name: `chat-stream-${sid}`,
+    });
+  });
+
+  it("ignores unrelated runtime messages", async () => {
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    expect(chromeMock.runtime.__ports).toHaveLength(1);
+
+    act(() => chromeMock.runtime.__emitMessage({ type: "something-else" }));
+
+    expect(chromeMock.runtime.__ports).toHaveLength(1);
+  });
+});
