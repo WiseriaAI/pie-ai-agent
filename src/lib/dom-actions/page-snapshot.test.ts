@@ -283,6 +283,21 @@ describe("pageSnapshotInjected", () => {
       expect(entry!.tag).toBe("input"); // tag reflects the control, not the <label> wrapper
     });
 
+    it("does NOT rescue a hidden select/textarea (only checkbox/radio)", () => {
+      document.body.innerHTML = `
+        <div class="f">
+          <select id="sel"><option value="a">A</option></select>
+          <label class="sl" for="sel">Region</label>
+        </div>`;
+      const sel = document.getElementById("sel") as HTMLSelectElement;
+      Object.defineProperty(sel, "getBoundingClientRect", {
+        value: () => ({ width: 0, height: 0, top: 0, left: 0, right: 0, bottom: 0 }),
+        configurable: true,
+      });
+      const result = pageSnapshotInjected();
+      expect(result.html).not.toMatch(/data-pie-idx/); // neither the hidden select nor its label is stamped
+    });
+
     it("does NOT rescue when the label is also hidden (genuinely unreachable)", () => {
       document.body.innerHTML = `
         <input type="checkbox" id="h" name="hh">

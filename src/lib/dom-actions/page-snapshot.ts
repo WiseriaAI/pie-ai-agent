@@ -141,11 +141,14 @@ export function pageSnapshotInjected(): PageSnapshotResult {
     return true;
   }
 
+  // Rescue only checkbox/radio: a single CDP click on the label natively toggles
+  // the control, which is the COMPLETE interaction. select/textarea/text inputs
+  // would stamp the label but select_option/type reject a <label> target, so they
+  // would be discoverable-but-not-operable — excluded to avoid misleading entries.
   function isRescuableControl(el: Element): boolean {
-    const tag = el.tagName.toLowerCase();
-    if (tag !== "input" && tag !== "select" && tag !== "textarea") return false;
-    if (tag === "input" && (el as HTMLInputElement).type === "hidden") return false;
-    return true;
+    if (el.tagName.toLowerCase() !== "input") return false;
+    const type = (el as HTMLInputElement).type.toLowerCase();
+    return type === "checkbox" || type === "radio";
   }
 
   // A form control filtered out by isVisible (e.g. a 1×1 framework toggle) is
@@ -411,7 +414,7 @@ export function pageSnapshotInjected(): PageSnapshotResult {
     const insideEditor = !isEditorHost && editorHosts.some((h) => h.contains(el));
     if (insideEditor) continue;
     const isInteractive = isEditorHost || el.matches?.(INTERACTIVE_SELECTOR);
-    if (isInteractive && isVisible(el)) {
+    if (isInteractive && isVisible(el) && !el.hasAttribute("data-pie-idx")) {
       stamp(el);
     } else if (isInteractive && isRescuableControl(el)) {
       const label = visibleLabelFor(el);
