@@ -78,6 +78,11 @@ import {
   evictByInFlightSet,
 } from "./image-cache";
 import {
+  getArtifact,
+  evictAllOnSWStartup as evictOutputAllOnSWStartup,
+  evictByInFlightSet as evictOutputByInFlightSet,
+} from "./output-cache";
+import {
   handleRecordingStart,
   handleRecordingAction,
   handleRecordingFinish,
@@ -234,6 +239,7 @@ const recoveryReady: Promise<void> = runSessionMigrations()
     // detectAndMarkPaused so R14 can safely mark image-bearing sessions as
     // `failed` knowing bytes are already gone.
     evictAllOnSWStartup();
+    evictOutputAllOnSWStartup();
     return detectAndMarkPaused();
   })
   .catch((e) => {
@@ -1522,6 +1528,26 @@ chrome.runtime.onConnect.addListener((port) => {
           | { ok: false; reason: string },
       );
     }
+    // output_file — panel asks SW to download a cached artifact. SW shows a
+    // Save As dialog (saveAs:true) so the user picks the location; replies with
+    // file-output-result so the panel resolves its pending promise.
+    if (rawMsg.type === "download-output" && typeof (rawMsg as { artifactId?: unknown }).artifactId === "string") {
+      const artifactId = (rawMsg as { artifactId: string }).artifactId;
+      const art = getArtifact(portSessionId, artifactId);
+      if (!art) {
+        port.postMessage({ type: "file-output-result", artifactId, status: "expired", sessionId: portSessionId });
+      } else {
+        const url = `data:${art.mime};charset=utf-8,${encodeURIComponent(art.content)}`;
+        chrome.downloads
+          .download({ url, filename: art.filename, conflictAction: "uniquify", saveAs: true })
+          .then(() => port.postMessage({ type: "file-output-result", artifactId, status: "ok", sessionId: portSessionId }))
+          .catch((e) => {
+            const m = e instanceof Error ? e.message : String(e);
+            const cancelled = /canceled|cancelled/i.test(m);
+            port.postMessage({ type: "file-output-result", artifactId, status: cancelled ? "ok" : "error", sessionId: portSessionId });
+          });
+      }
+    }
   });
 
   port.onDisconnect.addListener(() => {
@@ -1555,6 +1581,7 @@ chrome.runtime.onConnect.addListener((port) => {
     inFlightSessionIds.clear();
     // R13(d) — evict image cache for all sessions this port was tracking.
     evictByInFlightSet(sessionsToClose);
+    evictOutputByInFlightSet(sessionsToClose);
     transitionPortInFlightSessionsToPaused(sessionsToClose).catch((e) => {
       console.warn("[sw] panel-disconnect cleanup failed:", e);
     });
