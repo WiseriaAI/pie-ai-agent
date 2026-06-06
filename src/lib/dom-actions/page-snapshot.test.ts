@@ -280,6 +280,7 @@ describe("pageSnapshotInjected", () => {
       expect(entry!.type).toBe("checkbox");
       expect(entry!.checked).toBe(true);          // reflects input.checked
       expect(entry!.name).toBe("product[status]"); // identifies the control
+      expect(entry!.tag).toBe("input"); // tag reflects the control, not the <label> wrapper
     });
 
     it("does NOT rescue when the label is also hidden (genuinely unreachable)", () => {
