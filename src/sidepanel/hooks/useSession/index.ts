@@ -29,6 +29,11 @@ import {
 } from "./runtime-map";
 import { createPortHandlers } from "./port-handlers";
 import { isFilePdfUrl } from "@/lib/pdf/detect";
+import {
+  type DownloadResult,
+  registerDownload,
+  resolveDownload,
+} from "./download-pending";
 
 /**
  * useSession — single-source-of-truth for the active session's messages,
@@ -242,6 +247,10 @@ export interface UseSession {
   /** Recording v1 — exposes the active per-session port so useRecording can
    *  attach its own onMessage listener. Null until ready=true. */
   port: chrome.runtime.Port | null;
+  /** output_file — request the SW to download an artifact to disk. Sends an
+   *  out-of-band download-output port message and resolves when the SW replies
+   *  with file-output-result (or after a 30s safety timeout). */
+  downloadOutput: (artifactId: string) => Promise<DownloadResult>;
 }
 
 export function useSession(): UseSession {
@@ -1047,6 +1056,25 @@ export function useSession(): UseSession {
     setSlots(slotsRef.current);
   }, []);
 
+  // output_file — send an out-of-band download-output message over the active
+  // session's port and return a promise that resolves when the SW replies with
+  // file-output-result (or expires after 30 s).
+  const downloadOutput = useCallback((artifactId: string): Promise<DownloadResult> => {
+    const sid = sessionIdRef.current;
+    if (!sid) return Promise.resolve({ status: "error" as const });
+    return new Promise<DownloadResult>((resolve) => {
+      registerDownload(artifactId, resolve);
+      const port = getOrReconnectPort(sid);
+      try {
+        port.postMessage({ type: "download-output", artifactId });
+      } catch {
+        resolveDownload(artifactId, { status: "error" });
+        return;
+      }
+      window.setTimeout(() => resolveDownload(artifactId, { status: "error" }), 30_000);
+    });
+  }, [getOrReconnectPort]);
+
   return {
     sessionId,
     port: sessionIdRef.current ? (portsRef.current.get(sessionIdRef.current) ?? null) : null,
@@ -1079,5 +1107,6 @@ export function useSession(): UseSession {
     addQuote,
     removeQuote,
     clearQuotes,
+    downloadOutput,
   };
 }

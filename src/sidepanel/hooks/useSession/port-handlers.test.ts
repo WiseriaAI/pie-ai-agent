@@ -1,7 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPortHandlers } from "./port-handlers";
 import { EMPTY_SLOT, type SessionRuntimeSlot } from "./runtime-map";
 import type { PortMessageToPanel } from "@/types";
+import { _clearPendingForTests, registerDownload } from "./download-pending";
 
 function makeDeps() {
   const slotsRef = { current: new Map<string, SessionRuntimeSlot>() };
@@ -464,5 +465,97 @@ describe("agent-usage", () => {
     } as PortMessageToPanel);
     expect(deps.slotsRef.current.get("s1")?.usage?.totalInputTokens).toBe(10199);
     expect(deps.slotsRef.current.get("s1")?.usage?.lastInputTokens).toBe(200);
+  });
+});
+
+describe("file-output", () => {
+  it("pushes a file-output DisplayMessage into the slot's messages", () => {
+    const deps = makeDeps();
+    const { handleMessage } = createPortHandlers(deps);
+    handleMessage({
+      type: "file-output",
+      sessionId: "s1",
+      artifactId: "artifact-1",
+      filename: "report.pdf",
+      mime: "application/pdf",
+      size: 12345,
+    } as PortMessageToPanel);
+    const slot = deps.slotsRef.current.get("s1")!;
+    expect(slot.messages).toHaveLength(1);
+    expect(slot.messages[0]).toMatchObject({
+      role: "file-output",
+      artifactId: "artifact-1",
+      filename: "report.pdf",
+      mime: "application/pdf",
+      size: 12345,
+    });
+  });
+
+  it("does NOT push a duplicate card for the same artifactId", () => {
+    const deps = makeDeps();
+    const { handleMessage } = createPortHandlers(deps);
+    const msg = {
+      type: "file-output",
+      sessionId: "s1",
+      artifactId: "artifact-1",
+      filename: "report.pdf",
+      mime: "application/pdf",
+      size: 12345,
+    } as PortMessageToPanel;
+    handleMessage(msg);
+    handleMessage(msg);
+    expect(deps.slotsRef.current.get("s1")!.messages).toHaveLength(1);
+  });
+});
+
+describe("file-output-result", () => {
+  beforeEach(() => {
+    _clearPendingForTests();
+  });
+
+  it("resolves a registered pending download promise with the correct status", async () => {
+    const deps = makeDeps();
+    const { handleMessage } = createPortHandlers(deps);
+    const promise = new Promise<{ status: "ok" | "expired" | "error" }>((resolve) => {
+      registerDownload("artifact-2", resolve);
+    });
+    handleMessage({
+      type: "file-output-result",
+      sessionId: "s1",
+      artifactId: "artifact-2",
+      status: "ok",
+    } as PortMessageToPanel);
+    const result = await promise;
+    expect(result.status).toBe("ok");
+  });
+
+  it("resolves with 'expired' status when the SW reports the artifact was evicted", async () => {
+    const deps = makeDeps();
+    const { handleMessage } = createPortHandlers(deps);
+    const promise = new Promise<{ status: "ok" | "expired" | "error" }>((resolve) => {
+      registerDownload("artifact-3", resolve);
+    });
+    handleMessage({
+      type: "file-output-result",
+      sessionId: "s1",
+      artifactId: "artifact-3",
+      status: "expired",
+    } as PortMessageToPanel);
+    const result = await promise;
+    expect(result.status).toBe("expired");
+  });
+
+  it("is a no-op when no pending download is registered for the artifactId", () => {
+    const deps = makeDeps();
+    const { handleMessage } = createPortHandlers(deps);
+    // Should not throw even when nothing is registered
+    expect(() =>
+      handleMessage({
+        type: "file-output-result",
+        sessionId: "s1",
+        artifactId: "nonexistent",
+        status: "ok",
+      } as PortMessageToPanel),
+    ).not.toThrow();
   });
 });
