@@ -245,8 +245,9 @@ describe("pageSnapshotInjected", () => {
       const result = pageSnapshotInjected();
 
       // The label is stamped; the hidden input is not.
-      // (class="lbl" is stripped by ATTR_WHITELIST, so only whitelisted attrs appear)
-      expect(result.html).toMatch(/<label for="st" data-pie-idx="0">/);
+      // (class="lbl" is stripped by ATTR_WHITELIST; assert attribute-order-independent)
+      expect(result.html).toMatch(/<label[^>]*data-pie-idx="0"/);
+      expect(result.html).toMatch(/<label[^>]*for="st"/);
       expect(result.html).not.toMatch(/<input[^>]*name="product\[status\]"[^>]*data-pie-idx/);
     });
 

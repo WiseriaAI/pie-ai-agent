@@ -155,7 +155,7 @@ export function pageSnapshotInjected(): PageSnapshotResult {
   function visibleLabelFor(el: Element): HTMLLabelElement | null {
     const labels = (el as HTMLInputElement).labels;
     if (!labels) return null;
-    for (const l of Array.from(labels)) {
+    for (const l of labels) {
       if (isVisible(l)) return l;
     }
     return null;
@@ -402,13 +402,10 @@ export function pageSnapshotInjected(): PageSnapshotResult {
     const isEditorHost = editorHosts.includes(el);
     const insideEditor = !isEditorHost && editorHosts.some((h) => h.contains(el));
     if (insideEditor) continue;
-    if ((isEditorHost || el.matches?.(INTERACTIVE_SELECTOR)) && isVisible(el)) {
+    const isInteractive = isEditorHost || el.matches?.(INTERACTIVE_SELECTOR);
+    if (isInteractive && isVisible(el)) {
       stamp(el);
-    } else if (
-      el.matches?.(INTERACTIVE_SELECTOR) &&
-      isRescuableControl(el) &&
-      !isVisible(el)
-    ) {
+    } else if (isInteractive && isRescuableControl(el)) {
       const label = visibleLabelFor(el);
       if (label && !label.hasAttribute("data-pie-idx")) {
         stamp(label);
