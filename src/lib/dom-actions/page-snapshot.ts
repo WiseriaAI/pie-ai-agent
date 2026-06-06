@@ -141,6 +141,26 @@ export function pageSnapshotInjected(): PageSnapshotResult {
     return true;
   }
 
+  function isRescuableControl(el: Element): boolean {
+    const tag = el.tagName.toLowerCase();
+    if (tag !== "input" && tag !== "select" && tag !== "textarea") return false;
+    if (tag === "input" && (el as HTMLInputElement).type === "hidden") return false;
+    return true;
+  }
+
+  // A form control filtered out by isVisible (e.g. a 1×1 framework toggle) is
+  // still reachable if it has a VISIBLE associated <label>: clicking the label
+  // drives the native label→control toggle plus any framework binding. Return
+  // that label so Step C can stamp it as the control's proxy handle.
+  function visibleLabelFor(el: Element): HTMLLabelElement | null {
+    const labels = (el as HTMLInputElement).labels;
+    if (!labels) return null;
+    for (const l of Array.from(labels)) {
+      if (isVisible(l)) return l;
+    }
+    return null;
+  }
+
   function sanitizeText(s: string): string {
     return s.replace(CONTROL_CHAR_RE, "");
   }
@@ -371,15 +391,28 @@ export function pageSnapshotInjected(): PageSnapshotResult {
   );
 
   let stampIdx = 0;
+  const stamp = (el: Element): void => {
+    const idxStr = String(stampIdx++);
+    el.setAttribute("data-pie-idx", idxStr);
+    const cloneEl = liveToCloneMap.get(el);
+    if (cloneEl) cloneEl.setAttribute("data-pie-idx", idxStr);
+  };
+
   for (const el of liveBodyElements) {
     const isEditorHost = editorHosts.includes(el);
     const insideEditor = !isEditorHost && editorHosts.some((h) => h.contains(el));
     if (insideEditor) continue;
     if ((isEditorHost || el.matches?.(INTERACTIVE_SELECTOR)) && isVisible(el)) {
-      const idxStr = String(stampIdx++);
-      el.setAttribute("data-pie-idx", idxStr);
-      const cloneEl = liveToCloneMap.get(el);
-      if (cloneEl) cloneEl.setAttribute("data-pie-idx", idxStr);
+      stamp(el);
+    } else if (
+      el.matches?.(INTERACTIVE_SELECTOR) &&
+      isRescuableControl(el) &&
+      !isVisible(el)
+    ) {
+      const label = visibleLabelFor(el);
+      if (label && !label.hasAttribute("data-pie-idx")) {
+        stamp(label);
+      }
     }
   }
 

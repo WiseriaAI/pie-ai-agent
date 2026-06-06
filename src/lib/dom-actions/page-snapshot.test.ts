@@ -227,4 +227,50 @@ describe("pageSnapshotInjected", () => {
       }),
     );
   });
+
+  describe("hidden form control label-rescue", () => {
+    it("stamps the visible label, not the hidden 1×1 input", () => {
+      document.body.innerHTML = `
+        <div class="switch">
+          <input type="checkbox" id="st" name="product[status]" checked>
+          <label class="lbl" for="st">Toggle</label>
+        </div>`;
+      const cb = document.getElementById("st") as HTMLInputElement;
+      // Simulate the 1×1 hidden real input (Magento toggle).
+      Object.defineProperty(cb, "getBoundingClientRect", {
+        value: () => ({ width: 1, height: 1, top: 0, left: 0, right: 1, bottom: 1 }),
+        configurable: true,
+      });
+
+      const result = pageSnapshotInjected();
+
+      // The label is stamped; the hidden input is not.
+      // (class="lbl" is stripped by ATTR_WHITELIST, so only whitelisted attrs appear)
+      expect(result.html).toMatch(/<label for="st" data-pie-idx="0">/);
+      expect(result.html).not.toMatch(/<input[^>]*name="product\[status\]"[^>]*data-pie-idx/);
+    });
+
+    it("does NOT rescue when the input itself is visible (no double handle)", () => {
+      document.body.innerHTML = `
+        <input type="checkbox" id="v" name="ok">
+        <label for="v">Vis</label>`;
+      const result = pageSnapshotInjected();
+      // Visible input is stamped normally; label is NOT stamped.
+      expect(result.html).toMatch(/<input type="checkbox" id="v" name="ok"[^>]*data-pie-idx="0">/);
+      expect(result.html).not.toMatch(/<label[^>]*data-pie-idx/);
+    });
+
+    it("does NOT rescue when the label is also hidden (genuinely unreachable)", () => {
+      document.body.innerHTML = `
+        <input type="checkbox" id="h" name="hh">
+        <label class="hl" for="h">Hidden</label>`;
+      const cb = document.getElementById("h") as HTMLInputElement;
+      const lbl = document.querySelector("label.hl") as HTMLLabelElement;
+      const tiny = { value: () => ({ width: 1, height: 1, top: 0, left: 0, right: 1, bottom: 1 }), configurable: true };
+      Object.defineProperty(cb, "getBoundingClientRect", tiny);
+      Object.defineProperty(lbl, "getBoundingClientRect", { value: () => ({ width: 0, height: 0, top: 0, left: 0, right: 0, bottom: 0 }), configurable: true });
+      const result = pageSnapshotInjected();
+      expect(result.html).not.toMatch(/data-pie-idx/);
+    });
+  });
 });
