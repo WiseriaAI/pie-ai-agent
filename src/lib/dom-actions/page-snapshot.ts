@@ -361,7 +361,12 @@ export function pageSnapshotInjected(): PageSnapshotResult {
       const isCredential = t === "password" || auto.includes("one-time-code");
       if (!isCredential && live.value) clone.setAttribute("value", live.value);
       if (live.checked) clone.setAttribute("checked", "");
-    } else if (live instanceof HTMLTextAreaElement && live.value) {
+    } else if (live instanceof HTMLTextAreaElement && live.value && isVisible(live)) {
+      // Skip hidden textareas: a rich-text editor (TinyMCE etc.) keeps its
+      // submit source in a display:none <textarea> whose value is serialized
+      // HTML (e.g. "<p>…</p>"). Reflecting it would leak that markup into the
+      // snapshot, misleading the LLM with content that diverges from what
+      // read_editor returns. The editor surfaces as a role="editor" handle.
       (clone as HTMLTextAreaElement).textContent = live.value;
     } else if (live instanceof HTMLOptionElement && live.selected) {
       clone.setAttribute("selected", "");

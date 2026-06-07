@@ -50,6 +50,26 @@ describe("pageSnapshotInjected", () => {
     expect(result.html).not.toContain("123456");
   });
 
+  it("hidden textarea(display:none)的 value 不泄漏进快照(如 TinyMCE 源 textarea)", () => {
+    document.body.innerHTML = `<textarea name="desc" style="display:none"></textarea>`;
+    const ta = document.querySelector("textarea") as HTMLTextAreaElement;
+    ta.value = "<p>hidden html content</p>";
+    const result = pageSnapshotInjected();
+    expect(result.html).not.toContain("hidden html content");
+  });
+
+  it("可见 textarea 的 value 照常 reflect", () => {
+    document.body.innerHTML = `<textarea name="visible"></textarea>`;
+    const ta = document.querySelector("textarea") as HTMLTextAreaElement;
+    ta.value = "typed by user";
+    Object.defineProperty(ta, "getBoundingClientRect", {
+      value: () => ({ width: 200, height: 40, top: 0, left: 0, right: 200, bottom: 40 }),
+      configurable: true,
+    });
+    const result = pageSnapshotInjected();
+    expect(result.html).toContain("typed by user");
+  });
+
   it("reflect checked / selected / open", () => {
     document.body.innerHTML = `
       <input type="checkbox" id="c">
