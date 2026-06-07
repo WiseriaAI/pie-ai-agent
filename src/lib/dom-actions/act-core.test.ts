@@ -129,3 +129,73 @@ describe("actByIdxInjected op=type", () => {
     expect(r.observation).not.toContain("s3cr3t");
   });
 });
+
+describe("actByIdxInjected op=select", () => {
+  it("selects a valid option in a <select> element", async () => {
+    document.body.innerHTML = `
+      <select>
+        <option value="a">Apple</option>
+        <option value="b">Banana</option>
+        <option value="c">Cherry</option>
+      </select>`;
+    probePageInjected({ op: "snapshot" });
+    const sel = document.querySelector("select") as HTMLSelectElement;
+    const idx = Number(sel.getAttribute("data-pie-idx"));
+    expect(Number.isFinite(idx)).toBe(true);
+
+    const r = await actByIdxInjected({ op: "select", idx, value: "b" });
+
+    expect(r.ok).toBe(true);
+    if (!r.ok) throw new Error("narrow");
+    if (r.op !== "select") throw new Error("narrow op");
+    expect(r.observation).toContain("Banana");
+    expect(r.observation).toContain('"b"');
+    expect(sel.value).toBe("b");
+  });
+
+  it("rejects a non-<select> element", async () => {
+    document.body.innerHTML = `<input type="text" />`;
+    probePageInjected({ op: "snapshot" });
+    const inp = document.querySelector("input") as HTMLInputElement;
+    const idx = Number(inp.getAttribute("data-pie-idx"));
+
+    const r = await actByIdxInjected({ op: "select", idx, value: "x" });
+
+    expect(r.ok).toBe(false);
+    if (r.ok) throw new Error("narrow");
+    expect(r.error).toMatch(/not a <select>/i);
+  });
+
+  it("rejects a missing option and lists available values", async () => {
+    document.body.innerHTML = `
+      <select>
+        <option value="x">X</option>
+        <option value="y">Y</option>
+      </select>`;
+    probePageInjected({ op: "snapshot" });
+    const sel = document.querySelector("select") as HTMLSelectElement;
+    const idx = Number(sel.getAttribute("data-pie-idx"));
+
+    const r = await actByIdxInjected({ op: "select", idx, value: "z" });
+
+    expect(r.ok).toBe(false);
+    if (r.ok) throw new Error("narrow");
+    expect(r.error).toContain('"z"');
+    expect(r.error).toContain('"x"');
+    expect(r.error).toContain('"y"');
+  });
+});
+
+describe("actByIdxInjected op=focusClick", () => {
+  it("focusClick clicks the located element", async () => {
+    document.body.innerHTML = `<button>go</button>`;
+    probePageInjected({ op: "snapshot" });
+    const btn = document.querySelector("button") as HTMLElement;
+    const idx = Number(btn.getAttribute("data-pie-idx"));
+    let clicked = false;
+    btn.addEventListener("click", () => { clicked = true; });
+    const r = await actByIdxInjected({ op: "focusClick", idx });
+    expect(r.ok).toBe(true);
+    expect(clicked).toBe(true);
+  });
+});

@@ -5,8 +5,7 @@
  * chrome.scripting.executeScript — no imports may be used inside the function
  * body at runtime. All helpers are nested inside the exported function.
  *
- * op=rect: implemented (used by CDP mouse-click geometry)
- * op=type / select / focusClick: stubbed — implemented in Tasks 6-7
+ * All four ops implemented: rect, type, select, focusClick.
  */
 
 export type ActParams =
@@ -18,6 +17,8 @@ export type ActParams =
 export type ActResult =
   | { ok: true; op: "rect"; rect: { x: number; y: number; w: number; h: number } }
   | { ok: true; op: "type"; observation: string }
+  | { ok: true; op: "select"; observation: string }
+  | { ok: true; op: "focusClick"; observation: string }
   | { ok: false; error: string };
 
 export async function actByIdxInjected(params: ActParams): Promise<ActResult> {
@@ -110,7 +111,6 @@ export async function actByIdxInjected(params: ActParams): Promise<ActResult> {
     function getFieldName(el: Element): string {
       const inputEl = el as HTMLInputElement;
       if (inputEl.name) return inputEl.name;
-      if (inputEl.id) return inputEl.id;
       if (inputEl.id) {
         const label = document.querySelector<HTMLLabelElement>(
           `label[for="${inputEl.id}"]`,
@@ -118,6 +118,7 @@ export async function actByIdxInjected(params: ActParams): Promise<ActResult> {
         if (label?.textContent?.trim()) {
           return label.textContent.trim().slice(0, 60);
         }
+        return inputEl.id;
       }
       if (el.getAttribute("aria-label")) {
         return el.getAttribute("aria-label")!.trim().slice(0, 60);
@@ -394,6 +395,64 @@ export async function actByIdxInjected(params: ActParams): Promise<ActResult> {
     };
   }
 
-  // select / focusClick — implemented in Task 7
-  return { ok: false, error: "unimplemented op" };
+  if (params.op === "select") {
+    // ── Ported verbatim from selectByIndex (src/lib/dom-actions/select.ts).
+    // Changes: uses already-resolved `el` instead of own querySelector;
+    // returns wrapped in the ActResult shape.
+    const { idx: index, value } = params;
+
+    if (el.tagName.toLowerCase() !== "select") {
+      return {
+        ok: false,
+        error: `Element [${index}] is a <${el.tagName.toLowerCase()}>, not a <select>.`,
+      };
+    }
+
+    const selectEl = el as HTMLSelectElement;
+
+    const optionExists = Array.from(selectEl.options).some(
+      (opt) => opt.value === value,
+    );
+
+    if (!optionExists) {
+      const availableValues = Array.from(selectEl.options)
+        .map((o) => `"${o.value}"`)
+        .join(", ");
+      return {
+        ok: false,
+        error: `Option value "${value}" not found in select [${index}]. Available values: ${availableValues}`,
+      };
+    }
+
+    selectEl.value = value;
+    selectEl.dispatchEvent(new Event("change", { bubbles: true }));
+
+    const selectedOption = Array.from(selectEl.options).find(
+      (opt) => opt.value === value,
+    );
+    const label = selectedOption?.text?.trim() || value;
+
+    return {
+      ok: true,
+      op: "select",
+      observation: `Selected option "${label}" (value="${value}") in element [${index}]`,
+    };
+  }
+
+  if (params.op === "focusClick") {
+    // ── Ported verbatim from focusClickByIndex (src/lib/agent/tools/keyboard.ts).
+    // Changes: uses already-resolved `el` instead of own querySelector;
+    // returns wrapped in the ActResult shape.
+    (el as HTMLElement).click();
+    return {
+      ok: true,
+      op: "focusClick",
+      observation: `Focus-clicked element [${params.idx}]`,
+    };
+  }
+
+  // Unreachable: all four ActParams ops are handled above. `satisfies never`
+  // makes a future unhandled op a compile error (exhaustiveness guard).
+  params satisfies never;
+  return { ok: false, error: "unknown op" };
 }
