@@ -22,9 +22,7 @@ export const STALE_OBSERVATION_MARKER =
 /**
  * Literal that begins every per-frame block emitted by `renderFrameBlock`
  * in prompt.ts. Splitting an observation's text at the FIRST occurrence
- * separates the cheap semantic header from the bulky element listing (and
- * any trailing <reflections> tail (added by #61(b)), which is re-appended
- * fresh to the newest observation each round anyway).
+ * separates the cheap semantic header from the bulky element listing.
  */
 const FRAME_BLOCK_MARKER = "<untrusted_page_content";
 
