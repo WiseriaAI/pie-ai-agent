@@ -96,6 +96,17 @@ export function txMulti(
   );
 }
 
+/** Clear every store in the `pie` database in a single atomic transaction.
+ *  Production use (e.g. eval harness reset between runs). */
+export async function clearAllStores(): Promise<void> {
+  await txMulti([STORES.sessions, STORES.sessionIndex, STORES.instances, STORES.config], "readwrite", (m) => {
+    m[STORES.sessions].clear();
+    m[STORES.sessionIndex].clear();
+    m[STORES.instances].clear();
+    m[STORES.config].clear();
+  });
+}
+
 /** Test-only: drop the cached db handle + delete the database. */
 export async function _resetForTests(): Promise<void> {
   if (dbPromise) { (await dbPromise).close(); dbPromise = null; }
