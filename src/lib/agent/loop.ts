@@ -15,15 +15,6 @@ import {
 } from "./tools";
 import type { Tool } from "./types";
 import { getToolClass, SCREENSHOT_TOOL_NAMES } from "./tool-names";
-import {
-  detectLoop,
-  recordStep,
-  stepSignature,
-  DEFAULT_OSCILLATION_MAX_PERIOD,
-  DEFAULT_OSCILLATION_MIN_CYCLES,
-  type LoopVerdict,
-  type StepSignature,
-} from "./loop-detection";
 import { escapeUntrustedWrappers } from "./untrusted-wrappers";
 import { buildAgentSystemPrompt, buildObservationMessage } from "./prompt";
 import { applySlidingWindow } from "./window";
@@ -900,73 +891,6 @@ function redactArgsForPanel(toolName: string, args: unknown): unknown {
   };
 }
 
-// ── #61(a)(b) — loop detection + intra-episode reflection ─────────────────
-
-/** Max recent step signatures kept for loop detection. Chosen to hold at least
- *  oscillationMaxPeriod × oscillationMinCycles (= 3 × 2 = 6) signatures including
- *  the current step (so `recent` holds ≥ 5), making a period-3 oscillation
- *  (a→b→c→a→b→c) detectable; also comfortably exceeds exactRepeatThreshold (3)
- *  so a trailing identical run is never truncated before tripping the A-detector.
- *  Invariant: keep cap ≥ oscillationMaxPeriod × oscillationMinCycles − 1, else
- *  period-k detection silently degrades. */
-const RECENT_STEPS_CAP = 6;
-// Build-time invariant (throws at module load, matching the repo's invariant
-// style): the ring buffer + current step must hold a full oscillation window,
-// i.e. RECENT_STEPS_CAP + 1 ≥ MAX_PERIOD × MIN_CYCLES. Without this guard, a
-// future change to the detector defaults would silently degrade period-k
-// detection (the failure the comment above warns about) with no signal.
-if (RECENT_STEPS_CAP + 1 < DEFAULT_OSCILLATION_MAX_PERIOD * DEFAULT_OSCILLATION_MIN_CYCLES) {
-  throw new Error(
-    `RECENT_STEPS_CAP (${RECENT_STEPS_CAP}) too small for oscillation detection: ` +
-      `needs ≥ ${DEFAULT_OSCILLATION_MAX_PERIOD * DEFAULT_OSCILLATION_MIN_CYCLES - 1} ` +
-      `(MAX_PERIOD ${DEFAULT_OSCILLATION_MAX_PERIOD} × MIN_CYCLES ${DEFAULT_OSCILLATION_MIN_CYCLES} − 1).`,
-  );
-}
-/** Number of loop-detected interventions after which the reflection note
- *  escalates to a strong "call `fail`" directive. The loop NEVER hard-stops
- *  on this — escalation is advisory; only the LLM (done/fail/plain-text) or a
- *  user abort ends the task. */
-const REFLECTION_ESCALATE_AFTER = 2;
-
-/** Trusted tool_result content for tool_use blocks whose execution was
- *  skipped because a loop was detected. NOT wrapped in <untrusted_*> — this
- *  is runtime-authored guidance, not page data. */
-const REFLECTION_SKIP_RESULT =
-  "This action was not executed: it repeats a recent action that did not make " +
-  "progress (loop detected). See the <reflections> guidance in the latest page " +
-  "observation, then choose a different approach or call `fail` if the task " +
-  "cannot proceed.";
-
-/** Build the trusted reflection note appended to <reflections>. Past
- *  REFLECTION_ESCALATE_AFTER interventions the note escalates to a blunt
- *  "stop retrying, call `fail`" directive — but the runtime still does not
- *  terminate; the model must choose to. */
-function buildReflectionNote(verdict: LoopVerdict, attempt: number): string {
-  const why =
-    verdict.kind === "repeat-error"
-      ? `your last ${verdict.count} attempts at the same action all failed`
-      : verdict.kind === "exact-repeat"
-        ? `you have issued the same action ${verdict.count} times in a row with no apparent progress`
-        : verdict.kind === "oscillation"
-          ? `you are cycling between the same ${verdict.period} actions (a ${verdict.period}-step loop) without making progress`
-          : // unreachable defensive default (LoopVerdict has no other kind that reaches here)
-            "you appear to be repeating an action without progress";
-  const base =
-    `Self-correction (intervention ${attempt}): ${why}. You are stuck in a loop. ` +
-    "Before acting again: (1) re-read the latest page snapshot above — did the previous " +
-    "action have the effect you expected? (2) If an element is unresponsive, try a different " +
-    "element, a different tool, or scroll to reveal new state. (3) If the task genuinely " +
-    "cannot proceed, call `fail` with a clear explanation. Do NOT repeat the same action.";
-  if (attempt > REFLECTION_ESCALATE_AFTER) {
-    return (
-      `${base} You have now self-corrected ${attempt} times without breaking the ` +
-      "loop — repeating again wastes the user's tokens. If your next attempt is " +
-      "not a fundamentally different approach, call `fail` now and explain the blocker."
-    );
-  }
-  return base;
-}
-
 // ── Main loop ─────────────────────────────────────────────────────────────────
 
 export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
@@ -1007,12 +931,6 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
   // `history = ctx.resumedAgentMessages…` assignment) read an empty array
   // instead of hitting a TDZ ReferenceError (Fix 1 / C1).
   let history: AgentMessage[] = [];
-
-  // #61(a)(b) — in-memory loop-detection + reflection state. Reset on SW
-  // restart (resume path accepts the reset — SW death already broke any loop).
-  const recentSteps: StepSignature[] = [];
-  const reflectionMemory: string[] = [];
-  let reflectionCount = 0;
 
   // Idempotent done emit — every runAgentLoop exit path (success, abort,
   // error, finally) calls this; first one wins, the rest are no-ops.
@@ -1405,18 +1323,9 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       let observationText = buildObservationMessage(pageTitle, currentUrl);
       // Advisory runtime notices (trusted block, NOT untrusted page data).
       // Navigation divergence is surfaced once per distinct change; the budget
-      // nudge re-appears past the soft budget. Placed before <reflections> so
-      // they lead the observation when present.
+      // nudge re-appears past the soft budget.
       if (sysNotices.length > 0) {
         observationText += `\n\n<system_notice>\n${sysNotices.join("\n\n")}\n</system_notice>`;
-      }
-      // #61(b) — tail-inject accumulated reflections (trusted; NOT wrapped in
-      // <untrusted_*>). Always re-appended to the NEWEST observation so it
-      // survives sliding-window / token-budget pressure and stale-elision
-      // (which cuts at the first <untrusted_page_content>, dropping any stale
-      // reflections tail — fine, the latest turn always re-carries them).
-      if (reflectionMemory.length > 0) {
-        observationText += `\n\n<reflections>\n${reflectionMemory.join("\n\n")}\n</reflections>`;
       }
       // Task 3.3 — first-turn read_page nudge. Appended to the iteration-0
       // observation only when a pinned tab is present and this is NOT a
@@ -1774,66 +1683,6 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         completedToolCalls,
       );
 
-      // #61(a)(b) — loop detection BEFORE executing this step's tools. The
-      // signature fingerprints all tool calls (name + stable args). detectLoop
-      // compares it against the ring buffer of past executed steps; B-detector
-      // (repeat+error) uses the past steps' error bits. On a hit we do NOT
-      // execute the tools — we close the assistant turn with paired skip
-      // tool_results (Anthropic requires tool_use↔tool_result pairing) and push
-      // a reflection that lands in the NEXT observation's <reflections> tail.
-      const currentSig = stepSignature(completedToolCalls);
-      const verdict = detectLoop(recentSteps, currentSig);
-      if (verdict.kind !== "none") {
-        const skipResults: ContentBlock[] = completedToolCalls.map((tc) => ({
-          type: "tool_result",
-          toolUseId: tc.id,
-          content: REFLECTION_SKIP_RESULT,
-          isError: true,
-        }));
-
-        // Loop detected. We never hard-terminate here — the reflection note
-        // is injected (escalating past REFLECTION_ESCALATE_AFTER) and the loop
-        // continues; only the LLM (fail/done/plain-text) or a user abort ends
-        // the task. The skip tool_results above close the assistant turn so
-        // the model gets a clean next turn to change approach or call `fail`.
-        reflectionCount++;
-        const note = buildReflectionNote(verdict, reflectionCount);
-        reflectionMemory.push(note);
-
-        // Surface the reflection as a distinct step so the user sees the agent
-        // "thinking". args:{} passes through redactArgsForPanel unchanged.
-        // Deliberate status split: the reflect STEP is status:"ok" (the
-        // reflection itself succeeded → green check in the panel), whereas the
-        // paired skip tool_results above are isError:true (the skipped actions
-        // are failures to the model). Two audiences, two truths.
-        emitStep({
-          type: "agent-step",
-          stepIndex,
-          tool: "reflect",
-          args: {},
-          status: "ok",
-          observation: note,
-        });
-
-        history.push({ role: "assistant", content: assistantBlocks });
-        history.push({ role: "user", content: skipResults });
-
-        if (ctx.onStepSnapshot) {
-          const snap = buildSessionAgentSnapshot(history, stepIndex, hasImageContent);
-          ctx.onStepSnapshot(snap).catch((e) => {
-            console.warn(
-              `[agent] snapshot (reflection) failed for session=${ctx.sessionId} step=${stepIndex}:`,
-              e,
-            );
-          });
-        }
-
-        // Record the skipped step so a repeat next round still trips the
-        // detector (reflectionCount, not the ring buffer, is the real cap).
-        recordStep(recentSteps, { sig: currentSig, allErrored: true }, RECENT_STEPS_CAP);
-        continue; // → next iteration re-snapshots; observation carries <reflections>
-      }
-
       // Collect tool_result blocks for the user turn
       const toolResultBlocks: ContentBlock[] = [];
       let shouldTerminate = false;
@@ -2136,18 +1985,6 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           shouldTerminate = true;
           terminationResult = { success: false, summary: result.error ?? observation };
         }
-      }
-
-      // #61(a) — record this executed step in the loop-detection ring buffer.
-      // allErrored drives the B-detector: a step counts as errored only when
-      // EVERY tool_result it produced was an error (screenshot image blocks are
-      // not tool_result and are ignored).
-      {
-        const trResults = toolResultBlocks.filter(
-          (b): b is Extract<ContentBlock, { type: "tool_result" }> => b.type === "tool_result",
-        );
-        const allErrored = trResults.length > 0 && trResults.every((b) => b.isError === true);
-        recordStep(recentSteps, { sig: currentSig, allErrored }, RECENT_STEPS_CAP);
       }
 
       // Push assistant message + user tool_result message into history.
