@@ -1886,9 +1886,9 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         // tab tools already use for stale targets.
         // M3-U4 (TOCTOU fix) — re-read the cross-session registry per
         // tool dispatch so a sibling session created mid-loop is visible.
-        // One chrome.storage.local.get round-trip, fully amortized by the
-        // surrounding LLM call. Errors degrade to "no conflicts known" so
-        // a transient storage hiccup never falsely blocks a write.
+        // One IDB session_index read (via listSessionIndex), fully amortized
+        // by the surrounding LLM call. Errors degrade to "no conflicts known"
+        // so a transient storage hiccup never falsely blocks a write.
         let crossSessionPinnedTabIds: Set<number> | undefined;
         if (ctx.refreshCrossSessionPinnedTabIds) {
           try {

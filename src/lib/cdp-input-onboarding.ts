@@ -1,6 +1,6 @@
 import {
   setCdpInputEnabled,
-  CDP_INPUT_ENABLED_STORAGE_KEY,
+  type CdpInputState,
 } from "./cdp-input-enabled";
 
 interface PendingRequest {
@@ -63,16 +63,12 @@ export async function handleOnboardingResponse(
 }
 
 /**
- * Called by background/index.ts when chrome.storage.onChanged fires.
- * If the flag flips to true while any session is awaiting consent,
- * auto-resolve those pending requests as accepted.
+ * Called by background/index.ts when the cdp-input-enabled config flag
+ * changes (via the store-bus). If the flag is now true while any session
+ * is awaiting consent, auto-resolve those pending requests as accepted.
  */
-export function onStorageChanged(
-  changes: Record<string, chrome.storage.StorageChange>,
-): void {
-  const change = changes[CDP_INPUT_ENABLED_STORAGE_KEY];
-  if (!change) return;
-  if (change.newValue !== true) return;
+export function onCdpInputEnabledChanged(enabled: CdpInputState): void {
+  if (enabled !== true) return;
   for (const [sessionId, pending] of pendingBySession.entries()) {
     pending.resolve(true);
     pendingBySession.delete(sessionId);

@@ -15,13 +15,14 @@
  * Both scenarios are tested against the real functions that carry the
  * persistence invariant — no mocking of the agent loop itself.
  */
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import "@/test/setup";
-import { chromeMock } from "@/test/setup";
 import {
   addPending,
   drainPending,
 } from "@/lib/sessions/pending-instructions";
+import { setSessionAgent, getSessionAgent } from "@/lib/sessions/storage";
+import { _resetForTests } from "@/lib/idb/db";
 import { broadcastInstructionState } from "@/background/instruction-broadcast";
 import { buildMidTaskUserMessage } from "@/lib/agent/loop-drain";
 import type { SessionAgentState } from "@/lib/sessions/types";
@@ -30,23 +31,30 @@ import type { SessionAgentState } from "@/lib/sessions/types";
 
 const SESSION_ID = "test-session-recovery";
 
-function seedAgentState(
+beforeEach(async () => {
+  await _resetForTests();
+});
+
+// Seeds the session agent state into IDB. Post-migration, the queue persists in
+// the `pie` IDB database (sessions store, `${id}:agent` record) rather than
+// chrome.storage.local — IDB likewise survives SW eviction.
+async function seedAgentState(
   sessionId = SESSION_ID,
   overrides: Partial<SessionAgentState> = {},
-): void {
-  chromeMock.storage.local.__store[`session_${sessionId}_agent`] = {
+): Promise<void> {
+  await setSessionAgent(sessionId, {
     agentMessages: [],
     pendingInstructions: [],
     stepIndex: 1, // in-flight task
     hasImageContent: false,
     ...overrides,
-  } satisfies SessionAgentState;
+  } satisfies SessionAgentState);
 }
 
-function getAgentState(sessionId = SESSION_ID): SessionAgentState | undefined {
-  return chromeMock.storage.local.__store[
-    `session_${sessionId}_agent`
-  ] as SessionAgentState | undefined;
+async function getAgentState(
+  sessionId = SESSION_ID,
+): Promise<SessionAgentState | undefined> {
+  return (await getSessionAgent(sessionId)) ?? undefined;
 }
 
 function makeFakePort() {
@@ -62,7 +70,7 @@ function makeFakePort() {
 
 describe("T17a — SW restart preserves pending queue", () => {
   it("pending instructions survive SW eviction (chrome.storage.local persists)", async () => {
-    seedAgentState();
+    await seedAgentState();
 
     // chat-start → user adds 2 pending instructions during streaming
     await addPending(SESSION_ID, {
@@ -77,7 +85,7 @@ describe("T17a — SW restart preserves pending queue", () => {
     });
 
     // Verify queue exists in storage
-    const beforeEviction = getAgentState();
+    const beforeEviction = await getAgentState();
     expect(beforeEviction!.pendingInstructions).toHaveLength(2);
 
     // ── Simulate SW eviction ──────────────────────────────────────────────
@@ -93,14 +101,14 @@ describe("T17a — SW restart preserves pending queue", () => {
     // We test just the storage-persists invariant here.
 
     // Storage is still intact (chrome.storage.local persists across restarts)
-    const afterEviction = getAgentState();
+    const afterEviction = await getAgentState();
     expect(afterEviction!.pendingInstructions).toHaveLength(2);
     expect(afterEviction!.pendingInstructions[0]!.chatMessageId).toBe("pi-1");
     expect(afterEviction!.pendingInstructions[1]!.chatMessageId).toBe("pi-2");
   });
 
   it("after SW restart, resumed session drains pending and produces correct LLM message", async () => {
-    seedAgentState();
+    await seedAgentState();
 
     await addPending(SESSION_ID, {
       chatMessageId: "resume-instr-1",
@@ -122,12 +130,12 @@ describe("T17a — SW restart preserves pending queue", () => {
     expect(llmMsg!.content).toContain("also search for alternatives");
 
     // Queue is now empty
-    expect(getAgentState()!.pendingInstructions).toEqual([]);
+    expect((await getAgentState())!.pendingInstructions).toEqual([]);
   });
 
-  it("storage key format is stable across SW restart (key = session_{id}_agent)", async () => {
+  it("agent state is durably readable across SW restart (IDB persists)", async () => {
     const sessionId = "recovery-key-format";
-    seedAgentState(sessionId);
+    await seedAgentState(sessionId);
 
     await addPending(sessionId, {
       chatMessageId: "key-test",
@@ -135,12 +143,12 @@ describe("T17a — SW restart preserves pending queue", () => {
       createdAt: 1000,
     });
 
-    // The key must be exactly `session_${sessionId}_agent` — the same key
-    // that SW reads on startup during detectAndMarkPaused/handlePanelMounted
-    const rawKey = `session_${sessionId}_agent`;
-    const rawState = chromeMock.storage.local.__store[rawKey] as
-      | SessionAgentState
-      | undefined;
+    // Post-migration the queue lives in the `pie` IDB database (record id
+    // `${sessionId}:agent`), which survives SW eviction. The SW reads it back
+    // via getSessionAgent on startup during detectAndMarkPaused/
+    // handlePanelMounted — the durability invariant is what matters, not the
+    // legacy chrome.storage key string.
+    const rawState = await getSessionAgent(sessionId);
     expect(rawState).toBeDefined();
     expect(rawState!.pendingInstructions).toHaveLength(1);
     expect(rawState!.pendingInstructions[0]!.content).toBe("test instruction");
@@ -149,8 +157,8 @@ describe("T17a — SW restart preserves pending queue", () => {
   it("SW restart with multiple sessions: each session's queue is independent", async () => {
     const idA = "recovery-session-A";
     const idB = "recovery-session-B";
-    seedAgentState(idA);
-    seedAgentState(idB);
+    await seedAgentState(idA);
+    await seedAgentState(idB);
 
     await addPending(idA, {
       chatMessageId: "a-1",
@@ -169,20 +177,20 @@ describe("T17a — SW restart preserves pending queue", () => {
     });
 
     // After SW eviction, both sessions retain their independent queues
-    expect(getAgentState(idA)!.pendingInstructions).toHaveLength(1);
-    expect(getAgentState(idB)!.pendingInstructions).toHaveLength(2);
+    expect((await getAgentState(idA))!.pendingInstructions).toHaveLength(1);
+    expect((await getAgentState(idB))!.pendingInstructions).toHaveLength(2);
 
     // Drain A only — B is unaffected
     const drainedA = await drainPending(idA);
     expect(drainedA).toHaveLength(1);
     expect(drainedA[0]!.chatMessageId).toBe("a-1");
 
-    expect(getAgentState(idA)!.pendingInstructions).toHaveLength(0);
-    expect(getAgentState(idB)!.pendingInstructions).toHaveLength(2);
+    expect((await getAgentState(idA))!.pendingInstructions).toHaveLength(0);
+    expect((await getAgentState(idB))!.pendingInstructions).toHaveLength(2);
   });
 
   it("SW restart + no pending: drainPending returns empty (no crash, no spurious message)", async () => {
-    seedAgentState();
+    await seedAgentState();
     // No addPending calls — task aborted before user added anything
 
     const drained = await drainPending(SESSION_ID);
@@ -202,7 +210,7 @@ describe("T17a — SW restart preserves pending queue", () => {
 
 describe("T17b — panel reconnect: SW broadcasts current pending state", () => {
   it("broadcastInstructionState re-emits current pending queue after panel reconnect", async () => {
-    seedAgentState();
+    await seedAgentState();
     await addPending(SESSION_ID, {
       chatMessageId: "pending-on-reconnect-1",
       content: "check my messages",
@@ -230,7 +238,7 @@ describe("T17b — panel reconnect: SW broadcasts current pending state", () => 
   });
 
   it("broadcastInstructionState emits slim payload (chatMessageId + createdAt only)", async () => {
-    seedAgentState();
+    await seedAgentState();
     await addPending(SESSION_ID, {
       chatMessageId: "slim-test",
       content: "full content not in broadcast",
@@ -251,7 +259,7 @@ describe("T17b — panel reconnect: SW broadcasts current pending state", () => 
   });
 
   it("reconnect with empty queue broadcasts empty pending array (no residue from prior task)", async () => {
-    seedAgentState();
+    await seedAgentState();
     // No pending added (task completed cleanly or never started)
 
     const port = makeFakePort();
@@ -266,7 +274,7 @@ describe("T17b — panel reconnect: SW broadcasts current pending state", () => 
     const { cancelPending } = await import(
       "@/lib/sessions/pending-instructions"
     );
-    seedAgentState();
+    await seedAgentState();
     await addPending(SESSION_ID, {
       chatMessageId: "stay-1",
       content: "keep this",
@@ -302,7 +310,7 @@ describe("T17b — panel reconnect: SW broadcasts current pending state", () => 
   });
 
   it("multiple reconnects on the same port each get the current snapshot", async () => {
-    seedAgentState();
+    await seedAgentState();
     await addPending(SESSION_ID, {
       chatMessageId: "p1",
       content: "first",

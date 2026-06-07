@@ -5,7 +5,9 @@ import {
   registerOnboardingPort,
   unregisterOnboardingPort,
 } from "./cdp-input-onboarding";
-import { setCdpInputEnabled, CDP_INPUT_ENABLED_STORAGE_KEY } from "./cdp-input-enabled";
+import { CDP_INPUT_ENABLED_STORAGE_KEY, setCdpInputEnabled } from "./cdp-input-enabled";
+import { getConfig } from "./idb/config-store";
+import { _resetForTests } from "./idb/db";
 
 interface FakePort {
   name: string;
@@ -19,24 +21,8 @@ function fakePort(sessionId: string): FakePort {
   };
 }
 
-beforeEach(() => {
-  const data: Record<string, unknown> = {};
-  global.chrome = {
-    storage: {
-      local: {
-        get: vi.fn((k) => {
-          const want = Array.isArray(k) ? k : [k];
-          const out: Record<string, unknown> = {};
-          for (const key of want) if (key in data) out[key] = data[key];
-          return Promise.resolve(out);
-        }),
-        set: vi.fn((kv) => { Object.assign(data, kv); return Promise.resolve(); }),
-        remove: vi.fn(() => Promise.resolve()),
-        onChanged: { addListener: vi.fn(), removeListener: vi.fn() } as unknown as typeof chrome.storage.local.onChanged,
-      },
-      onChanged: { addListener: vi.fn() } as unknown as typeof chrome.storage.onChanged,
-    },
-  } as unknown as typeof chrome;
+beforeEach(async () => {
+  await _resetForTests();
 });
 
 describe("requestCdpInputConsent", () => {
@@ -52,14 +38,13 @@ describe("requestCdpInputConsent", () => {
     await expect(promise).resolves.toBe(true);
   });
 
-  it("writes flag=true to storage when user accepts", async () => {
+  it("writes flag=true to config store when user accepts", async () => {
     const port = fakePort("S1");
     registerOnboardingPort("S1", port as unknown as chrome.runtime.Port);
     const promise = requestCdpInputConsent("S1");
     handleOnboardingResponse("S1", true);
     await promise;
-    const r = await chrome.storage.local.get(CDP_INPUT_ENABLED_STORAGE_KEY);
-    expect(r[CDP_INPUT_ENABLED_STORAGE_KEY]).toBe(true);
+    expect(await getConfig<boolean>(CDP_INPUT_ENABLED_STORAGE_KEY)).toBe(true);
   });
 
   it("writes flag=false and resolves false when user declines", async () => {
@@ -69,8 +54,7 @@ describe("requestCdpInputConsent", () => {
     handleOnboardingResponse("S1", false);
     const result = await promise;
     expect(result).toBe(false);
-    const r = await chrome.storage.local.get(CDP_INPUT_ENABLED_STORAGE_KEY);
-    expect(r[CDP_INPUT_ENABLED_STORAGE_KEY]).toBe(false);
+    expect(await getConfig<boolean>(CDP_INPUT_ENABLED_STORAGE_KEY)).toBe(false);
   });
 
   it("rejects with onboarding-cancelled when port unregisters before response", async () => {
@@ -81,16 +65,16 @@ describe("requestCdpInputConsent", () => {
     await expect(promise).rejects.toThrow("Onboarding cancelled");
   });
 
-  it("auto-resolves true when another session flips storage to true mid-flight", async () => {
+  it("auto-resolves true when another session flips the flag to true mid-flight", async () => {
     const port = fakePort("S1");
     registerOnboardingPort("S1", port as unknown as chrome.runtime.Port);
     const promise = requestCdpInputConsent("S1");
     // Simulate another session flipping the flag
     await setCdpInputEnabled(true);
-    // The coordinator listens for storage changes and resolves
-    // (test invokes the registered listener manually)
-    const { onStorageChanged } = await import("./cdp-input-onboarding");
-    onStorageChanged({ [CDP_INPUT_ENABLED_STORAGE_KEY]: { newValue: true, oldValue: undefined } });
+    // The coordinator listens for store-bus changes and resolves
+    // (test invokes the handler with the resolved enabled state).
+    const { onCdpInputEnabledChanged } = await import("./cdp-input-onboarding");
+    onCdpInputEnabledChanged(true);
     await expect(promise).resolves.toBe(true);
   });
 

@@ -14,6 +14,8 @@ import {
   type TParams,
   type DotPathKey,
 } from "./types";
+import { setConfig } from "@/lib/idb/config-store";
+import { onStoreChange } from "@/lib/store-bus";
 import { enDict, type EnDict } from "./dictionaries/en";
 import { zhCNDict } from "./dictionaries/zh-CN";
 import { resolveLocale, normalizeBrowserLocale } from "./locale-resolver";
@@ -88,19 +90,16 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    function handler(
-      changes: Record<string, chrome.storage.StorageChange>,
-      areaName: string,
-    ) {
-      if (areaName !== "local") return;
-      if (!(STORAGE_KEY_UI_LOCALE in changes)) return;
+    // ui_locale now lives in the IDB `config` store; cross-context locale
+    // sync rides the store-bus instead of the (now-dead) chrome.storage
+    // onChanged signal. Re-resolve only when the locale key actually changed.
+    return onStoreChange("config", (c) => {
+      if (c.id !== STORAGE_KEY_UI_LOCALE) return;
       resolveLocale().then((l) => {
         _currentLocale = l;
         setLocaleState(l);
       });
-    }
-    chrome.storage.onChanged.addListener(handler);
-    return () => chrome.storage.onChanged.removeListener(handler);
+    });
   }, []);
 
   const value = useMemo<I18nContextValue>(
@@ -121,12 +120,12 @@ export function useT() {
 }
 
 export async function setLocale(next: LocaleSetting): Promise<void> {
-  // Always write the setting (including 'auto') so storage.onChanged fires
-  // and other sidepanel windows update too.
-  await chrome.storage.local.set({ [STORAGE_KEY_UI_LOCALE]: next });
-  // We don't directly setState here — the storage.onChanged subscription in
-  // I18nProvider picks up the change. In tests that mutate __store directly
-  // they call __emitChange manually.
+  // Always write the setting (including 'auto') so the store-bus "config"
+  // event fires and other sidepanel windows update too. setConfig publishes
+  // the change with id === STORAGE_KEY_UI_LOCALE.
+  await setConfig(STORAGE_KEY_UI_LOCALE, next);
+  // We don't directly setState here — the store-bus subscription in
+  // I18nProvider picks up the change.
 }
 
 // Re-exports for callers that want resolver utilities without poking the

@@ -3,6 +3,8 @@
  * 新会话从这里继承 (instanceId, model)。每次用户在 Composer 选定模型时更新。
  * 一 provider 一 key（D1），instanceId ↔ provider 一一对应。
  */
+import { getConfig, setConfig } from "@/lib/idb/config-store";
+
 export interface LastModelSelection {
   instanceId: string;
   model: string;
@@ -11,11 +13,10 @@ export interface LastModelSelection {
 const KEY = "last_model_selection";
 
 export async function getLastModelSelection(): Promise<LastModelSelection | null> {
-  const r = await chrome.storage.local.get(KEY);
-  const v = r[KEY] as LastModelSelection | undefined;
+  const v = await getConfig<LastModelSelection>(KEY);
   return v && v.instanceId && v.model ? v : null;
 }
 
 export async function setLastModelSelection(sel: LastModelSelection): Promise<void> {
-  await chrome.storage.local.set({ [KEY]: sel });
+  await setConfig(KEY, sel);
 }

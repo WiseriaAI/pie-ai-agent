@@ -1,5 +1,4 @@
-import { INSTANCE_KEY, INDEX_KEY, getActiveInstance } from "./instances";
-import { setLastModelSelection, getLastModelSelection } from "./last-model-selection";
+import { INSTANCE_KEY, INDEX_KEY } from "./instances";
 
 interface LegacyStored {
   id: string;
@@ -34,7 +33,14 @@ export async function migrateInstanceModel(): Promise<void> {
   const anyHasModel = stored.some((s) => typeof s.model === "string");
   if (!anyHasModel) return; // 幂等：已迁移
 
-  const activeId = await getActiveInstance();
+  // Phase-1 (chrome.storage domain) migration: active_instance_id still lives in
+  // chrome.storage at this point (the V3 sweep into IDB hasn't run yet). Read it
+  // directly from chrome.storage rather than via getActiveInstance() (which now
+  // reads IDB config and would return null pre-sweep).
+  const activeId =
+    ((await chrome.storage.local.get("active_instance_id"))["active_instance_id"] as
+      | string
+      | undefined) ?? null;
 
   // 按 provider 分组，选保留者（active 优先，否则 createdAt 最新）
   const byProvider = new Map<string, LegacyStored[]>();
@@ -51,9 +57,16 @@ export async function migrateInstanceModel(): Promise<void> {
   }
 
   // last_model_selection ← active 保留者的旧 model（无 active 用第一个保留者）
-  if (!(await getLastModelSelection())) {
+  // Read/write last_model_selection in the chrome.storage domain too (Phase-2
+  // sweep later moves it into IDB).
+  const existing = (await chrome.storage.local.get("last_model_selection"))["last_model_selection"];
+  if (!existing) {
     const seed = kept.find((s) => s.id === activeId) ?? kept[0];
-    if (seed?.model) await setLastModelSelection({ instanceId: seed.id, model: seed.model });
+    if (seed?.model) {
+      await chrome.storage.local.set({
+        last_model_selection: { instanceId: seed.id, model: seed.model },
+      });
+    }
   }
 
   // 写回：保留者去 model；删除非保留者

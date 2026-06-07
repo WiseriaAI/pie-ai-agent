@@ -6,10 +6,16 @@ import {
   markPaused,
   setSessionMeta,
 } from "./storage";
+import { setIndex } from "@/lib/idb/sessions-store";
+import { _resetForTests } from "@/lib/idb/db";
 import {
   getActivePinnedTabs,
   getCrossSessionPinnedTabIds,
 } from "./pinned-tab-registry";
+
+beforeEach(async () => {
+  await _resetForTests();
+});
 
 describe("pinned-tab-registry — getActivePinnedTabs", () => {
   it("returns active + paused sessions with a pinnedTabId", async () => {
@@ -127,11 +133,8 @@ describe("pinned-tab-registry — getCrossSessionPinnedTabIds", () => {
 });
 
 describe("pinned-tab-registry — R7 lock gated on currently-running sessions", () => {
-  beforeEach(() => chrome.storage.local.clear());
-
   it("only counts tabs owned by sessions in runningSessionIds", async () => {
-    await chrome.storage.local.set({
-      session_index: [
+    await setIndex([
         { id: "self", lastAccessedAt: 1, status: "active", pinnedTabIds: [10], messageCount: 1 },
         { id: "running", lastAccessedAt: 2, status: "active", pinnedTabIds: [20], messageCount: 1 },
         // idle: status active (e.g. an aborted task that kept its pin) but
@@ -139,8 +142,7 @@ describe("pinned-tab-registry — R7 lock gated on currently-running sessions", 
         { id: "idle", lastAccessedAt: 3, status: "active", pinnedTabIds: [30], messageCount: 1 },
         // paused historical session (SW restart) — also not running.
         { id: "paused", lastAccessedAt: 4, status: "paused", pinnedTabIds: [40], messageCount: 1 },
-      ],
-    });
+      ]);
     const set = await getCrossSessionPinnedTabIds("self", new Set(["running"]));
     expect(set.has(20)).toBe(true);
     expect(set.has(30)).toBe(false); // idle owner no longer locks
@@ -149,34 +151,27 @@ describe("pinned-tab-registry — R7 lock gated on currently-running sessions", 
   });
 
   it("empty runningSessionIds means no cross-session locks at all", async () => {
-    await chrome.storage.local.set({
-      session_index: [
+    await setIndex([
         { id: "self", lastAccessedAt: 1, status: "active", pinnedTabIds: [10], messageCount: 1 },
         { id: "other", lastAccessedAt: 2, status: "active", pinnedTabIds: [20], messageCount: 1 },
-      ],
-    });
+      ]);
     const set = await getCrossSessionPinnedTabIds("self", new Set());
     expect(set.size).toBe(0);
   });
 
   it("omitting runningSessionIds preserves legacy all-active/paused behavior", async () => {
-    await chrome.storage.local.set({
-      session_index: [
+    await setIndex([
         { id: "self", lastAccessedAt: 1, status: "active", pinnedTabIds: [10], messageCount: 1 },
         { id: "other", lastAccessedAt: 2, status: "active", pinnedTabIds: [20], messageCount: 1 },
-      ],
-    });
+      ]);
     const set = await getCrossSessionPinnedTabIds("self");
     expect(set).toEqual(new Set([20]));
   });
 });
 
 describe("v1.5 multi-pin registry", () => {
-  beforeEach(() => chrome.storage.local.clear());
-
   it("getActivePinnedTabs expands pinnedTabIds[] into per-tab entries", async () => {
-    await chrome.storage.local.set({
-      session_index: [
+    await setIndex([
         {
           id: "sA",
           lastAccessedAt: 1,
@@ -191,8 +186,7 @@ describe("v1.5 multi-pin registry", () => {
           pinnedTabIds: [99],
           messageCount: 1,
         },
-      ],
-    });
+      ]);
     const all = await getActivePinnedTabs();
     expect(all).toEqual(
       expect.arrayContaining([
@@ -206,12 +200,10 @@ describe("v1.5 multi-pin registry", () => {
   });
 
   it("getCrossSessionPinnedTabIds returns the union excluding caller", async () => {
-    await chrome.storage.local.set({
-      session_index: [
+    await setIndex([
         { id: "self", lastAccessedAt: 1, status: "active", pinnedTabIds: [10, 11], messageCount: 1 },
         { id: "other", lastAccessedAt: 2, status: "active", pinnedTabIds: [20, 21], messageCount: 1 },
-      ],
-    });
+      ]);
     const set = await getCrossSessionPinnedTabIds("self");
     expect(set.has(20)).toBe(true);
     expect(set.has(21)).toBe(true);

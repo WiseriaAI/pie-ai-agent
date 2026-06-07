@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { chromeMock } from "@/test/setup";
+import { _resetForTests } from "@/lib/idb/db";
 import {
   getProviderCustomModelMetas,
   getProviderCustomModelMeta,
@@ -8,8 +8,8 @@ import {
   DEFAULT_CUSTOM_MODEL_MAX_CONTEXT,
 } from "./provider-custom-model-meta";
 
-beforeEach(() => {
-  chromeMock.storage.local.__store = {};
+beforeEach(async () => {
+  await _resetForTests();
 });
 
 describe("provider-custom-model-meta", () => {

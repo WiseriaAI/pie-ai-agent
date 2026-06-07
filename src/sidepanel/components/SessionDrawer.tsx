@@ -24,7 +24,7 @@
  * - Focus trap within drawer
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useT } from "@/lib/i18n";
 import type { SessionIndexEntry } from "@/lib/sessions/types";
 import { getTotalBytes } from "@/lib/sessions/storage";
@@ -33,6 +33,7 @@ import {
   hardDeleteSession,
   softDeleteSession,
 } from "@/lib/sessions/lifecycle";
+import { useStoreChange } from "@/sidepanel/hooks/useStoreChange";
 import SessionRow from "./SessionRow";
 
 interface SessionDrawerProps {
@@ -43,11 +44,6 @@ interface SessionDrawerProps {
   onSelectSession: (id: string) => void;
   onResumeSession: (id: string) => void;
 }
-
-// 8 MB budget (MV3 quota is 10 MB; we reserve 2 MB for non-session keys).
-// Highlight the storage bar when above 7.5 MB.
-const STORAGE_BUDGET_BYTES = 8 * 1024 * 1024;
-const STORAGE_WARN_BYTES = 7.5 * 1024 * 1024;
 
 // ── Delayed-unmount helper ────────────────────────────────────────────────────
 // Keeps the drawer DOM present long enough for the closing transition to run,
@@ -91,40 +87,15 @@ function getFocusableElements(container: HTMLElement): HTMLElement[] {
 function StorageIndicator() {
   const t = useT();
   const [usedBytes, setUsedBytes] = useState(0);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
-      const bytes = await getTotalBytes();
-      if (!cancelled) setUsedBytes(bytes);
-    }
-
-    void load();
-
-    // Refresh on any storage change (sessions are being written frequently)
-    const listener = () => { void load(); };
-    chrome.storage.local.onChanged.addListener(listener);
-    return () => {
-      cancelled = true;
-      chrome.storage.local.onChanged.removeListener(listener);
-    };
-  }, []);
-
+  const load = useCallback(async () => { setUsedBytes(await getTotalBytes()); }, []);
+  useEffect(() => { void load(); }, [load]);
+  useStoreChange("sessions", () => { void load(); });
+  useStoreChange("config", () => { void load(); });
+  useStoreChange("instances", () => { void load(); });
   const usedMB = usedBytes / (1024 * 1024);
-  const budgetMB = STORAGE_BUDGET_BYTES / (1024 * 1024);
-  const percent = Math.min((usedBytes / STORAGE_BUDGET_BYTES) * 100, 100);
-  const isWarning = usedBytes >= STORAGE_WARN_BYTES;
-
   return (
-    <div
-      style={{
-        marginTop: "auto",
-        padding: "14px 16px",
-        borderTop: "1px solid var(--c-line)",
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", marginBottom: 6 }}>
+    <div style={{ marginTop: "auto", padding: "14px 16px", borderTop: "1px solid var(--c-line)" }}>
+      <div style={{ display: "flex", alignItems: "center" }}>
         <span
           aria-label={t("sessions.storage")}
           style={{
@@ -132,7 +103,7 @@ function StorageIndicator() {
             fontFamily: "'JetBrains Mono', monospace",
             fontSize: 10,
             fontWeight: 500,
-            color: isWarning ? "var(--c-warning)" : "var(--c-fg-3)",
+            color: "var(--c-fg-3)",
             letterSpacing: "0.12em",
             textTransform: "uppercase",
           }}
@@ -144,34 +115,11 @@ function StorageIndicator() {
             fontFamily: "'JetBrains Mono', monospace",
             fontSize: 10,
             fontWeight: 500,
-            color: isWarning ? "var(--c-warning)" : "var(--c-fg-2)",
+            color: "var(--c-fg-2)",
           }}
         >
-          {usedMB.toFixed(1)} / {budgetMB.toFixed(1)} MB
+          {usedMB.toFixed(1)} MB
         </span>
-      </div>
-      <div
-        role="progressbar"
-        aria-valuenow={Math.round(percent)}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-label={t("sessions.storageUsed", { percent: Math.round(percent) })}
-        style={{
-          height: 2,
-          background: "var(--c-line)",
-          borderRadius: 1,
-          overflow: "hidden",
-        }}
-      >
-        <div
-          style={{
-            height: "100%",
-            width: `${percent}%`,
-            background: isWarning ? "var(--c-warning)" : "var(--c-accent)",
-            borderRadius: 1,
-            transition: "width 0.3s ease",
-          }}
-        />
       </div>
     </div>
   );

@@ -1,3 +1,5 @@
+import { getConfig, setConfig } from "@/lib/idb/config-store";
+
 const SESSION_KEY_NAME = "encryption_key";
 
 let keyPromise: Promise<CryptoKey> | null = null;
@@ -7,14 +9,30 @@ export async function getOrCreateEncryptionKey(): Promise<CryptoKey> {
 
   keyPromise = (async () => {
     try {
-      const result = await chrome.storage.local.get(SESSION_KEY_NAME);
-      if (result[SESSION_KEY_NAME]) {
+      const stored = await getConfig<number[]>(SESSION_KEY_NAME);
+      if (stored) {
         // Stored as Array.from(Uint8Array) → number[]; cast to satisfy Uint8Array constructor.
-        const rawKey = new Uint8Array(result[SESSION_KEY_NAME] as number[]);
+        const rawKey = new Uint8Array(stored);
         return crypto.subtle.importKey("raw", rawKey, "AES-GCM", true, [
           "encrypt",
           "decrypt",
         ] as KeyUsage[]);
+      }
+
+      // Legacy fallback: before the V3 sweep promotes it, the key may still live in
+      // chrome.storage.local (a V1/V2 user upgrading straight into the IDB build).
+      // Use it read-only — the sweep moves it into IDB; we don't write IDB here, so
+      // the sweep's value stays authoritative and we avoid minting a mismatched key.
+      const legacy = await chrome.storage.local.get(SESSION_KEY_NAME);
+      const legacyRaw = legacy[SESSION_KEY_NAME];
+      if (Array.isArray(legacyRaw)) {
+        return crypto.subtle.importKey(
+          "raw",
+          new Uint8Array(legacyRaw as number[]),
+          "AES-GCM",
+          true,
+          ["encrypt", "decrypt"] as KeyUsage[],
+        );
       }
 
       const rawKey = crypto.getRandomValues(new Uint8Array(32));
@@ -27,9 +45,7 @@ export async function getOrCreateEncryptionKey(): Promise<CryptoKey> {
       );
 
       const exported = await crypto.subtle.exportKey("raw", key);
-      await chrome.storage.local.set({
-        [SESSION_KEY_NAME]: Array.from(new Uint8Array(exported)),
-      });
+      await setConfig(SESSION_KEY_NAME, Array.from(new Uint8Array(exported)));
 
       return key;
     } catch (e) {
@@ -80,4 +96,9 @@ export async function decrypt(
       "Failed to decrypt: encryption key may have changed after browser restart. Please re-enter your API key.",
     );
   }
+}
+
+/** Test-only: reset the module-level key promise so the next call re-reads from storage. */
+export function _resetKeyForTests(): void {
+  keyPromise = null;
 }

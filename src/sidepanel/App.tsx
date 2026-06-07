@@ -12,9 +12,11 @@ import { normalizeSkillSlashKey } from "@/lib/skills";
 import { useSession } from "@/sidepanel/hooks/useSession";
 import { useRecording } from "@/sidepanel/hooks/useRecording";
 import RecordingMode from "@/sidepanel/components/RecordingMode";
-import { listSessionIndex } from "@/lib/sessions/storage";
+import { listSessionIndex, getPendingConfirmCount } from "@/lib/sessions/storage";
 import { hardDeleteExpired } from "@/lib/sessions/lifecycle";
-import type { SessionIndexEntry, SessionAgentState } from "@/lib/sessions/types";
+import { getConfig, setConfig, removeConfig } from "@/lib/idb/config-store";
+import { useStoreChange } from "@/sidepanel/hooks/useStoreChange";
+import type { SessionIndexEntry } from "@/lib/sessions/types";
 
 type View = "agent" | "settings";
 
@@ -45,10 +47,12 @@ export default function App() {
     return stored === "light" || stored === "dark" || stored === "system" ? stored : "system";
   });
 
-  // M2: Apply theme-mode to document root, persist, and mirror to
-  // chrome.storage.local for cross-window sync.
+  // M2: Apply theme-mode to document root, persist, and mirror to the IDB
+  // `config` store for cross-window sync (via store-bus).
   // - 'light' / 'dark' → set dataset.theme so the [data-theme] CSS overrides win
   // - 'system' → delete dataset.theme, falling back to prefers-color-scheme
+  // localStorage is kept as the synchronous source for the pre-paint theme
+  // bootstrap in main.tsx (must read before any await), so we write both.
   useEffect(() => {
     if (themeMode === "light" || themeMode === "dark") {
       document.documentElement.dataset.theme = themeMode;
@@ -56,7 +60,7 @@ export default function App() {
       delete document.documentElement.dataset.theme;
     }
     localStorage.setItem("theme-mode", themeMode);
-    void chrome.storage.local.set({ "theme-mode": themeMode });
+    void setConfig("theme-mode", themeMode);
   }, [themeMode]);
 
   const session = useSession();
@@ -85,8 +89,8 @@ export default function App() {
   });
 
   // ── Load session index ────────────────────────────────────────────────────
-  // Maintained by storage onChanged so the drawer refreshes when SW writes
-  // session state (status transitions, new sessions, etc.)
+  // Refreshed via the store-bus "sessions" event so the drawer updates when
+  // the SW writes session state (status transitions, new sessions, etc.)
   const refreshSessionIndex = useCallback(async () => {
     const list = await listSessionIndex();
     // Hide empty active sessions from the drawer — a freshly-mounted panel
@@ -102,19 +106,11 @@ export default function App() {
   }, []);
 
   // ── Compute pendingCount ──────────────────────────────────────────────────
-  // Count sessions whose session_${id}_agent has pendingConfirm != null.
-  // Maintains a local cache updated via onChanged rather than polling.
+  // Count sessions whose :agent record has a live agent-tool pendingConfirm.
+  // Scans the IDB `sessions` store; refreshed via the store-bus "sessions"
+  // event rather than polling.
   const refreshPendingCount = useCallback(async () => {
-    const all = await chrome.storage.local.get(null);
-    let count = 0;
-    for (const [key, value] of Object.entries(all)) {
-      if (!key.startsWith("session_") || !key.endsWith("_agent")) continue;
-      const agentState = value as SessionAgentState | null | undefined;
-      if (agentState?.pendingConfirm != null) {
-        count++;
-      }
-    }
-    setPendingCount(count);
+    setPendingCount(await getPendingConfirmCount());
   }, []);
 
   useEffect(() => {
@@ -129,45 +125,51 @@ export default function App() {
     void refreshPendingCount();
 
     // firstRun → open settings
-    chrome.storage.local.get("firstRun", (result) => {
-      if (result.firstRun) {
+    void (async () => {
+      if (await getConfig<boolean>("firstRun")) {
         setView("settings");
-        chrome.storage.local.remove("firstRun");
+        void removeConfig("firstRun");
       }
-    });
+    })();
 
     loadProviderLabel();
+  }, [refreshSessionIndex, refreshPendingCount]);
 
-    const listener = (changes: { [key: string]: chrome.storage.StorageChange }) => {
-      // Refresh provider label if the selection or instance config changed
-      if (
-        changes.last_model_selection ||
-        changes.instances_index ||
-        Object.keys(changes).some((k) => k.startsWith("instance_"))
-      ) {
-        loadProviderLabel();
-      }
-      // Refresh session index if session_index or any session key changed
-      const hasSessionChange = Object.keys(changes).some(
-        (k) => k === "session_index" || k.startsWith("session_"),
-      );
-      if (hasSessionChange) {
-        void refreshSessionIndex();
-        void refreshPendingCount();
-      }
-      // M2: cross-window theme sync. Guard against feedback loop by only
-      // updating state when the new value differs from current (the writer
-      // window's setState already handled its own update).
-      if (changes["theme-mode"]) {
-        const next = changes["theme-mode"].newValue;
+  // ── Cross-context reactivity via store-bus ─────────────────────────────────
+  // Replaces the former chrome.storage.local.onChanged listener. Each former
+  // key-class maps to a store: session_* → "sessions"; last_model_selection /
+  // instances_index / instance_* → "instances" + "config" (active_instance_id
+  // lives in config); theme-mode → "config".
+
+  // Session list + pending count. The session index is written in the same
+  // batch as session records but only emits a coarse "sessions" event
+  // (writeSessionBatch never publishes to the "session_index" store), so one
+  // subscription covers both the index refresh and the pending-count rescan.
+  useStoreChange("sessions", () => {
+    void refreshSessionIndex();
+    void refreshPendingCount();
+  });
+
+  // Provider label depends on the active selection (config: last_model_selection
+  // / active_instance_id) and instance config (instances: instance_*).
+  useStoreChange("instances", () => {
+    loadProviderLabel();
+  });
+  useStoreChange("config", (c) => {
+    if (c.id === "theme-mode") {
+      // M2: cross-window theme sync. Re-read and only update when it differs
+      // from current (the writer window already handled its own setState).
+      void getConfig<string>("theme-mode").then((next) => {
         if (next === "light" || next === "dark" || next === "system") {
           setThemeMode((prev) => (prev === next ? prev : next));
         }
-      }
-    };
-    chrome.storage.local.onChanged.addListener(listener);
-    return () => chrome.storage.local.onChanged.removeListener(listener);
-  }, [refreshSessionIndex, refreshPendingCount]);
+      });
+      return;
+    }
+    // last_model_selection / active_instance_id (and any other config write)
+    // can change the resolved provider label.
+    loadProviderLabel();
+  });
 
   async function loadProviderLabel() {
     try {
@@ -207,7 +209,7 @@ export default function App() {
 
   // ── Drawer handlers ───────────────────────────────────────────────────────
   // P1-5 — stable identity so SessionDrawer focus-trap effect doesn't re-fire
-  // on every parent render (storage onChanged events drive App re-render
+  // on every parent render (store-bus "sessions" events drive App re-render
   // frequently while drawer is open; inline arrow would thrash preFocusRef).
   const handleCloseDrawer = useCallback(() => setDrawerOpen(false), []);
 

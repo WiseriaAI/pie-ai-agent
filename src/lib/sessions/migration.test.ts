@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { chromeMock } from "@/test/setup";
 import { runSessionMigrations } from "./migration";
-import { getSessionMeta, getSessionAgent, listSessionIndex } from "./storage";
+import type { SessionMeta, SessionAgentState, SessionIndexEntry } from "./types";
+
+// NOTE: runSessionMigrations is an upstream chrome.storage-domain migration —
+// it reads and writes chrome.storage.local directly (keys `session_{id}_meta` /
+// `_agent` / `session_index`). It is NOT migrated to IDB. Assertions therefore
+// read the chrome.storage mock, not the IDB-backed getters (which would not see
+// what this migration writes).
+function readStore<T>(key: string): T | undefined {
+  return chromeMock.storage.local.__store[key] as T | undefined;
+}
 
 // Helpers to seed 'default'-id residue directly into the mock store
 function seedDefaultMeta(messages: unknown[] = []) {
@@ -44,8 +53,8 @@ describe("runSessionMigrations", () => {
     expect(chromeMock.storage.local.__store["session_default_meta"]).toBeUndefined();
     expect(chromeMock.storage.local.__store["session_default_agent"]).toBeUndefined();
 
-    // Old index entry gone
-    const index = await listSessionIndex();
+    // Old index entry gone (read the chrome.storage index this migration wrote)
+    const index = readStore<SessionIndexEntry[]>("session_index")!;
     expect(index.find((e) => e.id === "default")).toBeUndefined();
 
     // New UUID entry present
@@ -54,14 +63,14 @@ describe("runSessionMigrations", () => {
     expect(newEntry.id).not.toBe("default");
     expect(newEntry.id.length).toBeGreaterThan(10); // UUID format
 
-    // Meta + agent accessible under new id
-    const newMeta = await getSessionMeta(newEntry.id);
-    expect(newMeta).not.toBeNull();
+    // Meta + agent accessible under new id (chrome.storage keys)
+    const newMeta = readStore<SessionMeta>(`session_${newEntry.id}_meta`);
+    expect(newMeta).toBeDefined();
     expect(newMeta!.id).toBe(newEntry.id); // id field inside meta also updated
     expect(newMeta!.messages).toEqual([{ role: "user", content: "hello" }]);
 
-    const newAgent = await getSessionAgent(newEntry.id);
-    expect(newAgent).not.toBeNull();
+    const newAgent = readStore<SessionAgentState>(`session_${newEntry.id}_agent`);
+    expect(newAgent).toBeDefined();
     expect(newAgent!.stepIndex).toBe(3);
 
     // Result reports cleared keys
@@ -115,7 +124,7 @@ describe("runSessionMigrations", () => {
     expect(chromeMock.storage.local.__store["session_default_agent"]).toBeUndefined();
 
     // Index no longer contains 'default'
-    const index = await listSessionIndex();
+    const index = readStore<SessionIndexEntry[]>("session_index")!;
     expect(index.find((e) => e.id === "default")).toBeUndefined();
 
     // No new UUID session created — empty sessions are just dropped
@@ -135,7 +144,7 @@ describe("runSessionMigrations", () => {
 
     await runSessionMigrations();
 
-    const index = await listSessionIndex();
+    const index = readStore<SessionIndexEntry[]>("session_index")!;
     // 'default' gone, real-uuid-1 preserved, new UUID added
     expect(index.find((e) => e.id === "default")).toBeUndefined();
     expect(index.find((e) => e.id === "real-uuid-1")).toBeDefined();

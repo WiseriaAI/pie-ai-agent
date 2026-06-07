@@ -1,5 +1,4 @@
-import { agentKey } from "@/lib/sessions/storage";
-import type { SessionAgentState } from "@/lib/sessions/types";
+import { getSessionAgent } from "@/lib/sessions/storage";
 import type { ChatInstructionStateMessage } from "@/types/messages";
 
 /**
@@ -12,9 +11,7 @@ export async function broadcastInstructionState(
   port: chrome.runtime.Port,
   sessionId: string,
 ): Promise<void> {
-  const key = agentKey(sessionId);
-  const res = await chrome.storage.local.get(key);
-  const state = res[key] as SessionAgentState | undefined;
+  const state = await getSessionAgent(sessionId);
   const payload: ChatInstructionStateMessage = {
     type: "chat-instruction-state",
     sessionId,

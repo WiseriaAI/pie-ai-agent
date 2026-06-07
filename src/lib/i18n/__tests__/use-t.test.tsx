@@ -2,6 +2,10 @@ import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import { render, screen, act, waitFor, cleanup } from "@testing-library/react";
 import { chromeMock } from "@/test/setup";
 import { I18nProvider, useT, setLocale, getLocale } from "../use-t";
+import { STORAGE_KEY_UI_LOCALE } from "../types";
+import { getConfig, setConfig } from "@/lib/idb/config-store";
+import { publishChange } from "@/lib/store-bus";
+import { _resetForTests } from "@/lib/idb/db";
 
 function Probe({ k, params }: { k: Parameters<ReturnType<typeof useT>>[0]; params?: Record<string, string | number> }) {
   const t = useT();
@@ -13,7 +17,8 @@ afterEach(() => {
 });
 
 describe("t / useT / I18nProvider", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    await _resetForTests();
     chromeMock.i18n.__uiLanguage = "en";
   });
 
@@ -27,7 +32,7 @@ describe("t / useT / I18nProvider", () => {
   });
 
   it("renders Chinese when ui_locale=zh-CN in storage", async () => {
-    await chromeMock.storage.local.set({ ui_locale: "zh-CN" });
+    await setConfig(STORAGE_KEY_UI_LOCALE, "zh-CN");
     render(
       <I18nProvider>
         <Probe k="common.cancel" />
@@ -49,11 +54,10 @@ describe("t / useT / I18nProvider", () => {
     });
 
     await waitFor(() => expect(screen.getByTestId("probe").textContent).toBe("保存"));
-    const stored = await chromeMock.storage.local.get("ui_locale");
-    expect(stored.ui_locale).toBe("zh-CN");
+    expect(await getConfig<string>(STORAGE_KEY_UI_LOCALE)).toBe("zh-CN");
   });
 
-  it("cross-window sync: storage.onChanged update flips the tree", async () => {
+  it("cross-window sync: store-bus config update flips the tree", async () => {
     render(
       <I18nProvider>
         <Probe k="common.delete" />
@@ -61,18 +65,18 @@ describe("t / useT / I18nProvider", () => {
     );
     await waitFor(() => expect(screen.getByTestId("probe").textContent).toBe("Delete"));
 
+    // Another window wrote ui_locale to IDB and the store-bus broadcast its
+    // change. I18nProvider re-resolves on the config change event.
     await act(async () => {
-      chromeMock.storage.local.__store["ui_locale"] = "zh-CN";
-      chromeMock.storage.local.__emitChange({
-        ui_locale: { oldValue: undefined, newValue: "zh-CN" },
-      });
+      await setConfig(STORAGE_KEY_UI_LOCALE, "zh-CN");
+      publishChange("config", "put", STORAGE_KEY_UI_LOCALE);
     });
 
     await waitFor(() => expect(screen.getByTestId("probe").textContent).toBe("删除"));
   });
 
   it("getLocale exposes the current effective locale", async () => {
-    await chromeMock.storage.local.set({ ui_locale: "zh-CN" });
+    await setConfig(STORAGE_KEY_UI_LOCALE, "zh-CN");
     render(
       <I18nProvider>
         <span />

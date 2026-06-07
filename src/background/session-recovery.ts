@@ -5,6 +5,7 @@ import {
   markFailedAndScrub,
   markPaused,
 } from "@/lib/sessions/storage";
+import { getConfig, setConfig } from "@/lib/idb/config-store";
 
 /**
  * M1-U5 — SW cold-start recovery: detect in-flight tasks that died
@@ -50,13 +51,12 @@ interface RecoveryStats {
 }
 
 async function readGuard(): Promise<number | null> {
-  const r = await chrome.storage.local.get(GUARD_KEY);
-  const value = r[GUARD_KEY];
+  const value = await getConfig<number>(GUARD_KEY);
   return typeof value === "number" ? value : null;
 }
 
 async function bumpGuard(now: number): Promise<void> {
-  await chrome.storage.local.set({ [GUARD_KEY]: now });
+  await setConfig(GUARD_KEY, now);
 }
 
 export interface DetectAndMarkPausedOptions {

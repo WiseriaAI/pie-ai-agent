@@ -1,6 +1,7 @@
 import { runAgentLoop } from "@/lib/agent/loop";
 import { createInstance, setActiveInstance, resolveActiveInstanceModelConfig } from "@/lib/instances";
 import { setCdpInputEnabled } from "@/lib/cdp-input-enabled";
+import { clearAllStores } from "@/lib/idb/db";
 import { setSessionMeta, setSessionAgent } from "@/lib/sessions/storage";
 import type { SessionMeta, SessionAgentState } from "@/lib/sessions/types";
 import type { PortMessageToPanel } from "@/types/messages";
@@ -191,6 +192,7 @@ function makeBridge() {
       for (const run of runs.values()) run.controller.abort();
       runs.clear();
       await chrome.storage.local.clear();
+      await clearAllStores();
     },
   };
 }

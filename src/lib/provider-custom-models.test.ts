@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { chromeMock } from "@/test/setup";
+import { _resetForTests } from "@/lib/idb/db";
 import {
   getProviderCustomModels,
   addProviderCustomModel,
   removeProviderCustomModel,
 } from "./provider-custom-models";
 
-beforeEach(() => {
-  chromeMock.storage.local.__store = {};
+beforeEach(async () => {
+  await _resetForTests();
 });
 
 describe("provider-custom-models", () => {

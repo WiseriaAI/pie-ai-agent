@@ -1,5 +1,4 @@
-import { describe, expect, it } from "vitest";
-import { chromeMock } from "@/test/setup";
+import { describe, expect, it, beforeEach } from "vitest";
 import {
   createSession,
   getSessionAgent,
@@ -12,6 +11,12 @@ import {
   detectAndMarkPaused,
   transitionPortInFlightSessionsToPaused,
 } from "./session-recovery";
+import { getConfig } from "@/lib/idb/config-store";
+import { _resetForTests } from "@/lib/idb/db";
+
+beforeEach(async () => {
+  await _resetForTests();
+});
 
 // detectAndMarkPaused is the SW-side cold-start recovery routine.
 // Its three-step ordering (markFailed-then-scrub for sessions with
@@ -236,7 +241,7 @@ describe("detectAndMarkPaused — guard storage", () => {
   it("writes recovery_guard timestamp to its own key (NOT inside SessionMeta)", async () => {
     await createSession();
     await detectAndMarkPaused({ now: 12345, skipGuard: true });
-    const guard = chromeMock.storage.local.__store.recovery_guard;
+    const guard = await getConfig<number>("recovery_guard");
     expect(guard).toBe(12345);
   });
 });
@@ -350,7 +355,7 @@ describe("transitionPortInFlightSessionsToPaused — per-port subset", () => {
 
     await transitionPortInFlightSessionsToPaused([meta.id]);
 
-    const guard = chromeMock.storage.local.__store.recovery_guard;
+    const guard = await getConfig<number>("recovery_guard");
     expect(guard).toBeUndefined();
   });
 

@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { buildClickTool, type MouseToolDeps } from "@/lib/agent/tools/mouse";
 import { setCdpInputEnabled } from "@/lib/cdp-input-enabled";
+import { _resetForTests } from "@/lib/idb/db";
 import type { CdpSession } from "@/background/cdp-session";
 
 vi.mock("@/lib/dom-actions/geometry", () => ({
@@ -23,18 +24,8 @@ function fakeSession(): CdpSession {
 }
 
 beforeEach(async () => {
-  const data: Record<string, unknown> = {};
+  await _resetForTests();
   global.chrome = {
-    storage: { local: {
-      get: vi.fn((k) => {
-        const want = Array.isArray(k) ? k : [k];
-        const out: Record<string, unknown> = {};
-        for (const key of want) if (key in data) out[key] = data[key];
-        return Promise.resolve(out);
-      }),
-      set: vi.fn((kv) => { Object.assign(data, kv); return Promise.resolve(); }),
-      remove: vi.fn(() => Promise.resolve()),
-    } as unknown as typeof chrome.storage.local },
     scripting: {
       executeScript: vi.fn().mockResolvedValue([{ result: undefined }]),
     } as unknown as typeof chrome.scripting,

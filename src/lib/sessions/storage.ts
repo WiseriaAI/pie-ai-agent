@@ -8,53 +8,79 @@ import type {
 import type { ImageAttachment } from "@/lib/images";
 import { getEffectivePinMode, clearTaskPinIfActive } from "./pin-state";
 import { getMigrationMapping } from "@/lib/migration-v2";
+import {
+  getSessionRecord,
+  putSessionRecord,
+  getIndex,
+  writeSessionBatch,
+} from "@/lib/idb/sessions-store";
+import { tx, STORES } from "@/lib/idb/db";
 
 // ── Key shape ────────────────────────────────────────────────────────────────
 //
-// One `session_index` singleton + per-session `session_${id}_meta` and
-// `session_${id}_agent`. The split (D2) keeps panel-facing meta writes
-// independent of SW-facing agent-state writes so they don't race each other.
-// `session_index` is what `listSessionIndex` reads — without it, the drawer
-// would have to `get(null)` the entire storage namespace (provider keys,
-// skill keys, encryption_key, etc.) on every render.
+// Persistence now lives in IndexedDB (the `pie` database, `sessions` +
+// `session_index` stores) via `@/lib/idb/sessions-store`. Record ids inside the
+// `sessions` store are `${id}:meta` / `${id}:agent` / `${id}:archived`; the
+// index is a single row in the `session_index` store. The meta/agent split (D2)
+// keeps panel-facing meta writes independent of SW-facing agent-state writes so
+// they don't race each other. `session_index` is what `listSessionIndex` reads —
+// without it, the drawer would have to scan every session record on every render.
+//
+// (Old data still keyed `session_${id}_meta` in chrome.storage.local is moved
+// over by the migration sweep in a later task; this module only speaks IDB.)
 
+// `INDEX_KEY` is no longer a real storage key — it survives as the sentinel key
+// inside a `writeAtomic` batch that tells the translator "this entry is the
+// session index" (vs. a per-session record). lifecycle.ts still imports it to
+// build atomic batches. Value is unchanged for back-compat with those callers.
 export const INDEX_KEY = "session_index";
 
 // ── Atomic write helper ─────────────────────────────────────────────────────
 //
 // All multi-key writes flow through this so the D9 single-call atomicity
-// invariant is enforced in one place. `chrome.storage.local.set({...})` with
-// multiple keys is the platform's atomic-batch primitive (all or nothing on
-// the single quota check / change notification). Setting a key to
-// `undefined` removes it — emulated by the test harness too.
+// invariant is enforced in one place. The batch is a `Record<string, unknown>`
+// (key → value; `undefined` value = delete). It is translated into the
+// sessions-store `SessionBatch`: the `INDEX_KEY` sentinel entry becomes the
+// `index`, every other entry becomes a record put/delete. `writeSessionBatch`
+// commits all of it in ONE IDB transaction spanning the sessions +
+// session_index stores (the IDB equivalent of chrome.storage's atomic set).
 //
-// Exported for `lifecycle.ts` so it can write directly (bypassing the
-// pre-write quota guard in `setSessionAgent`) without a skipQuotaGuard
-// flag leaking into the public API.
+// Exported for `lifecycle.ts` so it can build multi-key atomic batches directly
+// (meta + agent + index in one commit) without going through
+// `setSessionMeta` / `setSessionAgent`.
 export type WriteBatch = Record<string, unknown>;
 
 export async function writeAtomic(batch: WriteBatch): Promise<void> {
-  await chrome.storage.local.set(batch);
+  const records: Record<string, unknown> = {};
+  let index: SessionIndexEntry[] | undefined;
+  for (const [k, v] of Object.entries(batch)) {
+    if (k === INDEX_KEY) index = v as SessionIndexEntry[];
+    else records[k] = v;
+  }
+  await writeSessionBatch({ records, ...(index !== undefined ? { index } : {}) });
 }
 
 // ── Key helpers (exported for lifecycle.ts) ──────────────────────────────────
+//
+// These now return IDB record ids (`${id}:meta` etc.), not chrome.storage keys.
+// The exported names + string return type are unchanged so lifecycle.ts and
+// other callers that build `writeAtomic` batches keep working.
 export function metaKey(id: string): string {
-  return `session_${id}_meta`;
+  return `${id}:meta`;
 }
 
 export function agentKey(id: string): string {
-  return `session_${id}_agent`;
+  return `${id}:agent`;
 }
 
 export function archivedKey(id: string): string {
-  return `session_${id}_archived`;
+  return `${id}:archived`;
 }
 
 // ── Index helpers ───────────────────────────────────────────────────────────
 
 async function readIndex(): Promise<SessionIndexEntry[]> {
-  const result = await chrome.storage.local.get(INDEX_KEY);
-  const raw = result[INDEX_KEY];
+  const raw = await getIndex();
   if (!Array.isArray(raw)) return [];
   // Defensive: drop entries missing required fields so a corrupt index
   // doesn't break the entire session list.
@@ -69,14 +95,18 @@ async function readIndex(): Promise<SessionIndexEntry[]> {
 }
 
 /**
- * Read the raw session index (including archived entries) without filtering.
+ * Read the session index including archived entries.
  * Exported for `lifecycle.ts` which needs to iterate ALL entries including
- * archived ones (for hardDeleteExpired, checkAndArchiveLRU, etc.).
+ * archived ones (for hardDeleteExpired, etc.).
  * Returns an empty array if the index doesn't exist or isn't an array.
+ *
+ * "Raw" here means "no status/archived filtering applied" — it still runs the
+ * SAME defensive type filter as `readIndex` (dropping entries missing required
+ * fields) so a single corrupt entry can't break the whole list. The historical
+ * implementation filtered identically; this preserves that behavior.
  */
 export async function readIndexRaw(): Promise<SessionIndexEntry[]> {
-  const result = await chrome.storage.local.get(INDEX_KEY);
-  const raw = result[INDEX_KEY];
+  const raw = await getIndex();
   if (!Array.isArray(raw)) return [];
   return raw.filter(
     (e): e is SessionIndexEntry =>
@@ -233,27 +263,28 @@ async function backfillInstanceId(meta: SessionMeta & { provider?: string }): Pr
   void _drop;
   const next: SessionMeta = { ...rest, instanceId };
   // Persist the backfill so we don't keep doing it on subsequent reads.
-  await chrome.storage.local.set({ [`session_${meta.id}_meta`]: next });
+  await putSessionRecord(metaKey(meta.id), next);
   return next;
 }
 
 export async function getSessionMeta(id: string): Promise<SessionMeta | null> {
-  const result = await chrome.storage.local.get(metaKey(id));
-  const raw = result[metaKey(id)] as (SessionMeta & { provider?: string }) | undefined;
+  const raw = await getSessionRecord<SessionMeta & { provider?: string }>(metaKey(id));
   if (!raw) return null;
   return backfillInstanceId(raw);
 }
 
 // ── R10 storage scrub ────────────────────────────────────────────────────────
 //
-// `ImageAttachment.data` (base64 bytes) must never land in chrome.storage —
-// the 8 MB quota would be exhausted by a handful of screenshots. Before
-// persisting SessionMeta we strip `data` + `byteLength` from every
-// ImageAttachment in `meta.messages`, replacing the entry with an
+// `ImageAttachment.data` (base64 bytes) must not land in persisted SessionMeta.
+// Not for a hard quota reason anymore (IDB has no 8 MB ceiling), but for size
+// hygiene: bytes are the heaviest part of a message and don't belong at rest in
+// the meta record. Before persisting SessionMeta we strip `data` + `byteLength`
+// from every ImageAttachment in `meta.messages`, replacing the entry with an
 // ImagePlaceholder. The in-memory cache (image-cache.ts) holds the bytes for
-// the lifetime of the session; hydrateAttachments re-inflates on resume if
-// the session is still warm, or leaves the placeholder on a cold-start cache
-// miss (the user sees a "session drifted" card, not a quota error).
+// the lifetime of the session; hydrateAttachments re-inflates on resume if the
+// session is still warm, or leaves the placeholder on a cold-start cache miss
+// (the user sees a "session drifted" card) — the placeholder round-trip is what
+// preserves attachment identity across reload.
 function scrubAttachmentBytes(meta: SessionMeta): SessionMeta {
   if (!meta.messages?.length) return meta;
   let mutated = false;
@@ -318,49 +349,30 @@ export async function setSessionMeta(meta: SessionMeta): Promise<void> {
 export async function getSessionAgent(
   id: string,
 ): Promise<SessionAgentState | null> {
-  const result = await chrome.storage.local.get(agentKey(id));
-  const raw = result[agentKey(id)] as SessionAgentState | undefined;
+  const raw = await getSessionRecord<SessionAgentState>(agentKey(id));
   return raw ?? null;
 }
-
-// ── Pre-write quota guard ─────────────────────────────────────────────────────
-//
-// `checkAndArchiveLRU` lives in `lifecycle.ts` to avoid coupling storage.ts to
-// archive logic. We import it lazily (dynamic import) inside `setSessionAgent`
-// so there's no circular-module dependency at module load time.
-//
-// `lifecycle.ts` writes via `writeAtomic` directly (not via `setSessionAgent`),
-// which naturally bypasses this guard — no `skipQuotaGuard` flag needed.
-const QUOTA_GUARD_BYTES = 8 * 1024 * 1024; // 8 MB
 
 /**
  * Persist agent state. Does NOT touch the index — agent writes are the
  * hottest path (every step) and the index does not carry any agent-side
  * fields.
  *
- * M2-U4: before writing, checks total storage usage. If already at or above
- * the 8 MB budget, triggers `checkAndArchiveLRU` to free space (archive the
- * oldest non-archived sessions). The guard is NOT recursive — lifecycle.ts
- * writes via `writeAtomic` directly, bypassing this function.
+ * The former M2-U4 pre-write quota guard (chrome.storage `getBytesInUse` +
+ * `checkAndArchiveLRU` dynamic import) is gone: IndexedDB does not have the
+ * 8 MB chrome.storage.local ceiling, so the LRU auto-archive that protected
+ * that budget is being removed in a later task. This is now a plain record put.
  */
 export async function setSessionAgent(
   id: string,
   state: SessionAgentState,
 ): Promise<void> {
-  // Pre-write quota guard (D6 / M2-U4). Lazy import avoids circular dependency.
-  const used = await chrome.storage.local.getBytesInUse(null);
-  if (used >= QUOTA_GUARD_BYTES) {
-    // Estimate new bytes: conservatively use JSON length of the agent state.
-    const estimatedNewBytes = JSON.stringify(state).length;
-    const { checkAndArchiveLRU } = await import("./lifecycle");
-    await checkAndArchiveLRU(estimatedNewBytes);
-  }
   await writeAtomic({ [agentKey(id)]: state });
 }
 
 /**
- * List sessions in `lastAccessedAt` desc order. Reads only the single
- * `session_index` key — does not touch per-session meta/agent storage.
+ * List sessions in `lastAccessedAt` desc order. Reads only the session index
+ * store entry — does not touch per-session meta/agent records.
  */
 export async function listSessionIndex(): Promise<SessionIndexEntry[]> {
   const entries = await readIndex();
@@ -699,17 +711,41 @@ export async function migrateLastTaskSynthFromMeta(
 }
 
 /**
- * Total bytes currently used in chrome.storage.local — across ALL keys,
- * not just session_*. D6 quota guards care about overall storage
- * pressure (provider configs, skill defs, encryption_key, etc. all
- * compete for the same 10 MB MV3 budget).
+ * Approximate total bytes used by our IndexedDB stores. Prefers the browser's
+ * `navigator.storage.estimate()` usage figure (whole-origin, authoritative)
+ * when available; otherwise falls back to JSON-stringify byte-length of the
+ * sessions / config / instances stores.
  *
- * Uses `getBytesInUse(null)` per plan D6 — real value, not the
- * JSON.stringify approximation that `skill/storage.ts:getSkillStorageBytes`
- * applies to its own subset.
+ * (Pre-IDB this read `chrome.storage.local.getBytesInUse(null)` against the
+ * 8/10 MB MV3 budget. IndexedDB has no such tight ceiling, so this is now an
+ * informational figure rather than a hard quota gate.)
  */
 export async function getTotalBytes(): Promise<number> {
-  return chrome.storage.local.getBytesInUse(null);
+  if (typeof navigator !== "undefined" && navigator.storage?.estimate) {
+    const { usage } = await navigator.storage.estimate();
+    if (typeof usage === "number") return usage;
+  }
+  return getStoresByteLength();
+}
+
+/**
+ * Fallback byte estimate: JSON-stringify the full contents of every store we
+ * own (sessions / session_index / config / instances) and sum their lengths.
+ * Coarse but dependency-free, used only when `navigator.storage.estimate()` is
+ * unavailable (e.g. tests).
+ */
+async function getStoresByteLength(): Promise<number> {
+  let total = 0;
+  for (const store of [
+    STORES.sessions,
+    STORES.sessionIndex,
+    STORES.config,
+    STORES.instances,
+  ] as const) {
+    const all = await tx<unknown[]>(store, "readonly", (s) => s.getAll());
+    total += JSON.stringify(all).length;
+  }
+  return total;
 }
 
 // ── SEC-PLAN-009 — pending confirm flood protection ───────────────────────────
@@ -727,20 +763,23 @@ export const PENDING_CONFIRM_FLOOD_LIMIT = 5;
 
 /**
  * Count the number of sessions that currently have a live `pendingConfirm`
- * in their agent state. Reads ALL `session_*_agent` keys from storage.
+ * in their agent state. Reads ALL agent records (`${id}:agent`) from the
+ * `sessions` IDB store in one `getAll`.
  *
- * Uses `chrome.storage.local.get(null)` to get all keys in one call, then
- * filters for the `session_*_agent` key pattern. This is deliberately
- * full-scan because (a) the index doesn't carry pendingConfirm, and
- * (b) this is called only in the hot confirm path, not on every tick.
+ * This is deliberately a full-scan because (a) the index doesn't carry
+ * pendingConfirm, and (b) this is called only in the hot confirm path, not on
+ * every tick. Records are wrapped as `{ id, value }` in the store.
  */
 export async function getPendingConfirmCount(): Promise<number> {
-  const all = await chrome.storage.local.get(null);
+  const all = await tx<Array<{ id: string; value: unknown }>>(
+    STORES.sessions,
+    "readonly",
+    (s) => s.getAll(),
+  );
   let count = 0;
-  for (const [key, value] of Object.entries(all)) {
-    if (!key.endsWith("_agent")) continue;
-    // Key shape: `session_${id}_agent`
-    if (!key.startsWith("session_")) continue;
+  for (const { id, value } of all) {
+    // Record id shape: `${sessionId}:agent`
+    if (!id.endsWith(":agent")) continue;
     const agentState = value as SessionAgentState | null | undefined;
     // P1-10 — only count agent-tool confirms toward the flood limit.
     // Drift-card pendingConfirm (kind='pinned-tab-drift') is written by

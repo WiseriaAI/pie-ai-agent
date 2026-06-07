@@ -1,26 +1,44 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { chromeMock } from "@/test/setup";
+import { _resetForTests } from "@/lib/idb/db";
+import { getConfig } from "@/lib/idb/config-store";
+import { _resetKeyForTests } from "@/lib/crypto";
 import {
   createInstance, getInstance, listInstances, deleteInstance,
   setActiveInstance, getActiveInstance, resolveActiveInstanceModelConfig,
   resolveModelConfig, firstModelForProvider, updateInstance,
+  INDEX_KEY,
 } from "./instances";
 import { saveCustomProvider } from "./custom-providers";
 import { setProviderCustomModelMeta } from "./provider-custom-model-meta";
 
-beforeEach(() => {
-  chromeMock.storage.local.__store = {};
+beforeEach(async () => {
+  await _resetForTests();
+  _resetKeyForTests();
 });
 
 describe("instances CRUD", () => {
   it("createInstance writes encrypted, registers in instances_index, returns uuid", async () => {
     const id = await createInstance({ provider: "anthropic", nickname: "Anthropic", apiKey: "sk-ant-secret" });
     expect(id).toMatch(/^[0-9a-f]{8}-/);
-    const stored = chromeMock.storage.local.__store[`instance_${id}`] as Record<string, unknown>;
-    expect(stored.encryptedKey).toBeDefined();
-    expect(stored.encryptedKey).not.toContain("sk-ant-secret");
-    expect(stored.model).toBeUndefined(); // model decoupled from instance
-    expect(chromeMock.storage.local.__store["instances_index"]).toContain(id);
+    // Verify via the public API (IDB-backed)
+    const inst = await getInstance(id);
+    expect(inst).not.toBeNull();
+    expect(inst!.apiKey).toBe("sk-ant-secret"); // round-trips correctly
+    expect((inst as unknown as { encryptedKey?: string }).encryptedKey).toBeUndefined(); // not exposed raw
+    expect((inst as unknown as { model?: string }).model).toBeUndefined(); // model decoupled from instance
+    // Verify index contains the new id
+    const idx = await getConfig<string[]>(INDEX_KEY);
+    expect(idx).toContain(id);
+  });
+
+  it("createInstance commits instance record + index atomically (D9)", async () => {
+    const id = await createInstance({ provider: "anthropic", nickname: "A", apiKey: "k" });
+    // After the single txMulti commits, both the record and the index entry
+    // must be visible together (no orphan instance missing from the index).
+    expect(await getInstance(id)).not.toBeNull();
+    expect(await getConfig<string[]>(INDEX_KEY)).toContain(id);
+    // And it must show up via the index-driven listing.
+    expect((await listInstances()).map((i) => i.id)).toContain(id);
   });
 
   it("getInstance round-trips with decrypted apiKey (no model field)", async () => {
@@ -39,13 +57,28 @@ describe("instances CRUD", () => {
     expect(list.map((i) => i.id)).toEqual([a, b]);
   });
 
+  it("deleteInstance removes instance record + index atomically (D9)", async () => {
+    const a = await createInstance({ provider: "anthropic", nickname: "A", apiKey: "k1" });
+    const b = await createInstance({ provider: "openai", nickname: "B", apiKey: "k2" });
+    await deleteInstance(a);
+    // After the single txMulti commits, both the record and the index entry
+    // must be gone together (no dangling index entry pointing at a deleted record).
+    expect(await getInstance(a)).toBeNull();
+    const idx = await getConfig<string[]>(INDEX_KEY);
+    expect(idx).not.toContain(a);
+    expect(idx).toContain(b);
+  });
+
   it("deleteInstance removes storage + index entry; if active, picks next", async () => {
     const a = await createInstance({ provider: "anthropic", nickname: "A", apiKey: "k1" });
     const b = await createInstance({ provider: "openai", nickname: "B", apiKey: "k2" });
     await setActiveInstance(a);
     await deleteInstance(a);
-    expect(chromeMock.storage.local.__store[`instance_${a}`]).toBeUndefined();
-    expect(chromeMock.storage.local.__store["instances_index"]).toEqual([b]);
+    // Verify instance no longer accessible
+    expect(await getInstance(a)).toBeNull();
+    // Verify index updated
+    const idx = await getConfig<string[]>(INDEX_KEY);
+    expect(idx).toEqual([b]);
     expect(await getActiveInstance()).toBe(b);
   });
 

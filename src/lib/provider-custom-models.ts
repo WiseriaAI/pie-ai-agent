@@ -1,4 +1,6 @@
 import type { ProviderRef } from "@/lib/model-router";
+import { getConfig, setConfig } from "@/lib/idb/config-store";
+
 // Alias for backward compatibility; ProviderRef superset covers both builtin and custom providers.
 type Provider = ProviderRef;
 
@@ -18,8 +20,7 @@ type Provider = ProviderRef;
 const KEY = (provider: Provider) => `pcm_${provider}`;
 
 export async function getProviderCustomModels(provider: Provider): Promise<string[]> {
-  const r = await chrome.storage.local.get(KEY(provider));
-  return ((r[KEY(provider)] as string[]) ?? []).slice();
+  return ((await getConfig<string[]>(KEY(provider))) ?? []).slice();
 }
 
 export async function addProviderCustomModel(
@@ -31,7 +32,7 @@ export async function addProviderCustomModel(
   const cur = await getProviderCustomModels(provider);
   if (cur.includes(id)) return cur;
   const next = [...cur, id];
-  await chrome.storage.local.set({ [KEY(provider)]: next });
+  await setConfig(KEY(provider), next);
   return next;
 }
 
@@ -42,6 +43,6 @@ export async function removeProviderCustomModel(
   const cur = await getProviderCustomModels(provider);
   const next = cur.filter((x) => x !== modelId);
   if (next.length === cur.length) return cur;
-  await chrome.storage.local.set({ [KEY(provider)]: next });
+  await setConfig(KEY(provider), next);
   return next;
 }

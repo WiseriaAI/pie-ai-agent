@@ -3,9 +3,16 @@ import { chromeMock } from "@/test/setup";
 import { resolveSelection } from "./model-selection-resolver";
 import { createInstance } from "./instances";
 import { setLastModelSelection } from "./last-model-selection";
+import { _resetForTests } from "./idb/db";
+import { _resetKeyForTests } from "./crypto";
 
-beforeEach(() => {
+// Instances + last_model_selection now persist in IDB. Reset the `pie` db per
+// test so instances/last-selection from a prior test can't leak into the
+// "no instances configured" / first-instance-fallback cases.
+beforeEach(async () => {
   chromeMock.storage.local.__store = {};
+  await _resetForTests();
+  _resetKeyForTests();
 });
 
 describe("resolveSelection", () => {

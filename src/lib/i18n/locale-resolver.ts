@@ -4,6 +4,7 @@ import {
   type Locale,
   type LocaleSetting,
 } from "./types";
+import { getConfig } from "@/lib/idb/config-store";
 
 export function normalizeBrowserLocale(raw: string): Locale {
   if (!raw) return "en";
@@ -21,8 +22,7 @@ function isLocaleSetting(v: unknown): v is LocaleSetting {
 }
 
 export async function readLocaleSetting(): Promise<LocaleSetting> {
-  const got = await chrome.storage.local.get(STORAGE_KEY_UI_LOCALE);
-  const raw = got[STORAGE_KEY_UI_LOCALE];
+  const raw = await getConfig<string>(STORAGE_KEY_UI_LOCALE);
   return isLocaleSetting(raw) ? raw : "auto";
 }
 
