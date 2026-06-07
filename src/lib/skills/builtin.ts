@@ -32,9 +32,24 @@ export const BUILT_IN_SKILL_PACKAGES: SkillPackage[] = [
   pkg(
     "extract_structured_data",
     "Extract Structured Data",
-    "Extract structured information from the current page into JSON based on user-described fields.",
-    `Extract the fields the user asked for from the page. Call read_page to get the page HTML, locate the requested fields by their data-pie-idx or surrounding context, then output in the format the user requested (default json).`,
-    { tools: ["read_page"] },
+    "Extract structured data from the current page (one-shot or saved as a reusable extraction skill). LLM-driven.",
+    `Extract structured data from the current page. You do the extraction yourself (LLM-driven).
+
+PROPOSE SCHEMA
+1. Call read_page (mode="content", max_bytes=500000) to see the page.
+2. Propose a schema for the data the user wants: a list of fields, each { name, type (string|number|date|url|boolean), description?, normalize? }. Show it to the user.
+3. preview: extract a sample from just THIS page (attach _source:{page,url} to each row) and show it, so the user can confirm the schema and that extraction works.
+
+THEN, ONE OF:
+- One-shot: if the user only wants the data now, finish extracting (multi-page below if needed) and call output_extraction with format="json" and format="csv".
+- Save as reusable skill: once the user confirms the schema, call save_extraction_skill with { name, description, schema, stopCondition }. They can re-run it later via use_skill.
+
+MULTI-PAGE
+- Ask the user for a stop condition (natural language). Loop: read_page each page → extract → attach _source → evaluate stop condition → advance to next page (click next / load more / scroll / URL page param). No hard cap; give a page/cost estimate before a long run.
+
+OUTPUT
+- Always emit results via output_extraction (never hand-format CSV/JSON yourself): once format="json" (full contract), once format="csv".`,
+    { tools: ["read_page", "output_extraction", "save_extraction_skill"] },
   ),
 
   pkg(
