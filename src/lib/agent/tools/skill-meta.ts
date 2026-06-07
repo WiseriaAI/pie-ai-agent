@@ -312,9 +312,11 @@ const listSkillsTool: Tool = {
 const saveExtractionSkillTool: Tool = {
   name: "save_extraction_skill",
   description:
-    "Persist a reusable data-extraction skill (the schema + stop condition the user just confirmed) so it can be " +
-    "re-run later via use_skill. Call this AFTER you have previewed a 1-page sample and the user confirmed the schema. " +
-    "Extraction stays LLM-driven at run time; this only saves the config.",
+    "Save the current data-extraction setup (field schema + pagination stop condition) as a reusable, re-runnable " +
+    "skill. CALL THIS whenever the user wants to save / reuse / schedule an extraction or 'make a skill' out of it " +
+    "(e.g. \"save as a skill\", \"做成 skill\", \"以后/每次/定时再跑\") — saving and extracting now are NOT mutually " +
+    "exclusive, so if they also want the data now, do both. Previewing a 1-page sample and confirming the schema " +
+    "first is recommended but NOT required. Extraction stays LLM-driven at run time; this only persists the config.",
   parameters: {
     type: "object",
     additionalProperties: false,

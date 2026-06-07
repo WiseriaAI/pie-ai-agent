@@ -40,9 +40,10 @@ PROPOSE SCHEMA
 2. Propose a schema for the data the user wants: a list of fields, each { name, type (string|number|date|url|boolean), description?, normalize? }. Show it to the user.
 3. preview: extract a sample from just THIS page (attach _source:{page,url} to each row) and show it, so the user can confirm the schema and that extraction works.
 
-THEN, ONE OF:
-- One-shot: if the user only wants the data now, finish extracting (multi-page below if needed) and call output_extraction with format="json" and format="csv".
-- Save as reusable skill: once the user confirms the schema, call save_extraction_skill with { name, description, schema, stopCondition }. They can re-run it later via use_skill.
+THEN — these two are independent; do whichever the user asked for, or BOTH:
+- GET THE DATA NOW: extract it (multi-page below if needed) and emit via output_extraction (format="json" and format="csv").
+- SAVE AS A REUSABLE SKILL: if the user asks to save / reuse / schedule this extraction or "make a skill" of it (e.g. "save as a skill", "做成 skill", "以后/每次/定时"), call save_extraction_skill with { name, description, schema, stopCondition }. They can re-run it later via use_skill.
+- If the user asked to BOTH extract N pages AND save it as a skill, do BOTH: run the extraction (output_extraction) AND call save_extraction_skill. They are not mutually exclusive.
 
 MULTI-PAGE
 - Ask the user for a stop condition (natural language). Loop per page: read_page → extract THIS page's rows → attach _source → commit them with add_extraction_rows (first page: reset:true + schema) → evaluate stop condition → advance to next page (click next / load more / scroll / URL page param). No hard cap; give a page/cost estimate before a long run.
