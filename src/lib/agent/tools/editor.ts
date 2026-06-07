@@ -125,6 +125,25 @@ function adapterFragment(): string {
           else ed = { engine: "cm6", get: null, set: null }; // host found, view unreachable
         }
       } catch (e) {}
+      if (!ed && win.tinymce && win.tinymce.editors) try {
+        const host = el.closest(".tox-tinymce, .mce-tinymce") || el;
+        const t = win.tinymce.editors.find(function (e) {
+          const c = e.getContainer && e.getContainer();
+          return c && (c === host || c.contains(el) || el.contains(c));
+        });
+        if (t) ed = {
+          engine: "tinymce",
+          looseText: true,
+          get: function () { return t.getContent({ format: "text" }); },
+          set: function (txt) {
+            const esc = txt
+              .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+              .replace(/\\n/g, "<br>");
+            t.setContent(esc);
+            t.save();
+          },
+        };
+      } catch (e) {}
     }
   `;
 }
@@ -150,7 +169,10 @@ export function buildSetEditorExpression(idx: number, text: string): string {
     if (!ed.set) return { ok: false, reason: "cm6_no_view" };
     ed.set(TEXT);
     const after = String(ed.get());
-    return { ok: true, engine: ed.engine, verified: after === TEXT };
+    const verified = ed.looseText
+      ? after.replace(/\\s+/g, " ").trim() === TEXT.replace(/\\s+/g, " ").trim()
+      : after === TEXT;
+    return { ok: true, engine: ed.engine, verified: verified };
   })()`;
 }
 

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { buildEditorTools, buildReadEditorExpression, buildSetEditorExpression } from "./editor";
 import type { CdpSession } from "../../../background/cdp-session";
 
@@ -140,5 +140,123 @@ describe("set_editor_value", () => {
     );
     expect(res.success).toBe(false);
     expect(res.error).toMatch(/length|cap|exceeds/i);
+  });
+});
+
+// ── 真实求值生成的 CDP 表达式(happy-dom + fake 编辑器全局)──
+// build*Expression 产出 `(function(){...})()` 串;在 happy-dom 里求值即可端到端
+// 验证 adapter 解析 + 写入 + 引擎感知校验,而无需真实 CDP / 真实 TinyMCE。
+function evalExpr(expr: string): { ok: boolean; engine?: string; verified?: boolean; reason?: string; value?: string } {
+  return new Function("return " + expr)();
+}
+
+interface TinyFake {
+  capturedHtml: string;
+  saveCalled: boolean;
+  getContentText: () => string; // 测试可覆写以模拟"内容没落进去"
+}
+
+function installTinyMce(host: Element): TinyFake {
+  const state: TinyFake = {
+    capturedHtml: "",
+    saveCalled: false,
+    getContentText: function () {
+      // Mirror real TinyMCE getContent({format:"text"}): <br> → \n, strip
+      // remaining tags, and DECODE entities (&lt; → <, &amp; → &).
+      const d = document.createElement("div");
+      d.innerHTML = state.capturedHtml.replace(/<br\s*\/?>/gi, "\n");
+      return d.textContent ?? "";
+    },
+  };
+  const editor = {
+    getContainer: () => host,
+    setContent: (html: string) => { state.capturedHtml = html; },
+    getContent: (opts?: { format?: string }) =>
+      opts && opts.format === "text" ? state.getContentText() : state.capturedHtml,
+    save: () => { state.saveCalled = true; },
+  };
+  (window as unknown as { tinymce: unknown }).tinymce = { editors: [editor] };
+  return state;
+}
+
+function installMonaco(host: Element, getValueReturns: string): void {
+  const editor = {
+    getContainerDomNode: () => host,
+    getValue: () => getValueReturns,
+    setValue: (_t: string) => {},
+  };
+  (window as unknown as { monaco: unknown }).monaco = {
+    editor: { getEditors: () => [editor] },
+  };
+}
+
+describe("set_editor_value TinyMCE adapter (eval-in-happy-dom)", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    document.querySelectorAll("[data-pie-idx]").forEach((el) => el.removeAttribute("data-pie-idx"));
+    delete (window as unknown as { tinymce?: unknown }).tinymce;
+    delete (window as unknown as { monaco?: unknown }).monaco;
+  });
+
+  it("writes via setContent, calls save(), and verifies on round-trip", () => {
+    document.body.innerHTML = `<div class="tox-tinymce" data-pie-idx="3"></div>`;
+    const host = document.querySelector(".tox-tinymce")!;
+    const fake = installTinyMce(host);
+
+    const out = evalExpr(buildSetEditorExpression(3, "a < b & c"));
+
+    expect(out.ok).toBe(true);
+    expect(out.engine).toBe("tinymce");
+    expect(out.verified).toBe(true);
+    expect(fake.saveCalled).toBe(true);
+    expect(fake.capturedHtml).toContain("a &lt; b &amp; c");
+  });
+
+  it("reports verified=false when content did not land (anti false-success)", () => {
+    document.body.innerHTML = `<div class="tox-tinymce" data-pie-idx="3"></div>`;
+    const host = document.querySelector(".tox-tinymce")!;
+    const fake = installTinyMce(host);
+    fake.getContentText = () => "ORIGINAL UNCHANGED";
+
+    const out = evalExpr(buildSetEditorExpression(3, "1 customer(s) love it!"));
+
+    expect(out.ok).toBe(true);
+    expect(out.engine).toBe("tinymce");
+    expect(out.verified).toBe(false);
+  });
+
+  it("TinyMCE verify is whitespace-tolerant; Monaco verify stays strict", () => {
+    document.body.innerHTML = `<div class="tox-tinymce" data-pie-idx="1"></div>`;
+    const tinyHost = document.querySelector(".tox-tinymce")!;
+    const fake = installTinyMce(tinyHost);
+    fake.getContentText = () => "hello ";
+    const tinyOut = evalExpr(buildSetEditorExpression(1, "hello"));
+    expect(tinyOut.engine).toBe("tinymce");
+    expect(tinyOut.verified).toBe(true);
+
+    document.body.innerHTML = `<div class="monaco-editor" data-pie-idx="2"></div>`;
+    const monacoHost = document.querySelector(".monaco-editor")!;
+    installMonaco(monacoHost, "hello ");
+    const monacoOut = evalExpr(buildSetEditorExpression(2, "hello"));
+    expect(monacoOut.engine).toBe("monaco");
+    expect(monacoOut.verified).toBe(false);
+  });
+});
+
+describe("buildReadEditorExpression TinyMCE", () => {
+  it("reads TinyMCE as plain text via getContent format:text", () => {
+    const expr = buildReadEditorExpression(4);
+    expect(expr).toContain('getContent({ format: "text" })');
+  });
+
+  it("reads via getContent format:text and returns engine=tinymce", () => {
+    document.body.innerHTML = `<div class="tox-tinymce" data-pie-idx="4"></div>`;
+    const host = document.querySelector(".tox-tinymce")!;
+    installTinyMce(host).capturedHtml = "Hello world";
+    const out = evalExpr(buildReadEditorExpression(4));
+    expect(out.ok).toBe(true);
+    expect(out.engine).toBe("tinymce");
+    expect(out.value).toBe("Hello world");
+    delete (window as unknown as { tinymce?: unknown }).tinymce;
   });
 });
