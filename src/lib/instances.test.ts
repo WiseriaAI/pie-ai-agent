@@ -57,6 +57,18 @@ describe("instances CRUD", () => {
     expect(list.map((i) => i.id)).toEqual([a, b]);
   });
 
+  it("deleteInstance removes instance record + index atomically (D9)", async () => {
+    const a = await createInstance({ provider: "anthropic", nickname: "A", apiKey: "k1" });
+    const b = await createInstance({ provider: "openai", nickname: "B", apiKey: "k2" });
+    await deleteInstance(a);
+    // After the single txMulti commits, both the record and the index entry
+    // must be gone together (no dangling index entry pointing at a deleted record).
+    expect(await getInstance(a)).toBeNull();
+    const idx = await getConfig<string[]>(INDEX_KEY);
+    expect(idx).not.toContain(a);
+    expect(idx).toContain(b);
+  });
+
   it("deleteInstance removes storage + index entry; if active, picks next", async () => {
     const a = await createInstance({ provider: "anthropic", nickname: "A", apiKey: "k1" });
     const b = await createInstance({ provider: "openai", nickname: "B", apiKey: "k2" });

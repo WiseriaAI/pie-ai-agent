@@ -995,10 +995,10 @@ export function useSession(): UseSession {
     return meta.id;
   }, [connectPortFor, patchSlot]);
 
-  // v1.5 — PinnedTabDropdown actions. Direct storage writes (panel can write
-  // session_${id}_meta) — no need to round-trip through SW. The storage
-  // onChanged listener in this same hook picks up the change and updates
-  // local state, mirroring the user's choice instantly.
+  // v1.5 — PinnedTabDropdown actions. Direct IDB writes (panel can write
+  // session_${id}_meta) — no need to round-trip through SW. The store-bus
+  // subscriber in this same hook picks up the change and updates local state,
+  // mirroring the user's choice instantly.
   const togglePinTab = useCallback(
     async (tabId: number, origin: string): Promise<void> => {
       const id = sessionIdRef.current;

@@ -92,9 +92,19 @@ export async function listInstances(): Promise<DecryptedInstance[]> {
 
 export async function deleteInstance(id: string): Promise<void> {
   const idx = (await readIndex()).filter((x) => x !== id);
-  await setConfig(INDEX_KEY, idx);
-  await tx(STORES.instances, "readwrite", (s) => s.delete(id));
+  // Delete the instance record and update the index in a single multi-store
+  // transaction so they commit all-or-nothing (D9 atomicity) — a crash / SW
+  // termination between two separate writes would otherwise leave a dangling
+  // index entry pointing at a non-existent record. The config record shape
+  // `{ key, value }` mirrors config-store record shape; written in the same
+  // txMulti to keep index+delete atomic (D9).
+  await txMulti([STORES.instances, STORES.config], "readwrite", (m) => {
+    m[STORES.instances].delete(id);
+    m[STORES.config].put({ key: INDEX_KEY, value: idx });
+  });
   publishChange("instances", "remove", id);
+  // setConfig is bypassed above, so emit its config change manually.
+  publishChange("config", "put", INDEX_KEY);
   if ((await getActiveInstance()) === id) {
     if (idx.length > 0) await setActiveInstance(idx[0]!);
     else await removeConfig(ACTIVE_KEY);
