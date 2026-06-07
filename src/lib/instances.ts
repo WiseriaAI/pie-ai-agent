@@ -2,7 +2,7 @@ import type { ProviderRef, BuiltinProvider, ModelConfig } from "@/lib/model-rout
 import { resolveProviderMeta, getProviderMeta, resolveModelVision, resolveModelMeta } from "@/lib/model-router/providers/registry";
 import { getOrCreateEncryptionKey, encrypt, decrypt } from "@/lib/crypto";
 import { getCustomProvider, providerRefToId } from "@/lib/custom-providers";
-import { tx, STORES } from "@/lib/idb/db";
+import { tx, txMulti, STORES } from "@/lib/idb/db";
 import { getConfig, setConfig, removeConfig } from "@/lib/idb/config-store";
 import { publishChange } from "@/lib/store-bus";
 
@@ -22,6 +22,10 @@ export interface DecryptedInstance extends Omit<StoredInstance, "encryptedKey"> 
   apiKey: string;
 }
 
+// Retained for the chrome.storage.local → IDB migration sweep, which needs the
+// legacy `instance_${id}` key name to read old records. The module itself no
+// longer uses it to access data — instance records live in the `instances`
+// object store keyed by StoredInstance.id (keyPath="id").
 export const INSTANCE_KEY = (id: string) => `instance_${id}`;
 export const INDEX_KEY = "instances_index";
 const ACTIVE_KEY = "active_instance_id";
@@ -51,9 +55,19 @@ export async function createInstance(input: {
   };
   const idx = await readIndex();
   idx.push(id);
-  await tx(STORES.instances, "readwrite", (s) => s.put(stored));
-  await setConfig(INDEX_KEY, idx);
+  // Write the instance record and the index in a single multi-store transaction
+  // so they commit all-or-nothing (D9 atomicity) — a crash / SW termination
+  // between two separate writes would otherwise leave an orphan instance that
+  // listInstances can't see. The config record shape `{ key, value }` mirrors
+  // config-store record shape; written in the same txMulti to keep
+  // instance+index atomic (D9).
+  await txMulti([STORES.instances, STORES.config], "readwrite", (m) => {
+    m[STORES.instances].put(stored);
+    m[STORES.config].put({ key: INDEX_KEY, value: idx });
+  });
   publishChange("instances", "put", id);
+  // setConfig is bypassed above, so emit its config change manually.
+  publishChange("config", "put", INDEX_KEY);
   return id;
 }
 

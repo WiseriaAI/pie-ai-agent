@@ -31,6 +31,16 @@ describe("instances CRUD", () => {
     expect(idx).toContain(id);
   });
 
+  it("createInstance commits instance record + index atomically (D9)", async () => {
+    const id = await createInstance({ provider: "anthropic", nickname: "A", apiKey: "k" });
+    // After the single txMulti commits, both the record and the index entry
+    // must be visible together (no orphan instance missing from the index).
+    expect(await getInstance(id)).not.toBeNull();
+    expect(await getConfig<string[]>(INDEX_KEY)).toContain(id);
+    // And it must show up via the index-driven listing.
+    expect((await listInstances()).map((i) => i.id)).toContain(id);
+  });
+
   it("getInstance round-trips with decrypted apiKey (no model field)", async () => {
     const id = await createInstance({ provider: "openai", nickname: "Work", apiKey: "sk-test" });
     const inst = await getInstance(id);
