@@ -77,6 +77,7 @@ import {
   evictAllOnSWStartup,
   evictByInFlightSet,
 } from "./image-cache";
+import { getArtifact } from "@/lib/files/output-store";
 import {
   handleRecordingStart,
   handleRecordingAction,
@@ -234,6 +235,9 @@ const recoveryReady: Promise<void> = runSessionMigrations()
     // detectAndMarkPaused so R14 can safely mark image-bearing sessions as
     // `failed` knowing bytes are already gone.
     evictAllOnSWStartup();
+    // NOTE: output_file artifacts are NOT evicted on SW startup — they are
+    // persisted in IndexedDB and live for the session (cleared on archive /
+    // delete), so they must survive the service worker restarting.
     return detectAndMarkPaused();
   })
   .catch((e) => {
@@ -1522,6 +1526,35 @@ chrome.runtime.onConnect.addListener((port) => {
           | { ok: false; reason: string },
       );
     }
+    // output_file — panel asks SW to download a cached artifact. SW shows a
+    // Save As dialog (saveAs:true) so the user picks the location; replies with
+    // file-output-result so the panel resolves its pending promise.
+    if (rawMsg.type === "download-output" && typeof (rawMsg as { artifactId?: unknown }).artifactId === "string") {
+      const artifactId = (rawMsg as { artifactId: string }).artifactId;
+      void (async () => {
+        const art = await getArtifact(artifactId);
+        // Ownership guard: artifacts are keyed by globally-unique id; verify the
+        // artifact belongs to this port's trusted session before serving it.
+        if (!art || art.sessionId !== portSessionId) {
+          port.postMessage({ type: "file-output-result", artifactId, status: "expired", sessionId: portSessionId });
+          return;
+        }
+        // Use application/octet-stream (not art.mime) so Chrome preserves the
+        // exact filename + extension. With a concrete text mime, Chrome
+        // reconciles the saved extension to the mime's canonical one (e.g.
+        // text/plain → ".txt"), renaming report.md to report.txt. octet-stream
+        // is opaque, so the provided filename (incl. extension) is honored.
+        const url = `data:application/octet-stream;charset=utf-8,${encodeURIComponent(art.content)}`;
+        try {
+          await chrome.downloads.download({ url, filename: art.filename, conflictAction: "uniquify", saveAs: true });
+          port.postMessage({ type: "file-output-result", artifactId, status: "ok", sessionId: portSessionId });
+        } catch (e) {
+          const m = e instanceof Error ? e.message : String(e);
+          const cancelled = /canceled|cancelled/i.test(m);
+          port.postMessage({ type: "file-output-result", artifactId, status: cancelled ? "ok" : "error", sessionId: portSessionId });
+        }
+      })();
+    }
   });
 
   port.onDisconnect.addListener(() => {
@@ -1555,6 +1588,9 @@ chrome.runtime.onConnect.addListener((port) => {
     inFlightSessionIds.clear();
     // R13(d) — evict image cache for all sessions this port was tracking.
     evictByInFlightSet(sessionsToClose);
+    // output_file artifacts are persisted (IndexedDB) and intentionally NOT
+    // evicted on panel disconnect — they live until the session is archived
+    // or deleted, so a reopened panel can still download them.
     transitionPortInFlightSessionsToPaused(sessionsToClose).catch((e) => {
       console.warn("[sw] panel-disconnect cleanup failed:", e);
     });

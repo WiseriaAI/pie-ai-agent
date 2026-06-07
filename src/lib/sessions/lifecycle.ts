@@ -41,6 +41,7 @@ import {
   readIndexRaw,
   INDEX_KEY,
 } from "./storage";
+import { deleteSessionArtifacts } from "@/lib/files/output-store";
 
 // Re-export INDEX_KEY usage via the private helper we expose
 // (see storage.ts for readIndexRaw export added in M2-U4)
@@ -118,6 +119,11 @@ export async function archiveSession(
     [agentKey(id)]: undefined,
     [INDEX_KEY]: updatedIndex,
   });
+
+  // output_file artifacts expire when the session is archived (their lifecycle
+  // is tied to the live session). Best-effort: a failure here must not block
+  // the archive itself.
+  await deleteSessionArtifacts(id).catch(() => {});
 }
 
 // ── unarchiveSession ──────────────────────────────────────────────────────────
@@ -198,6 +204,10 @@ export async function hardDeleteSession(id: string): Promise<void> {
     [agentKey(id)]: undefined,
     [INDEX_KEY]: updatedIndex,
   });
+
+  // Clear any output_file artifacts for this session (covers a hard-delete that
+  // skipped the archive step). Best-effort.
+  await deleteSessionArtifacts(id).catch(() => {});
 }
 
 // ── hardDeleteExpired ─────────────────────────────────────────────────────────

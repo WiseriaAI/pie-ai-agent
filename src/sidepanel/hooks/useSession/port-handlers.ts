@@ -1,6 +1,7 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import type { DisplayMessage, PortMessageToPanel, PortMessageToWorker, QuoteAddedMessage } from "@/types";
 import { withSlot, type SessionRuntimeSlot } from "./runtime-map";
+import { resolveDownload } from "./download-pending";
 
 export interface CreatePortHandlersDeps {
   slotsRef: MutableRefObject<Map<string, SessionRuntimeSlot>>;
@@ -293,6 +294,27 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
         messages: chatMessages,
         sessionId: msg.sessionId,
       });
+      return;
+    }
+
+    if (msg.type === "file-output") {
+      const prev = slotsRef.current.get(msg.sessionId);
+      const baseMessages = prev?.messages ?? [];
+      // de-dup by artifactId (a re-emit shouldn't double-card)
+      if (baseMessages.some((m) => m.role === "file-output" && m.artifactId === msg.artifactId)) return;
+      const entry: DisplayMessage = {
+        role: "file-output",
+        artifactId: msg.artifactId,
+        filename: msg.filename,
+        mime: msg.mime,
+        size: msg.size,
+      };
+      patchSlot(msg.sessionId, { messages: [...baseMessages, entry] });
+      return;
+    }
+
+    if (msg.type === "file-output-result") {
+      resolveDownload(msg.artifactId, { status: msg.status });
       return;
     }
 

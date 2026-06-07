@@ -1,5 +1,6 @@
 import type { Tool, ToolHandlerContext } from "../types";
 import type { ActionResult } from "@/lib/dom-actions/types";
+import type { FileArtifact } from "@/lib/files/output-store";
 import { sanitizeDownloadName } from "@/lib/files/download-name";
 import { sendToOffscreen } from "@/background/offscreen-manager";
 import { classifyFile, MAX_FILE_BYTES } from "@/lib/file-read/classify";
@@ -7,71 +8,74 @@ import { arrayBufferToBase64 } from "@/lib/files/base64";
 import { escapeUntrustedWrappers } from "../untrusted-wrappers";
 import { buildLocalFileWrapper } from "@/lib/files/inject";
 
-interface SaveArgs {
-  filename?: string;
-  content?: string;
-  mime?: string;
-  saveAs?: boolean;
-}
+interface OutputArgs { filename?: string; content?: string; mime?: string; }
 
 // Allowlist of text-family MIME types. A hallucinating LLM could otherwise
-// pass e.g. text/html, turning the data: URL into something renderable, so
-// the broad `text/*` branch explicitly excludes html/xhtml.
+// pass e.g. text/html; the eventual download builds a data: URL from this mime
+// (SW download routing), so the broad `text/*` branch explicitly excludes
+// html/xhtml to keep the saved file from being treated as renderable markup.
 const SAFE_MIME = /^(text\/(?!html|xhtml)|application\/(json|xml|csv|x-ndjson))/;
 
 const MAX_CONTENT_BYTES = 5 * 1024 * 1024;
 
-export const saveToDownloadsTool: Tool = {
-  name: "save_to_downloads",
-  description:
-    "Save text content to the user's computer via the browser's download mechanism. " +
-    "By default it goes to the Downloads/pie/ folder, but if the user's browser is set to " +
-    "ask where to save each file, a save-location dialog will appear. " +
-    "Set save_as=true to always show a Save As dialog so the user picks the location. " +
-    "Use for saving generated reports, code, or markdown. Cannot write to arbitrary absolute paths.",
-  parameters: {
-    type: "object",
-    properties: {
-      filename: { type: "string", description: 'Relative file name, e.g. "report.md" or "notes/summary.md". Always saved under pie/.' },
-      content: { type: "string", description: "The text content to write." },
-      mime: { type: "string", description: 'MIME type. Default "text/plain".' },
-      save_as: { type: "boolean", description: "If true, prompt the user with a Save As dialog. Default false." },
+export interface OutputFileDeps {
+  sessionId: string;
+  store: (a: FileArtifact) => void | Promise<void>;
+}
+
+/**
+ * output_file — produce a downloadable text artifact. Stores content in the
+ * persistent output-store and returns `fileOutput` so the panel can render a card;
+ * the actual chrome.downloads call happens later when the user clicks the
+ * card's download button (SW routes `download-output`). Dep-injected with
+ * sessionId + store because it needs runtime state — NOT in the static
+ * LOCAL_FILE_TOOLS array (mirrors buildRequestLocalFileTool).
+ */
+export function buildOutputFileTool(deps: OutputFileDeps): Tool {
+  return {
+    name: "output_file",
+    description:
+      "Produce a text file (report, code, markdown, CSV, JSON) and present it to the user " +
+      "as a downloadable card in the side panel. The user decides whether to download it and " +
+      "picks the save location themselves — you do NOT save to disk directly, so do not assume " +
+      "the file was saved. Cannot write to arbitrary absolute paths; the name is always under pie/.",
+    parameters: {
+      type: "object",
+      properties: {
+        filename: { type: "string", description: 'Relative file name, e.g. "report.md" or "notes/summary.md". Always presented under pie/.' },
+        content: { type: "string", description: "The text content of the file." },
+        mime: { type: "string", description: 'MIME type. Default "text/plain".' },
+      },
+      required: ["filename", "content"],
+      additionalProperties: false,
     },
-    required: ["filename", "content"],
-    additionalProperties: false,
-  },
-  handler: async (args: unknown, _ctx: ToolHandlerContext): Promise<ActionResult> => {
-    const a = (args ?? {}) as SaveArgs & { save_as?: boolean };
-    if (typeof a.content !== "string") {
-      return { success: false, error: "content is required (string)" };
-    }
-    if (a.content.length > MAX_CONTENT_BYTES) {
-      return { success: false, error: `content_too_large: max ${MAX_CONTENT_BYTES / 1024 / 1024}MB` };
-    }
-    const rawFilename = typeof a.filename === "string" ? a.filename : "";
-    const filename = sanitizeDownloadName(rawFilename);
-    const mime = typeof a.mime === "string" && SAFE_MIME.test(a.mime) ? a.mime : "text/plain";
-    const saveAs = a.save_as === true || a.saveAs === true;
-    const url = `data:${mime};charset=utf-8,${encodeURIComponent(a.content)}`;
-    try {
-      await chrome.downloads.download({ url, filename, conflictAction: "uniquify", saveAs });
-    } catch (e) {
-      return { success: false, error: `download_failed: ${e instanceof Error ? e.message : String(e)}` };
-    }
-    // Signal when the caller's name was discarded for the safe fallback so the
-    // LLM knows the file isn't where it asked.
-    const sanitizedToFallback = filename === "pie/untitled.txt" && rawFilename !== "pie/untitled.txt";
-    const renameNote = sanitizedToFallback ? " (filename was sanitized to untitled.txt)" : "";
-    return {
-      success: true,
-      observation: `Saved to Downloads/${filename}${
-        saveAs
-          ? " (user chose location via Save As)"
-          : ". Note: if a same-named file existed, Chrome appended a numeric suffix."
-      }${renameNote}`,
-    };
-  },
-};
+    handler: async (args: unknown, _ctx: ToolHandlerContext): Promise<ActionResult> => {
+      const a = (args ?? {}) as OutputArgs;
+      if (typeof a.content !== "string") return { success: false, error: "content is required (string)" };
+      // Cap on actual UTF-8 byte size (not UTF-16 code-unit count) so the 5MB
+      // limit is byte-accurate for multibyte content; byteLength is reused below.
+      const byteLength = new Blob([a.content]).size;
+      if (byteLength > MAX_CONTENT_BYTES) return { success: false, error: `content_too_large: max ${MAX_CONTENT_BYTES / 1024 / 1024}MB` };
+      const rawFilename = typeof a.filename === "string" ? a.filename : "";
+      const filename = sanitizeDownloadName(rawFilename);
+      const mime = typeof a.mime === "string" && SAFE_MIME.test(a.mime) ? a.mime : "text/plain";
+      const id = crypto.randomUUID();
+      await deps.store({ id, sessionId: deps.sessionId, filename, mime, content: a.content, byteLength, addedAt: Date.now() });
+      const renameNote =
+        filename === "pie/untitled.txt" && rawFilename !== "pie/untitled.txt"
+          ? " (filename was sanitized to untitled.txt)"
+          : "";
+      return {
+        success: true,
+        observation:
+          `Presented "${filename}" to the user as a downloadable card in the side panel. ` +
+          `The user will choose whether to download it and where to save it. ` +
+          `Do not assume it has been saved.${renameNote}`,
+        fileOutput: { id, filename, mime, size: byteLength },
+      };
+    },
+  };
+}
 
 const READ_MAX_CHARS = 200_000; // injected-text safety ceiling (well below 5MB)
 
@@ -159,7 +163,7 @@ export const readLocalFileTool: Tool = {
   },
 };
 
-export const LOCAL_FILE_TOOLS: Tool[] = [saveToDownloadsTool, readLocalFileTool];
+export const LOCAL_FILE_TOOLS: Tool[] = [readLocalFileTool];
 
 // ── request_local_file — human-in-the-loop file picker ──────────────────────
 //
