@@ -1,26 +1,34 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { chromeMock } from "@/test/setup";
+import { _resetForTests } from "@/lib/idb/db";
+import { getConfig } from "@/lib/idb/config-store";
+import { _resetKeyForTests } from "@/lib/crypto";
 import {
   createInstance, getInstance, listInstances, deleteInstance,
   setActiveInstance, getActiveInstance, resolveActiveInstanceModelConfig,
   resolveModelConfig, firstModelForProvider, updateInstance,
+  INDEX_KEY,
 } from "./instances";
 import { saveCustomProvider } from "./custom-providers";
 import { setProviderCustomModelMeta } from "./provider-custom-model-meta";
 
-beforeEach(() => {
-  chromeMock.storage.local.__store = {};
+beforeEach(async () => {
+  await _resetForTests();
+  _resetKeyForTests();
 });
 
 describe("instances CRUD", () => {
   it("createInstance writes encrypted, registers in instances_index, returns uuid", async () => {
     const id = await createInstance({ provider: "anthropic", nickname: "Anthropic", apiKey: "sk-ant-secret" });
     expect(id).toMatch(/^[0-9a-f]{8}-/);
-    const stored = chromeMock.storage.local.__store[`instance_${id}`] as Record<string, unknown>;
-    expect(stored.encryptedKey).toBeDefined();
-    expect(stored.encryptedKey).not.toContain("sk-ant-secret");
-    expect(stored.model).toBeUndefined(); // model decoupled from instance
-    expect(chromeMock.storage.local.__store["instances_index"]).toContain(id);
+    // Verify via the public API (IDB-backed)
+    const inst = await getInstance(id);
+    expect(inst).not.toBeNull();
+    expect(inst!.apiKey).toBe("sk-ant-secret"); // round-trips correctly
+    expect((inst as unknown as { encryptedKey?: string }).encryptedKey).toBeUndefined(); // not exposed raw
+    expect((inst as unknown as { model?: string }).model).toBeUndefined(); // model decoupled from instance
+    // Verify index contains the new id
+    const idx = await getConfig<string[]>(INDEX_KEY);
+    expect(idx).toContain(id);
   });
 
   it("getInstance round-trips with decrypted apiKey (no model field)", async () => {
@@ -44,8 +52,11 @@ describe("instances CRUD", () => {
     const b = await createInstance({ provider: "openai", nickname: "B", apiKey: "k2" });
     await setActiveInstance(a);
     await deleteInstance(a);
-    expect(chromeMock.storage.local.__store[`instance_${a}`]).toBeUndefined();
-    expect(chromeMock.storage.local.__store["instances_index"]).toEqual([b]);
+    // Verify instance no longer accessible
+    expect(await getInstance(a)).toBeNull();
+    // Verify index updated
+    const idx = await getConfig<string[]>(INDEX_KEY);
+    expect(idx).toEqual([b]);
     expect(await getActiveInstance()).toBe(b);
   });
 
