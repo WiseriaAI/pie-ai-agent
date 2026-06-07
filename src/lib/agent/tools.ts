@@ -1,7 +1,6 @@
 import { buildClickTool, buildHoverTool, type MouseToolDeps } from "./tools/mouse";
-import { typeByIndex } from "../dom-actions/type";
+import { actByIdxInjected, type ActParams, type ActResult } from "../dom-actions/act-core";
 import { scroll } from "../dom-actions/scroll";
-import { selectByIndex } from "../dom-actions/select";
 import { wait } from "../dom-actions/wait";
 import type { ActionResult } from "../dom-actions/types";
 import type { Tool, ToolHandlerContext } from "./types";
@@ -93,6 +92,52 @@ async function execInTab<T extends unknown[]>(
   }
 }
 
+// actByIdxInjected returns the ActResult shape (op-tagged success | {ok:false}).
+// This helper runs it in the target frame with the same frame-gone handling as
+// execInTab, then leaves shape adaptation to the caller (ActResult → ActionResult).
+async function execActInTab(
+  tabId: number,
+  params: ActParams,
+  frameId?: number,
+): Promise<ActResult> {
+  const target: chrome.scripting.InjectionTarget = frameId !== undefined
+    ? { tabId, frameIds: [frameId] }
+    : { tabId };
+  try {
+    const results = await chrome.scripting.executeScript({
+      target,
+      func: actByIdxInjected,
+      args: [params],
+    });
+    return (
+      (results[0]?.result as ActResult | undefined) ?? {
+        ok: false,
+        error: "Execution failed",
+      }
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (frameId !== undefined && /Frame with ID .* not found|No frame with id/i.test(msg)) {
+      return {
+        ok: false,
+        error: `Frame ${frameId} unreachable or removed. Re-snapshot.`,
+      };
+    }
+    throw err;
+  }
+}
+
+// Adapt the act-core ActResult into the legacy ActionResult that tool handlers
+// return. The op-tagged success variants all carry an `observation`.
+function actResultToActionResult(r: ActResult): ActionResult {
+  if (r.ok) {
+    // op === "rect" carries no observation, but type/select/focusClick do; the
+    // tool handlers below only invoke type/select ops, so observation is present.
+    return { success: true, observation: "observation" in r ? r.observation : undefined };
+  }
+  return { success: false, error: r.error };
+}
+
 // ── Built-in tools ────────────────────────────────────────────────────────────
 
 export const BUILT_IN_TOOLS: Tool[] = [
@@ -125,7 +170,12 @@ export const BUILT_IN_TOOLS: Tool[] = [
     },
     handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
       const a = args as { frameId: number; elementIndex: number; text: string; clear?: boolean };
-      return execInTab(ctx.tabId, typeByIndex, [a.elementIndex, a.text, a.clear ?? false], a.frameId);
+      const r = await execActInTab(
+        ctx.tabId,
+        { op: "type", idx: a.elementIndex, text: a.text, clear: a.clear ?? false },
+        a.frameId,
+      );
+      return actResultToActionResult(r);
     },
   },
 
@@ -186,7 +236,12 @@ export const BUILT_IN_TOOLS: Tool[] = [
     },
     handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
       const a = args as { frameId: number; elementIndex: number; value: string };
-      return execInTab(ctx.tabId, selectByIndex, [a.elementIndex, a.value], a.frameId);
+      const r = await execActInTab(
+        ctx.tabId,
+        { op: "select", idx: a.elementIndex, value: a.value },
+        a.frameId,
+      );
+      return actResultToActionResult(r);
     },
   },
 

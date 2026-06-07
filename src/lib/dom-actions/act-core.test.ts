@@ -128,6 +128,23 @@ describe("actByIdxInjected op=type", () => {
     expect(r.observation).toContain("redacted");
     expect(r.observation).not.toContain("s3cr3t");
   });
+
+  it("derives the field name from a label[for] association (getFieldName label-for path)", async () => {
+    // password input has no name attr, so getFieldName falls through to the
+    // label[for="pw"] lookup. (It's sensitive, so the value is redacted but
+    // the resolved field name still surfaces.)
+    document.body.innerHTML = `<label for="pw">Password</label><input id="pw" type="password" data-pie-idx="7" />`;
+    const inp = document.querySelector("input") as HTMLInputElement;
+    inp.getBoundingClientRect = () =>
+      ({ width: 200, height: 30, top: 0, left: 0, right: 200, bottom: 30, x: 0, y: 0, toJSON() {} }) as DOMRect;
+
+    const r = await actByIdxInjected({ op: "type", idx: 7, text: "hunter2", clear: false });
+
+    expect(r.ok).toBe(true);
+    if (!r.ok) throw new Error("narrow");
+    if (r.op !== "type") throw new Error("narrow op");
+    expect(r.observation).toContain("Password");
+  });
 });
 
 describe("actByIdxInjected op=select", () => {
@@ -142,6 +159,8 @@ describe("actByIdxInjected op=select", () => {
     const sel = document.querySelector("select") as HTMLSelectElement;
     const idx = Number(sel.getAttribute("data-pie-idx"));
     expect(Number.isFinite(idx)).toBe(true);
+    let changed = false;
+    sel.addEventListener("change", () => { changed = true; });
 
     const r = await actByIdxInjected({ op: "select", idx, value: "b" });
 
@@ -151,6 +170,7 @@ describe("actByIdxInjected op=select", () => {
     expect(r.observation).toContain("Banana");
     expect(r.observation).toContain('"b"');
     expect(sel.value).toBe("b");
+    expect(changed).toBe(true);
   });
 
   it("rejects a non-<select> element", async () => {
@@ -196,6 +216,9 @@ describe("actByIdxInjected op=focusClick", () => {
     btn.addEventListener("click", () => { clicked = true; });
     const r = await actByIdxInjected({ op: "focusClick", idx });
     expect(r.ok).toBe(true);
+    if (!r.ok) throw new Error("narrow");
+    if (r.op !== "focusClick") throw new Error("narrow op");
+    expect(r.observation).toContain("Focus-clicked");
     expect(clicked).toBe(true);
   });
 });

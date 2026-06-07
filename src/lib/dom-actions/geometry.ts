@@ -1,4 +1,5 @@
 import type { CdpSession } from "../../background/cdp-session";
+import { actByIdxInjected } from "./act-core";
 
 export type GeometryError =
   | { kind: "element-not-found"; index: number }
@@ -7,23 +8,6 @@ export type GeometryError =
   | { kind: "cdp-frame-id-unresolved"; frameId: number };
 
 export type PagePoint = { x: number; y: number };
-
-/**
- * Self-contained function injected via chrome.scripting.executeScript.
- * Locates element by data-pie-idx, scrolls into view if needed,
- * returns its rect in frame-local coordinates.
- */
-export function readRectByIdx(idx: number):
-  | { x: number; y: number; w: number; h: number }
-  | null {
-  const el = document.querySelector(`[data-pie-idx="${idx}"]`);
-  if (!el) return null;
-  // scrollIntoViewIfNeeded is non-standard but widely supported in Chromium
-  (el as unknown as { scrollIntoViewIfNeeded?: (arg: unknown) => void })
-    .scrollIntoViewIfNeeded?.({ block: "center" });
-  const r = (el as HTMLElement).getBoundingClientRect();
-  return { x: r.x, y: r.y, w: r.width, h: r.height };
-}
 
 /**
  * Compute page-level coordinates for the center of an element by data-pie-idx.
@@ -42,8 +26,8 @@ export async function elementToPagePoint(
   try {
     injection = await chrome.scripting.executeScript({
       target: { tabId, frameIds: [frameId] },
-      func: readRectByIdx,
-      args: [elementIndex],
+      func: actByIdxInjected,
+      args: [{ op: "rect", idx: elementIndex } as const],
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -52,7 +36,8 @@ export async function elementToPagePoint(
     }
     throw err;
   }
-  const rect = injection[0]?.result as ReturnType<typeof readRectByIdx>;
+  const out = injection[0]?.result;
+  const rect = out && out.ok && out.op === "rect" ? out.rect : null;
   if (!rect) return { kind: "element-not-found", index: elementIndex };
   if (rect.w <= 0 || rect.h <= 0) return { kind: "element-not-visible", index: elementIndex };
   const center: PagePoint = {

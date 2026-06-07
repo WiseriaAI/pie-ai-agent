@@ -68,7 +68,8 @@ export async function actByIdxInjected(params: ActParams): Promise<ActResult> {
     // Changes: (a) uses already-resolved `el` instead of own querySelector;
     // (b) editor markers sourced from authoritative TYPE_EDITOR_MARKERS
     // (inlined verbatim for executeScript self-containment); (c) returns
-    // wrapped in the ActResult shape.
+    // wrapped in the ActResult shape; (d) getFieldName: label[for] lookup
+    // now active (id is fallback).
     const { idx: index, text, clear } = params;
 
     // ── Inline sensitivity detection ──

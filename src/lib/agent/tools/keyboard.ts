@@ -18,27 +18,7 @@
 // Spec: docs/plans/2026-04-28-001-feat-phase2.5-cdp-keyboard-simulation-plan.md
 
 import type { ActionResult } from "../../dom-actions/types";
-
-/**
- * Self-contained function injected via chrome.scripting.executeScript to
- * focus-click an element before a keyboard dispatch. Mirrors the old
- * dom-actions/click.ts contract; lives here as the only remaining
- * consumer of synthetic click (the public click tool is now CDP-based).
- */
-function focusClickByIndex(index: number): ActionResult {
-  const el = document.querySelector(`[data-pie-idx="${index}"]`);
-  if (!el) {
-    return {
-      success: false,
-      error: `Element not found at index ${index}. The page may have changed; try snapshotting again.`,
-    };
-  }
-  (el as HTMLElement).click();
-  return {
-    success: true,
-    observation: `Focus-clicked element [${index}]`,
-  };
-}
+import { actByIdxInjected, type ActResult } from "../../dom-actions/act-core";
 import { safeParseOrigin } from "../loop";
 import { requireCdpInput } from "./mouse";
 import type { CdpSession } from "../../../background/cdp-session";
@@ -378,23 +358,23 @@ export function buildKeyboardTools(deps: KeyboardToolDeps): Tool[] {
           const clickResult = await chrome.scripting
             .executeScript({
               target: { tabId: ctx.tabId },
-              func: focusClickByIndex,
-              args: [a.after_element_index],
+              func: actByIdxInjected,
+              args: [{ op: "focusClick", idx: a.after_element_index } as const],
             })
             .then(
               (results) =>
-                (results[0]?.result as ActionResult | undefined) ?? null,
+                (results[0]?.result as ActResult | undefined) ?? null,
             )
             .catch((e: unknown) => {
               return {
-                success: false,
+                ok: false,
                 error: e instanceof Error ? e.message : String(e),
-              } satisfies ActionResult;
+              } satisfies ActResult;
             });
-          if (!clickResult || !clickResult.success) {
+          if (!clickResult || !clickResult.ok) {
             return {
               success: false,
-              error: `Failed to focus target before keyboard input: ${clickResult?.error ?? "unknown"}`,
+              error: `Failed to focus target before keyboard input: ${clickResult && !clickResult.ok ? clickResult.error : "unknown"}`,
             };
           }
         }

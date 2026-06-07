@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { elementToPagePoint, readRectByIdx, resolveChromeToCdpFrameId } from "./geometry";
+import { elementToPagePoint, resolveChromeToCdpFrameId } from "./geometry";
+import { actByIdxInjected } from "./act-core";
 
 beforeEach(() => {
   global.chrome = {
@@ -12,7 +13,7 @@ beforeEach(() => {
 describe("elementToPagePoint — top frame", () => {
   it("returns rect center for frameId=0", async () => {
     (chrome.scripting.executeScript as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { result: { x: 100, y: 200, w: 50, h: 40 } },
+      { result: { ok: true, op: "rect", rect: { x: 100, y: 200, w: 50, h: 40 } } },
     ]);
     const result = await elementToPagePoint(7, 0, 3);
     expect(result).toEqual({ x: 125, y: 220 });
@@ -26,7 +27,7 @@ describe("elementToPagePoint — top frame", () => {
 
   it("returns element-not-visible error when rect is zero-sized", async () => {
     (chrome.scripting.executeScript as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { result: { x: 0, y: 0, w: 0, h: 0 } },
+      { result: { ok: true, op: "rect", rect: { x: 0, y: 0, w: 0, h: 0 } } },
     ]);
     const result = await elementToPagePoint(7, 0, 3);
     expect(result).toEqual({ kind: "element-not-visible", index: 3 });
@@ -105,7 +106,7 @@ describe("elementToPagePoint — iframe", () => {
   it("accumulates iframe origin + frame-local rect center", async () => {
     // executeScript returns frame-local rect (inside iframe)
     (chrome.scripting.executeScript as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { result: { x: 20, y: 30, w: 10, h: 20 } },
+      { result: { ok: true, op: "rect", rect: { x: 20, y: 30, w: 10, h: 20 } } },
     ]);
     (chrome.webNavigation.getAllFrames as ReturnType<typeof vi.fn>).mockResolvedValue([
       { frameId: 0, parentFrameId: -1, url: "https://top.test/" },
@@ -149,7 +150,7 @@ describe("elementToPagePoint — iframe", () => {
 
   it("returns cdp-frame-id-unresolved when CDP tree has no match", async () => {
     (chrome.scripting.executeScript as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { result: { x: 0, y: 0, w: 10, h: 10 } },
+      { result: { ok: true, op: "rect", rect: { x: 0, y: 0, w: 10, h: 10 } } },
     ]);
     (chrome.webNavigation.getAllFrames as ReturnType<typeof vi.fn>).mockResolvedValue([
       { frameId: 0, parentFrameId: -1, url: "https://top.test/" },
@@ -174,20 +175,26 @@ describe("elementToPagePoint — iframe", () => {
   });
 });
 
-describe("readRectByIdx (injected fn)", () => {
-  it("returns null when element absent", () => {
+// The frame-local rect read formerly lived in readRectByIdx; it is now the
+// op:"rect" branch of actByIdxInjected. These assert the rect-extraction
+// contract elementToPagePoint depends on.
+describe("actByIdxInjected op=rect (frame-local rect read)", () => {
+  it("returns ok:false when element absent", async () => {
     document.body.innerHTML = "";
-    const result = readRectByIdx(5);
-    expect(result).toBe(null);
+    const result = await actByIdxInjected({ op: "rect", idx: 5 });
+    expect(result.ok).toBe(false);
   });
 
-  it("returns rect when element present", () => {
+  it("returns the rect when element present", async () => {
     document.body.innerHTML = `<button data-pie-idx="5">x</button>`;
     const el = document.querySelector('[data-pie-idx="5"]') as HTMLElement;
     Object.defineProperty(el, "getBoundingClientRect", {
       value: () => ({ x: 10, y: 20, width: 30, height: 40, top: 20, left: 10, bottom: 60, right: 40 }),
     });
-    const result = readRectByIdx(5);
-    expect(result).toEqual({ x: 10, y: 20, w: 30, h: 40 });
+    const result = await actByIdxInjected({ op: "rect", idx: 5 });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("narrow");
+    if (result.op !== "rect") throw new Error("narrow op");
+    expect(result.rect).toEqual({ x: 10, y: 20, w: 30, h: 40 });
   });
 });

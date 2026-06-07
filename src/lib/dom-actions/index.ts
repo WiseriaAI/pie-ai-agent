@@ -4,9 +4,8 @@ export type {
 } from "./types";
 
 // DOM action functions (injected into target page via executeScript)
-export { typeByIndex } from "./type";
+export { actByIdxInjected } from "./act-core";
 export { scroll } from "./scroll";
-export { selectByIndex } from "./select";
 
 // Service Worker action (NOT injected into page)
 export { wait } from "./wait";

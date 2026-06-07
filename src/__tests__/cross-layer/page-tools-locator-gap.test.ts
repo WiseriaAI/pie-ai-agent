@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach } from "vitest";
 import { probePageInjected } from "../../lib/dom-actions/probe-core";
-import { typeByIndex } from "../../lib/dom-actions/type";
+import { actByIdxInjected } from "../../lib/dom-actions/act-core";
 
 describe("page tools locator gap cross-layer", () => {
   beforeEach(() => {
@@ -41,8 +41,8 @@ describe("page tools locator gap cross-layer", () => {
 
     expect(searchResult.matches[0].pieIdx).toBe(editor!.pieIdx);
 
-    const typed = await typeByIndex(editor!.pieIdx, "Thanks for the update.", false);
-    expect(typed.success).toBe(true);
+    const typed = await actByIdxInjected({ op: "type", idx: editor!.pieIdx, text: "Thanks for the update.", clear: false });
+    expect(typed.ok).toBe(true);
     expect(reply.textContent).toContain("Thanks for the update.");
   });
 });
