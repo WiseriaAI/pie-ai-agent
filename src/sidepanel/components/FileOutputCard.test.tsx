@@ -7,7 +7,9 @@ afterEach(() => cleanup());
 describe("FileOutputCard", () => {
   it("renders filename + type·size", () => {
     render(<FileOutputCard artifactId="a" filename="pie/report.md" mime="text/markdown" size={12300} onDownload={vi.fn()} />);
-    expect(screen.getByText("report.md")).toBeTruthy();
+    // title drops the extension (the type is shown on the meta line instead)
+    expect(screen.getByText("report")).toBeTruthy();
+    expect(screen.queryByText("report.md")).toBeNull();
     expect(screen.getByText(/MARKDOWN/)).toBeTruthy();
     expect(screen.getByText(/12\.0 KB/)).toBeTruthy();
   });

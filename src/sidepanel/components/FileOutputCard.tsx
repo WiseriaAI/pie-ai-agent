@@ -20,6 +20,15 @@ function basename(name: string): string {
   return parts[parts.length - 1] ?? name;
 }
 
+/** Basename without its trailing extension — the type is shown separately on
+ *  the meta line, so the title omits the redundant ".md"/".csv"/etc. A leading
+ *  dot (dotfiles like ".gitignore") is preserved. */
+function displayName(filename: string): string {
+  const base = basename(filename);
+  const dot = base.lastIndexOf(".");
+  return dot > 0 ? base.slice(0, dot) : base;
+}
+
 const DocIcon = ({ className }: { className?: string }) => (
   <svg
     width="20"
@@ -89,7 +98,7 @@ export function FileOutputCard({
       {/* filename + meta */}
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <div className="truncate text-[14px] font-medium text-fg-1">
-          {basename(filename)}
+          {displayName(filename)}
         </div>
         <div className="font-mono text-[11px] text-fg-3">
           {dimmed

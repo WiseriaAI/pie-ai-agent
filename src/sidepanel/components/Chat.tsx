@@ -1213,13 +1213,13 @@ After the skill completes, briefly summarize what was created (the user will see
               />
             )}
 
-            {/* Working indicator — visible while the agent loop is alive
-                and there's no partial assistant text already streaming.
-                Sits at the tail of the chat so the user has a single place
-                to look to confirm "still working" — covers the gaps between
-                tool calls (last step ok, next LLM round not yet started)
-                where active step spinners alone could feel like a hang. */}
-            {streaming && !streamingText && !streamingThinking && <WorkingIndicator />}
+            {/* Working indicator — visible whenever the agent loop is alive,
+                INCLUDING while a long tool call's arguments stream (e.g.
+                output_file's file content): no text deltas arrive during that
+                window, so a static preamble bubble alone would look frozen.
+                Sits at the tail so there's a single place to confirm "still
+                working" — also covers the gaps between tool calls. */}
+            {streaming && <WorkingIndicator />}
 
             {error && (
               <div className="rounded-lg border border-warning-line bg-warning-tint px-3 py-2 text-[12px] text-warning">
