@@ -53,19 +53,79 @@ describe("actByIdxInjected op=rect", () => {
     expect(r.rect).toMatchObject({ x: 5, y: 15, w: 100, h: 50 });
   });
 
-  it("returns ok:false with unimplemented op for type (stub)", async () => {
-    document.body.innerHTML = `<input type="text" />`;
-    const inp = document.querySelector("input") as HTMLElement;
-    Object.defineProperty(inp, "getBoundingClientRect", {
-      value: () => ({ x: 0, y: 0, width: 100, height: 30, top: 0, left: 0, right: 100, bottom: 30 }),
-      configurable: true,
-    });
-    probePageInjected({ op: "snapshot" });
-    const idx = Number(inp.getAttribute("data-pie-idx"));
-    expect(Number.isFinite(idx)).toBe(true);
-    const r = await actByIdxInjected({ op: "type", idx, text: "hello", clear: false });
+});
+
+describe("actByIdxInjected op=type", () => {
+  it("writes into a stamped input value", async () => {
+    document.body.innerHTML = `<input type="text" data-pie-idx="3" />`;
+    const inp = document.querySelector("input") as HTMLInputElement;
+    inp.getBoundingClientRect = () =>
+      ({ width: 200, height: 30, top: 0, left: 0, right: 200, bottom: 30, x: 0, y: 0, toJSON() {} }) as DOMRect;
+
+    const r = await actByIdxInjected({ op: "type", idx: 3, text: "hello world", clear: false });
+
+    expect(r.ok).toBe(true);
+    if (!r.ok) throw new Error("narrow");
+    if (r.op !== "type") throw new Error("narrow op");
+    expect(r.observation).toContain("hello world");
+    expect(inp.value).toBe("hello world");
+  });
+
+  it("writes into a stamped contenteditable", async () => {
+    document.body.innerHTML = `<div contenteditable="true" data-pie-idx="4"></div>`;
+    const div = document.querySelector("div") as HTMLElement;
+    div.getBoundingClientRect = () =>
+      ({ width: 200, height: 80, top: 0, left: 0, right: 200, bottom: 80, x: 0, y: 0, toJSON() {} }) as DOMRect;
+
+    const r = await actByIdxInjected({ op: "type", idx: 4, text: "rich text", clear: false });
+
+    expect(r.ok).toBe(true);
+    if (!r.ok) throw new Error("narrow");
+    if (r.op !== "type") throw new Error("narrow op");
+    expect((div.innerText || div.textContent || "")).toContain("rich text");
+  });
+
+  it("refuses a Monaco .inputarea (IME buffer) and routes to dispatch_keyboard_input", async () => {
+    document.body.innerHTML = `
+      <div class="monaco-editor">
+        <div class="overflow-guard">
+          <textarea class="inputarea" data-pie-idx="8"></textarea>
+        </div>
+      </div>`;
+    const ta = document.querySelector<HTMLTextAreaElement>("textarea")!;
+    // Monaco's .inputarea is full-size and opaque — it slips past any
+    // size<24 / opacity<0.2 heuristic. Force a non-trivial box.
+    ta.getBoundingClientRect = () =>
+      ({ width: 300, height: 120, top: 0, left: 0, right: 300, bottom: 120, x: 0, y: 0, toJSON() {} }) as DOMRect;
+
+    const r = await actByIdxInjected({ op: "type", idx: 8, text: 'console.log("HelloPie");', clear: false });
+
     expect(r.ok).toBe(false);
     if (r.ok) throw new Error("narrow");
-    expect(r.error).toMatch(/unimplemented/i);
+    expect(r.error).toContain("dispatch_keyboard_input");
+    expect(r.error).toContain("Monaco");
+  });
+
+  it("rejects a non-typeable element", async () => {
+    document.body.innerHTML = `<button data-pie-idx="5">btn</button>`;
+    const r = await actByIdxInjected({ op: "type", idx: 5, text: "x", clear: false });
+    expect(r.ok).toBe(false);
+    if (r.ok) throw new Error("narrow");
+    expect(r.error).toMatch(/not typeable/i);
+  });
+
+  it("redacts sensitive (password) field values in the observation", async () => {
+    document.body.innerHTML = `<input type="password" name="password" data-pie-idx="6" />`;
+    const inp = document.querySelector("input") as HTMLInputElement;
+    inp.getBoundingClientRect = () =>
+      ({ width: 200, height: 30, top: 0, left: 0, right: 200, bottom: 30, x: 0, y: 0, toJSON() {} }) as DOMRect;
+
+    const r = await actByIdxInjected({ op: "type", idx: 6, text: "s3cr3t", clear: false });
+
+    expect(r.ok).toBe(true);
+    if (!r.ok) throw new Error("narrow");
+    if (r.op !== "type") throw new Error("narrow op");
+    expect(r.observation).toContain("redacted");
+    expect(r.observation).not.toContain("s3cr3t");
   });
 });
