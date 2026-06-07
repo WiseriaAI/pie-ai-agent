@@ -103,7 +103,7 @@ export function FileOutputCard({
         type="button"
         disabled={disabled}
         onClick={handleClick}
-        className="flex shrink-0 items-center gap-1.5 rounded border border-accent-line bg-accent px-3 py-1.5 text-[12px] font-medium text-surface hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+        className="flex shrink-0 items-center gap-1.5 rounded-lg border border-accent-line bg-accent-strong px-3 py-1.5 text-[12px] font-medium text-surface hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
       >
         <DownloadIcon />
         {t("chat.output.download")}
