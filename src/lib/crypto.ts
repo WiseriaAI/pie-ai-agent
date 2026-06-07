@@ -1,3 +1,5 @@
+import { getConfig, setConfig } from "@/lib/idb/config-store";
+
 const SESSION_KEY_NAME = "encryption_key";
 
 let keyPromise: Promise<CryptoKey> | null = null;
@@ -7,10 +9,10 @@ export async function getOrCreateEncryptionKey(): Promise<CryptoKey> {
 
   keyPromise = (async () => {
     try {
-      const result = await chrome.storage.local.get(SESSION_KEY_NAME);
-      if (result[SESSION_KEY_NAME]) {
+      const stored = await getConfig<number[]>(SESSION_KEY_NAME);
+      if (stored) {
         // Stored as Array.from(Uint8Array) → number[]; cast to satisfy Uint8Array constructor.
-        const rawKey = new Uint8Array(result[SESSION_KEY_NAME] as number[]);
+        const rawKey = new Uint8Array(stored);
         return crypto.subtle.importKey("raw", rawKey, "AES-GCM", true, [
           "encrypt",
           "decrypt",
@@ -27,9 +29,7 @@ export async function getOrCreateEncryptionKey(): Promise<CryptoKey> {
       );
 
       const exported = await crypto.subtle.exportKey("raw", key);
-      await chrome.storage.local.set({
-        [SESSION_KEY_NAME]: Array.from(new Uint8Array(exported)),
-      });
+      await setConfig(SESSION_KEY_NAME, Array.from(new Uint8Array(exported)));
 
       return key;
     } catch (e) {
@@ -80,4 +80,9 @@ export async function decrypt(
       "Failed to decrypt: encryption key may have changed after browser restart. Please re-enter your API key.",
     );
   }
+}
+
+/** Test-only: reset the module-level key promise so the next call re-reads from storage. */
+export function _resetKeyForTests(): void {
+  keyPromise = null;
 }
