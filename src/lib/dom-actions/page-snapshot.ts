@@ -73,12 +73,14 @@ export function pageSnapshotInjected(): PageSnapshotResult {
   // Code editors render virtualized DOM (off-screen lines absent) and aren't
   // matched by INTERACTIVE_SELECTOR. We register the HOST so the agent can
   // discover it, click-focus it, and target read_editor / set_editor_value.
-  const EDITOR_SELECTOR = ".monaco-editor, .cm-editor, .CodeMirror";
+  const EDITOR_SELECTOR = ".monaco-editor, .cm-editor, .CodeMirror, .tox-tinymce, .mce-tinymce";
 
   function editorEngineOf(el: Element): string | null {
     if (el.matches?.(".monaco-editor")) return "Monaco";
     if (el.matches?.(".cm-editor")) return "CodeMirror"; // CM6
     if (el.matches?.(".CodeMirror")) return "CodeMirror"; // CM5
+    if (el.matches?.(".tox-tinymce")) return "TinyMCE";   // v5 / v6
+    if (el.matches?.(".mce-tinymce")) return "TinyMCE";   // v4
     return null;
   }
 
