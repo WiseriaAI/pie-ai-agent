@@ -210,8 +210,8 @@ describe("read_page tool", () => {
     expect(r.observation).toContain(big);
   });
 
-  it("max_bytes clamps to interactive mode hard cap", async () => {
-    const big = "x".repeat(220_000);
+  it("max_bytes clamps to interactive mode hard cap (500KB)", async () => {
+    const big = "x".repeat(600_000);
     vi.stubGlobal("chrome", {
       tabs: { get: vi.fn().mockResolvedValue({ id: 7, url: "https://x.com/", discarded: false }) },
       scripting: {
@@ -231,7 +231,7 @@ describe("read_page tool", () => {
 
     expect(r.success).toBe(true);
     expect(r.observation).toMatch(/frame_id="0".*truncated="true"/s);
-    expect(r.observation!.length).toBeLessThan(180_000);
+    expect(r.observation!.length).toBeLessThan(520_000);
   });
 
   it("HTML budget exhaustion keeps interactive_index entries from all reachable frames", async () => {
@@ -410,6 +410,19 @@ describe("read_page tool", () => {
     expect(r.observation).toMatch(/frame_id="0".*truncated="true"/s);
     expect(r.observation).toContain("\néé\n");
     expect(r.observation).not.toContain("\nééé\n");
+  });
+
+  it("content 模式 max_bytes=500000 不截断 ~400KB HTML", async () => {
+    const big = "<div>" + "x".repeat(400_000) + "SENTINEL_END</div>";
+    const fakeTab = { id: 7, url: "https://example.com/", discarded: false };
+    vi.stubGlobal("chrome", {
+      tabs: { get: vi.fn().mockResolvedValue(fakeTab) },
+      scripting: { executeScript: vi.fn().mockResolvedValue([{ frameId: 0, result: { html: big, interactiveElements: [], scrollableHints: [] } }]) },
+      webNavigation: { getAllFrames: vi.fn().mockResolvedValue([{ frameId: 0, url: "https://example.com/" }]) },
+    });
+    const result = await readPageTool.handler({ tabId: 7, mode: "content", max_bytes: 500_000 }, {} as any);
+    expect(result.success).toBe(true);
+    expect(result.observation).toContain("SENTINEL_END"); // 400KB 处尾部存活 = 未在旧 300K 上限截断
   });
 
   it("returns pdf_tab error when the target tab url ends in .pdf", async () => {

@@ -6,10 +6,10 @@ import { isRestrictedSchemeForGrouping } from "./tabs";
 import { isPdfTab } from "@/lib/pdf/detect";
 
 const MODE_BUDGETS = {
-  auto: { defaultBytes: 120_000, maxBytes: 300_000 },
-  interactive: { defaultBytes: 60_000, maxBytes: 160_000 },
-  content: { defaultBytes: 160_000, maxBytes: 300_000 },
-  full: { defaultBytes: 220_000, maxBytes: 300_000 },
+  auto: { defaultBytes: 120_000, maxBytes: 500_000 },
+  interactive: { defaultBytes: 60_000, maxBytes: 500_000 },
+  content: { defaultBytes: 160_000, maxBytes: 500_000 },
+  full: { defaultBytes: 220_000, maxBytes: 500_000 },
 } as const;
 
 type ReadPageMode = keyof typeof MODE_BUDGETS;
