@@ -1,5 +1,8 @@
 import type { ProviderRef } from "@/lib/model-router";
-import { INSTANCE_KEY, INDEX_KEY as INSTANCES_INDEX_KEY } from "@/lib/instances";
+import { listInstances } from "@/lib/instances";
+import { getConfig, setConfig } from "@/lib/idb/config-store";
+import { txMulti, STORES } from "@/lib/idb/db";
+import { publishChange } from "@/lib/store-bus";
 
 export interface StoredCustomProvider {
   id: string;
@@ -35,29 +38,21 @@ export function providerRefToId(ref: ProviderRef): string | null {
 }
 
 async function readIndex(): Promise<string[]> {
-  const r = await chrome.storage.local.get(INDEX_KEY);
-  return ((r[INDEX_KEY] as string[]) ?? []).slice();
-}
-
-async function writeIndex(idx: string[]): Promise<void> {
-  await chrome.storage.local.set({ [INDEX_KEY]: idx });
+  return ((await getConfig<string[]>(INDEX_KEY)) ?? []).slice();
 }
 
 export async function listCustomProviders(): Promise<StoredCustomProvider[]> {
   const idx = await readIndex();
   const out: StoredCustomProvider[] = [];
   for (const id of idx) {
-    const r = await chrome.storage.local.get(ENTITY_KEY(id));
-    const stored = r[ENTITY_KEY(id)] as StoredCustomProvider | undefined;
+    const stored = await getConfig<StoredCustomProvider>(ENTITY_KEY(id));
     if (stored) out.push(stored);
   }
   return out;
 }
 
 export async function getCustomProvider(id: string): Promise<StoredCustomProvider | null> {
-  const r = await chrome.storage.local.get(ENTITY_KEY(id));
-  const stored = r[ENTITY_KEY(id)] as StoredCustomProvider | undefined;
-  return stored ?? null;
+  return (await getConfig<StoredCustomProvider>(ENTITY_KEY(id))) ?? null;
 }
 
 export async function saveCustomProvider(input: {
@@ -77,7 +72,18 @@ export async function saveCustomProvider(input: {
   };
   const idx = await readIndex();
   idx.push(id);
-  await chrome.storage.local.set({ [ENTITY_KEY(id)]: entity, [INDEX_KEY]: idx });
+  // Write entity + index in a single multi-put transaction so they commit
+  // all-or-nothing (a crash between two separate writes would otherwise leave
+  // an orphan entity that listCustomProviders can't see, or an index pointing
+  // at a missing entity). Both records use the config `{ key, value }` shape —
+  // mirrors config-store record shape; one txMulti to keep entity+index atomic.
+  await txMulti([STORES.config], "readwrite", (m) => {
+    m[STORES.config].put({ key: ENTITY_KEY(id), value: entity });
+    m[STORES.config].put({ key: INDEX_KEY, value: idx });
+  });
+  // setConfig is bypassed above, so emit its config changes manually.
+  publishChange("config", "put", ENTITY_KEY(id));
+  publishChange("config", "put", INDEX_KEY);
   return id;
 }
 
@@ -85,8 +91,7 @@ export async function updateCustomProvider(
   id: string,
   patch: Partial<{ name: string; baseUrl: string; models: CustomModelMeta[] }>,
 ): Promise<void> {
-  const r = await chrome.storage.local.get(ENTITY_KEY(id));
-  const stored = r[ENTITY_KEY(id)] as StoredCustomProvider | undefined;
+  const stored = await getConfig<StoredCustomProvider>(ENTITY_KEY(id));
   if (!stored) throw new Error(`Custom provider ${id} not found`);
   const next: StoredCustomProvider = {
     ...stored,
@@ -95,7 +100,7 @@ export async function updateCustomProvider(
     ...(patch.models !== undefined && { models: patch.models }),
     updatedAt: Date.now(),
   };
-  await chrome.storage.local.set({ [ENTITY_KEY(id)]: next });
+  await setConfig(ENTITY_KEY(id), next);
 }
 
 /** Append a model to a custom provider's model list. Idempotent on model id
@@ -135,21 +140,18 @@ export async function removeCustomProviderModel(id: string, modelId: string): Pr
 
 export async function getInstancesUsingCustomProvider(id: string): Promise<CustomProviderInstanceRef[]> {
   const ref = `${CUSTOM_PREFIX}${id}`;
-  const r = await chrome.storage.local.get(INSTANCES_INDEX_KEY);
-  const idx: string[] = (r[INSTANCES_INDEX_KEY] as string[]) ?? [];
-  const result: CustomProviderInstanceRef[] = [];
-  for (const iid of idx) {
-    const r2 = await chrome.storage.local.get(INSTANCE_KEY(iid));
-    const stored = r2[INSTANCE_KEY(iid)] as { provider?: string; nickname?: string; model?: string } | undefined;
-    if (stored?.provider === ref) {
-      result.push({
-        id: iid,
-        nickname: stored.nickname ?? "",
-        model: stored.model ?? "",
-      });
-    }
-  }
-  return result;
+  // Instances now live in the IDB `instances` store; read them through the
+  // instances module rather than the legacy `instances_index` / `instance_*`
+  // keys. Reference semantics unchanged: an instance references this custom
+  // provider iff its `provider` ref equals `custom:<id>`.
+  const insts = await listInstances();
+  return insts
+    .filter((i) => i.provider === ref)
+    .map((i) => ({
+      id: i.id,
+      nickname: i.nickname ?? "",
+      model: (i as { model?: string }).model ?? "",
+    }));
 }
 
 export async function deleteCustomProvider(id: string): Promise<void> {
@@ -160,6 +162,14 @@ export async function deleteCustomProvider(id: string): Promise<void> {
     );
   }
   const idx = (await readIndex()).filter((x) => x !== id);
-  await chrome.storage.local.set({ [INDEX_KEY]: idx });
-  await chrome.storage.local.remove(ENTITY_KEY(id));
+  // Delete entity + update index in one transaction so they commit
+  // all-or-nothing. Index record uses the config `{ key, value }` shape —
+  // mirrors config-store record shape; one txMulti to keep entity+index atomic.
+  await txMulti([STORES.config], "readwrite", (m) => {
+    m[STORES.config].delete(ENTITY_KEY(id));
+    m[STORES.config].put({ key: INDEX_KEY, value: idx });
+  });
+  // setConfig/removeConfig are bypassed above, so emit config changes manually.
+  publishChange("config", "remove", ENTITY_KEY(id));
+  publishChange("config", "put", INDEX_KEY);
 }
