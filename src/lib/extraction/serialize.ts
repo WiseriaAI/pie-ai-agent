@@ -28,6 +28,6 @@ export function toCSV(
   return `${head}\n${body}`;
 }
 
-// ExtractionResult is intentionally imported here for Task 4 (toContractJSON will be added to this file next).
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-type _ExtractionResultRef = ExtractionResult;
+export function toContractJSON(result: ExtractionResult): string {
+  return JSON.stringify(result, null, 2);
+}

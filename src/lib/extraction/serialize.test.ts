@@ -1,7 +1,7 @@
 // src/lib/extraction/serialize.test.ts
 import { describe, it, expect } from "vitest";
-import { toCSV } from "./serialize";
-import type { ExtractionField, ExtractionRow } from "./types";
+import { toCSV, toContractJSON } from "./serialize";
+import type { ExtractionField, ExtractionRow, ExtractionResult } from "./types";
 
 const schema: ExtractionField[] = [
   { name: "title", type: "string" },
@@ -26,5 +26,19 @@ describe("toCSV", () => {
   });
   it("空 rows 仅表头", () => {
     expect(toCSV([], schema, { includeSourceColumns: true })).toBe("title,price,_source_page,_source_url");
+  });
+});
+
+describe("toContractJSON", () => {
+  it("产出完整契约 {schema, rows, meta}", () => {
+    const result: ExtractionResult = {
+      schema,
+      rows,
+      meta: { extractedAt: "2026-06-07T00:00:00Z", rowCount: 2, pageCount: 2, producedBy: { skillId: "s1", skillName: "N", version: 1 } },
+    };
+    const parsed = JSON.parse(toContractJSON(result));
+    expect(parsed.rows[0]._source).toEqual({ page: 1, url: "https://x/p1" });
+    expect(parsed.meta.rowCount).toBe(2);
+    expect(parsed.schema[0].name).toBe("title");
   });
 });
