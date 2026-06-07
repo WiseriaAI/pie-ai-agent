@@ -196,12 +196,16 @@ describe("SessionDrawer — a11y", () => {
 });
 
 describe("SessionDrawer — storage indicator", () => {
-  it("renders a progressbar for storage usage", () => {
+  it("renders raw usage label (no progressbar)", () => {
     render(<SessionDrawer {...BASE_PROPS} />);
-    const bar = screen.getByRole("progressbar");
-    expect(bar).toBeTruthy();
-    expect(bar.getAttribute("aria-valuemin")).toBe("0");
-    expect(bar.getAttribute("aria-valuemax")).toBe("100");
+    // Progress bar is removed; a plain "X MB" usage span is shown instead.
+    expect(screen.queryByRole("progressbar")).toBeNull();
+    // The storage label is rendered via aria-label="Storage" span.
+    const storageLabel = document.querySelector("[aria-label='Storage']");
+    expect(storageLabel).toBeTruthy();
+    // Usage value contains "MB"
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.textContent).toMatch(/MB/);
   });
 });
 
