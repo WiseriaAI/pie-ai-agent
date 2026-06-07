@@ -11,6 +11,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { installCaptureListener } from "./capture";
 import { detectSensitive } from "./redact";
 import type { CapturedActionPayload } from "./types";
+import { UNTRUSTED_WRAPPER_TAGS } from "@/lib/agent/untrusted-wrappers";
 
 describe("capture.installCaptureListener", () => {
   let captured: Array<{ type: string; payload: CapturedActionPayload }>;
@@ -509,16 +510,10 @@ describe("capture.installCaptureListener", () => {
       // Exhaustive check: every tag must be neutralized by capture's WRAPPER_TAGS_RE.
       // This acts as a runtime snapshot of the full table, complementing the source-text
       // lock-step test in untrusted-wrappers.test.ts.
-      const ALL_WRAPPER_TAGS = [
-        "untrusted_page_content", "untrusted_skill_params", "untrusted_tab_metadata",
-        "untrusted_user_message", "untrusted_prior_task_summary", "untrusted_continuity_marker",
-        "untrusted_page_quote", "untrusted_page_element", "untrusted_skill_content",
-        "untrusted_compacted_steps", "untrusted_search_result", "untrusted_pdf_page",
-        "untrusted_pdf_match", "untrusted_pdf_outline_entry", "untrusted_page_match",
-        "untrusted_local_file", "untrusted_editor_content",
-      ];
+      // Task 11 Part E: replaced hardcoded array with live import so future tag
+      // additions to UNTRUSTED_WRAPPER_TAGS are automatically covered here.
 
-      for (const tag of ALL_WRAPPER_TAGS) {
+      for (const tag of UNTRUSTED_WRAPPER_TAGS) {
         // Reset state for each tag
         localCapture = [];
         (window as Window & { __pieRecordingInstalled?: boolean }).__pieRecordingInstalled = false;
