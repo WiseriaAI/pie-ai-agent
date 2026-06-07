@@ -45,9 +45,9 @@ export const INDEX_KEY = "session_index";
 // commits all of it in ONE IDB transaction spanning the sessions +
 // session_index stores (the IDB equivalent of chrome.storage's atomic set).
 //
-// Exported for `lifecycle.ts` so it can write directly (bypassing the
-// pre-write quota guard in `setSessionAgent`) without a skipQuotaGuard
-// flag leaking into the public API.
+// Exported for `lifecycle.ts` so it can build multi-key atomic batches directly
+// (meta + agent + index in one commit) without going through
+// `setSessionMeta` / `setSessionAgent`.
 export type WriteBatch = Record<string, unknown>;
 
 export async function writeAtomic(batch: WriteBatch): Promise<void> {
@@ -95,19 +95,27 @@ async function readIndex(): Promise<SessionIndexEntry[]> {
 }
 
 /**
- * Read the raw session index (including archived entries) without filtering.
+ * Read the session index including archived entries.
  * Exported for `lifecycle.ts` which needs to iterate ALL entries including
  * archived ones (for hardDeleteExpired, checkAndArchiveLRU, etc.).
  * Returns an empty array if the index doesn't exist or isn't an array.
  *
- * NOTE: this preserves the historical behavioral difference vs. `readIndex` —
- * `readIndex` defensively drops malformed entries, `readIndexRaw` does NOT
- * (it returns whatever `getIndex` provides as long as it's an array).
+ * "Raw" here means "no status/archived filtering applied" — it still runs the
+ * SAME defensive type filter as `readIndex` (dropping entries missing required
+ * fields) so a single corrupt entry can't break the whole list. The historical
+ * implementation filtered identically; this preserves that behavior.
  */
 export async function readIndexRaw(): Promise<SessionIndexEntry[]> {
   const raw = await getIndex();
   if (!Array.isArray(raw)) return [];
-  return raw;
+  return raw.filter(
+    (e): e is SessionIndexEntry =>
+      e !== null &&
+      typeof e === "object" &&
+      typeof (e as SessionIndexEntry).id === "string" &&
+      typeof (e as SessionIndexEntry).lastAccessedAt === "number" &&
+      typeof (e as SessionIndexEntry).status === "string",
+  );
 }
 
 function indexEntryFromMeta(meta: SessionMeta): SessionIndexEntry {
@@ -267,14 +275,16 @@ export async function getSessionMeta(id: string): Promise<SessionMeta | null> {
 
 // ── R10 storage scrub ────────────────────────────────────────────────────────
 //
-// `ImageAttachment.data` (base64 bytes) must never land in chrome.storage —
-// the 8 MB quota would be exhausted by a handful of screenshots. Before
-// persisting SessionMeta we strip `data` + `byteLength` from every
-// ImageAttachment in `meta.messages`, replacing the entry with an
+// `ImageAttachment.data` (base64 bytes) must not land in persisted SessionMeta.
+// Not for a hard quota reason anymore (IDB has no 8 MB ceiling), but for size
+// hygiene: bytes are the heaviest part of a message and don't belong at rest in
+// the meta record. Before persisting SessionMeta we strip `data` + `byteLength`
+// from every ImageAttachment in `meta.messages`, replacing the entry with an
 // ImagePlaceholder. The in-memory cache (image-cache.ts) holds the bytes for
-// the lifetime of the session; hydrateAttachments re-inflates on resume if
-// the session is still warm, or leaves the placeholder on a cold-start cache
-// miss (the user sees a "session drifted" card, not a quota error).
+// the lifetime of the session; hydrateAttachments re-inflates on resume if the
+// session is still warm, or leaves the placeholder on a cold-start cache miss
+// (the user sees a "session drifted" card) — the placeholder round-trip is what
+// preserves attachment identity across reload.
 function scrubAttachmentBytes(meta: SessionMeta): SessionMeta {
   if (!meta.messages?.length) return meta;
   let mutated = false;
@@ -361,8 +371,8 @@ export async function setSessionAgent(
 }
 
 /**
- * List sessions in `lastAccessedAt` desc order. Reads only the single
- * `session_index` key — does not touch per-session meta/agent storage.
+ * List sessions in `lastAccessedAt` desc order. Reads only the session index
+ * store entry — does not touch per-session meta/agent records.
  */
 export async function listSessionIndex(): Promise<SessionIndexEntry[]> {
   const entries = await readIndex();
@@ -719,13 +729,19 @@ export async function getTotalBytes(): Promise<number> {
 }
 
 /**
- * Fallback byte estimate: JSON-stringify the full contents of the sessions /
- * config / instances stores and sum their lengths. Coarse but dependency-free,
- * used only when `navigator.storage.estimate()` is unavailable (e.g. tests).
+ * Fallback byte estimate: JSON-stringify the full contents of every store we
+ * own (sessions / session_index / config / instances) and sum their lengths.
+ * Coarse but dependency-free, used only when `navigator.storage.estimate()` is
+ * unavailable (e.g. tests).
  */
 async function getStoresByteLength(): Promise<number> {
   let total = 0;
-  for (const store of [STORES.sessions, STORES.config, STORES.instances] as const) {
+  for (const store of [
+    STORES.sessions,
+    STORES.sessionIndex,
+    STORES.config,
+    STORES.instances,
+  ] as const) {
     const all = await tx<unknown[]>(store, "readonly", (s) => s.getAll());
     total += JSON.stringify(all).length;
   }

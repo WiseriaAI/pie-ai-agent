@@ -25,6 +25,7 @@ import {
   migrateLastTaskSynthFromMeta,
   clearTaskPinAtSessionEnd,
   upgradeAutoToTaskAtChatStart,
+  readIndexRaw,
   agentKey,
   metaKey,
 } from "./storage";
@@ -338,6 +339,42 @@ describe("listSessionIndex", () => {
     const list = await listSessionIndex();
     expect(list).toHaveLength(1);
     expect(list[0]!.status).toBe("archived");
+  });
+});
+
+describe("readIndexRaw", () => {
+  it("returns [] when nothing has been written", async () => {
+    expect(await readIndexRaw()).toEqual([]);
+  });
+
+  it("includes archived entries (no status filtering, unlike a status-filtered view)", async () => {
+    const a = await createSession({ now: 1000 });
+    await setSessionMeta({
+      ...(await getSessionMeta(a.id))!,
+      status: "archived",
+      archivedAt: 1500,
+      lastAccessedAt: 1500,
+    });
+    const raw = await readIndexRaw();
+    expect(raw).toHaveLength(1);
+    expect(raw[0]!.status).toBe("archived");
+  });
+
+  it("defensively drops malformed entries (parity with readIndex's filter)", async () => {
+    // Historical behavior: readIndexRaw runs the SAME defensive type filter as
+    // readIndex — a single corrupt index entry must not survive into the
+    // returned list. Seed a good entry alongside malformed ones directly in IDB.
+    const good = await createSession();
+    const current = await getIndex();
+    await setIndex([
+      ...current,
+      { id: 42 /* not a string */ } as unknown as import("./types").SessionIndexEntry,
+      "totally-bogus" as unknown as import("./types").SessionIndexEntry,
+      null as unknown as import("./types").SessionIndexEntry,
+    ]);
+    const raw = await readIndexRaw();
+    expect(raw).toHaveLength(1);
+    expect(raw[0]!.id).toBe(good.id);
   });
 });
 
