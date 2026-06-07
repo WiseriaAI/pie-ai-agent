@@ -58,14 +58,18 @@ import {
   registerOnboardingPort,
   unregisterOnboardingPort,
   handleOnboardingResponse,
-  onStorageChanged as onCdpInputStorageChanged,
+  onCdpInputEnabledChanged,
 } from "@/lib/cdp-input-onboarding";
 import {
   registerLocalFilePort,
   unregisterLocalFilePort,
   handleLocalFileResponse,
 } from "@/lib/local-file-request";
-import { CDP_INPUT_ENABLED_STORAGE_KEY } from "@/lib/cdp-input-enabled";
+import {
+  CDP_INPUT_ENABLED_STORAGE_KEY,
+  isCdpInputEnabled,
+} from "@/lib/cdp-input-enabled";
+import { onStoreChange } from "@/lib/store-bus";
 
 import { runStartupMigrations } from "@/lib/startup-migrations";
 import { getCrossSessionPinnedTabIds } from "@/lib/sessions/pinned-tab-registry";
@@ -295,14 +299,15 @@ chrome.debugger.onDetach.addListener((source, reason) => {
 // running. Tear down every live session immediately + propagate abort
 // to each owning task. Toggle ON is a no-op here (next acquire creates
 // the session lazily).
-chrome.storage.onChanged.addListener((changes, area) => {
-  if (area !== "local") return;
-  onCdpInputStorageChanged(changes);
-  const change = changes[CDP_INPUT_ENABLED_STORAGE_KEY];
-  if (!change) return;
-  if (change.newValue === false || change.newValue === undefined) {
-    void detachAllSessions("kill-switch");
-  }
+onStoreChange("config", (c) => {
+  if (c.id !== CDP_INPUT_ENABLED_STORAGE_KEY) return;
+  void (async () => {
+    const enabled = await isCdpInputEnabled();
+    onCdpInputEnabledChanged(enabled);
+    if (enabled === false || enabled === undefined) {
+      void detachAllSessions("kill-switch");
+    }
+  })();
 });
 
 // --- Page Content Extraction ---
