@@ -45,7 +45,7 @@ describe("authoritative constants", () => {
   });
   it("WRAPPER_TAGS_LIST matches the agent-layer master table", async () => {
     const { UNTRUSTED_WRAPPER_TAGS } = await import("../../agent/untrusted-wrappers");
-    expect([...WRAPPER_TAGS_LIST].sort()).toEqual([...UNTRUSTED_WRAPPER_TAGS].sort());
+    expect([...WRAPPER_TAGS_LIST]).toEqual([...UNTRUSTED_WRAPPER_TAGS]);
   });
   it("TYPE_EDITOR_MARKERS keeps the 9 type-diagnostic editors", () => {
     expect(TYPE_EDITOR_MARKERS.map((m) => m[1])).toEqual([
