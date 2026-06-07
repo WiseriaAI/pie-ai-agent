@@ -2,6 +2,18 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { chromeMock } from "@/test/setup";
 import { migrateInstanceModel } from "./migrate-instance-model";
 import { getLastModelSelection } from "./last-model-selection";
+import { setActiveInstance } from "./instances";
+import { _resetForTests } from "./idb/db";
+
+// NOTE: migrateInstanceModel is an upstream migration whose instance records +
+// `instances_index` still live in chrome.storage.local (read/written directly).
+// Two of its dependencies are IDB-backed, however: it reads the active instance
+// via getActiveInstance() (IDB config `active_instance_id`) and writes
+// `last_model_selection` via setLastModelSelection (IDB config). So:
+//   - instance / index seeding + assertions → chrome.storage mock
+//   - active instance seeding → setActiveInstance (IDB)
+//   - last_model_selection assertion → getLastModelSelection (IDB)
+// IDB is reset per test so stale IDB config can't leak into the no-op cases.
 
 // Seed a legacy V2 instance (with the old `model` field) directly into the
 // in-memory store — migration only moves the stored record, it never decrypts.
@@ -25,8 +37,9 @@ function stored(id: string): Record<string, unknown> | undefined {
   return chromeMock.storage.local.__store[`instance_${id}`] as Record<string, unknown> | undefined;
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   chromeMock.storage.local.__store = {};
+  await _resetForTests();
 });
 
 describe("migrateInstanceModel", () => {
@@ -35,7 +48,7 @@ describe("migrateInstanceModel", () => {
     seed("i2", "openai", 200, "gpt-4o-mini");
     seed("i3", "anthropic", 150, "claude-opus-4-7");
     setIndex(["i1", "i2", "i3"]);
-    chromeMock.storage.local.__store["active_instance_id"] = "i1";
+    await setActiveInstance("i1");
 
     await migrateInstanceModel();
 
@@ -48,7 +61,7 @@ describe("migrateInstanceModel", () => {
   it("seeds last_model_selection from the kept active instance's old model", async () => {
     seed("i1", "openai", 100, "gpt-4o");
     setIndex(["i1"]);
-    chromeMock.storage.local.__store["active_instance_id"] = "i1";
+    await setActiveInstance("i1");
 
     await migrateInstanceModel();
 
