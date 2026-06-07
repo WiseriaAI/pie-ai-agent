@@ -1,7 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
+import { _resetForTests } from "@/lib/idb/db";
 import { getLastModelSelection, setLastModelSelection } from "./last-model-selection";
 
-// chrome.storage.local in-memory mock + per-test reset provided by src/test/setup.ts
+beforeEach(async () => {
+  await _resetForTests();
+});
 
 describe("last-model-selection", () => {
   it("returns null when nothing stored", async () => {
