@@ -21,11 +21,11 @@ describe("read_page budget enforcement", () => {
         executeScript: vi.fn().mockResolvedValue([
           {
             frameId: 0,
-            result: { html: huge, scrollableHints: [] },
+            result: { op: "snapshot" as const, html: huge, interactiveElements: [], scrollableHints: [] },
           },
           {
             frameId: 1,
-            result: { html: "<p>small</p>", scrollableHints: [] },
+            result: { op: "snapshot" as const, html: "<p>small</p>", interactiveElements: [], scrollableHints: [] },
           },
         ]),
       },

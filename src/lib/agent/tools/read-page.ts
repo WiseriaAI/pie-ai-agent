@@ -1,6 +1,6 @@
 import type { Tool, ToolHandlerContext } from "../types";
 import type { ActionResult } from "../../dom-actions/types";
-import { pageSnapshotInjected, type PageSnapshotResult } from "../../dom-actions/page-snapshot";
+import { probePageInjected, type ProbeResult } from "../../dom-actions/probe-core";
 import { escapeWrapperAttribute, escapeUntrustedWrappers } from "../untrusted-wrappers";
 import { isRestrictedSchemeForGrouping } from "./tabs";
 import { isPdfTab } from "@/lib/pdf/detect";
@@ -47,7 +47,9 @@ function elementText(value: string): string {
   return escapeWrapperAttribute(escapeUntrustedWrappers(value));
 }
 
-function interactivePriority(el: PageSnapshotResult["interactiveElements"][number]): number {
+type SnapshotResult = Extract<ProbeResult, { op: "snapshot" }>;
+
+function interactivePriority(el: SnapshotResult["interactiveElements"][number]): number {
   const tag = el.tag.toLowerCase();
   const role = el.role.toLowerCase();
   if (el.contenteditable || tag === "input" || tag === "textarea" || role === "textbox") return 0;
@@ -60,7 +62,7 @@ function interactivePriority(el: PageSnapshotResult["interactiveElements"][numbe
 
 function renderInteractiveIndex(
   mode: ReadPageMode,
-  frames: Array<{ frameId: number; crossOrigin: boolean; elements: PageSnapshotResult["interactiveElements"] }>,
+  frames: Array<{ frameId: number; crossOrigin: boolean; elements: SnapshotResult["interactiveElements"] }>,
 ): string {
   const all = frames.flatMap((f, frameOrder) =>
     f.elements.map((el, elementOrder) => ({
@@ -172,12 +174,13 @@ export const readPageTool: Tool = {
       return { success: false, error: "discardedTabRequiresActivation" };
     }
 
-    let results: chrome.scripting.InjectionResult<PageSnapshotResult>[];
+    let results: chrome.scripting.InjectionResult<ProbeResult>[];
     try {
       results = await chrome.scripting.executeScript({
         target: { tabId: a.tabId, allFrames: true },
-        func: pageSnapshotInjected,
-      }) as chrome.scripting.InjectionResult<PageSnapshotResult>[];
+        func: probePageInjected,
+        args: [{ op: "snapshot" }],
+      }) as chrome.scripting.InjectionResult<ProbeResult>[];
     } catch (e) {
       return { success: false, error: e instanceof Error ? e.message : "executeScript failed" };
     }
@@ -195,7 +198,7 @@ export const readPageTool: Tool = {
         // assigns frameIds sequentially on first parse — holds in practice; may
         // drift if a child navigates and gets a new frameId.
         .sort((x, y) => x.frameId - y.frameId);
-      // Regex depends on page-snapshot.ts stripping all non-whitelisted iframe
+      // Regex depends on probe-core.ts stripping all non-whitelisted iframe
       // attributes — only data-pie-iframe-position survives, so [^>]* is safe.
       return html.replace(
         /<iframe([^>]*)data-pie-iframe-position="(\d+)"([^>]*)>([\s\S]*?)<\/iframe>/g,
@@ -221,7 +224,7 @@ export const readPageTool: Tool = {
     const frameInteractive: Array<{
       frameId: number;
       crossOrigin: boolean;
-      elements: PageSnapshotResult["interactiveElements"];
+      elements: SnapshotResult["interactiveElements"];
     }> = [];
     const blocks: string[] = [];
     const scrollableLines: string[] = [];
@@ -230,7 +233,8 @@ export const readPageTool: Tool = {
 
     for (const f of sortedFrames) {
       const inj = results.find((r) => r.frameId === f.frameId);
-      const data = inj?.result;
+      const rawData = inj?.result;
+      const data = rawData?.op === "snapshot" ? rawData : undefined;
       let origin: string | null = null;
       try { origin = new URL(f.url).origin; if (origin === "null") origin = null; } catch {}
       const crossOrigin = topOrigin !== null && origin !== null && origin !== topOrigin;

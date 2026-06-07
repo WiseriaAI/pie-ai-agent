@@ -20,15 +20,15 @@ describe("read_page iframe fanout cross-layer", () => {
         executeScript: vi.fn().mockResolvedValue([
           {
             frameId: 0,
-            result: { html: "<p>top</p>", scrollableHints: [] },
+            result: { op: "snapshot" as const, html: "<p>top</p>", interactiveElements: [], scrollableHints: [] },
           },
           {
             frameId: 2,
-            result: { html: "<p>same</p>", scrollableHints: [] },
+            result: { op: "snapshot" as const, html: "<p>same</p>", interactiveElements: [], scrollableHints: [] },
           },
           {
             frameId: 3,
-            result: { html: "<p>cross</p>", scrollableHints: [] },
+            result: { op: "snapshot" as const, html: "<p>cross</p>", interactiveElements: [], scrollableHints: [] },
           },
         ]),
       },

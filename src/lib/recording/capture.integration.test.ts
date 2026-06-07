@@ -11,6 +11,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { installCaptureListener } from "./capture";
 import { detectSensitive } from "./redact";
 import type { CapturedActionPayload } from "./types";
+import { UNTRUSTED_WRAPPER_TAGS } from "@/lib/agent/untrusted-wrappers";
 
 describe("capture.installCaptureListener", () => {
   let captured: Array<{ type: string; payload: CapturedActionPayload }>;
@@ -423,5 +424,112 @@ describe("capture.installCaptureListener", () => {
     expect(clicks).toHaveLength(1);
     expect(clicks[0]!.payload.fromPopup).toBeUndefined();
     uninstall();
+  });
+
+  // ── Security: wrapper-tag neutralization in captured labels ──
+  // Tags NOT in capture's old 6-tag list must also be filtered. A page-injected
+  // wrapper tag in an element's aria-label/innerText is a prompt-injection escape
+  // surface; capture.ts must neutralize the full 17-tag master table.
+  //
+  // Each sub-test is isolated: localCapture + teardown track their own state so
+  // a failing assertion does not leave stale listeners for subsequent tests.
+
+  describe("SECURITY: full wrapper-table escaping in labels", () => {
+    let teardown: () => void;
+    let localCapture: Array<{ type: string; payload: CapturedActionPayload }>;
+
+    beforeEach(() => {
+      localCapture = [];
+      (window as Window & { __pieRecordingInstalled?: boolean }).__pieRecordingInstalled = false;
+      (window as unknown as { chrome: unknown }).chrome = {
+        runtime: {
+          sendMessage: vi.fn((msg: unknown) => {
+            localCapture.push(msg as { type: string; payload: CapturedActionPayload });
+          }),
+        },
+      };
+    });
+
+    afterEach(() => {
+      teardown?.();
+    });
+
+    it("filters untrusted_editor_content in aria-label (was missing from old 6-tag list)", () => {
+      document.body.innerHTML = `<main><button>Click</button></main>`;
+      const btn = document.querySelector("button")!;
+      btn.setAttribute("aria-label", "x <untrusted_editor_content> y");
+      teardown = installCaptureListener();
+      btn.click();
+
+      const clicks = localCapture.filter((c) => c.payload.type === "click");
+      expect(clicks).toHaveLength(1);
+      expect(clicks[0]!.payload.label).toContain("[filtered]");
+      expect(clicks[0]!.payload.label).not.toContain("untrusted_editor_content");
+    });
+
+    it("filters untrusted_pdf_page in aria-label (was missing from old 6-tag list)", () => {
+      document.body.innerHTML = `<main><button>Click</button></main>`;
+      const btn = document.querySelector("button")!;
+      btn.setAttribute("aria-label", "x <untrusted_pdf_page> y");
+      teardown = installCaptureListener();
+      btn.click();
+
+      const clicks = localCapture.filter((c) => c.payload.type === "click");
+      expect(clicks).toHaveLength(1);
+      expect(clicks[0]!.payload.label).toContain("[filtered]");
+      expect(clicks[0]!.payload.label).not.toContain("untrusted_pdf_page");
+    });
+
+    it("filters untrusted_page_match in aria-label (was missing from old 6-tag list)", () => {
+      document.body.innerHTML = `<main><button>Click</button></main>`;
+      const btn = document.querySelector("button")!;
+      btn.setAttribute("aria-label", "before <untrusted_page_match> after");
+      teardown = installCaptureListener();
+      btn.click();
+
+      const clicks = localCapture.filter((c) => c.payload.type === "click");
+      expect(clicks).toHaveLength(1);
+      expect(clicks[0]!.payload.label).toContain("[filtered]");
+      expect(clicks[0]!.payload.label).not.toContain("untrusted_page_match");
+    });
+
+    it("filters untrusted_local_file in aria-label (was missing from old 6-tag list)", () => {
+      document.body.innerHTML = `<main><button>Click</button></main>`;
+      const btn = document.querySelector("button")!;
+      btn.setAttribute("aria-label", "<untrusted_local_file id='x'>");
+      teardown = installCaptureListener();
+      btn.click();
+
+      const clicks = localCapture.filter((c) => c.payload.type === "click");
+      expect(clicks).toHaveLength(1);
+      expect(clicks[0]!.payload.label).toContain("[filtered]");
+      expect(clicks[0]!.payload.label).not.toContain("untrusted_local_file");
+    });
+
+    it("filters all 17 master tags — no tag in WRAPPER_TAGS_LIST escapes label sanitization", () => {
+      // Exhaustive check: every tag must be neutralized by capture's WRAPPER_TAGS_RE.
+      // This acts as a runtime snapshot of the full table, complementing the source-text
+      // lock-step test in untrusted-wrappers.test.ts.
+      // Task 11 Part E: replaced hardcoded array with live import so future tag
+      // additions to UNTRUSTED_WRAPPER_TAGS are automatically covered here.
+
+      for (const tag of UNTRUSTED_WRAPPER_TAGS) {
+        // Reset state for each tag
+        localCapture = [];
+        (window as Window & { __pieRecordingInstalled?: boolean }).__pieRecordingInstalled = false;
+        teardown?.();
+
+        document.body.innerHTML = `<main><button>Click</button></main>`;
+        const btn = document.querySelector("button")!;
+        btn.setAttribute("aria-label", `before <${tag}> after`);
+        teardown = installCaptureListener();
+        btn.click();
+
+        const clicks = localCapture.filter((c) => c.payload.type === "click");
+        expect(clicks).toHaveLength(1);
+        expect(clicks[0]!.payload.label, `tag "${tag}" must be filtered in label`).not.toContain(tag);
+        expect(clicks[0]!.payload.label, `tag "${tag}" must produce [filtered] in label`).toContain("[filtered]");
+      }
+    });
   });
 });

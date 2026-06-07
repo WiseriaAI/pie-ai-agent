@@ -19,11 +19,29 @@ const TAG_DELETE = new Set(["script", "style", "noscript", "template"]);
 
 const UNSAFE_URL = /^\s*(javascript|data):/i;
 
+// VERBATIM copy of WRAPPER_TAGS_LIST from src/lib/dom-actions/_shared/interactive.ts
+// (same order). html-strip.ts cannot import from interactive.ts because
+// stripToWhitelist is mirrored verbatim into probe-core.ts (executeScript
+// serialisation constraint). untrusted-wrappers.test.ts dual-list lock-step
+// guards this list against drift.
 const WRAPPER_TAGS_LIST = [
-  "untrusted_page_content", "untrusted_skill_params", "untrusted_tab_metadata",
-  "untrusted_user_message", "untrusted_prior_task_summary",
-  "untrusted_continuity_marker", "untrusted_page_quote", "untrusted_page_element",
-  "untrusted_skill_content", "untrusted_compacted_steps", "untrusted_search_result",
+  "untrusted_page_content",
+  "untrusted_skill_params",
+  "untrusted_tab_metadata",
+  "untrusted_user_message",
+  "untrusted_prior_task_summary",
+  "untrusted_continuity_marker",
+  "untrusted_page_quote",
+  "untrusted_page_element",
+  "untrusted_skill_content",
+  "untrusted_compacted_steps",
+  "untrusted_search_result",
+  "untrusted_pdf_page",
+  "untrusted_pdf_match",
+  "untrusted_pdf_outline_entry",
+  "untrusted_page_match",
+  "untrusted_local_file",
+  "untrusted_editor_content",
 ];
 const WRAPPER_TAGS = new Set(WRAPPER_TAGS_LIST);
 

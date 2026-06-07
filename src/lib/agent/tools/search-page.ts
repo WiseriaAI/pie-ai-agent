@@ -1,6 +1,6 @@
 import type { Tool, ToolHandlerContext } from "../types";
 import type { ActionResult } from "../../dom-actions/types";
-import { searchPageInjected, type SearchPageResult } from "../../dom-actions/search-page";
+import { probePageInjected, type ProbeResult, type SearchMatch } from "../../dom-actions/probe-core";
 import { escapeWrapperAttribute, escapeUntrustedWrappers } from "../untrusted-wrappers";
 import { isRestrictedSchemeForGrouping } from "./tabs";
 import { isPdfTab } from "@/lib/pdf/detect";
@@ -111,25 +111,27 @@ export const searchPageTool: Tool = {
       return { success: false, error: "discardedTabRequiresActivation" };
     }
 
-    let results: chrome.scripting.InjectionResult<SearchPageResult>[];
+    let results: chrome.scripting.InjectionResult<ProbeResult>[];
     try {
       results = (await chrome.scripting.executeScript({
         target: { tabId: a.tabId, allFrames: true },
-        func: searchPageInjected,
-        args: [{ queries, regex, mode, maxResults, searchBy }],
-      })) as chrome.scripting.InjectionResult<SearchPageResult>[];
+        func: probePageInjected,
+        args: [{ op: "search", queries, regex, mode, maxResults, searchBy }],
+      })) as chrome.scripting.InjectionResult<ProbeResult>[];
     } catch (e) {
       return { success: false, error: e instanceof Error ? e.message : "executeScript failed" };
     }
 
     for (const r of results) {
-      if (r.result?.invalidRegex) {
-        return { success: false, error: `invalid_regex: ${r.result.invalidRegex}` };
+      const d = r.result?.op === "search" ? r.result : undefined;
+      if (d?.invalidRegex) {
+        return { success: false, error: `invalid_regex: ${d.invalidRegex}` };
       }
     }
     for (const r of results) {
-      if (r.result?.invalidAttribute) {
-        return { success: false, error: `invalid_attribute_query: ${r.result.invalidAttribute}` };
+      const d = r.result?.op === "search" ? r.result : undefined;
+      if (d?.invalidAttribute) {
+        return { success: false, error: `invalid_attribute_query: ${d.invalidAttribute}` };
       }
     }
 
@@ -138,7 +140,7 @@ export const searchPageTool: Tool = {
     let total = 0;
     let timedOut = false;
     for (const r of sorted) {
-      const data = r.result;
+      const data = r.result?.op === "search" ? r.result : undefined;
       if (!data) continue;
       total += data.total;
       if (data.timedOut) timedOut = true;
@@ -191,4 +193,4 @@ export const searchPageTool: Tool = {
   },
 };
 
-type SearchMatchRow = SearchPageResult["matches"][number];
+type SearchMatchRow = SearchMatch;
