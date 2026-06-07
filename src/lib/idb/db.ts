@@ -6,6 +6,9 @@
 // invariant (e.g. session meta + index updated together).
 
 export const DB_NAME = "pie";
+// Bump DB_VERSION and add a new `if (!db.objectStoreNames.contains(...))` branch
+// in onupgradeneeded whenever a new store is added (onupgradeneeded only runs
+// when the version increases).
 export const DB_VERSION = 1;
 
 export const STORES = {
@@ -17,6 +20,9 @@ export const STORES = {
 
 export type StoreName = (typeof STORES)[keyof typeof STORES];
 
+// The db handle is intentionally kept open (not closed per-tx, unlike
+// output-store/skill-store). A single connection is required for txMulti:
+// IDB multi-store transactions must open all stores from the same connection.
 let dbPromise: Promise<IDBDatabase> | null = null;
 
 export function openDb(): Promise<IDBDatabase> {
@@ -35,7 +41,7 @@ export function openDb(): Promise<IDBDatabase> {
         db.createObjectStore(STORES.config, { keyPath: "key" });
     };
     req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+    req.onerror = () => { dbPromise = null; reject(req.error); };
   });
   return dbPromise;
 }
@@ -53,10 +59,10 @@ export function tx<T>(
       new Promise<T>((resolve, reject) => {
         const t = db.transaction(store, mode);
         const req = fn(t.objectStore(store));
-        let result: T;
+        let result: T | undefined = undefined;
         req.onsuccess = () => { result = req.result; };
         req.onerror = () => reject(req.error);
-        t.oncomplete = () => resolve(result);
+        t.oncomplete = () => resolve(result as T);
         t.onerror = () => reject(t.error);
         t.onabort = () => reject(t.error);
       }),
@@ -68,13 +74,13 @@ export function tx<T>(
 export function txMulti(
   stores: StoreName[],
   mode: IDBTransactionMode,
-  fn: (map: Record<string, IDBObjectStore>) => void,
+  fn: (map: Record<StoreName, IDBObjectStore>) => void,
 ): Promise<void> {
   return openDb().then(
     (db) =>
       new Promise<void>((resolve, reject) => {
         const t = db.transaction(stores, mode);
-        const map: Record<string, IDBObjectStore> = {};
+        const map = {} as Record<StoreName, IDBObjectStore>;
         for (const s of stores) map[s] = t.objectStore(s);
         try {
           fn(map);
