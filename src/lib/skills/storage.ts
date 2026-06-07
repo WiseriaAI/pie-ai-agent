@@ -1,3 +1,5 @@
+import { getConfig, setConfig } from "@/lib/idb/config-store";
+
 // "enabled_skills" is a whitelist of skill ids that are explicitly enabled.
 // Semantics:
 //   - If the key is absent (or id not in the array), fall back to the built-in
@@ -26,13 +28,12 @@ export function generateUserSkillId(): string {
 // --- Enable/disable tracking ---
 
 /**
- * Returns the raw whitelist+blacklist markers stored in chrome.storage.
+ * Returns the raw whitelist+blacklist markers stored in IDB config.
  * Format: plain id = explicitly enabled, "!<id>" = explicitly disabled.
  * Consumers must split on the "!" prefix to determine the actual state.
  */
 export async function getEnabledSkillIds(): Promise<string[]> {
-  const result = await chrome.storage.local.get(ENABLED_SKILLS_KEY);
-  return (result[ENABLED_SKILLS_KEY] as string[]) ?? [];
+  return (await getConfig<string[]>(ENABLED_SKILLS_KEY)) ?? [];
 }
 
 export async function setSkillEnabled(
@@ -45,5 +46,5 @@ export async function setSkillEnabled(
   const updated = enabled
     ? [...withoutMarked, id]
     : [...withoutMarked, `!${id}`];
-  await chrome.storage.local.set({ [ENABLED_SKILLS_KEY]: updated });
+  await setConfig(ENABLED_SKILLS_KEY, updated);
 }
