@@ -95,6 +95,25 @@ describe("ModelMeta capability flags (per-model)", () => {
     expect(getModelMeta("openai", "o3-mini")?.vision).toBe(false);
   });
 
+  it("gpt-5.5 flagship is registered with vision + tools + 1.05M context", () => {
+    const m = getModelMeta("openai", "gpt-5.5")!;
+    expect(m.vision).toBe(true);
+    expect(m.tools).toBe(true);
+    expect(m.maxContextTokens).toBe(1_050_000);
+  });
+
+  it("gpt-5.4 series is registered (mini/nano at 400K, flagship at 1.05M)", () => {
+    expect(getModelMeta("openai", "gpt-5.4")?.maxContextTokens).toBe(1_050_000);
+    expect(getModelMeta("openai", "gpt-5.4-mini")?.maxContextTokens).toBe(400_000);
+    expect(getModelMeta("openai", "gpt-5.4-nano")?.vision).toBe(true);
+  });
+
+  it("OpenAI does NOT expose realtime / image / TTS models", () => {
+    expect(getModelMeta("openai", "gpt-image-2")).toBeUndefined();
+    expect(getModelMeta("openai", "gpt-realtime-2")).toBeUndefined();
+    expect(getModelMeta("openai", "gpt-4o-mini-tts")).toBeUndefined();
+  });
+
   it("glm-4v-flash maxContextTokens is 16K", () => {
     expect(getModelMeta("zhipu", "glm-4v-flash")?.maxContextTokens).toBe(16_000);
   });
