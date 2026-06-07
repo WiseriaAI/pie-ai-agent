@@ -2,10 +2,14 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { getEnabledSkillPackages } from "./index";
 import { putPackage, listPackages, deletePackage } from "./skill-store";
 import { setSkillEnabled } from "./storage";
+import { _resetForTests } from "@/lib/idb/db";
 
 describe("getEnabledSkillPackages", () => {
   beforeEach(async () => {
-    // Clear storage state first to prevent enabled-state leaks across tests
+    // enabled_skills now lives in the `pie` IDB config store — reset it to
+    // prevent enabled-state leaks across tests (chrome.storage.clear no longer
+    // covers it). skill packages live in a separate skill-store db.
+    await _resetForTests();
     await chrome.storage.local.clear();
     // Then clean up any user packages in IndexedDB
     for (const p of await listPackages()) await deletePackage(p.id);

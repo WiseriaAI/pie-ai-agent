@@ -2,30 +2,20 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { render, screen, waitFor, fireEvent, cleanup } from "@testing-library/react";
 import SearchProviderSection from "./SearchProviderSection";
 import * as searchProvider from "@/lib/search-provider";
+import { getConfig } from "@/lib/idb/config-store";
+import { _resetForTests } from "@/lib/idb/db";
+import { _resetKeyForTests } from "@/lib/crypto";
 
-const memStore = new Map<string, unknown>();
+// search_provider_* keys (encrypted) now live in the `pie` IDB config store,
+// not chrome.storage.local. Reset the db + the cached crypto key per test so
+// keys don't leak; assert presence via the IDB getter.
+async function hasStoredKey(id: string): Promise<boolean> {
+  return (await getConfig(`search_provider_${id}`)) !== undefined;
+}
 
-beforeEach(() => {
-  memStore.clear();
-  globalThis.chrome = {
-    storage: {
-      local: ({
-        get: async (keys: string | string[]) => {
-          const arr = Array.isArray(keys) ? keys : [keys];
-          const out: Record<string, unknown> = {};
-          for (const k of arr) if (memStore.has(k)) out[k] = memStore.get(k);
-          return out;
-        },
-        set: async (items: Record<string, unknown>) => {
-          for (const [k, v] of Object.entries(items)) memStore.set(k, v);
-        },
-        remove: async (keys: string | string[]) => {
-          const arr = Array.isArray(keys) ? keys : [keys];
-          for (const k of arr) memStore.delete(k);
-        },
-      } as unknown as typeof chrome.storage.local),
-    },
-  } as unknown as typeof chrome;
+beforeEach(async () => {
+  await _resetForTests();
+  _resetKeyForTests();
   vi.restoreAllMocks();
 });
 
@@ -70,7 +60,7 @@ describe("SearchProviderSection", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: /save & test/i }));
     await waitFor(() => expect(screen.getByText(/verified/i)).toBeTruthy());
-    expect(memStore.has("search_provider_tavily")).toBe(true);
+    expect(await hasStoredKey("tavily")).toBe(true);
   });
 
   it("Forget clears the key after confirm", async () => {
@@ -80,7 +70,7 @@ describe("SearchProviderSection", () => {
     render(<SearchProviderSection />);
     fireEvent.click(await screen.findByRole("button", { name: /forget/i }));
     await waitFor(() => expect(screen.getByText(/not set/i)).toBeTruthy());
-    expect(memStore.has("search_provider_tavily")).toBe(false);
+    expect(await hasStoredKey("tavily")).toBe(false);
   });
 
   it("disables Save & test button while save is in flight", async () => {

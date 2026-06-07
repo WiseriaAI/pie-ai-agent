@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { chromeMock } from "@/test/setup";
 import { resolveLocale, normalizeBrowserLocale } from "../locale-resolver";
+import { STORAGE_KEY_UI_LOCALE } from "../types";
+import { setConfig } from "@/lib/idb/config-store";
+import { _resetForTests } from "@/lib/idb/db";
 
 describe("normalizeBrowserLocale", () => {
   it("zh-CN → zh-CN", () => {
@@ -24,22 +27,23 @@ describe("normalizeBrowserLocale", () => {
 });
 
 describe("resolveLocale", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    await _resetForTests();
     chromeMock.i18n.__uiLanguage = "en";
   });
 
   it("returns 'en' when storage override is 'en'", async () => {
-    await chromeMock.storage.local.set({ ui_locale: "en" });
+    await setConfig(STORAGE_KEY_UI_LOCALE, "en");
     expect(await resolveLocale()).toBe("en");
   });
 
   it("returns 'zh-CN' when storage override is 'zh-CN'", async () => {
-    await chromeMock.storage.local.set({ ui_locale: "zh-CN" });
+    await setConfig(STORAGE_KEY_UI_LOCALE, "zh-CN");
     expect(await resolveLocale()).toBe("zh-CN");
   });
 
   it("falls back to chrome.i18n when override is 'auto'", async () => {
-    await chromeMock.storage.local.set({ ui_locale: "auto" });
+    await setConfig(STORAGE_KEY_UI_LOCALE, "auto");
     chromeMock.i18n.__uiLanguage = "zh-CN";
     expect(await resolveLocale()).toBe("zh-CN");
   });
@@ -55,7 +59,7 @@ describe("resolveLocale", () => {
   });
 
   it("ignores garbage values in storage override and falls through to chrome.i18n", async () => {
-    await chromeMock.storage.local.set({ ui_locale: "klingon" });
+    await setConfig(STORAGE_KEY_UI_LOCALE, "klingon");
     chromeMock.i18n.__uiLanguage = "zh-CN";
     expect(await resolveLocale()).toBe("zh-CN");
   });
