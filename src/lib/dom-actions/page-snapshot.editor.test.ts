@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach } from "vitest";
-import { pageSnapshotInjected } from "./page-snapshot";
+import { probePageInjected } from "./probe-core";
 
 // happy-dom 不算布局，isVisible 依赖 getBoundingClientRect — 给编辑器宿主打可见尺寸。
 function makeVisible(el: HTMLElement) {
@@ -7,6 +7,12 @@ function makeVisible(el: HTMLElement) {
     value: () => ({ width: 600, height: 300, top: 0, left: 0, right: 600, bottom: 300 }),
     configurable: true,
   });
+}
+
+function snapshot() {
+  const result = probePageInjected({ op: "snapshot" });
+  if (result.op !== "snapshot") throw new Error("Expected snapshot result");
+  return result;
 }
 
 describe("read_page editor detection", () => {
@@ -24,7 +30,7 @@ describe("read_page editor detection", () => {
     const host = document.querySelector(".monaco-editor") as HTMLElement;
     makeVisible(host);
 
-    const snap = pageSnapshotInjected();
+    const snap = snapshot();
     const editor = snap.interactiveElements.find((el) => el.role === "editor");
 
     expect(editor).toBeDefined();
@@ -42,7 +48,7 @@ describe("read_page editor detection", () => {
     makeVisible(host);
     makeVisible(inner);
 
-    const snap = pageSnapshotInjected();
+    const snap = snapshot();
     expect(snap.interactiveElements.filter((e) => e.role === "editor")).toHaveLength(1);
     expect(inner.hasAttribute("data-pie-idx")).toBe(false);
   });
@@ -56,7 +62,7 @@ describe("read_page editor detection", () => {
     makeVisible(cm6);
     makeVisible(cm5);
 
-    const snap = pageSnapshotInjected();
+    const snap = snapshot();
     const names = snap.interactiveElements.filter((e) => e.role === "editor").map((e) => e.name);
     expect(names.some((n) => n.includes("CodeMirror"))).toBe(true);
     expect(names.filter((n) => n.includes("CodeMirror"))).toHaveLength(2);
@@ -73,7 +79,7 @@ describe("read_page editor detection", () => {
     const host = document.querySelector(".tox-tinymce") as HTMLElement;
     makeVisible(host);
 
-    const snap = pageSnapshotInjected();
+    const snap = snapshot();
     const editor = snap.interactiveElements.find((el) => el.role === "editor");
 
     expect(editor).toBeDefined();
@@ -93,7 +99,7 @@ describe("read_page editor detection", () => {
     makeVisible(host);
     makeVisible(btn);
 
-    const snap = pageSnapshotInjected();
+    const snap = snapshot();
     expect(snap.interactiveElements.filter((e) => e.role === "editor")).toHaveLength(1);
     expect(btn.hasAttribute("data-pie-idx")).toBe(false);
   });
@@ -103,7 +109,7 @@ describe("read_page editor detection", () => {
     const host = document.querySelector(".mce-tinymce") as HTMLElement;
     makeVisible(host);
 
-    const snap = pageSnapshotInjected();
+    const snap = snapshot();
     const editor = snap.interactiveElements.find((el) => el.role === "editor");
     expect(editor).toBeDefined();
     expect(editor!.name).toContain("TinyMCE");

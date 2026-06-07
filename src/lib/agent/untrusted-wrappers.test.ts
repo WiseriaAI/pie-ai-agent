@@ -4,7 +4,7 @@
  * Includes:
  *  1. Functional tests for escapeUntrustedWrappers
  *  2. Scenario 8 (dual-list lock-step): every tag in UNTRUSTED_WRAPPER_TAGS
- *     must also appear in page-snapshot.ts WRAPPER_TAGS_LIST.
+ *     must also appear in probe-core.ts WRAPPER_TAGS_LIST.
  *     This is a build-time coherence check enforced as a vitest assertion.
  */
 
@@ -17,20 +17,20 @@ import { escapeUntrustedWrappers, UNTRUSTED_WRAPPER_TAGS } from "./untrusted-wra
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
 
 // --- Dual-list lock-step assertion (Scenario 8 / Integration) ---
-describe("dual-list lock-step: UNTRUSTED_WRAPPER_TAGS ↔ page-snapshot.ts WRAPPER_TAGS_LIST", () => {
-  it("every tag in UNTRUSTED_WRAPPER_TAGS must appear as a string literal in page-snapshot.ts WRAPPER_TAGS_LIST", () => {
-    const snapshotPath = path.resolve(
+describe("dual-list lock-step: UNTRUSTED_WRAPPER_TAGS ↔ probe-core.ts WRAPPER_TAGS_LIST", () => {
+  it("every tag in UNTRUSTED_WRAPPER_TAGS must appear as a string literal in probe-core.ts WRAPPER_TAGS_LIST", () => {
+    const probeCoreePath = path.resolve(
       __dirname,
-      "../../lib/dom-actions/page-snapshot.ts",
+      "../../lib/dom-actions/probe-core.ts",
     );
-    const snapshotSource = fs.readFileSync(snapshotPath, "utf-8");
+    const probeCoreSource = fs.readFileSync(probeCoreePath, "utf-8");
 
     for (const tag of UNTRUSTED_WRAPPER_TAGS) {
       // Each tag must appear as a quoted string literal in the WRAPPER_TAGS_LIST array.
-      // page-snapshot.ts uses a compiled regex from that list rather than inline replaces.
+      // probe-core.ts uses a compiled regex from that list rather than inline replaces.
       expect(
-        snapshotSource.includes(`"${tag}"`),
-        `page-snapshot.ts WRAPPER_TAGS_LIST is missing "${tag}" — dual-list lock-step broken`,
+        probeCoreSource.includes(`"${tag}"`),
+        `probe-core.ts WRAPPER_TAGS_LIST is missing "${tag}" — dual-list lock-step broken`,
       ).toBe(true);
     }
   });

@@ -1,6 +1,5 @@
 import { describe, expect, it, beforeEach } from "vitest";
-import { pageSnapshotInjected } from "../../lib/dom-actions/page-snapshot";
-import { searchPageInjected } from "../../lib/dom-actions/search-page";
+import { probePageInjected } from "../../lib/dom-actions/probe-core";
 import { typeByIndex } from "../../lib/dom-actions/type";
 
 describe("page tools locator gap cross-layer", () => {
@@ -23,21 +22,24 @@ describe("page tools locator gap cross-layer", () => {
       configurable: true,
     });
 
-    const snapshot = pageSnapshotInjected();
-    const editor = snapshot.interactiveElements.find((el) => el.contenteditable);
+    const snapshotResult = probePageInjected({ op: "snapshot" });
+    if (snapshotResult.op !== "snapshot") throw new Error("Expected snapshot result");
+    const editor = snapshotResult.interactiveElements.find((el) => el.contenteditable);
 
-    expect(snapshot.html.length).toBeGreaterThan(120_000);
+    expect(snapshotResult.html.length).toBeGreaterThan(120_000);
     expect(editor).toEqual(expect.objectContaining({ role: "textbox", contenteditable: true }));
 
-    const search = searchPageInjected({
+    const searchResult = probePageInjected({
+      op: "search",
       queries: ["textbox"],
       regex: false,
       mode: "interactive",
       maxResults: 10,
       searchBy: "role",
     });
+    if (searchResult.op !== "search") throw new Error("Expected search result");
 
-    expect(search.matches[0].pieIdx).toBe(editor!.pieIdx);
+    expect(searchResult.matches[0].pieIdx).toBe(editor!.pieIdx);
 
     const typed = await typeByIndex(editor!.pieIdx, "Thanks for the update.", false);
     expect(typed.success).toBe(true);

@@ -3,8 +3,8 @@
  * INTERACTIVE_SELECTOR string literal as the canonical _shared source. They
  * cannot import it (executeScript serializes their bodies), so drift is caught
  * here via source-text inspection of Function.prototype.toString().
- * All three injected functions (pageSnapshotInjected, searchPageInjected,
- * installCaptureListener) are guarded here.
+ * Both injected functions (probePageInjected, installCaptureListener) are
+ * guarded here.
  *
  * Implementation note: esbuild compiles single-quoted strings with interior
  * double-quotes to double-quoted strings with escaped interior double-quotes
@@ -15,8 +15,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { INTERACTIVE_SELECTOR } from "./_shared/interactive";
-import { pageSnapshotInjected } from "./page-snapshot";
-import { searchPageInjected } from "./search-page";
+import { probePageInjected } from "./probe-core";
 import { installCaptureListener } from "@/lib/recording/capture";
 
 describe("INTERACTIVE_SELECTOR parity across injected functions", () => {
@@ -25,8 +24,7 @@ describe("INTERACTIVE_SELECTOR parity across injected functions", () => {
   const escapedSelector = JSON.stringify(INTERACTIVE_SELECTOR).slice(1, -1);
 
   for (const [name, fn] of [
-    ["pageSnapshotInjected", pageSnapshotInjected],
-    ["searchPageInjected", searchPageInjected],
+    ["probePageInjected", probePageInjected],
     ["installCaptureListener", installCaptureListener],
   ] as const) {
     it(`${name} inlines the canonical INTERACTIVE_SELECTOR literal`, () => {

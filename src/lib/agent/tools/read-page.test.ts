@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { readPageTool } from "./read-page";
-import { pageSnapshotInjected } from "../../dom-actions/page-snapshot";
+import { probePageInjected } from "../../dom-actions/probe-core";
 
 describe("read_page tool", () => {
   beforeEach(() => {
@@ -8,6 +8,7 @@ describe("read_page tool", () => {
   });
 
   const emptySnapshot = (html: string) => ({
+    op: "snapshot" as const,
     html,
     interactiveElements: [],
     scrollableHints: [],
@@ -68,7 +69,7 @@ describe("read_page tool", () => {
     expect(result.observation).toContain('<h1>Hi</h1>');
     const calls = (executeScript as any).mock.calls;
     expect(calls.length).toBe(1);
-    expect(calls[0][0].func).toBe(pageSnapshotInjected);
+    expect(calls[0][0].func).toBe(probePageInjected);
   });
 
   it("cross-origin frame 加 cross_origin=true 标记", async () => {
@@ -169,6 +170,7 @@ describe("read_page tool", () => {
           {
             frameId: 0,
             result: {
+              op: "snapshot" as const,
               html: big,
               interactiveElements: [
                 {
@@ -243,6 +245,7 @@ describe("read_page tool", () => {
           {
             frameId: 0,
             result: {
+              op: "snapshot" as const,
               html: big,
               interactiveElements: [
                 {
@@ -267,6 +270,7 @@ describe("read_page tool", () => {
           {
             frameId: 3,
             result: {
+              op: "snapshot" as const,
               html: "small",
               interactiveElements: [
                 {
@@ -316,6 +320,7 @@ describe("read_page tool", () => {
           {
             frameId: 0,
             result: {
+              op: "snapshot" as const,
               html: "",
               interactiveElements: [
                 {
@@ -370,6 +375,7 @@ describe("read_page tool", () => {
           {
             frameId: 0,
             result: {
+              op: "snapshot" as const,
               html: "",
               interactiveElements: [...lowValueElements, lateEditor],
               scrollableHints: [],

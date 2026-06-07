@@ -6,7 +6,7 @@ import { getToolClass } from "../tool-names";
 function frameResult(frameId: number, matches: any[], total: number, extra?: Partial<any>) {
   return {
     frameId,
-    result: { matches, total, timedOut: false, invalidRegex: null, invalidAttribute: null, ...extra },
+    result: { op: "search" as const, matches, total, timedOut: false, invalidRegex: null, invalidAttribute: null, ...extra },
   };
 }
 
@@ -120,6 +120,7 @@ describe("search_page tool", () => {
     expect(r.observation).toContain('contenteditable="true"');
     const call = (chrome.scripting.executeScript as any).mock.calls[0][0];
     expect(call.args[0]).toEqual({
+      op: "search",
       queries: ["textbox"],
       regex: false,
       mode: "interactive",
