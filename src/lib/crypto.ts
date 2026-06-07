@@ -19,6 +19,22 @@ export async function getOrCreateEncryptionKey(): Promise<CryptoKey> {
         ] as KeyUsage[]);
       }
 
+      // Legacy fallback: before the V3 sweep promotes it, the key may still live in
+      // chrome.storage.local (a V1/V2 user upgrading straight into the IDB build).
+      // Use it read-only — the sweep moves it into IDB; we don't write IDB here, so
+      // the sweep's value stays authoritative and we avoid minting a mismatched key.
+      const legacy = await chrome.storage.local.get(SESSION_KEY_NAME);
+      const legacyRaw = legacy[SESSION_KEY_NAME];
+      if (Array.isArray(legacyRaw)) {
+        return crypto.subtle.importKey(
+          "raw",
+          new Uint8Array(legacyRaw as number[]),
+          "AES-GCM",
+          true,
+          ["encrypt", "decrypt"] as KeyUsage[],
+        );
+      }
+
       const rawKey = crypto.getRandomValues(new Uint8Array(32));
       const key = await crypto.subtle.importKey(
         "raw",

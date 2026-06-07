@@ -27,6 +27,24 @@ describe("getOrCreateEncryptionKey", () => {
     expect(key1).toBe(key2);
   });
 
+  it("falls back to a legacy chrome.storage key when IDB is empty (pre-sweep upgrade)", async () => {
+    // IDB empty (beforeEach resets it); seed legacy key in chrome.storage only.
+    const rawKey = crypto.getRandomValues(new Uint8Array(32));
+    // Use a temporary key to encrypt some data, simulating ciphertext produced by
+    // the legacy key before the IDB migration ran.
+    const tmpKey = await crypto.subtle.importKey("raw", rawKey, "AES-GCM", true, [
+      "encrypt",
+      "decrypt",
+    ] as KeyUsage[]);
+    const { encrypt, decrypt } = await import("./crypto");
+    const cipher = await encrypt("sk-secret", tmpKey);
+    await chrome.storage.local.set({ encryption_key: Array.from(rawKey) });
+    // getOrCreateEncryptionKey should fall back to the legacy key and be able to
+    // decrypt ciphertext that was produced with it.
+    const key = await getOrCreateEncryptionKey();
+    expect(await decrypt(cipher, key)).toBe("sk-secret");
+  });
+
   it("restores key from config store after cache reset", async () => {
     const { getConfig } = await import("@/lib/idb/config-store");
 
