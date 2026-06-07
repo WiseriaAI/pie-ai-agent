@@ -30,6 +30,7 @@ import InstanceForm, { type InstanceFormPayload } from "./InstanceForm";
 import InstancesList from "./InstancesList";
 import NewConfigWizard from "./NewConfigWizard";
 import { useT, setLocale, getLocale, type LocaleSetting } from "@/lib/i18n";
+import { getConfig } from "@/lib/idb/config-store";
 import { buildGithubNewIssueUrl, buildFeedbackMailto, type FeedbackEnv } from "@/lib/feedback";
 
 interface Props {
@@ -306,8 +307,7 @@ export default function Settings({ onBack, onRunSkill }: Props) {
                   }}
                   ref={(el) => {
                     if (!el) return;
-                    chrome.storage.local.get("ui_locale").then((g) => {
-                      const v = g["ui_locale"];
+                    getConfig<string>("ui_locale").then((v) => {
                       if (v === "auto" || v === "en" || v === "zh-CN") el.value = v;
                     });
                   }}

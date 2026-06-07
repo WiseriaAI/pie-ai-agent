@@ -14,6 +14,7 @@ import {
   type TParams,
   type DotPathKey,
 } from "./types";
+import { setConfig } from "@/lib/idb/config-store";
 import { enDict, type EnDict } from "./dictionaries/en";
 import { zhCNDict } from "./dictionaries/zh-CN";
 import { resolveLocale, normalizeBrowserLocale } from "./locale-resolver";
@@ -123,7 +124,7 @@ export function useT() {
 export async function setLocale(next: LocaleSetting): Promise<void> {
   // Always write the setting (including 'auto') so storage.onChanged fires
   // and other sidepanel windows update too.
-  await chrome.storage.local.set({ [STORAGE_KEY_UI_LOCALE]: next });
+  await setConfig(STORAGE_KEY_UI_LOCALE, next);
   // We don't directly setState here — the storage.onChanged subscription in
   // I18nProvider picks up the change. In tests that mutate __store directly
   // they call __emitChange manually.
