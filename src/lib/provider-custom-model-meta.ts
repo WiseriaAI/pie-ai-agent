@@ -1,4 +1,5 @@
 import type { BuiltinProvider } from "@/lib/model-router";
+import { getConfig, setConfig } from "@/lib/idb/config-store";
 
 /**
  * 旁路属性表：给 builtin provider 的自定义模型挂 vision / maxContextTokens。
@@ -21,8 +22,7 @@ const KEY = (provider: BuiltinProvider) => `pcmm_${provider}`;
 export async function getProviderCustomModelMetas(
   provider: BuiltinProvider,
 ): Promise<Record<string, StoredCustomModelMeta>> {
-  const r = await chrome.storage.local.get(KEY(provider));
-  return { ...((r[KEY(provider)] as Record<string, StoredCustomModelMeta>) ?? {}) };
+  return { ...((await getConfig<Record<string, StoredCustomModelMeta>>(KEY(provider))) ?? {}) };
 }
 
 export async function getProviderCustomModelMeta(
@@ -39,7 +39,7 @@ export async function setProviderCustomModelMeta(
 ): Promise<void> {
   const all = await getProviderCustomModelMetas(provider);
   all[modelId] = meta;
-  await chrome.storage.local.set({ [KEY(provider)]: all });
+  await setConfig(KEY(provider), all);
 }
 
 export async function removeProviderCustomModelMeta(
@@ -49,5 +49,5 @@ export async function removeProviderCustomModelMeta(
   const all = await getProviderCustomModelMetas(provider);
   if (!(modelId in all)) return;
   delete all[modelId];
-  await chrome.storage.local.set({ [KEY(provider)]: all });
+  await setConfig(KEY(provider), all);
 }
