@@ -19,6 +19,7 @@ import { escapeUntrustedWrappers } from "../untrusted-wrappers";
 import { requireCdpInput } from "./mouse";
 import type { Tool, ToolHandlerContext } from "../types";
 import type { ActionResult } from "../../dom-actions/types";
+import { LOCATE_BY_IDX_FRAGMENT } from "../../dom-actions/_shared/locate";
 
 export interface EditorToolDeps {
   acquireSession: (tabId: number) => Promise<CdpSession>;
@@ -35,33 +36,6 @@ interface BridgeResult {
 }
 
 const MAX_SET_TEXT_LENGTH = 500_000;
-
-// Top-frame locator fragment. Queries ONLY the top document.
-// If the element is not found in the top frame, runs a DETECTION-ONLY
-// recursive same-origin walk to check whether the idx exists in a subframe
-// (so we can return "in_subframe" instead of "not_found"). Cross-origin
-// OOPIFs throw on .document and are silently skipped.
-// Returns: { el, win } if found in top frame; or the string reason
-// "in_subframe" / "not_found" as a sentinel (checked by callers before use).
-function locatorFragment(idx: number): string {
-  return `
-    const SEL = '[data-pie-idx="${idx}"]';
-    const el = document.querySelector(SEL);
-    const win = window;
-    // Detection-only subframe walk — MUST NOT act on the element, only test existence.
-    function inSubframe(w) {
-      const fs = w.frames;
-      for (let i = 0; i < fs.length; i++) {
-        try {
-          if (fs[i].document.querySelector(SEL)) return true;
-          if (inSubframe(fs[i])) return true;
-        } catch (e) { /* cross-origin OOPIF — skip */ }
-      }
-      return false;
-    }
-    const _locatorReason = el ? null : (inSubframe(window) ? "in_subframe" : "not_found");
-  `;
-}
 
 // Engine-resolution fragment: given `el` and `win` (already resolved by the
 // locator — only called when el is non-null), sets `ed` to a small
@@ -150,7 +124,7 @@ function adapterFragment(): string {
 
 export function buildReadEditorExpression(idx: number): string {
   return `(function () {
-    ${locatorFragment(idx)}
+    ${LOCATE_BY_IDX_FRAGMENT.replace(/\$\{idx\}/g, String(idx))}
     if (_locatorReason) return { ok: false, reason: _locatorReason };
     ${adapterFragment()}
     if (!ed) return { ok: false, reason: "no_engine" };
@@ -162,7 +136,7 @@ export function buildReadEditorExpression(idx: number): string {
 export function buildSetEditorExpression(idx: number, text: string): string {
   return `(function () {
     const TEXT = ${JSON.stringify(text)};
-    ${locatorFragment(idx)}
+    ${LOCATE_BY_IDX_FRAGMENT.replace(/\$\{idx\}/g, String(idx))}
     if (_locatorReason) return { ok: false, reason: _locatorReason };
     ${adapterFragment()}
     if (!ed) return { ok: false, reason: "no_engine" };

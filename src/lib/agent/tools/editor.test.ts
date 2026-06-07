@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { buildEditorTools, buildReadEditorExpression, buildSetEditorExpression } from "./editor";
+import { LOCATE_BY_IDX_FRAGMENT } from "../../dom-actions/_shared/locate";
 import type { CdpSession } from "../../../background/cdp-session";
 
 function fakeSession(evalResult: unknown): CdpSession {
@@ -258,6 +259,28 @@ describe("buildReadEditorExpression TinyMCE", () => {
     expect(out.engine).toBe("tinymce");
     expect(out.value).toBe("Hello world");
     delete (window as unknown as { tinymce?: unknown }).tinymce;
+  });
+});
+
+describe("LOCATE_BY_IDX_FRAGMENT shadow-aware locator", () => {
+  it("LOCATE_BY_IDX_FRAGMENT resolves el across an open shadow root", () => {
+    document.body.innerHTML = "";
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const sr = host.attachShadow({ mode: "open" });
+    sr.innerHTML = `<div data-pie-idx="7" class="cm-editor"></div>`;
+    const fn = new Function(`${LOCATE_BY_IDX_FRAGMENT.replace(/\$\{idx\}/g, "7")} return { found: !!el, reason: _locatorReason };`);
+    const out = fn();
+    expect(out.found).toBe(true);
+    expect(out.reason).toBeNull();
+  });
+
+  it("fragment reports not_found for a missing idx (top frame)", () => {
+    document.body.innerHTML = `<div>nothing</div>`;
+    const fn = new Function(`${LOCATE_BY_IDX_FRAGMENT.replace(/\$\{idx\}/g, "99")} return { found: !!el, reason: _locatorReason };`);
+    const out = fn();
+    expect(out.found).toBe(false);
+    expect(out.reason).toBe("not_found");
   });
 });
 
