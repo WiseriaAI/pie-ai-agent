@@ -1,11 +1,5 @@
 import type { PendingInstruction, SessionAgentState } from "./types";
-import { agentKey, writeAtomic } from "./storage";
-
-async function readAgent(sessionId: string): Promise<SessionAgentState | null> {
-  const key = agentKey(sessionId);
-  const res = await chrome.storage.local.get(key);
-  return (res[key] as SessionAgentState | undefined) ?? null;
-}
+import { agentKey, getSessionAgent, writeAtomic } from "./storage";
 
 /**
  * Append a PendingInstruction to the session's queue.
@@ -15,7 +9,7 @@ export async function addPending(
   sessionId: string,
   instruction: PendingInstruction,
 ): Promise<void> {
-  const state = await readAgent(sessionId);
+  const state = await getSessionAgent(sessionId);
   if (!state) return;
   const next: SessionAgentState = {
     ...state,
@@ -32,7 +26,7 @@ export async function cancelPending(
   sessionId: string,
   chatMessageId: string,
 ): Promise<boolean> {
-  const state = await readAgent(sessionId);
+  const state = await getSessionAgent(sessionId);
   if (!state) return false;
   const before = state.pendingInstructions.length;
   const filtered = state.pendingInstructions.filter(
@@ -52,7 +46,7 @@ export async function cancelPending(
 export async function drainPending(
   sessionId: string,
 ): Promise<PendingInstruction[]> {
-  const state = await readAgent(sessionId);
+  const state = await getSessionAgent(sessionId);
   if (!state) return [];
   const drained = state.pendingInstructions;
   if (drained.length === 0) return [];
