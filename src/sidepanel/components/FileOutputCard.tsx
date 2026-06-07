@@ -79,13 +79,16 @@ export function FileOutputCard({
   const disabled = status !== "idle";
   const dimmed = status === "expired";
 
-  // Proactively reflect expiry on mount so an evicted/archived artifact shows
-  // as expired without requiring a download click first.
+  // Proactively reflect availability whenever the artifact changes (mount, or
+  // a reused instance switched to a different artifact). Authoritative in BOTH
+  // directions — present → idle, gone → expired — so a stale "expired" left by
+  // a reused instance is corrected (don't clobber an in-flight download).
   useEffect(() => {
     if (!onProbe) return;
     let cancelled = false;
     void onProbe(artifactId).then((exists) => {
-      if (!cancelled && !exists) setStatus("expired");
+      if (cancelled) return;
+      setStatus((prev) => (prev === "busy" ? prev : exists ? "idle" : "expired"));
     });
     return () => {
       cancelled = true;

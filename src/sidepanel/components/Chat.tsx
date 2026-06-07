@@ -1192,8 +1192,12 @@ After the skill completes, briefly summarize what was created (the user will see
                 );
               }
               if (msg.role === "file-output") {
+                // Key by artifactId (not the numeric index) so React never
+                // reuses a card instance across sessions/artifacts — index keys
+                // let a previous session's card (and its local expired state)
+                // get reused at the same position when switching sessions.
                 return (
-                  <div key={firstIndex} className="bubble-in">
+                  <div key={`fileout-${msg.artifactId}`} className="bubble-in">
                     <FileOutputCard
                       artifactId={msg.artifactId}
                       filename={msg.filename}
