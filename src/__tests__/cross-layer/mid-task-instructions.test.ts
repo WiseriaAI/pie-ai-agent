@@ -16,14 +16,15 @@
  * (background/index.ts lines ~1039–1062). That logic is extracted into the same
  * testable primitives.
  */
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import "@/test/setup";
-import { chromeMock } from "@/test/setup";
 import {
   addPending,
   cancelPending,
   drainPending,
 } from "@/lib/sessions/pending-instructions";
+import { setSessionAgent, getSessionAgent } from "@/lib/sessions/storage";
+import { _resetForTests } from "@/lib/idb/db";
 import { buildMidTaskUserMessage, mergeCarryoverIntoMessages } from "@/lib/agent/loop-drain";
 import { broadcastInstructionState } from "@/background/instruction-broadcast";
 import type { SessionAgentState } from "@/lib/sessions/types";
@@ -32,23 +33,29 @@ import type { SessionAgentState } from "@/lib/sessions/types";
 
 const SESSION_ID = "test-session-mid-task";
 
-function seedAgentState(
+beforeEach(async () => {
+  await _resetForTests();
+});
+
+// Seeds the session agent state into IDB (the store now backing the
+// pending-instructions read-modify-write path).
+async function seedAgentState(
   sessionId = SESSION_ID,
   overrides: Partial<SessionAgentState> = {},
-): void {
-  chromeMock.storage.local.__store[`session_${sessionId}_agent`] = {
+): Promise<void> {
+  await setSessionAgent(sessionId, {
     agentMessages: [],
     pendingInstructions: [],
     stepIndex: 0,
     hasImageContent: false,
     ...overrides,
-  } satisfies SessionAgentState;
+  } satisfies SessionAgentState);
 }
 
-function getAgentState(sessionId = SESSION_ID): SessionAgentState | undefined {
-  return chromeMock.storage.local.__store[
-    `session_${sessionId}_agent`
-  ] as SessionAgentState | undefined;
+async function getAgentState(
+  sessionId = SESSION_ID,
+): Promise<SessionAgentState | undefined> {
+  return (await getSessionAgent(sessionId)) ?? undefined;
 }
 
 function makeFakePort() {
@@ -59,7 +66,7 @@ function makeFakePort() {
 
 describe("T15 — mid-task happy path: add → drain → LLM merge", () => {
   it("drainPending returns all instructions in FIFO order and empties the queue", async () => {
-    seedAgentState();
+    await seedAgentState();
     await addPending(SESSION_ID, {
       chatMessageId: "msg-1",
       content: "also check the news",
@@ -78,12 +85,12 @@ describe("T15 — mid-task happy path: add → drain → LLM merge", () => {
     expect(drained[1]!.chatMessageId).toBe("msg-2");
 
     // Queue is now empty
-    const state = getAgentState();
+    const state = await getAgentState();
     expect(state!.pendingInstructions).toEqual([]);
   });
 
   it("buildMidTaskUserMessage produces a merged <untrusted_user_message source=\"mid_task\"> user message", async () => {
-    seedAgentState();
+    await seedAgentState();
     await addPending(SESSION_ID, {
       chatMessageId: "msg-1",
       content: "first mid-task instruction",
@@ -111,7 +118,7 @@ describe("T15 — mid-task happy path: add → drain → LLM merge", () => {
   });
 
   it("after drain, storage has empty pendingInstructions (state broadcast precondition)", async () => {
-    seedAgentState();
+    await seedAgentState();
     await addPending(SESSION_ID, {
       chatMessageId: "msg-1",
       content: "instruction A",
@@ -120,12 +127,12 @@ describe("T15 — mid-task happy path: add → drain → LLM merge", () => {
 
     await drainPending(SESSION_ID);
 
-    const state = getAgentState();
+    const state = await getAgentState();
     expect(state!.pendingInstructions).toEqual([]);
   });
 
   it("broadcastInstructionState posts empty pending array after drain", async () => {
-    seedAgentState();
+    await seedAgentState();
     await addPending(SESSION_ID, {
       chatMessageId: "msg-1",
       content: "instruction to drain",
@@ -144,7 +151,7 @@ describe("T15 — mid-task happy path: add → drain → LLM merge", () => {
   });
 
   it("full pipeline: addPending(×2) → drainPending → buildMidTaskUserMessage → pending is empty", async () => {
-    seedAgentState();
+    await seedAgentState();
     const now = Date.now();
     await addPending(SESSION_ID, {
       chatMessageId: "m1",
@@ -173,7 +180,7 @@ describe("T15 — mid-task happy path: add → drain → LLM merge", () => {
     expect(content).toMatch(/<\/untrusted_user_message>$/);
 
     // After drain, queue is empty
-    expect(getAgentState()!.pendingInstructions).toEqual([]);
+    expect((await getAgentState())!.pendingInstructions).toEqual([]);
   });
 });
 
@@ -181,7 +188,7 @@ describe("T15 — mid-task happy path: add → drain → LLM merge", () => {
 
 describe("T16a — cancel: canceled instruction does not appear in next LLM call", () => {
   it("cancel removes the matching entry so it is absent from the drained list", async () => {
-    seedAgentState();
+    await seedAgentState();
     await addPending(SESSION_ID, {
       chatMessageId: "keep-me",
       content: "this instruction should stay",
@@ -208,7 +215,7 @@ describe("T16a — cancel: canceled instruction does not appear in next LLM call
   });
 
   it("cancel on already-drained chatMessageId is idempotent (returns false, no crash)", async () => {
-    seedAgentState();
+    await seedAgentState();
     await addPending(SESSION_ID, {
       chatMessageId: "m1",
       content: "some instruction",
@@ -223,7 +230,7 @@ describe("T16a — cancel: canceled instruction does not appear in next LLM call
   });
 
   it("after cancel, broadcastInstructionState reflects the smaller queue", async () => {
-    seedAgentState();
+    await seedAgentState();
     await addPending(SESSION_ID, {
       chatMessageId: "keep",
       content: "stay",
@@ -301,7 +308,7 @@ describe("T16b — reject: chat-instruction-add after loop ends returns rejected
   it("rejected instruction does NOT write to storage (queue stays clean)", async () => {
     // When SW sends chat-instruction-rejected, addPending is NOT called.
     // Verify storage is clean.
-    seedAgentState();
+    await seedAgentState();
 
     // Simulate what the rejection path does: nothing to storage, just postMessage
     const port = makeFakePort();
@@ -313,7 +320,7 @@ describe("T16b — reject: chat-instruction-add after loop ends returns rejected
     });
 
     // Storage queue is untouched
-    const state = getAgentState();
+    const state = await getAgentState();
     expect(state!.pendingInstructions).toEqual([]);
     // Port received the rejection
     const msg = (port.postMessage as ReturnType<typeof vi.fn>).mock.calls[0]![0];
@@ -330,7 +337,7 @@ describe("T16b — reject: chat-instruction-add after loop ends returns rejected
 
 describe("T16c — abort-carryover: leftover pending merges into next task's first user message", () => {
   it("carryover from prior abort is merged into next task message with [Earlier mid-task additions] header", async () => {
-    seedAgentState();
+    await seedAgentState();
 
     // Session had 2 pending instructions when abort happened
     await addPending(SESSION_ID, {
@@ -364,7 +371,7 @@ describe("T16c — abort-carryover: leftover pending merges into next task's fir
   });
 
   it("carryover with NO pending instructions leaves the new task message unchanged", async () => {
-    seedAgentState(); // fresh session — empty queue
+    await seedAgentState(); // fresh session — empty queue
 
     const carryover = await drainPending(SESSION_ID);
     expect(carryover).toHaveLength(0);
@@ -381,7 +388,7 @@ describe("T16c — abort-carryover: leftover pending merges into next task's fir
   });
 
   it("storage is empty after carryover drain so second chat-start is clean", async () => {
-    seedAgentState();
+    await seedAgentState();
     await addPending(SESSION_ID, {
       chatMessageId: "leftover",
       content: "leftover instruction",
@@ -397,7 +404,7 @@ describe("T16c — abort-carryover: leftover pending merges into next task's fir
   });
 
   it("returns original messages ref unchanged when last message is not a user string (assistant role)", async () => {
-    seedAgentState();
+    await seedAgentState();
     await addPending(SESSION_ID, {
       chatMessageId: "orphan",
       content: "this will be dropped",
@@ -417,7 +424,7 @@ describe("T16c — abort-carryover: leftover pending merges into next task's fir
   });
 
   it("returns original messages ref unchanged when last message content is not a string", async () => {
-    seedAgentState();
+    await seedAgentState();
     await addPending(SESSION_ID, {
       chatMessageId: "orphan-2",
       content: "also dropped",
