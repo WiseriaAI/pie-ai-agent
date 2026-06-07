@@ -4,8 +4,10 @@
  * Includes:
  *  1. Functional tests for escapeUntrustedWrappers
  *  2. Scenario 8 (dual-list lock-step): every tag in UNTRUSTED_WRAPPER_TAGS
- *     must also appear in probe-core.ts WRAPPER_TAGS_LIST.
- *     This is a build-time coherence check enforced as a vitest assertion.
+ *     must also appear in the inline WRAPPER_TAGS_LIST copy in each file that
+ *     performs its own wrapper-tag escaping (probe-core.ts, capture.ts,
+ *     html-strip.ts). This is a build-time coherence check enforced as a
+ *     vitest assertion.
  */
 
 import { describe, it, expect } from "vitest";
@@ -16,24 +18,39 @@ import { escapeUntrustedWrappers, UNTRUSTED_WRAPPER_TAGS } from "./untrusted-wra
 
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
 
-// --- Dual-list lock-step assertion (Scenario 8 / Integration) ---
-describe("dual-list lock-step: UNTRUSTED_WRAPPER_TAGS ↔ probe-core.ts WRAPPER_TAGS_LIST", () => {
-  it("every tag in UNTRUSTED_WRAPPER_TAGS must appear as a string literal in probe-core.ts WRAPPER_TAGS_LIST", () => {
-    const probeCoreePath = path.resolve(
-      __dirname,
-      "../../lib/dom-actions/probe-core.ts",
-    );
-    const probeCoreSource = fs.readFileSync(probeCoreePath, "utf-8");
+// Files that inline a verbatim copy of WRAPPER_TAGS_LIST and must stay in sync
+// with the master UNTRUSTED_WRAPPER_TAGS in untrusted-wrappers.ts.
+const FILES_WITH_INLINE_WRAPPER_LIST: Array<{ label: string; relativePath: string }> = [
+  {
+    label: "probe-core.ts",
+    relativePath: "../../lib/dom-actions/probe-core.ts",
+  },
+  {
+    label: "capture.ts (recording — label sanitization)",
+    relativePath: "../../lib/recording/capture.ts",
+  },
+  {
+    label: "html-strip.ts (DOM serialization — reference impl mirrored into probe-core)",
+    relativePath: "../../lib/dom-actions/html-strip.ts",
+  },
+];
 
-    for (const tag of UNTRUSTED_WRAPPER_TAGS) {
-      // Each tag must appear as a quoted string literal in the WRAPPER_TAGS_LIST array.
-      // probe-core.ts uses a compiled regex from that list rather than inline replaces.
-      expect(
-        probeCoreSource.includes(`"${tag}"`),
-        `probe-core.ts WRAPPER_TAGS_LIST is missing "${tag}" — dual-list lock-step broken`,
-      ).toBe(true);
-    }
-  });
+// --- Dual-list lock-step assertion (Scenario 8 / Integration) ---
+describe("dual-list lock-step: UNTRUSTED_WRAPPER_TAGS ↔ inline WRAPPER_TAGS_LIST in injected files", () => {
+  for (const { label, relativePath } of FILES_WITH_INLINE_WRAPPER_LIST) {
+    it(`every tag in UNTRUSTED_WRAPPER_TAGS must appear as a string literal in ${label}`, () => {
+      const filePath = path.resolve(__dirname, relativePath);
+      const source = fs.readFileSync(filePath, "utf-8");
+
+      for (const tag of UNTRUSTED_WRAPPER_TAGS) {
+        // Each tag must appear as a quoted string literal in the WRAPPER_TAGS_LIST array.
+        expect(
+          source.includes(`"${tag}"`),
+          `${label} WRAPPER_TAGS_LIST is missing "${tag}" — dual-list lock-step broken`,
+        ).toBe(true);
+      }
+    });
+  }
 });
 
 // --- Functional tests for escapeUntrustedWrappers ---

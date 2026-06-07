@@ -67,8 +67,32 @@ export function installCaptureListener(): () => void {
   const CONTROL_CHARS_RE =
     /[\u0000-\u001f\u007f-\u009f\u061c\u2028-\u2029\u200b-\u200f\u202a-\u202e\u2060\u2066-\u2069\ufeff]/g;
 
-  const WRAPPER_TAGS_RE =
-    /<\/?(?:untrusted_page_content|untrusted_skill_params|untrusted_tab_metadata|untrusted_user_message|untrusted_prior_task_summary|untrusted_continuity_marker)>/gi;
+  // VERBATIM copy of WRAPPER_TAGS_LIST from src/lib/dom-actions/_shared/interactive.ts
+  // (same order). Cannot import at runtime — executeScript serializes function bodies.
+  // untrusted-wrappers.test.ts dual-list lock-step guards this list against drift.
+  const WRAPPER_TAGS_LIST = [
+    "untrusted_page_content",
+    "untrusted_skill_params",
+    "untrusted_tab_metadata",
+    "untrusted_user_message",
+    "untrusted_prior_task_summary",
+    "untrusted_continuity_marker",
+    "untrusted_page_quote",
+    "untrusted_page_element",
+    "untrusted_skill_content",
+    "untrusted_compacted_steps",
+    "untrusted_search_result",
+    "untrusted_pdf_page",
+    "untrusted_pdf_match",
+    "untrusted_pdf_outline_entry",
+    "untrusted_page_match",
+    "untrusted_local_file",
+    "untrusted_editor_content",
+  ];
+  const WRAPPER_TAGS_RE = new RegExp(
+    `<\\/?(?:${WRAPPER_TAGS_LIST.join("|")})[^>]*>`,
+    "gi",
+  );
 
   function sanitizeText(s: string, maxLen: number): string {
     if (!s) return "";
