@@ -67,8 +67,7 @@ import {
 } from "@/lib/local-file-request";
 import { CDP_INPUT_ENABLED_STORAGE_KEY } from "@/lib/cdp-input-enabled";
 
-import { runSessionMigrations } from "@/lib/sessions/migration";
-import { migrateLegacyKeyboardFlag } from "@/lib/cdp-input-enabled";
+import { runStartupMigrations } from "@/lib/startup-migrations";
 import { getCrossSessionPinnedTabIds } from "@/lib/sessions/pinned-tab-registry";
 import { getEffectivePinMode, getPrimaryPin } from "@/lib/sessions/pin-state";
 import { chat } from "@/lib/model-router";
@@ -90,19 +89,14 @@ import {
   recordingState,
 } from "./recording-orchestrator";
 import type { RecordingSession } from "@/lib/recording/types";
-import { migrateV1toV2 } from "@/lib/migration-v2";
-import { migrateInstanceModel } from "@/lib/migrate-instance-model";
 import {
   createAbortRotation,
   rotateAbortController,
 } from "./abort-rotation";
 import { createKeepAlive, type KeepAlive } from "./keep-alive";
 import { setConfig } from "@/lib/idb/config-store";
-import { cleanupLegacySkipPermissions } from "./cleanup-migration";
 import { reinjectAllTabs } from "./content-reinject";
 import { dispatchQuoteAdded, drainPendingQuotesToPort } from "./quote-dispatch";
-import { cleanupThinShellSkills } from "@/lib/skills/migration-cleanup-thinshell";
-import { migrateSkillsToPackages } from "@/lib/skills/migration-packages";
 import {
   handleQuoteTextCaptured,
   handleQuoteElementCaptured,
@@ -115,23 +109,17 @@ import { mergeCarryoverIntoMessages } from "@/lib/agent/loop-drain";
 import type { ChatInstructionRejectedMessage } from "@/types/messages";
 import { isFilePdfUrl } from "@/lib/pdf/detect";
 
-// Run V1→V2 migration once on SW load (idempotent via schema_version sentinel),
-// then the V2-internal instance/model decouple migration (merges same-provider
-// instances + strips instance.model into last_model_selection).
-migrateV1toV2()
-  .then(() => migrateInstanceModel())
-  .catch((e) => console.error("migration v2 failed", e));
-cleanupLegacySkipPermissions().catch((e) =>
-  console.error("legacy skip-permissions cleanup failed", e),
-);
-cleanupThinShellSkills().catch((e) =>
-  console.error("thin-shell skills cleanup failed", e),
-);
-// Migrate legacy `skill_*` SkillDefinition records → IndexedDB SkillPackages
-// (idempotent: removes legacy keys after a successful put, so re-runs no-op).
-migrateSkillsToPackages().catch((e) =>
-  console.error("skill→package migration failed", e),
-);
+// Full startup-migration pipeline (idempotent, singleton): all
+// [MIGRATION-UPSTREAM] chrome.storage migrations → V2→V3 sweep (chrome.storage
+// → IndexedDB) → IDB-post migrations (migrateLegacyKeyboardFlag). Shared with
+// the side panel (src/sidepanel/main.tsx) so the sweep is race-free across the
+// two boot contexts. `recoveryReady` (below) and every IDB store read MUST
+// chain off this so they never read an empty IDB before the sweep runs.
+const startupMigrationsReady: Promise<void> = runStartupMigrations().catch(
+  (e) => {
+    console.error("[sw] startup migrations failed", e);
+  },
+) as Promise<void>;
 
 // Recording v1 — per-sessionId → port registry. Used by the chrome.runtime.onMessage
 // handler (capture inject sends sendMessage with no port reference) to find a port
@@ -214,9 +202,11 @@ chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 // M2-U1 — migration + recovery pipeline.
 //
 // `recoveryReady` is a module-level promise that sequentially:
-//   1. Runs idempotent storage migrations (rename/drop any 'default' id
-//      residue from early M1 development) — must finish before step 2
-//      so `detectAndMarkPaused` sees only UUID-keyed sessions.
+//   1. Awaits the full startup-migration pipeline (the [MIGRATION-UPSTREAM]
+//      chrome.storage migrations — including the session-id rename/drop of any
+//      'default' residue from early M1 development — plus the V2→V3 sweep into
+//      IndexedDB). Must finish before step 2 so `detectAndMarkPaused` reads
+//      UUID-keyed sessions from a populated IDB rather than an empty one.
 //   2. Runs M1-U5 paused-session cold-start detection.
 //
 // The promise is reused across the three SW startup entry points
@@ -224,12 +214,9 @@ chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 // ordered pipeline rather than each calling detectAndMarkPaused
 // independently. The 30s `recoveryGuard` inside detectAndMarkPaused
 // deduplicates repeated calls.
-// Run cdp-input flag migration on every SW startup (idempotent).
-void migrateLegacyKeyboardFlag();
-
-const recoveryReady: Promise<void> = runSessionMigrations()
+const recoveryReady: Promise<void> = startupMigrationsReady
   .catch((e) => {
-    console.warn("[sw] session migrations failed:", e);
+    console.warn("[sw] startup migrations failed before recovery:", e);
   })
   .then(() => {
     // R13(b) — clear ALL in-memory image bytes on SW restart. Must run before
@@ -255,7 +242,6 @@ chrome.runtime.onInstalled.addListener((details) => {
   recoveryReady.catch((e) => {
     console.warn("[sw] recovery on onInstalled failed:", e);
   });
-  void migrateLegacyKeyboardFlag();
   // ROADMAP §14 v1.1 — re-inject content scripts into already-open tabs so
   // they get a live runtime after extension reload/update. Without this,
   // previously-open tabs would orphan and silently fail every sendMessage
@@ -280,7 +266,6 @@ chrome.runtime.onStartup.addListener(() => {
   recoveryReady.catch((e) => {
     console.warn("[sw] recovery on onStartup failed:", e);
   });
-  void migrateLegacyKeyboardFlag();
 });
 
 // --- Phase 2.5 — CDP keyboard simulation lifecycle hooks ---

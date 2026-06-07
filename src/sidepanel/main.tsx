@@ -19,10 +19,19 @@ import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./index.css";
 import { I18nProvider } from "@/lib/i18n";
-import { migrateSkillsEnabledAllOn } from "@/lib/skills/migration-enabled-v1";
+import { runStartupMigrations } from "@/lib/startup-migrations";
 
 async function boot() {
-  await migrateSkillsEnabledAllOn();
+  // Run the full startup-migration pipeline (shared with the service worker)
+  // BEFORE mounting App. App's first render reads IDB stores (session index,
+  // instances, config); the V2→V3 sweep inside this pipeline is what moves that
+  // data out of chrome.storage.local into IDB, so mounting before it completes
+  // would render an empty IDB. The pipeline is idempotent and a cross-context
+  // singleton, so whichever of {SW, panel} reaches it first runs it and the
+  // other no-ops via schema_version===3.
+  await runStartupMigrations().catch((e) => {
+    console.warn("[panel] startup migrations failed (mounting anyway):", e);
+  });
   createRoot(document.getElementById("root")!).render(
     <StrictMode>
       <I18nProvider>
