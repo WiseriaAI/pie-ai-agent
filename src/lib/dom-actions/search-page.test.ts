@@ -249,6 +249,27 @@ describe("searchPageInjected", () => {
   });
 });
 
+describe("search finds label-rescued hidden controls", () => {
+  it("returns the rescued label's pie_idx for a hidden toggle", () => {
+    document.body.innerHTML = `
+      <div class="switch">
+        <input type="checkbox" id="st" name="product[status]" checked>
+        <label class="lbl" for="st">Enable Product</label>
+      </div>`;
+    const cb = document.getElementById("st") as HTMLInputElement;
+    Object.defineProperty(cb, "getBoundingClientRect", {
+      value: () => ({ width: 1, height: 1, top: 0, left: 0, right: 1, bottom: 1 }),
+      configurable: true,
+    });
+
+    const r = run({ queries: ["Enable Product"], mode: "all" });
+    const hit = r.matches.find((m) => /Enable Product/i.test(m.snippet));
+    expect(hit).toBeDefined();
+    expect(hit!.pieIdx).toBe(0); // the rescued label carries pie_idx 0
+    expect(document.getElementById("st")!.hasAttribute("data-pie-idx")).toBe(false);
+  });
+});
+
 describe("search_page ↔ read_page idx parity (cross-layer regression)", () => {
   beforeEach(() => {
     document.body.innerHTML = "";

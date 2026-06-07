@@ -37,3 +37,6 @@ eval/.venv/
 
 # Python bytecode cache (eval scorer)
 __pycache__/
+
+# Claude Code worktrees + local artifacts
+.claude/

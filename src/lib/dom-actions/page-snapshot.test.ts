@@ -227,4 +227,88 @@ describe("pageSnapshotInjected", () => {
       }),
     );
   });
+
+  describe("hidden form control label-rescue", () => {
+    it("stamps the visible label, not the hidden 1×1 input", () => {
+      document.body.innerHTML = `
+        <div class="switch">
+          <input type="checkbox" id="st" name="product[status]" checked>
+          <label class="lbl" for="st">Toggle</label>
+        </div>`;
+      const cb = document.getElementById("st") as HTMLInputElement;
+      // Simulate the 1×1 hidden real input (Magento toggle).
+      Object.defineProperty(cb, "getBoundingClientRect", {
+        value: () => ({ width: 1, height: 1, top: 0, left: 0, right: 1, bottom: 1 }),
+        configurable: true,
+      });
+
+      const result = pageSnapshotInjected();
+
+      // The label is stamped; the hidden input is not.
+      // (class="lbl" is stripped by ATTR_WHITELIST; assert attribute-order-independent)
+      expect(result.html).toMatch(/<label[^>]*data-pie-idx="0"/);
+      expect(result.html).toMatch(/<label[^>]*for="st"/);
+      expect(result.html).not.toMatch(/<input[^>]*name="product\[status\]"[^>]*data-pie-idx/);
+    });
+
+    it("does NOT rescue when the input itself is visible (no double handle)", () => {
+      document.body.innerHTML = `
+        <input type="checkbox" id="v" name="ok">
+        <label for="v">Vis</label>`;
+      const result = pageSnapshotInjected();
+      // Visible input is stamped normally; label is NOT stamped.
+      expect(result.html).toMatch(/<input type="checkbox" id="v" name="ok"[^>]*data-pie-idx="0">/);
+      expect(result.html).not.toMatch(/<label[^>]*data-pie-idx/);
+    });
+
+    it("the rescued entry reads as a checkbox with the control's state", () => {
+      document.body.innerHTML = `
+        <div class="switch">
+          <input type="checkbox" id="st2" name="product[status]" checked>
+          <label class="lbl" for="st2">Enable</label>
+        </div>`;
+      const cb = document.getElementById("st2") as HTMLInputElement;
+      Object.defineProperty(cb, "getBoundingClientRect", {
+        value: () => ({ width: 1, height: 1, top: 0, left: 0, right: 1, bottom: 1 }),
+        configurable: true,
+      });
+
+      const entry = pageSnapshotInjected().interactiveElements.find((e) => e.pieIdx === 0);
+
+      expect(entry).toBeDefined();
+      expect(entry!.role).toBe("checkbox");      // from the control, not the <label>
+      expect(entry!.type).toBe("checkbox");
+      expect(entry!.checked).toBe(true);          // reflects input.checked
+      expect(entry!.name).toBe("product[status]"); // identifies the control
+      expect(entry!.tag).toBe("input"); // tag reflects the control, not the <label> wrapper
+    });
+
+    it("does NOT rescue a hidden select/textarea (only checkbox/radio)", () => {
+      document.body.innerHTML = `
+        <div class="f">
+          <select id="sel"><option value="a">A</option></select>
+          <label class="sl" for="sel">Region</label>
+        </div>`;
+      const sel = document.getElementById("sel") as HTMLSelectElement;
+      Object.defineProperty(sel, "getBoundingClientRect", {
+        value: () => ({ width: 0, height: 0, top: 0, left: 0, right: 0, bottom: 0 }),
+        configurable: true,
+      });
+      const result = pageSnapshotInjected();
+      expect(result.html).not.toMatch(/data-pie-idx/); // neither the hidden select nor its label is stamped
+    });
+
+    it("does NOT rescue when the label is also hidden (genuinely unreachable)", () => {
+      document.body.innerHTML = `
+        <input type="checkbox" id="h" name="hh">
+        <label class="hl" for="h">Hidden</label>`;
+      const cb = document.getElementById("h") as HTMLInputElement;
+      const lbl = document.querySelector("label.hl") as HTMLLabelElement;
+      const tiny = { value: () => ({ width: 1, height: 1, top: 0, left: 0, right: 1, bottom: 1 }), configurable: true };
+      Object.defineProperty(cb, "getBoundingClientRect", tiny);
+      Object.defineProperty(lbl, "getBoundingClientRect", { value: () => ({ width: 0, height: 0, top: 0, left: 0, right: 0, bottom: 0 }), configurable: true });
+      const result = pageSnapshotInjected();
+      expect(result.html).not.toMatch(/data-pie-idx/);
+    });
+  });
 });

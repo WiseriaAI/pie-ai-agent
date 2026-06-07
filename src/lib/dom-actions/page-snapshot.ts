@@ -141,6 +141,29 @@ export function pageSnapshotInjected(): PageSnapshotResult {
     return true;
   }
 
+  // Rescue only checkbox/radio: a single CDP click on the label natively toggles
+  // the control, which is the COMPLETE interaction. select/textarea/text inputs
+  // would stamp the label but select_option/type reject a <label> target, so they
+  // would be discoverable-but-not-operable — excluded to avoid misleading entries.
+  function isRescuableControl(el: Element): boolean {
+    if (el.tagName.toLowerCase() !== "input") return false;
+    const type = (el as HTMLInputElement).type.toLowerCase();
+    return type === "checkbox" || type === "radio";
+  }
+
+  // A form control filtered out by isVisible (e.g. a 1×1 framework toggle) is
+  // still reachable if it has a VISIBLE associated <label>: clicking the label
+  // drives the native label→control toggle plus any framework binding. Return
+  // that label so Step C can stamp it as the control's proxy handle.
+  function visibleLabelFor(el: Element): HTMLLabelElement | null {
+    const labels = (el as HTMLInputElement).labels;
+    if (!labels) return null;
+    for (const l of labels) {
+      if (isVisible(l)) return l;
+    }
+    return null;
+  }
+
   function sanitizeText(s: string): string {
     return s.replace(CONTROL_CHAR_RE, "");
   }
@@ -256,24 +279,32 @@ export function pageSnapshotInjected(): PageSnapshotResult {
   }
 
   function interactiveSummary(el: Element): InteractiveElementSummary {
-    const tag = el.tagName.toLowerCase();
-    const input = el instanceof HTMLInputElement ? el : null;
-    const option = el instanceof HTMLOptionElement ? el : null;
+    // A rescued <label> stands in for its hidden control: derive all semantic
+    // fields from the control so the agent sees the checkbox/select it operates,
+    // while pieIdx stays on the label (whose geometry the CDP click targets).
+    const rescuedControl =
+      el.tagName.toLowerCase() === "label"
+        ? (el as HTMLLabelElement).control
+        : null;
+    const target = rescuedControl ?? el;
+    const tag = target.tagName.toLowerCase();
+    const input = target instanceof HTMLInputElement ? target : null;
+    const option = target instanceof HTMLOptionElement ? target : null;
     const pieIdx = Number(el.getAttribute("data-pie-idx") ?? "-1");
     return {
       pieIdx,
       tag,
-      role: inferredRole(el),
-      name: accessibleName(el),
-      text: directText(el),
-      placeholder: normalizeSpace(el.getAttribute("placeholder") ?? ""),
-      label: labelFor(el),
-      section: nearestSection(el),
-      type: input ? input.type.toLowerCase() : normalizeSpace(el.getAttribute("type") ?? ""),
-      contenteditable: el.getAttribute("contenteditable") === "true",
-      disabled: el.hasAttribute("disabled"),
-      checked: input ? input.checked : el.hasAttribute("checked"),
-      selected: option ? option.selected : el.hasAttribute("selected"),
+      role: inferredRole(target),
+      name: accessibleName(target),
+      text: directText(target),
+      placeholder: normalizeSpace(target.getAttribute("placeholder") ?? ""),
+      label: labelFor(target),
+      section: nearestSection(target),
+      type: input ? input.type.toLowerCase() : normalizeSpace(target.getAttribute("type") ?? ""),
+      contenteditable: target.getAttribute("contenteditable") === "true",
+      disabled: target.hasAttribute("disabled"),
+      checked: input ? input.checked : target.hasAttribute("checked"),
+      selected: option ? option.selected : target.hasAttribute("selected"),
     };
   }
 
@@ -371,15 +402,25 @@ export function pageSnapshotInjected(): PageSnapshotResult {
   );
 
   let stampIdx = 0;
+  const stamp = (el: Element): void => {
+    const idxStr = String(stampIdx++);
+    el.setAttribute("data-pie-idx", idxStr);
+    const cloneEl = liveToCloneMap.get(el);
+    if (cloneEl) cloneEl.setAttribute("data-pie-idx", idxStr);
+  };
+
   for (const el of liveBodyElements) {
     const isEditorHost = editorHosts.includes(el);
     const insideEditor = !isEditorHost && editorHosts.some((h) => h.contains(el));
     if (insideEditor) continue;
-    if ((isEditorHost || el.matches?.(INTERACTIVE_SELECTOR)) && isVisible(el)) {
-      const idxStr = String(stampIdx++);
-      el.setAttribute("data-pie-idx", idxStr);
-      const cloneEl = liveToCloneMap.get(el);
-      if (cloneEl) cloneEl.setAttribute("data-pie-idx", idxStr);
+    const isInteractive = isEditorHost || el.matches?.(INTERACTIVE_SELECTOR);
+    if (isInteractive && isVisible(el) && !el.hasAttribute("data-pie-idx")) {
+      stamp(el);
+    } else if (isInteractive && isRescuableControl(el)) {
+      const label = visibleLabelFor(el);
+      if (label && !label.hasAttribute("data-pie-idx")) {
+        stamp(label);
+      }
     }
   }
 

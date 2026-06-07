@@ -128,6 +128,25 @@ export function searchPageInjected(params: SearchPageParams): SearchPageResult {
     return true;
   }
 
+  // Rescue only checkbox/radio: a single CDP click on the label natively toggles
+  // the control, which is the COMPLETE interaction. select/textarea/text inputs
+  // would stamp the label but select_option/type reject a <label> target, so they
+  // would be discoverable-but-not-operable — excluded to avoid misleading entries.
+  function isRescuableControl(el: Element): boolean {
+    if (el.tagName.toLowerCase() !== "input") return false;
+    const type = (el as HTMLInputElement).type.toLowerCase();
+    return type === "checkbox" || type === "radio";
+  }
+
+  function visibleLabelFor(el: Element): HTMLLabelElement | null {
+    const labels = (el as HTMLInputElement).labels;
+    if (!labels) return null;
+    for (const l of labels) {
+      if (isVisible(l)) return l;
+    }
+    return null;
+  }
+
   // ── stamp data-pie-idx (copied from page-snapshot.ts Step C) ──
   const liveBodyElements = [...walkDeep(document.body)];
   for (const el of liveBodyElements) {
@@ -135,8 +154,14 @@ export function searchPageInjected(params: SearchPageParams): SearchPageResult {
   }
   let stampIdx = 0;
   for (const el of liveBodyElements) {
-    if (el.matches?.(INTERACTIVE_SELECTOR) && isVisible(el)) {
+    const isInteractive = el.matches?.(INTERACTIVE_SELECTOR);
+    if (isInteractive && isVisible(el) && !el.hasAttribute("data-pie-idx")) {
       el.setAttribute("data-pie-idx", String(stampIdx++));
+    } else if (isInteractive && isRescuableControl(el)) {
+      const label = visibleLabelFor(el);
+      if (label && !label.hasAttribute("data-pie-idx")) {
+        label.setAttribute("data-pie-idx", String(stampIdx++));
+      }
     }
   }
 
