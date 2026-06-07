@@ -275,6 +275,7 @@ GitHub `state:open` 的 3 条 feat 性 issue（虽未打 label，但标题均为
 - ✅ 并发会话支持（§12 #30, P0）— 2026-05-08
 - ✅ §13 P1 quick wins（prompt drift + 软换行）— 2026-05-08 (PR #45)
 - ✅ 页内内容引用 v1（§12 #38）— 2026-05-15 (v0.10.0)
+- ✅ 存储层迁移：chrome.storage.local → IndexedDB — 2026-06-07。单 `pie` database + 4 store（sessions / session_index / instances / config）；解除 10 MB 原有上限；跨 store 原子写靠 txMulti；变更通知改 store-bus（BroadcastChannel）；移除 LRU 自动归档；startup-migrations.ts 统一迁移 pipeline。已知 follow-up 见 `docs/solutions/2026-06-07-idb-storage-migration-trace.md`
 
 ---
 

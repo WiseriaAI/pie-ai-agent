@@ -97,7 +97,7 @@ async function readIndex(): Promise<SessionIndexEntry[]> {
 /**
  * Read the session index including archived entries.
  * Exported for `lifecycle.ts` which needs to iterate ALL entries including
- * archived ones (for hardDeleteExpired, checkAndArchiveLRU, etc.).
+ * archived ones (for hardDeleteExpired, etc.).
  * Returns an empty array if the index doesn't exist or isn't an array.
  *
  * "Raw" here means "no status/archived filtering applied" — it still runs the

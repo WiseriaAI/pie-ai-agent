@@ -53,14 +53,14 @@ LLM providers — encrypted locally, no Pie backend, no telemetry.
   locks, and each session is sandboxed (its own port, pinned tabs, and CDP
   owner token). CDP keyboard injection is off until you opt in.
 - **Multi-session, durable.** Conversations survive Service Worker
-  restarts; archived sessions evict on storage pressure (LRU + 30-day hard
-  delete).
+  restarts; sessions are hard-deleted after 30 days with manual
+  archive/restore support.
 - **Side panel, not pop-up.** Pie lives in Chrome's side panel and stays
   open while you browse — chat, run agent tasks, manage tabs without
   losing context.
 - **BYOK.** Bring your own API key from any of eleven LLM providers.
-  Encrypted at rest with AES-GCM in `chrome.storage.local`. No Pie
-  backend, no telemetry, no proxy. See [PRIVACY.md](PRIVACY.md).
+  Encrypted at rest with AES-GCM (key and data stored in local IndexedDB).
+  No Pie backend, no telemetry, no proxy. See [PRIVACY.md](PRIVACY.md).
 
 ## Features
 
@@ -180,9 +180,9 @@ For users who prefer to install the same artifact without the Web Store
 #### Upgrading without data loss
 
 Chrome derives the extension ID from the unpacked directory's path, and
-your sessions / encrypted API keys / Skills are scoped to that ID in
-`chrome.storage.local`. To carry them across releases, **upgrade in
-place** — don't unzip the new release to a different folder.
+your sessions / encrypted API keys / Skills are scoped to that extension
+origin (IndexedDB + local storage). To carry them across releases,
+**upgrade in place** — don't unzip the new release to a different folder.
 
 1. Open `chrome://extensions` and find Pie's card. Note the unpacked
    directory path (shown under the card, or via **Details** → "Source")
@@ -191,9 +191,9 @@ place** — don't unzip the new release to a different folder.
 4. Click the **↻ reload** icon on Pie's card
 
 > ⚠️ Do **not** click **Remove** on the old card. Remove drops the
-> extension's `chrome.storage.local` along with the encrypted API keys
-> and chat history. If you already removed it, re-add provider keys
-> from Settings; chat history can't be recovered.
+> extension's local storage (IndexedDB + chrome.storage) along with the
+> encrypted API keys and chat history. If you already removed it,
+> re-add provider keys from Settings; chat history can't be recovered.
 
 Web Store users (Option 1) skip this section — Chrome auto-updates the
 extension and storage carries over automatically.
@@ -220,7 +220,7 @@ below.
 2. Add a provider entry — paste your API key, choose a model
 3. Switch back to **Chat** and send a message
 
-Your key is encrypted before it lands in `chrome.storage.local`. The
+Your key is encrypted before it is stored locally (in IndexedDB). The
 encryption key itself is generated locally on first run and never leaves
 the device.
 
