@@ -18,6 +18,7 @@ import {
   updateLastAccessed,
 } from "@/lib/sessions/storage";
 import { hardDeleteSession } from "@/lib/sessions/lifecycle";
+import { useStoreChange } from "@/sidepanel/hooks/useStoreChange";
 import type { SessionAgentState, SessionMeta, SessionStatus } from "@/lib/sessions/types";
 import { deriveTitleFromMessages } from "@/lib/sessions/title";
 import { togglePinTabUserMode } from "@/lib/sessions/pin-state";
@@ -159,16 +160,16 @@ export interface UseSession {
    *  bootstrap and overwriting persisted history with an empty array. */
   ready: boolean;
   /** M1-U5 — current session status. App uses `paused` to surface the
-   *  'Resume task' affordance. Updated via storage onChanged so a SW
-   *  cold-start mark transitions the UI without panel reload. */
+   *  'Resume task' affordance. Updated via the store-bus "sessions" event so
+   *  a SW cold-start mark transitions the UI without panel reload. */
   status: SessionStatus | null;
   /** v1.5 — persisted pinned tabs array from the active session's meta.
    *  null when the session has no pin yet (brand-new empty session or auto
    *  mode). Chat reads this to decide whether to display a frozen pin
    *  (messages.length > 0 → locked) or a live preview of the user's
    *  currently-active tab (empty session → free). Updated on bootstrap,
-   *  setActive, and chrome.storage onChanged for the active session's
-   *  meta key. Replaces single pinnedOrigin + pinnedTabId fields. */
+   *  setActive, and the store-bus "sessions" event for the active session's
+   *  meta. Replaces single pinnedOrigin + pinnedTabId fields. */
   pinnedTabs: ReadonlyArray<{ tabId: number; origin: string }> | null;
   /** M5 — pin state machine: 'auto' / 'task' / 'user' (or null pre-bootstrap).
    *  Drives Chat.tsx's isLocked decision and per-effect listener wiring. */
@@ -523,24 +524,21 @@ export function useSession(): UseSession {
   // detectAndMarkPaused, post-resume markActive). Without this, the
   // panel would never see the SW transition from `active` to `paused`
   // after a SW death + wake-up that the user didn't trigger via
-  // closing/reopening the panel. Only watches the per-session meta key
-  // so traffic is minimal.
-  useEffect(() => {
-    if (!sessionId) return;
-    const metaKey = `session_${sessionId}_meta`;
-    const listener = (
-      changes: Record<string, chrome.storage.StorageChange>,
-    ) => {
-      const change = changes[metaKey];
-      if (!change) return;
-      const newMeta = change.newValue as
-        | {
-            messages?: DisplayMessage[];
-            status?: SessionStatus;
-            pinnedTabs?: Array<{ tabId: number; origin: string }>;
-            pinMode?: "auto" | "task" | "user";
-          }
-        | undefined;
+  // closing/reopening the panel.
+  //
+  // Post-IDB-migration: the chrome.storage onChanged signal (which carried
+  // the per-key `newValue`) is gone. We now ride the coarse store-bus
+  // "sessions" event and re-read the active session's meta from IDB. Behavior
+  // is equivalent: the refetched meta is the authoritative persisted state.
+  // We re-read on EVERY "sessions" event (the bus is coarse / id-less for
+  // batch writes) and apply the same adoption rules to the fetched meta.
+  useStoreChange("sessions", () => {
+    const sid = sessionId;
+    if (!sid) return;
+    void (async () => {
+      const newMeta = await getSessionMeta(sid);
+      // The active session changed out from under us while awaiting — bail.
+      if (sessionIdRef.current !== sid) return;
       // Status update is always adopted — the SW transitions (paused→active,
       // active→failed) must land even mid-stream (e.g. SW cold-start marking
       // a task paused while the panel thinks it's still running).
@@ -584,7 +582,7 @@ export function useSession(): UseSession {
         if (slotsRef.current.get(sessionIdRef.current ?? "")?.streaming) {
           return;
         }
-        const local = slotsRef.current.get(sessionId ?? "")?.messages ?? [];
+        const local = slotsRef.current.get(sid)?.messages ?? [];
         const remote = newMeta.messages;
         if (remote.length === local.length) {
           if (JSON.stringify(remote) === JSON.stringify(local)) {
@@ -603,12 +601,10 @@ export function useSession(): UseSession {
           }
           if (isPrefix) return;
         }
-        patchSlot(sessionId!, { messages: remote });
+        patchSlot(sid, { messages: remote });
       }
-    };
-    chrome.storage.local.onChanged.addListener(listener);
-    return () => chrome.storage.local.onChanged.removeListener(listener);
-  }, [sessionId]);
+    })();
+  });
 
   // ── sendMessage ────────────────────────────────────────────────────
   // M1-U4 mount-immediate connection + transparent reconnect: panel mount

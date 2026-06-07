@@ -30,10 +30,10 @@ import type { Quote, TextQuote, ElementQuote } from "@/types";
 import ModelPicker from "./ModelPicker";
 import ThinkingSection from "./ThinkingSection";
 import { useT } from "@/lib/i18n";
+import { useStoreChange } from "@/sidepanel/hooks/useStoreChange";
 import {
   getSessionMeta,
   setSessionMeta,
-  metaKey,
 } from "@/lib/sessions/storage";
 
 const MAX_IMAGES_PER_TURN = 3;
@@ -265,41 +265,36 @@ export default function Chat({
       setCurrentModel(sel?.model ?? null);
     }
     loadEffective().catch(() => { setCurrentInstanceId(null); setCurrentModel(null); });
-
-    const sessionMetaKey = metaKey(sessionId);
-    const onChanged = (changes: Record<string, chrome.storage.StorageChange>) => {
-      if (sessionMetaKey in changes) {
-        const newMeta = changes[sessionMetaKey]?.newValue as { instanceId?: string; model?: string } | undefined;
-        if (newMeta && newMeta.instanceId !== undefined) {
-          setCurrentInstanceId(newMeta.instanceId);
-          if (newMeta.model !== undefined) setCurrentModel(newMeta.model);
-          return;
-        }
-      }
-      // Global last selection changed AND session has no own pin → re-compute fallback
-      if (changes.last_model_selection) {
-        loadEffective().catch(() => {});
-      }
-    };
-    chrome.storage.local.onChanged.addListener(onChanged);
-    return () => chrome.storage.local.onChanged.removeListener(onChanged);
   }, [sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Re-resolve the effective selection when the per-session model pin
+  // (session meta → "sessions"), the global last_model_selection /
+  // active_instance_id ("config"), or instance config ("instances") changes.
+  // store-bus events are coarse, so we always re-run the full resolve.
+  const reloadEffectiveSelection = () => {
+    if (!sessionId) return;
+    const sessionIdStr = sessionId;
+    void (async () => {
+      const meta = await getSessionMeta(sessionIdStr);
+      const sel = await resolveSelection({ instanceId: meta?.instanceId, model: meta?.model });
+      setCurrentInstanceId(sel?.instanceId ?? null);
+      setCurrentModel(sel?.model ?? null);
+    })().catch(() => {});
+  };
+  useStoreChange("sessions", reloadEffectiveSelection);
+  useStoreChange("config", reloadEffectiveSelection);
+  useStoreChange("instances", reloadEffectiveSelection);
 
   useEffect(() => {
     checkConfig();
-    const listener = (changes: Record<string, chrome.storage.StorageChange>) => {
-      if (
-        changes.last_model_selection ||
-        changes.instances_index ||
-        (sessionId && metaKey(sessionId) in changes) ||
-        Object.keys(changes).some((k) => k.startsWith("instance_"))
-      ) {
-        checkConfig();
-      }
-    };
-    chrome.storage.local.onChanged.addListener(listener);
-    return () => chrome.storage.local.onChanged.removeListener(listener);
   }, [sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // hasConfig depends on the resolved selection + instance config: former keys
+  // last_model_selection / instances_index / active_instance_id ("config"),
+  // session meta pin ("sessions"), and instance_* records ("instances").
+  useStoreChange("config", () => checkConfig());
+  useStoreChange("sessions", () => checkConfig());
+  useStoreChange("instances", () => checkConfig());
 
   // R9 sub-path b — clear pending image attachments when the user switches
   // to a provider that lacks vision support. The dependency array intentionally
@@ -322,24 +317,22 @@ export default function Chat({
   }, []);
 
   useEffect(() => {
-    function reload() {
-      getEnabledSkillPackages()
-        .then(setEnabledSkills)
-        .catch(() => setEnabledSkills([]));
-    }
-    reload();
-    const listener = (changes: Record<string, chrome.storage.StorageChange>) => {
-      if (
-        Object.keys(changes).some(
-          (k) => k === "enabled_skills" || k.startsWith("skill_"),
-        )
-      ) {
-        reload();
-      }
-    };
-    chrome.storage.local.onChanged.addListener(listener);
-    return () => chrome.storage.local.onChanged.removeListener(listener);
+    getEnabledSkillPackages()
+      .then(setEnabledSkills)
+      .catch(() => setEnabledSkills([]));
   }, []);
+
+  // The enabled-skills toggle (`enabled_skills`) now lives in the IDB `config`
+  // store. NOTE: skill *package* definitions live in a separate `pie-skills`
+  // IDB that does NOT emit store-bus events, so edits to a package's contents
+  // won't trigger this reload — only enable/disable toggles do. (Known gap;
+  // matches the migration scope.)
+  useStoreChange("config", (c) => {
+    if (c.id && c.id !== "enabled_skills") return;
+    getEnabledSkillPackages()
+      .then(setEnabledSkills)
+      .catch(() => setEnabledSkills([]));
+  });
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
