@@ -31,6 +31,8 @@ import {
   setSkillEnabled,
 } from "../../skills/storage";
 import { buildSkillMd, isSingleLineSafe } from "../../skills/skill-md";
+import { buildExtractionConfig, buildExtractionSkillMd } from "../../extraction/skill-template";
+import type { ExtractionField } from "../../extraction/types";
 
 // ── Configuration / limits ───────────────────────────────────────────────────
 
@@ -307,6 +309,49 @@ const listSkillsTool: Tool = {
   },
 };
 
+const saveExtractionSkillTool: Tool = {
+  name: "save_extraction_skill",
+  description:
+    "Persist a reusable data-extraction skill (the schema + stop condition the user just confirmed) so it can be " +
+    "re-run later via use_skill. Call this AFTER you have previewed a 1-page sample and the user confirmed the schema. " +
+    "Extraction stays LLM-driven at run time; this only saves the config.",
+  parameters: {
+    type: "object",
+    additionalProperties: false,
+    required: ["name", "description", "schema", "stopCondition"],
+    properties: {
+      name: { type: "string", description: "Short label, e.g. \"Magento Orders\"." },
+      description: { type: "string", description: "What it extracts." },
+      schema: { type: "array", description: "Field defs [{name,type,description?,normalize?}]." },
+      stopCondition: { type: "string", description: "Natural-language stop condition for pagination." },
+    },
+  },
+  handler: async (args: unknown): Promise<ActionResult> => {
+    const a = (args ?? {}) as { name?: string; description?: string; schema?: ExtractionField[]; stopCondition?: string };
+    const name = (a.name ?? "").trim();
+    const description = (a.description ?? "").trim();
+    const stopCondition = (a.stopCondition ?? "").trim();
+    if (!name || !description) return { success: false, error: "name and description are required" };
+    if (!Array.isArray(a.schema) || a.schema.length === 0) return { success: false, error: "schema must be a non-empty array" };
+    if (!stopCondition) return { success: false, error: "stopCondition is required" };
+    if (/[\n\r]/.test(name) || /[\n\r]/.test(description) || name.includes("---") || description.includes("---")) {
+      return { success: false, error: "name/description must be single-line and not contain '---'" };
+    }
+    const id = `skill_extract_${crypto.randomUUID()}`;
+    const md = buildExtractionSkillMd(name, description);
+    const config = buildExtractionConfig(a.schema, stopCondition);
+    await putPackage({
+      id,
+      frontmatter: { name, description, version: "1.0.0", author: "agent", capabilities: { tools: ["read_page", "read_skill_file", "output_extraction"] } },
+      files: { "SKILL.md": md, "extraction.json": JSON.stringify(config, null, 2) },
+      builtIn: false,
+      createdAt: Date.now(),
+    });
+    await setSkillEnabled(id, true);
+    return { success: true, observation: `Saved extraction skill "${name}" (id ${id}). Re-run it later via use_skill.` };
+  },
+};
+
 // ── Public exports ───────────────────────────────────────────────────────────
 
 export const SKILL_META_TOOLS: Tool[] = [
@@ -314,6 +359,7 @@ export const SKILL_META_TOOLS: Tool[] = [
   updateSkillTool,
   deleteSkillTool,
   listSkillsTool,
+  saveExtractionSkillTool,
 ];
 
 export const SKILL_META_TOOL_NAMES = [
@@ -321,6 +367,7 @@ export const SKILL_META_TOOL_NAMES = [
   "update_skill",
   "delete_skill",
   "list_skills",
+  "save_extraction_skill",
 ] as const;
 
 export type SkillMetaToolName = (typeof SKILL_META_TOOL_NAMES)[number];

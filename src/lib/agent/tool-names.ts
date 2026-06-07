@@ -24,6 +24,7 @@ const SKILL_META_TOOL_NAMES_FOR_REGISTRY = [
   "update_skill",
   "delete_skill",
   "list_skills",
+  "save_extraction_skill",
 ] as const;
 
 // Standard skill mediation tools — use_skill invokes a skill by name;
@@ -173,6 +174,7 @@ export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
   update_skill: "write",
   delete_skill: "write",
   list_skills: "read",
+  save_extraction_skill: "write",
   // Standard skill mediation tools — pure text producers, no tab/page side effects
   use_skill: "read",
   read_skill_file: "read",

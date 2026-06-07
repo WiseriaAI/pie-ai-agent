@@ -321,3 +321,30 @@ describe("skill-meta CRUD tools (SkillPackage model)", () => {
     expect(r.observation).toContain("Summary");
   });
 });
+
+// ── save_extraction_skill ────────────────────────────────────────────────────
+
+const saveExtraction = SKILL_META_TOOLS.find((t) => t.name === "save_extraction_skill")!;
+
+describe("save_extraction_skill", () => {
+  beforeEach(clearAll);
+  it("持久化含 SKILL.md + extraction.json 的包", async () => {
+    const r = await saveExtraction.handler(
+      { name: "Orders", description: "extract orders", schema: [{ name: "title", type: "string" }], stopCondition: "until no next" },
+      ctx,
+    );
+    expect(r.success).toBe(true);
+    const pkgs = await listPackages();
+    const created = pkgs.find((p) => p.frontmatter.name === "Orders");
+    expect(created).toBeTruthy();
+    expect(created!.files["SKILL.md"]).toContain("read_skill_file");
+    const cfg = JSON.parse(created!.files["extraction.json"]);
+    expect(cfg.schema[0].name).toBe("title");
+    expect(cfg.stopCondition).toBe("until no next");
+    expect(cfg.output.includeSourceColumns).toBe(true);
+  });
+  it("schema 为空报错", async () => {
+    const r = await saveExtraction.handler({ name: "X", description: "d", schema: [], stopCondition: "s" }, ctx);
+    expect(r.success).toBe(false);
+  });
+});
