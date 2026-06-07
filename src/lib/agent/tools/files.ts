@@ -1,6 +1,6 @@
 import type { Tool, ToolHandlerContext } from "../types";
 import type { ActionResult } from "@/lib/dom-actions/types";
-import type { FileArtifact } from "@/background/output-cache";
+import type { FileArtifact } from "@/lib/files/output-store";
 import { sanitizeDownloadName } from "@/lib/files/download-name";
 import { sendToOffscreen } from "@/background/offscreen-manager";
 import { classifyFile, MAX_FILE_BYTES } from "@/lib/file-read/classify";
@@ -20,12 +20,12 @@ const MAX_CONTENT_BYTES = 5 * 1024 * 1024;
 
 export interface OutputFileDeps {
   sessionId: string;
-  store: (a: FileArtifact) => void;
+  store: (a: FileArtifact) => void | Promise<void>;
 }
 
 /**
  * output_file — produce a downloadable text artifact. Stores content in the
- * SW output-cache and returns `fileOutput` so the panel can render a card;
+ * persistent output-store and returns `fileOutput` so the panel can render a card;
  * the actual chrome.downloads call happens later when the user clicks the
  * card's download button (SW routes `download-output`). Dep-injected with
  * sessionId + store because it needs runtime state — NOT in the static
@@ -60,7 +60,7 @@ export function buildOutputFileTool(deps: OutputFileDeps): Tool {
       const filename = sanitizeDownloadName(rawFilename);
       const mime = typeof a.mime === "string" && SAFE_MIME.test(a.mime) ? a.mime : "text/plain";
       const id = crypto.randomUUID();
-      deps.store({ id, sessionId: deps.sessionId, filename, mime, content: a.content, byteLength, addedAt: Date.now() });
+      await deps.store({ id, sessionId: deps.sessionId, filename, mime, content: a.content, byteLength, addedAt: Date.now() });
       const renameNote =
         filename === "pie/untitled.txt" && rawFilename !== "pie/untitled.txt"
           ? " (filename was sanitized to untitled.txt)"

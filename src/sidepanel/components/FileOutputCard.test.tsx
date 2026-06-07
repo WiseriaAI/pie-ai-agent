@@ -27,4 +27,18 @@ describe("FileOutputCard", () => {
     fireEvent.click(screen.getByRole("button"));
     await waitFor(() => expect((screen.getByRole("button") as HTMLButtonElement).disabled).toBe(true));
   });
+
+  it("shows expired on mount (no click) when onProbe resolves false", async () => {
+    const onProbe = vi.fn().mockResolvedValue(false);
+    render(<FileOutputCard artifactId="a" filename="pie/x.md" mime="text/markdown" size={10} onDownload={vi.fn()} onProbe={onProbe} />);
+    await waitFor(() => expect((screen.getByRole("button") as HTMLButtonElement).disabled).toBe(true));
+    expect(onProbe).toHaveBeenCalledWith("a");
+  });
+
+  it("stays downloadable when onProbe resolves true", async () => {
+    const onProbe = vi.fn().mockResolvedValue(true);
+    render(<FileOutputCard artifactId="a" filename="pie/x.md" mime="text/markdown" size={10} onDownload={vi.fn()} onProbe={onProbe} />);
+    await waitFor(() => expect(onProbe).toHaveBeenCalledWith("a"));
+    expect((screen.getByRole("button") as HTMLButtonElement).disabled).toBe(false);
+  });
 });

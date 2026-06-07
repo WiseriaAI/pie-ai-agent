@@ -247,8 +247,8 @@ export type DisplayMessage =
       resolved?: "discarded";
     }
   | {
-      /** output_file — download card. Full content lives in the SW
-       *  output-cache; this carries only display fields + the artifactId the
+      /** output_file — download card. Full content lives in the persistent
+       *  output-store; this carries only display fields + the artifactId the
        *  panel sends back via download-output. */
       role: "file-output";
       artifactId: string;

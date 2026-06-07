@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useT } from "@/lib/i18n";
 import { fileTypeLabel, humanSize } from "@/lib/files/mime-label";
 
@@ -13,6 +13,10 @@ interface Props {
   mime: string;
   size: number;
   onDownload: (artifactId: string) => Promise<DownloadResult>;
+  /** Optional existence probe run on mount — if it resolves false (artifact
+   *  evicted / session archived), the card shows the expired state without the
+   *  user having to click download first. */
+  onProbe?: (artifactId: string) => Promise<boolean>;
 }
 
 function basename(name: string): string {
@@ -68,11 +72,25 @@ export function FileOutputCard({
   filename,
   size,
   onDownload,
+  onProbe,
 }: Props) {
   const t = useT();
   const [status, setStatus] = useState<"idle" | "busy" | "expired">("idle");
   const disabled = status !== "idle";
   const dimmed = status === "expired";
+
+  // Proactively reflect expiry on mount so an evicted/archived artifact shows
+  // as expired without requiring a download click first.
+  useEffect(() => {
+    if (!onProbe) return;
+    let cancelled = false;
+    void onProbe(artifactId).then((exists) => {
+      if (!cancelled && !exists) setStatus("expired");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [artifactId, onProbe]);
 
   async function handleClick() {
     if (disabled) return;

@@ -3,7 +3,7 @@ import type { ModelConfig } from "../model-router";
 import type { ChatMessage } from "../model-router";
 import { streamChat } from "../model-router";
 import { addImage, evictSession } from "../../background/image-cache";
-import { addArtifact } from "../../background/output-cache";
+import { putArtifact } from "../files/output-store";
 import { resetTaskBudget, dispatchCaptureVisibleTab, dispatchCaptureFullPageTab, type CdpAcquirer } from "./tools/screenshot";
 import { hydrateAttachments } from "./image-hydration";
 import {
@@ -1558,7 +1558,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       });
       const outputFileTool = buildOutputFileTool({
         sessionId,
-        store: (a) => addArtifact(sessionId, a),
+        store: (a) => putArtifact(a),
       });
       const allTools = filterToolsByVision(
         [...BUILT_IN_TOOLS, ...mouseTools, ...keyboardTools, ...editorTools, requestLocalFileTool, outputFileTool],

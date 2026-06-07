@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { buildOutputFileTool, readLocalFileTool, buildRequestLocalFileTool } from "./files";
-import type { FileArtifact } from "@/background/output-cache";
+import type { FileArtifact } from "@/lib/files/output-store";
 import { sendToOffscreen } from "@/background/offscreen-manager";
 vi.mock("@/background/offscreen-manager", () => ({ sendToOffscreen: vi.fn() }));
 
@@ -11,7 +11,7 @@ describe("output_file tool", () => {
   afterEach(() => { globalThis.chrome = originalChrome; });
   function build() {
     const stored: FileArtifact[] = [];
-    const tool = buildOutputFileTool({ sessionId: "s1", store: (a) => stored.push(a) });
+    const tool = buildOutputFileTool({ sessionId: "s1", store: (a) => { stored.push(a); } });
     return { tool, stored };
   }
 

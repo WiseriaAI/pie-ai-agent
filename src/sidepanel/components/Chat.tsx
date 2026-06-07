@@ -93,6 +93,7 @@ import { LocalFileRequestCard } from "./LocalFileRequestCard";
 import { usePdfPermission } from "../hooks/usePdfPermission";
 import { PdfPermissionCard } from "./PdfPermissionCard";
 import { FileOutputCard } from "./FileOutputCard";
+import { artifactExists } from "@/lib/files/output-store";
 
 interface ChatProps {
   providerLabel: string | null;
@@ -1199,6 +1200,7 @@ After the skill completes, briefly summarize what was created (the user will see
                       mime={msg.mime}
                       size={msg.size}
                       onDownload={session.downloadOutput}
+                      onProbe={artifactExists}
                     />
                   </div>
                 );
