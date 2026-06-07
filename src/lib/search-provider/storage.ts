@@ -1,4 +1,5 @@
 import { getOrCreateEncryptionKey, encrypt, decrypt } from "@/lib/crypto";
+import { getConfig, setConfig, removeConfig } from "@/lib/idb/config-store";
 import type { SearchProviderId } from "./types";
 
 interface StoredEntry {
@@ -11,14 +12,12 @@ function storageKeyFor(id: SearchProviderId): string {
 }
 
 async function read(id: SearchProviderId): Promise<StoredEntry | null> {
-  const k = storageKeyFor(id);
-  const got = await chrome.storage.local.get(k);
-  const v = (got as Record<string, unknown>)[k];
-  return (v as StoredEntry | undefined) ?? null;
+  const v = await getConfig<StoredEntry>(storageKeyFor(id));
+  return v ?? null;
 }
 
 async function write(id: SearchProviderId, entry: StoredEntry): Promise<void> {
-  await chrome.storage.local.set({ [storageKeyFor(id)]: entry });
+  await setConfig(storageKeyFor(id), entry);
 }
 
 export async function getSearchProviderKey(id: SearchProviderId): Promise<string | null> {
@@ -38,7 +37,7 @@ export async function setSearchProviderKey(
 }
 
 export async function clearSearchProviderKey(id: SearchProviderId): Promise<void> {
-  await chrome.storage.local.remove(storageKeyFor(id));
+  await removeConfig(storageKeyFor(id));
 }
 
 export async function markVerified(id: SearchProviderId): Promise<void> {

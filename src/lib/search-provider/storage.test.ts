@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
+import { _resetForTests } from "@/lib/idb/db";
+import { _resetKeyForTests } from "@/lib/crypto";
+import { getConfig } from "@/lib/idb/config-store";
 import {
   getSearchProviderKey,
   setSearchProviderKey,
@@ -7,29 +10,9 @@ import {
   markVerified,
 } from "./storage";
 
-// chrome.storage.local mock — same pattern as other tests in the repo.
-const memStore = new Map<string, unknown>();
-beforeEach(() => {
-  memStore.clear();
-  globalThis.chrome = {
-    storage: {
-      local: ({
-        get: async (keys: string | string[]) => {
-          const arr = Array.isArray(keys) ? keys : [keys];
-          const out: Record<string, unknown> = {};
-          for (const k of arr) if (memStore.has(k)) out[k] = memStore.get(k);
-          return out;
-        },
-        set: async (items: Record<string, unknown>) => {
-          for (const [k, v] of Object.entries(items)) memStore.set(k, v);
-        },
-        remove: async (keys: string | string[]) => {
-          const arr = Array.isArray(keys) ? keys : [keys];
-          for (const k of arr) memStore.delete(k);
-        },
-      } as unknown as typeof chrome.storage.local),
-    },
-  } as unknown as typeof chrome;
+beforeEach(async () => {
+  await _resetForTests();
+  _resetKeyForTests();
 });
 
 describe("search-provider storage", () => {
@@ -41,15 +24,16 @@ describe("search-provider storage", () => {
     await setSearchProviderKey("tavily", "tvly-secret-abc");
     expect(await getSearchProviderKey("tavily")).toBe("tvly-secret-abc");
     // Raw storage must NOT contain plaintext
-    const raw = memStore.get("search_provider_tavily") as { encryptedKey: string };
-    expect(raw.encryptedKey).not.toContain("tvly-secret-abc");
+    const raw = await getConfig<{ encryptedKey: string }>("search_provider_tavily");
+    expect(raw).not.toBeNull();
+    expect(raw!.encryptedKey).not.toContain("tvly-secret-abc");
   });
 
   it("clearSearchProviderKey removes the entry", async () => {
     await setSearchProviderKey("tavily", "tvly-x");
     await clearSearchProviderKey("tavily");
     expect(await getSearchProviderKey("tavily")).toBeNull();
-    expect(memStore.has("search_provider_tavily")).toBe(false);
+    expect(await getConfig("search_provider_tavily")).toBeUndefined();
   });
 
   it("getSearchProviderStatus returns configured=false when unset", async () => {
