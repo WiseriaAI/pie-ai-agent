@@ -1537,7 +1537,12 @@ chrome.runtime.onConnect.addListener((port) => {
       if (!art) {
         port.postMessage({ type: "file-output-result", artifactId, status: "expired", sessionId: portSessionId });
       } else {
-        const url = `data:${art.mime};charset=utf-8,${encodeURIComponent(art.content)}`;
+        // Use application/octet-stream (not art.mime) so Chrome preserves the
+        // exact filename + extension. With a concrete text mime, Chrome
+        // reconciles the saved extension to the mime's canonical one (e.g.
+        // text/plain → ".txt"), renaming report.md to report.txt. octet-stream
+        // is opaque, so the provided filename (incl. extension) is honored.
+        const url = `data:application/octet-stream;charset=utf-8,${encodeURIComponent(art.content)}`;
         chrome.downloads
           .download({ url, filename: art.filename, conflictAction: "uniquify", saveAs: true })
           .then(() => port.postMessage({ type: "file-output-result", artifactId, status: "ok", sessionId: portSessionId }))

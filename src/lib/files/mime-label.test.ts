@@ -1,19 +1,25 @@
 import { describe, it, expect } from "vitest";
-import { mimeLabel, humanSize } from "./mime-label";
+import { fileTypeLabel, humanSize } from "./mime-label";
 
-describe("mimeLabel", () => {
-  it("maps known mimes to friendly uppercase labels", () => {
-    expect(mimeLabel("text/markdown")).toBe("MARKDOWN");
-    expect(mimeLabel("application/json")).toBe("JSON");
-    expect(mimeLabel("text/csv")).toBe("CSV");
-    expect(mimeLabel("text/plain")).toBe("TEXT");
-    expect(mimeLabel("application/xml")).toBe("XML");
-    expect(mimeLabel("text/xml")).toBe("XML");
-    expect(mimeLabel("application/x-ndjson")).toBe("NDJSON");
+describe("fileTypeLabel", () => {
+  it("maps known extensions to friendly uppercase labels (from the filename)", () => {
+    expect(fileTypeLabel("pie/report.md")).toBe("MARKDOWN");
+    expect(fileTypeLabel("data.json")).toBe("JSON");
+    expect(fileTypeLabel("table.csv")).toBe("CSV");
+    expect(fileTypeLabel("notes.txt")).toBe("TEXT");
+    expect(fileTypeLabel("doc.xml")).toBe("XML");
+    expect(fileTypeLabel("script.py")).toBe("PYTHON");
   });
-  it("falls back to the subtype uppercased", () => {
-    expect(mimeLabel("text/x-python")).toBe("X-PYTHON");
-    expect(mimeLabel("")).toBe("FILE");
+  it("is case-insensitive on the extension and uses the basename", () => {
+    expect(fileTypeLabel("pie/sub/REPORT.MD")).toBe("MARKDOWN");
+  });
+  it("falls back to the uppercased extension for unknown types", () => {
+    expect(fileTypeLabel("a.weirdext")).toBe("WEIRDEXT");
+  });
+  it("returns FILE when there is no usable extension", () => {
+    expect(fileTypeLabel("pie/README")).toBe("FILE");
+    expect(fileTypeLabel(".gitignore")).toBe("FILE");
+    expect(fileTypeLabel("")).toBe("FILE");
   });
 });
 

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useT } from "@/lib/i18n";
-import { mimeLabel, humanSize } from "@/lib/files/mime-label";
+import { fileTypeLabel, humanSize } from "@/lib/files/mime-label";
 
 export interface DownloadResult {
   status: "ok" | "expired" | "error";
@@ -57,7 +57,6 @@ const DownloadIcon = () => (
 export function FileOutputCard({
   artifactId,
   filename,
-  mime,
   size,
   onDownload,
 }: Props) {
@@ -95,7 +94,7 @@ export function FileOutputCard({
         <div className="font-mono text-[11px] text-fg-3">
           {dimmed
             ? t("chat.output.expired")
-            : `${mimeLabel(mime)} · ${humanSize(size)}`}
+            : `${fileTypeLabel(filename)} · ${humanSize(size)}`}
         </div>
       </div>
 
