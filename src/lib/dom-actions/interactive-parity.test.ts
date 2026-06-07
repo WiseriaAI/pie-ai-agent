@@ -23,6 +23,7 @@ import { describe, it, expect } from "vitest";
 import {
   INTERACTIVE_SELECTOR,
   EDITOR_SELECTOR,
+  EDITOR_ENGINE_MAP,
   WRAPPER_TAGS_LIST,
   TYPE_EDITOR_MARKERS,
 } from "./_shared/interactive";
@@ -84,6 +85,22 @@ describe("TYPE_EDITOR_MARKERS parity in actByIdxInjected (Task 6 drift guard)", 
     const escapedSelector = JSON.stringify(selector).slice(1, -1);
     it(`actByIdxInjected inlines selector ${JSON.stringify(selector)}`, () => {
       expect(actByIdxInjected.toString()).toContain(escapedSelector);
+    });
+  }
+});
+
+// ── Part A: EDITOR_ENGINE_MAP parity in probePageInjected (editorEngineOf) ────
+describe("EDITOR_ENGINE_MAP parity in probePageInjected", () => {
+  // probePageInjected inlines editorEngineOf() which maps each editor host class
+  // to its engine display name. Guard each [selector, engine] pair so the inline
+  // mapping can't drift from the authoritative EDITOR_ENGINE_MAP.
+  for (const [selector, engine] of EDITOR_ENGINE_MAP) {
+    const escapedSelector = JSON.stringify(selector).slice(1, -1);
+    it(`probePageInjected inlines editor host class ${JSON.stringify(selector)}`, () => {
+      expect(probePageInjected.toString()).toContain(escapedSelector);
+    });
+    it(`probePageInjected inlines engine name "${engine}"`, () => {
+      expect(probePageInjected.toString()).toContain(engine);
     });
   }
 });
