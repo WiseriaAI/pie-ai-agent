@@ -45,11 +45,12 @@ THEN, ONE OF:
 - Save as reusable skill: once the user confirms the schema, call save_extraction_skill with { name, description, schema, stopCondition }. They can re-run it later via use_skill.
 
 MULTI-PAGE
-- Ask the user for a stop condition (natural language). Loop: read_page each page → extract → attach _source → evaluate stop condition → advance to next page (click next / load more / scroll / URL page param). No hard cap; give a page/cost estimate before a long run.
+- Ask the user for a stop condition (natural language). Loop per page: read_page → extract THIS page's rows → attach _source → commit them with add_extraction_rows (first page: reset:true + schema) → evaluate stop condition → advance to next page (click next / load more / scroll / URL page param). No hard cap; give a page/cost estimate before a long run.
+- Do NOT accumulate all rows in your head to pass at the end — commit each page via add_extraction_rows so large extractions never lose data.
 
 OUTPUT
-- Always emit results via output_extraction (never hand-format CSV/JSON yourself): once format="json" (full contract), once format="csv".`,
-    { tools: ["read_page", "output_extraction", "save_extraction_skill"] },
+- Always emit results via output_extraction (never hand-format CSV/JSON yourself): once format="json" (full contract), once format="csv". Do NOT pass rows — output_extraction serializes the rows you committed via add_extraction_rows. (For a tiny single-page one-shot you may instead pass rows+schema inline to output_extraction.)`,
+    { tools: ["read_page", "add_extraction_rows", "output_extraction", "save_extraction_skill"] },
   ),
 
   pkg(

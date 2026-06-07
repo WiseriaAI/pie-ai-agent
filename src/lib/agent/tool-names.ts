@@ -98,7 +98,7 @@ export const LOCAL_FILE_TOOL_NAMES = [
 
 // Extraction output tool — produces a structured extraction artifact.
 // class=read: emits data into the side-panel / store; no tab/page mutation.
-export const EXTRACTION_TOOL_NAMES = ["output_extraction"] as const;
+export const EXTRACTION_TOOL_NAMES = ["output_extraction", "add_extraction_rows"] as const;
 
 export const KNOWN_BUILT_IN_TOOL_NAMES = [
   ...PHASE_2_TOOL_NAMES,
@@ -210,6 +210,7 @@ export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
   request_local_file: "read",
   // Extraction output — structured data artifact; no tab/page mutation
   output_extraction: "read",
+  add_extraction_rows: "read", // accumulates a page's rows into the SW buffer; no tab/page mutation
   // Editor tools — CDP main-context getValue/setValue
   read_editor: "read",
   set_editor_value: "write",

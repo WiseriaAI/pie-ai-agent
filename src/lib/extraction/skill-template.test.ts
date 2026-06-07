@@ -18,6 +18,7 @@ describe("extraction skill template", () => {
     expect(md).toContain("extraction.json");
     expect(md).toContain("max_bytes");
     expect(md).toContain("output_extraction");
+    expect(md).toContain("add_extraction_rows");
     expect(md).toContain("_source");
   });
 });

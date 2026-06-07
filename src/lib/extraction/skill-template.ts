@@ -14,7 +14,7 @@ export function buildExtractionSkillMd(name: string, description: string): strin
     "version: 1.0.0",
     "author: agent",
     "capabilities:",
-    "  tools: [read_page, read_skill_file, output_extraction]",
+    "  tools: [read_page, read_skill_file, add_extraction_rows, output_extraction]",
     "---",
     "",
   ].join("\n");
@@ -28,10 +28,10 @@ export function buildExtractionSkillMd(name: string, description: string): strin
     "   - Call read_page with mode=\"content\" and max_bytes=500000 on the current tab.",
     "   - Extract one object per data row matching the schema fields. Apply each field's `type` and `normalize` hint to clean values.",
     "   - Attach to each row `_source: { page: <1-based page number>, url: <current page URL> }`.",
-    "   - Accumulate rows.",
+    "   - IMMEDIATELY commit THIS page's rows by calling add_extraction_rows({ rows: <this page only>, ... }). On the FIRST page also pass reset:true AND schema. Do NOT keep accumulating rows in your head across pages.",
     "   - Evaluate stopCondition (natural language) against this page. If satisfied, stop.",
     "   - Otherwise advance to the next page (click next / load more / scroll / change the URL page param) and repeat. There is NO hard page cap — rely on stopCondition; if it runs unusually long, check in with the user.",
-    "4. When done, call output_extraction TWICE: once with format=\"json\" and once with format=\"csv\", each time passing { filename, schema, rows, pageCount, producedBy: { skillId, skillName, version } }.",
+    "4. When done, call output_extraction TWICE — once with format=\"json\", once with format=\"csv\" — passing { filename, pageCount, producedBy: { skillId, skillName, version } }. Do NOT pass rows: output_extraction serializes the buffer you filled with add_extraction_rows.",
     "5. Tell the user the row count and page count, and that the files are ready as download cards.",
   ].join("\n");
 

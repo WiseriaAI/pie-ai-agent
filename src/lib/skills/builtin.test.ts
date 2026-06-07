@@ -23,7 +23,7 @@ describe("BUILT_IN_SKILL_PACKAGES", () => {
   it("extract_structured_data 引导 schema 提议/预览/保存 + 多页 + output_extraction", () => {
     const p = BUILT_IN_SKILL_PACKAGES.find((x) => x.id === "extract_structured_data")!;
     const md = p.files["SKILL.md"];
-    for (const kw of ["read_page", "max_bytes", "schema", "preview", "save_extraction_skill", "output_extraction", "_source"]) {
+    for (const kw of ["read_page", "max_bytes", "schema", "preview", "save_extraction_skill", "add_extraction_rows", "output_extraction", "_source"]) {
       expect(md).toContain(kw);
     }
   });
