@@ -1,12 +1,23 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { chromeMock, type FakePort } from "@/test/setup";
 import {
   createSession,
   getSessionMeta,
   setSessionMeta,
+  setSessionAgent,
 } from "@/lib/sessions/storage";
+import { setIndex } from "@/lib/idb/sessions-store";
+import { _resetForTests } from "@/lib/idb/db";
 import { useSession } from ".";
+
+// Session persistence now lives in IndexedDB (the `pie` db). The shared
+// test/setup.ts beforeEach only clears the chrome.storage mock, so without an
+// explicit IDB reset the `pie` db would leak session records / index entries
+// across tests — the prior source of flakiness in this file.
+beforeEach(async () => {
+  await _resetForTests();
+});
 
 // useSession lifecycle is async (it bootstraps a session on mount).
 // `waitFor` lets tests synchronize with the resulting state flips.
@@ -233,12 +244,17 @@ describe("useSession — persistence boundaries", () => {
     ]);
     expect(result.current.streamingText).toBe("");
 
-    // Storage round-trip: re-mount a fresh hook → sees the persisted messages.
-    const reread = await getSessionMeta(result.current.sessionId!);
-    expect(reread!.messages).toEqual([
-      { role: "user", content: "ping" },
-      { role: "assistant", content: "pong" },
-    ]);
+    // Storage round-trip: re-read storage → sees the persisted messages.
+    // The hook's persist is a fire-and-forget IDB write that commits on a
+    // later microtask, so poll until it lands (chrome.storage used to resolve
+    // synchronously; IDB does not).
+    await waitFor(async () => {
+      const reread = await getSessionMeta(result.current.sessionId!);
+      expect(reread!.messages).toEqual([
+        { role: "user", content: "ping" },
+        { role: "assistant", content: "pong" },
+      ]);
+    });
   });
 
   it("persists on chat-error so the user sees prior context after switching back", async () => {
@@ -259,8 +275,10 @@ describe("useSession — persistence boundaries", () => {
       { role: "assistant", content: "partial" },
     ]);
 
-    const reread = await getSessionMeta(result.current.sessionId!);
-    expect(reread!.messages).toEqual(result.current.messages);
+    await waitFor(async () => {
+      const reread = await getSessionMeta(result.current.sessionId!);
+      expect(reread!.messages).toEqual(result.current.messages);
+    });
   });
 
   it("persists on agent-done-task with a summary row", async () => {
@@ -288,10 +306,12 @@ describe("useSession — persistence boundaries", () => {
       stepCount: 3,
     });
 
-    const reread = await getSessionMeta(result.current.sessionId!);
-    expect(reread!.messages.at(-1)).toMatchObject({
-      role: "agent-summary",
-      success: true,
+    await waitFor(async () => {
+      const reread = await getSessionMeta(result.current.sessionId!);
+      expect(reread!.messages.at(-1)).toMatchObject({
+        role: "agent-summary",
+        success: true,
+      });
     });
   });
 
@@ -311,8 +331,10 @@ describe("useSession — persistence boundaries", () => {
       { role: "user", content: "ping" },
       { role: "assistant", content: "halfway" },
     ]);
-    const reread = await getSessionMeta(result.current.sessionId!);
-    expect(reread!.messages).toEqual(result.current.messages);
+    await waitFor(async () => {
+      const reread = await getSessionMeta(result.current.sessionId!);
+      expect(reread!.messages).toEqual(result.current.messages);
+    });
   });
 
   it("does NOT write storage during chat-chunk (avoids streaming churn)", async () => {
@@ -355,14 +377,36 @@ describe("useSession — clearMessages", () => {
 
     expect(result.current.messages).toHaveLength(2);
 
+    // Wait for the chat-done IDB persist to land before clearing — otherwise a
+    // late-committing write could repopulate storage after clearMessages.
+    await waitFor(async () => {
+      const seeded = await getSessionMeta(result.current.sessionId!);
+      expect(seeded!.messages).toHaveLength(2);
+    });
+    // The chat-done write fires a coarse "sessions" store-bus event whose
+    // listener re-reads meta asynchronously. Let that re-read fully drain
+    // (it self-echoes the 2-message state — a no-op) BEFORE clearMessages, so
+    // its stale snapshot can't land after the clear. Without this drain the
+    // in-flight re-read could resolve post-clear and re-adopt the 2 messages.
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
     await act(async () => {
       await result.current.clearMessages();
     });
 
-    expect(result.current.messages).toEqual([]);
+    // clearMessages persists [] and clears React state. The hook also rides a
+    // coarse "sessions" store-bus event and re-reads meta from IDB; the empty
+    // write is the last committed state, so React state settles to []. Poll to
+    // let any in-flight store-change re-read callbacks drain (the IDB write +
+    // its async re-read are not synchronous like the old chrome.storage mock).
+    await waitFor(() => expect(result.current.messages).toEqual([]));
     expect(result.current.error).toBeNull();
-    const reread = await getSessionMeta(result.current.sessionId!);
-    expect(reread!.messages).toEqual([]);
+    await waitFor(async () => {
+      const reread = await getSessionMeta(result.current.sessionId!);
+      expect(reread!.messages).toEqual([]);
+    });
   });
 });
 
@@ -896,30 +940,28 @@ describe("setActive — multi-session port lifecycle (#30)", () => {
 
   it("setActive rehydrates slot.usage from SessionAgentState.contextUsage (#59)", async () => {
     const id = "sess-rehydrate";
-    await chrome.storage.local.set({
-      [`session_${id}_meta`]: {
-        id,
-        createdAt: 1,
-        lastAccessedAt: 1,
-        status: "active",
-        messages: [],
-      },
-      [`session_${id}_agent`]: {
-        agentMessages: [],
-        pendingInstructions: [],
-        stepIndex: 0,
-        hasImageContent: false,
-        contextUsage: {
-          totalInputTokens: 5000,
-          totalOutputTokens: 200,
-          lastInputTokens: 1000,
-          lastOutputTokens: 50,
-        },
-      },
-      session_index: [
-        { id, lastAccessedAt: 1, status: "active", messageCount: 0 },
-      ],
+    await setSessionMeta({
+      id,
+      createdAt: 1,
+      lastAccessedAt: 1,
+      status: "active",
+      messages: [],
     });
+    await setSessionAgent(id, {
+      agentMessages: [],
+      pendingInstructions: [],
+      stepIndex: 0,
+      hasImageContent: false,
+      contextUsage: {
+        totalInputTokens: 5000,
+        totalOutputTokens: 200,
+        lastInputTokens: 1000,
+        lastOutputTokens: 50,
+      },
+    });
+    await setIndex([
+      { id, lastAccessedAt: 1, status: "active", messageCount: 0 },
+    ]);
 
     const { result } = renderHook(() => useSession());
     await waitFor(() => expect(result.current.ready).toBe(true));
@@ -940,20 +982,18 @@ describe("setActive — multi-session port lifecycle (#30)", () => {
 
   it("setActive on a session with no prior usage returns undefined usage (#59)", async () => {
     const id = "sess-no-usage";
-    await chrome.storage.local.set({
-      [`session_${id}_meta`]: {
-        id,
-        createdAt: 1,
-        lastAccessedAt: 1,
-        status: "active",
-        messages: [],
-      },
-      // Intentionally NO session_${id}_agent key — simulates a session
-      // that exists but never had an LLM call complete.
-      session_index: [
-        { id, lastAccessedAt: 1, status: "active", messageCount: 0 },
-      ],
+    await setSessionMeta({
+      id,
+      createdAt: 1,
+      lastAccessedAt: 1,
+      status: "active",
+      messages: [],
     });
+    // Intentionally NO agent record — simulates a session that exists but
+    // never had an LLM call complete.
+    await setIndex([
+      { id, lastAccessedAt: 1, status: "active", messageCount: 0 },
+    ]);
 
     const { result } = renderHook(() => useSession());
     await waitFor(() => expect(result.current.ready).toBe(true));
