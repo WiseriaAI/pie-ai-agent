@@ -1,0 +1,102 @@
+// src/lib/idb/db.ts
+//
+// Single IndexedDB database `pie` holding every former chrome.storage.local
+// namespace. One database (not one-per-domain) so a single IDB transaction can
+// span multiple stores — required to preserve the D9 atomic multi-key write
+// invariant (e.g. session meta + index updated together).
+
+export const DB_NAME = "pie";
+export const DB_VERSION = 1;
+
+export const STORES = {
+  sessions: "sessions",
+  sessionIndex: "session_index",
+  instances: "instances",
+  config: "config",
+} as const;
+
+export type StoreName = (typeof STORES)[keyof typeof STORES];
+
+let dbPromise: Promise<IDBDatabase> | null = null;
+
+export function openDb(): Promise<IDBDatabase> {
+  if (dbPromise) return dbPromise;
+  dbPromise = new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(STORES.sessions))
+        db.createObjectStore(STORES.sessions, { keyPath: "id" });
+      if (!db.objectStoreNames.contains(STORES.sessionIndex))
+        db.createObjectStore(STORES.sessionIndex, { keyPath: "id" });
+      if (!db.objectStoreNames.contains(STORES.instances))
+        db.createObjectStore(STORES.instances, { keyPath: "id" });
+      if (!db.objectStoreNames.contains(STORES.config))
+        db.createObjectStore(STORES.config, { keyPath: "key" });
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  return dbPromise;
+}
+
+/** Single-store transaction. Resolves on transaction commit (oncomplete), not
+ *  request success, so callers can rely on durability before publishing change
+ *  notifications. */
+export function tx<T>(
+  store: StoreName,
+  mode: IDBTransactionMode,
+  fn: (s: IDBObjectStore) => IDBRequest<T>,
+): Promise<T> {
+  return openDb().then(
+    (db) =>
+      new Promise<T>((resolve, reject) => {
+        const t = db.transaction(store, mode);
+        const req = fn(t.objectStore(store));
+        let result: T;
+        req.onsuccess = () => { result = req.result; };
+        req.onerror = () => reject(req.error);
+        t.oncomplete = () => resolve(result);
+        t.onerror = () => reject(t.error);
+        t.onabort = () => reject(t.error);
+      }),
+  );
+}
+
+/** Multi-store atomic transaction. `fn` issues requests against the provided
+ *  store map; resolves only when the whole transaction commits (all-or-nothing). */
+export function txMulti(
+  stores: StoreName[],
+  mode: IDBTransactionMode,
+  fn: (map: Record<string, IDBObjectStore>) => void,
+): Promise<void> {
+  return openDb().then(
+    (db) =>
+      new Promise<void>((resolve, reject) => {
+        const t = db.transaction(stores, mode);
+        const map: Record<string, IDBObjectStore> = {};
+        for (const s of stores) map[s] = t.objectStore(s);
+        try {
+          fn(map);
+        } catch (e) {
+          try { t.abort(); } catch { /* noop */ }
+          reject(e);
+          return;
+        }
+        t.oncomplete = () => resolve();
+        t.onerror = () => reject(t.error);
+        t.onabort = () => reject(t.error);
+      }),
+  );
+}
+
+/** Test-only: drop the cached db handle + delete the database. */
+export async function _resetForTests(): Promise<void> {
+  if (dbPromise) { (await dbPromise).close(); dbPromise = null; }
+  await new Promise<void>((resolve) => {
+    const req = indexedDB.deleteDatabase(DB_NAME);
+    req.onsuccess = () => resolve();
+    req.onerror = () => resolve();
+    req.onblocked = () => resolve();
+  });
+}
