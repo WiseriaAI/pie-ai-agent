@@ -97,6 +97,7 @@ import {
   rotateAbortController,
 } from "./abort-rotation";
 import { createKeepAlive, type KeepAlive } from "./keep-alive";
+import { setConfig } from "@/lib/idb/config-store";
 import { cleanupLegacySkipPermissions } from "./cleanup-migration";
 import { reinjectAllTabs } from "./content-reinject";
 import { dispatchQuoteAdded, drainPendingQuotesToPort } from "./quote-dispatch";
@@ -247,7 +248,7 @@ const recoveryReady: Promise<void> = runSessionMigrations()
 // First install handler
 chrome.runtime.onInstalled.addListener((details) => {
   if (details.reason === "install") {
-    chrome.storage.local.set({ firstRun: true });
+    void setConfig("firstRun", true);
   }
   // Belt-and-suspenders: also chain recovery for install events.
   // recoveryReady deduplicates via 30s guard.
