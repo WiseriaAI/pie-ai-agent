@@ -2,8 +2,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { buildClickTool, type MouseToolDeps } from "@/lib/agent/tools/mouse";
 import {
   isCdpInputEnabled,
-  CDP_INPUT_ENABLED_STORAGE_KEY,
+  setCdpInputEnabled,
 } from "@/lib/cdp-input-enabled";
+import { _resetForTests } from "@/lib/idb/db";
 import type { CdpSession } from "@/background/cdp-session";
 
 vi.mock("@/lib/dom-actions/geometry", () => ({
@@ -22,23 +23,9 @@ function fakeSession(): CdpSession {
   };
 }
 
-beforeEach(() => {
-  const data: Record<string, unknown> = {};
+beforeEach(async () => {
+  await _resetForTests();
   global.chrome = {
-    storage: { local: {
-      get: vi.fn((k) => {
-        const want = Array.isArray(k) ? k : [k];
-        const out: Record<string, unknown> = {};
-        for (const key of want) if (key in data) out[key] = data[key];
-        return Promise.resolve(out);
-      }),
-      set: vi.fn((kv) => { Object.assign(data, kv); return Promise.resolve(); }),
-      remove: vi.fn((keys) => {
-        const want = Array.isArray(keys) ? keys : [keys];
-        for (const k of want) delete data[k];
-        return Promise.resolve();
-      }),
-    } as unknown as typeof chrome.storage.local },
     scripting: {
       executeScript: vi.fn().mockResolvedValue([{ result: undefined }]),
     } as unknown as typeof chrome.scripting,
@@ -54,7 +41,7 @@ describe("consent gating end-to-end", () => {
     expect(await isCdpInputEnabled()).toBe(undefined);
     const requestConsent = vi.fn().mockImplementation(async () => {
       // Simulate sidepanel coordinator persisting flag on user accept
-      await chrome.storage.local.set({ [CDP_INPUT_ENABLED_STORAGE_KEY]: true });
+      await setCdpInputEnabled(true);
       return true;
     });
     const deps: MouseToolDeps = {
@@ -71,7 +58,7 @@ describe("consent gating end-to-end", () => {
 
   it("first call with decline returns disabled error and persists flag=false", async () => {
     const requestConsent = vi.fn().mockImplementation(async () => {
-      await chrome.storage.local.set({ [CDP_INPUT_ENABLED_STORAGE_KEY]: false });
+      await setCdpInputEnabled(false);
       return false;
     });
     const deps: MouseToolDeps = {
@@ -87,7 +74,7 @@ describe("consent gating end-to-end", () => {
   });
 
   it("once flag=true, subsequent calls do not invoke requestConsent", async () => {
-    await chrome.storage.local.set({ [CDP_INPUT_ENABLED_STORAGE_KEY]: true });
+    await setCdpInputEnabled(true);
     const requestConsent = vi.fn();
     const deps: MouseToolDeps = {
       acquireSession: vi.fn().mockResolvedValue(fakeSession()),
@@ -101,7 +88,7 @@ describe("consent gating end-to-end", () => {
   });
 
   it("flag=false re-invokes requestConsent each call (re-prompt to enable on the spot)", async () => {
-    await chrome.storage.local.set({ [CDP_INPUT_ENABLED_STORAGE_KEY]: false });
+    await setCdpInputEnabled(false);
     const requestConsent = vi.fn().mockResolvedValue(false);
     const deps: MouseToolDeps = {
       acquireSession: vi.fn(),
