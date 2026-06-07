@@ -68,7 +68,19 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     iconAsset: "provider-icons/openai.svg",
     defaultBaseUrl: "https://api.openai.com",
     placeholder: "sk-...",
+    // Curated from the OpenAI models reference (issue #109). The agent loop
+    // runs over the chat-completions streaming path and requires tool calling,
+    // so only text/vision chat models are listed — image-gen (gpt-image-2),
+    // realtime audio/voice (gpt-realtime-*), and TTS/ASR (gpt-4o-mini-tts) are
+    // out of scope. Deprecated lines (gpt-3.5-turbo, gpt-4/4-turbo,
+    // gpt-4.1-nano, *-search-preview, *-deep-research) are intentionally
+    // omitted. The gpt-5.x flagships take Text+Image input.
+    // maxContextTokens = input window.
     models: [
+      { id: "gpt-5.5", vision: true, tools: true, maxContextTokens: 1_050_000 },
+      { id: "gpt-5.4", vision: true, tools: true, maxContextTokens: 1_050_000 },
+      { id: "gpt-5.4-mini", vision: true, tools: true, maxContextTokens: 400_000 },
+      { id: "gpt-5.4-nano", vision: true, tools: true, maxContextTokens: 400_000 },
       { id: "gpt-4o", vision: true, tools: true, maxContextTokens: 128_000 },
       { id: "gpt-4o-mini", vision: true, tools: true, maxContextTokens: 128_000 },
       { id: "o3-mini", vision: false, tools: true, maxContextTokens: 200_000 },
