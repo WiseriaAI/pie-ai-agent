@@ -40,6 +40,7 @@ import { isCdpInputEnabled } from "../cdp-input-enabled";
 import { requestCdpInputConsent } from "../cdp-input-onboarding";
 import { requestLocalFileFromPanel } from "../local-file-request";
 import { buildRequestLocalFileTool, buildOutputFileTool } from "./tools/files";
+import { buildOutputExtractionTool } from "./tools/extraction-output";
 import { getEnabledSkillPackages } from "../skills";
 import { isFilePdfUrl } from "../pdf/detect";
 import {
@@ -1560,8 +1561,12 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         sessionId,
         store: (a) => putArtifact(a),
       });
+      const outputExtractionTool = buildOutputExtractionTool({
+        sessionId,
+        store: (a) => putArtifact(a),
+      });
       const allTools = filterToolsByVision(
-        [...BUILT_IN_TOOLS, ...mouseTools, ...keyboardTools, ...editorTools, requestLocalFileTool, outputFileTool],
+        [...BUILT_IN_TOOLS, ...mouseTools, ...keyboardTools, ...editorTools, requestLocalFileTool, outputFileTool, outputExtractionTool],
         modelConfig.vision,
       );
       const toolDefinitions = toolsToDefinitions(allTools);

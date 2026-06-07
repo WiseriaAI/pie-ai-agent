@@ -95,6 +95,10 @@ export const LOCAL_FILE_TOOL_NAMES = [
   "request_local_file",
 ] as const;
 
+// Extraction output tool — produces a structured extraction artifact.
+// class=read: emits data into the side-panel / store; no tab/page mutation.
+export const EXTRACTION_TOOL_NAMES = ["output_extraction"] as const;
+
 export const KNOWN_BUILT_IN_TOOL_NAMES = [
   ...PHASE_2_TOOL_NAMES,
   ...SKILL_META_TOOL_NAMES_FOR_REGISTRY,
@@ -105,6 +109,7 @@ export const KNOWN_BUILT_IN_TOOL_NAMES = [
   ...PAGE_SNAPSHOT_TOOL_NAMES,
   ...PDF_TOOL_NAMES,
   ...LOCAL_FILE_TOOL_NAMES,
+  ...EXTRACTION_TOOL_NAMES,
 ] as const;
 
 export const KNOWN_KEYBOARD_TOOL_NAMES = [
@@ -201,6 +206,8 @@ export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
   output_file: "read",
   read_local_file: "read",
   request_local_file: "read",
+  // Extraction output — structured data artifact; no tab/page mutation
+  output_extraction: "read",
   // Editor tools — CDP main-context getValue/setValue
   read_editor: "read",
   set_editor_value: "write",
