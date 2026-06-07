@@ -183,7 +183,7 @@ function reasonToError(reason: string | undefined): string {
     case "in_subframe":
       return "Editor is inside an iframe — iframe editors aren't supported yet. Click the editor to focus, then use dispatch_keyboard_input (write) or screenshot + vision (read).";
     case "no_engine":
-      return "No supported editor (Monaco/CodeMirror) at this index. If it's a canvas editor (e.g. Google Docs), read via screenshot + vision, or write via dispatch_keyboard_input after clicking to focus.";
+      return "No supported editor (Monaco / CodeMirror / TinyMCE) at this index. If it's a canvas editor (e.g. Google Docs), read via screenshot + vision, or write via dispatch_keyboard_input after clicking to focus.";
     case "cm6_no_view":
       return "CodeMirror 6 instance not reachable (no exposed EditorView). Read via screenshot + vision, or write via dispatch_keyboard_input after clicking to focus.";
     default:
@@ -224,7 +224,7 @@ export function buildEditorTools(deps: EditorToolDeps): Tool[] {
     {
       name: "read_editor",
       description:
-        "Read the FULL content of a code editor (Monaco / CodeMirror) by its data-pie-idx from read_page's <interactive_index> (role=\"editor\"). Returns the entire document via the editor's model API — including lines scrolled off-screen that read_page cannot see. Use this instead of read_page when you need the complete editor text. For canvas editors (e.g. Google Docs) it returns an error; read those via screenshot + vision.",
+        "Read the FULL content of a code editor (Monaco / CodeMirror) or a TinyMCE rich-text editor by its data-pie-idx from read_page's <interactive_index> (role=\"editor\"). Returns the entire document via the editor's model API — including lines scrolled off-screen that read_page cannot see. TinyMCE returns plain text. Use this instead of read_page when you need the complete editor text. For canvas editors (e.g. Google Docs) it returns an error; read those via screenshot + vision.",
       parameters: {
         type: "object",
         properties: {
@@ -253,7 +253,7 @@ export function buildEditorTools(deps: EditorToolDeps): Tool[] {
     {
       name: "set_editor_value",
       description:
-        "Replace the ENTIRE content of a code editor (Monaco / CodeMirror) by its data-pie-idx from read_page (role=\"editor\"). Writes via the editor's model API in one shot — no per-character typing, no IME issues, no length truncation. Use this to fill editors with large code/SQL. Reads back to verify. For canvas editors (e.g. Google Docs) it errors; write those via dispatch_keyboard_input after clicking to focus.",
+        "Replace the ENTIRE content of a code editor (Monaco / CodeMirror) or a TinyMCE rich-text editor by its data-pie-idx from read_page (role=\"editor\"). Writes via the editor's model API in one shot — no per-character typing, no IME issues, no length truncation. TinyMCE input is treated as PLAIN TEXT (special characters are escaped; what you pass is what appears) and committed to the underlying form field. Reads back to verify. For canvas editors (e.g. Google Docs) it errors; write those via dispatch_keyboard_input after clicking to focus.",
       parameters: {
         type: "object",
         properties: {

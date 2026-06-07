@@ -260,3 +260,19 @@ describe("buildReadEditorExpression TinyMCE", () => {
     delete (window as unknown as { tinymce?: unknown }).tinymce;
   });
 });
+
+describe("editor tool descriptions mention TinyMCE", () => {
+  const tools = buildEditorTools({
+    acquireSession: async () => ({}) as never,
+    requestConsent: async () => true,
+    sessionId: "s1",
+  });
+  it("set_editor_value description covers TinyMCE rich-text + plain-text write", () => {
+    const t = tools.find((x) => x.name === "set_editor_value")!;
+    expect(t.description).toContain("TinyMCE");
+  });
+  it("read_editor description covers TinyMCE", () => {
+    const t = tools.find((x) => x.name === "read_editor")!;
+    expect(t.description).toContain("TinyMCE");
+  });
+});
