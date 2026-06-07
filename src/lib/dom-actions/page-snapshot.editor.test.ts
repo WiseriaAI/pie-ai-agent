@@ -61,4 +61,53 @@ describe("read_page editor detection", () => {
     expect(names.some((n) => n.includes("CodeMirror"))).toBe(true);
     expect(names.filter((n) => n.includes("CodeMirror"))).toHaveLength(2);
   });
+
+  it("registers a TinyMCE v5/6 host (.tox-tinymce) as a role=editor element", () => {
+    document.body.innerHTML = `
+      <div class="tox tox-tinymce">
+        <div class="tox-editor-container">
+          <button class="tox-tbtn">Bold</button>
+          <iframe class="tox-edit-area__iframe"></iframe>
+        </div>
+      </div>`;
+    const host = document.querySelector(".tox-tinymce") as HTMLElement;
+    makeVisible(host);
+
+    const snap = pageSnapshotInjected();
+    const editor = snap.interactiveElements.find((el) => el.role === "editor");
+
+    expect(editor).toBeDefined();
+    expect(editor!.name).toContain("TinyMCE");
+    expect(editor!.name).toContain("read_editor");
+    expect(editor!.name).toContain("set_editor_value");
+    expect(host.getAttribute("data-pie-idx")).toBe(String(editor!.pieIdx));
+  });
+
+  it("suppresses the toolbar button inside the TinyMCE host (single handle)", () => {
+    document.body.innerHTML = `
+      <div class="tox tox-tinymce">
+        <button class="tox-tbtn">Bold</button>
+      </div>`;
+    const host = document.querySelector(".tox-tinymce") as HTMLElement;
+    const btn = document.querySelector(".tox-tbtn") as HTMLElement;
+    makeVisible(host);
+    makeVisible(btn);
+
+    const snap = pageSnapshotInjected();
+    expect(snap.interactiveElements.filter((e) => e.role === "editor")).toHaveLength(1);
+    expect(btn.hasAttribute("data-pie-idx")).toBe(false);
+  });
+
+  it("registers a TinyMCE v4 host (.mce-tinymce) as a role=editor element", () => {
+    document.body.innerHTML = `<div class="mce-tinymce mce-container"></div>`;
+    const host = document.querySelector(".mce-tinymce") as HTMLElement;
+    makeVisible(host);
+
+    const snap = pageSnapshotInjected();
+    const editor = snap.interactiveElements.find((el) => el.role === "editor");
+    expect(editor).toBeDefined();
+    expect(editor!.name).toContain("TinyMCE");
+    expect(editor!.name).toContain("read_editor");
+    expect(editor!.name).toContain("set_editor_value");
+  });
 });

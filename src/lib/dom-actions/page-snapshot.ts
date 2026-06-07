@@ -73,12 +73,14 @@ export function pageSnapshotInjected(): PageSnapshotResult {
   // Code editors render virtualized DOM (off-screen lines absent) and aren't
   // matched by INTERACTIVE_SELECTOR. We register the HOST so the agent can
   // discover it, click-focus it, and target read_editor / set_editor_value.
-  const EDITOR_SELECTOR = ".monaco-editor, .cm-editor, .CodeMirror";
+  const EDITOR_SELECTOR = ".monaco-editor, .cm-editor, .CodeMirror, .tox-tinymce, .mce-tinymce";
 
   function editorEngineOf(el: Element): string | null {
     if (el.matches?.(".monaco-editor")) return "Monaco";
     if (el.matches?.(".cm-editor")) return "CodeMirror"; // CM6
     if (el.matches?.(".CodeMirror")) return "CodeMirror"; // CM5
+    if (el.matches?.(".tox-tinymce")) return "TinyMCE";   // v5 / v6
+    if (el.matches?.(".mce-tinymce")) return "TinyMCE";   // v4
     return null;
   }
 
@@ -359,7 +361,12 @@ export function pageSnapshotInjected(): PageSnapshotResult {
       const isCredential = t === "password" || auto.includes("one-time-code");
       if (!isCredential && live.value) clone.setAttribute("value", live.value);
       if (live.checked) clone.setAttribute("checked", "");
-    } else if (live instanceof HTMLTextAreaElement && live.value) {
+    } else if (live instanceof HTMLTextAreaElement && live.value && isVisible(live)) {
+      // Skip hidden textareas: a rich-text editor (TinyMCE etc.) keeps its
+      // submit source in a display:none <textarea> whose value is serialized
+      // HTML (e.g. "<p>…</p>"). Reflecting it would leak that markup into the
+      // snapshot, misleading the LLM with content that diverges from what
+      // read_editor returns. The editor surfaces as a role="editor" handle.
       (clone as HTMLTextAreaElement).textContent = live.value;
     } else if (live instanceof HTMLOptionElement && live.selected) {
       clone.setAttribute("selected", "");
