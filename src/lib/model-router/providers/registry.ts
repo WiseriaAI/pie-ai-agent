@@ -13,6 +13,13 @@ export interface ModelMeta {
   tools: boolean;
   /** Approximate context window for the token-budget guard. */
   maxContextTokens: number;
+  /**
+   * 模型真实「最大输出 token」上限（≠ maxContextTokens 输入窗口）。
+   * 仅 anthropic-wire 家族（anthropic/deepseek/minimax/mimo/stepfun，走官方 SDK，
+   * max_tokens 必填）需要它——见 anthropic-sdk-core。OpenAI-compat / gemini 不填则用
+   * provider 默认，无需此值。必须来自 provider 官方文档，查不到则留空（退回兜底常量）。
+   */
+  maxOutputTokens?: number;
 }
 
 export interface ProviderMeta {
@@ -57,9 +64,9 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     defaultBaseUrl: "https://api.anthropic.com",
     placeholder: "sk-ant-...",
     models: [
-      { id: "claude-opus-4-7", vision: true, tools: true, maxContextTokens: 200_000 },
-      { id: "claude-sonnet-4-6", vision: true, tools: true, maxContextTokens: 200_000 },
-      { id: "claude-haiku-4-5-20251001", displayName: "claude-haiku-4-5", vision: true, tools: true, maxContextTokens: 200_000 },
+      { id: "claude-opus-4-7", vision: true, tools: true, maxContextTokens: 200_000, maxOutputTokens: 128_000 },
+      { id: "claude-sonnet-4-6", vision: true, tools: true, maxContextTokens: 200_000, maxOutputTokens: 64_000 },
+      { id: "claude-haiku-4-5-20251001", displayName: "claude-haiku-4-5", vision: true, tools: true, maxContextTokens: 200_000, maxOutputTokens: 64_000 },
     ],
   },
   {
@@ -103,14 +110,14 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     defaultBaseUrl: "https://api.minimaxi.com",
     placeholder: "eyJ...",
     models: [
-      { id: "MiniMax-M3", vision: true, tools: true, maxContextTokens: 1_000_000 },
-      { id: "MiniMax-M2.7", vision: false, tools: true, maxContextTokens: 204_800 },
-      { id: "MiniMax-M2.7-highspeed", vision: false, tools: true, maxContextTokens: 204_800 },
-      { id: "MiniMax-M2.5", vision: false, tools: true, maxContextTokens: 204_800 },
-      { id: "MiniMax-M2.5-highspeed", vision: false, tools: true, maxContextTokens: 204_800 },
-      { id: "MiniMax-M2.1", vision: false, tools: true, maxContextTokens: 204_800 },
-      { id: "MiniMax-M2.1-highspeed", vision: false, tools: true, maxContextTokens: 204_800 },
-      { id: "MiniMax-M2", vision: false, tools: true, maxContextTokens: 204_800 },
+      { id: "MiniMax-M3", vision: true, tools: true, maxContextTokens: 1_000_000, maxOutputTokens: 524_288 },
+      { id: "MiniMax-M2.7", vision: false, tools: true, maxContextTokens: 204_800, maxOutputTokens: 204_800 },
+      { id: "MiniMax-M2.7-highspeed", vision: false, tools: true, maxContextTokens: 204_800, maxOutputTokens: 204_800 },
+      { id: "MiniMax-M2.5", vision: false, tools: true, maxContextTokens: 204_800, maxOutputTokens: 204_800 },
+      { id: "MiniMax-M2.5-highspeed", vision: false, tools: true, maxContextTokens: 204_800, maxOutputTokens: 204_800 },
+      { id: "MiniMax-M2.1", vision: false, tools: true, maxContextTokens: 204_800, maxOutputTokens: 204_800 },
+      { id: "MiniMax-M2.1-highspeed", vision: false, tools: true, maxContextTokens: 204_800, maxOutputTokens: 204_800 },
+      { id: "MiniMax-M2", vision: false, tools: true, maxContextTokens: 204_800, maxOutputTokens: 204_800 },
     ],
   },
   {
@@ -177,8 +184,8 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     defaultBaseUrl: "https://api.deepseek.com",
     placeholder: "sk-...",
     models: [
-      { id: "deepseek-v4-flash", vision: false, tools: true, maxContextTokens: 1_000_000 },
-      { id: "deepseek-v4-pro", vision: false, tools: true, maxContextTokens: 1_000_000 },
+      { id: "deepseek-v4-flash", vision: false, tools: true, maxContextTokens: 1_000_000, maxOutputTokens: 384_000 },
+      { id: "deepseek-v4-pro", vision: false, tools: true, maxContextTokens: 1_000_000, maxOutputTokens: 384_000 },
     ],
   },
   {
@@ -188,11 +195,11 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     defaultBaseUrl: "https://token-plan-cn.xiaomimimo.com",
     placeholder: "API key",
     models: [
-      { id: "mimo-v2.5-pro", vision: false, tools: true, maxContextTokens: 1_000_000 },
-      { id: "mimo-v2.5",     vision: true,  tools: true, maxContextTokens: 1_000_000 },
-      { id: "mimo-v2-pro",   vision: false, tools: true, maxContextTokens: 1_000_000 },
-      { id: "mimo-v2-omni",  vision: true,  tools: true, maxContextTokens: 256_000   },
-      { id: "mimo-v2-flash", vision: false, tools: true, maxContextTokens: 256_000   },
+      { id: "mimo-v2.5-pro", vision: false, tools: true, maxContextTokens: 1_000_000, maxOutputTokens: 131_072 },
+      { id: "mimo-v2.5",     vision: true,  tools: true, maxContextTokens: 1_000_000, maxOutputTokens: 131_072 },
+      { id: "mimo-v2-pro",   vision: false, tools: true, maxContextTokens: 1_000_000, maxOutputTokens: 131_072 },
+      { id: "mimo-v2-omni",  vision: true,  tools: true, maxContextTokens: 256_000,   maxOutputTokens: 131_072 },
+      { id: "mimo-v2-flash", vision: false, tools: true, maxContextTokens: 256_000,   maxOutputTokens: 65_536 },
     ],
   },
   {
@@ -222,6 +229,9 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     // tool-calling flagship, text-only here (vision guard is fail-closed). Both
     // 256K. step-router-v1 lives on the separate `/step_plan/v1/messages`
     // channel and has no image support — intentionally omitted.
+    // TODO(maxOutputTokens): StepFun 官方文档仅披露 context window 256K，未给
+    // 单独的最大输出上限（max_tokens 文档为 INF/不限）。查到官方值前留空，
+    // 退回 anthropic-sdk-core 的 ANTHROPIC_WIRE_FALLBACK_MAX_TOKENS。
     models: [
       { id: "step-3.7-flash", vision: true, tools: true, maxContextTokens: 256_000 },
       { id: "step-3.5-flash", vision: false, tools: true, maxContextTokens: 256_000 },

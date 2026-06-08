@@ -283,3 +283,36 @@ describe("Moonshot (Kimi) — dual-region registration", () => {
     expect(m.maxContextTokens).toBe(32_000);
   });
 });
+
+describe("maxOutputTokens (anthropic-wire, sourced from provider docs)", () => {
+  const cases: Array<[string, string, number]> = [
+    ["anthropic", "claude-opus-4-7", 128_000],
+    ["anthropic", "claude-sonnet-4-6", 64_000],
+    ["anthropic", "claude-haiku-4-5-20251001", 64_000],
+    ["deepseek", "deepseek-v4-flash", 384_000],
+    ["deepseek", "deepseek-v4-pro", 384_000],
+    ["minimax", "MiniMax-M3", 524_288],
+    ["minimax", "MiniMax-M2.7", 204_800],
+    ["minimax", "MiniMax-M2", 204_800],
+    ["mimo", "mimo-v2.5-pro", 131_072],
+    ["mimo", "mimo-v2-flash", 65_536],
+  ];
+  it.each(cases)("%s/%s → %d", (provider, model, expected) => {
+    expect(getModelMeta(provider as never, model)?.maxOutputTokens).toBe(expected);
+  });
+
+  it("stepfun flash models intentionally have no maxOutputTokens (官方未披露)", () => {
+    expect(getModelMeta("stepfun" as never, "step-3.7-flash")?.maxOutputTokens).toBeUndefined();
+    expect(getModelMeta("stepfun" as never, "step-3.5-flash")?.maxOutputTokens).toBeUndefined();
+  });
+
+  it("deepseek/minimax/mimo 每个模型都填了 maxOutputTokens", () => {
+    for (const p of PROVIDER_REGISTRY) {
+      if (p.id === "minimax" || p.id === "mimo" || p.id === "deepseek") {
+        for (const m of p.models) {
+          expect(m.maxOutputTokens, `${p.id}/${m.id}`).toBeTypeOf("number");
+        }
+      }
+    }
+  });
+});
