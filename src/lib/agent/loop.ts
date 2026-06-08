@@ -1339,7 +1339,16 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // Scratchpad overview — bounded, rides the trailing observation so the
       // sliding-window/compaction/token-budget passes never trim it. Empty
       // string when the scratchpad is unused (no cost for non-extraction tasks).
-      const scratchpadOverview = await svcGetOverview(sessionId);
+      // Fail-soft: the overview is an enhancement, so an IDB read failure
+      // (tx abort / blocked / corrupt record / quota) must NOT unwind the step
+      // loop's outer try (which has no catch) and kill the in-flight task —
+      // degrade to advisory, mirroring the chrome.tabs.get guard above.
+      let scratchpadOverview = "";
+      try {
+        scratchpadOverview = await svcGetOverview(sessionId);
+      } catch (e) {
+        console.warn("[loop] scratchpad overview read failed; continuing without it", e);
+      }
       if (scratchpadOverview) {
         observationText += `\n\n${scratchpadOverview}`;
       }
