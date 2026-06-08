@@ -26,8 +26,8 @@ export interface AtlasProbeControl {
   type: string;
   label: string;
   value?: string;
-  disabled: boolean;
-  checked: boolean;
+  disabled?: boolean;
+  checked?: boolean;
 }
 
 export interface AtlasProbeForm {
@@ -37,15 +37,27 @@ export interface AtlasProbeForm {
   submitControlId?: string;
 }
 
+export interface AtlasProbeFieldGuess {
+  name: string;
+  confidence: "high" | "medium" | "low";
+}
+
+export interface AtlasProbeRecord {
+  id: string;
+  fields: Record<string, string>;
+  text: string;
+  evidence: string;
+}
+
 export interface AtlasProbeTarget {
   id: string;
   type: "collection" | "table" | "detail_region" | "region";
   label: string;
   confidence: "high" | "medium" | "low";
   summary: string;
-  fieldGuesses?: string[];
+  fieldGuesses?: AtlasProbeFieldGuess[];
   columns?: string[];
-  records?: Array<Record<string, string>>;
+  records?: AtlasProbeRecord[];
   visibleCount?: number;
   estimatedTotal?: number;
 }
@@ -690,6 +702,12 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
       return undefined;
     }
 
+    function supportsDisabled(el: Element): boolean {
+      const tag = el.tagName.toLowerCase();
+      return tag === "button" || tag === "input" || tag === "select" ||
+        tag === "textarea" || tag === "option" || tag === "fieldset";
+    }
+
     function isAtlasVisible(el: Element): boolean {
       const style = window.getComputedStyle(el);
       if (style.display === "none" || style.visibility === "hidden") return false;
@@ -719,9 +737,13 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
         pieIdx,
         type: inferredRole(el) || tag,
         label: atlasLabel(el, tag),
-        disabled: el.hasAttribute("disabled"),
-        checked: input ? input.checked : el.hasAttribute("checked"),
       };
+      if (supportsDisabled(el)) {
+        control.disabled = el.hasAttribute("disabled");
+      }
+      if (input && (input.type.toLowerCase() === "checkbox" || input.type.toLowerCase() === "radio")) {
+        control.checked = input.checked;
+      }
       const value = controlValue(el);
       if (value !== undefined) control.value = value;
       controls.push(control);
@@ -767,13 +789,22 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
       const sourceRows = bodyRows.length > 0
         ? bodyRows
         : Array.from(table.rows).slice(headerCells.length > 0 ? 1 : 0);
-      const records = sourceRows.slice(0, 25).map((row) => {
-        const record: Record<string, string> = {};
+      const visibleRows = sourceRows.filter((row) => isAtlasVisible(row));
+      const records = visibleRows.slice(0, 25).map((row, rowIndex) => {
+        const fields: Record<string, string> = {};
+        const cellTexts: string[] = [];
         Array.from(row.cells).forEach((cell, idx) => {
           const key = columns[idx] || `Column ${idx + 1}`;
-          record[key] = textFrom(cell);
+          const value = textFrom(cell);
+          fields[key] = value;
+          cellTexts.push(value);
         });
-        return record;
+        return {
+          id: `table_t${i}_r${rowIndex}`,
+          fields,
+          text: cellTexts.filter(Boolean).join(" "),
+          evidence: "tr",
+        };
       });
 
       targets.push({
@@ -781,11 +812,11 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
         type: "table",
         label: targetLabel(table, `Table ${i + 1}`),
         confidence: "high",
-        summary: `${records.length} rows, ${columns.length} columns`,
+        summary: `${visibleRows.length} rows, ${columns.length} columns`,
         columns,
         records,
-        visibleCount: records.length,
-        estimatedTotal: Math.max(records.length, table.rows.length - (headerCells.length > 0 ? 1 : 0)),
+        visibleCount: visibleRows.length,
+        estimatedTotal: visibleRows.length,
       });
     }
 
@@ -803,18 +834,42 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
       return `${el.tagName.toLowerCase()}|${childTags}|${markers}`;
     }
 
-    function collectionRecord(el: Element): Record<string, string> {
+    function fieldConfidence(name: string): "high" | "medium" | "low" {
+      if (name === "title") return "high";
+      if (name === "link") return "medium";
+      return "low";
+    }
+
+    function fieldGuessesFromRecords(records: AtlasProbeRecord[]): AtlasProbeFieldGuess[] {
+      const names = new Set<string>();
+      for (const record of records) {
+        for (const name of Object.keys(record.fields)) names.add(name);
+      }
+      return Array.from(names).map((name) => ({ name, confidence: fieldConfidence(name) }));
+    }
+
+    function collectionRecord(el: Element, id: string): AtlasProbeRecord {
       const link = el.querySelector("a[href]") as HTMLAnchorElement | null;
       const heading = el.querySelector("h1,h2,h3,h4,h5,h6");
-      const record: Record<string, string> = {};
+      const fields: Record<string, string> = {};
+      let evidence = "";
       if (link) {
-        record.title = normalizeSpace(link.textContent ?? "") || accessibleName(link);
-        record.link = link.getAttribute("href") || link.href;
+        fields.title = normalizeSpace(link.textContent ?? "") || accessibleName(link);
+        fields.link = link.getAttribute("href") || link.href;
+        evidence = "a[href]";
       } else {
         const title = textFrom(heading) || directText(el) || descendantText(el);
-        if (title) record.title = title;
+        if (title) {
+          fields.title = title;
+          evidence = heading ? heading.tagName.toLowerCase() : el.tagName.toLowerCase();
+        }
       }
-      return record;
+      return {
+        id,
+        fields,
+        text: descendantText(el),
+        evidence: evidence || el.tagName.toLowerCase(),
+      };
     }
 
     let collectionIndex = 0;
@@ -839,15 +894,19 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
       for (const group of groups.values()) {
         if (group.length < 3) continue;
         seenCollectionParents.add(parent);
-        const records = group.slice(0, 20).map(collectionRecord);
-        const label = targetLabel(parent, nearestSection(group[0]) || `Collection ${collectionIndex + 1}`);
+        const fallbackLabel = `Collection ${collectionIndex + 1}`;
+        const collectionId = `collection_c${collectionIndex++}`;
+        const records = group
+          .slice(0, 20)
+          .map((el, recordIndex) => collectionRecord(el, `${collectionId}_r${recordIndex}`));
+        const label = targetLabel(parent, nearestSection(group[0]) || fallbackLabel);
         targets.push({
-          id: `collection_c${collectionIndex++}`,
+          id: collectionId,
           type: "collection",
           label,
           confidence: "medium",
           summary: `${group.length} repeated ${group[0].tagName.toLowerCase()} items`,
-          fieldGuesses: Array.from(new Set(records.flatMap((record) => Object.keys(record)))),
+          fieldGuesses: fieldGuessesFromRecords(records),
           records,
           visibleCount: group.length,
           estimatedTotal: group.length,
@@ -856,8 +915,7 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
     }
 
     function bucket(value: number, size: number): number {
-      if (value <= 0) return 0;
-      return Math.ceil(value / size) * size;
+      return Math.round(value / size) * size;
     }
 
     function fullTextLength(s: string): number {

@@ -654,6 +654,7 @@ describe("probePageInjected op=atlas", () => {
       <main>
         <section>
           <h2>Catalog</h2>
+          <p>${"catalog overview ".repeat(20)}</p>
           <form aria-label="Product search">
             <label for="kw">Keyword</label>
             <input id="kw" name="keyword" type="search" value="boots">
@@ -704,6 +705,10 @@ describe("probePageInjected op=atlas", () => {
         label: "Search",
       }),
     ]));
+    const productLinkControl = r.controls.find((control) => control.label === "Red Shoe");
+    expect(productLinkControl).toBeDefined();
+    expect(productLinkControl).not.toHaveProperty("disabled");
+    expect(productLinkControl).not.toHaveProperty("checked");
 
     expect(r.forms).toEqual([
       expect.objectContaining({
@@ -719,11 +724,30 @@ describe("probePageInjected op=atlas", () => {
         type: "collection",
         confidence: "medium",
         label: "Featured products",
+        fieldGuesses: expect.arrayContaining([
+          { name: "title", confidence: "high" },
+          { name: "link", confidence: "medium" },
+        ]),
         visibleCount: 3,
         records: expect.arrayContaining([
-          expect.objectContaining({ title: "Red Shoe", link: "/p/red-shoe" }),
-          expect.objectContaining({ title: "Blue Hat", link: "/p/blue-hat" }),
-          expect.objectContaining({ title: "Green Bag", link: "/p/green-bag" }),
+          expect.objectContaining({
+            id: expect.any(String),
+            fields: { title: "Red Shoe", link: "/p/red-shoe" },
+            text: expect.stringContaining("Red Shoe"),
+            evidence: "a[href]",
+          }),
+          expect.objectContaining({
+            id: expect.any(String),
+            fields: { title: "Blue Hat", link: "/p/blue-hat" },
+            text: expect.stringContaining("Blue Hat"),
+            evidence: "a[href]",
+          }),
+          expect.objectContaining({
+            id: expect.any(String),
+            fields: { title: "Green Bag", link: "/p/green-bag" },
+            text: expect.stringContaining("Green Bag"),
+            evidence: "a[href]",
+          }),
         ]),
       }),
       expect.objectContaining({
@@ -733,8 +757,18 @@ describe("probePageInjected op=atlas", () => {
         label: "Inventory",
         columns: ["SKU", "Stock"],
         records: [
-          { SKU: "RS-1", Stock: "7" },
-          { SKU: "BH-2", Stock: "4" },
+          {
+            id: "table_t0_r0",
+            fields: { SKU: "RS-1", Stock: "7" },
+            text: "RS-1 7",
+            evidence: "tr",
+          },
+          {
+            id: "table_t0_r1",
+            fields: { SKU: "BH-2", Stock: "4" },
+            text: "BH-2 4",
+            evidence: "tr",
+          },
         ],
       }),
     ]));
@@ -744,5 +778,45 @@ describe("probePageInjected op=atlas", () => {
     expect(r.fingerprint.bodyTextLengthBucket).toBeGreaterThan(0);
     expect(r.fingerprint.interactiveCountBucket).toBeGreaterThan(0);
     expect(r.fingerprint.topSectionCount).toBeGreaterThan(0);
+  });
+
+  it("uses Math.round semantics for fingerprint buckets", () => {
+    document.body.innerHTML = `<p>${"x".repeat(249)}</p>`;
+    const textOnly = probePageInjected({ op: "atlas" });
+    if (textOnly.op !== "atlas") throw new Error("narrow");
+    expect(textOnly.fingerprint.bodyTextLengthBucket).toBe(0);
+
+    document.body.innerHTML = `
+      <button>A</button>
+      <button>B</button>
+      <button>C</button>
+      <button>D</button>
+    `;
+    const lowInteractive = probePageInjected({ op: "atlas" });
+    if (lowInteractive.op !== "atlas") throw new Error("narrow");
+    expect(lowInteractive.fingerprint.interactiveCountBucket).toBe(0);
+  });
+
+  it("caps sampled table records at 25 while preserving full visible row count", () => {
+    const rows = Array.from({ length: 30 }, (_, i) => `
+      <tr><td>SKU-${i + 1}</td><td>${i + 1}</td></tr>
+    `).join("");
+    document.body.innerHTML = `
+      <table aria-label="Large inventory">
+        <thead><tr><th>SKU</th><th>Stock</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+
+    const r = probePageInjected({ op: "atlas" });
+    if (r.op !== "atlas") throw new Error("narrow");
+    const table = r.targets.find((target) => target.type === "table");
+
+    expect(table).toEqual(expect.objectContaining({
+      id: "table_t0",
+      visibleCount: 30,
+      records: expect.any(Array),
+    }));
+    expect(table!.records).toHaveLength(25);
   });
 });
