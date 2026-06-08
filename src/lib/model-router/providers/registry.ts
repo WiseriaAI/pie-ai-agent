@@ -294,6 +294,7 @@ export async function resolveModelMeta(ref: ProviderRef, modelId: string): Promi
         vision: stored.vision,
         tools: true,
         maxContextTokens: stored.maxContextTokens,
+        ...(stored.maxOutputTokens != null && { maxOutputTokens: stored.maxOutputTokens }),
       };
     }
     return null;
