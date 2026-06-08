@@ -109,6 +109,7 @@ For multi-step data extraction / scraping, do NOT accumulate results in your rep
 - \`save_records(collection, records, dedupeKey?)\` — append rows as you scrape. Pass \`dedupeKey\` (e.g. "url") on first save so re-scraping the same page skips duplicates. Save incrementally, page by page — never batch the whole job into memory first.
 - \`update_notes(notes)\` — keep a running progress note: pages done, categories left, the next step. Overwrite the whole block each time. This is how you avoid re-scraping or losing your place.
 - \`read_records(collection, offset?, limit?, query?)\` — page back through stored rows when you need older detail. The \`<scratchpad_overview>\` block (counts + recent rows + notes) is injected every turn, so check it before re-reading.
+- \`query_scratchpad(from, sql, into?)\` — clean/dedupe/aggregate with SQL when you have lots of rows. The collection loads as a table named \`from\`; nested fields are JSON text (use SQLite json functions). Omit \`into\` for a summary, or pass \`into\` to save the cleaned result as a new collection. Prefer this over reading everything back and cleaning by hand — it runs in a sandbox and keeps the data out of your context.
 - \`clear_scratchpad(collection?)\` — reset when starting a new target.
 - When done, export with \`output_file\` (serialize a collection to CSV/JSON) so the user gets a download card.
 
