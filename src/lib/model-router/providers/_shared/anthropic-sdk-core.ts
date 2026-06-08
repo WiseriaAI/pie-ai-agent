@@ -14,6 +14,7 @@ import type {
   ToolDefinition,
   StreamEvent,
 } from "@/lib/model-router/types";
+import { parseTextToolInvocations } from "@/lib/agent/text-tool-invocation";
 
 export interface AnthropicSdkHooks {
   /** Appended to config.baseUrl before the SDK's own `/v1/messages` suffix.
@@ -145,6 +146,8 @@ export async function* streamChatAnthropicSdk(
   let stopReason: "end" | "tool_calls" | "length" | undefined;
   const toolBlocks = new Set<number>();
   const thinkingSignatures = new Map<number, string>();
+  const pendingTextBlocks = new Map<number, string>();
+  let convertedTextToolInvocation = false;
 
   try {
     const stream = await client.messages.create(
@@ -175,10 +178,28 @@ export async function* streamChatAnthropicSdk(
         } else if (event.content_block.type === "thinking") {
           thinkingSignatures.set(event.index, "");
           yield { type: "thinking-start", replay: true };
+        } else if (event.content_block.type === "text") {
+          pendingTextBlocks.set(event.index, event.content_block.text ?? "");
         }
       } else if (event.type === "content_block_delta") {
         if (event.delta.type === "text_delta") {
-          yield { type: "text-delta", text: event.delta.text };
+          const pending = pendingTextBlocks.get(event.index);
+          if (pending !== undefined) {
+            const next = pending + event.delta.text;
+            const probe = next.trimStart();
+            if (
+              probe.length === 0 ||
+              "<tool_invocation".startsWith(probe) ||
+              probe.startsWith("<tool_invocation")
+            ) {
+              pendingTextBlocks.set(event.index, next);
+            } else {
+              pendingTextBlocks.delete(event.index);
+              yield { type: "text-delta", text: next };
+            }
+          } else {
+            yield { type: "text-delta", text: event.delta.text };
+          }
         } else if (event.delta.type === "input_json_delta") {
           yield { type: "tool-call-delta", index: event.index, argsDelta: event.delta.partial_json };
         } else if (event.delta.type === "thinking_delta") {
@@ -188,7 +209,29 @@ export async function* streamChatAnthropicSdk(
           thinkingSignatures.set(event.index, prev + event.delta.signature);
         }
       } else if (event.type === "content_block_stop") {
-        if (toolBlocks.has(event.index)) {
+        if (pendingTextBlocks.has(event.index)) {
+          const text = pendingTextBlocks.get(event.index)!;
+          pendingTextBlocks.delete(event.index);
+          const invocations = parseTextToolInvocations(text);
+          if (invocations.length > 0) {
+            convertedTextToolInvocation = true;
+            for (const invocation of invocations) {
+              yield {
+                type: "tool-call-start",
+                id: invocation.id,
+                index: event.index,
+                name: invocation.name,
+              };
+              const argsJson = JSON.stringify(invocation.args ?? {});
+              if (argsJson !== "{}") {
+                yield { type: "tool-call-delta", index: event.index, argsDelta: argsJson };
+              }
+              yield { type: "tool-call-end", index: event.index };
+            }
+          } else if (text) {
+            yield { type: "text-delta", text };
+          }
+        } else if (toolBlocks.has(event.index)) {
           yield { type: "tool-call-end", index: event.index };
           toolBlocks.delete(event.index);
         } else if (thinkingSignatures.has(event.index)) {
@@ -198,6 +241,9 @@ export async function* streamChatAnthropicSdk(
         }
       } else if (event.type === "message_delta") {
         stopReason = mapStopReason(event.delta.stop_reason);
+        if (convertedTextToolInvocation && stopReason !== "length") {
+          stopReason = "tool_calls";
+        }
         // MiMo / MiniMax report the real prompt size only in this terminal
         // delta (message_start carried 0); Anthropic-official sends it up front
         // and leaves this null. Prefer a positive late value, else keep what
@@ -210,6 +256,9 @@ export async function* streamChatAnthropicSdk(
       }
     }
 
+    if (convertedTextToolInvocation && stopReason !== "length") {
+      stopReason = "tool_calls";
+    }
     yield { type: "done", stopReason, usage };
   } catch (e) {
     if (signal?.aborted || e instanceof Anthropic.APIUserAbortError) return;
