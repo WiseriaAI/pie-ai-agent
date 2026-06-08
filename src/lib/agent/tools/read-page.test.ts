@@ -156,7 +156,9 @@ describe("read_page tool", () => {
         ]),
       },
     });
-    const r = await readPageTool.handler({ tabId: 7, mode: "interactive" }, {} as any);
+    // Force budget exhaustion with an explicit small max_bytes so this stays a
+    // truncation-ORDER test, independent of the (now max-sized) default budget.
+    const r = await readPageTool.handler({ tabId: 7, mode: "interactive", max_bytes: 100_000 }, {} as any);
     expect(r.observation).toMatch(/frame_id="0".*truncated="true"/s);
     expect(r.observation).toMatch(/frame_id="3".*unread="budget"/s);
   });
@@ -233,7 +235,7 @@ describe("read_page tool", () => {
 
     expect(r.success).toBe(true);
     expect(r.observation).toMatch(/frame_id="0".*truncated="true"/s);
-    expect(r.observation!.length).toBeLessThan(180_000);
+    expect(r.observation!.length).toBeLessThan(220_000);
   });
 
   it("HTML budget exhaustion keeps interactive_index entries from all reachable frames", async () => {
@@ -302,7 +304,9 @@ describe("read_page tool", () => {
       },
     });
 
-    const r = await readPageTool.handler({ tabId: 7, mode: "interactive" }, {} as any);
+    // Explicit small max_bytes forces budget exhaustion regardless of the
+    // (now max-sized) default, keeping this a frame-index-preservation test.
+    const r = await readPageTool.handler({ tabId: 7, mode: "interactive", max_bytes: 100_000 }, {} as any);
 
     expect(r.success).toBe(true);
     expect(r.observation).toMatch(/frame_id="0".*truncated="true"/s);

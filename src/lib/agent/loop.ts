@@ -32,6 +32,15 @@ import { isCdpInputEnabled } from "../cdp-input-enabled";
 import { requestCdpInputConsent } from "../cdp-input-onboarding";
 import { requestLocalFileFromPanel } from "../local-file-request";
 import { buildRequestLocalFileTool, buildOutputFileTool } from "./tools/files";
+import { buildScratchpadTools } from "./tools/scratchpad";
+import {
+  saveRecords as svcSaveRecords,
+  updateNotes as svcUpdateNotes,
+  readScratchpadRecords as svcReadRecords,
+  clearScratchpadCollections as svcClearScratchpad,
+  getOverview as svcGetOverview,
+} from "../scratchpad/service";
+import { queryScratchpad as svcQueryScratchpad } from "../scratchpad/sql-bridge";
 import { getEnabledSkillPackages } from "../skills";
 import { isFilePdfUrl } from "../pdf/detect";
 import {
@@ -1314,7 +1323,8 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           `You've taken ${stepIndex} steps (soft budget ${SOFT_STEP_BUDGET}). ` +
             `The runtime will not stop you, but long tasks burn the user's ` +
             `tokens — wrap up now: finish with \`done\`, or call \`fail\` if ` +
-            `you're blocked.`,
+            `you're blocked. If you're accumulating data, make sure it's in the ` +
+            `scratchpad via \`save_records\` — don't hold it in your reply.`,
         );
       }
 
@@ -1327,6 +1337,22 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // nudge re-appears past the soft budget.
       if (sysNotices.length > 0) {
         observationText += `\n\n<system_notice>\n${sysNotices.join("\n\n")}\n</system_notice>`;
+      }
+      // Scratchpad overview — bounded, rides the trailing observation so the
+      // sliding-window/compaction/token-budget passes never trim it. Empty
+      // string when the scratchpad is unused (no cost for non-extraction tasks).
+      // Fail-soft: the overview is an enhancement, so an IDB read failure
+      // (tx abort / blocked / corrupt record / quota) must NOT unwind the step
+      // loop's outer try (which has no catch) and kill the in-flight task —
+      // degrade to advisory, mirroring the chrome.tabs.get guard above.
+      let scratchpadOverview = "";
+      try {
+        scratchpadOverview = await svcGetOverview(sessionId);
+      } catch (e) {
+        console.warn("[loop] scratchpad overview read failed; continuing without it", e);
+      }
+      if (scratchpadOverview) {
+        observationText += `\n\n${scratchpadOverview}`;
       }
       // Task 3.3 — first-turn read_page nudge. Appended to the iteration-0
       // observation only when a pinned tab is present and this is NOT a
@@ -1470,8 +1496,15 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         sessionId,
         store: (a) => putArtifact(a),
       });
+      const scratchpadTools = buildScratchpadTools({
+        saveRecords: (collection, records, opts) => svcSaveRecords(sessionId, collection, records, opts),
+        updateNotes: (notes) => svcUpdateNotes(sessionId, notes),
+        readRecords: (collection, opts) => svcReadRecords(sessionId, collection, opts),
+        clearScratchpad: (collection) => svcClearScratchpad(sessionId, collection),
+        queryScratchpad: (args) => svcQueryScratchpad(sessionId, args),
+      });
       const allTools = filterToolsByVision(
-        [...BUILT_IN_TOOLS, ...mouseTools, ...keyboardTools, ...editorTools, requestLocalFileTool, outputFileTool],
+        [...BUILT_IN_TOOLS, ...mouseTools, ...keyboardTools, ...editorTools, requestLocalFileTool, outputFileTool, ...scratchpadTools],
         modelConfig.vision,
       );
       const toolDefinitions = toolsToDefinitions(allTools);

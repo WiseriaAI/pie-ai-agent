@@ -41,6 +41,7 @@ import {
 } from "./storage";
 import { getSessionRecord } from "@/lib/idb/sessions-store";
 import { deleteSessionArtifacts } from "@/lib/files/output-store";
+import { deleteScratchpad } from "../scratchpad/store";
 
 // Re-export INDEX_KEY usage via the private helper we expose
 // (see storage.ts for readIndexRaw export added in M2-U4)
@@ -117,6 +118,11 @@ export async function archiveSession(
   // is tied to the live session). Best-effort: a failure here must not block
   // the archive itself.
   await deleteSessionArtifacts(id).catch(() => {});
+  // NOTE (intentional asymmetry): the scratchpad is NOT deleted on archive.
+  // Unlike output_file artifacts (tied to the live task), the scratchpad is
+  // tied to the SESSION lifecycle — unarchiving must be able to resume on the
+  // accumulated data. It is finally reclaimed by hardDeleteSession and the
+  // 30-day hardDeleteExpired sweep. Do not "fix" this by deleting it here.
 }
 
 // ── unarchiveSession ──────────────────────────────────────────────────────────
@@ -200,6 +206,7 @@ export async function hardDeleteSession(id: string): Promise<void> {
   // Clear any output_file artifacts for this session (covers a hard-delete that
   // skipped the archive step). Best-effort.
   await deleteSessionArtifacts(id).catch(() => {});
+  await deleteScratchpad(id).catch(() => {});
 }
 
 // ── hardDeleteExpired ─────────────────────────────────────────────────────────
@@ -256,5 +263,14 @@ export async function hardDeleteExpired(
   }
 
   await writeAtomic(batch);
+
+  // Reclaim each expired session's scratchpad. Since the scratchpad survives
+  // archive (see archiveSession), this 30-day sweep is its only final cleanup
+  // path — skipping it would permanently leak orphan scratchpads. Best-effort,
+  // out-of-band of the atomic batch (scratchpads live in a separate store).
+  for (const id of toDelete) {
+    await deleteScratchpad(id).catch(() => {});
+  }
+
   return { deleted: toDelete.length };
 }

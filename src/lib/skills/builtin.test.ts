@@ -19,4 +19,27 @@ describe("BUILT_IN_SKILL_PACKAGES", () => {
     expect(ids).toContain("auto_group_tabs");
     expect(ids).toContain("close_duplicate_tabs");
   });
+
+  it("extract_structured_data 升级为 scratchpad 长程抽取 playbook", () => {
+    const extract = BUILT_IN_SKILL_PACKAGES.find((p) => p.id === "extract_structured_data")!;
+    const md = extract.files["SKILL.md"];
+    // description 进 catalog，须带触发信号（何时调用）
+    expect(extract.frontmatter.description).toMatch(/scrape|collect/i);
+    // body 编排 scratchpad 工具链 + 导出前与用户确认
+    expect(md).toMatch(/scratchpad/i);
+    expect(md).toContain("save_records");
+    expect(md).toContain("update_notes");
+    expect(md).toContain("query_scratchpad");
+    expect(md).toContain("output_file");
+    expect(md).toMatch(/before export/i);
+    // 旧的单页 output-json playbook 已不再
+    expect(md).not.toContain("data-pie-idx");
+  });
+
+  it("没有 builtin 残留 capabilities 死配置", () => {
+    for (const p of BUILT_IN_SKILL_PACKAGES) {
+      expect(p.frontmatter.capabilities).toBeUndefined();
+      expect(p.files["SKILL.md"]).not.toContain("capabilities:");
+    }
+  });
 });

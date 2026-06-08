@@ -95,6 +95,23 @@ export const LOCAL_FILE_TOOL_NAMES = [
   "request_local_file",
 ] as const;
 
+// Scratchpad tools — per-session durable memory for long-horizon extraction.
+//   save_records / update_notes / clear_scratchpad — write (mutate IDB state).
+//   read_records — read (observe stored data, no mutation).
+//   query_scratchpad — read FOR TAB-LOCK PURPOSES. It can mutate IDB state (its
+//     optional `into` arg writes the result set back as a collection), but the
+//     read/write class is only consumed by collectCrossSessionConflicts, which
+//     gates a cross-session *tab* lock. query_scratchpad takes no tab argument
+//     and can never conflict on a tab, so classing it `read` is deliberate
+//     (same rationale as the skill-meta IDB-write tools below).
+export const SCRATCHPAD_TOOL_NAMES = [
+  "save_records",
+  "update_notes",
+  "read_records",
+  "clear_scratchpad",
+  "query_scratchpad",
+] as const;
+
 export const KNOWN_BUILT_IN_TOOL_NAMES = [
   ...PHASE_2_TOOL_NAMES,
   ...SKILL_META_TOOL_NAMES_FOR_REGISTRY,
@@ -105,6 +122,7 @@ export const KNOWN_BUILT_IN_TOOL_NAMES = [
   ...PAGE_SNAPSHOT_TOOL_NAMES,
   ...PDF_TOOL_NAMES,
   ...LOCAL_FILE_TOOL_NAMES,
+  ...SCRATCHPAD_TOOL_NAMES,
 ] as const;
 
 export const KNOWN_KEYBOARD_TOOL_NAMES = [
@@ -204,6 +222,16 @@ export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
   // Editor tools — CDP main-context getValue/setValue
   read_editor: "read",
   set_editor_value: "write",
+  // Scratchpad tools — per-session durable memory for long-horizon extraction
+  save_records: "write",
+  update_notes: "write",
+  read_records: "read",
+  clear_scratchpad: "write",
+  // query_scratchpad can write IDB state via its optional `into` arg, but the
+  // class only gates the cross-session *tab* lock (collectCrossSessionConflicts).
+  // It has no tab target and can never conflict on a tab, so `read` is correct
+  // here — this is a tab-lock classification, not a "does it mutate" flag.
+  query_scratchpad: "read",
 };
 
 // Build-time exhaustive check — every known tool name MUST have a class

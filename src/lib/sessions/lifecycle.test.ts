@@ -27,6 +27,8 @@ import {
   archivedKey,
 } from "./storage";
 import type { SessionAgentState } from "./types";
+import { saveRecords } from "@/lib/scratchpad/service";
+import { readScratchpad } from "@/lib/scratchpad/store";
 
 beforeEach(async () => {
   await _resetForTests();
@@ -93,6 +95,28 @@ describe("Scenario 2: hardDeleteExpired sweeps 30d+ archived sessions", () => {
     const result = await hardDeleteExpired(now + 365 * 24 * 60 * 60 * 1000);
     expect(result.deleted).toBe(0);
     expect(await getSessionRecord(archivedKey(session.id))).toBeDefined();
+  });
+
+  it("reclaims the scratchpad of an expired session (no orphan leak)", async () => {
+    const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    const thirtyOneDaysAgo = now - THIRTY_DAYS_MS - 1000;
+
+    const session = await createSession({ now: thirtyOneDaysAgo });
+    // Scratchpad survives archive, so seed it then archive.
+    await saveRecords(session.id, "products", [{ url: "a" }], { dedupeKey: "url" });
+    await archiveSession(session.id, { now: thirtyOneDaysAgo });
+
+    // Sanity: scratchpad still present after archive.
+    const beforeSweep = await readScratchpad(session.id);
+    expect(beforeSweep.collections.products?.records).toHaveLength(1);
+
+    const result = await hardDeleteExpired(now);
+    expect(result.deleted).toBe(1);
+
+    // Scratchpad must be reclaimed by the sweep (read-miss → empty).
+    const afterSweep = await readScratchpad(session.id);
+    expect(afterSweep.collections).toEqual({});
   });
 });
 

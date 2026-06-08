@@ -26,10 +26,22 @@ function copyLiteparseWasm(): Plugin {
   };
 }
 
+function copySqlWasm(): Plugin {
+  return {
+    name: "copy-sql-wasm",
+    apply: "build",
+    buildStart() {
+      const src = path.resolve(__dirname, "node_modules/sql.js/dist/sql-wasm.wasm");
+      const dst = path.resolve(__dirname, "public/sql-wasm.wasm");
+      fs.copyFileSync(src, dst);
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => {
   const isEval = mode === "eval";
   return {
-    plugins: [react(), tailwindcss(), crx({ manifest }), copyLiteparseWasm()],
+    plugins: [react(), tailwindcss(), crx({ manifest }), copyLiteparseWasm(), copySqlWasm()],
     define: {
       __PIE_EVAL__: JSON.stringify(isEval),
     },
