@@ -685,19 +685,30 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
     }
 
     function atlasLabel(el: Element, fallback: string): string {
-      return labelFor(el) || accessibleName(el) || nearestSection(el) || fallback;
+      return safeText(labelFor(el) || accessibleName(el) || nearestSection(el) || fallback);
+    }
+
+    function safeText(s: string): string {
+      return sanitizeText(escapeWrapperMarkup(s))
+        .replace(SUMMARY_MARKUP_RE, "[filtered]")
+        .replace(/[<>]/g, "[filtered]")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, SUMMARY_TEXT_MAX);
     }
 
     function controlValue(el: Element): string | undefined {
       if (el instanceof HTMLInputElement) {
-        if (el.type.toLowerCase() === "password") return undefined;
-        return el.value || undefined;
+        const type = el.type.toLowerCase();
+        const auto = (el.getAttribute("autocomplete") ?? "").toLowerCase();
+        if (type === "password" || auto.includes("one-time-code")) return undefined;
+        return el.value ? safeText(el.value) : undefined;
       }
       if (el instanceof HTMLTextAreaElement) {
-        return el.value || undefined;
+        return el.value ? safeText(el.value) : undefined;
       }
       if (el instanceof HTMLSelectElement) {
-        return el.value || undefined;
+        return el.value ? safeText(el.value) : undefined;
       }
       return undefined;
     }
@@ -708,46 +719,84 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
         tag === "textarea" || tag === "option" || tag === "fieldset";
     }
 
+    function rescuedControlFor(el: Element): HTMLInputElement | null {
+      if (el.tagName.toLowerCase() !== "label") return null;
+      const control = (el as HTMLLabelElement).control;
+      if (!(control instanceof HTMLInputElement)) return null;
+      const type = control.type.toLowerCase();
+      if (type !== "checkbox" && type !== "radio") return null;
+      return control;
+    }
+
+    function hasHiddenAncestor(el: Element): boolean {
+      let node: Element | null = el;
+      while (node && node !== document.body) {
+        const style = window.getComputedStyle(node);
+        if (style.display === "none" || style.visibility === "hidden" || style.visibility === "collapse") {
+          return true;
+        }
+        if (parseFloat(style.opacity) === 0) return true;
+        node = node.parentElement;
+      }
+      return false;
+    }
+
     function isAtlasVisible(el: Element): boolean {
+      if (hasHiddenAncestor(el)) return false;
       const style = window.getComputedStyle(el);
       if (style.display === "none" || style.visibility === "hidden") return false;
       if (parseFloat(style.opacity) === 0) return false;
       const rect = el.getBoundingClientRect();
       if (rect.width > 0 && rect.height > 0) return true;
-      return normalizeSpace(el.textContent ?? "") !== "";
+      return safeText(visibleText(el)) !== "";
     }
 
     function targetLabel(el: Element, fallback: string): string {
-      return accessibleName(el) || nearestSection(el) || fallback;
+      return safeText(accessibleName(el) || nearestSection(el) || fallback);
     }
 
     function textFrom(el: Element | null | undefined): string {
-      return el ? normalizeSpace(el.textContent ?? "") : "";
+      return el ? safeText(visibleText(el)) : "";
+    }
+
+    function visibleText(el: Element): string {
+      if (hasHiddenAncestor(el)) return "";
+      let text = "";
+      for (const child of el.childNodes) {
+        if (child.nodeType === Node.TEXT_NODE) {
+          text += child.nodeValue ?? "";
+        } else if (child instanceof Element && isAtlasVisible(child)) {
+          text += ` ${visibleText(child)}`;
+        }
+      }
+      return text;
     }
 
     const controls: AtlasProbeControl[] = [];
     const controlByElement = new Map<Element, string>();
     for (const el of liveBodyElements) {
       if (!el.hasAttribute("data-pie-idx")) continue;
+      const target = rescuedControlFor(el) ?? el;
       const pieIdx = Number(el.getAttribute("data-pie-idx"));
-      const tag = el.tagName.toLowerCase();
-      const input = el instanceof HTMLInputElement ? el : null;
+      const tag = target.tagName.toLowerCase();
+      const input = target instanceof HTMLInputElement ? target : null;
       const control: AtlasProbeControl = {
         id: controlIdForPieIdx(pieIdx),
         pieIdx,
-        type: inferredRole(el) || tag,
-        label: atlasLabel(el, tag),
+        type: inferredRole(target) || tag,
+        label: atlasLabel(target, atlasLabel(el, tag)),
       };
-      if (supportsDisabled(el)) {
-        control.disabled = el.hasAttribute("disabled");
+      if (supportsDisabled(target)) {
+        control.disabled = target.hasAttribute("disabled");
       }
       if (input && (input.type.toLowerCase() === "checkbox" || input.type.toLowerCase() === "radio")) {
         control.checked = input.checked;
       }
-      const value = controlValue(el);
+      const value = controlValue(target);
       if (value !== undefined) control.value = value;
       controls.push(control);
       controlByElement.set(el, control.id);
+      if (target !== el) controlByElement.set(target, control.id);
     }
 
     const forms: AtlasProbeForm[] = [];
@@ -761,11 +810,11 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
         if (id) fields.push(id);
       }
 
-      const submit = form.querySelector("button,input[type='submit'],input[type='button']");
+      const submit = form.querySelector("button[type='submit'],input[type='submit'],button:not([type])");
       const submitControlId = submit ? controlByElement.get(submit) : undefined;
       const atlasForm: AtlasProbeForm = {
         id: `form_f${i}`,
-        label: accessibleName(form) || nearestSection(form) || `Form ${i + 1}`,
+        label: safeText(accessibleName(form) || nearestSection(form) || `Form ${i + 1}`),
         fields,
       };
       if (submitControlId) atlasForm.submitControlId = submitControlId;
@@ -779,6 +828,7 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
       const table = tables[i];
       const headerCells = Array.from(table.querySelectorAll("thead th"));
       const firstRow = table.rows.item(0);
+      const firstRowHasTh = !!firstRow && Array.from(firstRow.cells).some((cell) => cell.tagName.toLowerCase() === "th");
       const fallbackHeaderCells = headerCells.length > 0
         ? headerCells
         : Array.from(firstRow?.cells ?? []);
@@ -787,8 +837,8 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
 
       const bodyRows = Array.from(table.querySelectorAll("tbody tr"));
       const sourceRows = bodyRows.length > 0
-        ? bodyRows
-        : Array.from(table.rows).slice(headerCells.length > 0 ? 1 : 0);
+        ? bodyRows.slice(firstRowHasTh && bodyRows[0] === firstRow ? 1 : 0)
+        : Array.from(table.rows).slice(headerCells.length > 0 || firstRowHasTh ? 1 : 0);
       const visibleRows = sourceRows.filter((row) => isAtlasVisible(row));
       const records = visibleRows.slice(0, 25).map((row, rowIndex) => {
         const fields: Record<string, string> = {};
@@ -854,20 +904,21 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
       const fields: Record<string, string> = {};
       let evidence = "";
       if (link) {
-        fields.title = normalizeSpace(link.textContent ?? "") || accessibleName(link);
-        fields.link = link.getAttribute("href") || link.href;
+        fields.title = textFrom(link) || safeText(accessibleName(link));
+        const href = safeText(link.getAttribute("href") || link.href);
+        if (href && !UNSAFE_URL.test(href)) fields.link = href;
         evidence = "a[href]";
       } else {
         const title = textFrom(heading) || directText(el) || descendantText(el);
         if (title) {
-          fields.title = title;
+          fields.title = safeText(title);
           evidence = heading ? heading.tagName.toLowerCase() : el.tagName.toLowerCase();
         }
       }
       return {
         id,
         fields,
-        text: descendantText(el),
+        text: textFrom(el),
         evidence: evidence || el.tagName.toLowerCase(),
       };
     }
