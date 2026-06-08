@@ -8,6 +8,7 @@ import type { Tool, ToolHandlerContext } from "../types";
 import type { ActionResult } from "../../dom-actions/types";
 import type { SaveResult } from "../../scratchpad/service";
 import type { ReadResult } from "../../scratchpad/operations";
+import { escapeUntrustedWrappers } from "../untrusted-wrappers";
 
 export interface ScratchpadToolDeps {
   saveRecords: (
@@ -107,9 +108,14 @@ export function buildScratchpadTools(deps: ScratchpadToolDeps): Tool[] {
       }
       const res = await deps.readRecords(a.collection, { offset: a.offset, limit: a.limit, query: a.query });
       if ("error" in res) return { success: false, error: res.error };
+      // Records are page-derived (scraped) untrusted data; wrap + escape per
+      // P3-O so they cannot break out of context (see overview.ts for parity).
+      const body = escapeUntrustedWrappers(JSON.stringify(res.records));
       return {
         success: true,
-        observation: `Records ${res.offset}-${res.offset + res.records.length} of ${res.total}:\n${JSON.stringify(res.records)}`,
+        observation:
+          `Records ${res.offset}-${res.offset + res.records.length} of ${res.total}:\n` +
+          `<untrusted_scratchpad_preview>${body}</untrusted_scratchpad_preview>`,
       };
     },
   };
