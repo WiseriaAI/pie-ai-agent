@@ -5,11 +5,15 @@ import { escapeWrapperAttribute, escapeUntrustedWrappers } from "../untrusted-wr
 import { isRestrictedSchemeForGrouping } from "./tabs";
 import { isPdfTab } from "@/lib/pdf/detect";
 
+// read_page byte budgets per mode. Default is the hard cap — don't truncate
+// by default; the LLM can still pass a smaller max_bytes to save tokens when
+// it only needs a peek. interactive stays lower by design (it only needs the
+// interactive index, not full body text).
 const MODE_BUDGETS = {
-  auto: { defaultBytes: 120_000, maxBytes: 300_000 },
-  interactive: { defaultBytes: 60_000, maxBytes: 160_000 },
-  content: { defaultBytes: 160_000, maxBytes: 300_000 },
-  full: { defaultBytes: 220_000, maxBytes: 300_000 },
+  auto: { maxBytes: 500_000 },
+  interactive: { maxBytes: 200_000 },
+  content: { maxBytes: 300_000 },
+  full: { maxBytes: 500_000 },
 } as const;
 
 type ReadPageMode = keyof typeof MODE_BUDGETS;
@@ -27,7 +31,7 @@ function normalizeMode(mode: unknown): ReadPageMode {
 function resolveHtmlBudget(mode: ReadPageMode, rawMaxBytes: unknown): number {
   const cfg = MODE_BUDGETS[mode];
   if (typeof rawMaxBytes !== "number" || !Number.isFinite(rawMaxBytes)) {
-    return cfg.defaultBytes;
+    return cfg.maxBytes;
   }
   return Math.max(1, Math.min(cfg.maxBytes, Math.floor(rawMaxBytes)));
 }

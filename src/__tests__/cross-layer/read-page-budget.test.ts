@@ -37,10 +37,13 @@ describe("read_page budget enforcement", () => {
       },
     });
 
-    const r = await readPageTool.handler({ tabId: 1 }, {} as any);
+    // Explicit small max_bytes forces budget exhaustion independent of the
+    // (now max-sized) default budget — this tests the cross-frame budget
+    // enforcement behavior, not a specific default value.
+    const r = await readPageTool.handler({ tabId: 1, max_bytes: 100_000 }, {} as any);
     expect(r.success).toBe(true);
 
-    // Frame 0 should be truncated due to default auto mode budget.
+    // Frame 0 should be truncated due to the explicit budget.
     expect(r.observation).toMatch(/frame_id="0"[\s\S]*truncated="true"/);
 
     // Frame 1 should be marked as unread="budget" because budget already exhausted
