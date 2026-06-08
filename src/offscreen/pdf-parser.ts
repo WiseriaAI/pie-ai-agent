@@ -1,6 +1,7 @@
 import initLiteParse, { LiteParse } from "@llamaindex/liteparse-wasm";
 import { tabUrlForCacheKey } from "@/lib/pdf/detect";
 import { base64ToArrayBuffer } from "@/lib/files/base64";
+import { runQuery } from "./sql-engine";
 
 export interface ParsedPage {
   page: number; // 1-indexed
@@ -37,7 +38,8 @@ export type OffscreenMessage =
   | { type: "pdf:outline"; url: string }
   | { type: "pdf:read_page"; url: string; pages: number[] }
   | { type: "pdf:search"; url: string; query: string; maxResults: number }
-  | { type: "pdf:parse_bytes"; base64: string; cacheKey: string };
+  | { type: "pdf:parse_bytes"; base64: string; cacheKey: string }
+  | { type: "sql:run"; table: string; records: Array<Record<string, unknown>>; sql: string };
 
 export type HandleResult =
   | { ok: true; result: unknown }
@@ -134,6 +136,12 @@ export async function handleMessage(
     if (msg.type === "pdf:parse_bytes") {
       const parsed = await getParsedFromBytes(base64ToArrayBuffer(msg.base64), msg.cacheKey, state, deps);
       return { ok: true, result: { pages: parsed.pages, total_pages: parsed.totalPages } };
+    }
+
+    if (msg.type === "sql:run") {
+      const r = await runQuery(msg.table, msg.records, msg.sql);
+      if ("error" in r) return { ok: false, error: r.error };
+      return { ok: true, result: r };
     }
 
     const parsed = await getParsed(msg.url, state, deps);
