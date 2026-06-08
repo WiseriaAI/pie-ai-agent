@@ -810,7 +810,9 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
         if (id) fields.push(id);
       }
 
-      const submit = form.querySelector("button[type='submit'],input[type='submit'],button:not([type])");
+      const submit =
+        form.querySelector("button[type='submit'],input[type='submit']") ??
+        form.querySelector("button:not([type])");
       const submitControlId = submit ? controlByElement.get(submit) : undefined;
       const atlasForm: AtlasProbeForm = {
         id: `form_f${i}`,
@@ -905,8 +907,8 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
       let evidence = "";
       if (link) {
         fields.title = textFrom(link) || safeText(accessibleName(link));
-        const href = safeText(link.getAttribute("href") || link.href);
-        if (href && !UNSAFE_URL.test(href)) fields.link = href;
+        const href = safeLinkHref(link);
+        if (href) fields.link = href;
         evidence = "a[href]";
       } else {
         const title = textFrom(heading) || directText(el) || descendantText(el);
@@ -921,6 +923,18 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
         text: textFrom(el),
         evidence: evidence || el.tagName.toLowerCase(),
       };
+    }
+
+    function isUnsafeHrefValue(href: string): boolean {
+      const collapsed = href.replace(/[\u0000-\u0020]+/g, "");
+      return UNSAFE_URL.test(collapsed);
+    }
+
+    function safeLinkHref(link: HTMLAnchorElement): string {
+      const raw = link.getAttribute("href") ?? "";
+      const normalized = link.href || raw;
+      if (isUnsafeHrefValue(raw) || isUnsafeHrefValue(normalized)) return "";
+      return safeText(raw || normalized);
     }
 
     let collectionIndex = 0;

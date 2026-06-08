@@ -864,6 +864,53 @@ describe("probePageInjected op=atlas", () => {
     ]));
   });
 
+  it("does not emit newline or tab obfuscated unsafe links from collection records", () => {
+    document.body.innerHTML = `
+      <section aria-label="Obfuscated products">
+        <article class="product-card"><a id="js-link">Bad JS</a></article>
+        <article class="product-card"><a id="data-link">Bad Data</a></article>
+        <article class="product-card"><a href="/still-safe">Still Safe</a></article>
+      </section>
+    `;
+    document.getElementById("js-link")!.setAttribute("href", "java\nscript:alert(1)");
+    document.getElementById("data-link")!.setAttribute("href", "da\tta:text/html,hi");
+
+    const r = probePageInjected({ op: "atlas" });
+    if (r.op !== "atlas") throw new Error("narrow");
+    const collection = r.targets.find((target) => target.type === "collection");
+    const serialized = JSON.stringify(collection);
+
+    expect(serialized).not.toContain("javascript:");
+    expect(serialized).not.toContain("data:text/html");
+    expect(serialized).not.toContain("java\\nscript");
+    expect(serialized).not.toContain("da\\tta");
+    expect(collection!.records).toEqual(expect.arrayContaining([
+      expect.objectContaining({ fields: { title: "Bad JS" } }),
+      expect.objectContaining({ fields: { title: "Bad Data" } }),
+      expect.objectContaining({ fields: { title: "Still Safe", link: "/still-safe" } }),
+    ]));
+  });
+
+  it("prefers explicit submit controls over earlier implicit buttons", () => {
+    document.body.innerHTML = `
+      <form aria-label="Actions">
+        <label for="term">Term</label>
+        <input id="term">
+        <button>Cancel</button>
+        <button type="submit">Save</button>
+      </form>
+    `;
+
+    const r = probePageInjected({ op: "atlas" });
+    if (r.op !== "atlas") throw new Error("narrow");
+    const save = r.controls.find((control) => control.label === "Save");
+
+    expect(save).toBeDefined();
+    expect(r.forms[0]).toEqual(expect.objectContaining({
+      submitControlId: save!.id,
+    }));
+  });
+
   it("reports label-rescued hidden checkboxes using the real control semantics", () => {
     document.body.innerHTML = `
       <form aria-label="Flags">
