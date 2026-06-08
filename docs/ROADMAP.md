@@ -2,7 +2,7 @@
 
 延续 `docs/design.md` 的 Phase 0/1/2/3 终态。本文件是已交付 phase 状态 + 后续 backlog 的 single source of truth；invariant 级别细节见 `docs/solutions/`。
 
-**已交付**：Phase 0 / 1 / 2 / 2.5 / 2.6 / 3 / 4 (M1 + M2 + M3) / 5 (multimodal v1) / v1.5 (multi-pin + open_url + focus_tab)。Skill scope 解禁 + 全局 skip-permissions toggle ([#26](docs/solutions/2026-05-06-skill-scope-and-skip-permissions.md))。Confirm 层彻底删除（risk classifier / confirm card / skip-permissions toggle / K-10 reject-3-strikes）— 2026-05-08。
+**已交付**：Phase 0 / 1 / 2 / 2.5 / 2.6 / 3 / 4 (M1 + M2 + M3) / 5 (multimodal v1) / v1.5 (multi-pin + open_url + focus_tab)。Skill scope 解禁 + 全局 skip-permissions toggle ([#26](docs/solutions/2026-05-06-skill-scope-and-skip-permissions.md))。Confirm 层彻底删除（risk classifier / confirm card / skip-permissions toggle / K-10 reject-3-strikes）— 2026-05-08。长程任务草稿本（per-session IndexedDB 外部记忆：`save_records`/`update_notes`/`read_records`/`clear_scratchpad`/`query_scratchpad` 5 tool + 概览搭车 trailing 永不被裁 + sql.js 复用 PDF offscreen 就地清洗 + 导出走 output_file）— 2026-06-08（待真机，[trace](docs/solutions/2026-06-08-scratchpad-long-horizon-invariant-trace.md)）。
 
 本文件汇总各 brainstorm / plan 主动 defer 的 milestone，是后续工作的 backlog。每条目标是"够用以决定下一步"，不是 plan，立 plan 时再 brainstorm + plan 走完整链路。
 
