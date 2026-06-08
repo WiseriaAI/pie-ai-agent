@@ -9,13 +9,14 @@ export const DB_NAME = "pie";
 // Bump DB_VERSION and add a new `if (!db.objectStoreNames.contains(...))` branch
 // in onupgradeneeded whenever a new store is added (onupgradeneeded only runs
 // when the version increases).
-export const DB_VERSION = 1;
+export const DB_VERSION = 2;
 
 export const STORES = {
   sessions: "sessions",
   sessionIndex: "session_index",
   instances: "instances",
   config: "config",
+  scratchpads: "scratchpads",
 } as const;
 
 export type StoreName = (typeof STORES)[keyof typeof STORES];
@@ -39,6 +40,8 @@ export function openDb(): Promise<IDBDatabase> {
         db.createObjectStore(STORES.instances, { keyPath: "id" });
       if (!db.objectStoreNames.contains(STORES.config))
         db.createObjectStore(STORES.config, { keyPath: "key" });
+      if (!db.objectStoreNames.contains(STORES.scratchpads))
+        db.createObjectStore(STORES.scratchpads, { keyPath: "id" });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => { dbPromise = null; reject(req.error); };
@@ -99,12 +102,17 @@ export function txMulti(
 /** Clear every store in the `pie` database in a single atomic transaction.
  *  Production use (e.g. eval harness reset between runs). */
 export async function clearAllStores(): Promise<void> {
-  await txMulti([STORES.sessions, STORES.sessionIndex, STORES.instances, STORES.config], "readwrite", (m) => {
-    m[STORES.sessions].clear();
-    m[STORES.sessionIndex].clear();
-    m[STORES.instances].clear();
-    m[STORES.config].clear();
-  });
+  await txMulti(
+    [STORES.sessions, STORES.sessionIndex, STORES.instances, STORES.config, STORES.scratchpads],
+    "readwrite",
+    (m) => {
+      m[STORES.sessions].clear();
+      m[STORES.sessionIndex].clear();
+      m[STORES.instances].clear();
+      m[STORES.config].clear();
+      m[STORES.scratchpads].clear();
+    },
+  );
 }
 
 /** Test-only: drop the cached db handle + delete the database. */
