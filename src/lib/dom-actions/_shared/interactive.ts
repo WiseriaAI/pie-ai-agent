@@ -99,6 +99,7 @@ export const WRAPPER_TAGS_LIST: readonly string[] = [
   "untrusted_page_match",
   "untrusted_local_file",
   "untrusted_editor_content",
+  "untrusted_scratchpad_preview",
 ];
 
 /**
