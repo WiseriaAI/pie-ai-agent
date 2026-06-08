@@ -1,16 +1,28 @@
-import { escapeWrapperAttribute, escapeUntrustedWrappers } from "../../untrusted-wrappers";
+import { escapeUntrustedWrappers } from "../../untrusted-wrappers";
 import type { AtlasTarget, PageAtlasState } from "./types";
 
 function attr(name: string, value: string | number | boolean): string {
-  return `${name}="${escapeWrapperAttribute(String(value))}"`;
+  return `${name}="${xmlAttr(value)}"`;
 }
 
 function optionalAttr(name: string, value: string | number | boolean | undefined): string | null {
   return value === undefined ? null : attr(name, value);
 }
 
-function text(value: string): string {
-  return escapeWrapperAttribute(escapeUntrustedWrappers(value));
+function xmlAttr(value: string | number | boolean): string {
+  return escapeUntrustedWrappers(String(value))
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function xmlText(value: string): string {
+  return escapeUntrustedWrappers(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 function nextActionsFor(target: AtlasTarget): string[] {
@@ -20,7 +32,7 @@ function nextActionsFor(target: AtlasTarget): string[] {
 }
 
 export function renderAtlasError(message: string): string {
-  return `<page_atlas_error ${attr("message", message)} />`;
+  return `<page_atlas_error>${xmlText(message)}</page_atlas_error>`;
 }
 
 export function renderPageAtlas(atlas: PageAtlasState): string {
@@ -70,7 +82,7 @@ export function renderPageAtlas(atlas: PageAtlasState): string {
     ].filter((item): item is string => item !== null);
     dataLines.push(`    <target ${attrs.join(" ")}>`);
     if (target.summary) {
-      dataLines.push(`      <summary>${text(target.summary)}</summary>`);
+      dataLines.push(`      <summary>${xmlText(target.summary)}</summary>`);
     }
     for (const fieldGuess of target.fieldGuesses ?? []) {
       dataLines.push(
@@ -80,7 +92,7 @@ export function renderPageAtlas(atlas: PageAtlasState): string {
     if (target.columns && target.columns.length > 0) {
       dataLines.push("      <columns>");
       for (const column of target.columns) {
-        dataLines.push(`        <column ${attr("name", column)} />`);
+        dataLines.push(`        <column>${xmlText(column)}</column>`);
       }
       dataLines.push("      </columns>");
     }
