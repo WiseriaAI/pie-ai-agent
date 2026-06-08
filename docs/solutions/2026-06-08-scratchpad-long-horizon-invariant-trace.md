@@ -15,7 +15,7 @@
 - **S1 — 事实源唯一**：scratchpad 数据的唯一权威是 IndexedDB 单库 `pie` 的 `scratchpads` store（`keyPath:"id"`，key = sessionId）。`DB_VERSION` 1→2（漏 bump 则现有用户 onupgradeneeded 不触发、永不建 store）。SQLite(sql.js) 只是**瞬态清洗协处理器**，无任何持久状态——与 PDF offscreen/LiteParse 同生命周期哲学（offscreen 里的都是可丢弃派生物，SW idle 即回收）。
 - **S2 — 概览搭车 trailing，永不被裁**：每轮 `buildObservationMessage` 后把 `<scratchpad_overview>`（有界：每表计数 + dedupeKey + 前 3 条预览 + notes 全文）append 到 observationText，并入最新 user turn（trailing）。sliding-window / compaction / token-budget 三者都不动 trailing。数据落盘瞬间即脱离对话介质，compaction 摘掉写入步骤也不丢数据/进度。
 - **S3 — untrusted 包裹不变量**：概览预览、`read_records` 回显、`query_scratchpad` 结果预览——凡页面派生数据进 LLM context，一律 `<untrusted_scratchpad_preview>` 包裹 + `escapeUntrustedWrappers` 转义。新 tag 在 `UNTRUSTED_WRAPPER_TAGS`（主）+ probe-core.ts / html-strip.ts / _shared/interactive.ts / **recording/capture.ts** 全部副本登记，dual-list lock-step 测试守。notes 与计数/表名是 trusted（LLM 自写 / 系统聚合）。
-- **S4 — 容量保护**：`saveRecords` 写前 `estimateBytes > MAX_SCRATCHPAD_BYTES(50MB/session)` 即拒（结构化 error，不落盘、不损坏）。Backlog：可做用户可调。
+- **S4 — 容量保护**：所有写放大路径写前 `estimateBytes > MAX_SCRATCHPAD_BYTES(50MB/session)` 即拒（结构化 error，不落盘、不损坏）——覆盖 `saveRecords` 和 `query_scratchpad` 的 `into` 写回（SQL 能放大行数，如 self cross-join N→N²，是独立于 saveRecords 的真实放大面）。唯 `update_notes` 不设守卫（见加固项 5）。Backlog：可做用户可调。
 - **S5 — fail-soft 概览读**：`svcGetOverview` 每步读 IDB，包在 try/catch 里——读失败 `console.warn` + 空概览继续，绝不 unwind 外层 catch-less try 杀掉 in-flight 任务（概览是增强项）。
 - **S6 — 生命周期**：scratchpad per-session，`hardDeleteSession` 删、30 天 `hardDeleteExpired` sweep 也删（best-effort）；**archive 有意保留**（绑 session 而非 live-task，unarchive 可续爬，区别于绑 live-session 的 output_file artifacts）。
 - **S7 — SQL 沙箱安全**：`runQuery` 表名/列名经 `quoteIdent` 转义（双引号 + 内部引号 double-up），值走 bound `?` placeholder，无插值注入面；`db.close()` 在 finally 保证释放；列无类型声明以保留 number affinity；嵌套对象存 JSON text。SQL 在 WASM 沙箱内只能动导入的临时表，碰不到页面/网络/扩展状态。
@@ -36,7 +36,7 @@
 2. **read_records untrusted 包裹（S3）**：plan Task 8 原稿 `read_records` 直接 `JSON.stringify` 回显，code review 揪出违反 P3-O；已修为与 overview 同款包裹 + 转义，并加注入转义测试。
 3. **概览 fail-soft（S5）**：plan Task 10 原稿 `svcGetOverview` 是裸 await，code review 判定一次 IDB 读失败会杀整个任务；已包 try/catch + 空串 fallback。
 4. **sweep 清理（S6）**：plan 未覆盖 30 天 sweep 的 scratchpad 清理；既然 archive 保留，sweep 是唯一最终清理路径，已补 best-effort `deleteScratchpad`（未动 pre-existing 的 artifacts sweep gap）。
-5. **updateNotes 不设独立预算**：仅 `saveRecords` 走 50MB 守卫；`update_notes` 整块覆写不累积、且单次写受 LLM 输出 token 上限约束（远 < 50MB），故无界是有意决策（理论性、不可达），未加守卫。
+5. **预算守卫覆盖 saveRecords + query into，唯 updateNotes 不设**：`saveRecords` 与 `query_scratchpad` 的 `into` 写回都走 50MB 守卫（final review 揪出 into 写回原缺守卫、SQL 行放大能突破，已补）；`update_notes` 整块覆写不累积、且单次写受 LLM 输出 token 上限约束（远 < 50MB），故无界是有意决策（理论性、不可达），未加守卫。
 
 ## 真机回归清单（待执行）
 
