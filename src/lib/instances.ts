@@ -152,6 +152,10 @@ export async function resolveModelConfig(instanceId: string, model: string): Pro
       vision = (await resolveModelMeta(inst.provider, model))?.vision;
     }
   }
+  // maxOutputTokens：anthropic-wire 后端用它当 max_tokens 必填默认。registry/
+  // 自定义 provider 经 resolveModelMeta 统一解析；OpenRouter(fetched) 命中不到则
+  // 留 undefined（OpenAI-compat 不读此字段，无影响）。
+  const maxOutputTokens = (await resolveModelMeta(inst.provider, model))?.maxOutputTokens;
   return {
     provider: inst.provider,
     providerName: meta.name,
@@ -159,6 +163,7 @@ export async function resolveModelConfig(instanceId: string, model: string): Pro
     apiKey: inst.apiKey,
     baseUrl: meta.defaultBaseUrl,
     ...(inst.maxTokens != null && { maxTokens: inst.maxTokens }),
+    ...(maxOutputTokens != null && { maxOutputTokens }),
     ...(vision !== undefined && { vision }),
   };
 }
