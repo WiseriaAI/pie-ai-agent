@@ -1,7 +1,7 @@
 import type { ActionResult } from "../../../dom-actions/types";
 import type { Tool, ToolHandlerContext } from "../../types";
 import { escapeUntrustedWrappers } from "../../untrusted-wrappers";
-import { pageAtlasStore, parseOrigin, type PageAtlasStore } from "./state";
+import { pageAtlasStore, type PageAtlasStore } from "./state";
 import type { AtlasRecord, AtlasTarget, AtlasTargetType, PageAtlasState } from "./types";
 
 type GetTabUrl = (tabId: number) => Promise<string | undefined>;
@@ -178,19 +178,16 @@ async function resolveAtlasForSearch(
 
   const currentUrl = await getCurrentUrl(getTabUrl, ctx.tabId);
   if (!currentUrl) return { ok: false, error: READ_PAGE_FIRST };
-  if (atlas.tabId !== ctx.tabId) {
-    return { ok: false, error: `atlas ${atlas.atlasId} belongs to tab ${atlas.tabId}, not tab ${ctx.tabId}. ${READ_PAGE_FIRST}` };
-  }
-
-  const currentOrigin = parseOrigin(currentUrl);
-  if (
-    currentOrigin !== atlas.origin
-    || ((currentOrigin === null || atlas.origin === null) && currentUrl !== atlas.url)
-  ) {
-    return {
-      ok: false,
-      error: 'The page origin changed since the atlas was created. Call read_page({mode:"atlas"}) again.',
-    };
+  const result = store.resolveTarget({
+    atlasId,
+    targetId: "__atlas_freshness_probe__",
+    tabId: ctx.tabId,
+    currentUrl,
+    allowedTypes: ALL_TARGET_TYPES,
+    now: Date.now(),
+  });
+  if (!result.ok && result.reason !== "target_not_found") {
+    return { ok: false, error: result.message };
   }
 
   return { ok: true, atlas };
@@ -279,7 +276,12 @@ export function createPageAtlasTargetTools(deps: PageAtlasTargetToolDeps = {}): 
         );
       }
       lines.push("</target_candidates>");
-      return ok(lines.join("\n"));
+      return ok(wrapUntrustedPageContent(
+        "find_target",
+        resolved.atlas.atlasId,
+        "target_candidates",
+        lines.join("\n"),
+      ));
     },
   };
 
