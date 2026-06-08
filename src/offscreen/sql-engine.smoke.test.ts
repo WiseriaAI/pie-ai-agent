@@ -7,7 +7,7 @@ describe("sql.js smoke (node)", () => {
   it("creates a table, inserts, selects", async () => {
     const wasmBinary = fs.readFileSync(
       path.resolve(__dirname, "../../node_modules/sql.js/dist/sql-wasm.wasm"),
-    );
+    ) as unknown as ArrayBuffer;
     const SQL = await initSqlJs({ wasmBinary });
     const db = new SQL.Database();
     db.run("CREATE TABLE t (url TEXT, price INTEGER)");
