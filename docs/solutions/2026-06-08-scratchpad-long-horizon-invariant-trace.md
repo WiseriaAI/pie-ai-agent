@@ -50,3 +50,4 @@
 6. **SW 回收存活**：等待/手动 stop SW 后继续任务，scratchpad 数据仍在（IDB 持久）。
 7. **session 删除清理**：删 session 后 DevTools → IndexedDB → pie/scratchpads 确认记录被清。
 8. **旧版升级 DB 迁移**：DB_VERSION=1 的既有 profile 升级到 2，`scratchpads` store 被创建、原有 sessions/instances/config 无损。
+9. **skill 触发 + playbook 遵循（端到端引导验证）**：对列表/抓取类请求（如"把这网站的商品列出来"）确认能触发 `extract_structured_data` skill（`use_skill` 被调用），且加载后模型照 playbook 走——逐页 `save_records`、概览核对、导出前停下来问用户清洗/格式。检验"工具 + 三层引导（常驻 SCRATCHPAD_GUIDANCE + skill playbook + 每轮概览）是否真驱动模型正确编排"。
