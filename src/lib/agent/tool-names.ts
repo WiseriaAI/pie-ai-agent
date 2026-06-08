@@ -95,6 +95,19 @@ export const LOCAL_FILE_TOOL_NAMES = [
   "request_local_file",
 ] as const;
 
+// Scratchpad tools — per-session durable memory for long-horizon extraction.
+//   save_records / update_notes / clear_scratchpad — write (mutate IDB state).
+//   read_records / query_scratchpad — read (observe stored data, no mutation).
+// Note: query_scratchpad (Phase 2 SQL) is registered here for classification
+// even though its Tool impl lands in a later task. The class is metadata only.
+export const SCRATCHPAD_TOOL_NAMES = [
+  "save_records",
+  "update_notes",
+  "read_records",
+  "clear_scratchpad",
+  "query_scratchpad",
+] as const;
+
 export const KNOWN_BUILT_IN_TOOL_NAMES = [
   ...PHASE_2_TOOL_NAMES,
   ...SKILL_META_TOOL_NAMES_FOR_REGISTRY,
@@ -105,6 +118,7 @@ export const KNOWN_BUILT_IN_TOOL_NAMES = [
   ...PAGE_SNAPSHOT_TOOL_NAMES,
   ...PDF_TOOL_NAMES,
   ...LOCAL_FILE_TOOL_NAMES,
+  ...SCRATCHPAD_TOOL_NAMES,
 ] as const;
 
 export const KNOWN_KEYBOARD_TOOL_NAMES = [
@@ -204,6 +218,12 @@ export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
   // Editor tools — CDP main-context getValue/setValue
   read_editor: "read",
   set_editor_value: "write",
+  // Scratchpad tools — per-session durable memory for long-horizon extraction
+  save_records: "write",
+  update_notes: "write",
+  read_records: "read",
+  clear_scratchpad: "write",
+  query_scratchpad: "read",
 };
 
 // Build-time exhaustive check — every known tool name MUST have a class
