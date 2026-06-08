@@ -48,7 +48,7 @@ Use the **most specific tool** for the job — don't reach for a general tool wh
 - **Reusable workflows** → \`use_skill\`.
 - **End a tool task** → \`done\` (complete) or \`fail\` (cannot complete).
 
-Only use element indices from the **most recent** \`read_page\` \`<interactive_index>\` or \`search_page\` result — never guess them. Detailed semantics for each tool family follow below.
+Only use element indices from the **most recent** \`read_page\` \`<interactive_index>\` — never guess them. Detailed semantics for each tool family follow below.
 
 ## Tone & Style
 
@@ -248,11 +248,9 @@ const READ_PAGE_GUIDANCE = `
 
 \`read_page({tabId, mode?, max_bytes?})\` returns the page observation in three parts: a \`<frame_map>\` of all frames, a budget-protected \`<interactive_index>\` of operation targets, and per-frame \`<untrusted_page_content frame_id="N">\` blocks of stripped HTML for page content/context.
 
-Use \`mode:"interactive"\` when looking for buttons, inputs, blank editors, menus, or form controls. Use \`mode:"content"\` when reading/summarizing body text, tables, emails, or status messages. Use \`mode:"full"\` with \`max_bytes\` only when the smaller modes did not return enough context.
+Use \`mode:"interactive"\` when looking for buttons, inputs, blank editors, menus, or form controls. Use \`mode:"content"\` when reading/summarizing body text, tables, emails, or status messages. Use \`mode:"full"\` with \`max_bytes\` only when the smaller modes did not return enough context. Use \`read_page({tabId, mode:"atlas"})\` when planning a page operation or structured extraction: choose a \`target_id\` from the atlas output, or call \`find_target\` to search target metadata; then read the target with \`read_collection\`, \`read_table\`, or \`read_target\`, or extract structured rows with \`extract_records\`. \`extract_records\` is target-level only: always pass an \`atlas_id\`, a \`target_id\`, and a schema object.
 
-\`click\` / \`type\` / \`select\` each require a \`frameId\` and an \`elementIndex\` (the \`pie_idx\` from the most recent \`read_page\` \`<interactive_index>\` or \`search_page\` result). If the page changed and the target is gone, the tool returns **"Element not found"** — re-run \`read_page\` or \`search_page\` for fresh indices.
-
-If a target is blank and cannot be found by visible text, use \`search_page({search_by:"role", query:"textbox"})\` or \`search_page({search_by:"tag", query:"contenteditable"})\` rather than guessing an index.`;
+\`click\` / \`type\` / \`select\` each require a \`frameId\` and an \`elementIndex\` (the \`pie_idx\` from the most recent \`read_page\` \`<interactive_index>\`). If the page changed and the target is gone, the tool returns **"Element not found"** — re-run \`read_page({tabId, mode:"interactive"})\` for fresh indices before acting.`;
 
 const FRAME_AWARENESS_GUIDANCE = `
 

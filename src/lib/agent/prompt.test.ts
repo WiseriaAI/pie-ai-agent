@@ -300,17 +300,25 @@ describe("Page tools locator guidance (#113)", () => {
     expect(prompt).not.toContain("interactive elements stamped `data-pie-idx=\"N\"`");
   });
 
-  it("guides blank editors through search_page role/tag search", () => {
+  it("guides page operations and structured extraction through the Page Atlas flow", () => {
     const prompt = buildAgentSystemPrompt("reply to this email");
-    expect(prompt).toContain('search_page({search_by:"role", query:"textbox"})');
-    expect(prompt).toContain('search_page({search_by:"tag", query:"contenteditable"})');
-    expect(prompt).toContain("rather than guessing an index");
+    expect(prompt).toContain('read_page({tabId, mode:"atlas"})');
+    expect(prompt).toContain("choose a `target_id`");
+    expect(prompt).toContain("`find_target`");
+    expect(prompt).toContain("`read_collection`");
+    expect(prompt).toContain("`read_table`");
+    expect(prompt).toContain("`read_target`");
+    expect(prompt).toContain("`extract_records`");
+    expect(prompt).toMatch(/extract_records.*target-level only/is);
+    expect(prompt).toContain('read_page({tabId, mode:"interactive"})');
   });
 
-  it("allows element indices from the most recent read_page interactive_index or search_page result", () => {
+  it("allows element indices only from the most recent read_page interactive_index", () => {
     const prompt = buildAgentSystemPrompt("reply to this email");
     expect(prompt).toContain(
-      "most recent** `read_page` `<interactive_index>` or `search_page` result",
+      "most recent** `read_page` `<interactive_index>`",
     );
+    expect(prompt).not.toContain("or `search_page` result");
+    expect(prompt).not.toContain("search_page({");
   });
 });

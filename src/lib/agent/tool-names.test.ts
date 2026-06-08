@@ -4,6 +4,8 @@ import {
   getToolClass,
   KNOWN_BUILT_IN_TOOL_NAMES,
   KNOWN_KEYBOARD_TOOL_NAMES,
+  PAGE_ATLAS_TOOL_NAMES,
+  PAGE_SNAPSHOT_TOOL_NAMES,
   TAB_TOOL_NAMES,
 } from "./tool-names";
 
@@ -71,6 +73,25 @@ describe("M3-U4 — TOOL_CLASSES registry", () => {
   it("getToolClass returns the registered class for known names", () => {
     expect(getToolClass("click")).toBe("write");
     expect(getToolClass("list_tabs")).toBe("read");
+  });
+
+  it("registers Page Atlas target tools as built-in read tools and retires search_page", () => {
+    expect(PAGE_SNAPSHOT_TOOL_NAMES).toEqual(["read_page"]);
+    expect(PAGE_ATLAS_TOOL_NAMES).toEqual([
+      "find_target",
+      "read_collection",
+      "read_table",
+      "read_target",
+      "extract_records",
+    ]);
+
+    for (const name of PAGE_ATLAS_TOOL_NAMES) {
+      expect(KNOWN_BUILT_IN_TOOL_NAMES).toContain(name);
+      expect(getToolClass(name)).toBe("read");
+    }
+
+    expect(KNOWN_BUILT_IN_TOOL_NAMES).not.toContain("search_page");
+    expect(TOOL_CLASSES).not.toHaveProperty("search_page");
   });
 
   it("every KNOWN_BUILT_IN_TOOL_NAMES entry has a class (build-time exhaustive)", () => {

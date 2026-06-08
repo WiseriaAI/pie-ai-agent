@@ -71,7 +71,18 @@ export const SEARCH_TOOL_NAMES = [
 // class=read: reads page DOM structure; no tab/page state mutation.
 export const PAGE_SNAPSHOT_TOOL_NAMES = [
   "read_page",
-  "search_page",
+] as const;
+
+// Page Atlas target tools (always present in BUILT_IN_TOOLS).
+//
+// class=read: reads structured targets captured by read_page({mode:"atlas"});
+// no tab/page state mutation.
+export const PAGE_ATLAS_TOOL_NAMES = [
+  "find_target",
+  "read_collection",
+  "read_table",
+  "read_target",
+  "extract_records",
 ] as const;
 
 // PDF tools (always present in BUILT_IN_TOOLS once Task 10 lands).
@@ -120,6 +131,7 @@ export const KNOWN_BUILT_IN_TOOL_NAMES = [
   ...SCREENSHOT_TOOL_NAMES,
   ...SEARCH_TOOL_NAMES,
   ...PAGE_SNAPSHOT_TOOL_NAMES,
+  ...PAGE_ATLAS_TOOL_NAMES,
   ...PDF_TOOL_NAMES,
   ...LOCAL_FILE_TOOL_NAMES,
   ...SCRATCHPAD_TOOL_NAMES,
@@ -210,7 +222,12 @@ export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
   search_web: "read",
   // Page snapshot tool — reads page DOM structure, no tab/page state mutation
   read_page: "read",
-  search_page: "read",
+  // Page Atlas target tools — reads structured atlas targets, no tab/page state mutation
+  find_target: "read",
+  read_collection: "read",
+  read_table: "read",
+  read_target: "read",
+  extract_records: "read",
   // PDF tools — pure text producers, parse-only, no tab mutation
   read_pdf: "read",
   search_pdf: "read",
