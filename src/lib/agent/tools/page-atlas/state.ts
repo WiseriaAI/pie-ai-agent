@@ -5,12 +5,12 @@ import type {
   ResolveTargetResult,
 } from "./types";
 
-const DEFAULT_TTL_MS = 60_000;
+const DEFAULT_TTL_MS = 120_000;
 
 export interface PageAtlasStore {
-  save(atlas: PageAtlasState): PageAtlasState;
+  save(atlas: PageAtlasState): void;
   get(atlasId: string): PageAtlasState | undefined;
-  clear(atlasId?: string): void;
+  clear(): void;
   resolveTarget(args: ResolveTargetArgs): ResolveTargetResult;
 }
 
@@ -29,24 +29,16 @@ export function createPageAtlasStore(
   const ttlMs = options.ttlMs ?? DEFAULT_TTL_MS;
   const atlases = new Map<string, PageAtlasState>();
 
-  const isExpired = (atlas: PageAtlasState, now: number) =>
-    now - atlas.createdAt > ttlMs;
-
   return {
     save(atlas) {
       atlases.set(atlas.atlasId, atlas);
-      return atlas;
     },
 
     get(atlasId) {
       return atlases.get(atlasId);
     },
 
-    clear(atlasId) {
-      if (atlasId) {
-        atlases.delete(atlasId);
-        return;
-      }
+    clear() {
       atlases.clear();
     },
 
@@ -56,7 +48,7 @@ export function createPageAtlasStore(
         return {
           ok: false,
           reason: "atlas_not_found",
-          message: `atlas ${args.atlasId} not found`,
+          message: 'Call read_page({mode:"atlas"}) first, then use a target_id from that atlas.',
         };
       }
 
@@ -64,26 +56,24 @@ export function createPageAtlasStore(
         return {
           ok: false,
           reason: "tab_mismatch",
-          message: `atlas ${args.atlasId} belongs to tab ${atlas.tabId}; current tab is ${args.tabId}`,
+          message: `atlas ${args.atlasId} belongs to tab ${atlas.tabId}, not tab ${args.tabId}`,
         };
       }
 
-      const now = args.now ?? Date.now();
-      if (isExpired(atlas, now)) {
+      if (args.now - atlas.createdAt > ttlMs) {
         atlases.delete(args.atlasId);
         return {
           ok: false,
           reason: "atlas_expired",
-          message: `atlas ${args.atlasId} expired`,
+          message: 'The page atlas is stale. Call read_page({mode:"atlas"}) again.',
         };
       }
 
-      const currentOrigin = parseOrigin(args.currentUrl);
-      if (currentOrigin !== atlas.origin) {
+      if (parseOrigin(args.currentUrl) !== atlas.origin) {
         return {
           ok: false,
           reason: "origin_changed",
-          message: `atlas ${args.atlasId} was captured on origin ${atlas.origin ?? "unknown"}; current origin is ${currentOrigin ?? "unknown"}`,
+          message: 'The page origin changed since the atlas was created. Call read_page({mode:"atlas"}) again.',
         };
       }
 
@@ -92,15 +82,15 @@ export function createPageAtlasStore(
         return {
           ok: false,
           reason: "target_not_found",
-          message: `target ${args.targetId} not found`,
+          message: `target ${args.targetId} does not exist in atlas ${args.atlasId}. Call read_page({mode:"atlas"}) again.`,
         };
       }
 
-      if (!isExpectedType(target.type, args.expectedType)) {
+      if (!isAllowedType(target.type, args.allowedTypes)) {
         return {
           ok: false,
           reason: "unsupported_target_type",
-          message: `target ${args.targetId} is type ${target.type}; expected ${formatExpectedType(args.expectedType)}`,
+          message: `target ${target.id} is type ${target.type}; expected ${args.allowedTypes.join(" or ")}`,
         };
       }
 
@@ -113,19 +103,8 @@ export function createPageAtlasStore(
   };
 }
 
-function isExpectedType(
-  actual: AtlasTargetType,
-  expected: ResolveTargetArgs["expectedType"],
-) {
-  if (!expected) return true;
-  if (Array.isArray(expected)) return expected.includes(actual);
-  return actual === expected;
-}
-
-function formatExpectedType(expected: ResolveTargetArgs["expectedType"]) {
-  if (!expected) return "any";
-  if (Array.isArray(expected)) return expected.join(" or ");
-  return expected;
+function isAllowedType(actual: AtlasTargetType, allowedTypes: AtlasTargetType[]) {
+  return allowedTypes.includes(actual);
 }
 
 export const pageAtlasStore = createPageAtlasStore();

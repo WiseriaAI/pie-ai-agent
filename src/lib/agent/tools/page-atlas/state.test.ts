@@ -7,19 +7,77 @@ const atlas = (overrides: Partial<PageAtlasState> = {}): PageAtlasState => ({
   tabId: 7,
   url: "https://example.com/products",
   origin: "https://example.com",
+  title: "Products",
   createdAt: 1_000,
+  fingerprint: {
+    url: "https://example.com/products",
+    title: "Products",
+    bodyTextLengthBucket: 10,
+    interactiveCountBucket: 5,
+    topSectionCount: 2,
+  },
   targets: [
     {
       id: "collection_c1",
       type: "collection",
       label: "Products",
       frameId: 0,
+      confidence: "high",
+      summary: "Visible product cards",
+      visibleCount: 2,
+      estimatedTotal: 2,
+      records: [
+        {
+          id: "record_r1",
+          fields: { name: "Pie" },
+          text: "Pie",
+          evidence: "card text",
+        },
+      ],
     },
     {
       id: "table_t1",
       type: "table",
       label: "Raw product table",
       frameId: 0,
+      confidence: "medium",
+      summary: "Raw product rows",
+      columns: ["name"],
+    },
+  ],
+  controls: [
+    {
+      id: "control_next",
+      frameId: 0,
+      pieIdx: 4,
+      type: "button",
+      label: "Next",
+    },
+  ],
+  forms: [
+    {
+      id: "form_search",
+      label: "Search",
+      frameId: 0,
+      fields: ["query"],
+      submitControlId: "control_next",
+    },
+  ],
+  controlGroups: [
+    {
+      id: "group_filters",
+      label: "Filters",
+      frameId: 0,
+      controls: ["control_next"],
+    },
+  ],
+  navigation: [
+    {
+      id: "navigation_pages",
+      type: "pagination",
+      label: "Pages",
+      frameId: 0,
+      controls: ["control_next"],
     },
   ],
   ...overrides,
@@ -35,7 +93,7 @@ describe("page atlas store", () => {
       tabId: 7,
       currentUrl: "https://example.com/products?page=2",
       targetId: "collection_c1",
-      expectedType: "collection",
+      allowedTypes: ["collection"],
       now: 1_500,
     });
 
@@ -55,7 +113,7 @@ describe("page atlas store", () => {
       tabId: 7,
       currentUrl: "https://example.com/products",
       targetId: "table_t1",
-      expectedType: "collection",
+      allowedTypes: ["collection"],
       now: 1_500,
     });
 
@@ -75,14 +133,15 @@ describe("page atlas store", () => {
       tabId: 7,
       currentUrl: "https://example.com/products",
       targetId: "collection_c1",
-      expectedType: "collection",
+      allowedTypes: ["collection"],
       now: 1_101,
     });
 
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.reason).toBe("atlas_expired");
-    }
+    expect(result).toEqual({
+      ok: false,
+      reason: "atlas_expired",
+      message: "The page atlas is stale. Call read_page({mode:\"atlas\"}) again.",
+    });
     expect(store.get("atlas_1")).toBeUndefined();
   });
 
@@ -95,13 +154,59 @@ describe("page atlas store", () => {
       tabId: 7,
       currentUrl: "https://evil.example/products",
       targetId: "collection_c1",
-      expectedType: "collection",
+      allowedTypes: ["collection"],
       now: 1_500,
     });
 
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.reason).toBe("origin_changed");
-    }
+    expect(result).toEqual({
+      ok: false,
+      reason: "origin_changed",
+      message: "The page origin changed since the atlas was created. Call read_page({mode:\"atlas\"}) again.",
+    });
+  });
+
+  it("returns exact fail-closed messages for missing atlas, target, and tab mismatch", () => {
+    const store = createPageAtlasStore({ ttlMs: 5_000 });
+
+    expect(store.resolveTarget({
+      atlasId: "atlas_1",
+      tabId: 7,
+      currentUrl: "https://example.com/products",
+      targetId: "collection_c1",
+      allowedTypes: ["collection"],
+      now: 1_500,
+    })).toEqual({
+      ok: false,
+      reason: "atlas_not_found",
+      message: "Call read_page({mode:\"atlas\"}) first, then use a target_id from that atlas.",
+    });
+
+    store.save(atlas());
+
+    expect(store.resolveTarget({
+      atlasId: "atlas_1",
+      tabId: 8,
+      currentUrl: "https://example.com/products",
+      targetId: "collection_c1",
+      allowedTypes: ["collection"],
+      now: 1_500,
+    })).toEqual({
+      ok: false,
+      reason: "tab_mismatch",
+      message: "atlas atlas_1 belongs to tab 7, not tab 8",
+    });
+
+    expect(store.resolveTarget({
+      atlasId: "atlas_1",
+      tabId: 7,
+      currentUrl: "https://example.com/products",
+      targetId: "missing",
+      allowedTypes: ["collection"],
+      now: 1_500,
+    })).toEqual({
+      ok: false,
+      reason: "target_not_found",
+      message: "target missing does not exist in atlas atlas_1. Call read_page({mode:\"atlas\"}) again.",
+    });
   });
 });
