@@ -26,7 +26,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["liteparse.wasm", "src/offscreen/pdf-parser.html"],
+      "resources": ["liteparse.wasm", "sql-wasm.wasm", "src/offscreen/pdf-parser.html"],
       "matches": ["<all_urls>"]
     }
   ],
