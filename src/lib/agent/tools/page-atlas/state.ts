@@ -60,7 +60,11 @@ export function createPageAtlasStore(
         };
       }
 
-      if (args.now - atlas.createdAt > ttlMs) {
+      if (
+        !Number.isFinite(args.now)
+        || !Number.isFinite(atlas.createdAt)
+        || args.now - atlas.createdAt > ttlMs
+      ) {
         atlases.delete(args.atlasId);
         return {
           ok: false,
@@ -69,7 +73,11 @@ export function createPageAtlasStore(
         };
       }
 
-      if (parseOrigin(args.currentUrl) !== atlas.origin) {
+      const currentOrigin = parseOrigin(args.currentUrl);
+      if (
+        currentOrigin !== atlas.origin
+        || ((currentOrigin === null || atlas.origin === null) && args.currentUrl !== atlas.url)
+      ) {
         return {
           ok: false,
           reason: "origin_changed",

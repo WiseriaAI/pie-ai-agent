@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createPageAtlasStore } from "./state";
+import { createPageAtlasStore, parseOrigin } from "./state";
 import type { PageAtlasState } from "./types";
 
 const atlas = (overrides: Partial<PageAtlasState> = {}): PageAtlasState => ({
@@ -84,6 +84,12 @@ const atlas = (overrides: Partial<PageAtlasState> = {}): PageAtlasState => ({
 });
 
 describe("page atlas store", () => {
+  it("parses invalid and opaque URL origins as null", () => {
+    expect(parseOrigin("not a url")).toBeNull();
+    expect(parseOrigin("about:blank")).toBeNull();
+    expect(parseOrigin("data:text/html,hi")).toBeNull();
+  });
+
   it("resolves a fresh target", () => {
     const store = createPageAtlasStore({ ttlMs: 5_000 });
     store.save(atlas());
@@ -163,6 +169,65 @@ describe("page atlas store", () => {
       reason: "origin_changed",
       message: "The page origin changed since the atlas was created. Call read_page({mode:\"atlas\"}) again.",
     });
+  });
+
+  it("resolves a null-origin atlas only when the current URL is unchanged", () => {
+    const store = createPageAtlasStore({ ttlMs: 5_000 });
+    store.save(atlas({
+      url: "about:blank",
+      origin: null,
+      fingerprint: {
+        url: "about:blank",
+        title: "Products",
+        bodyTextLengthBucket: 10,
+        interactiveCountBucket: 5,
+        topSectionCount: 2,
+      },
+    }));
+
+    const result = store.resolveTarget({
+      atlasId: "atlas_1",
+      tabId: 7,
+      currentUrl: "about:blank",
+      targetId: "collection_c1",
+      allowedTypes: ["collection"],
+      now: 1_500,
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.target.id).toBe("collection_c1");
+    }
+  });
+
+  it("fails closed when a null-origin atlas sees a different opaque or invalid URL", () => {
+    const store = createPageAtlasStore({ ttlMs: 5_000 });
+    store.save(atlas({
+      url: "about:blank",
+      origin: null,
+      fingerprint: {
+        url: "about:blank",
+        title: "Products",
+        bodyTextLengthBucket: 10,
+        interactiveCountBucket: 5,
+        topSectionCount: 2,
+      },
+    }));
+
+    for (const currentUrl of ["data:text/html,hi", "not a url"]) {
+      expect(store.resolveTarget({
+        atlasId: "atlas_1",
+        tabId: 7,
+        currentUrl,
+        targetId: "collection_c1",
+        allowedTypes: ["collection"],
+        now: 1_500,
+      })).toEqual({
+        ok: false,
+        reason: "origin_changed",
+        message: "The page origin changed since the atlas was created. Call read_page({mode:\"atlas\"}) again.",
+      });
+    }
   });
 
   it("returns exact fail-closed messages for missing atlas, target, and tab mismatch", () => {
