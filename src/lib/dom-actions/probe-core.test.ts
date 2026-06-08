@@ -647,3 +647,102 @@ describe("op=search finds label-rescued hidden controls", () => {
     expect(document.getElementById("st")!.hasAttribute("data-pie-idx")).toBe(false);
   });
 });
+
+describe("probePageInjected op=atlas", () => {
+  it("detects controls, forms, repeated collections, native tables, and fingerprint buckets", () => {
+    document.body.innerHTML = `
+      <main>
+        <section>
+          <h2>Catalog</h2>
+          <form aria-label="Product search">
+            <label for="kw">Keyword</label>
+            <input id="kw" name="keyword" type="search" value="boots">
+            <button type="submit">Search</button>
+          </form>
+        </section>
+        <section aria-label="Featured products">
+          <article class="product-card">
+            <a href="/p/red-shoe">Red Shoe</a>
+            <p>$29</p>
+          </article>
+          <article class="product-card">
+            <a href="/p/blue-hat">Blue Hat</a>
+            <p>$19</p>
+          </article>
+          <article class="product-card">
+            <a href="/p/green-bag">Green Bag</a>
+            <p>$49</p>
+          </article>
+        </section>
+        <table aria-label="Inventory">
+          <thead><tr><th>SKU</th><th>Stock</th></tr></thead>
+          <tbody>
+            <tr><td>RS-1</td><td>7</td></tr>
+            <tr><td>BH-2</td><td>4</td></tr>
+          </tbody>
+        </table>
+      </main>
+    `;
+
+    const r = probePageInjected({ op: "atlas" });
+
+    expect(r.op).toBe("atlas");
+    if (r.op !== "atlas") throw new Error("narrow");
+
+    expect(r.controls).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: "ctrl_0",
+        pieIdx: 0,
+        type: "textbox",
+        label: "Keyword",
+        value: "boots",
+      }),
+      expect.objectContaining({
+        id: "ctrl_1",
+        pieIdx: 1,
+        type: "button",
+        label: "Search",
+      }),
+    ]));
+
+    expect(r.forms).toEqual([
+      expect.objectContaining({
+        id: "form_f0",
+        label: "Product search",
+        fields: ["ctrl_0"],
+        submitControlId: "ctrl_1",
+      }),
+    ]);
+
+    expect(r.targets).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: "collection",
+        confidence: "medium",
+        label: "Featured products",
+        visibleCount: 3,
+        records: expect.arrayContaining([
+          expect.objectContaining({ title: "Red Shoe", link: "/p/red-shoe" }),
+          expect.objectContaining({ title: "Blue Hat", link: "/p/blue-hat" }),
+          expect.objectContaining({ title: "Green Bag", link: "/p/green-bag" }),
+        ]),
+      }),
+      expect.objectContaining({
+        id: "table_t0",
+        type: "table",
+        confidence: "high",
+        label: "Inventory",
+        columns: ["SKU", "Stock"],
+        records: [
+          { SKU: "RS-1", Stock: "7" },
+          { SKU: "BH-2", Stock: "4" },
+        ],
+      }),
+    ]));
+
+    expect(r.fingerprint.url).toBe(window.location.href);
+    expect(r.fingerprint.title).toBe(document.title);
+    expect(r.fingerprint.bodyTextLengthBucket).toBeGreaterThan(0);
+    expect(r.fingerprint.interactiveCountBucket).toBeGreaterThan(0);
+    expect(r.fingerprint.topSectionCount).toBeGreaterThan(0);
+  });
+});

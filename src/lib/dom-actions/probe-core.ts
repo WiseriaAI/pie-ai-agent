@@ -20,8 +20,47 @@ export interface SearchMatch {
   snippet: string;
 }
 
+export interface AtlasProbeControl {
+  id: string;
+  pieIdx: number;
+  type: string;
+  label: string;
+  value?: string;
+  disabled: boolean;
+  checked: boolean;
+}
+
+export interface AtlasProbeForm {
+  id: string;
+  label: string;
+  fields: string[];
+  submitControlId?: string;
+}
+
+export interface AtlasProbeTarget {
+  id: string;
+  type: "collection" | "table" | "detail_region" | "region";
+  label: string;
+  confidence: "high" | "medium" | "low";
+  summary: string;
+  fieldGuesses?: string[];
+  columns?: string[];
+  records?: Array<Record<string, string>>;
+  visibleCount?: number;
+  estimatedTotal?: number;
+}
+
+export interface AtlasProbeFingerprint {
+  url: string;
+  title: string;
+  bodyTextLengthBucket: number;
+  interactiveCountBucket: number;
+  topSectionCount: number;
+}
+
 export type ProbeParams =
   | { op: "snapshot" }
+  | { op: "atlas" }
   | {
       op: "search";
       queries: string[];
@@ -37,6 +76,13 @@ export type ProbeResult =
       html: string;
       interactiveElements: InteractiveElementSummary[];
       scrollableHints: ScrollableHint[];
+    }
+  | {
+      op: "atlas";
+      controls: AtlasProbeControl[];
+      forms: AtlasProbeForm[];
+      targets: AtlasProbeTarget[];
+      fingerprint: AtlasProbeFingerprint;
     }
   | {
       op: "search";
@@ -612,6 +658,226 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
     }
 
     return { op: "snapshot", html, interactiveElements, scrollableHints };
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // op:"atlas" — compact page-world structure probe. This runs inside the page
+  // and must stay self-contained, so it reuses only helpers nested above.
+  // ──────────────────────────────────────────────────────────────────────────
+  if (params.op === "atlas") {
+    const liveBodyElements = [...walkDeep(document.body)];
+    stampLiveDom(liveBodyElements, new Map<Element, Element>());
+
+    function controlIdForPieIdx(pieIdx: number): string {
+      return `ctrl_${pieIdx}`;
+    }
+
+    function atlasLabel(el: Element, fallback: string): string {
+      return labelFor(el) || accessibleName(el) || nearestSection(el) || fallback;
+    }
+
+    function controlValue(el: Element): string | undefined {
+      if (el instanceof HTMLInputElement) {
+        if (el.type.toLowerCase() === "password") return undefined;
+        return el.value || undefined;
+      }
+      if (el instanceof HTMLTextAreaElement) {
+        return el.value || undefined;
+      }
+      if (el instanceof HTMLSelectElement) {
+        return el.value || undefined;
+      }
+      return undefined;
+    }
+
+    function isAtlasVisible(el: Element): boolean {
+      const style = window.getComputedStyle(el);
+      if (style.display === "none" || style.visibility === "hidden") return false;
+      if (parseFloat(style.opacity) === 0) return false;
+      const rect = el.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) return true;
+      return normalizeSpace(el.textContent ?? "") !== "";
+    }
+
+    function targetLabel(el: Element, fallback: string): string {
+      return accessibleName(el) || nearestSection(el) || fallback;
+    }
+
+    function textFrom(el: Element | null | undefined): string {
+      return el ? normalizeSpace(el.textContent ?? "") : "";
+    }
+
+    const controls: AtlasProbeControl[] = [];
+    const controlByElement = new Map<Element, string>();
+    for (const el of liveBodyElements) {
+      if (!el.hasAttribute("data-pie-idx")) continue;
+      const pieIdx = Number(el.getAttribute("data-pie-idx"));
+      const tag = el.tagName.toLowerCase();
+      const input = el instanceof HTMLInputElement ? el : null;
+      const control: AtlasProbeControl = {
+        id: controlIdForPieIdx(pieIdx),
+        pieIdx,
+        type: inferredRole(el) || tag,
+        label: atlasLabel(el, tag),
+        disabled: el.hasAttribute("disabled"),
+        checked: input ? input.checked : el.hasAttribute("checked"),
+      };
+      const value = controlValue(el);
+      if (value !== undefined) control.value = value;
+      controls.push(control);
+      controlByElement.set(el, control.id);
+    }
+
+    const forms: AtlasProbeForm[] = [];
+    const nativeForms = liveBodyElements.filter((el): el is HTMLFormElement => el instanceof HTMLFormElement);
+    for (let i = 0; i < nativeForms.length; i++) {
+      const form = nativeForms[i];
+      const fields: string[] = [];
+      const fieldEls = form.querySelectorAll("input,select,textarea");
+      for (const field of fieldEls) {
+        const id = controlByElement.get(field);
+        if (id) fields.push(id);
+      }
+
+      const submit = form.querySelector("button,input[type='submit'],input[type='button']");
+      const submitControlId = submit ? controlByElement.get(submit) : undefined;
+      const atlasForm: AtlasProbeForm = {
+        id: `form_f${i}`,
+        label: accessibleName(form) || nearestSection(form) || `Form ${i + 1}`,
+        fields,
+      };
+      if (submitControlId) atlasForm.submitControlId = submitControlId;
+      forms.push(atlasForm);
+    }
+
+    const targets: AtlasProbeTarget[] = [];
+
+    const tables = liveBodyElements.filter((el): el is HTMLTableElement => el instanceof HTMLTableElement);
+    for (let i = 0; i < tables.length; i++) {
+      const table = tables[i];
+      const headerCells = Array.from(table.querySelectorAll("thead th"));
+      const firstRow = table.rows.item(0);
+      const fallbackHeaderCells = headerCells.length > 0
+        ? headerCells
+        : Array.from(firstRow?.cells ?? []);
+      const columns = fallbackHeaderCells
+        .map((cell, idx) => textFrom(cell) || `Column ${idx + 1}`);
+
+      const bodyRows = Array.from(table.querySelectorAll("tbody tr"));
+      const sourceRows = bodyRows.length > 0
+        ? bodyRows
+        : Array.from(table.rows).slice(headerCells.length > 0 ? 1 : 0);
+      const records = sourceRows.slice(0, 25).map((row) => {
+        const record: Record<string, string> = {};
+        Array.from(row.cells).forEach((cell, idx) => {
+          const key = columns[idx] || `Column ${idx + 1}`;
+          record[key] = textFrom(cell);
+        });
+        return record;
+      });
+
+      targets.push({
+        id: `table_t${i}`,
+        type: "table",
+        label: targetLabel(table, `Table ${i + 1}`),
+        confidence: "high",
+        summary: `${records.length} rows, ${columns.length} columns`,
+        columns,
+        records,
+        visibleCount: records.length,
+        estimatedTotal: Math.max(records.length, table.rows.length - (headerCells.length > 0 ? 1 : 0)),
+      });
+    }
+
+    function shapeKey(el: Element): string {
+      const childTags = Array.from(el.children)
+        .slice(0, 8)
+        .map((child) => `${child.tagName.toLowerCase()}:${child.children.length}`)
+        .join(",");
+      const markers = [
+        el.querySelector("a") ? "a" : "",
+        el.querySelector("img") ? "img" : "",
+        el.querySelector("h1,h2,h3,h4,h5,h6") ? "heading" : "",
+        el.className && typeof el.className === "string" ? `class:${el.className.trim().split(/\s+/).sort().join(".")}` : "",
+      ].filter(Boolean).join("|");
+      return `${el.tagName.toLowerCase()}|${childTags}|${markers}`;
+    }
+
+    function collectionRecord(el: Element): Record<string, string> {
+      const link = el.querySelector("a[href]") as HTMLAnchorElement | null;
+      const heading = el.querySelector("h1,h2,h3,h4,h5,h6");
+      const record: Record<string, string> = {};
+      if (link) {
+        record.title = normalizeSpace(link.textContent ?? "") || accessibleName(link);
+        record.link = link.getAttribute("href") || link.href;
+      } else {
+        const title = textFrom(heading) || directText(el) || descendantText(el);
+        if (title) record.title = title;
+      }
+      return record;
+    }
+
+    let collectionIndex = 0;
+    const seenCollectionParents = new Set<Element>();
+    for (const parent of liveBodyElements) {
+      if (seenCollectionParents.has(parent)) continue;
+      if (parent.closest("table")) continue;
+      const visibleChildren = Array.from(parent.children).filter((child) => {
+        if (child.closest("table")) return false;
+        return isAtlasVisible(child);
+      });
+      if (visibleChildren.length < 3) continue;
+
+      const groups = new Map<string, Element[]>();
+      for (const child of visibleChildren) {
+        const key = shapeKey(child);
+        const group = groups.get(key) ?? [];
+        group.push(child);
+        groups.set(key, group);
+      }
+
+      for (const group of groups.values()) {
+        if (group.length < 3) continue;
+        seenCollectionParents.add(parent);
+        const records = group.slice(0, 20).map(collectionRecord);
+        const label = targetLabel(parent, nearestSection(group[0]) || `Collection ${collectionIndex + 1}`);
+        targets.push({
+          id: `collection_c${collectionIndex++}`,
+          type: "collection",
+          label,
+          confidence: "medium",
+          summary: `${group.length} repeated ${group[0].tagName.toLowerCase()} items`,
+          fieldGuesses: Array.from(new Set(records.flatMap((record) => Object.keys(record)))),
+          records,
+          visibleCount: group.length,
+          estimatedTotal: group.length,
+        });
+      }
+    }
+
+    function bucket(value: number, size: number): number {
+      if (value <= 0) return 0;
+      return Math.ceil(value / size) * size;
+    }
+
+    function fullTextLength(s: string): number {
+      return sanitizeText(escapeWrapperMarkup(s))
+        .replace(SUMMARY_MARKUP_RE, "[filtered]")
+        .replace(/[<>]/g, "[filtered]")
+        .replace(/\s+/g, " ")
+        .trim()
+        .length;
+    }
+
+    const fingerprint: AtlasProbeFingerprint = {
+      url: window.location.href,
+      title: document.title,
+      bodyTextLengthBucket: bucket(fullTextLength(document.body.textContent ?? ""), 500),
+      interactiveCountBucket: bucket(controls.length, 10),
+      topSectionCount: document.querySelectorAll("main,section,article,nav,aside,header,footer").length,
+    };
+
+    return { op: "atlas", controls, forms, targets, fingerprint };
   }
 
   // ──────────────────────────────────────────────────────────────────────────
