@@ -1,7 +1,7 @@
 // src/lib/scratchpad/sql-bridge.test.ts
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { _resetForTests } from "../idb/db";
-import { saveRecords, readScratchpadRecords } from "./service";
+import { saveRecords, readScratchpadRecords, MAX_SCRATCHPAD_BYTES } from "./service";
 import { queryScratchpad, __setOffscreenSenderForTests } from "./sql-bridge";
 
 describe("queryScratchpad", () => {
@@ -93,5 +93,31 @@ describe("queryScratchpad", () => {
     const src = await readScratchpadRecords("s", "products");
     if ("error" in src) throw new Error("source collection must survive");
     expect(src.records).toEqual([{ url: "a" }, { url: "b" }]);
+  });
+
+  it("rejects an into write-back that exceeds the per-session byte budget", async () => {
+    await saveRecords("s", "products", [{ url: "a" }], {});
+    // SQL can amplify rows (e.g. a self cross-join), so the result set could
+    // dwarf the source. Simulate an oversized result and confirm the budget
+    // guard fires on the write-back path, not just on saveRecords.
+    __setOffscreenSenderForTests(
+      vi.fn().mockResolvedValue({
+        columns: ["blob"],
+        rows: [{ blob: "x".repeat(MAX_SCRATCHPAD_BYTES + 10) }],
+      }),
+    );
+
+    const r = await queryScratchpad("s", {
+      from: "products",
+      sql: "SELECT 1",
+      into: "huge",
+    });
+    // ① Structured capacity error.
+    expect("error" in r).toBe(true);
+    if ("error" in r) expect(r.error).toContain("capacity");
+
+    // ② Nothing persisted: the oversized result never reached the store.
+    const target = await readScratchpadRecords("s", "huge");
+    expect("error" in target).toBe(true);
   });
 });

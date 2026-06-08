@@ -6,7 +6,8 @@
 
 import { sendToOffscreen } from "../../background/offscreen-manager";
 import { readScratchpad, writeScratchpad } from "./store";
-import { appendRecords } from "./operations";
+import { appendRecords, estimateBytes } from "./operations";
+import { MAX_SCRATCHPAD_BYTES } from "./service";
 
 interface SqlRunResult { columns: string[]; rows: Array<Record<string, unknown>> }
 
@@ -52,6 +53,15 @@ export async function queryScratchpad(
     const cleared = { ...pad, collections: { ...pad.collections } };
     delete cleared.collections[args.into];
     const next = appendRecords(cleared, args.into, result.rows, {});
+    // Re-check the per-session budget BEFORE persisting: SQL can amplify rows
+    // (e.g. a self cross-join turns N rows into N²), so `into` write-back is a
+    // path that could otherwise blow past the cap that service.saveRecords
+    // enforces. Reject without persisting (S4 capacity invariant).
+    if (estimateBytes(next.pad) > MAX_SCRATCHPAD_BYTES) {
+      return {
+        error: `scratchpad capacity exceeded (${MAX_SCRATCHPAD_BYTES / 1024 / 1024}MB/session) — query result too large to store into "${args.into}".`,
+      };
+    }
     await writeScratchpad(next.pad);
     return { rows: result.rows.length, columns: result.columns, preview: result.rows.slice(0, PREVIEW_ROWS), into: args.into };
   }
