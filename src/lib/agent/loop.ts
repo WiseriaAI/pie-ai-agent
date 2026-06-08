@@ -39,6 +39,7 @@ import {
   clearScratchpadCollections as svcClearScratchpad,
   getOverview as svcGetOverview,
 } from "../scratchpad/service";
+import { queryScratchpad as svcQueryScratchpad } from "../scratchpad/sql-bridge";
 import { getEnabledSkillPackages } from "../skills";
 import { isFilePdfUrl } from "../pdf/detect";
 import {
@@ -1499,6 +1500,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         updateNotes: (notes) => svcUpdateNotes(sessionId, notes),
         readRecords: (collection, opts) => svcReadRecords(sessionId, collection, opts),
         clearScratchpad: (collection) => svcClearScratchpad(sessionId, collection),
+        queryScratchpad: (args) => svcQueryScratchpad(sessionId, args),
       });
       const allTools = filterToolsByVision(
         [...BUILT_IN_TOOLS, ...mouseTools, ...keyboardTools, ...editorTools, requestLocalFileTool, outputFileTool, ...scratchpadTools],

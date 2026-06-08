@@ -12,6 +12,7 @@ function build(overrides: Partial<ScratchpadToolDeps> = {}) {
     updateNotes: async (...a) => { (calls.notes ??= []).push(a); },
     readRecords: async () => ({ records: [{ x: 1 }], total: 1, offset: 0, limit: 50 }),
     clearScratchpad: async (...a) => { (calls.clear ??= []).push(a); },
+    queryScratchpad: async () => ({ rows: 2, columns: ["url"], preview: [{ url: "a" }, { url: "b" }] }),
     ...overrides,
   };
   const tools = buildScratchpadTools(deps);
@@ -20,10 +21,10 @@ function build(overrides: Partial<ScratchpadToolDeps> = {}) {
 }
 
 describe("scratchpad tools", () => {
-  it("exposes exactly the 4 phase-1 tools", () => {
+  it("exposes exactly the 5 tools", () => {
     const { tools } = build();
     expect(tools.map((t) => t.name).sort()).toEqual(
-      ["clear_scratchpad", "read_records", "save_records", "update_notes"],
+      ["clear_scratchpad", "query_scratchpad", "read_records", "save_records", "update_notes"],
     );
   });
 
@@ -120,5 +121,15 @@ describe("scratchpad tools", () => {
     const r = await byName.clear_scratchpad.handler({}, ctx);
     expect(r.success).toBe(true);
     expect(calls.clear?.[0]).toEqual([undefined]);
+  });
+
+  it("query_scratchpad validates from/sql and returns summary", async () => {
+    const { byName } = build();
+    const bad = await byName.query_scratchpad.handler({ from: "p" }, ctx);
+    expect(bad.success).toBe(false);
+    const ok = await byName.query_scratchpad.handler({ from: "p", sql: "SELECT 1" }, ctx);
+    expect(ok.success).toBe(true);
+    expect(ok.observation).toMatch(/2 row/);
+    expect(ok.observation).toContain("<untrusted_scratchpad_preview>");
   });
 });

@@ -22,6 +22,8 @@ export interface ScratchpadToolDeps {
     opts: { offset?: number; limit?: number; query?: string },
   ) => Promise<ReadResult | { error: string }>;
   clearScratchpad: (collection?: string) => Promise<void>;
+  queryScratchpad: (args: { from: string; sql: string; into?: string }) =>
+    Promise<{ rows: number; columns: string[]; preview: Array<Record<string, unknown>>; into?: string } | { error: string }>;
 }
 
 interface SaveArgs {
@@ -137,5 +139,34 @@ export function buildScratchpadTools(deps: ScratchpadToolDeps): Tool[] {
     },
   };
 
-  return [saveRecords, updateNotes, readRecordsTool, clearScratchpadTool];
+  const queryScratchpadTool: Tool = {
+    name: "query_scratchpad",
+    description:
+      "Run SQL over a scratchpad collection to clean/dedupe/aggregate/transform — runs in a sandboxed SQLite engine, the data never re-enters your context. The collection is loaded as a table named after `from` (nested fields become JSON text). Omit `into` to get a result summary; pass `into` to write the result set back as a new collection (then export it with output_file).",
+    parameters: {
+      type: "object",
+      properties: {
+        from: { type: "string", description: "Source collection, loaded as a SQL table of the same name." },
+        sql: { type: "string", description: "SQL to run, e.g. SELECT DISTINCT url, price FROM products WHERE price > 0." },
+        into: { type: "string", description: "Optional target collection to store the result set." },
+      },
+      required: ["from", "sql"],
+      additionalProperties: false,
+    },
+    handler: async (args: unknown, _ctx: ToolHandlerContext): Promise<ActionResult> => {
+      const a = (args ?? {}) as { from?: string; sql?: string; into?: string };
+      if (typeof a.from !== "string" || !a.from.trim()) return { success: false, error: "from is required (string)" };
+      if (typeof a.sql !== "string" || !a.sql.trim()) return { success: false, error: "sql is required (string)" };
+      const res = await deps.queryScratchpad({ from: a.from, sql: a.sql, into: a.into });
+      if ("error" in res) return { success: false, error: res.error };
+      const previewJson = escapeUntrustedWrappers(JSON.stringify(res.preview));
+      const dest = res.into ? ` written to "${res.into}"` : "";
+      return {
+        success: true,
+        observation: `Query returned ${res.rows} row(s)${dest}. Preview: <untrusted_scratchpad_preview>${previewJson}</untrusted_scratchpad_preview>`,
+      };
+    },
+  };
+
+  return [saveRecords, updateNotes, readRecordsTool, clearScratchpadTool, queryScratchpadTool];
 }
