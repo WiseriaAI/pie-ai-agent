@@ -5,3 +5,7 @@ export {
   parseOrigin,
   type PageAtlasStore,
 } from "./state";
+export {
+  createPageAtlasTargetTools,
+  type PageAtlasTargetToolDeps,
+} from "./target-tools";
