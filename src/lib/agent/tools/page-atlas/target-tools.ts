@@ -1,7 +1,7 @@
 import type { ActionResult } from "../../../dom-actions/types";
 import type { Tool, ToolHandlerContext } from "../../types";
 import { escapeUntrustedWrappers } from "../../untrusted-wrappers";
-import { pageAtlasStore, type PageAtlasStore } from "./state";
+import { pageAtlasStore, parseOrigin, type PageAtlasStore } from "./state";
 import type { AtlasRecord, AtlasTarget, AtlasTargetType, PageAtlasState } from "./types";
 
 type GetTabUrl = (tabId: number) => Promise<string | undefined>;
@@ -34,6 +34,8 @@ interface ExtractRecordsArgs {
 }
 
 const READ_PAGE_FIRST = 'Call read_page({mode:"atlas"}) first, then use atlas_id and target_id from that atlas.';
+const INVALID_RANGE = "invalid_range: expected range like 0..10";
+const ALL_TARGET_TYPES: AtlasTargetType[] = ["collection", "table", "detail_region", "region"];
 
 function xml(value: unknown): string {
   return escapeUntrustedWrappers(String(value ?? ""))
@@ -70,26 +72,33 @@ function normalizeMode(value: unknown): TargetMode {
   return value === "text" ? "text" : "summary";
 }
 
-function parseRange(value: unknown, recordCount: number): { start: number; end: number } {
-  if (typeof value !== "string") return { start: 0, end: recordCount };
+type ParsedRange =
+  | { ok: true; start: number; end: number }
+  | { ok: false; error: string };
+
+function parseRange(value: unknown, recordCount: number): ParsedRange {
+  if (value === undefined || value === null) return { ok: true, start: 0, end: recordCount };
+  if (typeof value !== "string") return { ok: false, error: INVALID_RANGE };
   const match = value.trim().match(/^(\d+)\.\.(\d+)$/);
-  if (!match) return { start: 0, end: recordCount };
+  if (!match) return { ok: false, error: INVALID_RANGE };
 
   const start = Number(match[1]);
   const end = Number(match[2]);
   if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start > end) {
-    return { start: 0, end: recordCount };
+    return { ok: false, error: INVALID_RANGE };
   }
   return {
+    ok: true,
     start: Math.min(start, recordCount),
     end: Math.min(end, recordCount),
   };
 }
 
-function selectedRecords(records: AtlasRecord[] | undefined, range: unknown): AtlasRecord[] {
+function selectedRecords(records: AtlasRecord[] | undefined, range: unknown): { ok: true; records: AtlasRecord[] } | { ok: false; error: string } {
   const all = records ?? [];
-  const { start, end } = parseRange(range, all.length);
-  return all.slice(start, end);
+  const rangeResult = parseRange(range, all.length);
+  if (!rangeResult.ok) return rangeResult;
+  return { ok: true, records: all.slice(rangeResult.start, rangeResult.end) };
 }
 
 function searchableText(target: AtlasTarget): string {
@@ -117,6 +126,14 @@ async function defaultGetTabUrl(tabId: number): Promise<string | undefined> {
   return tab.url;
 }
 
+async function getCurrentUrl(getTabUrl: GetTabUrl, tabId: number): Promise<string | undefined> {
+  try {
+    return await getTabUrl(tabId);
+  } catch {
+    return undefined;
+  }
+}
+
 async function resolveTarget(
   store: PageAtlasStore,
   getTabUrl: GetTabUrl,
@@ -125,7 +142,7 @@ async function resolveTarget(
   targetId: string,
   allowedTypes: AtlasTargetType[],
 ): Promise<{ ok: true; atlas: PageAtlasState; target: AtlasTarget } | { ok: false; error: string }> {
-  const currentUrl = await getTabUrl(ctx.tabId);
+  const currentUrl = await getCurrentUrl(getTabUrl, ctx.tabId);
   if (!currentUrl) {
     return { ok: false, error: READ_PAGE_FIRST };
   }
@@ -141,6 +158,50 @@ async function resolveTarget(
 
   if (!result.ok) return { ok: false, error: result.message };
   return result;
+}
+
+async function resolveAtlasForSearch(
+  store: PageAtlasStore,
+  getTabUrl: GetTabUrl,
+  ctx: ToolHandlerContext,
+  atlasId: string,
+): Promise<{ ok: true; atlas: PageAtlasState } | { ok: false; error: string }> {
+  const atlas = store.get(atlasId);
+  if (!atlas) return { ok: false, error: READ_PAGE_FIRST };
+
+  const firstTarget = atlas.targets[0];
+  if (firstTarget) {
+    const resolved = await resolveTarget(store, getTabUrl, ctx, atlasId, firstTarget.id, ALL_TARGET_TYPES);
+    if (!resolved.ok) return { ok: false, error: resolved.error };
+    return { ok: true, atlas: resolved.atlas };
+  }
+
+  const currentUrl = await getCurrentUrl(getTabUrl, ctx.tabId);
+  if (!currentUrl) return { ok: false, error: READ_PAGE_FIRST };
+  if (atlas.tabId !== ctx.tabId) {
+    return { ok: false, error: `atlas ${atlas.atlasId} belongs to tab ${atlas.tabId}, not tab ${ctx.tabId}. ${READ_PAGE_FIRST}` };
+  }
+
+  const currentOrigin = parseOrigin(currentUrl);
+  if (
+    currentOrigin !== atlas.origin
+    || ((currentOrigin === null || atlas.origin === null) && currentUrl !== atlas.url)
+  ) {
+    return {
+      ok: false,
+      error: 'The page origin changed since the atlas was created. Call read_page({mode:"atlas"}) again.',
+    };
+  }
+
+  return { ok: true, atlas };
+}
+
+function wrapUntrustedPageContent(tool: string, atlasId: string, targetId: string, body: string): string {
+  return (
+    `<untrusted_page_content ${attr("atlas_id", atlasId)} ${attr("target_id", targetId)} ${attr("tool", tool)}>` +
+    `${body}` +
+    "</untrusted_page_content>"
+  );
 }
 
 function renderRecords(tagName: string, atlasId: string, target: AtlasTarget, records: AtlasRecord[]): string {
@@ -163,7 +224,7 @@ function schemaKeys(schema: unknown): string[] | null {
   return Object.keys(schema as Record<string, unknown>);
 }
 
-function renderExtractedRecords(target: AtlasTarget, records: AtlasRecord[], keys: string[]): string {
+function renderExtractedRecords(records: AtlasRecord[], keys: string[]): string {
   const extracted = records.map((record) => {
     const row: Record<string, string> = {};
     for (const key of keys) {
@@ -172,7 +233,7 @@ function renderExtractedRecords(target: AtlasTarget, records: AtlasRecord[], key
     row._evidence = escapeUntrustedWrappers(record.evidence);
     return row;
   });
-  return JSON.stringify(extracted);
+  return xml(JSON.stringify(extracted));
 }
 
 export function createPageAtlasTargetTools(deps: PageAtlasTargetToolDeps = {}): Tool[] {
@@ -194,23 +255,23 @@ export function createPageAtlasTargetTools(deps: PageAtlasTargetToolDeps = {}): 
       required: ["atlas_id", "query"],
       additionalProperties: false,
     },
-    handler: async (args: unknown): Promise<ActionResult> => {
+    handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
       const a = (args ?? {}) as FindTargetArgs;
       if (!isNonEmptyString(a.atlas_id) || !isNonEmptyString(a.query)) {
         return fail(`find_target requires atlas_id and query. ${READ_PAGE_FIRST}`);
       }
 
-      const atlas = store.get(a.atlas_id);
-      if (!atlas) return fail(READ_PAGE_FIRST);
+      const resolved = await resolveAtlasForSearch(store, getTabUrl, ctx, a.atlas_id);
+      if (!resolved.ok) return fail(resolved.error);
 
       const kind = normalizeKind(a.kind);
       const query = a.query.trim();
-      const candidates = atlas.targets
+      const candidates = resolved.atlas.targets
         .filter((target) => (!kind || target.type === kind) && searchableText(target).includes(query.toLowerCase()))
         .slice(0, 20);
 
       const lines = [
-        `<target_candidates ${attr("atlas_id", atlas.atlasId)} ${attr("query", query)} ${attr("count", candidates.length)}>`,
+        `<target_candidates ${attr("atlas_id", resolved.atlas.atlasId)} ${attr("query", query)} ${attr("count", candidates.length)}>`,
       ];
       for (const target of candidates) {
         lines.push(
@@ -243,7 +304,14 @@ export function createPageAtlasTargetTools(deps: PageAtlasTargetToolDeps = {}): 
       }
       const resolved = await resolveTarget(store, getTabUrl, ctx, a.atlas_id, a.target_id, ["collection"]);
       if (!resolved.ok) return fail(resolved.error);
-      return ok(renderRecords("collection_records", resolved.atlas.atlasId, resolved.target, selectedRecords(resolved.target.records, a.range)));
+      const selected = selectedRecords(resolved.target.records, a.range);
+      if (!selected.ok) return fail(selected.error);
+      return ok(wrapUntrustedPageContent(
+        "read_collection",
+        resolved.atlas.atlasId,
+        resolved.target.id,
+        renderRecords("collection_records", resolved.atlas.atlasId, resolved.target, selected.records),
+      ));
     },
   };
 
@@ -268,7 +336,14 @@ export function createPageAtlasTargetTools(deps: PageAtlasTargetToolDeps = {}): 
       }
       const resolved = await resolveTarget(store, getTabUrl, ctx, a.atlas_id, a.target_id, ["table"]);
       if (!resolved.ok) return fail(resolved.error);
-      return ok(renderRecords("table_records", resolved.atlas.atlasId, resolved.target, selectedRecords(resolved.target.records, a.range)));
+      const selected = selectedRecords(resolved.target.records, a.range);
+      if (!selected.ok) return fail(selected.error);
+      return ok(wrapUntrustedPageContent(
+        "read_table",
+        resolved.atlas.atlasId,
+        resolved.target.id,
+        renderRecords("table_records", resolved.atlas.atlasId, resolved.target, selected.records),
+      ));
     },
   };
 
@@ -295,11 +370,21 @@ export function createPageAtlasTargetTools(deps: PageAtlasTargetToolDeps = {}): 
       if (!resolved.ok) return fail(resolved.error);
       const mode = normalizeMode(a.mode);
       if (mode === "summary") {
-        return ok(
+        return ok(wrapUntrustedPageContent(
+          "read_target",
+          resolved.atlas.atlasId,
+          resolved.target.id,
           `<target_summary ${attr("atlas_id", resolved.atlas.atlasId)} ${attr("target_id", resolved.target.id)} ${attr("type", resolved.target.type)} ${attr("label", resolved.target.label)}>${xml(resolved.target.summary)}</target_summary>`,
-        );
+        ));
       }
-      return ok(renderRecords("target_text", resolved.atlas.atlasId, resolved.target, selectedRecords(resolved.target.records, undefined)));
+      const selected = selectedRecords(resolved.target.records, undefined);
+      if (!selected.ok) return fail(selected.error);
+      return ok(wrapUntrustedPageContent(
+        "read_target",
+        resolved.atlas.atlasId,
+        resolved.target.id,
+        renderRecords("target_text", resolved.atlas.atlasId, resolved.target, selected.records),
+      ));
     },
   };
 
@@ -330,7 +415,14 @@ export function createPageAtlasTargetTools(deps: PageAtlasTargetToolDeps = {}): 
         "detail_region",
       ]);
       if (!resolved.ok) return fail(resolved.error);
-      return ok(renderExtractedRecords(resolved.target, selectedRecords(resolved.target.records, a.range), keys));
+      const selected = selectedRecords(resolved.target.records, a.range);
+      if (!selected.ok) return fail(selected.error);
+      return ok(wrapUntrustedPageContent(
+        "extract_records",
+        resolved.atlas.atlasId,
+        resolved.target.id,
+        renderExtractedRecords(selected.records, keys),
+      ));
     },
   };
 
