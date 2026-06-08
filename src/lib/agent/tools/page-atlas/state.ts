@@ -1,4 +1,5 @@
 import type {
+  AtlasFingerprint,
   AtlasTargetType,
   PageAtlasState,
   ResolveTargetArgs,
@@ -21,6 +22,25 @@ export function parseOrigin(url: string): string | null {
   } catch {
     return null;
   }
+}
+
+function comparableUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    parsed.hash = "";
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
+
+function fingerprintsMatch(expected: AtlasFingerprint, actual: AtlasFingerprint): boolean {
+  return (
+    comparableUrl(expected.url) === comparableUrl(actual.url)
+    && expected.bodyTextLengthBucket === actual.bodyTextLengthBucket
+    && expected.interactiveCountBucket === actual.interactiveCountBucket
+    && expected.topSectionCount === actual.topSectionCount
+  );
 }
 
 export function createPageAtlasStore(
@@ -82,6 +102,22 @@ export function createPageAtlasStore(
           ok: false,
           reason: "origin_changed",
           message: 'The page origin changed since the atlas was created. Call read_page({mode:"atlas"}) again.',
+        };
+      }
+
+      if (comparableUrl(args.currentUrl) !== comparableUrl(atlas.url)) {
+        return {
+          ok: false,
+          reason: "page_changed",
+          message: 'The page URL changed since the atlas was created. Call read_page({mode:"atlas"}) again.',
+        };
+      }
+
+      if (args.currentFingerprint && !fingerprintsMatch(atlas.fingerprint, args.currentFingerprint)) {
+        return {
+          ok: false,
+          reason: "page_changed",
+          message: 'The page structure changed since the atlas was created. Call read_page({mode:"atlas"}) again.',
         };
       }
 

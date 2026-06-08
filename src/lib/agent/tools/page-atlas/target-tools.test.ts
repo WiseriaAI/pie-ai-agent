@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPageAtlasStore, type PageAtlasStore } from "./state";
-import { createPageAtlasTargetTools } from "./target-tools";
+import { createPageAtlasTargetTools, type PageAtlasTargetToolDeps } from "./target-tools";
 import type { PageAtlasState } from "./types";
 
 const ctx = { tabId: 7 };
@@ -103,6 +103,17 @@ function toolsFor(store: PageAtlasStore, currentUrl = "https://example.com/produ
   const tools = createPageAtlasTargetTools({
     store,
     getTabUrl: vi.fn(async () => currentUrl),
+  });
+  return Object.fromEntries(tools.map((tool) => [tool.name, tool]));
+}
+
+function toolsForPageState(
+  store: PageAtlasStore,
+  pageState: PageAtlasTargetToolDeps["getPageState"],
+) {
+  const tools = createPageAtlasTargetTools({
+    store,
+    getPageState: pageState,
   });
   return Object.fromEntries(tools.map((tool) => [tool.name, tool]));
 }
@@ -321,6 +332,27 @@ describe("page atlas target tools", () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toContain("read_page");
+  });
+
+  it("fails closed when the current page fingerprint drifts", async () => {
+    const tools = toolsForPageState(store, vi.fn(async () => ({
+      url: "https://example.com/products",
+      fingerprint: {
+        url: "https://example.com/products",
+        title: "Products",
+        bodyTextLengthBucket: 11,
+        interactiveCountBucket: 5,
+        topSectionCount: 2,
+      },
+    })));
+
+    const result = await tools.read_collection.handler(
+      { atlas_id: "atlas_1", target_id: "collection_c1" },
+      ctx,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe('The page structure changed since the atlas was created. Call read_page({mode:"atlas"}) again.');
   });
 
   it("find_target fails closed when the current tab origin drifts", async () => {

@@ -131,10 +131,11 @@ describe("read_page tool", () => {
     const result = await readPageTool.handler({ tabId: 7, mode: "atlas" }, {} as any);
 
     expect(result.success).toBe(true);
+    expect(result.observation).toContain('<untrusted_page_content');
+    expect(result.observation).toContain('mode="atlas"');
     expect(result.observation).toContain("<page_atlas");
     expect(result.observation).toContain("collection_c1");
     expect(result.observation).toContain("extract_records");
-    expect(result.observation).not.toContain("<untrusted_page_content");
     const atlasId = result.observation!.match(/atlas_id="([^"]+)"/)?.[1];
     expect(atlasId).toBeTruthy();
     const stored = pageAtlasStore.get(atlasId!);
@@ -146,6 +147,43 @@ describe("read_page tool", () => {
     expect(calls[0][0].func).toBe(probePageInjected);
     expect(calls[0][0].target).toEqual({ tabId: 7, allFrames: true });
     expect(calls[0][0].args).toEqual([{ op: "atlas" }]);
+  });
+
+  it("mode=atlas namespaces non-top-frame target and control ids", async () => {
+    const childAtlas = atlasProbe();
+    childAtlas.controls[0] = { ...childAtlas.controls[0], label: "Child load more" };
+    childAtlas.targets[0] = { ...childAtlas.targets[0], label: "Child products" };
+    const executeScript = vi.fn().mockResolvedValue([
+      { frameId: 0, result: atlasProbe() },
+      { frameId: 3, result: childAtlas },
+    ]);
+    vi.stubGlobal("chrome", {
+      tabs: {
+        get: vi.fn().mockResolvedValue({
+          id: 7,
+          url: "https://example.com/products",
+          title: "Products",
+          discarded: false,
+        }),
+      },
+      scripting: { executeScript },
+      webNavigation: {
+        getAllFrames: vi.fn().mockResolvedValue([
+          { frameId: 0, url: "https://example.com/products" },
+          { frameId: 3, url: "https://example.com/embed" },
+        ]),
+      },
+    });
+
+    const result = await readPageTool.handler({ tabId: 7, mode: "atlas" }, {} as any);
+
+    expect(result.success).toBe(true);
+    expect(result.observation).toContain('target_id="f3_collection_c1"');
+    expect(result.observation).toContain('id="f3_ctrl_4"');
+    const atlasId = result.observation!.match(/atlas_id="([^"]+)"/)?.[1];
+    const stored = pageAtlasStore.get(atlasId!);
+    expect(stored?.targets.map((target) => target.id)).toEqual(["collection_c1", "f3_collection_c1"]);
+    expect(stored?.controls.map((control) => control.id)).toEqual(["ctrl_4", "f3_ctrl_4"]);
   });
 
   it("mode=atlas escapes hostile atlas strings as XML-like output", async () => {
@@ -191,7 +229,7 @@ describe("read_page tool", () => {
     expect(result.observation).toContain(`<column>A &amp; B</column>`);
     expect(result.observation).toContain(`Summary &amp;lt;/untrusted_page_content&amp;gt; &amp; more`);
     expect(result.observation).not.toContain("<x>");
-    expect(result.observation).not.toContain("</untrusted_page_content>");
+    expect(result.observation?.match(/<\/untrusted_page_content>/g)).toHaveLength(1);
   });
 
   it("cross-origin frame 加 cross_origin=true 标记", async () => {

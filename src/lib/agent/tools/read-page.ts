@@ -54,6 +54,43 @@ function elementText(value: string): string {
   return escapeWrapperAttribute(escapeUntrustedWrappers(value));
 }
 
+function wrapPageAtlasObservation(atlas: PageAtlasState, body: string): string {
+  return [
+    `<untrusted_page_content ${attr("tool", "read_page")} ${attr("mode", "atlas")} ${attr("atlas_id", atlas.atlasId)} ${attr("tab_id", atlas.tabId)}>`,
+    body,
+    "</untrusted_page_content>",
+  ].join("\n");
+}
+
+function frameScopedId(frameId: number, id: string): string {
+  return frameId === 0 ? id : `f${frameId}_${id}`;
+}
+
+function namespaceAtlasResult(data: Extract<ProbeResult, { op: "atlas" }>, frameId: number) {
+  return {
+    targets: data.targets.map((target) => ({
+      ...target,
+      id: frameScopedId(frameId, target.id),
+      frameId,
+      records: target.records?.map((record) => ({
+        ...record,
+        id: frameScopedId(frameId, record.id),
+      })),
+    })),
+    controls: data.controls.map((control) => ({
+      ...control,
+      id: frameScopedId(frameId, control.id),
+      frameId,
+    })),
+    forms: data.forms.map((form) => ({
+      ...form,
+      id: frameScopedId(frameId, form.id),
+      frameId,
+      submitControlId: form.submitControlId ? frameScopedId(frameId, form.submitControlId) : undefined,
+    })),
+  };
+}
+
 type SnapshotResult = Extract<ProbeResult, { op: "snapshot" }>;
 
 function interactivePriority(el: SnapshotResult["interactiveElements"][number]): number {
@@ -229,13 +266,14 @@ export const readPageTool: Tool = {
         const data = result.result;
         if (data?.op !== "atlas") continue;
         const frameId = result.frameId;
-        atlas.targets.push(...data.targets.map((target) => ({ ...target, frameId })));
-        atlas.controls.push(...data.controls.map((control) => ({ ...control, frameId })));
-        atlas.forms.push(...data.forms.map((form) => ({ ...form, frameId })));
+        const scoped = namespaceAtlasResult(data, frameId);
+        atlas.targets.push(...scoped.targets);
+        atlas.controls.push(...scoped.controls);
+        atlas.forms.push(...scoped.forms);
       }
 
       pageAtlasStore.save(atlas);
-      return { success: true, observation: renderPageAtlas(atlas) };
+      return { success: true, observation: wrapPageAtlasObservation(atlas, renderPageAtlas(atlas)) };
     }
 
     let results: chrome.scripting.InjectionResult<ProbeResult>[];

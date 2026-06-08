@@ -91,6 +91,7 @@ export type PageAtlasResolveFailureReason =
   | "tab_mismatch"
   | "atlas_expired"
   | "origin_changed"
+  | "page_changed"
   | "target_not_found"
   | "unsupported_target_type";
 
@@ -99,6 +100,7 @@ export interface ResolveTargetArgs {
   targetId: string;
   tabId: number;
   currentUrl: string;
+  currentFingerprint?: AtlasFingerprint;
   allowedTypes: AtlasTargetType[];
   now: number;
 }

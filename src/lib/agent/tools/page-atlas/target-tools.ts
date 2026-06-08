@@ -1,14 +1,17 @@
 import type { ActionResult } from "../../../dom-actions/types";
+import { probePageInjected, type ProbeResult } from "../../../dom-actions/probe-core";
 import type { Tool, ToolHandlerContext } from "../../types";
 import { escapeUntrustedWrappers } from "../../untrusted-wrappers";
 import { pageAtlasStore, type PageAtlasStore } from "./state";
-import type { AtlasRecord, AtlasTarget, AtlasTargetType, PageAtlasState } from "./types";
+import type { AtlasFingerprint, AtlasRecord, AtlasTarget, AtlasTargetType, PageAtlasState } from "./types";
 
 type GetTabUrl = (tabId: number) => Promise<string | undefined>;
+type GetPageState = (tabId: number) => Promise<{ url?: string; fingerprint?: AtlasFingerprint }>;
 
 export interface PageAtlasTargetToolDeps {
   store?: PageAtlasStore;
   getTabUrl?: GetTabUrl;
+  getPageState?: GetPageState;
 }
 
 type TargetMode = "summary" | "text";
@@ -121,28 +124,50 @@ function matchReason(target: AtlasTarget, query: string): string {
   return `target metadata matches ${query}`;
 }
 
-async function defaultGetTabUrl(tabId: number): Promise<string | undefined> {
+async function defaultGetPageState(tabId: number): Promise<{ url?: string; fingerprint?: AtlasFingerprint }> {
   const tab = await chrome.tabs.get(tabId);
-  return tab.url;
+  let fingerprint: AtlasFingerprint | undefined;
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId, frameIds: [0] },
+      func: probePageInjected,
+      args: [{ op: "atlas" }],
+    }) as chrome.scripting.InjectionResult<ProbeResult>[];
+    const result = results[0]?.result;
+    if (result?.op === "atlas") {
+      fingerprint = result.fingerprint;
+    }
+  } catch {
+    // URL freshness still protects cross-page target reuse when probing fails.
+  }
+  return { url: tab.url, fingerprint };
 }
 
-async function getCurrentUrl(getTabUrl: GetTabUrl, tabId: number): Promise<string | undefined> {
+function pageStateGetter(deps: PageAtlasTargetToolDeps): GetPageState {
+  if (deps.getPageState) return deps.getPageState;
+  if (deps.getTabUrl) {
+    return async (tabId) => ({ url: await deps.getTabUrl!(tabId) });
+  }
+  return defaultGetPageState;
+}
+
+async function getCurrentPageState(getPageState: GetPageState, tabId: number): Promise<{ url?: string; fingerprint?: AtlasFingerprint }> {
   try {
-    return await getTabUrl(tabId);
+    return await getPageState(tabId);
   } catch {
-    return undefined;
+    return {};
   }
 }
 
 async function resolveTarget(
   store: PageAtlasStore,
-  getTabUrl: GetTabUrl,
+  getPageState: GetPageState,
   ctx: ToolHandlerContext,
   atlasId: string,
   targetId: string,
   allowedTypes: AtlasTargetType[],
 ): Promise<{ ok: true; atlas: PageAtlasState; target: AtlasTarget } | { ok: false; error: string }> {
-  const currentUrl = await getCurrentUrl(getTabUrl, ctx.tabId);
+  const { url: currentUrl, fingerprint: currentFingerprint } = await getCurrentPageState(getPageState, ctx.tabId);
   if (!currentUrl) {
     return { ok: false, error: READ_PAGE_FIRST };
   }
@@ -152,6 +177,7 @@ async function resolveTarget(
     targetId,
     tabId: ctx.tabId,
     currentUrl,
+    currentFingerprint,
     allowedTypes,
     now: Date.now(),
   });
@@ -162,7 +188,7 @@ async function resolveTarget(
 
 async function resolveAtlasForSearch(
   store: PageAtlasStore,
-  getTabUrl: GetTabUrl,
+  getPageState: GetPageState,
   ctx: ToolHandlerContext,
   atlasId: string,
 ): Promise<{ ok: true; atlas: PageAtlasState } | { ok: false; error: string }> {
@@ -171,18 +197,19 @@ async function resolveAtlasForSearch(
 
   const firstTarget = atlas.targets[0];
   if (firstTarget) {
-    const resolved = await resolveTarget(store, getTabUrl, ctx, atlasId, firstTarget.id, ALL_TARGET_TYPES);
+    const resolved = await resolveTarget(store, getPageState, ctx, atlasId, firstTarget.id, ALL_TARGET_TYPES);
     if (!resolved.ok) return { ok: false, error: resolved.error };
     return { ok: true, atlas: resolved.atlas };
   }
 
-  const currentUrl = await getCurrentUrl(getTabUrl, ctx.tabId);
+  const { url: currentUrl, fingerprint: currentFingerprint } = await getCurrentPageState(getPageState, ctx.tabId);
   if (!currentUrl) return { ok: false, error: READ_PAGE_FIRST };
   const result = store.resolveTarget({
     atlasId,
     targetId: "__atlas_freshness_probe__",
     tabId: ctx.tabId,
     currentUrl,
+    currentFingerprint,
     allowedTypes: ALL_TARGET_TYPES,
     now: Date.now(),
   });
@@ -235,7 +262,7 @@ function renderExtractedRecords(records: AtlasRecord[], keys: string[]): string 
 
 export function createPageAtlasTargetTools(deps: PageAtlasTargetToolDeps = {}): Tool[] {
   const store = deps.store ?? pageAtlasStore;
-  const getTabUrl = deps.getTabUrl ?? defaultGetTabUrl;
+  const getPageState = pageStateGetter(deps);
 
   const findTargetTool: Tool = {
     name: "find_target",
@@ -258,7 +285,7 @@ export function createPageAtlasTargetTools(deps: PageAtlasTargetToolDeps = {}): 
         return fail(`find_target requires atlas_id and query. ${READ_PAGE_FIRST}`);
       }
 
-      const resolved = await resolveAtlasForSearch(store, getTabUrl, ctx, a.atlas_id);
+      const resolved = await resolveAtlasForSearch(store, getPageState, ctx, a.atlas_id);
       if (!resolved.ok) return fail(resolved.error);
 
       const kind = normalizeKind(a.kind);
@@ -304,7 +331,7 @@ export function createPageAtlasTargetTools(deps: PageAtlasTargetToolDeps = {}): 
       if (!isNonEmptyString(a.atlas_id) || !isNonEmptyString(a.target_id)) {
         return fail(`read_collection requires atlas_id and target_id. ${READ_PAGE_FIRST}`);
       }
-      const resolved = await resolveTarget(store, getTabUrl, ctx, a.atlas_id, a.target_id, ["collection"]);
+      const resolved = await resolveTarget(store, getPageState, ctx, a.atlas_id, a.target_id, ["collection"]);
       if (!resolved.ok) return fail(resolved.error);
       const selected = selectedRecords(resolved.target.records, a.range);
       if (!selected.ok) return fail(selected.error);
@@ -336,7 +363,7 @@ export function createPageAtlasTargetTools(deps: PageAtlasTargetToolDeps = {}): 
       if (!isNonEmptyString(a.atlas_id) || !isNonEmptyString(a.target_id)) {
         return fail(`read_table requires atlas_id and target_id. ${READ_PAGE_FIRST}`);
       }
-      const resolved = await resolveTarget(store, getTabUrl, ctx, a.atlas_id, a.target_id, ["table"]);
+      const resolved = await resolveTarget(store, getPageState, ctx, a.atlas_id, a.target_id, ["table"]);
       if (!resolved.ok) return fail(resolved.error);
       const selected = selectedRecords(resolved.target.records, a.range);
       if (!selected.ok) return fail(selected.error);
@@ -368,7 +395,7 @@ export function createPageAtlasTargetTools(deps: PageAtlasTargetToolDeps = {}): 
       if (!isNonEmptyString(a.atlas_id) || !isNonEmptyString(a.target_id)) {
         return fail(`read_target requires atlas_id and target_id. ${READ_PAGE_FIRST}`);
       }
-      const resolved = await resolveTarget(store, getTabUrl, ctx, a.atlas_id, a.target_id, ["detail_region", "region"]);
+      const resolved = await resolveTarget(store, getPageState, ctx, a.atlas_id, a.target_id, ["detail_region", "region"]);
       if (!resolved.ok) return fail(resolved.error);
       const mode = normalizeMode(a.mode);
       if (mode === "summary") {
@@ -411,7 +438,7 @@ export function createPageAtlasTargetTools(deps: PageAtlasTargetToolDeps = {}): 
       if (!isNonEmptyString(a.atlas_id) || !isNonEmptyString(a.target_id) || !keys) {
         return fail(`extract_records requires atlas_id, target_id, and a schema object. ${READ_PAGE_FIRST}`);
       }
-      const resolved = await resolveTarget(store, getTabUrl, ctx, a.atlas_id, a.target_id, [
+      const resolved = await resolveTarget(store, getPageState, ctx, a.atlas_id, a.target_id, [
         "collection",
         "table",
         "detail_region",

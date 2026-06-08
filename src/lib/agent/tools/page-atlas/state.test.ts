@@ -97,7 +97,7 @@ describe("page atlas store", () => {
     const result = store.resolveTarget({
       atlasId: "atlas_1",
       tabId: 7,
-      currentUrl: "https://example.com/products?page=2",
+      currentUrl: "https://example.com/products#reviews",
       targetId: "collection_c1",
       allowedTypes: ["collection"],
       now: 1_500,
@@ -108,6 +108,53 @@ describe("page atlas store", () => {
       expect(result.target.id).toBe("collection_c1");
       expect(result.atlas.atlasId).toBe("atlas_1");
     }
+  });
+
+  it("fails closed when the current tab changes URL on the same origin", () => {
+    const store = createPageAtlasStore({ ttlMs: 5_000 });
+    store.save(atlas());
+
+    const result = store.resolveTarget({
+      atlasId: "atlas_1",
+      tabId: 7,
+      currentUrl: "https://example.com/checkout",
+      targetId: "collection_c1",
+      allowedTypes: ["collection"],
+      now: 1_500,
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      reason: "page_changed",
+      message: "The page URL changed since the atlas was created. Call read_page({mode:\"atlas\"}) again.",
+    });
+  });
+
+  it("fails closed when the current page fingerprint drifts", () => {
+    const store = createPageAtlasStore({ ttlMs: 5_000 });
+    store.save(atlas());
+
+    const result = store.resolveTarget({
+      atlasId: "atlas_1",
+      tabId: 7,
+      currentUrl: "https://example.com/products",
+      currentFingerprint: {
+        url: "https://example.com/products",
+        title: "Products",
+        bodyTextLengthBucket: 99,
+        interactiveCountBucket: 5,
+        topSectionCount: 2,
+      },
+      targetId: "collection_c1",
+      allowedTypes: ["collection"],
+      now: 1_500,
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      reason: "page_changed",
+      message: "The page structure changed since the atlas was created. Call read_page({mode:\"atlas\"}) again.",
+    });
   });
 
   it("returns the exact unsupported type message", () => {
