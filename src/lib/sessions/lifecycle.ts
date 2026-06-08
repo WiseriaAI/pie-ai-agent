@@ -41,6 +41,7 @@ import {
 } from "./storage";
 import { getSessionRecord } from "@/lib/idb/sessions-store";
 import { deleteSessionArtifacts } from "@/lib/files/output-store";
+import { deleteScratchpad } from "../scratchpad/store";
 
 // Re-export INDEX_KEY usage via the private helper we expose
 // (see storage.ts for readIndexRaw export added in M2-U4)
@@ -200,6 +201,7 @@ export async function hardDeleteSession(id: string): Promise<void> {
   // Clear any output_file artifacts for this session (covers a hard-delete that
   // skipped the archive step). Best-effort.
   await deleteSessionArtifacts(id).catch(() => {});
+  await deleteScratchpad(id).catch(() => {});
 }
 
 // ── hardDeleteExpired ─────────────────────────────────────────────────────────
