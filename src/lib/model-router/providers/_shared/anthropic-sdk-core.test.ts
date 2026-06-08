@@ -206,3 +206,32 @@ describe("anthropic-sdk thinking", () => {
     expect(body.messages[0].content[1]).toEqual({ type: "text", text: "ok" });
   });
 });
+
+describe("anthropic-sdk-core max_tokens 解析", () => {
+  function captureBody() {
+    let captured: any = null;
+    vi.spyOn(globalThis, "fetch").mockImplementation((_url: any, init: any) => {
+      captured = init?.body ? JSON.parse(init.body as string) : null;
+      return Promise.resolve(sse(TEXT_THEN_TOOL));
+    });
+    return { body: () => captured };
+  }
+
+  it("用户手填 maxTokens 优先", async () => {
+    const cap = captureBody();
+    await collect(streamChatAnthropicSdk(config({ maxTokens: 8000, maxOutputTokens: 384_000 }), [{ role: "user", content: "hi" }]));
+    expect(cap.body().max_tokens).toBe(8000);
+  });
+
+  it("无 maxTokens 时用模型 maxOutputTokens", async () => {
+    const cap = captureBody();
+    await collect(streamChatAnthropicSdk(config({ maxOutputTokens: 384_000 }), [{ role: "user", content: "hi" }]));
+    expect(cap.body().max_tokens).toBe(384_000);
+  });
+
+  it("两者都没有时退回兜底常量（不再是 4096）", async () => {
+    const cap = captureBody();
+    await collect(streamChatAnthropicSdk(config(), [{ role: "user", content: "hi" }]));
+    expect(cap.body().max_tokens).toBe(32_768);
+  });
+});

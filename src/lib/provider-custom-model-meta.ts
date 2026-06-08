@@ -13,6 +13,8 @@ export interface StoredCustomModelMeta {
   displayName?: string;
   vision: boolean;
   maxContextTokens: number;
+  /** anthropic-wire builtin 自定义模型的最大输出上限。见 ModelMeta.maxOutputTokens。 */
+  maxOutputTokens?: number;
 }
 
 export const DEFAULT_CUSTOM_MODEL_MAX_CONTEXT = 256_000;

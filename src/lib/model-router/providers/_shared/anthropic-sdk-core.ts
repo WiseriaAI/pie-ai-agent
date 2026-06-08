@@ -30,6 +30,14 @@ export interface AnthropicSdkHooks {
 
 const CACHE_CONTROL_EPHEMERAL = { type: "ephemeral" } as const;
 
+/**
+ * anthropic-wire 的 max_tokens 是必填字段（官方 SDK 类型 + API 强制）。当模型
+ * 既没有用户手填 maxTokens、registry 也没填 maxOutputTokens 时（当前仅 stepfun）
+ * 用此兜底。取值远大于历史的 4096（避免长思考被截断），又远小于已知 anthropic-wire
+ * 模型的最小真实输出上限 64K（不会越界 400）。模型一旦有官方真实值就走 maxOutputTokens。
+ */
+const ANTHROPIC_WIRE_FALLBACK_MAX_TOKENS = 32_768;
+
 function toSdkParams(messages: AgentMessage[]): {
   system: string | undefined;
   messages: Anthropic.MessageParam[];
@@ -142,7 +150,7 @@ export async function* streamChatAnthropicSdk(
     const stream = await client.messages.create(
       {
         model: config.model,
-        max_tokens: config.maxTokens ?? 4096,
+        max_tokens: config.maxTokens ?? config.maxOutputTokens ?? ANTHROPIC_WIRE_FALLBACK_MAX_TOKENS,
         stream: true,
         ...(system ? { system } : {}),
         messages: sdkMessages,

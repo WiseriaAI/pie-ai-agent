@@ -67,3 +67,15 @@ describe("provider-custom-model-meta", () => {
     });
   });
 });
+
+describe("pcmm maxOutputTokens 透传", () => {
+  it("存取 maxOutputTokens 字段", async () => {
+    await setProviderCustomModelMeta("deepseek", "my-custom-r1", {
+      vision: false,
+      maxContextTokens: 128_000,
+      maxOutputTokens: 32_000,
+    });
+    const got = await getProviderCustomModelMeta("deepseek", "my-custom-r1");
+    expect(got?.maxOutputTokens).toBe(32_000);
+  });
+});
