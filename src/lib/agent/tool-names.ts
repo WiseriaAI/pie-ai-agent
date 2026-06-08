@@ -97,9 +97,13 @@ export const LOCAL_FILE_TOOL_NAMES = [
 
 // Scratchpad tools — per-session durable memory for long-horizon extraction.
 //   save_records / update_notes / clear_scratchpad — write (mutate IDB state).
-//   read_records / query_scratchpad — read (observe stored data, no mutation).
-// Note: query_scratchpad (Phase 2 SQL) is registered here for classification
-// even though its Tool impl lands in a later task. The class is metadata only.
+//   read_records — read (observe stored data, no mutation).
+//   query_scratchpad — read FOR TAB-LOCK PURPOSES. It can mutate IDB state (its
+//     optional `into` arg writes the result set back as a collection), but the
+//     read/write class is only consumed by collectCrossSessionConflicts, which
+//     gates a cross-session *tab* lock. query_scratchpad takes no tab argument
+//     and can never conflict on a tab, so classing it `read` is deliberate
+//     (same rationale as the skill-meta IDB-write tools below).
 export const SCRATCHPAD_TOOL_NAMES = [
   "save_records",
   "update_notes",
@@ -223,6 +227,10 @@ export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
   update_notes: "write",
   read_records: "read",
   clear_scratchpad: "write",
+  // query_scratchpad can write IDB state via its optional `into` arg, but the
+  // class only gates the cross-session *tab* lock (collectCrossSessionConflicts).
+  // It has no tab target and can never conflict on a tab, so `read` is correct
+  // here — this is a tab-lock classification, not a "does it mutate" flag.
   query_scratchpad: "read",
 };
 
