@@ -1,4 +1,4 @@
-import type { AgentMessage, ContentBlock, ToolDefinition } from "../model-router/types";
+import type { AgentMessage, ContentBlock, ToolDefinition, StreamEvent } from "../model-router/types";
 import type { ModelConfig } from "../model-router";
 import type { ChatMessage } from "../model-router";
 import { streamChat } from "../model-router";
@@ -16,6 +16,7 @@ import {
 import type { Tool } from "./types";
 import { getToolClass, SCREENSHOT_TOOL_NAMES } from "./tool-names";
 import { escapeUntrustedWrappers } from "./untrusted-wrappers";
+import { classifyStreamCompletion } from "./stream-completion";
 import { buildAgentSystemPrompt, buildObservationMessage } from "./prompt";
 import { applySlidingWindow } from "./window";
 import { elideStaleObservations } from "./elide-stale-observations";
@@ -1529,6 +1530,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       });
       let __sawAnyEvent = false;
       let lastStepUsage: { inputTokens: number; outputTokens: number } | null = null;
+      let lastStopReason: Extract<StreamEvent, { type: "done" }>["stopReason"];
       for await (const event of streamChat(modelConfig, windowedHistory, signal, toolDefinitions)) {
         if (!__sawAnyEvent) {
           __sawAnyEvent = true;
@@ -1583,6 +1585,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             openToolCalls.delete(event.index);
           }
         } else if (event.type === "done") {
+          lastStopReason = event.stopReason;
           // Issue #59 — capture real provider-reported usage for the ring.
           // Stored to a local and applied after the stream finishes; abort
           // and error paths skip the apply.
@@ -1661,6 +1664,39 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // an aborted stream looks like "LLM ended cleanly" and finally
       // skips its done emit (because normalTextReply gates it).
       if (signal.aborted) return; // → finally with reason-based summary
+
+      // 截断兜底（factor 2）：max_tokens 触顶时不静默当作"任务完成"。
+      const completion = classifyStreamCompletion({
+        stopReason: lastStopReason,
+        hasToolCalls: completedToolCalls.length > 0,
+        hasText: accumulatedText.trim().length > 0,
+      });
+      if (completion === "truncated-empty") {
+        // 思考/输出在产出任何可用内容前就触顶——与 LLM-stream-error 同路失败，
+        // 不走 chat-done（否则 loop 会假装任务完成）。
+        const msg =
+          "模型在产出任何回复前就触达输出 token 上限（stop_reason=length），" +
+          "通常是长推理吃光了输出预算。请在该 instance 调高最大输出（maxTokens），" +
+          "或简化任务后重试。";
+        port.postMessage(withSession({ type: "chat-error", error: msg }, sessionId));
+        await emitDone({
+          type: "agent-done-task",
+          success: false,
+          summary: msg,
+          stepCount: stepIndex,
+        }, "fail");
+        return;
+      }
+      if (completion === "truncated-partial") {
+        // 部分答案已流式发出但不完整——追加可见提示，再走正常 pure-text 收尾。
+        port.postMessage(
+          withSession(
+            { type: "chat-chunk", text: "\n\n⚠️ [回复被输出 token 上限截断，未必完整。可在该 instance 调高最大输出后重试。]" },
+            sessionId,
+          ),
+        );
+        // 不 return，自然落入下面的 completedToolCalls.length === 0 纯文本分支收尾。
+      }
 
       // Pure text response (no tool calls) — finish as normal chat.
       //

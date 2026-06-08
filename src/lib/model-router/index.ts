@@ -38,6 +38,13 @@ export interface ModelConfig {
   providerName?: string;
   maxTokens?: number;
   /**
+   * 模型 meta 的最大输出上限，task-start 时由 `resolveModelConfig` 从
+   * `resolveModelMeta(...).maxOutputTokens` 解析填入。anthropic-sdk-core 用它作为
+   * 「用户没手填 maxTokens 时」的默认（max_tokens 在该 wire 是必填字段）。
+   * OpenAI-compat / gemini 不读此字段（它们不填则省略 max_tokens）。
+   */
+  maxOutputTokens?: number;
+  /**
    * Whether the resolved model accepts image input. Resolved at task-start
    * time by `resolveInstanceToModelConfig` via `resolveModelVision`, which
    * consults the hardcoded registry first and falls back to the instance's

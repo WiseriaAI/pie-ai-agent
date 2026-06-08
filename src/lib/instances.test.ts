@@ -231,3 +231,25 @@ describe("resolveModelConfig — builtin custom model vision via pcmm", () => {
     expect(cfg && "vision" in cfg).toBe(false);
   });
 });
+
+describe("resolveModelConfig — maxOutputTokens resolved from registry", () => {
+  it("anthropic-wire registry model carries its maxOutputTokens", async () => {
+    const id = await createInstance({ provider: "deepseek", nickname: "DS", apiKey: "k" });
+    const cfg = await resolveModelConfig(id, "deepseek-v4-flash");
+    expect(cfg!.maxOutputTokens).toBe(384_000);
+  });
+
+  it("registry model without maxOutputTokens leaves it undefined", async () => {
+    const id = await createInstance({ provider: "stepfun", nickname: "SF", apiKey: "k" });
+    const cfg = await resolveModelConfig(id, "step-3.7-flash");
+    expect(cfg!.maxOutputTokens).toBeUndefined();
+  });
+
+  it("instance-level maxTokens coexists with resolved maxOutputTokens (neither overwrites)", async () => {
+    const id = await createInstance({ provider: "deepseek", nickname: "DS", apiKey: "k" });
+    await updateInstance(id, { maxTokens: 8000 });
+    const cfg = await resolveModelConfig(id, "deepseek-v4-flash");
+    expect(cfg!.maxTokens).toBe(8000);
+    expect(cfg!.maxOutputTokens).toBe(384_000);
+  });
+});
