@@ -1,10 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { readPageTool } from "./read-page";
 import { probePageInjected } from "../../dom-actions/probe-core";
+import { pageAtlasStore } from "./page-atlas";
 
 describe("read_page tool", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    pageAtlasStore.clear();
   });
 
   const emptySnapshot = (html: string) => ({
@@ -45,6 +47,40 @@ describe("read_page tool", () => {
     ...overrides,
   });
 
+  const atlasProbe = () => ({
+    op: "atlas" as const,
+    controls: [
+      {
+        id: "ctrl_4",
+        pieIdx: 4,
+        type: "button",
+        label: "Load more",
+      },
+    ],
+    forms: [],
+    targets: [
+      {
+        id: "collection_c1",
+        type: "collection" as const,
+        label: "Products",
+        confidence: "high" as const,
+        summary: "3 repeated product cards",
+        fieldGuesses: [
+          { name: "title", confidence: "high" as const },
+        ],
+        visibleCount: 3,
+        estimatedTotal: 12,
+      },
+    ],
+    fingerprint: {
+      url: "https://example.com/products",
+      title: "Products",
+      bodyTextLengthBucket: 500,
+      interactiveCountBucket: 10,
+      topSectionCount: 2,
+    },
+  });
+
   it("返回 success + observation 含 frame_map + per-frame HTML", async () => {
     const fakeTab = { id: 7, url: "https://example.com/", discarded: false };
     const executeScript = vi.fn().mockResolvedValue([
@@ -70,6 +106,46 @@ describe("read_page tool", () => {
     const calls = (executeScript as any).mock.calls;
     expect(calls.length).toBe(1);
     expect(calls[0][0].func).toBe(probePageInjected);
+  });
+
+  it("mode=atlas returns compact page_atlas and stores target ids", async () => {
+    const fakeTab = {
+      id: 7,
+      url: "https://example.com/products",
+      title: "Products",
+      discarded: false,
+    };
+    const executeScript = vi.fn().mockResolvedValue([
+      { frameId: 0, result: atlasProbe() },
+    ]);
+    vi.stubGlobal("chrome", {
+      tabs: { get: vi.fn().mockResolvedValue(fakeTab) },
+      scripting: { executeScript },
+      webNavigation: {
+        getAllFrames: vi.fn().mockResolvedValue([
+          { frameId: 0, url: "https://example.com/products" },
+        ]),
+      },
+    });
+
+    const result = await readPageTool.handler({ tabId: 7, mode: "atlas" }, {} as any);
+
+    expect(result.success).toBe(true);
+    expect(result.observation).toContain("<page_atlas");
+    expect(result.observation).toContain("collection_c1");
+    expect(result.observation).toContain("extract_records");
+    expect(result.observation).not.toContain("<untrusted_page_content");
+    const atlasId = result.observation!.match(/atlas_id="([^"]+)"/)?.[1];
+    expect(atlasId).toBeTruthy();
+    const stored = pageAtlasStore.get(atlasId!);
+    expect(stored?.targets.map((target) => target.id)).toContain("collection_c1");
+    expect(stored?.targets[0]?.frameId).toBe(0);
+    expect(stored?.controls[0]?.frameId).toBe(0);
+    const calls = (executeScript as any).mock.calls;
+    expect(calls.length).toBe(1);
+    expect(calls[0][0].func).toBe(probePageInjected);
+    expect(calls[0][0].target).toEqual({ tabId: 7, allFrames: true });
+    expect(calls[0][0].args).toEqual([{ op: "atlas" }]);
   });
 
   it("cross-origin frame 加 cross_origin=true 标记", async () => {

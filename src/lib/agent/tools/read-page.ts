@@ -4,6 +4,8 @@ import { probePageInjected, type ProbeResult } from "../../dom-actions/probe-cor
 import { escapeWrapperAttribute, escapeUntrustedWrappers } from "../untrusted-wrappers";
 import { isRestrictedSchemeForGrouping } from "./tabs";
 import { isPdfTab } from "@/lib/pdf/detect";
+import { pageAtlasStore, parseOrigin, type PageAtlasState } from "./page-atlas";
+import { renderPageAtlas } from "./page-atlas/render";
 
 // read_page byte budgets per mode. Default is the hard cap — don't truncate
 // by default; the LLM can still pass a smaller max_bytes to save tokens when
@@ -11,6 +13,7 @@ import { isPdfTab } from "@/lib/pdf/detect";
 // interactive index, not full body text).
 const MODE_BUDGETS = {
   auto: { maxBytes: 500_000 },
+  atlas: { maxBytes: 500_000 },
   interactive: { maxBytes: 200_000 },
   content: { maxBytes: 300_000 },
   full: { maxBytes: 500_000 },
@@ -25,7 +28,7 @@ interface ReadPageArgs {
 }
 
 function normalizeMode(mode: unknown): ReadPageMode {
-  return mode === "interactive" || mode === "content" || mode === "full" ? mode : "auto";
+  return mode === "atlas" || mode === "interactive" || mode === "content" || mode === "full" ? mode : "auto";
 }
 
 function resolveHtmlBudget(mode: ReadPageMode, rawMaxBytes: unknown): number {
@@ -138,7 +141,7 @@ export const readPageTool: Tool = {
       tabId: { type: "integer", description: "Tab id to read." },
       mode: {
         type: "string",
-        enum: ["auto", "interactive", "content", "full"],
+        enum: ["auto", "atlas", "interactive", "content", "full"],
         description: "Read mode. auto is default; interactive uses a smaller HTML budget while preserving the interactive index.",
       },
       max_bytes: {
@@ -176,6 +179,63 @@ export const readPageTool: Tool = {
     }
     if (tab.discarded) {
       return { success: false, error: "discardedTabRequiresActivation" };
+    }
+
+    if (mode === "atlas") {
+      let atlasResults: chrome.scripting.InjectionResult<ProbeResult>[];
+      try {
+        atlasResults = await chrome.scripting.executeScript({
+          target: { tabId: a.tabId, allFrames: true },
+          func: probePageInjected,
+          args: [{ op: "atlas" }],
+        }) as chrome.scripting.InjectionResult<ProbeResult>[];
+      } catch (e) {
+        return { success: false, error: e instanceof Error ? e.message : "executeScript failed" };
+      }
+
+      const frames = await chrome.webNavigation.getAllFrames({ tabId: a.tabId });
+      if (!frames) return { success: false, error: "Tab unavailable" };
+
+      const top = frames.find((f) => f.frameId === 0);
+      const topUrl = top?.url ?? tab.url ?? "";
+      const topAtlasResult = atlasResults.find((r) => r.frameId === 0)?.result;
+      const topFingerprint = topAtlasResult?.op === "atlas"
+        ? topAtlasResult.fingerprint
+        : {
+            url: topUrl,
+            title: tab.title ?? "",
+            bodyTextLengthBucket: 0,
+            interactiveCountBucket: 0,
+            topSectionCount: 0,
+          };
+
+      const atlasId = `atlas_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+      const atlas: PageAtlasState = {
+        atlasId,
+        tabId: a.tabId,
+        url: topUrl,
+        origin: parseOrigin(topUrl),
+        title: tab.title ?? topFingerprint.title,
+        createdAt: Date.now(),
+        fingerprint: topFingerprint,
+        targets: [],
+        controls: [],
+        forms: [],
+        controlGroups: [],
+        navigation: [],
+      };
+
+      for (const result of atlasResults) {
+        const data = result.result;
+        if (data?.op !== "atlas") continue;
+        const frameId = result.frameId;
+        atlas.targets.push(...data.targets.map((target) => ({ ...target, frameId })));
+        atlas.controls.push(...data.controls.map((control) => ({ ...control, frameId })));
+        atlas.forms.push(...data.forms.map((form) => ({ ...form, frameId })));
+      }
+
+      pageAtlasStore.save(atlas);
+      return { success: true, observation: renderPageAtlas(atlas) };
     }
 
     let results: chrome.scripting.InjectionResult<ProbeResult>[];
