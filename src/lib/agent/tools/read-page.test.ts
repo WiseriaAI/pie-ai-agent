@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { readPageTool } from "./read-page";
-import { probePageInjected } from "../../dom-actions/probe-core";
+import { probePageInjected, type ProbeResult } from "../../dom-actions/probe-core";
 import { pageAtlasStore } from "./page-atlas";
 
 describe("read_page tool", () => {
@@ -47,7 +47,7 @@ describe("read_page tool", () => {
     ...overrides,
   });
 
-  const atlasProbe = () => ({
+  const atlasProbe = (): Extract<ProbeResult, { op: "atlas" }> => ({
     op: "atlas" as const,
     controls: [
       {

@@ -508,3 +508,12 @@ DOM 指纹第一版可轻量实现：
 5. 现有 `search_page` 第一版不公开；搜索先收敛为 `find_target(atlas_id, query)`。
 6. 后续语义搜索必须绑定 atlas：`semantic_search(atlas_id, query, scope?)`。
 7. 流程不依赖 LLM 自觉遵守，而由 `atlas_id` / `target_id` / fail-closed / `next_actions` 强制表达。
+
+## 16. Implementation Trace
+
+- `read_page(mode="atlas")` implemented in `src/lib/agent/tools/read-page.ts`.
+- Page-world atlas heuristics implemented in `src/lib/dom-actions/probe-core.ts` under `op: "atlas"`.
+- Atlas state and target validation implemented in `src/lib/agent/tools/page-atlas/state.ts`.
+- Target-gated tools implemented in `src/lib/agent/tools/page-atlas/target-tools.ts`.
+- Public tool disclosure updated in `src/lib/agent/tools.ts`, `src/lib/agent/tool-names.ts`, and `src/lib/agent/prompt.ts`.
+- `search_page` remains importable for unit coverage but is no longer exposed through `BUILT_IN_TOOLS` or prompt guidance in V1.

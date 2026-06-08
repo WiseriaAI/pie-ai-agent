@@ -828,7 +828,7 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
     const tables = liveBodyElements.filter((el): el is HTMLTableElement => el instanceof HTMLTableElement);
     for (let i = 0; i < tables.length; i++) {
       const table = tables[i];
-      const headerCells = Array.from(table.querySelectorAll("thead th"));
+      const headerCells = Array.from(table.querySelectorAll<HTMLTableCellElement>("thead th"));
       const firstRow = table.rows.item(0);
       const firstRowHasTh = !!firstRow && Array.from(firstRow.cells).some((cell) => cell.tagName.toLowerCase() === "th");
       const fallbackHeaderCells = headerCells.length > 0
@@ -837,7 +837,7 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
       const columns = fallbackHeaderCells
         .map((cell, idx) => textFrom(cell) || `Column ${idx + 1}`);
 
-      const bodyRows = Array.from(table.querySelectorAll("tbody tr"));
+      const bodyRows = Array.from(table.querySelectorAll<HTMLTableRowElement>("tbody tr"));
       const sourceRows = bodyRows.length > 0
         ? bodyRows.slice(firstRowHasTh && bodyRows[0] === firstRow ? 1 : 0)
         : Array.from(table.rows).slice(headerCells.length > 0 || firstRowHasTh ? 1 : 0);
