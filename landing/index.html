@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Pie — Tell your browser what to do.</title>
-  <meta name="description" content="An open-source AI agent in your browser. Say what you want in plain language — Pie plans the steps and does the work. Free, no telemetry." />
+  <meta name="description" content="An open-source AI agent in your browser. Say what you want in plain language — Pie plans the steps and does the work. No telemetry." />
   <meta name="theme-color" content="#FAFBFC" />
   <meta property="og:type" content="website" />
   <meta property="og:title" content="Pie — Tell your browser what to do." />
@@ -32,7 +32,16 @@
             <span data-i18n="nav.star">Star</span>
             <span class="gh-count tabular mono" id="gh-stars" hidden></span>
           </a>
-          <a class="btn-ink" data-href="store" data-i18n="nav.install">Add to Chrome</a>
+          <a class="btn-ink" data-href="store">
+            <svg class="chrome-ic" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="#EA4335" d="M12 2a10 10 0 0 1 8.66 5H12a5 5 0 0 0-4.33 2.5L4.78 4.49A9.96 9.96 0 0 1 12 2z"/>
+              <path fill="#FBBC04" d="M20.66 7A10 10 0 0 1 12 22l4.33-7.5A5 5 0 0 0 12 7h8.66z"/>
+              <path fill="#34A853" d="M7.67 9.5A5 5 0 0 0 12 17h4.33L12 22A10 10 0 0 1 4.78 4.49L7.67 9.5z"/>
+              <circle cx="12" cy="12" r="4" fill="#4285F4"/>
+              <circle cx="12" cy="12" r="2.35" fill="#fff"/>
+            </svg>
+            <span data-i18n="nav.install">Add to Chrome</span>
+          </a>
         </nav>
       </div>
     </header>
@@ -43,9 +52,18 @@
           <h1 class="hero-title" data-i18n="hero.title">Tell your browser what to do.</h1>
           <p class="hero-sub" data-i18n="hero.sub"></p>
           <div class="cta-row">
-            <a class="btn-ink lg" data-href="store" data-i18n="hero.cta">Add to Chrome — free</a>
+            <a class="btn-ink lg" data-href="store">
+              <svg class="chrome-ic" width="17" height="17" viewBox="0 0 24 24" aria-hidden="true">
+                <path fill="#EA4335" d="M12 2a10 10 0 0 1 8.66 5H12a5 5 0 0 0-4.33 2.5L4.78 4.49A9.96 9.96 0 0 1 12 2z"/>
+                <path fill="#FBBC04" d="M20.66 7A10 10 0 0 1 12 22l4.33-7.5A5 5 0 0 0 12 7h8.66z"/>
+                <path fill="#34A853" d="M7.67 9.5A5 5 0 0 0 12 17h4.33L12 22A10 10 0 0 1 4.78 4.49L7.67 9.5z"/>
+                <circle cx="12" cy="12" r="4" fill="#4285F4"/>
+                <circle cx="12" cy="12" r="2.35" fill="#fff"/>
+              </svg>
+              <span data-i18n="hero.cta">Add to Chrome</span>
+            </a>
             <a class="btn-outline" data-href="github">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="#4A5C6E"><path d="M12 1.5l3.09 6.26 6.91 1-5 4.87 1.18 6.88L12 17.27 5.82 20.51 7 13.63l-5-4.87 6.91-1L12 1.5z"/></svg>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="#4A5C6E" aria-hidden="true"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.3.8-.6v-2c-3.2.7-3.9-1.5-3.9-1.5-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2 1-.3 2-.4 3-.4s2 .1 3 .4c2.3-1.6 3.3-1.2 3.3-1.2.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5z"/></svg>
               <span data-i18n="hero.star">Star on GitHub</span>
             </a>
           </div>
@@ -200,6 +218,51 @@
       </div>
     </section>
 
+    <section class="section project-sec" id="project">
+      <div class="wrap project-wrap">
+        <div class="project-head reveal-up">
+          <span class="caps" style="color:var(--c-accent)" data-i18n="project.eyebrow">Open project</span>
+          <h2 class="h-section sm" data-i18n="project.title">Transparent by default.</h2>
+          <p class="sub" data-i18n="project.sub"></p>
+        </div>
+        <div class="project-grid reveal-up">
+          <a class="project-card" data-href="license">
+            <span class="caps project-k" data-i18n="project.license.k">License</span>
+            <span class="project-t" data-i18n="project.license.t">Apache-2.0</span>
+            <span class="project-d" data-i18n="project.license.d"></span>
+          </a>
+          <a class="project-card" data-href="releaseLatest">
+            <span class="caps project-k" data-i18n="project.latest.k">Latest notes</span>
+            <span class="project-t" data-i18n="project.latest.t">v0.20.0</span>
+            <span class="project-d" data-i18n="project.latest.d"></span>
+          </a>
+          <a class="project-card" data-href="releases">
+            <span class="caps project-k" data-i18n="project.history.k">Version history</span>
+            <span class="project-t" data-i18n="project.history.t">All releases</span>
+            <span class="project-d" data-i18n="project.history.d"></span>
+          </a>
+        </div>
+        <div class="version-list reveal-up">
+          <a class="version-row" data-href="release020">
+            <span class="mono version-num">v0.20.0</span>
+            <span class="version-copy" data-i18n="version.020"></span>
+          </a>
+          <a class="version-row" data-href="release0195">
+            <span class="mono version-num">v0.19.5</span>
+            <span class="version-copy" data-i18n="version.0195"></span>
+          </a>
+          <a class="version-row" data-href="release0192">
+            <span class="mono version-num">v0.19.2</span>
+            <span class="version-copy" data-i18n="version.0192"></span>
+          </a>
+          <a class="version-row" data-href="release0190">
+            <span class="mono version-num">v0.19.0</span>
+            <span class="version-copy" data-i18n="version.0190"></span>
+          </a>
+        </div>
+      </div>
+    </section>
+
     <section class="cta-dark dotgrid-dark" id="cta">
       <div class="wrap cta-in reveal-up">
         <svg class="cta-mark" width="44" height="44" viewBox="0 0 128 128"><rect width="128" height="128" rx="26" fill="#FAFBFC"/><circle cx="64" cy="64" r="44" fill="#14181D"/><circle cx="98" cy="30" r="22" fill="#FAFBFC"/></svg>
@@ -207,7 +270,7 @@
         <h2 class="cta-title" data-i18n="cta.title">Put your browser to work.</h2>
         <p class="cta-sub" data-i18n="cta.sub"></p>
         <div class="cta-row">
-          <a class="btn-light" data-href="store" data-i18n="cta.install">Add to Chrome — free</a>
+          <a class="btn-light" data-href="store" data-i18n="cta.install">Add to Chrome</a>
           <a class="btn-ghost-dark" data-href="github">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="#FAFBFC"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.3.8-.6v-2c-3.2.7-3.9-1.5-3.9-1.5-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2 1-.3 2-.4 3-.4s2 .1 3 .4c2.3-1.6 3.3-1.2 3.3-1.2.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5z"/></svg>
             <span data-i18n="cta.star">Star on GitHub</span>
@@ -226,9 +289,10 @@
           </div>
           <nav class="foot-links">
             <a data-href="privacy" data-i18n="foot.privacy">Privacy</a>
-            <a data-href="changelog" data-i18n="foot.changelog">Changelog</a>
+            <a data-href="license" data-i18n="foot.license">License</a>
+            <a data-href="releaseLatest" data-i18n="foot.release">Release notes</a>
+            <a data-href="releases" data-i18n="foot.releases">Versions</a>
             <a data-href="roadmap" data-i18n="foot.roadmap">Roadmap</a>
-            <a data-href="arch" data-i18n="foot.arch">Architecture</a>
             <a data-href="github" data-i18n="foot.github">GitHub</a>
             <a data-href="store" data-i18n="foot.store">Chrome Web Store</a>
           </nav>

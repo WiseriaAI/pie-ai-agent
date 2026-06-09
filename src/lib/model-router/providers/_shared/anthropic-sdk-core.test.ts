@@ -40,6 +40,15 @@ const LATE_INPUT_TOKENS = [
   'event: message_stop\ndata: {"type":"message_stop"}\n\n',
 ];
 
+const LEAKED_TEXT_TOOL_INVOCATION = [
+  'event: message_start\ndata: {"type":"message_start","message":{"id":"m","type":"message","role":"assistant","model":"x","content":[],"stop_reason":null,"usage":{"input_tokens":7,"output_tokens":0}}}\n\n',
+  'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}\n\n',
+  'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"<tool_invocation name=\\"read_page\\" arguments={\\"tabId\\": 736359264, \\"mode\\": \\"content\\"} />"}}\n\n',
+  'event: content_block_stop\ndata: {"type":"content_block_stop","index":0}\n\n',
+  'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":12}}\n\n',
+  'event: message_stop\ndata: {"type":"message_stop"}\n\n',
+];
+
 const config = (over: Partial<ModelConfig> = {}): ModelConfig =>
   ({ provider: "anthropic", model: "claude-x", apiKey: "sk-test", baseUrl: "https://api.anthropic.com", ...over }) as ModelConfig;
 
@@ -77,6 +86,28 @@ describe("anthropic-sdk-core", () => {
     const events = await collect(streamChatAnthropicSdk(config(), [{ role: "user", content: "hi" }]));
     const done = events.find((e) => e.type === "done");
     expect(done).toMatchObject({ usage: { inputTokens: 9582, outputTokens: 61 } });
+  });
+
+  it("normalizes leaked <tool_invocation /> text into tool-call events", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(sse(LEAKED_TEXT_TOOL_INVOCATION));
+    const events = await collect(streamChatAnthropicSdk(config(), [{ role: "user", content: "hi" }]));
+    expect(events.map((e) => e.type)).toEqual([
+      "tool-call-start",
+      "tool-call-delta",
+      "tool-call-end",
+      "done",
+    ]);
+    expect(events.find((e) => e.type === "tool-call-start")).toMatchObject({
+      name: "read_page",
+      index: 0,
+    });
+    expect(events.find((e) => e.type === "tool-call-delta")).toMatchObject({
+      index: 0,
+      argsDelta: '{"tabId":736359264,"mode":"content"}',
+    });
+    expect(events.find((e) => e.type === "done")).toMatchObject({
+      stopReason: "tool_calls",
+    });
   });
 
   it("survives an MV3-service-worker-like env with no process / Buffer globals", async () => {

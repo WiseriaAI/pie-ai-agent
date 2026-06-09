@@ -62,7 +62,11 @@ export const zhCNDict = {
     backToAgent: "返回 Agent",
     title: "设置",
     forgetConfirm: "确认删除此配置？",
-    tabs: { configs: "配置", skills: "技能", search: "搜索" },
+    tabs: { configs: "配置", skills: "技能", search: "搜索", general: "通用" },
+    about: {
+      tagline: "BYOK · 本地优先 · 开源",
+      changelog: "更新日志",
+    },
     active: "当前使用",
     noActiveConfig: "暂无活跃配置 — 从下方选择一个。",
     experimental: "实验性功能",
@@ -278,7 +282,7 @@ export const zhCNDict = {
   },
   skills: {
     empty: {
-      cta: "显示可复用工作流（skill）。底层工具按 prompt 自动 resolve。",
+      cta: "显示可复用工作流（skill）。底层工具按 prompt 自动 resolve。想新建?直接跟 Pie 说「帮我创建一个 skill」并说明要做的事,让 Pie 帮你写好它。",
     },
     section: {
       yours: {
@@ -288,7 +292,7 @@ export const zhCNDict = {
     },
     capacity: "容量",
     newSkill: "+ 新建技能",
-    noSkills: "暂无技能 — 点击 \"+ 新建技能\" 添加。",
+    noSkills: "还没有技能。",
     form: {
       editSkill: "编辑技能",
       newSkill: "新建技能",

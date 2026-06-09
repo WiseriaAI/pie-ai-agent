@@ -65,6 +65,7 @@ import { broadcastInstructionState } from "@/background/instruction-broadcast";
 import { synthesizeAgentTurnText, type TerminationReason } from "./synthesize-agent-turn";
 import { waitForUrlSettle, type UrlSettleResult } from "./wait-for-url-settle";
 import { assembleAssistantBlocks, type ThinkingContentBlock } from "./assistant-blocks";
+import { parseTextToolInvocations } from "./text-tool-invocation";
 // setLastTaskSynth removed from emitDone — lastTaskSynth is now folded into
 // the tombstone write by buildSessionAgentTombstone(synth) to prevent the
 // two-write race on the agent key (AD1 fix). No import needed.
@@ -1696,6 +1697,14 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           ),
         );
         // 不 return，自然落入下面的 completedToolCalls.length === 0 纯文本分支收尾。
+      }
+
+      if (completedToolCalls.length === 0 && accumulatedText.trim().length > 0) {
+        const textToolCalls = parseTextToolInvocations(accumulatedText);
+        if (textToolCalls.length > 0) {
+          completedToolCalls.push(...textToolCalls);
+          accumulatedText = "";
+        }
       }
 
       // Pure text response (no tool calls) — finish as normal chat.
