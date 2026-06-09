@@ -196,6 +196,11 @@ export default function Chat({
   // M5 — PinnedTabDropdown open state. Lives in Chat (not the dropdown
   // itself) because the dropdown's anchor is the PINNED row in the info bar.
   const [pinDropdownOpen, setPinDropdownOpen] = useState(false);
+  // Keep the dropdown mounted through its leave animation: `open` drives the
+  // animation direction; `visible` drives actual mount/unmount (set false only
+  // once the dropdown reports its leave animation finished via onExited).
+  const [pinDropdownVisible, setPinDropdownVisible] = useState(false);
+  const pinAnchorRef = useRef<HTMLButtonElement>(null);
   const [pickerActive, setPickerActive] = useState(false);
   const [enabledSkills, setEnabledSkills] = useState<SkillPackage[]>([]);
   const [popoverSelected, setPopoverSelected] = useState(0);
@@ -353,6 +358,12 @@ export default function Chat({
     if (!c) return;
     atBottomRef.current = c.scrollHeight - c.scrollTop - c.clientHeight <= 60;
   };
+
+  // Mount the pin dropdown as soon as it opens; unmounting waits for the
+  // dropdown's leave animation (onExited).
+  useEffect(() => {
+    if (pinDropdownOpen) setPinDropdownVisible(true);
+  }, [pinDropdownOpen]);
 
   useEffect(() => {
     if (prefillInput) {
@@ -1077,6 +1088,7 @@ After the skill completes, briefly summarize what was created (the user will see
           {displayPinnedOrigin && (
             <>
               <button
+                ref={pinAnchorRef}
                 type="button"
                 onClick={() => setPinDropdownOpen((v) => !v)}
                 aria-label={t("chat.pinnedTabSelector")}
@@ -1096,8 +1108,10 @@ After the skill completes, briefly summarize what was created (the user will see
                 ) : null}
                 <span className="text-fg-3 text-[10px]" aria-hidden="true">▾</span>
               </button>
-              {pinDropdownOpen && (
+              {pinDropdownVisible && (
                 <PinnedTabDropdown
+                  open={pinDropdownOpen}
+                  anchorRef={pinAnchorRef}
                   pinMode={pinMode}
                   pinnedTabs={pinnedTabs}
                   streaming={streaming}
@@ -1108,6 +1122,7 @@ After the skill completes, briefly summarize what was created (the user will see
                     void clearUserPin();
                   }}
                   onClose={() => setPinDropdownOpen(false)}
+                  onExited={() => setPinDropdownVisible(false)}
                 />
               )}
             </>
