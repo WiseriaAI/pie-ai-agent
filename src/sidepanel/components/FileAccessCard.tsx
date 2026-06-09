@@ -1,10 +1,10 @@
 import { useEffect } from "react";
 
-export interface PdfPermissionCardProps {
+export interface FileAccessCardProps {
   onDismiss: () => void;
 }
 
-export function PdfPermissionCard({ onDismiss }: PdfPermissionCardProps) {
+export function FileAccessCard({ onDismiss }: FileAccessCardProps) {
   useEffect(() => {
     async function recheck() {
       try {
@@ -30,10 +30,10 @@ export function PdfPermissionCard({ onDismiss }: PdfPermissionCardProps) {
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-warning-line bg-warning-tint px-3 py-2.5 text-[12px] leading-[18px] text-warning">
       <div className="text-[13px] font-medium text-warning">
-        Reading a local PDF needs permission
+        Reading local files needs permission
       </div>
       <p className="text-warning/90">
-        Pie can read this file once you turn on
+        Pie can read local files once you turn on
         <span className="font-medium"> Allow access to file URLs</span> for this
         extension. Click below to open the extension settings, then flip the
         toggle and come back — Pie will pick it up automatically.

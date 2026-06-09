@@ -507,9 +507,9 @@ export interface RecordingAbortedBroadcast {
 
 // --- PDF permission ---
 
-export interface PdfNeedsFileAccessMessage {
-  type: "pdf:needs-file-access";
-  tabId: number;
+export interface NeedsFileAccessMessage {
+  type: "needs-file-access";
+  tabId?: number;
 }
 
 /** output_file — SW tells the panel to render a download card. */
@@ -564,6 +564,6 @@ export type PortMessageToPanel =
   | QuoteAddedMessage                  // issue #38
   | ChatInstructionStateMessage        // Issue #34
   | ChatInstructionRejectedMessage    // Issue #34
-  | PdfNeedsFileAccessMessage         // PDF local file access card
+  | NeedsFileAccessMessage            // local file access card
   | FileOutputMessage                 // output_file download card
   | FileOutputResultMessage;          // output_file download result

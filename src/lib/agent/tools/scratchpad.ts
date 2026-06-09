@@ -40,7 +40,15 @@ export function buildScratchpadTools(deps: ScratchpadToolDeps): Tool[] {
   const saveRecords: Tool = {
     name: "save_records",
     description:
-      "Append structured records to a named scratchpad collection (persisted outside the chat context, survives compaction). Use this WHILE extracting — don't accumulate data in your reply. Pass dedupeKey on first save to skip duplicate rows on retry/re-scrape.",
+      `Append structured records to a named scratchpad collection. Persisted outside the chat context and survives compaction. ALWAYS use this to store intermediate results when scraping structured data from pages — never accumulate extracted rows in your reply. Pass dedupeKey on the first save to skip duplicate rows on retry/re-scrape.
+
+USE WHEN:
+- You are extracting ANY rows of structured data (products, links, table rows, search results) — store them here as you go, not in your reply.
+- A long task produces data incrementally and you must not lose it to context compaction.
+
+**DO NOT USE WHEN:**
+- The value is free-text task state (pages done, next step) — use update_notes.
+- You just want to read existing rows back — use read_records.`,
     parameters: {
       type: "object",
       properties: {
@@ -73,7 +81,15 @@ export function buildScratchpadTools(deps: ScratchpadToolDeps): Tool[] {
   const updateNotes: Tool = {
     name: "update_notes",
     description:
-      "Overwrite the scratchpad progress notes (whole block). Track task state here — pages done, categories left, next step — so you never lose your place across long tasks.",
+      `Overwrite the scratchpad progress notes (replaces the whole block). This is free-text task state, not data rows.
+
+USE WHEN:
+- You need to track where you are across a long task — pages done, categories left, next step.
+- You want a place to keep your plan that survives context compaction.
+
+**DO NOT USE WHEN:**
+- You're storing structured rows of extracted data — use save_records.
+- You expect to edit just part of the notes — there's no partial edit; always pass the full updated block.`,
     parameters: {
       type: "object",
       properties: { notes: { type: "string", description: "Full markdown notes (replaces previous notes)." } },
@@ -91,7 +107,15 @@ export function buildScratchpadTools(deps: ScratchpadToolDeps): Tool[] {
   const readRecordsTool: Tool = {
     name: "read_records",
     description:
-      "Read back stored records from a collection (paginated; default 50). Use offset/limit to page and query for a substring filter. The overview already shows counts + recent rows, so only read when you need older detail.",
+      `Read stored records back from a collection (paginated; default 50). Use offset/limit to page and query for a case-insensitive substring filter.
+
+USE WHEN:
+- You need older or more detail than the scratchpad overview already shows.
+- You want to page through or substring-filter previously saved rows.
+
+**DO NOT USE WHEN:**
+- The overview already shows the counts + recent rows you need — don't re-read.
+- You want to dedupe/aggregate/reshape the data — use query_scratchpad (keeps it out of context).`,
     parameters: {
       type: "object",
       properties: {
@@ -125,7 +149,15 @@ export function buildScratchpadTools(deps: ScratchpadToolDeps): Tool[] {
   const clearScratchpadTool: Tool = {
     name: "clear_scratchpad",
     description:
-      "Reset the scratchpad. Pass a collection name to clear just that table, or omit to clear everything (all collections + notes). Use when starting a fresh extraction target.",
+      `Reset the scratchpad. Pass a collection name to clear just that table, or omit to wipe everything (all collections + notes).
+
+USE WHEN:
+- You're starting a fresh extraction target and want a clean slate.
+- A collection holds stale/wrong data you want to drop before re-saving.
+
+**DO NOT USE WHEN:**
+- You only want to remove some rows — clear is all-or-nothing per collection; use query_scratchpad with a filtering SELECT into a new collection instead.
+- You still need the saved data — this is irreversible.`,
     parameters: {
       type: "object",
       properties: { collection: { type: "string", description: "Optional collection to clear; omit to clear all." } },
@@ -142,7 +174,16 @@ export function buildScratchpadTools(deps: ScratchpadToolDeps): Tool[] {
   const queryScratchpadTool: Tool = {
     name: "query_scratchpad",
     description:
-      "Run SQL over a scratchpad collection to clean/dedupe/aggregate/transform — runs in a sandboxed SQLite engine, the data never re-enters your context. The collection is loaded as a table named after `from` (nested fields become JSON text). Omit `into` to get a result summary; pass `into` to write the result set back as a new collection (then export it with output_file).",
+      `Run SQL over a scratchpad collection to clean/dedupe/aggregate/transform. Runs in a sandboxed SQLite engine; the data never re-enters your context. The collection loads as a table named after \`from\` (nested fields become JSON text). Omit \`into\` for a result summary; pass \`into\` to write the result set back as a new collection.
+
+USE WHEN:
+- You need to dedupe, filter, aggregate, sort, or reshape saved rows — especially large collections.
+- You want the transform done without pulling all the data back into context.
+- You'll export the cleaned result: write it with \`into\`, then export with output_file.
+
+**DO NOT USE WHEN:**
+- You just want to read a few rows as-is — use read_records.
+- The data isn't in a scratchpad collection yet — save it with save_records first.`,
     parameters: {
       type: "object",
       properties: {

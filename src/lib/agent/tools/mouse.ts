@@ -90,7 +90,13 @@ export function buildHoverTool(deps: MouseToolDeps): Tool {
   return {
     name: "hover",
     description:
-      "Hover the mouse over an element by its data-pie-idx from the latest read_page <interactive_index>. Use this when an element shows new content on mouseover (dropdown menus, tooltips, hover cards). After hovering, call read_page again to see any newly revealed elements.",
+      `Hover the mouse over an element by its data-pie-idx from the latest read_page <interactive_index>. Uses real mouse events (CDP). After hovering, call read_page again to see any newly revealed elements.
+
+USE WHEN:
+- An element reveals new content on mouseover — dropdown menus, tooltips, hover cards.
+
+**DO NOT USE WHEN:**
+- You want to activate or open the element — use click.`,
     parameters: {
       type: "object",
       properties: {
@@ -147,7 +153,15 @@ export function buildClickTool(deps: MouseToolDeps): Tool {
   return {
     name: "click",
     description:
-      "Click an interactive element by its data-pie-idx from the latest read_page <interactive_index>. Uses real mouse events (CDP). If the element is gone (page changed), returns 'Element not found'; call read_page({mode:\"interactive\"}) again to get current indices.",
+      `Click an interactive element by its data-pie-idx from the latest read_page <interactive_index>. Uses real mouse events (CDP). If the element is gone (page changed), returns 'Element not found' — call read_page({mode:"interactive"}) again for current indices.
+
+USE WHEN:
+- You need to activate a clickable element — button, link, checkbox, radio, menu item, tab.
+
+**DO NOT USE WHEN:**
+- You want to enter text — use type (or set_editor_value / dispatch_keyboard_input for editors).
+- You want to pick a native <select> option — use select.
+- You only need to reveal hover content — use hover.`,
     parameters: {
       type: "object",
       properties: {

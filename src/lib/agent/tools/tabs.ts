@@ -476,10 +476,13 @@ const closeTabsTool: Tool = {
 const activateTabTool: Tool = {
   name: "activate_tab",
   description:
-    "Switch the user's view to a specific tab. The agent's pinned tab does " +
-    "NOT change — subsequent click/type tools still target the original tab. " +
-    "Use this only to bring a tab into the user's view; do not assume the " +
-    "agent will operate on the activated tab next.",
+    `Switch the USER's view to a specific tab. The agent's focused tab does NOT change — subsequent read_page/click/type still target the focused tab.
+
+USE WHEN:
+- You want to bring a tab into the user's view (show them something).
+
+**DO NOT USE WHEN:**
+- You want the agent to operate on that tab next — use focus_tab (activate_tab does NOT redirect your actions).`,
   parameters: {
     type: "object",
     properties: {
@@ -868,10 +871,15 @@ const moveTabsTool: Tool = {
 const focusTabTool: Tool = {
   name: "focus_tab",
   description:
-    "Switch the agent's focus to one of the session's pinned tabs (listed in " +
-    "the system prompt; open_url tabs are added there). Takes effect on the " +
-    "NEXT iteration — call focus_tab(N), then read_page/click/type against tab " +
-    "N on the following response. Use it to work across multiple pinned tabs.",
+    `Switch the agent's focus to one of the session's pinned tabs (listed in the system prompt; open_url tabs are added there). Takes effect on the NEXT iteration — call focus_tab(N), then read_page/click/type against tab N on the following response.
+
+USE WHEN:
+- You need to operate (read_page/click/type) on a different pinned tab than the current one.
+- You're working across multiple pinned tabs and need to switch which one your actions target.
+
+**DO NOT USE WHEN:**
+- You only want the USER to see a tab without changing where your actions go — use activate_tab.
+- The tab isn't pinned yet — focus only works on session-pinned tabs (open a new one with open_url first).`,
   parameters: {
     type: "object",
     properties: {
@@ -1038,9 +1046,14 @@ const OPEN_URL_MAX_LEN = 4096;
 const openUrlTool: Tool = {
   name: "open_url",
   description:
-    "Open a new browser tab at the given URL (http/https only; other schemes " +
-    "rejected). The new tab auto-joins this session's pinned tab list — call " +
-    "focus_tab(newTabId) on the next iteration to operate on it.",
+    `Open a new browser tab at the given URL (http/https only; other schemes rejected). The new tab auto-joins this session's pinned tab list — call focus_tab(newTabId) on the next iteration to operate on it.
+
+USE WHEN:
+- You need to visit a URL that isn't open in any current tab.
+
+**DO NOT USE WHEN:**
+- The page is already open in a pinned tab — use focus_tab to switch to it instead of opening a duplicate.
+- You only want to surface an already-open tab to the user — use activate_tab.`,
   parameters: {
     type: "object",
     properties: {

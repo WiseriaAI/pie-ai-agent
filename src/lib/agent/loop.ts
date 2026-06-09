@@ -31,7 +31,7 @@ import {
 import { isCdpInputEnabled } from "../cdp-input-enabled";
 import { requestCdpInputConsent } from "../cdp-input-onboarding";
 import { requestLocalFileFromPanel } from "../local-file-request";
-import { buildRequestLocalFileTool, buildOutputFileTool } from "./tools/files";
+import { buildReadLocalFileTool, buildRequestLocalFileTool, buildOutputFileTool } from "./tools/files";
 import { buildScratchpadTools } from "./tools/scratchpad";
 import {
   saveRecords as svcSaveRecords,
@@ -1489,6 +1489,9 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // #62 — fail-closed vision gating (see filterToolsByVision). Screenshot
       // tools are only offered to models KNOWN to support vision; non-vision
       // and unknown-vision models never see them.
+      const readLocalFileTool = buildReadLocalFileTool({
+        notifyNeedsFileAccess: () => port.postMessage({ type: "needs-file-access" }),
+      });
       const requestLocalFileTool = buildRequestLocalFileTool({
         sessionId,
         requestFile: requestLocalFileFromPanel,
@@ -1505,7 +1508,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         queryScratchpad: (args) => svcQueryScratchpad(sessionId, args),
       });
       const allTools = filterToolsByVision(
-        [...BUILT_IN_TOOLS, ...mouseTools, ...keyboardTools, ...editorTools, requestLocalFileTool, outputFileTool, ...scratchpadTools],
+        [...BUILT_IN_TOOLS, ...mouseTools, ...keyboardTools, ...editorTools, readLocalFileTool, requestLocalFileTool, outputFileTool, ...scratchpadTools],
         modelConfig.vision,
       );
       const toolDefinitions = toolsToDefinitions(allTools);
