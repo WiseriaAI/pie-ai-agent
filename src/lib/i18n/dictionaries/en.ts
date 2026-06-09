@@ -61,10 +61,15 @@ export const enDict = {
     backToAgent: "Back to agent",
     title: "Settings",
     forgetConfirm: "Forget this config?",
-    tabs: { configs: "Configs", skills: "Skills", search: "Search" },
+    tabs: { configs: "Configs", skills: "Skills", search: "Search", general: "General" },
+    about: {
+      sectionTitle: "About",
+      tagline: "BYOK · Local-first · Open source",
+      changelog: "Changelog",
+    },
     active: "ACTIVE",
     noActiveConfig: "No active config — pick one below.",
-    experimental: "EXPERIMENTAL",
+    experimental: "Experimental",
     cdpInput: {
       title: "Browser input simulation (CDP)",
       description: "Required for hover, click, and keyboard tools. Enabling triggers Chrome's yellow debugger bar while a task runs.",

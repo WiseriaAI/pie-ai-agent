@@ -62,7 +62,12 @@ export const zhCNDict = {
     backToAgent: "返回 Agent",
     title: "设置",
     forgetConfirm: "确认删除此配置？",
-    tabs: { configs: "配置", skills: "技能", search: "搜索" },
+    tabs: { configs: "配置", skills: "技能", search: "搜索", general: "通用" },
+    about: {
+      sectionTitle: "关于",
+      tagline: "BYOK · 本地优先 · 开源",
+      changelog: "更新日志",
+    },
     active: "当前使用",
     noActiveConfig: "暂无活跃配置 — 从下方选择一个。",
     experimental: "实验性功能",
