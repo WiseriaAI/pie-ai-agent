@@ -1629,7 +1629,7 @@ async function broadcastPdfNeedsFileAccess(tabId: number): Promise<void> {
   if (allowed) return;
   for (const port of portsBySession.values()) {
     try {
-      port.postMessage({ type: "pdf:needs-file-access", tabId });
+      port.postMessage({ type: "needs-file-access", tabId });
     } catch {
       // port may have disconnected concurrently
     }

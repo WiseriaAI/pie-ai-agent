@@ -266,8 +266,15 @@ export function createPageAtlasTargetTools(deps: PageAtlasTargetToolDeps = {}): 
   const findTargetTool: Tool = {
     name: "find_target",
     description:
-      "Find target_id candidates inside an existing page atlas by searching only target metadata " +
-      "(labels, summaries, field guesses, and table columns). Call read_page({mode:\"atlas\"}) first.",
+      `Narrow a large page atlas down to the right target_id by searching only target metadata (labels, summaries, field guesses, table columns). Requires read_page({mode:"atlas"}) first.
+
+USE WHEN:
+- The atlas has many targets and you need to locate the one holding your data.
+- You can name what you want by keyword but don't yet know its target_id.
+
+**DO NOT USE WHEN:**
+- The atlas already makes the target obvious — read it directly instead.
+- You want the records themselves, not a target_id — use read_collection / read_table / read_target / extract_records.`,
     parameters: {
       type: "object",
       properties: {
@@ -314,7 +321,15 @@ export function createPageAtlasTargetTools(deps: PageAtlasTargetToolDeps = {}): 
   const readCollectionTool: Tool = {
     name: "read_collection",
     description:
-      "Read records from a collection target in an existing page atlas. Requires atlas_id and target_id from read_page({mode:\"atlas\"}).",
+      `Read full records (every field + text per item) from a collection target — a list of repeated, same-shaped items such as search results, product cards, or feed entries. Requires atlas_id + target_id from read_page({mode:"atlas"}).
+
+USE WHEN:
+- The target's type is "collection" and you need the raw content of its items.
+- You want all fields per item, not a projected subset.
+
+**DO NOT USE WHEN:**
+- You only need a few fields per item — use extract_records (cheaper).
+- The target is a table (use read_table) or a detail_region/region (use read_target).`,
     parameters: {
       type: "object",
       properties: {
@@ -346,7 +361,14 @@ export function createPageAtlasTargetTools(deps: PageAtlasTargetToolDeps = {}): 
   const readTableTool: Tool = {
     name: "read_table",
     description:
-      "Read records from a table target in an existing page atlas. Requires atlas_id and target_id from read_page({mode:\"atlas\"}).",
+      `Read full records from a table target — row/column tabular data with a header (the atlas lists its columns). Requires atlas_id + target_id from read_page({mode:"atlas"}).
+
+USE WHEN:
+- The target's type is "table" and you need its rows.
+
+**DO NOT USE WHEN:**
+- You only need specific columns — use extract_records.
+- The target is a repeated item list (use read_collection) or a detail_region/region (use read_target).`,
     parameters: {
       type: "object",
       properties: {
@@ -378,7 +400,16 @@ export function createPageAtlasTargetTools(deps: PageAtlasTargetToolDeps = {}): 
   const readTargetTool: Tool = {
     name: "read_target",
     description:
-      "Read a detail_region or region target from an existing page atlas in summary or text mode. Requires read_page({mode:\"atlas\"}) first.",
+      `Read a detail_region (one structured block, e.g. a single product or profile) or region (a free-text section) target. mode="summary" (default) returns a short overview; mode="text" returns the full extracted text. Requires read_page({mode:"atlas"}) first.
+
+USE WHEN:
+- The target's type is "detail_region" or "region".
+- You need an overview of the block — use mode="summary".
+- You need the block's full body text — use mode="text".
+
+**DO NOT USE WHEN:**
+- The target is a repeated item list (use read_collection) or a table (use read_table).
+- You need specific fields across many records — use extract_records.`,
     parameters: {
       type: "object",
       properties: {
@@ -419,7 +450,15 @@ export function createPageAtlasTargetTools(deps: PageAtlasTargetToolDeps = {}): 
   const extractRecordsTool: Tool = {
     name: "extract_records",
     description:
-      "Extract records from a collection, table, or detail_region target using only keys from the supplied schema object. Requires read_page({mode:\"atlas\"}) first.",
+      `Project records down to just the fields you name: pass a schema object whose keys are the field names to keep. Cheaper than read_collection / read_table for large lists because it drops everything else. Requires atlas_id + target_id from read_page({mode:"atlas"}).
+
+USE WHEN:
+- You need only specific fields from a collection, table, or detail_region target.
+- The list is large and you want to minimize tokens.
+
+**DO NOT USE WHEN:**
+- You need the full raw content of each item — use read_collection / read_table.
+- The target is a plain region (no structured records) — use read_target.`,
     parameters: {
       type: "object",
       properties: {

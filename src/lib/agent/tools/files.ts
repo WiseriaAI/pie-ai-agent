@@ -35,10 +35,16 @@ export function buildOutputFileTool(deps: OutputFileDeps): Tool {
   return {
     name: "output_file",
     description:
-      "Produce a text file (report, code, markdown, CSV, JSON) and present it to the user " +
-      "as a downloadable card in the side panel. The user decides whether to download it and " +
-      "picks the save location themselves — you do NOT save to disk directly, so do not assume " +
-      "the file was saved. Cannot write to arbitrary absolute paths; the name is always under pie/.",
+      `Produce a text file (report, code, markdown, CSV, JSON) and present it to the user as a downloadable card in the side panel — the user picks whether and where to save it.
+
+USE WHEN:
+- You've generated substantial text the user will want to keep or open elsewhere (a report, a code file, exported data).
+- The output is too long or too file-shaped to sit inline in the chat.
+
+**DO NOT USE WHEN:**
+- You expect the file written to disk yourself — this only shows a download card; you do NOT save to disk and must not assume it was saved.
+- You need a specific absolute path — names are always under pie/, arbitrary paths aren't allowed.
+- The content is a short answer that belongs inline in your reply.`,
     parameters: {
       type: "object",
       properties: {
@@ -96,12 +102,24 @@ function basename(uri: string): string {
 
 interface ReadLocalArgs { uri?: string }
 
-export const readLocalFileTool: Tool = {
+export interface ReadLocalFileDeps {
+  /** Called when 'Allow access to file URLs' is off, so the panel can surface <FileAccessCard />. */
+  notifyNeedsFileAccess?: () => void;
+}
+
+export function buildReadLocalFileTool(deps: ReadLocalFileDeps = {}): Tool {
+  return {
   name: "read_local_file",
   description:
-    "Read a local file by its file:// URI (or absolute path) and return its text. Works for " +
-    "text/code files and PDFs. The user must have enabled 'Allow access to file URLs' for the " +
-    "extension. For images, ask the user to attach them via the + menu instead.",
+    `Read a local file by its file:// URI (or absolute path) and return its text. Works for text/code files and PDFs.
+
+USE WHEN:
+- You already know the file's path or file:// URI.
+- The user has enabled 'Allow access to file URLs' for the extension (required).
+
+**DO NOT USE WHEN:**
+- You don't have the path — use request_local_file to let the user pick the file.
+- The file is an image — ask the user to attach it via the + menu instead.`,
   parameters: {
     type: "object",
     properties: { uri: { type: "string", description: 'A file:// URI or absolute path, e.g. "file:///Users/me/notes.md".' } },
@@ -116,7 +134,10 @@ export const readLocalFileTool: Tool = {
       return { success: false, error: `invalid_uri: read_local_file only accepts file:// URIs or absolute paths; got "${uri.slice(0, 80)}"` };
     }
     const allowed = await chrome.extension.isAllowedFileSchemeAccess();
-    if (!allowed) return { success: false, error: "file_access_denied: enable 'Allow access to file URLs' in chrome://extensions to read local files" };
+    if (!allowed) {
+      deps.notifyNeedsFileAccess?.();
+      return { success: false, error: "file_access_denied: Pie can't read local files until the user turns on 'Allow access to file URLs'. Ask the user to open chrome://extensions, find Pie, enable that toggle, and tell you when it's done — then retry. Pie cannot enable this itself; only the user can flip the toggle." };
+    }
     let res: Response;
     try { res = await fetch(uri); }
     catch (e) { return { success: false, error: `fetch_failed: ${e instanceof Error ? e.message : String(e)}` }; }
@@ -161,9 +182,8 @@ export const readLocalFileTool: Tool = {
       };
     } catch (e) { return { success: false, error: e instanceof Error ? e.message : String(e) }; }
   },
-};
-
-export const LOCAL_FILE_TOOLS: Tool[] = [readLocalFileTool];
+  };
+}
 
 // ── request_local_file — human-in-the-loop file picker ──────────────────────
 //
@@ -187,10 +207,15 @@ export function buildRequestLocalFileTool(deps: RequestLocalFileDeps): Tool {
   return {
     name: "request_local_file",
     description:
-      "Prompt the user to pick a local file (text/code or PDF) via the side panel, and return " +
-      "its extracted text. Use this when you need a file's contents but don't have its path — " +
-      "the user chooses the file themselves. Requires the side panel to be open. For images, " +
-      "ask the user to attach them via the + menu instead (images can't be returned here).",
+      `Prompt the user to pick a local file (text/code or PDF) via the side panel and return its extracted text — the user chooses the file.
+
+USE WHEN:
+- You need a file's contents but don't have its path.
+- The side panel is open (required).
+
+**DO NOT USE WHEN:**
+- You already know the file's path or file:// URI — use read_local_file directly.
+- The file is an image — ask the user to attach it via the + menu instead (images can't be returned here).`,
     parameters: {
       type: "object",
       properties: {},

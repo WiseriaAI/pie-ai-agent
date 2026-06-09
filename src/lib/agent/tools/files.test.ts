@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { buildOutputFileTool, readLocalFileTool, buildRequestLocalFileTool } from "./files";
+import { buildOutputFileTool, buildReadLocalFileTool, buildRequestLocalFileTool } from "./files";
 import type { FileArtifact } from "@/lib/files/output-store";
 import { sendToOffscreen } from "@/background/offscreen-manager";
 vi.mock("@/background/offscreen-manager", () => ({ sendToOffscreen: vi.fn() }));
@@ -65,6 +65,7 @@ describe("output_file tool", () => {
 });
 
 describe("read_local_file tool", () => {
+  const readLocalFileTool = buildReadLocalFileTool();
   beforeEach(() => {
     vi.clearAllMocks();
     (chrome.extension as unknown as { isAllowedFileSchemeAccess: ReturnType<typeof vi.fn> })
@@ -96,6 +97,27 @@ describe("read_local_file tool", () => {
     const r = await readLocalFileTool.handler({ uri: "file:///tmp/a.txt" }, { tabId: 1 } as never);
     expect(r.success).toBe(false);
     expect(r.error).toContain("file_access_denied");
+  });
+
+  it("calls notifyNeedsFileAccess (to surface the permission card) when the toggle is off", async () => {
+    (chrome.extension as unknown as { isAllowedFileSchemeAccess: ReturnType<typeof vi.fn> })
+      .isAllowedFileSchemeAccess = vi.fn(async () => false);
+    const notify = vi.fn();
+    const tool = buildReadLocalFileTool({ notifyNeedsFileAccess: notify });
+    const r = await tool.handler({ uri: "file:///tmp/a.txt" }, { tabId: 1 } as never);
+    expect(r.success).toBe(false);
+    expect(r.error).toContain("file_access_denied");
+    expect(notify).toHaveBeenCalledTimes(1);
+  });
+
+  it("does NOT call notifyNeedsFileAccess when access is granted", async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true, headers: { get: () => "text/plain" }, text: async () => "ok",
+    });
+    const notify = vi.fn();
+    const tool = buildReadLocalFileTool({ notifyNeedsFileAccess: notify });
+    await tool.handler({ uri: "file:///tmp/a.txt" }, { tabId: 1 } as never);
+    expect(notify).not.toHaveBeenCalled();
   });
 
   it("parses a PDF via offscreen pdf:parse_bytes", async () => {

@@ -13,7 +13,6 @@ import { searchWebTool } from "./tools/search";
 import { readPageTool } from "./tools/read-page";
 import { createPageAtlasTargetTools } from "./tools/page-atlas";
 import { PDF_TOOLS } from "./tools/pdf";
-import { LOCAL_FILE_TOOLS } from "./tools/files";
 
 export {
   KEYBOARD_TOOL_NAMES,
@@ -144,7 +143,15 @@ export const BUILT_IN_TOOLS: Tool[] = [
   {
     name: "type",
     description:
-      "Type text into an input/textarea/contenteditable by its data-pie-idx from the latest read_page <interactive_index>. If the element is gone (page changed), returns 'Element not found'; call read_page({mode:\"interactive\"}) again to get current indices.",
+      `Type text into a native input / textarea / contenteditable by its data-pie-idx from the latest read_page <interactive_index>. If the element is gone (page changed), returns 'Element not found' — call read_page({mode:"interactive"}) again.
+
+USE WHEN:
+- The target is a standard form field — text input, textarea, search box, or a plain contenteditable.
+
+**DO NOT USE WHEN:**
+- The field is a code editor (Monaco / CodeMirror) or TinyMCE — read_page tags these role="editor"; use set_editor_value.
+- The field is a canvas-rendered editor (Google Docs, Feishu Docs, Notion) where type returns 'hidden IME / keyboard capture buffer' — use dispatch_keyboard_input.
+- You're choosing a native <select> option — use select.`,
     parameters: {
       type: "object",
       properties: {
@@ -181,7 +188,14 @@ export const BUILT_IN_TOOLS: Tool[] = [
 
   {
     name: "scroll",
-    description: "Scroll the page up or down. Defaults to the top frame if frameId is not specified.",
+    description:
+      `Scroll the page up or down. Defaults to the top frame if frameId is not specified.
+
+USE WHEN:
+- You need to trigger lazy-load / infinite-scroll to pull more content into the DOM.
+
+**DO NOT USE WHEN:**
+- You only want to read off-screen content — read_page already captures the full page DOM; you don't need to scroll first.`,
     parameters: {
       type: "object",
       properties: {
@@ -214,7 +228,13 @@ export const BUILT_IN_TOOLS: Tool[] = [
   {
     name: "select",
     description:
-      "Select an option in a <select> element by its data-pie-idx from the latest read_page <interactive_index>. If the element is gone (page changed), returns 'Element not found'; call read_page({mode:\"interactive\"}) again to get current indices.",
+      `Select an option in a native <select> element by its data-pie-idx from the latest read_page <interactive_index>. If the element is gone (page changed), returns 'Element not found' — call read_page({mode:"interactive"}) again.
+
+USE WHEN:
+- The target is a real HTML <select> dropdown (read_page shows it as a select).
+
+**DO NOT USE WHEN:**
+- The dropdown is a custom widget (div / listbox, not a real <select>) — click to open it, then click the option.`,
     parameters: {
       type: "object",
       properties: {
@@ -361,7 +381,6 @@ export const BUILT_IN_TOOLS: Tool[] = [
   readPageTool,
   ...createPageAtlasTargetTools(),
   ...PDF_TOOLS,
-  ...LOCAL_FILE_TOOLS,
 ];
 
 // iframe spec R-iframe-1 — build-time assertion: writes target a specific

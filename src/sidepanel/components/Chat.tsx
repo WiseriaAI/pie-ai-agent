@@ -90,8 +90,8 @@ import { useCdpOnboarding } from "../hooks/useCdpOnboarding";
 import { CdpOnboardingCard } from "./CdpOnboardingCard";
 import { useLocalFileRequest } from "../hooks/useLocalFileRequest";
 import { LocalFileRequestCard } from "./LocalFileRequestCard";
-import { usePdfPermission } from "../hooks/usePdfPermission";
-import { PdfPermissionCard } from "./PdfPermissionCard";
+import { useFileAccessPrompt } from "../hooks/useFileAccessPrompt";
+import { FileAccessCard } from "./FileAccessCard";
 import { FileOutputCard } from "./FileOutputCard";
 import { artifactExists } from "@/lib/files/output-store";
 
@@ -259,7 +259,7 @@ export default function Chat({
     session.port,
     sessionId,
   );
-  const { showCard: showPdfPermission, dismiss: dismissPdfPermission } = usePdfPermission(
+  const { showCard: showFileAccess, dismiss: dismissFileAccess } = useFileAccessPrompt(
     session.port,
   );
   useEffect(() => {
@@ -1495,8 +1495,8 @@ After the skill completes, briefly summarize what was created (the user will see
           onCancel={() => respondLocalFile({ ok: false, reason: "cancelled by user" })}
         />
       )}
-      {showPdfPermission && (
-        <PdfPermissionCard onDismiss={dismissPdfPermission} />
+      {showFileAccess && (
+        <FileAccessCard onDismiss={dismissFileAccess} />
       )}
 
       <Composer
