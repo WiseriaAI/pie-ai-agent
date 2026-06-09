@@ -129,7 +129,7 @@ export default function SearchProviderSection() {
 
         {mode === "empty" && (
           <>
-            <div className="rounded-[10px] bg-field px-3.5 py-3">
+            <div className="rounded-[10px] border border-line bg-field px-3.5 py-3">
               <span className="font-mono text-[13px] text-fg-3">
                 tvly-···································
               </span>

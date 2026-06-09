@@ -43,7 +43,7 @@ export default function LanguageSelect() {
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className="flex w-full items-center justify-between rounded-[10px] bg-field px-3 py-2.5 text-[13px] text-fg-1"
+        className="flex w-full items-center justify-between rounded-[10px] border border-line bg-field px-3 py-2.5 text-[13px] text-fg-1"
       >
         <span>{currentLabel}</span>
         <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true" className="text-fg-3">

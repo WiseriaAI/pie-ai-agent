@@ -520,7 +520,7 @@ function SkillForm({
         <input
           value={form.name}
           onChange={(e) => onChange((p) => ({ ...p, name: e.target.value }))}
-          className="w-full rounded-[10px] border border-transparent bg-field px-3 py-2 text-[12px] text-fg-1 placeholder:text-fg-3 focus:border-accent-line"
+          className="w-full rounded-[10px] border border-line bg-field px-3 py-2 text-[12px] text-fg-1 placeholder:text-fg-3 focus:border-accent-line"
           placeholder={t("skills.form.namePlaceholder")}
         />
       </FormField>
@@ -529,7 +529,7 @@ function SkillForm({
         <input
           value={form.description}
           onChange={(e) => onChange((p) => ({ ...p, description: e.target.value }))}
-          className="w-full rounded-[10px] border border-transparent bg-field px-3 py-2 text-[12px] text-fg-1 placeholder:text-fg-3 focus:border-accent-line"
+          className="w-full rounded-[10px] border border-line bg-field px-3 py-2 text-[12px] text-fg-1 placeholder:text-fg-3 focus:border-accent-line"
           placeholder={t("skills.form.descPlaceholder")}
         />
       </FormField>
@@ -542,7 +542,7 @@ function SkillForm({
           value={form.instructions}
           onChange={(e) => onChange((p) => ({ ...p, instructions: e.target.value }))}
           rows={8}
-          className="w-full rounded-[10px] border border-transparent bg-field px-3 py-2 font-mono text-[11px] leading-4 text-fg-1 placeholder:text-fg-3 focus:border-accent-line"
+          className="w-full rounded-[10px] border border-line bg-field px-3 py-2 font-mono text-[11px] leading-4 text-fg-1 placeholder:text-fg-3 focus:border-accent-line"
           placeholder={t("skills.form.instructionsPlaceholder")}
         />
       </FormField>

@@ -63,7 +63,7 @@ export default function ProviderDropdown(props: Props) {
       <button
         aria-label={selectedName ?? t("providerDropdown.selectProvider")}
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 rounded-[10px] border border-transparent bg-field px-3 py-2.5 text-left text-[13px] text-fg-1 hover:border-line"
+        className="flex items-center gap-2 rounded-[10px] border border-line bg-field px-3 py-2.5 text-left text-[13px] text-fg-1"
       >
         {props.value && <ProviderIcon provider={props.value} size={16} className="text-fg-1" />}
         <span>{selectedName ?? t("providerDropdown.selectProvider")}</span>
@@ -82,7 +82,7 @@ export default function ProviderDropdown(props: Props) {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder={t("providerDropdown.searchPlaceholder")}
-              className="w-full rounded-[8px] border border-transparent bg-field px-2.5 py-1.5 text-[12px] text-fg-1 placeholder:text-fg-3 focus:border-accent-line"
+              className="w-full rounded-[8px] border border-line bg-field px-2.5 py-1.5 text-[12px] text-fg-1 placeholder:text-fg-3 focus:border-accent-line"
             />
           </div>
 
