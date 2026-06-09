@@ -438,9 +438,11 @@ function AboutSection() {
     <section className="flex flex-col gap-3.5">
       <div className="h-px w-full bg-line" />
       <div className="flex items-center gap-2.5">
-        <div className="flex h-[26px] w-[26px] flex-shrink-0 items-center justify-center rounded-[7px] border border-line bg-field">
-          <div className="h-2 w-2 rounded-full bg-accent" />
-        </div>
+        <img
+          src={chrome.runtime.getURL("icons/icon-128.png")}
+          alt="Pie"
+          className="h-[26px] w-[26px] flex-shrink-0 rounded-[7px]"
+        />
         <div className="flex flex-col gap-0.5">
           <div className="flex items-baseline gap-1.5">
             <span className="text-[13px] font-semibold text-fg-1">Pie</span>

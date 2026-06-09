@@ -132,13 +132,13 @@ export default function InstanceForm(props: Props) {
         {!replacing && props.existingApiKey ? (
           <div className="flex flex-col gap-1.5">
             <div className="flex gap-1.5">
-              <div className="flex-1 rounded-[10px] bg-field border border-line px-3 py-2.5 font-mono text-[13px] text-fg-1 select-all">
+              <div className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap rounded-[10px] bg-field border border-line px-3 py-2.5 font-mono text-[13px] text-fg-1 select-all">
                 {partialReveal(props.existingApiKey)}
               </div>
               <button
                 type="button"
                 onClick={() => setReplacing(true)}
-                className="rounded-[10px] border border-line bg-transparent px-2.5 py-2 text-[12px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
+                className="shrink-0 rounded-[10px] border border-line bg-transparent px-2.5 py-2 text-[12px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
               >
                 {t("instanceForm.replaceKey")}
               </button>
@@ -153,12 +153,12 @@ export default function InstanceForm(props: Props) {
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
                 placeholder={meta?.placeholder ?? ""}
-                className="flex-1 rounded-[10px] bg-field border border-line focus:border-accent-line px-3 py-2.5 text-[13px] text-fg-1"
+                className="min-w-0 flex-1 rounded-[10px] bg-field border border-line focus:border-accent-line px-3 py-2.5 text-[13px] text-fg-1"
               />
               <button
                 type="button"
                 onClick={() => setShowKey(!showKey)}
-                className="rounded-[10px] border border-line bg-transparent px-2.5 py-2 text-[12px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
+                className="shrink-0 rounded-[10px] border border-line bg-transparent px-2.5 py-2 text-[12px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
               >
                 {showKey ? t("instanceForm.hideKey") : t("instanceForm.showKey")}
               </button>
