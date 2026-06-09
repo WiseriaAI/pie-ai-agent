@@ -222,7 +222,7 @@ export default function NewConfigWizard(props: Props) {
   }
 
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-line bg-canvas p-3.5">
+    <div className="flex flex-col gap-3 rounded-[14px] bg-surface p-3.5">
       <ProviderDropdown
         value={provider}
         builtinProviders={sortedProviders}
@@ -396,7 +396,7 @@ export default function NewConfigWizard(props: Props) {
                 <button
                   type="button"
                   onClick={props.onCancel}
-                  className="rounded border border-line bg-transparent px-3 py-1.5 text-[11px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
+                  className="rounded-[10px] border border-line bg-transparent px-3 py-2 text-[12px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
                 >
                   {t("common.cancel")}
                 </button>
@@ -404,7 +404,7 @@ export default function NewConfigWizard(props: Props) {
                   type="button"
                   onClick={triggerTest}
                   disabled={!effectiveCanSave}
-                  className="rounded border border-line bg-transparent px-3 py-1.5 text-[11px] text-fg-2 hover:border-fg-3 disabled:opacity-30"
+                  className="rounded-[10px] border border-line bg-transparent px-3 py-2 text-[12px] text-fg-2 hover:border-fg-3 disabled:opacity-30"
                 >
                   {t("common.test")}
                 </button>
@@ -412,7 +412,7 @@ export default function NewConfigWizard(props: Props) {
                   type="button"
                   onClick={triggerSave}
                   disabled={!effectiveCanSave}
-                  className="rounded bg-fg-1 px-3 py-1.5 text-[11px] font-medium text-canvas disabled:opacity-30"
+                  className="rounded-[10px] bg-fg-1 px-4 py-2 text-[12px] font-medium text-canvas disabled:opacity-30"
                 >
                   {saveLabel}
                 </button>
@@ -429,7 +429,7 @@ export default function NewConfigWizard(props: Props) {
             <button
               type="button"
               onClick={props.onCancel}
-              className="rounded border border-line bg-transparent px-3 py-1.5 text-[11px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
+              className="rounded-[10px] border border-line bg-transparent px-3 py-2 text-[12px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
             >
               {t("common.cancel")}
             </button>
