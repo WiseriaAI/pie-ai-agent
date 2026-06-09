@@ -9,9 +9,11 @@
  *   - error:   ✕ + tool name + first line of observation (always visible,
  *     never auto-collapsed — errors deserve attention)
  *
- * Each line has a [详情] toggle that expands to args + observation +
- * resolvedElement, matching what the old AgentStepBubble showed but without
- * the surrounding card border + 14px padding.
+ * The whole header row is the toggle: clicking it expands args + observation
+ * + resolvedElement. The affordance is a small ">" chevron sitting right after
+ * the tool name (rotates 90° when open) — no "详情" label. The expanded block
+ * fades/slides in (view-enter) and caps args/observation height with an inner
+ * scroll so a long tool result no longer stretches the whole chat.
  */
 
 import { useState } from "react";
@@ -47,7 +49,13 @@ export default function AgentStepLine({
 
   return (
     <div className="flex flex-col gap-1.5">
-      <div className="flex items-center gap-2 text-[12px]">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
+        aria-label={expanded ? t("agentStep.collapse") : t("agentStep.expand")}
+        className="flex w-full items-center gap-2 text-left text-[12px]"
+      >
         <StatusDot status={status} />
         <span className={statusTextClass(status)}>
           {status === "pending" ? (
@@ -59,23 +67,22 @@ export default function AgentStepLine({
             <code className="font-mono text-fg-1">{tool}</code>
           )}
         </span>
+        <span
+          aria-hidden="true"
+          className="inline-block flex-shrink-0 text-fg-3 transition-transform duration-200"
+          style={{ transform: expanded ? "rotate(90deg)" : "rotate(0deg)" }}
+        >
+          ›
+        </span>
         {status === "error" && observation && (
-          <span className="truncate text-fg-3" title={observation}>
+          <span className="min-w-0 truncate text-fg-3" title={observation}>
             · {firstLine(observation)}
           </span>
         )}
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          aria-expanded={expanded}
-          className="ml-auto font-mono text-[10px] uppercase tracking-[0.08em] text-fg-3 hover:text-fg-2"
-        >
-          {expanded ? t("agentStep.collapse") : t("agentStep.expand")}
-        </button>
-      </div>
+      </button>
 
       {expanded && (
-        <div className="ml-4 flex flex-col gap-1.5 border-l border-line pl-2.5 text-[11px]">
+        <div className="view-enter ml-4 flex flex-col gap-1.5 border-l border-line pl-2.5 text-[11px]">
           {resolvedElement && (
             <div className="font-mono leading-4 text-fg-2">
               <span className="text-fg-3">{t("agentStep.element")}</span>
@@ -96,7 +103,7 @@ export default function AgentStepLine({
               <div className="font-mono text-[10px] uppercase tracking-[0.08em] text-fg-3">
                 {t("agentStep.args")}
               </div>
-            <pre className="mt-1 overflow-x-auto rounded border border-line bg-field p-2 font-mono leading-4 text-fg-2">
+            <pre className="mt-1 max-h-60 overflow-auto rounded border border-line bg-field p-2 font-mono leading-4 text-fg-2">
               {safeStringify(args, t("agentStep.nonSerializable"))}
             </pre>
           </div>
@@ -117,7 +124,7 @@ export default function AgentStepLine({
               <div className="font-mono text-[10px] uppercase tracking-[0.08em] text-fg-3">
                 {t("agentStep.observation")}
               </div>
-              <div className="mt-1 whitespace-pre-wrap leading-4 text-fg-2">
+              <div className="mt-1 max-h-60 overflow-y-auto whitespace-pre-wrap break-words leading-4 text-fg-2">
                 {observation}
               </div>
             </div>

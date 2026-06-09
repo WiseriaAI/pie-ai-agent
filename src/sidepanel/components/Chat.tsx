@@ -196,6 +196,11 @@ export default function Chat({
   // M5 — PinnedTabDropdown open state. Lives in Chat (not the dropdown
   // itself) because the dropdown's anchor is the PINNED row in the info bar.
   const [pinDropdownOpen, setPinDropdownOpen] = useState(false);
+  // Keep the dropdown mounted through its leave animation: `open` drives the
+  // animation direction; `visible` drives actual mount/unmount (set false only
+  // once the dropdown reports its leave animation finished via onExited).
+  const [pinDropdownVisible, setPinDropdownVisible] = useState(false);
+  const pinAnchorRef = useRef<HTMLButtonElement>(null);
   const [pickerActive, setPickerActive] = useState(false);
   const [enabledSkills, setEnabledSkills] = useState<SkillPackage[]>([]);
   const [popoverSelected, setPopoverSelected] = useState(0);
@@ -213,6 +218,14 @@ export default function Chat({
   // null = not yet fetched / tab closed → fall back to host display.
   const [lockedPinnedTitle, setLockedPinnedTitle] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  // Stick-to-bottom: track whether the user is currently near the bottom and
+  // only auto-scroll in that case, using an INSTANT jump (not smooth). When we
+  // are already pinned to the bottom — e.g. the loop just exited and appended
+  // its summary — an instant jump to the unchanged position is a no-op, so the
+  // visible "re-scroll" wobble is gone. Scrolling up to read mid-stream is no
+  // longer hijacked back to the bottom.
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const atBottomRef = useRef(true);
 
   // Phase 5 image input state
   const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
@@ -335,8 +348,22 @@ export default function Chat({
   });
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (!atBottomRef.current) return;
+    const c = scrollContainerRef.current;
+    if (c) c.scrollTop = c.scrollHeight;
   }, [messages, streamingText]);
+
+  const handleMessagesScroll = () => {
+    const c = scrollContainerRef.current;
+    if (!c) return;
+    atBottomRef.current = c.scrollHeight - c.scrollTop - c.clientHeight <= 60;
+  };
+
+  // Mount the pin dropdown as soon as it opens; unmounting waits for the
+  // dropdown's leave animation (onExited).
+  useEffect(() => {
+    if (pinDropdownOpen) setPinDropdownVisible(true);
+  }, [pinDropdownOpen]);
 
   useEffect(() => {
     if (prefillInput) {
@@ -1061,6 +1088,7 @@ After the skill completes, briefly summarize what was created (the user will see
           {displayPinnedOrigin && (
             <>
               <button
+                ref={pinAnchorRef}
                 type="button"
                 onClick={() => setPinDropdownOpen((v) => !v)}
                 aria-label={t("chat.pinnedTabSelector")}
@@ -1080,8 +1108,10 @@ After the skill completes, briefly summarize what was created (the user will see
                 ) : null}
                 <span className="text-fg-3 text-[10px]" aria-hidden="true">▾</span>
               </button>
-              {pinDropdownOpen && (
+              {pinDropdownVisible && (
                 <PinnedTabDropdown
+                  open={pinDropdownOpen}
+                  anchorRef={pinAnchorRef}
                   pinMode={pinMode}
                   pinnedTabs={pinnedTabs}
                   streaming={streaming}
@@ -1092,6 +1122,7 @@ After the skill completes, briefly summarize what was created (the user will see
                     void clearUserPin();
                   }}
                   onClose={() => setPinDropdownOpen(false)}
+                  onExited={() => setPinDropdownVisible(false)}
                 />
               )}
             </>
@@ -1127,7 +1158,11 @@ After the skill completes, briefly summarize what was created (the user will see
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto">
+      <div
+        ref={scrollContainerRef}
+        onScroll={handleMessagesScroll}
+        className="flex-1 overflow-y-auto"
+      >
         {messages.length === 0 && !streaming && !pageChanged ? (
           <EmptyState />
         ) : (
