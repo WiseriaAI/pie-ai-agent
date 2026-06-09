@@ -50,7 +50,7 @@ export default function AgentStepGroup({
   const t = useT();
 
   return (
-    <div className="flex max-w-[320px] flex-col gap-1.5">
+    <div className="flex w-full flex-col gap-1.5">
       {doneSteps.length > 0 && (
         <>
           <button

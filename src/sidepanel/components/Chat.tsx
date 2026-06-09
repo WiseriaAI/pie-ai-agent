@@ -213,6 +213,14 @@ export default function Chat({
   // null = not yet fetched / tab closed → fall back to host display.
   const [lockedPinnedTitle, setLockedPinnedTitle] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  // Stick-to-bottom: track whether the user is currently near the bottom and
+  // only auto-scroll in that case, using an INSTANT jump (not smooth). When we
+  // are already pinned to the bottom — e.g. the loop just exited and appended
+  // its summary — an instant jump to the unchanged position is a no-op, so the
+  // visible "re-scroll" wobble is gone. Scrolling up to read mid-stream is no
+  // longer hijacked back to the bottom.
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const atBottomRef = useRef(true);
 
   // Phase 5 image input state
   const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
@@ -335,8 +343,16 @@ export default function Chat({
   });
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (!atBottomRef.current) return;
+    const c = scrollContainerRef.current;
+    if (c) c.scrollTop = c.scrollHeight;
   }, [messages, streamingText]);
+
+  const handleMessagesScroll = () => {
+    const c = scrollContainerRef.current;
+    if (!c) return;
+    atBottomRef.current = c.scrollHeight - c.scrollTop - c.clientHeight <= 60;
+  };
 
   useEffect(() => {
     if (prefillInput) {
@@ -1127,7 +1143,11 @@ After the skill completes, briefly summarize what was created (the user will see
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto">
+      <div
+        ref={scrollContainerRef}
+        onScroll={handleMessagesScroll}
+        className="flex-1 overflow-y-auto"
+      >
         {messages.length === 0 && !streaming && !pageChanged ? (
           <EmptyState />
         ) : (
