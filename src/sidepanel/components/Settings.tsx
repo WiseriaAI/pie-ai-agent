@@ -29,8 +29,8 @@ import SearchProviderSection from "./SearchProviderSection";
 import InstanceForm, { type InstanceFormPayload } from "./InstanceForm";
 import InstancesList from "./InstancesList";
 import NewConfigWizard from "./NewConfigWizard";
-import { useT, setLocale, getLocale, type LocaleSetting } from "@/lib/i18n";
-import { getConfig } from "@/lib/idb/config-store";
+import LanguageSelect from "./LanguageSelect";
+import { useT, getLocale } from "@/lib/i18n";
 import { buildGithubNewIssueUrl, buildFeedbackMailto, type FeedbackEnv } from "@/lib/feedback";
 
 interface Props {
@@ -290,26 +290,7 @@ export default function Settings({ onBack, onRunSkill }: Props) {
           <div className="flex flex-col gap-7">
             <section className="flex flex-col gap-3.5">
               <div className="text-[15px] font-semibold tracking-[-0.005em] text-fg-1">{t("settings.language.sectionTitle")}</div>
-              <label className="flex items-center gap-2 text-[12px]">
-                <span className="text-fg-2 min-w-[120px]">{t("settings.language.label")}</span>
-                <select
-                  className="font-mono text-[12px] bg-field rounded px-2 py-1"
-                  defaultValue="auto"
-                  onChange={(e) => {
-                    void setLocale(e.target.value as LocaleSetting);
-                  }}
-                  ref={(el) => {
-                    if (!el) return;
-                    getConfig<string>("ui_locale").then((v) => {
-                      if (v === "auto" || v === "en" || v === "zh-CN") el.value = v;
-                    });
-                  }}
-                >
-                  <option value="auto">{t("settings.language.optionAuto")}</option>
-                  <option value="en">{t("settings.language.optionEn")}</option>
-                  <option value="zh-CN">{t("settings.language.optionZhCN")}</option>
-                </select>
-              </label>
+              <LanguageSelect />
             </section>
             <CdpInputSection
               state={cdpInput}
