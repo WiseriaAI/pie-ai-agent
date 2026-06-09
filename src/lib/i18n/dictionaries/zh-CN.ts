@@ -292,7 +292,7 @@ export const zhCNDict = {
     },
     capacity: "容量",
     newSkill: "+ 新建技能",
-    noSkills: "暂无技能 — 点击 \"+ 新建技能\" 添加。",
+    noSkills: "还没有技能。",
     form: {
       editSkill: "编辑技能",
       newSkill: "新建技能",

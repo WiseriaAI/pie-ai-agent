@@ -159,12 +159,6 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
     await loadSkills();
   }
 
-  function openCreateForm() {
-    setForm(emptyForm());
-    setFormError(null);
-    setShowForm(true);
-  }
-
   function openEditForm(skill: SkillPackage) {
     setForm(formFromSkill(skill));
     setFormError(null);
@@ -255,19 +249,10 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
     }
   }
 
-  const quotaPct = Math.min(100, (storageBytes / STORAGE_QUOTA_BYTES) * 100);
   const custom = skills.filter((s) => !s.builtIn);
 
   return (
     <div className="flex flex-col gap-7">
-      <CapacitySection
-        skillCount={skills.length}
-        storageBytes={storageBytes}
-        quotaPct={quotaPct}
-        showFormButton={!showForm}
-        onNew={openCreateForm}
-      />
-
       {/* Concept hint — Skill 与底层 tool 的区别。Phase 3+ 用户经常误以为
           "为什么 click / type / open_url 这些没在列表里" — 它们是 LLM 的原子
           工具，不是 reusable workflow（skill）。 */}
@@ -308,50 +293,6 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
         <p className="text-[12px] text-fg-3">{t("skills.noSkills")}</p>
       )}
     </div>
-  );
-}
-
-function CapacitySection({
-  skillCount,
-  storageBytes,
-  quotaPct,
-  showFormButton,
-  onNew,
-}: {
-  skillCount: number;
-  storageBytes: number;
-  quotaPct: number;
-  showFormButton: boolean;
-  onNew: () => void;
-}) {
-  const t = useT();
-  const overFill = quotaPct >= 80;
-  return (
-    <section className="flex flex-col gap-2.5">
-      <div className="flex items-baseline justify-between">
-        <div className="flex flex-col gap-0.5">
-          <span className="text-[16px] font-semibold tracking-[-0.01em] text-fg-1">{t("skills.capacity")}</span>
-          <span className="font-mono text-[11px] text-fg-3">
-            {skillCount} skill{skillCount === 1 ? "" : "s"}{" "}
-            · {formatBytes(storageBytes)} of {formatBytes(STORAGE_QUOTA_BYTES)}
-          </span>
-        </div>
-        {showFormButton && (
-          <button
-            onClick={onNew}
-            className="rounded-[10px] bg-fg-1 px-3.5 py-2 text-[12px] font-medium text-canvas hover:opacity-90"
-          >
-            {t("skills.newSkill")}
-          </button>
-        )}
-      </div>
-      <div className="h-1 w-full overflow-hidden rounded-full bg-field">
-        <div
-          className={`h-full transition-all ${overFill ? "bg-warning" : "bg-accent"}`}
-          style={{ width: `${quotaPct}%` }}
-        />
-      </div>
-    </section>
   );
 }
 

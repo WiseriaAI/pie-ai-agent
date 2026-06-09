@@ -291,7 +291,7 @@ export const enDict = {
     },
     capacity: "Capacity",
     newSkill: "+ New skill",
-    noSkills: 'No skills yet — click "+ New skill" to add one.',
+    noSkills: "No skills yet.",
     form: {
       editSkill: "Edit skill",
       newSkill: "New skill",
