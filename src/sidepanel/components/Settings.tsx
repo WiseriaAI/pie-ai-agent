@@ -148,6 +148,7 @@ export default function Settings({ onBack, onRunSkill }: Props) {
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-6">
+        <div key={tab} className="view-enter">
         {tab === "configs" ? (
           <div className="flex flex-col gap-7">
             <section className="flex flex-col gap-3.5">
@@ -304,6 +305,7 @@ export default function Settings({ onBack, onRunSkill }: Props) {
         ) : (
           <SearchProviderSection />
         )}
+        </div>
       </div>
     </div>
   );

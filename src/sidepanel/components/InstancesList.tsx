@@ -47,7 +47,7 @@ export default function InstancesList(props: Props) {
                 <path d="M2.5 3.5L4.5 5.5L6.5 3.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </div>
-            {isOpen && <div className="border-t border-line bg-[var(--c-surface-deep)]">{props.renderForm(inst.id)}</div>}
+            {isOpen && <div className="drawer-down border-t border-line bg-[var(--c-surface-deep)]">{props.renderForm(inst.id)}</div>}
           </div>
         );
       })}

@@ -59,7 +59,7 @@ export default function LanguageSelect() {
       {open && (
         <div
           role="listbox"
-          className="absolute z-10 mt-1 flex w-full flex-col gap-0.5 rounded-[9px] border border-line bg-surface p-1"
+          className="scale-in origin-top absolute z-10 mt-1 flex w-full flex-col gap-0.5 rounded-[9px] border border-line bg-surface p-1"
         >
           {OPTIONS.map((o) => {
             const active = o.value === value;

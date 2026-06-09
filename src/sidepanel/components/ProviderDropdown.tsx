@@ -73,7 +73,7 @@ export default function ProviderDropdown(props: Props) {
       </button>
 
       {open && (
-        <div className="flex flex-col rounded-[10px] border border-line bg-surface">
+        <div className="scale-in origin-top flex flex-col rounded-[10px] border border-line bg-surface">
           {/* Search input */}
           <div className="border-b border-line p-2">
             <input
