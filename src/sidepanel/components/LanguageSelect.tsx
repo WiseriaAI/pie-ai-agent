@@ -46,7 +46,7 @@ export default function LanguageSelect() {
         className="flex w-full items-center justify-between rounded-[10px] bg-field px-3 py-2.5 text-[13px] text-fg-1"
       >
         <span>{currentLabel}</span>
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="text-fg-3">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true" className="text-fg-3">
           <path
             d="M3 4.5L6 7.5L9 4.5"
             stroke="currentColor"
@@ -76,7 +76,7 @@ export default function LanguageSelect() {
               >
                 <span>{t(o.labelKey)}</span>
                 {active && (
-                  <svg width="13" height="13" viewBox="0 0 14 14" fill="none" className="text-accent">
+                  <svg width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden="true" className="text-accent">
                     <path
                       d="M2.5 7.5L5.5 10.5L11.5 4"
                       stroke="currentColor"

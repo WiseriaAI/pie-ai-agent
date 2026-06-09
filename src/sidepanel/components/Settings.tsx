@@ -278,7 +278,7 @@ export default function Settings({ onBack, onRunSkill }: Props) {
               ) : (
                 <button
                   onClick={() => setShowWizard(true)}
-                  className="flex items-center gap-2 self-start rounded border border-line bg-transparent px-3.5 py-2 text-[12px] text-accent hover:bg-field"
+                  className="flex items-center gap-2 self-start rounded-[10px] border border-line bg-transparent px-3.5 py-2 text-[12px] text-accent hover:bg-field"
                 >
                   {t("settings.myConfigs.newConfigButton")}
                 </button>
