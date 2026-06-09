@@ -111,7 +111,7 @@ export default function InstanceForm(props: Props) {
           aria-label="nickname"
           value={nickname}
           onChange={(e) => setNickname(e.target.value)}
-          className="rounded-[10px] bg-field border border-transparent focus:border-accent-line px-3 py-2 text-[12px] text-fg-1"
+          className="rounded-[10px] bg-field border border-transparent focus:border-accent-line px-3 py-2.5 text-[13px] text-fg-1"
         />
       </Field>
 
@@ -120,7 +120,7 @@ export default function InstanceForm(props: Props) {
           {metaLoading && isCustomProvider ? (
             <div className="h-[38px] animate-pulse rounded border border-line bg-field" />
           ) : (
-            <div className="flex items-center gap-2 rounded-[10px] bg-field border border-transparent px-3 py-2 text-[12px] text-fg-2">
+            <div className="flex items-center gap-2 rounded-[10px] bg-field border border-transparent px-3 py-2.5 text-[13px] text-fg-2">
               <span className="text-fg-1">{meta ? providerDisplayName(meta, t) : props.provider}</span>
               <span className="ml-auto font-mono text-[10px] text-fg-3">{t("instanceForm.locked")}</span>
             </div>
@@ -132,7 +132,7 @@ export default function InstanceForm(props: Props) {
         {!replacing && props.existingApiKey ? (
           <div className="flex flex-col gap-1.5">
             <div className="flex gap-1.5">
-              <div className="flex-1 rounded-[10px] bg-field border border-transparent px-3 py-2 font-mono text-[12px] text-fg-1 select-all">
+              <div className="flex-1 rounded-[10px] bg-field border border-transparent px-3 py-2.5 font-mono text-[13px] text-fg-1 select-all">
                 {partialReveal(props.existingApiKey)}
               </div>
               <button
@@ -153,7 +153,7 @@ export default function InstanceForm(props: Props) {
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
                 placeholder={meta?.placeholder ?? ""}
-                className="flex-1 rounded-[10px] bg-field border border-transparent focus:border-accent-line px-3 py-2 text-[12px] text-fg-1"
+                className="flex-1 rounded-[10px] bg-field border border-transparent focus:border-accent-line px-3 py-2.5 text-[13px] text-fg-1"
               />
               <button
                 type="button"
