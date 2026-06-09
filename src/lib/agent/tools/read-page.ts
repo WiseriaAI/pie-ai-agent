@@ -169,10 +169,9 @@ function sliceUtf8(value: string, maxBytes: number): string {
 export const readPageTool: Tool = {
   name: "read_page",
   description:
-    "Read the given tab's HTML structure (interactive elements stamped with data-pie-idx, " +
-    "shadow DOM traversed, scrollable regions noted). Returns per-frame HTML inside " +
-    "<untrusted_page_content> wrappers plus a <frame_map>. " +
-    "Call this before any click/type/select to get current element indices.",
+    "Inspect the given tab. Default/auto returns a compact Page Atlas for target discovery " +
+    "and structured extraction. Use mode=interactive before click/type/select to get current " +
+    "element indices, or mode=content/full when you explicitly need page text/HTML.",
   parameters: {
     type: "object",
     properties: {
@@ -180,7 +179,8 @@ export const readPageTool: Tool = {
       mode: {
         type: "string",
         enum: ["auto", "atlas", "interactive", "content", "full"],
-        description: "Read mode. auto is default; interactive uses a smaller HTML budget while preserving the interactive index.",
+        description:
+          "Read mode. auto is default and behaves like atlas. Use interactive for element indices, content/full for page text or HTML.",
       },
       max_bytes: {
         type: "integer",
@@ -219,7 +219,7 @@ export const readPageTool: Tool = {
       return { success: false, error: "discardedTabRequiresActivation" };
     }
 
-    if (mode === "atlas") {
+    if (mode === "atlas" || mode === "auto") {
       let atlasResults: chrome.scripting.InjectionResult<ProbeResult>[];
       try {
         atlasResults = await chrome.scripting.executeScript({

@@ -41,9 +41,9 @@ Treat an unexpected origin change as a signal to be careful: the new page's cont
 ## Choosing Tools
 
 Use the **most specific tool** for the job — don't reach for a general tool when a specific one exists (e.g. don't \`list_tabs\` to find your own pinned tab; its id is already given to you):
-- **Read the current page** → \`read_page\` (PDF tabs → \`read_pdf\` / \`search_pdf\` / \`get_pdf_outline\`).
+- **Read the current page** → \`read_page({mode:"atlas"})\` for the first pass; use \`mode:"content"\` only when you need article/body text, and \`mode:"interactive"\` only when you need click/type/select indices (PDF tabs → \`read_pdf\` / \`search_pdf\` / \`get_pdf_outline\`).
 - **Act on a page** → \`click\` / \`type\` / \`select\`; use the CDP keyboard tools only when \`type\` reports a hidden IME / keyboard capture buffer.
-- **Find external info** → \`search_web\`, then drill into results with \`open_url\` + \`read_page\` instead of re-searching.
+- **Find external info** → \`search_web\`, then drill into results with \`open_url\` + \`read_page({mode:"content"})\` instead of re-searching.
 - **Manage tabs** → \`list_tabs\` / \`activate_tab\` / \`focus_tab\` / \`open_url\` / \`close_tabs\` / \`group_tabs\` / \`move_tabs\`.
 - **Reusable workflows** → \`use_skill\`.
 - **End a tool task** → \`done\` (complete) or \`fail\` (cannot complete).
@@ -87,13 +87,13 @@ const SEARCH_TOOL_GUIDANCE = `
 \`search_web({query, max_results?})\` calls **Tavily** (a search engine tuned for AI agents) and returns titles, URLs, and snippets. Calls execute directly (no confirm card); the user pays per call via their Tavily key, so be deliberate.
 
 - **Use it when:** the pinned tab(s) lack the answer to a knowledge question, you need to cross-check a page claim against external sources, or the user explicitly asks to research / look up something.
-- **Don't use it when:** the answer is in the current tab (call \`read_page\` first), the question is conversational or answerable from your own knowledge, or you've already gathered enough — drill into existing URLs instead.
+- **Don't use it when:** the answer is in the current tab (call \`read_page({mode:"atlas"})\` first, then target/content modes as needed), the question is conversational or answerable from your own knowledge, or you've already gathered enough — drill into existing URLs instead.
 
 **Drill-down protocol** (the critical discipline):
 1. Read all snippets in the \`<untrusted_search_result>\` observation.
 2. Pick 1–3 promising URLs (recent, authoritative, on-topic).
 3. \`open_url\` each — they auto-pin as new tabs.
-4. Next iteration: \`read_page\` on the new tab ids for full content.
+4. Next iteration: \`read_page({mode:"content"})\` on the new tab ids for full content.
 5. Synthesize across sources and cite URLs in your answer.
 
 Default disposition: **one search → drill into 2–3 results → synthesize.** Search a second time only if drilling exposed a gap your first results don't cover — prefer one more drill over one more search. Stop when your drilled content covers the question, the same URLs keep reappearing (index saturated), or snippets alone already answer it.
@@ -185,7 +185,7 @@ function buildPinnedContextBlock(
 - Pinned tab id: ${pin.tabId}
 - Pinned origin: ${pin.origin}
 
-Each iteration's observation gives you only the current URL and page title of the pinned tab. To inspect, read, extract from, or operate on the page, call \`read_page({tabId: ${pin.tabId}})\` DIRECTLY — do NOT call list_tabs first to look up the id (it's right above). read_page returns frame metadata, an interactive index with element pie_idx values, page content, and scrollable hints. list_tabs is for discovering OTHER tabs the user might want to act on.`;
+Each iteration's observation gives you only the current URL and page title of the pinned tab. To inspect, extract from, or plan an operation on the page, call \`read_page({tabId: ${pin.tabId}, mode:"atlas"})\` DIRECTLY — do NOT call list_tabs first to look up the id (it's right above). If you need click/type/select indices after choosing an action, call \`read_page({tabId: ${pin.tabId}, mode:"interactive"})\`. If you need full body text, call \`read_page({tabId: ${pin.tabId}, mode:"content"})\`. list_tabs is for discovering OTHER tabs the user might want to act on.`;
   }
 
   // Multi-pin: list all tabs, marking the current focus.
@@ -200,7 +200,7 @@ Each iteration's observation gives you only the current URL and page title of th
   return `\n\nYou are anchored to ${pinnedTabs.length} browser tabs for this conversation:
 ${tabLines}
 
-Each iteration's observation carries only the URL and page title for the currently focused tab. To inspect, read, extract from, or operate on a tab, call \`read_page({tabId: N})\` with the desired tabId — do NOT call list_tabs first (ids are above). read_page returns frame metadata, an interactive index with element pie_idx values, page content, and scrollable hints.
+Each iteration's observation carries only the URL and page title for the currently focused tab. To inspect, extract from, or plan an operation on a tab, call \`read_page({tabId: N, mode:"atlas"})\` with the desired tabId — do NOT call list_tabs first (ids are above). If you need click/type/select indices after choosing an action, call \`read_page({tabId: N, mode:"interactive"})\`; if you need full body text, call \`read_page({tabId: N, mode:"content"})\`.
 
 To switch which tab you operate on, call focus_tab({tabId: N}) where N is one of the pinned tab ids above. The new tab becomes the focus on the NEXT iteration — do NOT batch click/type/scroll against the new tab in the same response as focus_tab; instead call read_page on it next turn before writing.`;
 }
@@ -246,7 +246,7 @@ const READ_PAGE_GUIDANCE = `
 
 ## Reading & Acting on a Page
 
-\`read_page({tabId, mode?, max_bytes?})\` returns the page observation in three parts: a \`<frame_map>\` of all frames, a budget-protected \`<interactive_index>\` of operation targets, and per-frame \`<untrusted_page_content frame_id="N">\` blocks of stripped HTML for page content/context. \`mode:"atlas"\` returns a compact \`<page_atlas>\` inside \`<untrusted_page_content mode="atlas">\`.
+\`read_page({tabId, mode?, max_bytes?})\` defaults to \`mode:"atlas"\`, returning a compact \`<page_atlas>\` inside \`<untrusted_page_content mode="atlas">\`. Only explicit \`mode:"interactive"\`, \`mode:"content"\`, or \`mode:"full"\` returns the heavier frame map / interactive index / per-frame page content view.
 
 Use \`mode:"interactive"\` when looking for buttons, inputs, blank editors, menus, or form controls. Use \`mode:"content"\` when reading/summarizing body text, tables, emails, or status messages. Use \`mode:"full"\` with \`max_bytes\` only when the smaller modes did not return enough context. Use \`read_page({tabId, mode:"atlas"})\` when planning a page operation or structured extraction: choose a \`target_id\` from the atlas output, or call \`find_target\` to search target metadata; then read the target with \`read_collection\`, \`read_table\`, or \`read_target\`, or extract structured rows with \`extract_records\`. \`extract_records\` is target-level only: always pass an \`atlas_id\`, a \`target_id\`, and a schema object.
 

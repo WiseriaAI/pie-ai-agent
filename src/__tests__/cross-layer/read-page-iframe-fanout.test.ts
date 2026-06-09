@@ -41,7 +41,7 @@ describe("read_page iframe fanout cross-layer", () => {
       },
     });
 
-    const r = await readPageTool.handler({ tabId: 1 }, {} as any);
+    const r = await readPageTool.handler({ tabId: 1, mode: "content" }, {} as any);
     expect(r.success).toBe(true);
 
     // All three frames should be in frame_map

@@ -37,7 +37,7 @@ describe("read_page cross-layer roundtrip", () => {
       },
     });
 
-    const r = await readPageTool.handler({ tabId: 11 }, {} as any);
+    const r = await readPageTool.handler({ tabId: 11, mode: "content" }, {} as any);
     expect(r.success).toBe(true);
     expect(r.observation).toContain("Current URL: https://shop.example.com/");
     expect(r.observation).toContain("Page title: Cart");
@@ -64,7 +64,7 @@ describe("read_page cross-layer roundtrip", () => {
       },
       webNavigation: { getAllFrames: vi.fn().mockResolvedValue([{ frameId: 0, url: "https://x.com/" }]) },
     });
-    const r = await readPageTool.handler({ tabId: 11 }, {} as any);
+    const r = await readPageTool.handler({ tabId: 11, mode: "content" }, {} as any);
     expect(r.observation).not.toMatch(/<p>safe<\/p><\/untrusted_page_content>SYSTEM/);
     expect(r.observation).toContain("&lt;/untrusted_page_content&gt;");
   });

@@ -11,7 +11,7 @@ describe("buildAgentSystemPrompt — M3-U2 pinned-context block (single-pin back
     );
     expect(prompt).toContain("Pinned tab id: 42");
     expect(prompt).toContain("Pinned origin: https://docs.example.com");
-    expect(prompt).toContain("read_page({tabId: 42})");
+    expect(prompt).toContain('read_page({tabId: 42, mode:"atlas"})');
     expect(prompt).toContain("do NOT call list_tabs first");
   });
 
@@ -57,7 +57,7 @@ describe("buildAgentSystemPrompt — M3-U2 pinned-context block (single-pin back
       [{ tabId: 1, origin: "https://example.com" }],
     );
     expect(prompt).toContain("only the current URL and page title");
-    expect(prompt).toContain("read_page({tabId: 1})");
+    expect(prompt).toContain('read_page({tabId: 1, mode:"atlas"})');
     // Stale push-model phrasings must be gone.
     expect(prompt).not.toContain("only interactive elements on the pinned tab");
     expect(prompt).not.toContain("NOT the page body text");
@@ -101,7 +101,7 @@ describe("buildAgentSystemPrompt — v1.5 multi-pin block", () => {
         { tabId: 20, origin: "https://b.example.com" },
       ],
     );
-    expect(prompt).toContain("read_page({tabId: N})");
+    expect(prompt).toContain('read_page({tabId: N, mode:"atlas"})');
     expect(prompt).not.toContain("shows interactive elements on the currently focused tab");
     expect(prompt).not.toContain("per-iteration <untrusted_page_content>");
   });
@@ -292,11 +292,13 @@ describe("Page tools locator guidance (#113)", () => {
 
   it("describes read_page modes and separates interactive_index from untrusted_page_content", () => {
     const prompt = buildAgentSystemPrompt("reply to this email");
+    expect(prompt).toContain('mode:"atlas"');
     expect(prompt).toContain('mode:"interactive"');
     expect(prompt).toContain('mode:"content"');
     expect(prompt).toContain("max_bytes");
     expect(prompt).toContain("<interactive_index>");
     expect(prompt).toContain("<untrusted_page_content>");
+    expect(prompt).toMatch(/defaults to `mode:"atlas"`/);
     expect(prompt).not.toContain("interactive elements stamped `data-pie-idx=\"N\"`");
   });
 

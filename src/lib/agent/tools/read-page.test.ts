@@ -81,7 +81,7 @@ describe("read_page tool", () => {
     },
   });
 
-  it("返回 success + observation 含 frame_map + per-frame HTML", async () => {
+  it("mode=content 返回 success + observation 含 frame_map + per-frame HTML", async () => {
     const fakeTab = { id: 7, url: "https://example.com/", discarded: false };
     const executeScript = vi.fn().mockResolvedValue([
       { frameId: 0, result: emptySnapshot("<h1>Hi</h1>") },
@@ -96,7 +96,7 @@ describe("read_page tool", () => {
       },
     });
 
-    const result = await readPageTool.handler({ tabId: 7 }, {} as any);
+    const result = await readPageTool.handler({ tabId: 7, mode: "content" }, {} as any);
     expect(result.success).toBe(true);
     expect(result.observation).toContain('Current URL: https://example.com/');
     expect(result.observation).toContain('<frame_map>');
@@ -106,6 +106,36 @@ describe("read_page tool", () => {
     const calls = (executeScript as any).mock.calls;
     expect(calls.length).toBe(1);
     expect(calls[0][0].func).toBe(probePageInjected);
+  });
+
+  it("default auto mode returns compact page_atlas instead of full page HTML", async () => {
+    const fakeTab = {
+      id: 7,
+      url: "https://example.com/products",
+      title: "Products",
+      discarded: false,
+    };
+    const executeScript = vi.fn().mockResolvedValue([
+      { frameId: 0, result: atlasProbe() },
+    ]);
+    vi.stubGlobal("chrome", {
+      tabs: { get: vi.fn().mockResolvedValue(fakeTab) },
+      scripting: { executeScript },
+      webNavigation: {
+        getAllFrames: vi.fn().mockResolvedValue([
+          { frameId: 0, url: "https://example.com/products" },
+        ]),
+      },
+    });
+
+    const result = await readPageTool.handler({ tabId: 7 }, {} as any);
+
+    expect(result.success).toBe(true);
+    expect(result.observation).toContain('mode="atlas"');
+    expect(result.observation).toContain("<page_atlas");
+    expect(result.observation).not.toContain("<frame_map>");
+    expect(result.observation).not.toContain("<interactive_index");
+    expect((executeScript as any).mock.calls[0][0].args).toEqual([{ op: "atlas" }]);
   });
 
   it("mode=atlas returns compact page_atlas and stores target ids", async () => {
@@ -264,7 +294,7 @@ describe("read_page tool", () => {
         ]),
       },
     });
-    const r = await readPageTool.handler({ tabId: 7 }, {} as any);
+    const r = await readPageTool.handler({ tabId: 7, mode: "content" }, {} as any);
     expect(r.observation).toMatch(/frame_id="3".*cross_origin="true"/);
   });
 
@@ -281,7 +311,7 @@ describe("read_page tool", () => {
         ]),
       },
     });
-    const r = await readPageTool.handler({ tabId: 7 }, {} as any);
+    const r = await readPageTool.handler({ tabId: 7, mode: "content" }, {} as any);
     expect(r.observation).toMatch(/frame_id="5".*unreachable="true".*reason="about-blank"/s);
   });
 
@@ -289,7 +319,7 @@ describe("read_page tool", () => {
     vi.stubGlobal("chrome", {
       tabs: { get: vi.fn().mockResolvedValue({ id: 7, url: "chrome://settings/", discarded: false }) },
     });
-    const r = await readPageTool.handler({ tabId: 7 }, {} as any);
+    const r = await readPageTool.handler({ tabId: 7, mode: "content" }, {} as any);
     expect(r.success).toBe(false);
     expect(r.error).toMatch(/restricted/i);
   });
@@ -310,7 +340,7 @@ describe("read_page tool", () => {
         ]),
       },
     });
-    const r = await readPageTool.handler({ tabId: 7 }, {} as any);
+    const r = await readPageTool.handler({ tabId: 7, mode: "content" }, {} as any);
     expect(r.observation).toMatch(/<iframe data-frame-id="9">\[内容见 frame_id=9\]<\/iframe>/);
     expect(r.observation).not.toContain("data-pie-iframe-position");
   });
@@ -339,7 +369,7 @@ describe("read_page tool", () => {
     expect(r.observation).toMatch(/frame_id="3".*unread="budget"/s);
   });
 
-  it("default auto mode renders interactive_index and does not truncate 80KB HTML", async () => {
+  it("mode=content renders interactive_index and does not truncate 80KB HTML", async () => {
     const big = "x".repeat(80_000);
     vi.stubGlobal("chrome", {
       tabs: { get: vi.fn().mockResolvedValue({ id: 7, url: "https://x.com/", discarded: false }) },
@@ -377,10 +407,10 @@ describe("read_page tool", () => {
       },
     });
 
-    const r = await readPageTool.handler({ tabId: 7 }, {} as any);
+    const r = await readPageTool.handler({ tabId: 7, mode: "content" }, {} as any);
 
     expect(r.success).toBe(true);
-    expect(r.observation).toContain('<interactive_index mode="auto" total="1">');
+    expect(r.observation).toContain('<interactive_index mode="content" total="1">');
     expect(r.observation).toContain(
       '<interactive_element frame_id="0" pie_idx="4" tag="div" role="textbox"',
     );
@@ -529,7 +559,7 @@ describe("read_page tool", () => {
       },
     });
 
-    const r = await readPageTool.handler({ tabId: 7 }, {} as any);
+    const r = await readPageTool.handler({ tabId: 7, mode: "interactive" }, {} as any);
 
     expect(r.success).toBe(true);
     expect(r.observation).toContain('name="Bad &quot; name &lt;x&gt;"');
@@ -568,10 +598,10 @@ describe("read_page tool", () => {
       },
     });
 
-    const r = await readPageTool.handler({ tabId: 7 }, {} as any);
+    const r = await readPageTool.handler({ tabId: 7, mode: "interactive" }, {} as any);
 
     expect(r.success).toBe(true);
-    expect(r.observation).toContain('<interactive_index mode="auto" total="321" truncated="true">');
+    expect(r.observation).toContain('<interactive_index mode="interactive" total="321" truncated="true">');
     expect(r.observation).toContain('pie_idx="999" tag="div" role="textbox"');
     expect(r.observation).toContain('contenteditable="true"');
     expect(r.observation).not.toContain('pie_idx="319" tag="div" role=""');
@@ -590,7 +620,7 @@ describe("read_page tool", () => {
       },
     });
 
-    const r = await readPageTool.handler({ tabId: 7, max_bytes: 5 }, {} as any);
+    const r = await readPageTool.handler({ tabId: 7, mode: "content", max_bytes: 5 }, {} as any);
 
     expect(r.success).toBe(true);
     expect(r.observation).toMatch(/frame_id="0".*truncated="true"/s);
