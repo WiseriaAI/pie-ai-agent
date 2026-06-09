@@ -152,7 +152,7 @@ export default function Settings({ onBack, onRunSkill }: Props) {
           <div className="flex flex-col gap-7">
             <section className="flex flex-col gap-3.5">
               <div className="flex items-baseline justify-between">
-                <span className="caps text-fg-3">{t("settings.myConfigs.title")}</span>
+                <span className="text-[16px] font-semibold tracking-[-0.01em] text-fg-1">{t("settings.myConfigs.title")}</span>
                 <span className="font-mono text-[10px] text-fg-3">
                   {instances.length} {t("settings.myConfigs.countSuffix")}
                 </span>

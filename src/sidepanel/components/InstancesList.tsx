@@ -10,11 +10,11 @@ interface Props {
 
 export default function InstancesList(props: Props) {
   return (
-    <div className="flex flex-col gap-px overflow-hidden rounded-lg border border-line bg-line">
-      {props.instances.map((inst) => {
+    <div className="flex flex-col overflow-hidden rounded-[14px] bg-surface">
+      {props.instances.map((inst, i) => {
         const isOpen = props.expandedId === inst.id;
         return (
-          <div key={inst.id} className="bg-surface">
+          <div key={inst.id} className={i > 0 ? "border-t border-line" : ""}>
             <div
               role="button"
               tabIndex={0}
@@ -25,15 +25,15 @@ export default function InstancesList(props: Props) {
                   props.onToggleExpand(inst.id);
                 }
               }}
-              className="flex w-full cursor-pointer items-center gap-3 px-3.5 py-3 text-left hover:bg-field focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+              className="flex w-full cursor-pointer items-center gap-3 px-[15px] py-[15px] text-left hover:bg-field focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
             >
-              <ProviderIcon provider={inst.provider} size={26} />
+              <ProviderIcon provider={inst.provider} size={36} />
               <div className="min-w-0 flex-1">
-                <div className="text-[13px] font-medium text-fg-1">
+                <div className="text-[14px] font-medium text-fg-1">
                   {inst.nickname}
                   <span className="ml-1 text-[11px] font-normal text-fg-3">· {inst.provider}</span>
                 </div>
-                <div className="truncate font-mono text-[11px] text-fg-2">{maskKey(inst.apiKey)}</div>
+                <div className="truncate font-mono text-[11px] text-fg-3">{maskKey(inst.apiKey)}</div>
               </div>
               <svg
                 width="9"
@@ -47,7 +47,7 @@ export default function InstancesList(props: Props) {
                 <path d="M2.5 3.5L4.5 5.5L6.5 3.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </div>
-            {isOpen && <div className="border-t border-line bg-canvas">{props.renderForm(inst.id)}</div>}
+            {isOpen && <div className="border-t border-line bg-[var(--c-surface-deep)]">{props.renderForm(inst.id)}</div>}
           </div>
         );
       })}
