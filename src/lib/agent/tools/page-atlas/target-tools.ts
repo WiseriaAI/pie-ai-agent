@@ -126,7 +126,6 @@ function matchReason(target: AtlasTarget, query: string): string {
 
 async function defaultGetPageState(tabId: number): Promise<{ url?: string; fingerprint?: AtlasFingerprint }> {
   const tab = await chrome.tabs.get(tabId);
-  let fingerprint: AtlasFingerprint | undefined;
   try {
     const results = await chrome.scripting.executeScript({
       target: { tabId, frameIds: [0] },
@@ -135,12 +134,12 @@ async function defaultGetPageState(tabId: number): Promise<{ url?: string; finge
     }) as chrome.scripting.InjectionResult<ProbeResult>[];
     const result = results[0]?.result;
     if (result?.op === "atlas") {
-      fingerprint = result.fingerprint;
+      return { url: tab.url, fingerprint: result.fingerprint };
     }
   } catch {
-    // URL freshness still protects cross-page target reuse when probing fails.
+    // Without a fresh page fingerprint, old atlas target ids are not safe to reuse.
   }
-  return { url: tab.url, fingerprint };
+  return {};
 }
 
 function pageStateGetter(deps: PageAtlasTargetToolDeps): GetPageState {

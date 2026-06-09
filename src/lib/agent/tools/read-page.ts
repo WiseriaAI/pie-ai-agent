@@ -86,6 +86,7 @@ function namespaceAtlasResult(data: Extract<ProbeResult, { op: "atlas" }>, frame
       ...form,
       id: frameScopedId(frameId, form.id),
       frameId,
+      fields: form.fields.map((field) => frameScopedId(frameId, field)),
       submitControlId: form.submitControlId ? frameScopedId(frameId, form.submitControlId) : undefined,
     })),
   };

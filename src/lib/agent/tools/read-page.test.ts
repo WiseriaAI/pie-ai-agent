@@ -152,6 +152,14 @@ describe("read_page tool", () => {
   it("mode=atlas namespaces non-top-frame target and control ids", async () => {
     const childAtlas = atlasProbe();
     childAtlas.controls[0] = { ...childAtlas.controls[0], label: "Child load more" };
+    childAtlas.forms = [
+      {
+        id: "form_f0",
+        label: "Child form",
+        fields: ["ctrl_4"],
+        submitControlId: "ctrl_4",
+      },
+    ];
     childAtlas.targets[0] = { ...childAtlas.targets[0], label: "Child products" };
     const executeScript = vi.fn().mockResolvedValue([
       { frameId: 0, result: atlasProbe() },
@@ -180,10 +188,18 @@ describe("read_page tool", () => {
     expect(result.success).toBe(true);
     expect(result.observation).toContain('target_id="f3_collection_c1"');
     expect(result.observation).toContain('id="f3_ctrl_4"');
+    expect(result.observation).toContain('id="f3_form_f0"');
+    expect(result.observation).toContain('fields="f3_ctrl_4"');
+    expect(result.observation).toContain('submit_control_id="f3_ctrl_4"');
     const atlasId = result.observation!.match(/atlas_id="([^"]+)"/)?.[1];
     const stored = pageAtlasStore.get(atlasId!);
     expect(stored?.targets.map((target) => target.id)).toEqual(["collection_c1", "f3_collection_c1"]);
     expect(stored?.controls.map((control) => control.id)).toEqual(["ctrl_4", "f3_ctrl_4"]);
+    expect(stored?.forms[0]).toMatchObject({
+      id: "f3_form_f0",
+      fields: ["f3_ctrl_4"],
+      submitControlId: "f3_ctrl_4",
+    });
   });
 
   it("mode=atlas escapes hostile atlas strings as XML-like output", async () => {

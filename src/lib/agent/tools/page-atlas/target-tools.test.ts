@@ -385,6 +385,24 @@ describe("page atlas target tools", () => {
     expect(result.error).toContain("read_page");
   });
 
+  it("fails closed when the default page fingerprint probe fails", async () => {
+    vi.stubGlobal("chrome", {
+      tabs: { get: vi.fn().mockResolvedValue({ id: 7, url: "https://example.com/products" }) },
+      scripting: {
+        executeScript: vi.fn().mockRejectedValue(new Error("cannot inject")),
+      },
+    });
+    const tools = Object.fromEntries(createPageAtlasTargetTools({ store }).map((tool) => [tool.name, tool]));
+
+    const result = await tools.read_collection.handler(
+      { atlas_id: "atlas_1", target_id: "collection_c1" },
+      ctx,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("read_page");
+  });
+
   it("fails closed for unsupported target type", async () => {
     const tools = toolsFor(store);
 
