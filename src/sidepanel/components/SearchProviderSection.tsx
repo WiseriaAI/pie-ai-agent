@@ -103,23 +103,25 @@ export default function SearchProviderSection() {
   return (
     <section className="flex flex-col gap-4">
       {/* Section header */}
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-1.5">
         <div className="flex items-center justify-between">
-          <span className="caps text-fg-3">{t("settings.searchProvider.caps")}</span>
+          <span className="text-[16px] font-semibold tracking-[-0.01em] text-fg-1">
+            {t("settings.searchProvider.caps")}
+          </span>
           {capsRight}
         </div>
-        <div className="flex items-baseline gap-2.5">
-          <span className="text-[18px] font-semibold tracking-[-0.01em] text-fg-1">
+        <div className="flex items-baseline gap-2">
+          <span className="text-[12px] text-fg-2">
             {t("settings.searchProvider.titleProvider")}
           </span>
-          <span className="text-[13px] text-fg-2">
+          <span className="text-[12px] text-fg-2">
             {t("settings.searchProvider.subtitle")}
           </span>
         </div>
       </div>
 
-      {/* Card */}
-      <div className="flex flex-col gap-3.5 rounded-[9px] border border-line bg-surface p-4">
+      {/* Card — no border */}
+      <div className="flex flex-col gap-3.5 rounded-[14px] bg-surface p-4">
         <div className="flex items-center justify-between">
           <span className="caps text-fg-3">{t("settings.searchProvider.apiKeyLabel")}</span>
           <span className="caps text-fg-3">{t("settings.searchProvider.storageMeta")}</span>
@@ -127,7 +129,7 @@ export default function SearchProviderSection() {
 
         {mode === "empty" && (
           <>
-            <div className="rounded-[7px] border border-line bg-field px-3.5 py-3">
+            <div className="rounded-[10px] bg-field px-3.5 py-3">
               <span className="font-mono text-[13px] text-fg-3">
                 tvly-···································
               </span>
@@ -136,7 +138,7 @@ export default function SearchProviderSection() {
               <button
                 onClick={() => setMode("editing")}
                 disabled={busy}
-                className="inline-flex items-center gap-1.5 rounded-[6px] border border-line bg-field px-3.5 py-2 text-[13px] font-medium text-fg-1 disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded-[10px] border border-line bg-transparent px-3.5 py-2 text-[13px] text-fg-1 disabled:opacity-50"
               >
                 <span>+</span>
                 {t("settings.searchProvider.addKey")}
@@ -170,7 +172,7 @@ export default function SearchProviderSection() {
               <button
                 onClick={handleReTest}
                 disabled={busy}
-                className="text-fg-2 underline decoration-line underline-offset-[3px] disabled:opacity-50"
+                className="rounded-[10px] border border-line bg-transparent px-3.5 py-2 text-[13px] text-fg-2 disabled:opacity-50"
               >
                 {t("settings.searchProvider.reTest")}
               </button>
@@ -182,14 +184,14 @@ export default function SearchProviderSection() {
                   setDraft("");
                 }}
                 disabled={busy}
-                className="inline-flex items-center rounded-[6px] border border-line bg-field px-3.5 py-2 text-[13px] font-medium text-fg-1 disabled:opacity-50"
+                className="inline-flex items-center rounded-[10px] border border-line bg-transparent px-3.5 py-2 text-[13px] text-fg-1 disabled:opacity-50"
               >
                 {t("settings.searchProvider.replaceKey")}
               </button>
               <button
                 onClick={handleForget}
                 disabled={busy}
-                className="inline-flex items-center rounded-[6px] border border-warning bg-transparent px-3.5 py-2 text-[13px] font-medium text-warning disabled:opacity-50"
+                className="inline-flex items-center rounded-[10px] bg-transparent px-3.5 py-2 text-[13px] text-warning hover:bg-warning-tint disabled:opacity-50"
               >
                 {t("settings.searchProvider.forget")}
               </button>
@@ -199,7 +201,7 @@ export default function SearchProviderSection() {
 
         {mode === "editing" && (
           <>
-            <div className="flex items-center gap-2 rounded-[7px] border border-accent bg-field px-3.5 py-3">
+            <div className="flex items-center gap-2 rounded-[10px] border border-accent-line bg-field px-3.5 py-3">
               <input
                 ref={inputRef}
                 type={reveal ? "text" : "password"}
@@ -213,18 +215,32 @@ export default function SearchProviderSection() {
                 aria-label="reveal"
                 className="text-fg-2"
               >
-                {reveal ? "🙈" : "👁"}
+                {reveal ? (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+                    <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+                    <line x1="1" y1="1" x2="23" y2="23" />
+                  </svg>
+                ) : (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                )}
               </button>
             </div>
             <div className="flex items-center gap-2 text-[12px] text-fg-2">
-              <span>🔒</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              </svg>
               <span>{t("settings.searchProvider.encryptedHint")}</span>
             </div>
             <div className="flex items-center gap-2 pt-1">
               <button
                 onClick={handleSaveAndTest}
                 disabled={!draft.trim() || busy}
-                className="inline-flex items-center rounded-[6px] border border-accent bg-accent px-4 py-2 text-[13px] font-semibold text-bg disabled:opacity-50"
+                className="inline-flex items-center rounded-[10px] bg-fg-1 px-4 py-2 text-[13px] font-medium text-canvas disabled:opacity-50"
               >
                 {t("settings.searchProvider.saveAndTest")}
               </button>
@@ -233,7 +249,7 @@ export default function SearchProviderSection() {
                   setMode(status.configured ? "configured" : "empty");
                   setDraft("");
                 }}
-                className="inline-flex items-center rounded-[6px] border border-line bg-transparent px-3.5 py-2 text-[13px] font-medium text-fg-2"
+                className="inline-flex items-center rounded-[10px] border border-line bg-transparent px-3.5 py-2 text-[13px] text-fg-2"
               >
                 {t("settings.searchProvider.cancel")}
               </button>
