@@ -647,3 +647,364 @@ describe("op=search finds label-rescued hidden controls", () => {
     expect(document.getElementById("st")!.hasAttribute("data-pie-idx")).toBe(false);
   });
 });
+
+describe("probePageInjected op=atlas", () => {
+  it("detects controls, forms, repeated collections, native tables, and fingerprint buckets", () => {
+    document.body.innerHTML = `
+      <main>
+        <section>
+          <h2>Catalog</h2>
+          <p>${"catalog overview ".repeat(20)}</p>
+          <form aria-label="Product search">
+            <label for="kw">Keyword</label>
+            <input id="kw" name="keyword" type="search" value="boots">
+            <button type="submit">Search</button>
+          </form>
+        </section>
+        <section aria-label="Featured products">
+          <article class="product-card">
+            <a href="/p/red-shoe">Red Shoe</a>
+            <p>$29</p>
+          </article>
+          <article class="product-card">
+            <a href="/p/blue-hat">Blue Hat</a>
+            <p>$19</p>
+          </article>
+          <article class="product-card">
+            <a href="/p/green-bag">Green Bag</a>
+            <p>$49</p>
+          </article>
+        </section>
+        <table aria-label="Inventory">
+          <thead><tr><th>SKU</th><th>Stock</th></tr></thead>
+          <tbody>
+            <tr><td>RS-1</td><td>7</td></tr>
+            <tr><td>BH-2</td><td>4</td></tr>
+          </tbody>
+        </table>
+      </main>
+    `;
+
+    const r = probePageInjected({ op: "atlas" });
+
+    expect(r.op).toBe("atlas");
+    if (r.op !== "atlas") throw new Error("narrow");
+
+    expect(r.controls).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: "ctrl_0",
+        pieIdx: 0,
+        type: "textbox",
+        label: "Keyword",
+        value: "boots",
+      }),
+      expect.objectContaining({
+        id: "ctrl_1",
+        pieIdx: 1,
+        type: "button",
+        label: "Search",
+      }),
+    ]));
+    const productLinkControl = r.controls.find((control) => control.label === "Red Shoe");
+    expect(productLinkControl).toBeDefined();
+    expect(productLinkControl).not.toHaveProperty("disabled");
+    expect(productLinkControl).not.toHaveProperty("checked");
+
+    expect(r.forms).toEqual([
+      expect.objectContaining({
+        id: "form_f0",
+        label: "Product search",
+        fields: ["ctrl_0"],
+        submitControlId: "ctrl_1",
+      }),
+    ]);
+
+    expect(r.targets).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: "collection",
+        confidence: "medium",
+        label: "Featured products",
+        fieldGuesses: expect.arrayContaining([
+          { name: "title", confidence: "high" },
+          { name: "link", confidence: "medium" },
+        ]),
+        visibleCount: 3,
+        records: expect.arrayContaining([
+          expect.objectContaining({
+            id: expect.any(String),
+            fields: { title: "Red Shoe", link: "/p/red-shoe" },
+            text: expect.stringContaining("Red Shoe"),
+            evidence: "a[href]",
+          }),
+          expect.objectContaining({
+            id: expect.any(String),
+            fields: { title: "Blue Hat", link: "/p/blue-hat" },
+            text: expect.stringContaining("Blue Hat"),
+            evidence: "a[href]",
+          }),
+          expect.objectContaining({
+            id: expect.any(String),
+            fields: { title: "Green Bag", link: "/p/green-bag" },
+            text: expect.stringContaining("Green Bag"),
+            evidence: "a[href]",
+          }),
+        ]),
+      }),
+      expect.objectContaining({
+        id: "table_t0",
+        type: "table",
+        confidence: "high",
+        label: "Inventory",
+        columns: ["SKU", "Stock"],
+        records: [
+          {
+            id: "table_t0_r0",
+            fields: { SKU: "RS-1", Stock: "7" },
+            text: "RS-1 7",
+            evidence: "tr",
+          },
+          {
+            id: "table_t0_r1",
+            fields: { SKU: "BH-2", Stock: "4" },
+            text: "BH-2 4",
+            evidence: "tr",
+          },
+        ],
+      }),
+    ]));
+
+    expect(r.fingerprint.url).toBe(window.location.href);
+    expect(r.fingerprint.title).toBe(document.title);
+    expect(r.fingerprint.bodyTextLengthBucket).toBeGreaterThan(0);
+    expect(r.fingerprint.interactiveCountBucket).toBeGreaterThan(0);
+    expect(r.fingerprint.topSectionCount).toBeGreaterThan(0);
+  });
+
+  it("uses Math.round semantics for fingerprint buckets", () => {
+    document.body.innerHTML = `<p>${"x".repeat(249)}</p>`;
+    const textOnly = probePageInjected({ op: "atlas" });
+    if (textOnly.op !== "atlas") throw new Error("narrow");
+    expect(textOnly.fingerprint.bodyTextLengthBucket).toBe(0);
+
+    document.body.innerHTML = `
+      <button>A</button>
+      <button>B</button>
+      <button>C</button>
+      <button>D</button>
+    `;
+    const lowInteractive = probePageInjected({ op: "atlas" });
+    if (lowInteractive.op !== "atlas") throw new Error("narrow");
+    expect(lowInteractive.fingerprint.interactiveCountBucket).toBe(0);
+  });
+
+  it("caps sampled table records at 25 while preserving full visible row count", () => {
+    const rows = Array.from({ length: 30 }, (_, i) => `
+      <tr><td>SKU-${i + 1}</td><td>${i + 1}</td></tr>
+    `).join("");
+    document.body.innerHTML = `
+      <table aria-label="Large inventory">
+        <thead><tr><th>SKU</th><th>Stock</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+
+    const r = probePageInjected({ op: "atlas" });
+    if (r.op !== "atlas") throw new Error("narrow");
+    const table = r.targets.find((target) => target.type === "table");
+
+    expect(table).toEqual(expect.objectContaining({
+      id: "table_t0",
+      visibleCount: 30,
+      records: expect.any(Array),
+    }));
+    expect(table!.records).toHaveLength(25);
+  });
+
+  it("does not emit credential-like values and filters wrapper-like control values", () => {
+    document.body.innerHTML = `
+      <label for="pw">Password</label>
+      <input id="pw" type="password">
+      <label for="otp">OTP</label>
+      <input id="otp" autocomplete="one-time-code">
+      <label for="q">Query</label>
+      <input id="q" value="before <untrusted_page_content/> after">
+    `;
+    (document.getElementById("pw") as HTMLInputElement).value = "secret";
+    (document.getElementById("otp") as HTMLInputElement).value = "123456";
+
+    const r = probePageInjected({ op: "atlas" });
+    if (r.op !== "atlas") throw new Error("narrow");
+    const serialized = JSON.stringify(r.controls);
+
+    expect(serialized).not.toContain("secret");
+    expect(serialized).not.toContain("123456");
+    expect(serialized).not.toContain("<untrusted_page_content");
+    expect(serialized).toContain("[filtered]");
+  });
+
+  it("does not emit unsafe javascript or data links from collection records", () => {
+    document.body.innerHTML = `
+      <section aria-label="Unsafe products">
+        <article class="product-card"><a href="javascript:alert(1)">Bad JS</a></article>
+        <article class="product-card"><a href="data:text/html,hi">Bad Data</a></article>
+        <article class="product-card"><a href="/safe">Safe Link</a></article>
+      </section>
+    `;
+
+    const r = probePageInjected({ op: "atlas" });
+    if (r.op !== "atlas") throw new Error("narrow");
+    const collection = r.targets.find((target) => target.type === "collection");
+
+    expect(JSON.stringify(collection)).not.toContain("javascript:");
+    expect(JSON.stringify(collection)).not.toContain("data:text/html");
+    expect(collection!.records).toEqual(expect.arrayContaining([
+      expect.objectContaining({ fields: { title: "Bad JS" } }),
+      expect.objectContaining({ fields: { title: "Bad Data" } }),
+      expect.objectContaining({ fields: { title: "Safe Link", link: "/safe" } }),
+    ]));
+  });
+
+  it("does not emit newline or tab obfuscated unsafe links from collection records", () => {
+    document.body.innerHTML = `
+      <section aria-label="Obfuscated products">
+        <article class="product-card"><a id="js-link">Bad JS</a></article>
+        <article class="product-card"><a id="data-link">Bad Data</a></article>
+        <article class="product-card"><a href="/still-safe">Still Safe</a></article>
+      </section>
+    `;
+    document.getElementById("js-link")!.setAttribute("href", "java\nscript:alert(1)");
+    document.getElementById("data-link")!.setAttribute("href", "da\tta:text/html,hi");
+
+    const r = probePageInjected({ op: "atlas" });
+    if (r.op !== "atlas") throw new Error("narrow");
+    const collection = r.targets.find((target) => target.type === "collection");
+    const serialized = JSON.stringify(collection);
+
+    expect(serialized).not.toContain("javascript:");
+    expect(serialized).not.toContain("data:text/html");
+    expect(serialized).not.toContain("java\\nscript");
+    expect(serialized).not.toContain("da\\tta");
+    expect(collection!.records).toEqual(expect.arrayContaining([
+      expect.objectContaining({ fields: { title: "Bad JS" } }),
+      expect.objectContaining({ fields: { title: "Bad Data" } }),
+      expect.objectContaining({ fields: { title: "Still Safe", link: "/still-safe" } }),
+    ]));
+  });
+
+  it("prefers explicit submit controls over earlier implicit buttons", () => {
+    document.body.innerHTML = `
+      <form aria-label="Actions">
+        <label for="term">Term</label>
+        <input id="term">
+        <button>Cancel</button>
+        <button type="submit">Save</button>
+      </form>
+    `;
+
+    const r = probePageInjected({ op: "atlas" });
+    if (r.op !== "atlas") throw new Error("narrow");
+    const save = r.controls.find((control) => control.label === "Save");
+
+    expect(save).toBeDefined();
+    expect(r.forms[0]).toEqual(expect.objectContaining({
+      submitControlId: save!.id,
+    }));
+  });
+
+  it("reports label-rescued hidden checkboxes using the real control semantics", () => {
+    document.body.innerHTML = `
+      <form aria-label="Flags">
+        <input type="checkbox" id="enabled" name="enabled" checked>
+        <label for="enabled">Enabled</label>
+        <button type="submit">Save</button>
+      </form>
+    `;
+    const checkbox = document.getElementById("enabled") as HTMLInputElement;
+    Object.defineProperty(checkbox, "getBoundingClientRect", {
+      value: () => ({ width: 1, height: 1, top: 0, left: 0, right: 1, bottom: 1 }),
+      configurable: true,
+    });
+
+    const r = probePageInjected({ op: "atlas" });
+    if (r.op !== "atlas") throw new Error("narrow");
+
+    expect(r.controls).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: "ctrl_0",
+        pieIdx: 0,
+        type: "checkbox",
+        label: "Enabled",
+        checked: true,
+      }),
+    ]));
+    expect(r.forms[0]).toEqual(expect.objectContaining({
+      fields: ["ctrl_0"],
+      submitControlId: "ctrl_1",
+    }));
+  });
+
+  it("does not count collection items hidden by an ancestor as visible", () => {
+    document.body.innerHTML = `
+      <section aria-label="Visible products">
+        <article class="product-card"><a href="/p/one">One</a></article>
+        <article class="product-card"><a href="/p/two">Two</a></article>
+        <article class="product-card"><a href="/p/three">Three</a></article>
+        <article class="product-card"><div style="display:none"><a href="/p/hidden">Hidden</a></div></article>
+      </section>
+    `;
+
+    const r = probePageInjected({ op: "atlas" });
+    if (r.op !== "atlas") throw new Error("narrow");
+    const collection = r.targets.find((target) => target.type === "collection");
+
+    expect(collection).toEqual(expect.objectContaining({ visibleCount: 3 }));
+    expect(JSON.stringify(collection)).not.toContain("Hidden");
+  });
+
+  it("does not count table rows hidden by an ancestor as visible", () => {
+    document.body.innerHTML = `
+      <table aria-label="Partly hidden">
+        <thead><tr><th>Name</th></tr></thead>
+        <tbody>
+          <tr><td>Visible</td></tr>
+        </tbody>
+        <tbody style="display:none">
+          <tr><td>Hidden</td></tr>
+        </tbody>
+      </table>
+    `;
+
+    const r = probePageInjected({ op: "atlas" });
+    if (r.op !== "atlas") throw new Error("narrow");
+    const table = r.targets.find((target) => target.type === "table");
+
+    expect(table).toEqual(expect.objectContaining({ visibleCount: 1 }));
+    expect(JSON.stringify(table)).not.toContain("Hidden");
+  });
+
+  it("uses first-row th cells as columns without including that row as a record", () => {
+    document.body.innerHTML = `
+      <table aria-label="No thead">
+        <tr><th>Name</th><th>Qty</th></tr>
+        <tr><td>Widget</td><td>2</td></tr>
+      </table>
+    `;
+
+    const r = probePageInjected({ op: "atlas" });
+    if (r.op !== "atlas") throw new Error("narrow");
+    const table = r.targets.find((target) => target.type === "table");
+
+    expect(table).toEqual(expect.objectContaining({
+      columns: ["Name", "Qty"],
+      visibleCount: 1,
+      records: [
+        {
+          id: "table_t0_r0",
+          fields: { Name: "Widget", Qty: "2" },
+          text: "Widget 2",
+          evidence: "tr",
+        },
+      ],
+    }));
+  });
+});

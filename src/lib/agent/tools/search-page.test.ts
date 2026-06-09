@@ -245,16 +245,31 @@ describe("search_page tool", () => {
 });
 
 describe("search_page registry", () => {
-  it("在 BUILT_IN_TOOLS 中", () => {
-    expect(BUILT_IN_TOOLS.find((t) => t.name === "search_page")).toBeTruthy();
-  });
-  it("分类为 read", () => {
-    expect(getToolClass("search_page")).toBe("read");
+  it("is importable for direct tests but no longer public in BUILT_IN_TOOLS", () => {
+    expect(searchPageTool.name).toBe("search_page");
+    expect(BUILT_IN_TOOLS.find((t) => t.name === "search_page")).toBeFalsy();
   });
 
-  it("schema exposes search_by enum and remains strict", () => {
-    const tool = BUILT_IN_TOOLS.find((t) => t.name === "search_page");
-    const params = tool?.parameters as {
+  it("publicly exposes Page Atlas target tools instead", () => {
+    expect(BUILT_IN_TOOLS.map((t) => t.name)).toEqual(
+      expect.arrayContaining([
+        "read_page",
+        "find_target",
+        "read_collection",
+        "read_table",
+        "read_target",
+        "extract_records",
+      ]),
+    );
+    expect(getToolClass("find_target")).toBe("read");
+    expect(getToolClass("read_collection")).toBe("read");
+    expect(getToolClass("read_table")).toBe("read");
+    expect(getToolClass("read_target")).toBe("read");
+    expect(getToolClass("extract_records")).toBe("read");
+  });
+
+  it("direct schema still exposes search_by enum and remains strict", () => {
+    const params = searchPageTool.parameters as {
       additionalProperties: boolean;
       properties: {
         search_by: { enum: string[]; description: string };
@@ -266,10 +281,11 @@ describe("search_page registry", () => {
     expect(params.properties.search_by.description).toContain("tag=contenteditable");
   });
 
-  it("type/select descriptions allow indices from read_page interactive_index or search_page", () => {
+  it("type/select descriptions allow indices only from read_page interactive_index", () => {
     for (const name of ["type", "select"]) {
       const tool = BUILT_IN_TOOLS.find((t) => t.name === name);
-      expect(tool?.description).toContain("read_page <interactive_index> or search_page result");
+      expect(tool?.description).toContain("latest read_page <interactive_index>");
+      expect(tool?.description).not.toContain("search_page");
       const params = tool?.parameters as {
         properties: {
           frameId: { description: string };
@@ -277,11 +293,13 @@ describe("search_page registry", () => {
         };
       };
       expect(params.properties.frameId.description).toContain(
-        "read_page <interactive_index> or search_page result",
+        "latest read_page <interactive_index>",
       );
       expect(params.properties.elementIndex.description).toContain(
-        "read_page <interactive_index> or search_page result",
+        "latest read_page <interactive_index>",
       );
+      expect(params.properties.frameId.description).not.toContain("search_page");
+      expect(params.properties.elementIndex.description).not.toContain("search_page");
     }
   });
 });

@@ -4,6 +4,8 @@ import { probePageInjected, type ProbeResult } from "../../dom-actions/probe-cor
 import { escapeWrapperAttribute, escapeUntrustedWrappers } from "../untrusted-wrappers";
 import { isRestrictedSchemeForGrouping } from "./tabs";
 import { isPdfTab } from "@/lib/pdf/detect";
+import { pageAtlasStore, parseOrigin, type PageAtlasState } from "./page-atlas";
+import { renderPageAtlas } from "./page-atlas/render";
 
 // read_page byte budgets per mode. Default is the hard cap — don't truncate
 // by default; the LLM can still pass a smaller max_bytes to save tokens when
@@ -11,6 +13,7 @@ import { isPdfTab } from "@/lib/pdf/detect";
 // interactive index, not full body text).
 const MODE_BUDGETS = {
   auto: { maxBytes: 500_000 },
+  atlas: { maxBytes: 500_000 },
   interactive: { maxBytes: 200_000 },
   content: { maxBytes: 300_000 },
   full: { maxBytes: 500_000 },
@@ -25,7 +28,7 @@ interface ReadPageArgs {
 }
 
 function normalizeMode(mode: unknown): ReadPageMode {
-  return mode === "interactive" || mode === "content" || mode === "full" ? mode : "auto";
+  return mode === "atlas" || mode === "interactive" || mode === "content" || mode === "full" ? mode : "auto";
 }
 
 function resolveHtmlBudget(mode: ReadPageMode, rawMaxBytes: unknown): number {
@@ -49,6 +52,44 @@ function attr(name: string, value: string | number | boolean): string {
 
 function elementText(value: string): string {
   return escapeWrapperAttribute(escapeUntrustedWrappers(value));
+}
+
+function wrapPageAtlasObservation(atlas: PageAtlasState, body: string): string {
+  return [
+    `<untrusted_page_content ${attr("tool", "read_page")} ${attr("mode", "atlas")} ${attr("atlas_id", atlas.atlasId)} ${attr("tab_id", atlas.tabId)}>`,
+    body,
+    "</untrusted_page_content>",
+  ].join("\n");
+}
+
+function frameScopedId(frameId: number, id: string): string {
+  return frameId === 0 ? id : `f${frameId}_${id}`;
+}
+
+function namespaceAtlasResult(data: Extract<ProbeResult, { op: "atlas" }>, frameId: number) {
+  return {
+    targets: data.targets.map((target) => ({
+      ...target,
+      id: frameScopedId(frameId, target.id),
+      frameId,
+      records: target.records?.map((record) => ({
+        ...record,
+        id: frameScopedId(frameId, record.id),
+      })),
+    })),
+    controls: data.controls.map((control) => ({
+      ...control,
+      id: frameScopedId(frameId, control.id),
+      frameId,
+    })),
+    forms: data.forms.map((form) => ({
+      ...form,
+      id: frameScopedId(frameId, form.id),
+      frameId,
+      fields: form.fields.map((field) => frameScopedId(frameId, field)),
+      submitControlId: form.submitControlId ? frameScopedId(frameId, form.submitControlId) : undefined,
+    })),
+  };
 }
 
 type SnapshotResult = Extract<ProbeResult, { op: "snapshot" }>;
@@ -128,18 +169,20 @@ function sliceUtf8(value: string, maxBytes: number): string {
 export const readPageTool: Tool = {
   name: "read_page",
   description:
-    "Read the given tab's HTML structure (interactive elements stamped with data-pie-idx, " +
-    "shadow DOM traversed, scrollable regions noted). Returns per-frame HTML inside " +
-    "<untrusted_page_content> wrappers plus a <frame_map>. " +
-    "Call this before any click/type/select to get current element indices.",
+    "Inspect the given tab. Default/auto returns a compact Page Atlas for target discovery " +
+    "and structured extraction. Do not use content/full as the first inspection step. " +
+    "Use mode=interactive before click/type/select to get current element indices. " +
+    "Use content/full only as an expensive fallback after atlas/target tools are insufficient, " +
+    "or when the user explicitly asks to read or summarize full article/body text.",
   parameters: {
     type: "object",
     properties: {
       tabId: { type: "integer", description: "Tab id to read." },
       mode: {
         type: "string",
-        enum: ["auto", "interactive", "content", "full"],
-        description: "Read mode. auto is default; interactive uses a smaller HTML budget while preserving the interactive index.",
+        enum: ["auto", "atlas", "interactive", "content", "full"],
+        description:
+          "Read mode. auto is default and behaves like atlas. Use interactive for element indices. content/full are expensive fallbacks, not first-pass inspection modes.",
       },
       max_bytes: {
         type: "integer",
@@ -176,6 +219,64 @@ export const readPageTool: Tool = {
     }
     if (tab.discarded) {
       return { success: false, error: "discardedTabRequiresActivation" };
+    }
+
+    if (mode === "atlas" || mode === "auto") {
+      let atlasResults: chrome.scripting.InjectionResult<ProbeResult>[];
+      try {
+        atlasResults = await chrome.scripting.executeScript({
+          target: { tabId: a.tabId, allFrames: true },
+          func: probePageInjected,
+          args: [{ op: "atlas" }],
+        }) as chrome.scripting.InjectionResult<ProbeResult>[];
+      } catch (e) {
+        return { success: false, error: e instanceof Error ? e.message : "executeScript failed" };
+      }
+
+      const frames = await chrome.webNavigation.getAllFrames({ tabId: a.tabId });
+      if (!frames) return { success: false, error: "Tab unavailable" };
+
+      const top = frames.find((f) => f.frameId === 0);
+      const topUrl = top?.url ?? tab.url ?? "";
+      const topAtlasResult = atlasResults.find((r) => r.frameId === 0)?.result;
+      const topFingerprint = topAtlasResult?.op === "atlas"
+        ? topAtlasResult.fingerprint
+        : {
+            url: topUrl,
+            title: tab.title ?? "",
+            bodyTextLengthBucket: 0,
+            interactiveCountBucket: 0,
+            topSectionCount: 0,
+          };
+
+      const atlasId = `atlas_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+      const atlas: PageAtlasState = {
+        atlasId,
+        tabId: a.tabId,
+        url: topUrl,
+        origin: parseOrigin(topUrl),
+        title: tab.title ?? topFingerprint.title,
+        createdAt: Date.now(),
+        fingerprint: topFingerprint,
+        targets: [],
+        controls: [],
+        forms: [],
+        controlGroups: [],
+        navigation: [],
+      };
+
+      for (const result of atlasResults) {
+        const data = result.result;
+        if (data?.op !== "atlas") continue;
+        const frameId = result.frameId;
+        const scoped = namespaceAtlasResult(data, frameId);
+        atlas.targets.push(...scoped.targets);
+        atlas.controls.push(...scoped.controls);
+        atlas.forms.push(...scoped.forms);
+      }
+
+      pageAtlasStore.save(atlas);
+      return { success: true, observation: wrapPageAtlasObservation(atlas, renderPageAtlas(atlas)) };
     }
 
     let results: chrome.scripting.InjectionResult<ProbeResult>[];

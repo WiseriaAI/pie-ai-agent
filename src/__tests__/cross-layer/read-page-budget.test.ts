@@ -40,7 +40,7 @@ describe("read_page budget enforcement", () => {
     // Explicit small max_bytes forces budget exhaustion independent of the
     // (now max-sized) default budget — this tests the cross-frame budget
     // enforcement behavior, not a specific default value.
-    const r = await readPageTool.handler({ tabId: 1, max_bytes: 100_000 }, {} as any);
+    const r = await readPageTool.handler({ tabId: 1, mode: "content", max_bytes: 100_000 }, {} as any);
     expect(r.success).toBe(true);
 
     // Frame 0 should be truncated due to the explicit budget.

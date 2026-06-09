@@ -11,7 +11,7 @@ import { SKILL_ACCESS_TOOLS } from "./tools/skill-access";
 import { TAB_TOOLS } from "./tools/tabs";
 import { searchWebTool } from "./tools/search";
 import { readPageTool } from "./tools/read-page";
-import { searchPageTool } from "./tools/search-page";
+import { createPageAtlasTargetTools } from "./tools/page-atlas";
 import { PDF_TOOLS } from "./tools/pdf";
 import { LOCAL_FILE_TOOLS } from "./tools/files";
 
@@ -144,17 +144,17 @@ export const BUILT_IN_TOOLS: Tool[] = [
   {
     name: "type",
     description:
-      "Type text into an input/textarea/contenteditable by its data-pie-idx from the latest read_page <interactive_index> or search_page result. If the element is gone (page changed), returns 'Element not found'; call read_page or search_page again to get current indices.",
+      "Type text into an input/textarea/contenteditable by its data-pie-idx from the latest read_page <interactive_index>. If the element is gone (page changed), returns 'Element not found'; call read_page({mode:\"interactive\"}) again to get current indices.",
     parameters: {
       type: "object",
       properties: {
         frameId: {
           type: "number",
-          description: "Frame ID from the latest read_page <interactive_index> or search_page result.",
+          description: "Frame ID from the latest read_page <interactive_index>.",
         },
         elementIndex: {
           type: "number",
-          description: "data-pie-idx of the element from the latest read_page <interactive_index> or search_page result.",
+          description: "data-pie-idx of the element from the latest read_page <interactive_index>.",
         },
         text: {
           type: "string",
@@ -214,17 +214,17 @@ export const BUILT_IN_TOOLS: Tool[] = [
   {
     name: "select",
     description:
-      "Select an option in a <select> element by its data-pie-idx from the latest read_page <interactive_index> or search_page result. If the element is gone (page changed), returns 'Element not found'; call read_page or search_page again to get current indices.",
+      "Select an option in a <select> element by its data-pie-idx from the latest read_page <interactive_index>. If the element is gone (page changed), returns 'Element not found'; call read_page({mode:\"interactive\"}) again to get current indices.",
     parameters: {
       type: "object",
       properties: {
         frameId: {
           type: "number",
-          description: "Frame ID from the latest read_page <interactive_index> or search_page result.",
+          description: "Frame ID from the latest read_page <interactive_index>.",
         },
         elementIndex: {
           type: "number",
-          description: "data-pie-idx of the <select> from the latest read_page <interactive_index> or search_page result.",
+          description: "data-pie-idx of the <select> from the latest read_page <interactive_index>.",
         },
         value: {
           type: "string",
@@ -359,7 +359,7 @@ export const BUILT_IN_TOOLS: Tool[] = [
   },
   searchWebTool,
   readPageTool,
-  searchPageTool,
+  ...createPageAtlasTargetTools(),
   ...PDF_TOOLS,
   ...LOCAL_FILE_TOOLS,
 ];

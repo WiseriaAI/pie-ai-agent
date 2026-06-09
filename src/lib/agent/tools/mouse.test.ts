@@ -96,9 +96,10 @@ describe("hover tool", () => {
     );
   });
 
-  it("description allows indices from read_page interactive_index or search_page", () => {
+  it("description allows indices only from read_page interactive_index", () => {
     const tool = buildHoverTool(deps());
-    expect(tool.description).toContain("read_page <interactive_index> or search_page result");
+    expect(tool.description).toContain("latest read_page <interactive_index>");
+    expect(tool.description).not.toContain("search_page");
     const params = tool.parameters as {
       properties: {
         frameId: { description: string };
@@ -106,11 +107,13 @@ describe("hover tool", () => {
       };
     };
     expect(params.properties.frameId.description).toContain(
-      "read_page <interactive_index> or search_page result",
+      "latest read_page <interactive_index>",
     );
     expect(params.properties.elementIndex.description).toContain(
-      "read_page <interactive_index> or search_page result",
+      "latest read_page <interactive_index>",
     );
+    expect(params.properties.frameId.description).not.toContain("search_page");
+    expect(params.properties.elementIndex.description).not.toContain("search_page");
   });
 
   it("returns success observation with mouseMoved dispatched", async () => {
@@ -203,9 +206,10 @@ describe("click tool (CDP)", () => {
     );
   });
 
-  it("description allows indices from read_page interactive_index or search_page", () => {
+  it("description allows indices only from read_page interactive_index", () => {
     const tool = buildClickTool(deps());
-    expect(tool.description).toContain("read_page <interactive_index> or search_page result");
+    expect(tool.description).toContain("latest read_page <interactive_index>");
+    expect(tool.description).not.toContain("search_page");
     const params = tool.parameters as {
       properties: {
         frameId: { description: string };
@@ -213,11 +217,13 @@ describe("click tool (CDP)", () => {
       };
     };
     expect(params.properties.frameId.description).toContain(
-      "read_page <interactive_index> or search_page result",
+      "latest read_page <interactive_index>",
     );
     expect(params.properties.elementIndex.description).toContain(
-      "read_page <interactive_index> or search_page result",
+      "latest read_page <interactive_index>",
     );
+    expect(params.properties.frameId.description).not.toContain("search_page");
+    expect(params.properties.elementIndex.description).not.toContain("search_page");
   });
 
   it("dispatches mouseMoved → mousePressed → mouseReleased", async () => {

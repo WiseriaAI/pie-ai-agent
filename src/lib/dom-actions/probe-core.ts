@@ -20,8 +20,59 @@ export interface SearchMatch {
   snippet: string;
 }
 
+export interface AtlasProbeControl {
+  id: string;
+  pieIdx: number;
+  type: string;
+  label: string;
+  value?: string;
+  disabled?: boolean;
+  checked?: boolean;
+}
+
+export interface AtlasProbeForm {
+  id: string;
+  label: string;
+  fields: string[];
+  submitControlId?: string;
+}
+
+export interface AtlasProbeFieldGuess {
+  name: string;
+  confidence: "high" | "medium" | "low";
+}
+
+export interface AtlasProbeRecord {
+  id: string;
+  fields: Record<string, string>;
+  text: string;
+  evidence: string;
+}
+
+export interface AtlasProbeTarget {
+  id: string;
+  type: "collection" | "table" | "detail_region" | "region";
+  label: string;
+  confidence: "high" | "medium" | "low";
+  summary: string;
+  fieldGuesses?: AtlasProbeFieldGuess[];
+  columns?: string[];
+  records?: AtlasProbeRecord[];
+  visibleCount?: number;
+  estimatedTotal?: number;
+}
+
+export interface AtlasProbeFingerprint {
+  url: string;
+  title: string;
+  bodyTextLengthBucket: number;
+  interactiveCountBucket: number;
+  topSectionCount: number;
+}
+
 export type ProbeParams =
   | { op: "snapshot" }
+  | { op: "atlas" }
   | {
       op: "search";
       queries: string[];
@@ -37,6 +88,13 @@ export type ProbeResult =
       html: string;
       interactiveElements: InteractiveElementSummary[];
       scrollableHints: ScrollableHint[];
+    }
+  | {
+      op: "atlas";
+      controls: AtlasProbeControl[];
+      forms: AtlasProbeForm[];
+      targets: AtlasProbeTarget[];
+      fingerprint: AtlasProbeFingerprint;
     }
   | {
       op: "search";
@@ -612,6 +670,337 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
     }
 
     return { op: "snapshot", html, interactiveElements, scrollableHints };
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // op:"atlas" — compact page-world structure probe. This runs inside the page
+  // and must stay self-contained, so it reuses only helpers nested above.
+  // ──────────────────────────────────────────────────────────────────────────
+  if (params.op === "atlas") {
+    const liveBodyElements = [...walkDeep(document.body)];
+    stampLiveDom(liveBodyElements, new Map<Element, Element>());
+
+    function controlIdForPieIdx(pieIdx: number): string {
+      return `ctrl_${pieIdx}`;
+    }
+
+    function atlasLabel(el: Element, fallback: string): string {
+      return safeText(labelFor(el) || accessibleName(el) || nearestSection(el) || fallback);
+    }
+
+    function safeText(s: string): string {
+      return sanitizeText(escapeWrapperMarkup(s))
+        .replace(SUMMARY_MARKUP_RE, "[filtered]")
+        .replace(/[<>]/g, "[filtered]")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, SUMMARY_TEXT_MAX);
+    }
+
+    function controlValue(el: Element): string | undefined {
+      if (el instanceof HTMLInputElement) {
+        const type = el.type.toLowerCase();
+        const auto = (el.getAttribute("autocomplete") ?? "").toLowerCase();
+        if (type === "password" || auto.includes("one-time-code")) return undefined;
+        return el.value ? safeText(el.value) : undefined;
+      }
+      if (el instanceof HTMLTextAreaElement) {
+        return el.value ? safeText(el.value) : undefined;
+      }
+      if (el instanceof HTMLSelectElement) {
+        return el.value ? safeText(el.value) : undefined;
+      }
+      return undefined;
+    }
+
+    function supportsDisabled(el: Element): boolean {
+      const tag = el.tagName.toLowerCase();
+      return tag === "button" || tag === "input" || tag === "select" ||
+        tag === "textarea" || tag === "option" || tag === "fieldset";
+    }
+
+    function rescuedControlFor(el: Element): HTMLInputElement | null {
+      if (el.tagName.toLowerCase() !== "label") return null;
+      const control = (el as HTMLLabelElement).control;
+      if (!(control instanceof HTMLInputElement)) return null;
+      const type = control.type.toLowerCase();
+      if (type !== "checkbox" && type !== "radio") return null;
+      return control;
+    }
+
+    function hasHiddenAncestor(el: Element): boolean {
+      let node: Element | null = el;
+      while (node && node !== document.body) {
+        const style = window.getComputedStyle(node);
+        if (style.display === "none" || style.visibility === "hidden" || style.visibility === "collapse") {
+          return true;
+        }
+        if (parseFloat(style.opacity) === 0) return true;
+        node = node.parentElement;
+      }
+      return false;
+    }
+
+    function isAtlasVisible(el: Element): boolean {
+      if (hasHiddenAncestor(el)) return false;
+      const style = window.getComputedStyle(el);
+      if (style.display === "none" || style.visibility === "hidden") return false;
+      if (parseFloat(style.opacity) === 0) return false;
+      const rect = el.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) return true;
+      return safeText(visibleText(el)) !== "";
+    }
+
+    function targetLabel(el: Element, fallback: string): string {
+      return safeText(accessibleName(el) || nearestSection(el) || fallback);
+    }
+
+    function textFrom(el: Element | null | undefined): string {
+      return el ? safeText(visibleText(el)) : "";
+    }
+
+    function visibleText(el: Element): string {
+      if (hasHiddenAncestor(el)) return "";
+      let text = "";
+      for (const child of el.childNodes) {
+        if (child.nodeType === Node.TEXT_NODE) {
+          text += child.nodeValue ?? "";
+        } else if (child instanceof Element && isAtlasVisible(child)) {
+          text += ` ${visibleText(child)}`;
+        }
+      }
+      return text;
+    }
+
+    const controls: AtlasProbeControl[] = [];
+    const controlByElement = new Map<Element, string>();
+    for (const el of liveBodyElements) {
+      if (!el.hasAttribute("data-pie-idx")) continue;
+      const target = rescuedControlFor(el) ?? el;
+      const pieIdx = Number(el.getAttribute("data-pie-idx"));
+      const tag = target.tagName.toLowerCase();
+      const input = target instanceof HTMLInputElement ? target : null;
+      const control: AtlasProbeControl = {
+        id: controlIdForPieIdx(pieIdx),
+        pieIdx,
+        type: inferredRole(target) || tag,
+        label: atlasLabel(target, atlasLabel(el, tag)),
+      };
+      if (supportsDisabled(target)) {
+        control.disabled = target.hasAttribute("disabled");
+      }
+      if (input && (input.type.toLowerCase() === "checkbox" || input.type.toLowerCase() === "radio")) {
+        control.checked = input.checked;
+      }
+      const value = controlValue(target);
+      if (value !== undefined) control.value = value;
+      controls.push(control);
+      controlByElement.set(el, control.id);
+      if (target !== el) controlByElement.set(target, control.id);
+    }
+
+    const forms: AtlasProbeForm[] = [];
+    const nativeForms = liveBodyElements.filter((el): el is HTMLFormElement => el instanceof HTMLFormElement);
+    for (let i = 0; i < nativeForms.length; i++) {
+      const form = nativeForms[i];
+      const fields: string[] = [];
+      const fieldEls = form.querySelectorAll("input,select,textarea");
+      for (const field of fieldEls) {
+        const id = controlByElement.get(field);
+        if (id) fields.push(id);
+      }
+
+      const submit =
+        form.querySelector("button[type='submit'],input[type='submit']") ??
+        form.querySelector("button:not([type])");
+      const submitControlId = submit ? controlByElement.get(submit) : undefined;
+      const atlasForm: AtlasProbeForm = {
+        id: `form_f${i}`,
+        label: safeText(accessibleName(form) || nearestSection(form) || `Form ${i + 1}`),
+        fields,
+      };
+      if (submitControlId) atlasForm.submitControlId = submitControlId;
+      forms.push(atlasForm);
+    }
+
+    const targets: AtlasProbeTarget[] = [];
+
+    const tables = liveBodyElements.filter((el): el is HTMLTableElement => el instanceof HTMLTableElement);
+    for (let i = 0; i < tables.length; i++) {
+      const table = tables[i];
+      const headerCells = Array.from(table.querySelectorAll<HTMLTableCellElement>("thead th"));
+      const firstRow = table.rows.item(0);
+      const firstRowHasTh = !!firstRow && Array.from(firstRow.cells).some((cell) => cell.tagName.toLowerCase() === "th");
+      const fallbackHeaderCells = headerCells.length > 0
+        ? headerCells
+        : Array.from(firstRow?.cells ?? []);
+      const columns = fallbackHeaderCells
+        .map((cell, idx) => textFrom(cell) || `Column ${idx + 1}`);
+
+      const bodyRows = Array.from(table.querySelectorAll<HTMLTableRowElement>("tbody tr"));
+      const sourceRows = bodyRows.length > 0
+        ? bodyRows.slice(firstRowHasTh && bodyRows[0] === firstRow ? 1 : 0)
+        : Array.from(table.rows).slice(headerCells.length > 0 || firstRowHasTh ? 1 : 0);
+      const visibleRows = sourceRows.filter((row) => isAtlasVisible(row));
+      const records = visibleRows.slice(0, 25).map((row, rowIndex) => {
+        const fields: Record<string, string> = {};
+        const cellTexts: string[] = [];
+        Array.from(row.cells).forEach((cell, idx) => {
+          const key = columns[idx] || `Column ${idx + 1}`;
+          const value = textFrom(cell);
+          fields[key] = value;
+          cellTexts.push(value);
+        });
+        return {
+          id: `table_t${i}_r${rowIndex}`,
+          fields,
+          text: cellTexts.filter(Boolean).join(" "),
+          evidence: "tr",
+        };
+      });
+
+      targets.push({
+        id: `table_t${i}`,
+        type: "table",
+        label: targetLabel(table, `Table ${i + 1}`),
+        confidence: "high",
+        summary: `${visibleRows.length} rows, ${columns.length} columns`,
+        columns,
+        records,
+        visibleCount: visibleRows.length,
+        estimatedTotal: visibleRows.length,
+      });
+    }
+
+    function shapeKey(el: Element): string {
+      const childTags = Array.from(el.children)
+        .slice(0, 8)
+        .map((child) => `${child.tagName.toLowerCase()}:${child.children.length}`)
+        .join(",");
+      const markers = [
+        el.querySelector("a") ? "a" : "",
+        el.querySelector("img") ? "img" : "",
+        el.querySelector("h1,h2,h3,h4,h5,h6") ? "heading" : "",
+        el.className && typeof el.className === "string" ? `class:${el.className.trim().split(/\s+/).sort().join(".")}` : "",
+      ].filter(Boolean).join("|");
+      return `${el.tagName.toLowerCase()}|${childTags}|${markers}`;
+    }
+
+    function fieldConfidence(name: string): "high" | "medium" | "low" {
+      if (name === "title") return "high";
+      if (name === "link") return "medium";
+      return "low";
+    }
+
+    function fieldGuessesFromRecords(records: AtlasProbeRecord[]): AtlasProbeFieldGuess[] {
+      const names = new Set<string>();
+      for (const record of records) {
+        for (const name of Object.keys(record.fields)) names.add(name);
+      }
+      return Array.from(names).map((name) => ({ name, confidence: fieldConfidence(name) }));
+    }
+
+    function collectionRecord(el: Element, id: string): AtlasProbeRecord {
+      const link = el.querySelector("a[href]") as HTMLAnchorElement | null;
+      const heading = el.querySelector("h1,h2,h3,h4,h5,h6");
+      const fields: Record<string, string> = {};
+      let evidence = "";
+      if (link) {
+        fields.title = textFrom(link) || safeText(accessibleName(link));
+        const href = safeLinkHref(link);
+        if (href) fields.link = href;
+        evidence = "a[href]";
+      } else {
+        const title = textFrom(heading) || directText(el) || descendantText(el);
+        if (title) {
+          fields.title = safeText(title);
+          evidence = heading ? heading.tagName.toLowerCase() : el.tagName.toLowerCase();
+        }
+      }
+      return {
+        id,
+        fields,
+        text: textFrom(el),
+        evidence: evidence || el.tagName.toLowerCase(),
+      };
+    }
+
+    function isUnsafeHrefValue(href: string): boolean {
+      const collapsed = href.replace(/[\u0000-\u0020]+/g, "");
+      return UNSAFE_URL.test(collapsed);
+    }
+
+    function safeLinkHref(link: HTMLAnchorElement): string {
+      const raw = link.getAttribute("href") ?? "";
+      const normalized = link.href || raw;
+      if (isUnsafeHrefValue(raw) || isUnsafeHrefValue(normalized)) return "";
+      return safeText(raw || normalized);
+    }
+
+    let collectionIndex = 0;
+    const seenCollectionParents = new Set<Element>();
+    for (const parent of liveBodyElements) {
+      if (seenCollectionParents.has(parent)) continue;
+      if (parent.closest("table")) continue;
+      const visibleChildren = Array.from(parent.children).filter((child) => {
+        if (child.closest("table")) return false;
+        return isAtlasVisible(child);
+      });
+      if (visibleChildren.length < 3) continue;
+
+      const groups = new Map<string, Element[]>();
+      for (const child of visibleChildren) {
+        const key = shapeKey(child);
+        const group = groups.get(key) ?? [];
+        group.push(child);
+        groups.set(key, group);
+      }
+
+      for (const group of groups.values()) {
+        if (group.length < 3) continue;
+        seenCollectionParents.add(parent);
+        const fallbackLabel = `Collection ${collectionIndex + 1}`;
+        const collectionId = `collection_c${collectionIndex++}`;
+        const records = group
+          .slice(0, 20)
+          .map((el, recordIndex) => collectionRecord(el, `${collectionId}_r${recordIndex}`));
+        const label = targetLabel(parent, nearestSection(group[0]) || fallbackLabel);
+        targets.push({
+          id: collectionId,
+          type: "collection",
+          label,
+          confidence: "medium",
+          summary: `${group.length} repeated ${group[0].tagName.toLowerCase()} items`,
+          fieldGuesses: fieldGuessesFromRecords(records),
+          records,
+          visibleCount: group.length,
+          estimatedTotal: group.length,
+        });
+      }
+    }
+
+    function bucket(value: number, size: number): number {
+      return Math.round(value / size) * size;
+    }
+
+    function fullTextLength(s: string): number {
+      return sanitizeText(escapeWrapperMarkup(s))
+        .replace(SUMMARY_MARKUP_RE, "[filtered]")
+        .replace(/[<>]/g, "[filtered]")
+        .replace(/\s+/g, " ")
+        .trim()
+        .length;
+    }
+
+    const fingerprint: AtlasProbeFingerprint = {
+      url: window.location.href,
+      title: document.title,
+      bodyTextLengthBucket: bucket(fullTextLength(document.body.textContent ?? ""), 500),
+      interactiveCountBucket: bucket(controls.length, 10),
+      topSectionCount: document.querySelectorAll("main,section,article,nav,aside,header,footer").length,
+    };
+
+    return { op: "atlas", controls, forms, targets, fingerprint };
   }
 
   // ──────────────────────────────────────────────────────────────────────────
