@@ -282,7 +282,7 @@ export const zhCNDict = {
   },
   skills: {
     empty: {
-      cta: "显示可复用工作流（skill）。底层工具按 prompt 自动 resolve。",
+      cta: "显示可复用工作流（skill）。底层工具按 prompt 自动 resolve。想新建?直接跟 Pie 说「帮我创建一个 skill」并说明要做的事,让 Pie 帮你写好它。",
     },
     section: {
       yours: {
