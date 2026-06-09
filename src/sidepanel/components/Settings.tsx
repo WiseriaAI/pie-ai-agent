@@ -38,7 +38,7 @@ interface Props {
   onRunSkill?: (skillId: string, skillName: string) => void;
 }
 
-type Tab = "configs" | "skills" | "search";
+type Tab = "configs" | "skills" | "search" | "general";
 
 export default function Settings({ onBack, onRunSkill }: Props) {
   const t = useT();
@@ -131,26 +131,21 @@ export default function Settings({ onBack, onRunSkill }: Props) {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex flex-shrink-0 items-center gap-2 border-b border-line bg-canvas px-3.5 py-3">
+      <header className="flex flex-shrink-0 items-center gap-2.5 border-b border-line bg-canvas px-3.5 py-3">
         <button
           onClick={onBack}
           className="flex h-7 w-7 items-center justify-center rounded text-fg-2 hover:bg-field hover:text-fg-1"
           aria-label={t("settings.backToAgent")}
         >
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <path
-              d="M9 11L5 7L9 3"
-              stroke="currentColor"
-              strokeWidth="1.25"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
+            <path d="M9 11L5 7L9 3" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </button>
-        <span className="text-[13px] font-semibold tracking-[-0.005em] text-fg-1">{t("settings.title")}</span>
-        <div className="flex-1" />
-        <SegmentedTabs value={tab} onChange={setTab} />
+        <span className="text-[17px] font-semibold tracking-[-0.01em] text-fg-1">{t("settings.title")}</span>
       </header>
+      <div className="flex-shrink-0 border-b border-line bg-canvas px-3.5 pb-3.5 pt-3">
+        <SegmentedTabs value={tab} onChange={setTab} />
+      </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-6">
         {tab === "configs" ? (
@@ -290,13 +285,11 @@ export default function Settings({ onBack, onRunSkill }: Props) {
               )}
             </section>
 
-            <CdpInputSection
-              state={cdpInput}
-              onSet={async (next) => { setCdpInput(next); await setCdpInputEnabled(next); }}
-            />
-
+          </div>
+        ) : tab === "general" ? (
+          <div className="flex flex-col gap-7">
             <section className="flex flex-col gap-3.5">
-              <div className="caps text-fg-3">{t("settings.language.sectionTitle")}</div>
+              <div className="text-[15px] font-semibold tracking-[-0.005em] text-fg-1">{t("settings.language.sectionTitle")}</div>
               <label className="flex items-center gap-2 text-[12px]">
                 <span className="text-fg-2 min-w-[120px]">{t("settings.language.label")}</span>
                 <select
@@ -318,8 +311,12 @@ export default function Settings({ onBack, onRunSkill }: Props) {
                 </select>
               </label>
             </section>
-
+            <CdpInputSection
+              state={cdpInput}
+              onSet={async (next) => { setCdpInput(next); await setCdpInputEnabled(next); }}
+            />
             <FeedbackSection activeInstance={instances[0]} />
+            <AboutSection />
           </div>
         ) : tab === "skills" ? (
           <SkillsList onRunSkill={onRunSkill ?? (() => {})} />
@@ -331,40 +328,27 @@ export default function Settings({ onBack, onRunSkill }: Props) {
   );
 }
 
-function SegmentedTabs({
-  value,
-  onChange,
-}: {
-  value: Tab;
-  onChange: (t: Tab) => void;
-}) {
+function SegmentedTabs({ value, onChange }: { value: Tab; onChange: (t: Tab) => void }) {
   const t = useT();
   const tabs: { id: Tab; label: string }[] = [
     { id: "configs", label: t("settings.tabs.configs") },
     { id: "skills", label: t("settings.tabs.skills") },
     { id: "search", label: t("settings.tabs.search") },
+    { id: "general", label: t("settings.tabs.general") },
   ];
   return (
-    <div className="flex">
-      {tabs.map((tab, i) => {
-        const active = value === tab.id;
+    <div data-testid="settings-tabs" className="flex w-full overflow-hidden rounded-lg border border-line">
+      {tabs.map((tb, i) => {
+        const active = value === tb.id;
         return (
           <button
-            key={tab.id}
-            onClick={() => onChange(tab.id)}
-            className={`border border-line px-3 py-1 text-[11px] ${
-              i === 0
-                ? "rounded-l-md"
-                : i === tabs.length - 1
-                ? "-ml-px rounded-r-md"
-                : "-ml-px"
-            } ${
-              active
-                ? "bg-field font-medium text-fg-1"
-                : "bg-transparent text-fg-2 hover:text-fg-1"
+            key={tb.id}
+            onClick={() => onChange(tb.id)}
+            className={`flex-1 py-1.5 text-[12px] ${i > 0 ? "border-l border-line" : ""} ${
+              active ? "bg-field font-medium text-fg-1" : "bg-transparent text-fg-2 hover:text-fg-1"
             }`}
           >
-            {tab.label}
+            {tb.label}
           </button>
         );
       })}
@@ -381,28 +365,12 @@ function FeedbackSection({ activeInstance }: { activeInstance: DecryptedInstance
     locale: getLocale(),
   };
   return (
-    <section className="flex flex-col gap-3.5">
-      <div className="caps text-fg-3">{t("settings.feedback.sectionTitle")}</div>
-      <div className="flex flex-col gap-2.5 rounded-lg border border-line bg-surface p-3.5">
-        <p className="text-[11px] leading-[16px] text-fg-3">{t("settings.feedback.githubHint")}</p>
-        <div className="flex gap-2">
-          {/* Native anchors: target=_blank opens a tab for GitHub; mailto is
-              intercepted by the browser and won't navigate the side panel. */}
-          <a
-            href={buildGithubNewIssueUrl(env)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-2 rounded border border-line bg-transparent px-3.5 py-2 text-[12px] text-accent hover:bg-field"
-          >
-            {t("settings.feedback.githubButton")}
-          </a>
-          <a
-            href={buildFeedbackMailto(env)}
-            className="flex items-center gap-2 rounded border border-line bg-transparent px-3.5 py-2 text-[12px] text-fg-2 hover:bg-field"
-          >
-            {t("settings.feedback.emailButton")}
-          </a>
-        </div>
+    <section className="flex flex-col gap-2.5">
+      <div className="text-[15px] font-semibold tracking-[-0.005em] text-fg-1">{t("settings.feedback.sectionTitle")}</div>
+      <p className="text-[12px] leading-[18px] text-fg-2">{t("settings.feedback.githubHint")}</p>
+      <div className="flex items-center gap-4 pt-0.5">
+        <a href={buildGithubNewIssueUrl(env)} target="_blank" rel="noopener noreferrer" className="text-[13px] font-medium text-accent hover:underline">{t("settings.feedback.githubButton")} ↗</a>
+        <a href={buildFeedbackMailto(env)} className="text-[13px] text-fg-2 hover:text-fg-1">{t("settings.feedback.emailButton")} ↗</a>
       </div>
     </section>
   );
@@ -420,7 +388,7 @@ function CdpInputSection({
   return (
     <section className="flex flex-col gap-3">
       <div className="flex items-baseline justify-between">
-        <span className="caps text-fg-3">{t("settings.experimental")}</span>
+        <span className="text-[15px] font-semibold tracking-[-0.005em] text-fg-1">{t("settings.experimental")}</span>
       </div>
       <div className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-3.5">
         <div className="flex items-start gap-3">
@@ -477,6 +445,30 @@ function Switch({
         }`}
       />
     </button>
+  );
+}
+
+function AboutSection() {
+  const t = useT();
+  const v = chrome.runtime.getManifest().version;
+  return (
+    <section className="flex flex-col gap-3.5">
+      <div className="h-px w-full bg-line" />
+      <div className="flex items-center gap-2.5">
+        <div className="flex h-[26px] w-[26px] flex-shrink-0 items-center justify-center rounded-[7px] border border-line bg-field">
+          <div className="h-2 w-2 rounded-full bg-accent" />
+        </div>
+        <div className="flex flex-col gap-0.5">
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-[13px] font-semibold text-fg-1">Pie</span>
+            <span className="font-mono text-[11px] text-fg-2">v{v}</span>
+          </div>
+          <span className="text-[11px] text-fg-3">{t("settings.about.tagline")}</span>
+        </div>
+        <div className="flex-1" />
+        <a href="https://github.com/WiseriaAI/pie-ai-agent/releases" target="_blank" rel="noopener noreferrer" className="text-[12px] text-fg-2 hover:text-fg-1">{t("settings.about.changelog")} ↗</a>
+      </div>
+    </section>
   );
 }
 

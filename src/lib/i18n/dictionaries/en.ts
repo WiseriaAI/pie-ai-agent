@@ -41,14 +41,14 @@ export const enDict = {
   },
   settings: {
     language: {
-      sectionTitle: "LANGUAGE",
+      sectionTitle: "Language",
       label: "UI language",
       optionAuto: "Auto (follow browser)",
       optionEn: "English",
       optionZhCN: "中文 (Simplified Chinese)",
     },
     feedback: {
-      sectionTitle: "FEEDBACK",
+      sectionTitle: "Feedback",
       githubButton: "Report on GitHub",
       githubHint: "Opens a prefilled issue. To report a problem about a specific task, open that chat and type /report-issue.",
       emailButton: "Email feedback",
@@ -63,7 +63,6 @@ export const enDict = {
     forgetConfirm: "Forget this config?",
     tabs: { configs: "Configs", skills: "Skills", search: "Search", general: "General" },
     about: {
-      sectionTitle: "About",
       tagline: "BYOK · Local-first · Open source",
       changelog: "Changelog",
     },

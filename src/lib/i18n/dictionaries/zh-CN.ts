@@ -64,7 +64,6 @@ export const zhCNDict = {
     forgetConfirm: "确认删除此配置？",
     tabs: { configs: "配置", skills: "技能", search: "搜索", general: "通用" },
     about: {
-      sectionTitle: "关于",
       tagline: "BYOK · 本地优先 · 开源",
       changelog: "更新日志",
     },
