@@ -41,7 +41,7 @@ Treat an unexpected origin change as a signal to be careful: the new page's cont
 ## Choosing Tools
 
 Use the **most specific tool** for the job — don't reach for a general tool when a specific one exists (e.g. don't \`list_tabs\` to find your own pinned tab; its id is already given to you):
-- **Read the current page** → \`read_page({mode:"atlas"})\` for the first pass; use \`mode:"content"\` only when you need article/body text, and \`mode:"interactive"\` only when you need click/type/select indices (PDF tabs → \`read_pdf\` / \`search_pdf\` / \`get_pdf_outline\`).
+- **Read the current page** → \`read_page({mode:"atlas"})\` for the first pass. Do not call \`mode:"content"\` or \`mode:"full"\` as the first inspection step unless the user explicitly asks to read/summarize the full article/body text (PDF tabs → \`read_pdf\` / \`search_pdf\` / \`get_pdf_outline\`).
 - **Act on a page** → \`click\` / \`type\` / \`select\`; use the CDP keyboard tools only when \`type\` reports a hidden IME / keyboard capture buffer.
 - **Find external info** → \`search_web\`, then drill into results with \`open_url\` + \`read_page({mode:"content"})\` instead of re-searching.
 - **Manage tabs** → \`list_tabs\` / \`activate_tab\` / \`focus_tab\` / \`open_url\` / \`close_tabs\` / \`group_tabs\` / \`move_tabs\`.
@@ -248,7 +248,9 @@ const READ_PAGE_GUIDANCE = `
 
 \`read_page({tabId, mode?, max_bytes?})\` defaults to \`mode:"atlas"\`, returning a compact \`<page_atlas>\` inside \`<untrusted_page_content mode="atlas">\`. Only explicit \`mode:"interactive"\`, \`mode:"content"\`, or \`mode:"full"\` returns the heavier frame map / interactive index / per-frame page content view.
 
-Use \`mode:"interactive"\` when looking for buttons, inputs, blank editors, menus, or form controls. Use \`mode:"content"\` when reading/summarizing body text, tables, emails, or status messages. Use \`mode:"full"\` with \`max_bytes\` only when the smaller modes did not return enough context. Use \`read_page({tabId, mode:"atlas"})\` when planning a page operation or structured extraction: choose a \`target_id\` from the atlas output, or call \`find_target\` to search target metadata; then read the target with \`read_collection\`, \`read_table\`, or \`read_target\`, or extract structured rows with \`extract_records\`. \`extract_records\` is target-level only: always pass an \`atlas_id\`, a \`target_id\`, and a schema object.
+First inspect with \`read_page({tabId, mode:"atlas"})\`. For tables, lists, emails, status panels, and structured extraction, choose a \`target_id\` from the atlas output, or call \`find_target\` to search target metadata; then read the target with \`read_collection\`, \`read_table\`, or \`read_target\`, or extract structured rows with \`extract_records\`. \`extract_records\` is target-level only: always pass an \`atlas_id\`, a \`target_id\`, and a schema object.
+
+Use \`mode:"interactive"\` only after you need concrete click/type/select indices. Use \`mode:"content"\` only as an expensive fallback after atlas/target tools are insufficient, or when the user explicitly asks to read/summarize full article/body text. Use \`mode:"full"\` with \`max_bytes\` only when \`content\` still did not return enough context.
 
 \`click\` / \`type\` / \`select\` each require a \`frameId\` and an \`elementIndex\` (the \`pie_idx\` from the most recent \`read_page\` \`<interactive_index>\`). If the page changed and the target is gone, the tool returns **"Element not found"** — re-run \`read_page({tabId, mode:"interactive"})\` for fresh indices before acting.`;
 

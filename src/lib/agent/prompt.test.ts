@@ -299,6 +299,8 @@ describe("Page tools locator guidance (#113)", () => {
     expect(prompt).toContain("<interactive_index>");
     expect(prompt).toContain("<untrusted_page_content>");
     expect(prompt).toMatch(/defaults to `mode:"atlas"`/);
+    expect(prompt).toMatch(/Do not call `mode:"content"` or `mode:"full"` as the first inspection step/);
+    expect(prompt).toMatch(/mode:"content".*expensive fallback/is);
     expect(prompt).not.toContain("interactive elements stamped `data-pie-idx=\"N\"`");
   });
 
@@ -313,6 +315,8 @@ describe("Page tools locator guidance (#113)", () => {
     expect(prompt).toContain("`extract_records`");
     expect(prompt).toMatch(/extract_records.*target-level only/is);
     expect(prompt).toContain('read_page({tabId, mode:"interactive"})');
+    expect(prompt).toMatch(/tables, lists, emails, status panels.*target_id/is);
+    expect(prompt).not.toMatch(/Use `mode:"content"` when reading\/summarizing body text, tables, emails, or status messages/);
   });
 
   it("allows element indices only from the most recent read_page interactive_index", () => {

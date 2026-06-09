@@ -170,8 +170,10 @@ export const readPageTool: Tool = {
   name: "read_page",
   description:
     "Inspect the given tab. Default/auto returns a compact Page Atlas for target discovery " +
-    "and structured extraction. Use mode=interactive before click/type/select to get current " +
-    "element indices, or mode=content/full when you explicitly need page text/HTML.",
+    "and structured extraction. Do not use content/full as the first inspection step. " +
+    "Use mode=interactive before click/type/select to get current element indices. " +
+    "Use content/full only as an expensive fallback after atlas/target tools are insufficient, " +
+    "or when the user explicitly asks to read or summarize full article/body text.",
   parameters: {
     type: "object",
     properties: {
@@ -180,7 +182,7 @@ export const readPageTool: Tool = {
         type: "string",
         enum: ["auto", "atlas", "interactive", "content", "full"],
         description:
-          "Read mode. auto is default and behaves like atlas. Use interactive for element indices, content/full for page text or HTML.",
+          "Read mode. auto is default and behaves like atlas. Use interactive for element indices. content/full are expensive fallbacks, not first-pass inspection modes.",
       },
       max_bytes: {
         type: "integer",
