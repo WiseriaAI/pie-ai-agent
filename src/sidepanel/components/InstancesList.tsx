@@ -10,7 +10,7 @@ interface Props {
 
 export default function InstancesList(props: Props) {
   return (
-    <div className="flex flex-col overflow-hidden rounded-[14px] bg-surface">
+    <div className="flex flex-col overflow-hidden rounded-[14px] border border-line bg-surface">
       {props.instances.map((inst, i) => {
         const isOpen = props.expandedId === inst.id;
         return (

@@ -271,7 +271,7 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
       {/* Concept hint — Skill 与底层 tool 的区别。Phase 3+ 用户经常误以为
           "为什么 click / type / open_url 这些没在列表里" — 它们是 LLM 的原子
           工具，不是 reusable workflow（skill）。 */}
-      <div className="rounded-[10px] bg-surface px-3 py-2.5 text-[12px] leading-[18px] text-fg-2">
+      <div className="rounded-[10px] border border-line bg-surface px-3 py-2.5 text-[12px] leading-[18px] text-fg-2">
         {t("skills.empty.cta")}
       </div>
 
@@ -370,7 +370,7 @@ function SkillsSection({
         <span className="text-[15px] font-semibold tracking-[-0.005em] text-fg-1">{title}</span>
         <span className="font-mono text-[10px] text-fg-3">{subtitle}</span>
       </div>
-      <div className="flex flex-col overflow-hidden rounded-[14px] bg-surface">
+      <div className="flex flex-col overflow-hidden rounded-[14px] border border-line bg-surface">
         {children}
       </div>
     </section>
@@ -497,7 +497,7 @@ function SkillForm({
 }) {
   const t = useT();
   return (
-    <section className="flex flex-col gap-3 rounded-[14px] bg-surface p-3.5">
+    <section className="flex flex-col gap-3 rounded-[14px] border border-line bg-surface p-3.5">
       <div className="flex items-baseline justify-between">
         <span className="text-[15px] font-semibold tracking-[-0.005em] text-fg-1">
           {form.editingId ? t("skills.form.editSkill") : t("skills.form.newSkill")}

@@ -121,7 +121,7 @@ export default function SearchProviderSection() {
       </div>
 
       {/* Card — no border */}
-      <div className="flex flex-col gap-3.5 rounded-[14px] bg-surface p-4">
+      <div className="flex flex-col gap-3.5 rounded-[14px] border border-line bg-surface p-4">
         <div className="flex items-center justify-between">
           <span className="caps text-fg-3">{t("settings.searchProvider.apiKeyLabel")}</span>
           <span className="caps text-fg-3">{t("settings.searchProvider.storageMeta")}</span>

@@ -222,7 +222,7 @@ export default function NewConfigWizard(props: Props) {
   }
 
   return (
-    <div className="flex flex-col gap-3 rounded-[14px] bg-surface p-3.5">
+    <div className="flex flex-col gap-3 rounded-[14px] border border-line bg-surface p-3.5">
       <ProviderDropdown
         value={provider}
         builtinProviders={sortedProviders}

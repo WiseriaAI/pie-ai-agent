@@ -371,7 +371,7 @@ function CdpInputSection({
       <div className="flex items-baseline justify-between">
         <span className="text-[15px] font-semibold tracking-[-0.005em] text-fg-1">{t("settings.experimental")}</span>
       </div>
-      <div className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-3.5">
+      <div className="flex flex-col gap-3 rounded-[14px] border border-line bg-surface p-3.5">
         <div className="flex items-start gap-3">
           <div className="flex flex-1 flex-col gap-1">
             <div className="text-[13px] font-medium text-fg-1">{t("settings.cdpInput.title")}</div>
