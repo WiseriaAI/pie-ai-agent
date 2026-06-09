@@ -50,17 +50,34 @@ interface SessionDrawerProps {
 // then removes it. Mirrors what AnimatePresence does in motion libraries, but
 // without pulling in 20kB. Delay must match the longest transition below
 // (240ms panel slide).
-function useDelayedUnmount(isOpen: boolean, delay: number) {
-  const [render, setRender] = useState(isOpen);
+// Drives both the mount lifecycle and the open/close transition.
+//   - `mounted`: keep the DOM around through the close animation, then remove.
+//   - `open`: the *visual* state (transform/opacity). On open it flips to true
+//     only AFTER the off-screen initial frame has painted, so the browser has
+//     a from-state to transition out of — mounting straight into the final
+//     transform would skip the slide-in entirely.
+function useDrawerTransition(isOpen: boolean, delay: number) {
+  const [mounted, setMounted] = useState(isOpen);
+  const [open, setOpen] = useState(isOpen);
   useEffect(() => {
     if (isOpen) {
-      setRender(true);
-      return;
+      setMounted(true);
+      // Two rAFs: frame 1 paints the off-screen initial state, frame 2 flips
+      // to open so the transition actually runs.
+      let raf2 = 0;
+      const raf1 = requestAnimationFrame(() => {
+        raf2 = requestAnimationFrame(() => setOpen(true));
+      });
+      return () => {
+        cancelAnimationFrame(raf1);
+        cancelAnimationFrame(raf2);
+      };
     }
-    const t = setTimeout(() => setRender(false), delay);
+    setOpen(false);
+    const t = setTimeout(() => setMounted(false), delay);
     return () => clearTimeout(t);
   }, [isOpen, delay]);
-  return render;
+  return { mounted, open };
 }
 
 const DRAWER_TRANSITION_MS = 240;
@@ -324,9 +341,14 @@ export default function SessionDrawer({
 
   // M5: stay mounted long enough for the close transition to finish before
   // removing the DOM. focus-trap effect above already guards on isOpen so
-  // listeners aren't attached while the drawer is animating out.
-  const shouldRender = useDelayedUnmount(isOpen, DRAWER_TRANSITION_MS);
-  if (!shouldRender) return null;
+  // listeners aren't attached while the drawer is animating out. `animateOpen`
+  // is the visual open state (see useDrawerTransition) — it lags isOpen by one
+  // painted frame on open so the slide-in transition runs.
+  const { mounted, open: animateOpen } = useDrawerTransition(
+    isOpen,
+    DRAWER_TRANSITION_MS,
+  );
+  if (!mounted) return null;
 
   // Sessions split by status — archived goes to the "show archived" section
   const activeSessions = sessions.filter((s) => s.status !== "archived");
@@ -357,15 +379,15 @@ export default function SessionDrawer({
            clicks fall through immediately even if the panel hasn't unmounted. */}
       <div
         data-testid="drawer-backdrop"
-        data-state={isOpen ? "open" : "closed"}
+        data-state={animateOpen ? "open" : "closed"}
         onClick={onClose}
         style={{
           position: "fixed",
           inset: 0,
           background: "var(--c-overlay-strong)",
           zIndex: 40,
-          opacity: isOpen ? 1 : 0,
-          pointerEvents: isOpen ? "auto" : "none",
+          opacity: animateOpen ? 1 : 0,
+          pointerEvents: animateOpen ? "auto" : "none",
           transition: `opacity 200ms ${DRAWER_EASING}`,
         }}
       />
@@ -376,7 +398,7 @@ export default function SessionDrawer({
         role="dialog"
         aria-modal="true"
         aria-label={t("sessions.header")}
-        data-state={isOpen ? "open" : "closed"}
+        data-state={animateOpen ? "open" : "closed"}
         style={{
           position: "fixed",
           top: 0,
@@ -389,7 +411,7 @@ export default function SessionDrawer({
           display: "flex",
           flexDirection: "column",
           overflow: "hidden",
-          transform: isOpen ? "translateX(0)" : "translateX(-100%)",
+          transform: animateOpen ? "translateX(0)" : "translateX(-100%)",
           transition: `transform ${DRAWER_TRANSITION_MS}ms ${DRAWER_EASING}`,
         }}
       >

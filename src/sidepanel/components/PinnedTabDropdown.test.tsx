@@ -7,6 +7,7 @@
  */
 
 import { render, screen, fireEvent, cleanup, act } from "@testing-library/react";
+import { createRef } from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { chromeMock } from "@/test/setup";
 import PinnedTabDropdown from "./PinnedTabDropdown";
@@ -195,6 +196,47 @@ describe("PinnedTabDropdown — actions", () => {
       fireEvent.keyDown(document, { key: "Escape" });
     });
 
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("outside-click ignores the anchor button but closes on other clicks", async () => {
+    seedTabs([{ id: 1, url: "https://x.com/" }]);
+    const onClose = vi.fn();
+    const anchorRef = createRef<HTMLButtonElement>();
+
+    await act(async () => {
+      render(
+        <div>
+          <button ref={anchorRef}>anchor</button>
+          <PinnedTabDropdown
+            pinMode="auto"
+            pinnedTabs={null}
+            streaming={false}
+            onToggle={vi.fn()}
+            onClearPin={vi.fn()}
+            onClose={onClose}
+            anchorRef={anchorRef}
+          />
+        </div>,
+      );
+    });
+
+    // The outside-click listener registers on a deferred macrotask.
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    // mousedown on the anchor must NOT close — its own onClick owns the toggle,
+    // so closing here would relaunch the open→close→open flicker.
+    await act(async () => {
+      fireEvent.mouseDown(anchorRef.current!);
+    });
+    expect(onClose).not.toHaveBeenCalled();
+
+    // mousedown anywhere else DOES close.
+    await act(async () => {
+      fireEvent.mouseDown(document.body);
+    });
     expect(onClose).toHaveBeenCalled();
   });
 

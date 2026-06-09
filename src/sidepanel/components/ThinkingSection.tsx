@@ -22,7 +22,7 @@ export default function ThinkingSection({ thinking, streaming }: ThinkingSection
         className="flex items-center gap-1.5 self-start font-mono text-[10px] uppercase tracking-[0.08em] text-fg-3 hover:text-fg-2"
       >
         <span
-          className="inline-block transition-transform"
+          className="inline-block transition-transform duration-200"
           style={{ transform: open ? "rotate(90deg)" : "rotate(0deg)" }}
         >
           ›
@@ -30,7 +30,7 @@ export default function ThinkingSection({ thinking, streaming }: ThinkingSection
         <span>{streaming ? t("thinking.inProgress") : t("thinking.label")}</span>
       </button>
       {open && thinking && (
-        <div className="ml-3 border-l border-line pl-2.5 text-[12px] leading-5 text-fg-2">
+        <div className="view-enter ml-3 border-l border-line pl-2.5 text-[12px] leading-5 text-fg-2">
           <MarkdownContent content={thinking} />
         </div>
       )}
