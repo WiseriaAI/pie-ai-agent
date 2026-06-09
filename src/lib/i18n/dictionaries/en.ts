@@ -285,16 +285,16 @@ export const enDict = {
     },
     section: {
       yours: {
-        title: "YOURS",
+        title: "Your Skills",
         subtitleEditable: "{count} · editable",
       },
     },
-    capacity: "CAPACITY",
+    capacity: "Capacity",
     newSkill: "+ New skill",
     noSkills: 'No skills yet — click "+ New skill" to add one.',
     form: {
-      editSkill: "EDIT SKILL",
-      newSkill: "NEW SKILL",
+      editSkill: "Edit skill",
+      newSkill: "New skill",
       name: "Name",
       namePlaceholder: "Extract product info",
       description: "Description",
