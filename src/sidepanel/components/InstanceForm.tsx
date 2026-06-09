@@ -111,7 +111,7 @@ export default function InstanceForm(props: Props) {
           aria-label="nickname"
           value={nickname}
           onChange={(e) => setNickname(e.target.value)}
-          className="rounded border border-line bg-field px-3 py-2 text-[12px] text-fg-1"
+          className="rounded-[10px] bg-field border border-line focus:border-accent-line px-3 py-2.5 text-[13px] text-fg-1"
         />
       </Field>
 
@@ -120,7 +120,7 @@ export default function InstanceForm(props: Props) {
           {metaLoading && isCustomProvider ? (
             <div className="h-[38px] animate-pulse rounded border border-line bg-field" />
           ) : (
-            <div className="flex items-center gap-2 rounded border border-line bg-field px-3 py-2 text-[12px] text-fg-2">
+            <div className="flex items-center gap-2 rounded-[10px] bg-field border border-line px-3 py-2.5 text-[13px] text-fg-2">
               <span className="text-fg-1">{meta ? providerDisplayName(meta, t) : props.provider}</span>
               <span className="ml-auto font-mono text-[10px] text-fg-3">{t("instanceForm.locked")}</span>
             </div>
@@ -132,13 +132,13 @@ export default function InstanceForm(props: Props) {
         {!replacing && props.existingApiKey ? (
           <div className="flex flex-col gap-1.5">
             <div className="flex gap-1.5">
-              <div className="flex-1 rounded border border-line bg-field px-3 py-2 font-mono text-[12px] text-fg-1 select-all">
+              <div className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap rounded-[10px] bg-field border border-line px-3 py-2.5 font-mono text-[13px] text-fg-1 select-all">
                 {partialReveal(props.existingApiKey)}
               </div>
               <button
                 type="button"
                 onClick={() => setReplacing(true)}
-                className="rounded border border-line bg-field px-2.5 text-[11px] text-fg-2 hover:text-fg-1"
+                className="shrink-0 rounded-[10px] border border-line bg-transparent px-2.5 py-2 text-[12px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
               >
                 {t("instanceForm.replaceKey")}
               </button>
@@ -153,12 +153,12 @@ export default function InstanceForm(props: Props) {
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
                 placeholder={meta?.placeholder ?? ""}
-                className="flex-1 rounded border border-line bg-field px-3 py-2 text-[12px] text-fg-1"
+                className="min-w-0 flex-1 rounded-[10px] bg-field border border-line focus:border-accent-line px-3 py-2.5 text-[13px] text-fg-1"
               />
               <button
                 type="button"
                 onClick={() => setShowKey(!showKey)}
-                className="rounded border border-line bg-field px-2.5 text-[11px] text-fg-2"
+                className="shrink-0 rounded-[10px] border border-line bg-transparent px-2.5 py-2 text-[12px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
               >
                 {showKey ? t("instanceForm.hideKey") : t("instanceForm.showKey")}
               </button>
@@ -167,7 +167,7 @@ export default function InstanceForm(props: Props) {
               <button
                 type="button"
                 onClick={() => { setApiKey(""); setReplacing(false); }}
-                className="self-start rounded border border-line bg-transparent px-3 py-1.5 text-[11px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
+                className="self-start rounded-[10px] border border-line bg-transparent px-3 py-2 text-[12px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
               >
                 {t("instanceForm.cancelKeepKey")}
               </button>
@@ -210,21 +210,21 @@ export default function InstanceForm(props: Props) {
           <button
             onClick={() => props.onTest(payload)}
             disabled={!canSave}
-            className="rounded border border-line bg-transparent px-3 py-1.5 text-[11px] text-fg-2 hover:border-fg-3 disabled:opacity-30"
+            className="rounded-[10px] border border-line bg-transparent px-3 py-2 text-[12px] text-fg-2 hover:border-fg-3 hover:text-fg-1 disabled:opacity-30"
           >
             {t("instanceForm.test")}
           </button>
           <button
             onClick={() => props.onSave(payload)}
             disabled={!canSave}
-            className="rounded bg-fg-1 px-3 py-1.5 text-[11px] font-medium text-canvas disabled:opacity-30"
+            className="rounded-[10px] bg-fg-1 px-4 py-2 text-[12px] font-medium text-canvas disabled:opacity-30"
           >
             {props.saveLabel ?? t("instanceForm.save")}
           </button>
           {props.mode === "edit" && props.onDelete && (
             <button
               onClick={() => props.onDelete!()}
-              className="ml-auto rounded border border-warning-line bg-transparent px-3 py-1.5 text-[11px] text-warning hover:bg-warning-tint"
+              className="ml-auto rounded-[10px] bg-transparent px-3 py-2 text-[12px] text-warning hover:bg-warning-tint"
             >
               {t("instanceForm.forgetConfig")}
             </button>
@@ -248,7 +248,7 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
   return (
     <label className="flex flex-col gap-1.5">
       <div className="flex items-baseline justify-between">
-        <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-3">{label}</span>
+        <span className="text-[12px] font-medium text-fg-2">{label}</span>
         {hint && <span className="font-mono text-[10px] text-fg-3">{hint}</span>}
       </div>
       {children}

@@ -43,7 +43,7 @@ export default function ProviderModelList(props: Props) {
   const isLazy = registry.length === 0;
 
   return (
-    <div className="flex flex-col overflow-hidden rounded-lg border border-line bg-field">
+    <div className="flex flex-col overflow-hidden rounded-[10px] bg-field">
       {isLazy && props.onRefresh && (
         <div className="flex items-center justify-between border-b border-line px-3 py-1.5 text-[10px] text-fg-3">
           <span className="font-mono">
@@ -85,18 +85,18 @@ export default function ProviderModelList(props: Props) {
                   displayName: cm?.displayName,
                 })
               }
-              className="cursor-pointer text-fg-3 hover:text-fg-1"
+              className="flex items-center cursor-pointer text-fg-3 hover:text-fg-1"
             >
-              ✎
+              <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M9.5 2.5L11.5 4.5L5 11L2.5 11.5L3 9L9.5 2.5Z" stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round"/></svg>
             </span>
             {props.onRemoveCustom && (
               <span
                 role="button"
                 aria-label="remove"
                 onClick={() => props.onRemoveCustom!(id)}
-                className="cursor-pointer text-fg-3 hover:text-warning"
+                className="flex items-center cursor-pointer text-fg-3 hover:text-warning"
               >
-                ×
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 2 L8 8 M8 2 L2 8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
               </span>
             )}
           </div>
@@ -136,5 +136,5 @@ export default function ProviderModelList(props: Props) {
 }
 
 function Chip({ children }: { children: React.ReactNode }) {
-  return <span className="rounded bg-line px-1 text-[9px] text-fg-3">{children}</span>;
+  return <span className="rounded-full bg-accent-tint px-2 py-0.5 font-mono text-[10px] text-fg-2">{children}</span>;
 }

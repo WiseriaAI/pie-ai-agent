@@ -20,7 +20,7 @@
     --c-warning-tint: rgba(184, 90, 77, 0.08);
     --c-warning-line: rgba(184, 90, 77, 0.4);
     --c-overlay: rgba(20, 24, 29, 0.04);
-    --c-pending: #B040AC;
+    --c-pending: #8A6D2E;
     --c-danger-fg: #A02020;
     --c-danger-line: #E8C0C0;
     --c-overlay-strong: rgba(20, 24, 29, 0.5);
@@ -46,7 +46,7 @@
       --c-warning-tint: rgba(194, 107, 94, 0.08);
       --c-warning-line: rgba(194, 107, 94, 0.45);
       --c-overlay: rgba(232, 236, 242, 0.04);
-      --c-pending: #C260BE;
+      --c-pending: #B89968;
       --c-danger-fg: #8A3A3A;
       --c-danger-line: #3A2222;
       --c-overlay-strong: rgba(8, 13, 16, 0.72);
@@ -76,7 +76,7 @@
     --c-warning-tint: rgba(184, 90, 77, 0.08);
     --c-warning-line: rgba(184, 90, 77, 0.4);
     --c-overlay: rgba(20, 24, 29, 0.04);
-    --c-pending: #B040AC;
+    --c-pending: #8A6D2E;
     --c-danger-fg: #A02020;
     --c-danger-line: #E8C0C0;
     --c-overlay-strong: rgba(20, 24, 29, 0.5);
@@ -101,7 +101,7 @@
     --c-warning-tint: rgba(194, 107, 94, 0.08);
     --c-warning-line: rgba(194, 107, 94, 0.45);
     --c-overlay: rgba(232, 236, 242, 0.04);
-    --c-pending: #C260BE;
+    --c-pending: #B89968;
     --c-danger-fg: #8A3A3A;
     --c-danger-line: #3A2222;
     --c-overlay-strong: rgba(8, 13, 16, 0.72);
@@ -211,6 +211,12 @@ button {
 .view-enter { animation: view-enter 200ms cubic-bezier(0.32, 0.72, 0, 1) both; }
 .bubble-in  { animation: bubble-in  200ms cubic-bezier(0.32, 0.72, 0, 1) both; }
 .scale-in   { animation: scale-in   240ms cubic-bezier(0.32, 0.72, 0, 1) both; }
+
+@keyframes drawer-down {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0);     }
+}
+.drawer-down { animation: drawer-down 200ms cubic-bezier(0.32, 0.72, 0, 1) both; }
 
 /* Respect OS-level motion reduction. Collapse all animation/transition to
    sub-frame so behavior stays correct (final state) without movement. */

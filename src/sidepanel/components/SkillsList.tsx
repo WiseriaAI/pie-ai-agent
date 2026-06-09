@@ -159,12 +159,6 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
     await loadSkills();
   }
 
-  function openCreateForm() {
-    setForm(emptyForm());
-    setFormError(null);
-    setShowForm(true);
-  }
-
   function openEditForm(skill: SkillPackage) {
     setForm(formFromSkill(skill));
     setFormError(null);
@@ -255,32 +249,14 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
     }
   }
 
-  const quotaPct = Math.min(100, (storageBytes / STORAGE_QUOTA_BYTES) * 100);
   const custom = skills.filter((s) => !s.builtIn);
 
   return (
     <div className="flex flex-col gap-7">
-      <CapacitySection
-        skillCount={skills.length}
-        storageBytes={storageBytes}
-        quotaPct={quotaPct}
-        showFormButton={!showForm}
-        onNew={openCreateForm}
-      />
-
       {/* Concept hint — Skill 与底层 tool 的区别。Phase 3+ 用户经常误以为
           "为什么 click / type / open_url 这些没在列表里" — 它们是 LLM 的原子
           工具，不是 reusable workflow（skill）。 */}
-      <div
-        style={{
-          padding: "8px 12px",
-          fontSize: 12,
-          color: "var(--c-fg-2, #888)",
-          background: "var(--c-bg-2, transparent)",
-          borderLeft: "2px solid var(--c-line, #ccc)",
-          lineHeight: 1.5,
-        }}
-      >
+      <div className="rounded-[10px] border border-line bg-surface px-3 py-2.5 text-[12px] leading-[18px] text-fg-2">
         {t("skills.empty.cta")}
       </div>
 
@@ -320,52 +296,6 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
   );
 }
 
-function CapacitySection({
-  skillCount,
-  storageBytes,
-  quotaPct,
-  showFormButton,
-  onNew,
-}: {
-  skillCount: number;
-  storageBytes: number;
-  quotaPct: number;
-  showFormButton: boolean;
-  onNew: () => void;
-}) {
-  const t = useT();
-  const overFill = quotaPct >= 80;
-  return (
-    <section className="flex flex-col gap-2.5">
-      <div className="flex items-baseline justify-between">
-        <div className="flex flex-col gap-0.5">
-          <span className="caps text-fg-3">{t("skills.capacity")}</span>
-          <span className="text-[14px] font-medium text-fg-1">
-            {skillCount} skill{skillCount === 1 ? "" : "s"}{" "}
-            <span className="text-fg-2">
-              · {formatBytes(storageBytes)} of {formatBytes(STORAGE_QUOTA_BYTES)}
-            </span>
-          </span>
-        </div>
-        {showFormButton && (
-          <button
-            onClick={onNew}
-            className="rounded-md bg-fg-1 px-3.5 py-1.5 text-[12px] font-medium text-canvas hover:opacity-90"
-          >
-            {t("skills.newSkill")}
-          </button>
-        )}
-      </div>
-      <div className="h-1 w-full overflow-hidden rounded-sm border border-line bg-surface">
-        <div
-          className={`h-full transition-all ${overFill ? "bg-warning" : "bg-accent"}`}
-          style={{ width: `${quotaPct}%` }}
-        />
-      </div>
-    </section>
-  );
-}
-
 function SkillsSection({
   title,
   subtitle,
@@ -378,10 +308,10 @@ function SkillsSection({
   return (
     <section className="flex flex-col gap-3">
       <div className="flex items-baseline justify-between">
-        <span className="caps text-fg-3">{title}</span>
+        <span className="text-[15px] font-semibold tracking-[-0.005em] text-fg-1">{title}</span>
         <span className="font-mono text-[10px] text-fg-3">{subtitle}</span>
       </div>
-      <div className="flex flex-col gap-px overflow-hidden rounded-lg border border-line bg-line">
+      <div className="flex flex-col overflow-hidden rounded-[14px] border border-line bg-surface">
         {children}
       </div>
     </section>
@@ -418,9 +348,7 @@ function SkillRow({
   const slug = normalizeSlug(skill.frontmatter.name) || skill.id;
 
   return (
-    <div
-      className="flex flex-col gap-2 bg-surface px-3.5 py-3.5"
-    >
+    <div className="flex flex-col gap-2 border-t border-line bg-surface px-3.5 py-3.5 first:border-t-0">
       <div className="flex items-center gap-2.5">
         <button
           onClick={onToggle}
@@ -436,7 +364,7 @@ function SkillRow({
           }
         />
         <code className="font-mono text-[12px] text-accent">/{slug}</code>
-        <span className="ml-auto font-mono text-[10px] uppercase tracking-[0.08em] text-fg-3">
+        <span className="ml-auto rounded-full bg-accent-tint px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.08em] text-fg-3">
           {tag}
         </span>
       </div>
@@ -453,7 +381,7 @@ function SkillRow({
         <button
           onClick={onRun}
           disabled={!enabled}
-          className="rounded border border-line bg-transparent px-2.5 py-1 text-[11px] text-fg-2 hover:border-fg-3 hover:text-fg-1 disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-[10px] border border-line bg-transparent px-2.5 py-1 text-[11px] text-fg-2 hover:border-fg-3 hover:text-fg-1 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {t("common.run")}
         </button>
@@ -461,7 +389,7 @@ function SkillRow({
           <>
             <button
               onClick={onEdit}
-              className="rounded border border-line bg-transparent px-2.5 py-1 text-[11px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
+              className="rounded-[10px] border border-line bg-transparent px-2.5 py-1 text-[11px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
             >
               {t("common.edit")}
             </button>
@@ -469,13 +397,13 @@ function SkillRow({
               <>
                 <button
                   onClick={onDelete}
-                  className="rounded border border-warning-line bg-transparent px-2.5 py-1 text-[11px] text-warning hover:bg-warning-tint"
+                  className="rounded-[10px] border border-warning-line bg-transparent px-2.5 py-1 text-[11px] text-warning hover:bg-warning-tint"
                 >
                   {t("common.confirm")}
                 </button>
                 <button
                   onClick={onCancelDelete}
-                  className="rounded border border-line bg-transparent px-2.5 py-1 text-[11px] text-fg-2 hover:text-fg-1"
+                  className="rounded-[10px] border border-line bg-transparent px-2.5 py-1 text-[11px] text-fg-2 hover:text-fg-1"
                 >
                   {t("common.cancel")}
                 </button>
@@ -483,7 +411,7 @@ function SkillRow({
             ) : (
               <button
                 onClick={onAskDelete}
-                className="rounded border border-line bg-transparent px-2.5 py-1 text-[11px] text-fg-3 hover:border-warning-line hover:text-warning"
+                className="rounded-[10px] border border-line bg-transparent px-2.5 py-1 text-[11px] text-fg-3 hover:border-warning-line hover:text-warning"
               >
                 {t("common.delete")}
               </button>
@@ -510,14 +438,14 @@ function SkillForm({
 }) {
   const t = useT();
   return (
-    <section className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-3.5">
+    <section className="flex flex-col gap-3 rounded-[14px] border border-line bg-surface p-3.5">
       <div className="flex items-baseline justify-between">
-        <span className="caps text-fg-3">
+        <span className="text-[15px] font-semibold tracking-[-0.005em] text-fg-1">
           {form.editingId ? t("skills.form.editSkill") : t("skills.form.newSkill")}
         </span>
         <button
           onClick={onCancel}
-          className="text-[11px] text-fg-2 hover:text-fg-1"
+          className="rounded-[10px] border border-line bg-transparent px-2.5 py-1 text-[11px] text-fg-2 hover:text-fg-1"
         >
           {t("common.cancel")}
         </button>
@@ -533,7 +461,7 @@ function SkillForm({
         <input
           value={form.name}
           onChange={(e) => onChange((p) => ({ ...p, name: e.target.value }))}
-          className="w-full rounded border border-line bg-field px-3 py-2 text-[12px] text-fg-1 placeholder:text-fg-3 focus:border-accent-line"
+          className="w-full rounded-[10px] border border-line bg-field px-3 py-2 text-[12px] text-fg-1 placeholder:text-fg-3 focus:border-accent-line"
           placeholder={t("skills.form.namePlaceholder")}
         />
       </FormField>
@@ -542,7 +470,7 @@ function SkillForm({
         <input
           value={form.description}
           onChange={(e) => onChange((p) => ({ ...p, description: e.target.value }))}
-          className="w-full rounded border border-line bg-field px-3 py-2 text-[12px] text-fg-1 placeholder:text-fg-3 focus:border-accent-line"
+          className="w-full rounded-[10px] border border-line bg-field px-3 py-2 text-[12px] text-fg-1 placeholder:text-fg-3 focus:border-accent-line"
           placeholder={t("skills.form.descPlaceholder")}
         />
       </FormField>
@@ -555,7 +483,7 @@ function SkillForm({
           value={form.instructions}
           onChange={(e) => onChange((p) => ({ ...p, instructions: e.target.value }))}
           rows={8}
-          className="w-full rounded border border-line bg-field px-3 py-2 font-mono text-[11px] leading-4 text-fg-1 placeholder:text-fg-3 focus:border-accent-line"
+          className="w-full rounded-[10px] border border-line bg-field px-3 py-2 font-mono text-[11px] leading-4 text-fg-1 placeholder:text-fg-3 focus:border-accent-line"
           placeholder={t("skills.form.instructionsPlaceholder")}
         />
       </FormField>
@@ -563,13 +491,13 @@ function SkillForm({
       <div className="flex justify-end gap-2 pt-1">
         <button
           onClick={onCancel}
-          className="rounded border border-line bg-transparent px-3 py-1.5 text-[11px] text-fg-2 hover:text-fg-1"
+          className="rounded-[10px] border border-line bg-transparent px-3 py-1.5 text-[11px] text-fg-2 hover:text-fg-1"
         >
           {t("common.cancel")}
         </button>
         <button
           onClick={onSubmit}
-          className="rounded bg-fg-1 px-3 py-1.5 text-[11px] font-medium text-canvas hover:opacity-90"
+          className="rounded-[10px] bg-fg-1 px-3 py-1.5 text-[11px] font-medium text-canvas hover:opacity-90"
         >
           {form.editingId ? t("skills.form.saveChanges") : t("skills.form.createSkill")}
         </button>
@@ -590,7 +518,7 @@ function FormField({
   return (
     <label className="flex flex-col gap-1.5">
       <div className="flex items-baseline justify-between">
-        <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-3">
+        <span className="text-[12px] font-medium text-fg-2">
           {label}
         </span>
         {hint && (

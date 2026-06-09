@@ -41,14 +41,14 @@ export const enDict = {
   },
   settings: {
     language: {
-      sectionTitle: "LANGUAGE",
+      sectionTitle: "Language",
       label: "UI language",
       optionAuto: "Auto (follow browser)",
       optionEn: "English",
       optionZhCN: "中文 (Simplified Chinese)",
     },
     feedback: {
-      sectionTitle: "FEEDBACK",
+      sectionTitle: "Feedback",
       githubButton: "Report on GitHub",
       githubHint: "Opens a prefilled issue. To report a problem about a specific task, open that chat and type /report-issue.",
       emailButton: "Email feedback",
@@ -61,10 +61,14 @@ export const enDict = {
     backToAgent: "Back to agent",
     title: "Settings",
     forgetConfirm: "Forget this config?",
-    tabs: { configs: "Configs", skills: "Skills", search: "Search" },
+    tabs: { configs: "Configs", skills: "Skills", search: "Search", general: "General" },
+    about: {
+      tagline: "BYOK · Local-first · Open source",
+      changelog: "Changelog",
+    },
     active: "ACTIVE",
     noActiveConfig: "No active config — pick one below.",
-    experimental: "EXPERIMENTAL",
+    experimental: "Experimental",
     cdpInput: {
       title: "Browser input simulation (CDP)",
       description: "Required for hover, click, and keyboard tools. Enabling triggers Chrome's yellow debugger bar while a task runs.",
@@ -277,20 +281,20 @@ export const enDict = {
   },
   skills: {
     empty: {
-      cta: "Displays reusable workflows (skills). Underlying tools auto-resolve from the prompt.",
+      cta: "Displays reusable workflows (skills). Underlying tools auto-resolve from the prompt. Want a new one? Just ask Pie to create a skill and describe what it should do — Pie will write it for you.",
     },
     section: {
       yours: {
-        title: "YOURS",
+        title: "Your Skills",
         subtitleEditable: "{count} · editable",
       },
     },
-    capacity: "CAPACITY",
+    capacity: "Capacity",
     newSkill: "+ New skill",
-    noSkills: 'No skills yet — click "+ New skill" to add one.',
+    noSkills: "No skills yet.",
     form: {
-      editSkill: "EDIT SKILL",
-      newSkill: "NEW SKILL",
+      editSkill: "Edit skill",
+      newSkill: "New skill",
       name: "Name",
       namePlaceholder: "Extract product info",
       description: "Description",
