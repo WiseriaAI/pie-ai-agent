@@ -253,3 +253,51 @@ describe("resolveModelConfig — maxOutputTokens resolved from registry", () => 
     expect(cfg!.maxOutputTokens).toBe(384_000);
   });
 });
+
+describe("endpoint variants", () => {
+  it("endpointVariant round-trips through create/get and survives unrelated updates", async () => {
+    const id = await createInstance({ provider: "zhipu", nickname: "Z", apiKey: "k", endpointVariant: "coding-plan" });
+    expect((await getInstance(id))!.endpointVariant).toBe("coding-plan");
+    await updateInstance(id, { nickname: "Z2" });
+    expect((await getInstance(id))!.endpointVariant).toBe("coding-plan");
+  });
+
+  it("updateInstance: string sets, null clears back to default endpoint", async () => {
+    const id = await createInstance({ provider: "zhipu", nickname: "Z", apiKey: "k" });
+    await updateInstance(id, { endpointVariant: "coding-plan" });
+    expect((await getInstance(id))!.endpointVariant).toBe("coding-plan");
+    await updateInstance(id, { endpointVariant: null });
+    expect((await getInstance(id))!.endpointVariant).toBeUndefined();
+  });
+
+  it("resolveModelConfig: no variant → defaultBaseUrl (legacy records unchanged)", async () => {
+    const id = await createInstance({ provider: "zhipu", nickname: "Z", apiKey: "k" });
+    const cfg = await resolveModelConfig(id, "glm-4.7");
+    expect(cfg!.baseUrl).toBe("https://open.bigmodel.cn/api/paas/v4");
+  });
+
+  it("resolveModelConfig: variant overrides baseUrl", async () => {
+    const id = await createInstance({ provider: "moonshot", nickname: "K", apiKey: "k", endpointVariant: "kimi-code" });
+    const cfg = await resolveModelConfig(id, "kimi-for-coding");
+    expect(cfg!.baseUrl).toBe("https://api.kimi.com/coding");
+    // union 查找把 variant 模型的 meta 也接通（vision fail-closed false）
+    expect(cfg!.vision).toBe(false);
+  });
+
+  it("resolveModelConfig: dangling variant id falls back to defaultBaseUrl", async () => {
+    const id = await createInstance({ provider: "zhipu", nickname: "Z", apiKey: "k", endpointVariant: "removed-variant" });
+    const cfg = await resolveModelConfig(id, "glm-4.7");
+    expect(cfg!.baseUrl).toBe("https://open.bigmodel.cn/api/paas/v4");
+  });
+
+  it("firstModelForProvider prefers the variant pool over the registry list", async () => {
+    const id = await createInstance({ provider: "moonshot", nickname: "K", apiKey: "k", endpointVariant: "kimi-code" });
+    expect(await firstModelForProvider("moonshot", id)).toBe("kimi-for-coding");
+    // 无 variant 的 instance 仍取 registry[0]
+    const id2 = await createInstance({ provider: "moonshot", nickname: "K2", apiKey: "k" });
+    expect(await firstModelForProvider("moonshot", id2)).toBe("kimi-k2.6");
+    // customModels 仍最优先
+    const id3 = await createInstance({ provider: "moonshot", nickname: "K3", apiKey: "k", endpointVariant: "kimi-code", customModels: ["my-model"] });
+    expect(await firstModelForProvider("moonshot", id3)).toBe("my-model");
+  });
+});
