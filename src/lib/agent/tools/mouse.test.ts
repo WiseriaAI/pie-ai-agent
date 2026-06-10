@@ -309,6 +309,29 @@ describe("click tool — subframe synthetic path", () => {
     );
   });
 
+  it("string frameId is coerced and routed to the synthetic path", async () => {
+    (chrome.scripting.executeScript as ReturnType<typeof vi.fn>).mockImplementation(
+      async (injection: { args?: unknown[] }) =>
+        injection.args
+          ? [{ result: { ok: true, op: "click", observation: "Clicked element [4]" } }]
+          : [{ result: undefined }],
+    );
+    const acquireSession = vi.fn();
+    const requestConsent = vi.fn();
+    const tool = buildClickTool({ acquireSession, sessionId: "S1", requestConsent });
+    const result = await tool.handler(
+      { frameId: "5" as unknown as number, elementIndex: 4 },
+      { tabId: 7 },
+    );
+    expect(result.success).toBe(true);
+    expect(result.observation).toContain("frame 5");
+    expect(acquireSession).not.toHaveBeenCalled();
+    expect(requestConsent).not.toHaveBeenCalled();
+    expect(chrome.scripting.executeScript).toHaveBeenCalledWith(
+      expect.objectContaining({ target: { tabId: 7, frameIds: [5] } }),
+    );
+  });
+
   it("frameId>0 with vanished frame returns unreachable error", async () => {
     (chrome.scripting.executeScript as ReturnType<typeof vi.fn>).mockRejectedValue(
       new Error("No frame with id 21114 in tab 7"),

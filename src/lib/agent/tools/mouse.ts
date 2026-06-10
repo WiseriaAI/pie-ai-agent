@@ -106,9 +106,13 @@ USE WHEN:
       additionalProperties: false,
     },
     handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
-      const a = args as { frameId: number; elementIndex: number };
+      // Models sometimes send frameId as a JSON string ("5"); coerce before
+      // routing. undefined/NaN → 0 (CDP top-frame path).
+      const a = args as { frameId: number | string; elementIndex: number };
+      const rawFrameId = Number(a.frameId);
+      const frameId = Number.isFinite(rawFrameId) ? rawFrameId : 0;
 
-      if (typeof a.frameId === "number" && a.frameId !== 0) {
+      if (frameId !== 0) {
         return {
           success: false,
           error:
@@ -180,9 +184,13 @@ USE WHEN:
       additionalProperties: false,
     },
     handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
-      const a = args as { frameId: number; elementIndex: number };
+      // Models sometimes send frameId as a JSON string ("5"); coerce before
+      // routing. undefined/NaN → 0 (CDP top-frame path).
+      const a = args as { frameId: number | string; elementIndex: number };
+      const rawFrameId = Number(a.frameId);
+      const frameId = Number.isFinite(rawFrameId) ? rawFrameId : 0;
 
-      if (typeof a.frameId === "number" && a.frameId !== 0) {
+      if (frameId !== 0) {
         // Subframe path — in-frame synthetic click. No CDP: the chrome↔CDP
         // frame mapping was the broken link (OOPIF frames invisible to the
         // root session). executeScript reaches exactly the frames read_page
@@ -194,12 +202,12 @@ USE WHEN:
           const result = await execActInTab(
             ctx.tabId,
             { op: "click", idx: a.elementIndex },
-            a.frameId,
+            frameId,
           );
           if (!result.ok) return { success: false, error: result.error };
           return {
             success: true,
-            observation: `Clicked [${a.elementIndex}] in frame ${a.frameId} via synthetic events (real mouse input is top-frame only). If the page did not react, the control may require trusted input.`,
+            observation: `Clicked [${a.elementIndex}] in frame ${frameId} via synthetic events (real mouse input is top-frame only). If the page did not react, the control may require trusted input.`,
           };
         });
       }
