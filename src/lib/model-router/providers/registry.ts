@@ -88,6 +88,12 @@ const KIMI_CODE_VARIANT: EndpointVariant = {
   ],
 };
 
+// StepFun shared model metas — referenced by both the default (pay-as-you-go)
+// list and the step-plan variant pool so capability flags can't drift between
+// the two copies (same lockstep pattern as MOONSHOT_MODELS).
+const STEP_37_FLASH: ModelMeta = { id: "step-3.7-flash", vision: true, tools: true, maxContextTokens: 256_000 };
+const STEP_35_FLASH: ModelMeta = { id: "step-3.5-flash", vision: false, tools: true, maxContextTokens: 256_000 };
+
 export const PROVIDER_REGISTRY: ProviderMeta[] = [
   {
     id: "anthropic",
@@ -276,15 +282,12 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     // Anthropic-wire (`/v1/messages`, Bearer). step-3.7-flash is the native
     // multimodal flagship (image/video in); step-3.5-flash is the reasoning /
     // tool-calling flagship, text-only here (vision guard is fail-closed). Both
-    // 256K. step-router-v1 lives on the separate `/step_plan/v1/messages`
-    // channel and has no image support — intentionally omitted.
+    // 256K. step-router-v1 is omitted from this default (pay-as-you-go) list —
+    // it is exposed via the step-plan endpoint variant below.
     // TODO(maxOutputTokens): StepFun 官方文档仅披露 context window 256K，未给
     // 单独的最大输出上限（max_tokens 文档为 INF/不限）。查到官方值前留空，
     // 退回 anthropic-sdk-core 的 ANTHROPIC_WIRE_FALLBACK_MAX_TOKENS。
-    models: [
-      { id: "step-3.7-flash", vision: true, tools: true, maxContextTokens: 256_000 },
-      { id: "step-3.5-flash", vision: false, tools: true, maxContextTokens: 256_000 },
-    ],
+    models: [STEP_37_FLASH, STEP_35_FLASH],
     defaultEndpointLabel: "Pay-as-you-go",
     endpointVariants: [
       {
@@ -296,9 +299,9 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
         // Step Plan 限定池（¥49–699/月档位）。maxOutputTokens 官方未披露，
         // 留空退回 ANTHROPIC_WIRE_FALLBACK_MAX_TOKENS（同默认清单的 TODO）。
         models: [
-          { id: "step-3.7-flash", vision: true, tools: true, maxContextTokens: 256_000 },
+          STEP_37_FLASH,
           { id: "step-3.5-flash-2603", vision: false, tools: true, maxContextTokens: 256_000 },
-          { id: "step-3.5-flash", vision: false, tools: true, maxContextTokens: 256_000 },
+          STEP_35_FLASH,
           { id: "step-router-v1", vision: false, tools: true, maxContextTokens: 256_000 },
         ],
       },
@@ -415,7 +418,7 @@ export function resolveModelVision(
   return undefined;
 }
 
-/** instance 選中的 endpoint variant；id 悬空（registry 已删）或未选 → undefined（落回默认端点）。 */
+/** instance 选中的 endpoint variant；id 悬空（registry 已删）或未选 → undefined（落回默认端点）。 */
 export function resolveEndpointVariant(
   meta: Pick<ProviderMeta, "endpointVariants">,
   variantId: string | undefined,

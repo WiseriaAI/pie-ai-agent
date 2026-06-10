@@ -377,4 +377,14 @@ describe("endpoint variants", () => {
       expect(getProviderMeta(id)!.endpointVariants).toBeUndefined();
     }
   });
+
+  it("every provider with endpointVariants has a defaultEndpointLabel and unique variant ids", () => {
+    for (const p of PROVIDER_REGISTRY) {
+      if (!p.endpointVariants?.length) continue;
+      expect(p.defaultEndpointLabel, `${p.id} must label its default endpoint`).toBeTypeOf("string");
+      expect(p.defaultEndpointLabel!.length, `${p.id} defaultEndpointLabel must be non-empty`).toBeGreaterThan(0);
+      const ids = p.endpointVariants.map((v) => v.id);
+      expect(new Set(ids).size, `${p.id} variant ids must be unique`).toBe(ids.length);
+    }
+  });
 });
