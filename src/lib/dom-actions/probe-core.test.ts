@@ -1007,4 +1007,127 @@ describe("probePageInjected op=atlas", () => {
       ],
     }));
   });
+
+  describe("container target labels (atlas)", () => {
+    function atlasTargets() {
+      const r = probePageInjected({ op: "atlas" });
+      if (r.op !== "atlas") throw new Error("narrow");
+      return r.targets;
+    }
+    const tableHtml = `
+      <thead><tr><th>Search Term</th><th>Results</th><th>Uses</th></tr></thead>
+      <tbody><tr><td>tanks</td><td>23</td><td>1</td></tr></tbody>
+    `;
+
+    it("aria-label 优先于 caption", () => {
+      document.body.innerHTML = `
+        <table aria-label="Named by aria">
+          <caption>Named by caption</caption>${tableHtml}
+        </table>`;
+      const t = atlasTargets().find((x) => x.type === "table");
+      expect(t!.label).toBe("Named by aria");
+    });
+
+    it("caption 作为表名", () => {
+      document.body.innerHTML = `
+        <table><caption>Quarterly Report</caption>${tableHtml}</table>`;
+      const t = atlasTargets().find((x) => x.type === "table");
+      expect(t!.label).toBe("Quarterly Report");
+    });
+
+    it("祖先 tabpanel 的 aria-labelledby 解析为页签标题", () => {
+      document.body.innerHTML = `
+        <span id="tab-top">Top Search Terms</span>
+        <div role="tabpanel" aria-labelledby="tab-top">
+          <table>${tableHtml}</table>
+        </div>`;
+      const t = atlasTargets().find((x) => x.type === "table");
+      expect(t!.label).toBe("Top Search Terms");
+    });
+
+    it("Magento 形状：前置兄弟 div 标题；双表 label 互异（核心回归）", () => {
+      document.body.innerHTML = `
+        <div>
+          <div>Last Search Terms</div>
+          <div><table>${tableHtml}</table></div>
+        </div>
+        <div>
+          <div>Top Search Terms</div>
+          <div><table>${tableHtml}</table></div>
+        </div>`;
+      const tables = atlasTargets().filter((x) => x.type === "table");
+      expect(tables.map((x) => x.label)).toEqual(["Last Search Terms", "Top Search Terms"]);
+    });
+
+    it("无任何线索时回退 Table N，且 label 不含单元格内容（防 descendantText 回归）", () => {
+      document.body.innerHTML = `<div><table>${tableHtml}</table></div>`;
+      const t = atlasTargets().find((x) => x.type === "table");
+      expect(t!.label).toBe("Table 1");
+      expect(t!.label).not.toContain("tanks");
+    });
+
+    it(">60 字符的前置 div 不当标题", () => {
+      const long = "x".repeat(61);
+      document.body.innerHTML = `
+        <div>
+          <div>${long}</div>
+          <div><table>${tableHtml}</table></div>
+        </div>`;
+      const t = atlasTargets().find((x) => x.type === "table");
+      expect(t!.label).toBe("Table 1");
+    });
+
+    it("前置兄弟自身是容器/控件时不当标题（工具条形状）", () => {
+      document.body.innerHTML = `
+        <div>
+          <button>Export CSV</button>
+          <div><table>${tableHtml}</table></div>
+        </div>`;
+      const t = atlasTargets().find((x) => x.type === "table");
+      expect(t!.label).toBe("Table 1");
+    });
+
+    it("无兄弟标题但祖先 section 有 heading 时走 nearestSection", () => {
+      document.body.innerHTML = `
+        <section>
+          <div><div><table>${tableHtml}</table></div></div>
+          <h2>Sales Overview</h2>
+        </section>`;
+      const t = atlasTargets().find((x) => x.type === "table");
+      expect(t!.label).toBe("Sales Overview");
+    });
+
+    it("collection 容器同样取前置兄弟标题", () => {
+      document.body.innerHTML = `
+        <div>
+          <div>Featured Items</div>
+          <ul>
+            <li><a href="/p/a">Alpha</a></li>
+            <li><a href="/p/b">Beta</a></li>
+            <li><a href="/p/c">Gamma</a></li>
+          </ul>
+        </div>`;
+      const c = atlasTargets().find((x) => x.type === "collection");
+      expect(c!.label).toBe("Featured Items");
+    });
+  });
+});
+
+describe("injected-function sloppy-mode safety guards", () => {
+  it("probePageInjected 序列化源码以 'use strict' 开头（dev 注入路径与严格语义对齐；产物层会被 minifier 删除）", () => {
+    const src = probePageInjected.toString();
+    const bodyStart = src.indexOf("{");
+    const head = src.slice(bodyStart + 1, bodyStart + 1200);
+    expect(head).toMatch(/^\s*(\/\/[^\n]*\n|\s)*["']use strict["']/);
+  });
+
+  it("atlas 块内不得有 function 声明（Annex B 提升 + minifier 块级重命名会撞名覆盖外层 helper，须用 const 箭头）", () => {
+    const src = probePageInjected.toString();
+    const atlasStart = src.indexOf('=== "atlas"');
+    const atlasEnd = src.indexOf('op: "atlas"', atlasStart);
+    expect(atlasStart).toBeGreaterThan(-1);
+    expect(atlasEnd).toBeGreaterThan(atlasStart);
+    const atlasBlock = src.slice(atlasStart, atlasEnd);
+    expect(atlasBlock).not.toMatch(/\bfunction\b/);
+  });
 });
