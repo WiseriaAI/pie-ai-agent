@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { ProviderRef, ModelMeta, BuiltinProvider } from "@/lib/model-router";
-import { getProviderMeta } from "@/lib/model-router";
+import { getProviderMeta, resolveEndpointVariant } from "@/lib/model-router";
 import { CUSTOM_PREFIX } from "@/lib/custom-providers";
 import { useT } from "@/lib/i18n";
 import { type StoredCustomModelMeta, DEFAULT_CUSTOM_MODEL_MAX_CONTEXT } from "@/lib/provider-custom-model-meta";
@@ -8,6 +8,8 @@ import ModelMetaEditor, { type ModelMetaDraft } from "./ModelMetaEditor";
 
 interface Props {
   provider: ProviderRef;
+  /** When set, the registry model list is replaced by the variant's models override (if any). */
+  endpointVariant?: string;
   /** Editable custom model ids (builtin: pcm pool; custom provider: entity models). */
   customModels: string[];
   customModelMetas?: Record<string, StoredCustomModelMeta>;
@@ -29,8 +31,12 @@ export default function ProviderModelList(props: Props) {
   const t = useT();
   const isCustomProvider = props.provider.startsWith(CUSTOM_PREFIX);
   const meta = isCustomProvider ? undefined : getProviderMeta(props.provider as BuiltinProvider);
-  const registry = meta?.models ?? [];
-  const fetched = props.fetchedModels ?? [];
+  const variant = meta ? resolveEndpointVariant(meta, props.endpointVariant) : undefined;
+  // When the selected variant has a models override, use it exclusively (same
+  // semantics as ModelPicker's modelsFor). fetchedModels are also skipped in
+  // this case because the variant's pool is fixed and can't be fetched.
+  const registry = variant?.models ?? meta?.models ?? [];
+  const fetched = variant?.models ? [] : (props.fetchedModels ?? []);
   const [editing, setEditing] = useState<Partial<ModelMetaDraft> | null>(null);
 
   // Built-in (read-only): registry → fetched, dedup.

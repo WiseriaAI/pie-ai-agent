@@ -127,3 +127,58 @@ describe("InstanceForm", () => {
     expect(screen.getByText(/LOCKED/)).toBeTruthy();
   });
 });
+
+describe("endpoint variant switch", () => {
+  const noop = () => {};
+  const base = {
+    mode: "create" as const,
+    initialNickname: "n",
+    onTest: noop,
+  };
+
+  it("renders the segmented switch only for providers with variants", () => {
+    const { rerender } = render(<InstanceForm {...base} provider="zhipu" onSave={noop} />);
+    expect(screen.getByRole("button", { name: "Pay-as-you-go" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Coding Plan" })).toBeTruthy();
+    rerender(<InstanceForm {...base} provider="anthropic" onSave={noop} />);
+    expect(screen.queryByRole("button", { name: "Pay-as-you-go" })).toBeNull();
+  });
+
+  it("selecting a variant flows into the onSave payload; default = undefined", () => {
+    const onSave = vi.fn();
+    render(<InstanceForm {...base} provider="zhipu" onSave={onSave} />);
+    fireEvent.change(screen.getByLabelText("api key"), { target: { value: "k" } });
+    fireEvent.click(screen.getByRole("button", { name: "Coding Plan" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(onSave.mock.calls[0]![0].endpointVariant).toBe("coding-plan");
+    // 切回默认 → undefined
+    fireEvent.click(screen.getByRole("button", { name: "Pay-as-you-go" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(onSave.mock.calls[1]![0].endpointVariant).toBeUndefined();
+  });
+
+  it("edit mode pre-selects initialEndpointVariant", () => {
+    const onSave = vi.fn();
+    render(
+      <InstanceForm {...base} mode="edit" provider="zhipu" existingApiKey="sk-x"
+        initialEndpointVariant="coding-plan" onSave={onSave} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(onSave.mock.calls[0]![0].endpointVariant).toBe("coding-plan");
+  });
+
+  it("variant placeholder overrides the provider placeholder (mimo payg)", () => {
+    render(<InstanceForm {...base} provider="mimo" onSave={noop} />);
+    expect(screen.getByLabelText("api key").getAttribute("placeholder")).toBe("tp-...");
+    fireEvent.click(screen.getByRole("button", { name: "Pay-as-you-go" }));
+    expect(screen.getByLabelText("api key").getAttribute("placeholder")).toBe("sk-...");
+  });
+
+  it("model list follows a models-override variant (moonshot kimi-code)", () => {
+    render(<InstanceForm {...base} provider="moonshot" onSave={noop} />);
+    expect(screen.getByText("kimi-k2.6")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Kimi Code Plan" }));
+    expect(screen.queryByText("kimi-k2.6")).toBeNull();
+    expect(screen.getByText("kimi-for-coding")).toBeTruthy();
+  });
+});
