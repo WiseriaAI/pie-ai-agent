@@ -1007,4 +1007,88 @@ describe("probePageInjected op=atlas", () => {
       ],
     }));
   });
+
+  describe("container target labels (atlas)", () => {
+    function atlasTargets() {
+      const r = probePageInjected({ op: "atlas" });
+      if (r.op !== "atlas") throw new Error("narrow");
+      return r.targets;
+    }
+    const tableHtml = `
+      <thead><tr><th>Search Term</th><th>Results</th><th>Uses</th></tr></thead>
+      <tbody><tr><td>tanks</td><td>23</td><td>1</td></tr></tbody>
+    `;
+
+    it("aria-label 优先于 caption", () => {
+      document.body.innerHTML = `
+        <table aria-label="Named by aria">
+          <caption>Named by caption</caption>${tableHtml}
+        </table>`;
+      const t = atlasTargets().find((x) => x.type === "table");
+      expect(t!.label).toBe("Named by aria");
+    });
+
+    it("caption 作为表名", () => {
+      document.body.innerHTML = `
+        <table><caption>Quarterly Report</caption>${tableHtml}</table>`;
+      const t = atlasTargets().find((x) => x.type === "table");
+      expect(t!.label).toBe("Quarterly Report");
+    });
+
+    it("祖先 tabpanel 的 aria-labelledby 解析为页签标题", () => {
+      document.body.innerHTML = `
+        <span id="tab-top">Top Search Terms</span>
+        <div role="tabpanel" aria-labelledby="tab-top">
+          <table>${tableHtml}</table>
+        </div>`;
+      const t = atlasTargets().find((x) => x.type === "table");
+      expect(t!.label).toBe("Top Search Terms");
+    });
+
+    it("Magento 形状：前置兄弟 div 标题；双表 label 互异（核心回归）", () => {
+      document.body.innerHTML = `
+        <div>
+          <div>Last Search Terms</div>
+          <div><table>${tableHtml}</table></div>
+        </div>
+        <div>
+          <div>Top Search Terms</div>
+          <div><table>${tableHtml}</table></div>
+        </div>`;
+      const tables = atlasTargets().filter((x) => x.type === "table");
+      expect(tables.map((x) => x.label)).toEqual(["Last Search Terms", "Top Search Terms"]);
+    });
+
+    it("无任何线索时回退 Table N，且 label 不含单元格内容（防 descendantText 回归）", () => {
+      document.body.innerHTML = `<div><table>${tableHtml}</table></div>`;
+      const t = atlasTargets().find((x) => x.type === "table");
+      expect(t!.label).toBe("Table 1");
+      expect(t!.label).not.toContain("tanks");
+    });
+
+    it(">60 字符的前置 div 不当标题", () => {
+      const long = "x".repeat(61);
+      document.body.innerHTML = `
+        <div>
+          <div>${long}</div>
+          <div><table>${tableHtml}</table></div>
+        </div>`;
+      const t = atlasTargets().find((x) => x.type === "table");
+      expect(t!.label).toBe("Table 1");
+    });
+
+    it("collection 容器同样取前置兄弟标题", () => {
+      document.body.innerHTML = `
+        <div>
+          <div>Featured Items</div>
+          <ul>
+            <li><a href="/p/a">Alpha</a></li>
+            <li><a href="/p/b">Beta</a></li>
+            <li><a href="/p/c">Gamma</a></li>
+          </ul>
+        </div>`;
+      const c = atlasTargets().find((x) => x.type === "collection");
+      expect(c!.label).toBe("Featured Items");
+    });
+  });
 });
