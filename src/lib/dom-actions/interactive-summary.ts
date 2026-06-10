@@ -12,6 +12,10 @@ export interface InteractiveElementSummary {
   disabled: boolean;
   checked: boolean;
   selected: boolean;
+  /** Raw aria-haspopup value ("true" | "menu" | "listbox" | ... | ""). */
+  hasPopup?: string;
+  /** Raw aria-expanded value ("true" | "false" | ""). */
+  ariaExpanded?: string;
 }
 
 export interface InteractiveSummaryMatch {

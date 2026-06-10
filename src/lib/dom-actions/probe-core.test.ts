@@ -31,6 +31,20 @@ describe("probePageInjected op=snapshot", () => {
     expect(editors[0].name).toContain("read_editor");
   });
 
+  it("captures aria-haspopup and aria-expanded on interactive elements", () => {
+    document.body.innerHTML =
+      `<button aria-haspopup="menu" aria-expanded="false">Options</button>` +
+      `<a href="/x">Plain</a>`;
+    const r = probePageInjected({ op: "snapshot" });
+    if (r.op !== "snapshot") throw new Error("narrow");
+    const btn = r.interactiveElements.find((e) => e.tag === "button")!;
+    expect(btn.hasPopup).toBe("menu");
+    expect(btn.ariaExpanded).toBe("false");
+    const link = r.interactiveElements.find((e) => e.tag === "a")!;
+    expect(link.hasPopup).toBe("");
+    expect(link.ariaExpanded).toBe("");
+  });
+
   it("返回 html + scrollableHints", () => {
     document.body.innerHTML = `<button>X</button>`;
     const r = probePageInjected({ op: "snapshot" });

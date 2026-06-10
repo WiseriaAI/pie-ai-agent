@@ -138,6 +138,8 @@ function renderInteractiveIndex(
     if (el.disabled) attrs.push(attr("disabled", true));
     if (el.checked) attrs.push(attr("checked", true));
     if (el.selected) attrs.push(attr("selected", true));
+    if (el.hasPopup) attrs.push(attr("haspopup", el.hasPopup));
+    if (el.ariaExpanded) attrs.push(attr("expanded", el.ariaExpanded));
     const text = el.text ? elementText(el.text) : "";
     return `  <interactive_element ${attrs.join(" ")}>${text}</interactive_element>`;
   });

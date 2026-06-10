@@ -406,6 +406,8 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
       disabled: target.hasAttribute("disabled"),
       checked: input ? input.checked : target.hasAttribute("checked"),
       selected: option ? option.selected : target.hasAttribute("selected"),
+      hasPopup: normalizeSpace(target.getAttribute("aria-haspopup") ?? ""),
+      ariaExpanded: normalizeSpace(target.getAttribute("aria-expanded") ?? ""),
     };
   }
 
