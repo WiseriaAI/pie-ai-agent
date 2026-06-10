@@ -68,16 +68,6 @@ function geometryErrorToActionResult(e: GeometryError): ActionResult {
         success: false,
         error: `Element [${e.index}] has zero size (display:none / removed from layout). Call read_page again.`,
       };
-    case "frame-gone":
-      return {
-        success: false,
-        error: `Frame ${e.frameId} unreachable; re-snapshot.`,
-      };
-    case "cdp-frame-id-unresolved":
-      return {
-        success: false,
-        error: `Internal: frame mapping failed for frameId ${e.frameId}. Try in top frame.`,
-      };
     default: {
       // Exhaustiveness check — if GeometryError gains a new kind, this
       // triggers a compile error so the mapping must be updated.
@@ -116,7 +106,7 @@ USE WHEN:
     handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
       const a = args as { frameId: number; elementIndex: number };
 
-      if (a.frameId !== 0) {
+      if (typeof a.frameId === "number" && a.frameId !== 0) {
         return {
           success: false,
           error:
@@ -145,7 +135,7 @@ USE WHEN:
       }
 
       return withActionSettle(ctx.tabId, async () => {
-        const point = await elementToPagePoint(ctx.tabId, a.frameId, a.elementIndex, session);
+        const point = await elementToPagePoint(ctx.tabId, a.elementIndex);
         if ("kind" in point) return geometryErrorToActionResult(point);
 
         await dispatchMouseAt(session, point.x, point.y, "mouseMoved");
@@ -189,11 +179,14 @@ USE WHEN:
     handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
       const a = args as { frameId: number; elementIndex: number };
 
-      if (a.frameId !== 0) {
+      if (typeof a.frameId === "number" && a.frameId !== 0) {
         // Subframe path — in-frame synthetic click. No CDP: the chrome↔CDP
         // frame mapping was the broken link (OOPIF frames invisible to the
         // root session). executeScript reaches exactly the frames read_page
         // can snapshot, so anything the agent can see it can click.
+        // Settle signals are top-frame scoped: the mutation tracker injects at
+        // {tabId} and nav events with frameId!==0 are ignored — in-iframe-only
+        // updates just ride out the quiet floor.
         return withActionSettle(ctx.tabId, async () => {
           const result = await execActInTab(
             ctx.tabId,
@@ -229,7 +222,7 @@ USE WHEN:
       }
 
       return withActionSettle(ctx.tabId, async () => {
-        const point = await elementToPagePoint(ctx.tabId, a.frameId, a.elementIndex, session);
+        const point = await elementToPagePoint(ctx.tabId, a.elementIndex);
         if ("kind" in point) return geometryErrorToActionResult(point);
 
         await dispatchMouseAt(session, point.x, point.y, "mouseMoved");

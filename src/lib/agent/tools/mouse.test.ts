@@ -258,6 +258,17 @@ describe("click tool (CDP)", () => {
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/Element not found at index 5/);
   });
+
+  it("missing frameId falls into the CDP top-frame path (not synthetic)", async () => {
+    const session = fakeSession();
+    const acquireSession = vi.fn().mockResolvedValue(session);
+    vi.mocked(elementToPagePoint).mockResolvedValue({ x: 80, y: 90 });
+    const tool = buildClickTool(deps({ acquireSession }));
+    const result = await tool.handler({ elementIndex: 4 }, { tabId: 7 });
+    expect(result.success).toBe(true);
+    expect(acquireSession).toHaveBeenCalledWith(7);
+    expect(result.observation).not.toContain("synthetic");
+  });
 });
 
 describe("click tool — subframe synthetic path", () => {
