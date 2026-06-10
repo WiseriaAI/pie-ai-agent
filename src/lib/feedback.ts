@@ -5,8 +5,7 @@
 
 export const GITHUB_REPO = "WiseriaAI/pie-ai-agent";
 
-// TODO: replace with the dedicated feedback address once decided (spec open item).
-export const FEEDBACK_EMAIL = "feedback@example.com";
+export const FEEDBACK_EMAIL = "feedback@pie.chat";
 
 export interface FeedbackEnv {
   /** Extension version, e.g. chrome.runtime.getManifest().version */

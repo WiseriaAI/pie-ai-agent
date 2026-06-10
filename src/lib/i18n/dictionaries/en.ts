@@ -50,7 +50,7 @@ export const enDict = {
     feedback: {
       sectionTitle: "Feedback",
       githubButton: "Report on GitHub",
-      githubHint: "Opens a prefilled issue. To report a problem about a specific task, open that chat and type /report-issue.",
+      githubHint: "We greatly value your feedback and suggestions, and welcome you to share them with us anytime.",
       emailButton: "Email feedback",
     },
     myConfigs: {

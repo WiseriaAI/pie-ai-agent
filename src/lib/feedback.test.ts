@@ -16,6 +16,10 @@ const ENV: FeedbackEnv = {
 };
 
 describe("feedback builders", () => {
+  it("uses the dedicated feedback inbox", () => {
+    expect(FEEDBACK_EMAIL).toBe("feedback@pie.chat");
+  });
+
   it("env block includes version, UA, provider·model, locale", () => {
     const block = buildEnvBlock(ENV);
     expect(block).toContain("0.19.4");

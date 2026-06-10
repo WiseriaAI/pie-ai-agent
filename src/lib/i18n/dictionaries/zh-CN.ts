@@ -51,7 +51,7 @@ export const zhCNDict = {
     feedback: {
       sectionTitle: "反馈",
       githubButton: "在 GitHub 上反馈",
-      githubHint: "打开预填的 issue 页。要反馈某个具体任务的问题，请回到那个会话输入 /report-issue。",
+      githubHint: "我们非常重视您的意见和建议，欢迎随时向我们反馈",
       emailButton: "邮件反馈",
     },
     myConfigs: {
