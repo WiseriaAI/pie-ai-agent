@@ -83,3 +83,7 @@
 - 不触碰 PR #152 interactive parity 常量（`interactive-parity.test.ts` 不涉 targetLabel，已确认）。
 - `<untrusted_*>` wrapper 体系不变（label 仍走既有 escape 路径）。
 - tool-names.ts read/write 分类不变（无新 tool）。
+
+## 附注：eval 实证揭出的第二个修复（2026-06-10）
+
+eval 复跑曾出现"空 atlas"：rolldown minify 把外层 `cssEscape` 与新增块内 `ancestorTabpanelLabel` 都重命名为 `_`（严格模式块级作用域下合法），但 `executeScript` 把函数 toString 后在页面 **sloppy** 环境重求值，Annex B 把块内函数声明提升到函数作用域，两个 `_` 撞名 → TypeError → atlas op 整个 frame 结果被静默丢弃。修复：atlas 块内全部 25 个函数声明转 `const` 箭头绑定（无 Annex B 提升，对 minifier 名字分配漂移确定性免疫）；`"use strict"` 保留为 dev 路径防护（minifier 会从产物中剥除该指令）；2 个守护测试。act-core 等其余注入函数存在同类潜在隐患（今日产物确认未撞名），另开 issue 跟进。
