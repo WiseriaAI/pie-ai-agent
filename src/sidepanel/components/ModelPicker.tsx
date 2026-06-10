@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useT } from "@/lib/i18n";
 import type { DecryptedInstance } from "@/lib/instances";
 import type { BuiltinProvider, ModelMeta } from "@/lib/model-router";
-import { getProviderMeta } from "@/lib/model-router";
+import { getProviderMeta, resolveEndpointVariant } from "@/lib/model-router";
 import { CUSTOM_PREFIX } from "@/lib/custom-providers";
 import ProviderIcon from "./ProviderIcon";
 
@@ -36,12 +36,16 @@ interface ModelRow {
   isCustom: boolean;
 }
 
-/** Build the dedup'd model list for an instance: registry → fetched → custom. */
-function modelsFor(inst: DecryptedInstance): ModelRow[] {
+/** Build the dedup'd model list for an instance: registry → fetched → custom.
+ *  带 models override 的 endpoint variant 整体替换 registry 段（fetched 仅
+ *  openrouter 使用、与 variant 不相交，但同样跳过以保持「替换」语义）。
+ *  Exported for unit tests. */
+export function modelsFor(inst: DecryptedInstance): ModelRow[] {
   const isCustom = inst.provider.startsWith(CUSTOM_PREFIX);
   const meta = isCustom ? undefined : getProviderMeta(inst.provider as BuiltinProvider);
-  const registry = meta?.models ?? [];
-  const fetched = (inst.fetchedModels ?? []) as ModelMeta[];
+  const variant = meta ? resolveEndpointVariant(meta, inst.endpointVariant) : undefined;
+  const registry = variant?.models ?? meta?.models ?? [];
+  const fetched = variant?.models ? [] : ((inst.fetchedModels ?? []) as ModelMeta[]);
   const custom = inst.customModels ?? [];
   const rows: ModelRow[] = [
     ...registry.map((m) => ({ id: m.id, meta: m, isCustom: false })),

@@ -1,6 +1,6 @@
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { describe, it, expect, vi, afterEach } from "vitest";
-import ModelPicker from "./ModelPicker";
+import ModelPicker, { modelsFor } from "./ModelPicker";
 import type { DecryptedInstance } from "@/lib/instances";
 
 const insts: DecryptedInstance[] = [
@@ -67,5 +67,31 @@ describe("ModelPicker", () => {
     renderPicker({ locked: true });
     fireEvent.click(screen.getAllByRole("button")[0]!);
     expect(screen.queryByText("OpenAI")).toBeNull();
+  });
+});
+
+function inst(over: Partial<DecryptedInstance>): DecryptedInstance {
+  return { id: "i1", provider: "moonshot", nickname: "K", apiKey: "k", createdAt: 0, ...over };
+}
+
+describe("modelsFor with endpoint variants", () => {
+  it("variant with models replaces the registry list (custom pool still appended)", () => {
+    const rows = modelsFor(inst({ endpointVariant: "kimi-code", customModels: ["my-model"] }));
+    expect(rows.map((r) => r.id)).toEqual(["kimi-for-coding", "my-model"]);
+  });
+
+  it("variant without models keeps the default list (zhipu coding-plan)", () => {
+    const rows = modelsFor(inst({ provider: "zhipu", endpointVariant: "coding-plan" }));
+    expect(rows.map((r) => r.id)).toContain("glm-5.1");
+  });
+
+  it("no variant → unchanged registry list", () => {
+    const rows = modelsFor(inst({}));
+    expect(rows[0]!.id).toBe("kimi-k2.6");
+  });
+
+  it("dangling variant id falls back to the default list", () => {
+    const rows = modelsFor(inst({ endpointVariant: "gone" }));
+    expect(rows[0]!.id).toBe("kimi-k2.6");
   });
 });
