@@ -38,4 +38,18 @@ describe("ProviderModelList", () => {
     fireEvent.click(screen.getByText(/add custom model/i));
     expect(screen.getByPlaceholderText("model id")).toBeTruthy();
   });
+
+  it("models-override variant replaces registry list AND skips fetchedModels", () => {
+    render(
+      <ProviderModelList
+        provider="moonshot"
+        endpointVariant="kimi-code"
+        customModels={[]}
+        fetchedModels={[{ id: "should-not-appear", vision: false, tools: true, maxContextTokens: 1000 }]}
+      />,
+    );
+    expect(screen.getByText("kimi-for-coding")).toBeTruthy();
+    expect(screen.queryByText("kimi-k2.6")).toBeNull();
+    expect(screen.queryByText("should-not-appear")).toBeNull();
+  });
 });

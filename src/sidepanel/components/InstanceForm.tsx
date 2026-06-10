@@ -98,9 +98,16 @@ export default function InstanceForm(props: Props) {
       return changed ? merged : prev;
     });
   }, [props.initialCustomModels]);
-  const [endpointVariant, setEndpointVariant] = useState<string | undefined>(props.initialEndpointVariant);
+  // Lazy init normalizes stale variant ids: if a registry update removed the
+  // stored variant, the UI falls back to the default endpoint and saving the
+  // form clears the stale id — same semantics as the runtime fallback in
+  // instances.ts. Safe at init time: builtin meta resolves synchronously via
+  // getProviderMeta, and custom providers never have endpointVariants.
+  const [endpointVariant, setEndpointVariant] = useState<string | undefined>(() =>
+    meta && resolveEndpointVariant(meta, props.initialEndpointVariant) ? props.initialEndpointVariant : undefined,
+  );
   const variants = meta?.endpointVariants ?? [];
-  const selectedVariant = variants.find((v) => v.id === endpointVariant);
+  const selectedVariant = meta ? resolveEndpointVariant(meta, endpointVariant) : undefined;
 
   // Edit mode: start in read-only partial-reveal; create mode: always in replacing state
   const [replacing, setReplacing] = useState(props.mode === "create" || !props.existingApiKey);
@@ -137,7 +144,7 @@ export default function InstanceForm(props: Props) {
 
       {variants.length > 0 && (
         <FieldDiv label={t("instanceForm.endpoint")} hint={selectedVariant?.baseUrl ?? meta?.defaultBaseUrl}>
-          <div className="flex w-full overflow-hidden rounded-[10px] border border-line">
+          <div role="group" aria-label={t("instanceForm.endpoint")} className="flex w-full overflow-hidden rounded-[10px] border border-line">
             {[{ id: undefined as string | undefined, label: meta?.defaultEndpointLabel ?? t("instanceForm.endpointDefault") },
               ...variants.map((v) => ({ id: v.id as string | undefined, label: v.label }))].map((opt, i) => {
               const active = endpointVariant === opt.id;
@@ -145,8 +152,9 @@ export default function InstanceForm(props: Props) {
                 <button
                   key={opt.id ?? "_default"}
                   type="button"
+                  aria-pressed={active}
                   onClick={() => setEndpointVariant(opt.id)}
-                  className={`flex-1 py-2 text-[12px] ${i > 0 ? "border-l border-line" : ""} ${
+                  className={`flex-1 px-1 py-2 text-[12px] ${i > 0 ? "border-l border-line" : ""} ${
                     active ? "bg-field font-medium text-fg-1" : "bg-transparent text-fg-2 hover:text-fg-1"
                   }`}
                 >

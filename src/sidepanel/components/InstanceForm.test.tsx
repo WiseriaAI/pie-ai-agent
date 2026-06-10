@@ -181,4 +181,14 @@ describe("endpoint variant switch", () => {
     expect(screen.queryByText("kimi-k2.6")).toBeNull();
     expect(screen.getByText("kimi-for-coding")).toBeTruthy();
   });
+
+  it("stale initialEndpointVariant (removed from registry) normalizes to undefined", () => {
+    const onSave = vi.fn();
+    render(
+      <InstanceForm {...base} mode="edit" provider="zhipu" existingApiKey="sk-x"
+        initialEndpointVariant="gone" onSave={onSave} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(onSave.mock.calls[0]![0].endpointVariant).toBeUndefined();
+  });
 });
