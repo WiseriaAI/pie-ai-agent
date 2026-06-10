@@ -256,72 +256,73 @@ describe("resolveModelConfig — maxOutputTokens resolved from registry", () => 
 
 describe("endpoint variants", () => {
   it("endpointVariant round-trips through create/get and survives unrelated updates", async () => {
-    const id = await createInstance({ provider: "zhipu", nickname: "Z", apiKey: "k", endpointVariant: "coding-plan" });
-    expect((await getInstance(id))!.endpointVariant).toBe("coding-plan");
+    const id = await createInstance({ provider: "zhipu", nickname: "Z", apiKey: "k", endpointVariant: "payg" });
+    expect((await getInstance(id))!.endpointVariant).toBe("payg");
     await updateInstance(id, { nickname: "Z2" });
-    expect((await getInstance(id))!.endpointVariant).toBe("coding-plan");
+    expect((await getInstance(id))!.endpointVariant).toBe("payg");
   });
 
   it("updateInstance: string sets, null clears back to default endpoint", async () => {
     const id = await createInstance({ provider: "zhipu", nickname: "Z", apiKey: "k" });
-    await updateInstance(id, { endpointVariant: "coding-plan" });
-    expect((await getInstance(id))!.endpointVariant).toBe("coding-plan");
+    await updateInstance(id, { endpointVariant: "payg" });
+    expect((await getInstance(id))!.endpointVariant).toBe("payg");
     await updateInstance(id, { endpointVariant: null });
     expect((await getInstance(id))!.endpointVariant).toBeUndefined();
   });
 
-  it("resolveModelConfig: no variant → defaultBaseUrl (legacy records unchanged)", async () => {
+  it("resolveModelConfig: no variant → default (Plan) baseUrl", async () => {
+    // Default endpoint is now the Coding Plan; pay-as-you-go is the variant.
     const id = await createInstance({ provider: "zhipu", nickname: "Z", apiKey: "k" });
     const cfg = await resolveModelConfig(id, "glm-4.7");
-    expect(cfg!.baseUrl).toBe("https://open.bigmodel.cn/api/paas/v4");
+    expect(cfg!.baseUrl).toBe("https://open.bigmodel.cn/api/coding/paas/v4");
   });
 
-  it("resolveModelConfig: variant overrides baseUrl", async () => {
-    const id = await createInstance({ provider: "moonshot", nickname: "K", apiKey: "k", endpointVariant: "kimi-code" });
-    const cfg = await resolveModelConfig(id, "kimi-for-coding");
-    expect(cfg!.baseUrl).toBe("https://api.kimi.com/coding");
-    // union 查找把 variant 模型的 meta 也接通（vision fail-closed false）
-    expect(cfg!.vision).toBe(false);
+  it("resolveModelConfig: payg variant overrides baseUrl + model meta (union lookup)", async () => {
+    const id = await createInstance({ provider: "moonshot", nickname: "K", apiKey: "k", endpointVariant: "payg" });
+    const cfg = await resolveModelConfig(id, "kimi-k2.6");
+    expect(cfg!.baseUrl).toBe("https://api.moonshot.ai"); // pay-as-you-go endpoint
+    expect(cfg!.vision).toBe(true); // kimi-k2.6 lives in the payg variant pool, vision:true
   });
 
-  it("resolveModelConfig: dangling variant id falls back to defaultBaseUrl", async () => {
+  it("resolveModelConfig: dangling variant id falls back to the default (Plan) baseUrl", async () => {
     const id = await createInstance({ provider: "zhipu", nickname: "Z", apiKey: "k", endpointVariant: "removed-variant" });
     const cfg = await resolveModelConfig(id, "glm-4.7");
-    expect(cfg!.baseUrl).toBe("https://open.bigmodel.cn/api/paas/v4");
+    expect(cfg!.baseUrl).toBe("https://open.bigmodel.cn/api/coding/paas/v4");
   });
 
   it("firstModelForProvider prefers the variant pool over the registry list", async () => {
-    const id = await createInstance({ provider: "moonshot", nickname: "K", apiKey: "k", endpointVariant: "kimi-code" });
-    expect(await firstModelForProvider("moonshot", id)).toBe("kimi-for-coding");
-    // 无 variant 的 instance 仍取 registry[0]
+    // payg variant → its own pool head (kimi-k2.6)
+    const id = await createInstance({ provider: "moonshot", nickname: "K", apiKey: "k", endpointVariant: "payg" });
+    expect(await firstModelForProvider("moonshot", id)).toBe("kimi-k2.6");
+    // 无 variant 的 instance 取默认（Plan）registry[0] = kimi-for-coding
     const id2 = await createInstance({ provider: "moonshot", nickname: "K2", apiKey: "k" });
-    expect(await firstModelForProvider("moonshot", id2)).toBe("kimi-k2.6");
+    expect(await firstModelForProvider("moonshot", id2)).toBe("kimi-for-coding");
     // customModels 仍最优先
-    const id3 = await createInstance({ provider: "moonshot", nickname: "K3", apiKey: "k", endpointVariant: "kimi-code", customModels: ["my-model"] });
+    const id3 = await createInstance({ provider: "moonshot", nickname: "K3", apiKey: "k", endpointVariant: "payg", customModels: ["my-model"] });
     expect(await firstModelForProvider("moonshot", id3)).toBe("my-model");
   });
 
-  it("firstModelForProvider: variantOverride null forces the default pool over the stored variant", async () => {
-    // 存量 instance 选了 kimi-code，但表单已切回默认端点（payload.endpointVariant=undefined → null）
-    const id = await createInstance({ provider: "moonshot", nickname: "K", apiKey: "k", endpointVariant: "kimi-code" });
-    expect(await firstModelForProvider("moonshot", id, null)).toBe("kimi-k2.6");
+  it("firstModelForProvider: variantOverride null forces the default (Plan) pool over the stored variant", async () => {
+    // 存量 instance 选了 payg，但表单已切回默认端点（payload.endpointVariant=undefined → null）
+    const id = await createInstance({ provider: "moonshot", nickname: "K", apiKey: "k", endpointVariant: "payg" });
+    expect(await firstModelForProvider("moonshot", id, null)).toBe("kimi-for-coding");
   });
 
   it("firstModelForProvider: variantOverride string resolves that variant regardless of stored field", async () => {
-    // 存量 instance 无 variant，表单里选了 kimi-code（尚未保存）
+    // 存量 instance 无 variant（默认 Plan），表单里选了 payg（尚未保存）
     const id = await createInstance({ provider: "moonshot", nickname: "K", apiKey: "k" });
-    expect(await firstModelForProvider("moonshot", id, "kimi-code")).toBe("kimi-for-coding");
+    expect(await firstModelForProvider("moonshot", id, "payg")).toBe("kimi-k2.6");
   });
 
   it("updateInstance: empty string also clears (same hygiene as create's conditional spread)", async () => {
-    const id = await createInstance({ provider: "zhipu", nickname: "Z", apiKey: "k", endpointVariant: "coding-plan" });
+    const id = await createInstance({ provider: "zhipu", nickname: "Z", apiKey: "k", endpointVariant: "payg" });
     await updateInstance(id, { endpointVariant: "" });
     expect((await getInstance(id))!.endpointVariant).toBeUndefined();
   });
 
   it("firstModelForProvider without instanceId picks the provider's instance and honours its variant", async () => {
-    await createInstance({ provider: "moonshot", nickname: "K", apiKey: "k", endpointVariant: "kimi-code" });
-    expect(await firstModelForProvider("moonshot")).toBe("kimi-for-coding");
+    await createInstance({ provider: "moonshot", nickname: "K", apiKey: "k", endpointVariant: "payg" });
+    expect(await firstModelForProvider("moonshot")).toBe("kimi-k2.6");
   });
 
   it("resolveModelConfig: custom provider with dangling endpointVariant falls back to cp.baseUrl", async () => {

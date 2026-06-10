@@ -39,17 +39,18 @@ describe("ProviderModelList", () => {
     expect(screen.getByPlaceholderText("model id")).toBeTruthy();
   });
 
-  it("models-override variant replaces registry list AND skips fetchedModels", () => {
+  it("models-override variant (payg) replaces the default list AND skips fetchedModels", () => {
     render(
       <ProviderModelList
         provider="moonshot"
-        endpointVariant="kimi-code"
+        endpointVariant="payg"
         customModels={[]}
         fetchedModels={[{ id: "should-not-appear", vision: false, tools: true, maxContextTokens: 1000 }]}
       />,
     );
-    expect(screen.getByText("kimi-for-coding")).toBeTruthy();
-    expect(screen.queryByText("kimi-k2.6")).toBeNull();
+    // payg variant pool = MOONSHOT_MODELS; default (Plan) model is replaced; fetched skipped.
+    expect(screen.getByText("kimi-k2.6")).toBeTruthy();
+    expect(screen.queryByText("kimi-for-coding")).toBeNull();
     expect(screen.queryByText("should-not-appear")).toBeNull();
   });
 });

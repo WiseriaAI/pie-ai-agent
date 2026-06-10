@@ -145,13 +145,9 @@ export default function InstanceForm(props: Props) {
       {variants.length > 0 && (
         <FieldDiv label={t("instanceForm.endpoint")} hint={selectedVariant?.baseUrl ?? meta?.defaultBaseUrl}>
           <div role="group" aria-label={t("instanceForm.endpoint")} className="flex w-full overflow-hidden rounded-[10px] border border-line">
-            {(() => {
-              const defaultOpt = { id: undefined as string | undefined, label: meta?.defaultEndpointLabel ?? t("instanceForm.endpointDefault") };
-              const variantOpts = variants.map((v) => ({ id: v.id as string | undefined, label: v.label }));
-              // defaultEndpointLast：默认端点即按量计费的 provider 把 default 排到最右，
-              // 让 Pay-as-you-go 跨 provider 对齐（mimo 的 PAYG 是 variant、本就在右）。
-              return meta?.defaultEndpointLast ? [...variantOpts, defaultOpt] : [defaultOpt, ...variantOpts];
-            })().map((opt, i) => {
+            {/* 默认端点（Plan）在左、Pay-as-you-go variant 在右——跨 provider 对齐。 */}
+            {[{ id: undefined as string | undefined, label: meta?.defaultEndpointLabel ?? t("instanceForm.endpointDefault") },
+              ...variants.map((v) => ({ id: v.id as string | undefined, label: v.label }))].map((opt, i) => {
               const active = endpointVariant === opt.id;
               return (
                 <button
@@ -159,11 +155,18 @@ export default function InstanceForm(props: Props) {
                   type="button"
                   aria-pressed={active}
                   onClick={() => setEndpointVariant(opt.id)}
-                  className={`flex-1 px-1 py-2 text-[12px] ${i > 0 ? "border-l border-line" : ""} ${
-                    active ? "bg-field font-medium text-fg-1" : "bg-transparent text-fg-2 hover:text-fg-1"
+                  className={`flex flex-1 items-center justify-center gap-1 px-1.5 py-2 text-[12px] ${i > 0 ? "border-l border-line" : ""} ${
+                    active
+                      ? "bg-accent-tint font-semibold text-accent"
+                      : "bg-transparent text-fg-3 hover:bg-field hover:text-fg-1"
                   }`}
                 >
-                  {opt.label}
+                  {active && (
+                    <svg width="11" height="11" viewBox="0 0 11 11" aria-hidden className="shrink-0">
+                      <path d="M2 5.5L4.5 8L9 3" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  )}
+                  <span className="truncate">{opt.label}</span>
                 </button>
               );
             })}

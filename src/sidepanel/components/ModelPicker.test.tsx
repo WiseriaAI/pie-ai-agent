@@ -75,29 +75,32 @@ function inst(over: Partial<DecryptedInstance>): DecryptedInstance {
 }
 
 describe("modelsFor with endpoint variants", () => {
-  it("variant with models replaces the registry list (custom pool still appended)", () => {
-    const rows = modelsFor(
+  it("payg variant with models replaces the default (Plan) list; custom appended, fetched skipped", () => {
+    const ids = modelsFor(
       inst({
-        endpointVariant: "kimi-code",
+        endpointVariant: "payg", // moonshot payg pool = MOONSHOT_MODELS
         customModels: ["my-model"],
         fetchedModels: [{ id: "should-not-appear", vision: false, tools: true, maxContextTokens: 1 }],
       }),
-    );
-    expect(rows.map((r) => r.id)).toEqual(["kimi-for-coding", "my-model"]);
+    ).map((r) => r.id);
+    expect(ids).toContain("kimi-k2.6"); // from the payg pool
+    expect(ids).not.toContain("kimi-for-coding"); // default (Plan) model is replaced
+    expect(ids).toContain("my-model"); // custom pool still appended
+    expect(ids).not.toContain("should-not-appear"); // fetched skipped when variant has models
   });
 
-  it("variant without models keeps the default list (zhipu coding-plan)", () => {
-    const rows = modelsFor(inst({ provider: "zhipu", endpointVariant: "coding-plan" }));
+  it("payg variant without models keeps the default list (zhipu — both share the full GLM list)", () => {
+    const rows = modelsFor(inst({ provider: "zhipu", endpointVariant: "payg" }));
     expect(rows.map((r) => r.id)).toContain("glm-5.1");
   });
 
-  it("no variant → unchanged registry list", () => {
+  it("no variant → default (Plan) registry list", () => {
     const rows = modelsFor(inst({}));
-    expect(rows[0]!.id).toBe("kimi-k2.6");
+    expect(rows[0]!.id).toBe("kimi-for-coding"); // moonshot default = Kimi Code Plan
   });
 
-  it("dangling variant id falls back to the default list", () => {
+  it("dangling variant id falls back to the default (Plan) list", () => {
     const rows = modelsFor(inst({ endpointVariant: "gone" }));
-    expect(rows[0]!.id).toBe("kimi-k2.6");
+    expect(rows[0]!.id).toBe("kimi-for-coding");
   });
 });

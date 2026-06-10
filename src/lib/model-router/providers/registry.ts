@@ -59,15 +59,13 @@ export interface ProviderMeta {
    *  monogram fallback（见 ProviderIcon）。svg 已用 fill="currentColor"，由
    *  组件按主题给色。 */
   iconAsset?: string;
-  /** 额外端点变体（按量/Plan 双计费等）。缺省 = 无变体，UI 不渲染切换。 */
+  /** 额外端点变体（Plan/按量 双计费等）。缺省 = 无变体，UI 不渲染切换。
+   *  约定：默认端点 = 订阅 Plan（无 endpointVariant），按量计费是 id "payg" 的 variant，
+   *  这样切换控件 `[默认, ...variants]` 天然渲染成 `[Plan, Pay-as-you-go]`，跨 provider 对齐。
+   *  存量按量实例由 migrate-endpoint-default-payg 钉到 "payg" 保平滑。 */
   endpointVariants?: EndpointVariant[];
-  /** 有 endpointVariants 时，默认端点在切换控件里的文案。 */
+  /** 有 endpointVariants 时，默认（Plan）端点在切换控件里的文案。 */
   defaultEndpointLabel?: string;
-  /** 切换控件里把默认端点渲染到最右而非最左。用于「默认端点即按量计费」的
-   *  provider（zhipu/moonshot/stepfun）：打开后 Plan 端点在左、Pay-as-you-go 在右，
-   *  与「默认即订阅、按量是 variant」的 mimo（PAYG 天然在右）跨 provider 对齐。
-   *  纯显示，不影响 default 端点「无 endpointVariant」的存储语义。 */
-  defaultEndpointLast?: boolean;
 }
 
 // Kimi (Moonshot) curated models — shared by both the international
@@ -80,17 +78,29 @@ const MOONSHOT_MODELS: ModelMeta[] = [
   { id: "moonshot-v1-32k", vision: false, tools: true, maxContextTokens: 32_000 },
 ];
 
-// Kimi Code 订阅端点（api.kimi.com）。订阅 API 只接受统一 model id
-// "kimi-for-coding"（官方要求请求体固定用它，不暴露真实模型名）。
+// Kimi Code 订阅端点（api.kimi.com）= moonshot 两条目的默认端点。订阅 API 只接受
+// 统一 model id "kimi-for-coding"（官方要求请求体固定用它，不暴露真实模型名）。
 // TODO(vision): 官方未明确 kimi-for-coding 是否收图片输入，fail-closed false，核实后更新。
-const KIMI_CODE_VARIANT: EndpointVariant = {
-  id: "kimi-code",
-  label: "Kimi Code Plan",
-  baseUrl: "https://api.kimi.com/coding",
-  placeholder: "sk-kimi-...",
-  models: [
-    { id: "kimi-for-coding", vision: false, tools: true, maxContextTokens: 256_000 },
-  ],
+const KIMI_CODE_MODELS: ModelMeta[] = [
+  { id: "kimi-for-coding", vision: false, tools: true, maxContextTokens: 256_000 },
+];
+
+// 按量计费 variant：Kimi Code（订阅）无地区分流，单一 api.kimi.com/coding，所以
+// moonshot / moonshot-cn 两条目共享同一 Plan 默认端点，仅按量端点按地区分两份
+// （api.moonshot.ai vs api.moonshot.cn）。两者 PAYG 模型清单都是 MOONSHOT_MODELS。
+const MOONSHOT_PAYG_INTL: EndpointVariant = {
+  id: "payg",
+  label: "Pay-as-you-go",
+  baseUrl: "https://api.moonshot.ai",
+  placeholder: "sk-...",
+  models: MOONSHOT_MODELS,
+};
+const MOONSHOT_PAYG_CN: EndpointVariant = {
+  id: "payg",
+  label: "Pay-as-you-go",
+  baseUrl: "https://api.moonshot.cn",
+  placeholder: "sk-...",
+  models: MOONSHOT_MODELS,
 };
 
 // StepFun shared model metas — referenced by both the default (pay-as-you-go)
@@ -167,7 +177,10 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     id: "zhipu",
     name: "GLM(Zhipu)",
     iconAsset: "provider-icons/zhipu.svg",
-    defaultBaseUrl: "https://open.bigmodel.cn/api/paas/v4",
+    // 默认端点 = Coding Plan（订阅）专属 OpenAI-compat 端点（FAQ：走通用端点不扣
+    // 套餐额度）。按量计费是 "payg" variant。存量按量实例由 migrate-endpoint-default-payg
+    // 钉到 "payg"，升级后仍打按量端点、key 不失效。
+    defaultBaseUrl: "https://open.bigmodel.cn/api/coding/paas/v4",
     placeholder: "API key",
     // Curated from the BigModel model-overview (issue #106). Only chat /
     // vision models are listed — the agent loop requires tool calling, so
@@ -196,13 +209,12 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
       { id: "glm-4.1v-thinking-flash", vision: true, tools: true, maxContextTokens: 64_000 },
       { id: "glm-4v-flash", vision: true, tools: true, maxContextTokens: 16_000 },
     ],
-    defaultEndpointLabel: "Pay-as-you-go",
-    defaultEndpointLast: true,
-    // Coding Plan 专属 OpenAI-compat 端点（FAQ：走通用端点不扣套餐额度）。
-    // Plan 限 GLM-5.1/5-Turbo/4.7/4.5-Air，但按量清单是超集 → 不 override，
-    // 选错模型由运行期报错自纠，免维护两份清单。
+    // 默认（Coding Plan）沿用上面这份全量 GLM 清单：Plan 限 GLM-5.1/5-Turbo/4.7/4.5-Air，
+    // 但按量是超集 → 默认不 override，选错模型由运行期报错自纠，免维护两份清单。
+    // payg variant 同样不 override（共用全量清单）。
+    defaultEndpointLabel: "Coding Plan",
     endpointVariants: [
-      { id: "coding-plan", label: "Coding Plan", baseUrl: "https://open.bigmodel.cn/api/coding/paas/v4" },
+      { id: "payg", label: "Pay-as-you-go", baseUrl: "https://open.bigmodel.cn/api/paas/v4" },
     ],
   },
   {
@@ -263,56 +275,53 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     id: "moonshot",
     name: "Moonshot(Kimi)",
     iconAsset: "provider-icons/moonshot.svg",
-    defaultBaseUrl: "https://api.moonshot.ai",
-    placeholder: "sk-...",
-    models: MOONSHOT_MODELS,
-    defaultEndpointLabel: "Pay-as-you-go",
-    defaultEndpointLast: true,
-    endpointVariants: [KIMI_CODE_VARIANT],
+    // 默认端点 = Kimi Code Plan（订阅，api.kimi.com/coding，只认 kimi-for-coding）。
+    // 按量计费是 "payg" variant（api.moonshot.ai）。存量按量实例由迁移钉到 "payg"。
+    defaultBaseUrl: "https://api.kimi.com/coding",
+    placeholder: "sk-kimi-...",
+    models: KIMI_CODE_MODELS,
+    defaultEndpointLabel: "Kimi Code Plan",
+    endpointVariants: [MOONSHOT_PAYG_INTL],
   },
   {
     id: "moonshot-cn",
     name: "Moonshot(Kimi) China",
     iconAsset: "provider-icons/moonshot.svg",
-    defaultBaseUrl: "https://api.moonshot.cn",
-    placeholder: "sk-...",
-    models: MOONSHOT_MODELS,
-    defaultEndpointLabel: "Pay-as-you-go",
-    defaultEndpointLast: true,
-    endpointVariants: [KIMI_CODE_VARIANT],
+    // 同 moonshot：默认走全局 Kimi Code Plan 端点，仅按量 variant 用 .cn 地区。
+    defaultBaseUrl: "https://api.kimi.com/coding",
+    placeholder: "sk-kimi-...",
+    models: KIMI_CODE_MODELS,
+    defaultEndpointLabel: "Kimi Code Plan",
+    endpointVariants: [MOONSHOT_PAYG_CN],
   },
   {
     id: "stepfun",
     name: "StepFun",
     iconAsset: "provider-icons/stepfun.svg",
-    defaultBaseUrl: "https://api.stepfun.com",
+    // Anthropic-wire (`/v1/messages`, Bearer). 默认端点 = Step Plan（订阅）：Anthropic
+    // SDK 会自动在 base_url 后拼 /v1/messages，故 base 不带 /v1（官方 Step Plan 文档
+    // 明示；OpenAI SDK 才用 .../step_plan/v1）。按量计费是 "payg" variant。存量按量
+    // 实例由迁移钉到 "payg"。step-3.7-flash 多模态、step-3.5-flash 文本（vision fail-closed）。
+    // TODO(maxOutputTokens): StepFun 官方文档仅披露 context window 256K，未给单独的
+    // 最大输出上限（max_tokens 文档为 INF/不限）。查到官方值前留空，退回
+    // anthropic-sdk-core 的 ANTHROPIC_WIRE_FALLBACK_MAX_TOKENS。
+    defaultBaseUrl: "https://api.stepfun.com/step_plan",
     placeholder: "API key",
-    // Anthropic-wire (`/v1/messages`, Bearer). step-3.7-flash is the native
-    // multimodal flagship (image/video in); step-3.5-flash is the reasoning /
-    // tool-calling flagship, text-only here (vision guard is fail-closed). Both
-    // 256K. step-router-v1 is omitted from this default (pay-as-you-go) list —
-    // it is exposed via the step-plan endpoint variant below.
-    // TODO(maxOutputTokens): StepFun 官方文档仅披露 context window 256K，未给
-    // 单独的最大输出上限（max_tokens 文档为 INF/不限）。查到官方值前留空，
-    // 退回 anthropic-sdk-core 的 ANTHROPIC_WIRE_FALLBACK_MAX_TOKENS。
-    models: [STEP_37_FLASH, STEP_35_FLASH],
-    defaultEndpointLabel: "Pay-as-you-go",
-    defaultEndpointLast: true,
+    // 默认（Step Plan）限定池（¥49–699/月档位），含 step-router-v1 智能路由。
+    models: [
+      STEP_37_FLASH,
+      { id: "step-3.5-flash-2603", vision: false, tools: true, maxContextTokens: 256_000 },
+      STEP_35_FLASH,
+      { id: "step-router-v1", vision: false, tools: true, maxContextTokens: 256_000 },
+    ],
+    defaultEndpointLabel: "Step Plan",
     endpointVariants: [
       {
-        id: "step-plan",
-        label: "Step Plan",
-        // Anthropic SDK 会自动在 base_url 后拼 /v1/messages，故 base 不带 /v1
-        // （官方 Step Plan 文档明示；OpenAI SDK 才用 .../step_plan/v1）。
-        baseUrl: "https://api.stepfun.com/step_plan",
-        // Step Plan 限定池（¥49–699/月档位）。maxOutputTokens 官方未披露，
-        // 留空退回 ANTHROPIC_WIRE_FALLBACK_MAX_TOKENS（同默认清单的 TODO）。
-        models: [
-          STEP_37_FLASH,
-          { id: "step-3.5-flash-2603", vision: false, tools: true, maxContextTokens: 256_000 },
-          STEP_35_FLASH,
-          { id: "step-router-v1", vision: false, tools: true, maxContextTokens: 256_000 },
-        ],
+        id: "payg",
+        label: "Pay-as-you-go",
+        baseUrl: "https://api.stepfun.com",
+        // 按量端点不提供 step-router-v1 / -2603（那是 Step Plan 限定）。
+        models: [STEP_37_FLASH, STEP_35_FLASH],
       },
     ],
   },

@@ -144,28 +144,27 @@ describe("endpoint variant switch", () => {
     expect(screen.queryByRole("button", { name: "Pay-as-you-go" })).toBeNull();
   });
 
-  it("keeps Pay-as-you-go rightmost across providers (defaultEndpointLast vs payg-variant)", () => {
-    // zhipu: 默认即 PAYG，defaultEndpointLast → [Coding Plan, Pay-as-you-go]
+  it("renders [Plan, Pay-as-you-go] with Pay-as-you-go rightmost across providers", () => {
+    // Default endpoint (Plan) is left, payg variant is right — uniform alignment.
     const { rerender } = render(<InstanceForm {...base} provider="zhipu" onSave={noop} />);
     let labels = within(screen.getByRole("group", { name: "ENDPOINT" }))
       .getAllByRole("button").map((b) => b.textContent);
     expect(labels).toEqual(["Coding Plan", "Pay-as-you-go"]);
-    // mimo: PAYG 本就是 variant（默认是 Token Plan）→ [Token Plan, Pay-as-you-go]
     rerender(<InstanceForm {...base} provider="mimo" onSave={noop} />);
     labels = within(screen.getByRole("group", { name: "ENDPOINT" }))
       .getAllByRole("button").map((b) => b.textContent);
     expect(labels).toEqual(["Token Plan", "Pay-as-you-go"]);
   });
 
-  it("selecting a variant flows into the onSave payload; default = undefined", () => {
+  it("selecting the payg variant flows into the onSave payload; default (Plan) = undefined", () => {
     const onSave = vi.fn();
     render(<InstanceForm {...base} provider="zhipu" onSave={onSave} />);
     fireEvent.change(screen.getByLabelText("api key"), { target: { value: "k" } });
-    fireEvent.click(screen.getByRole("button", { name: "Coding Plan" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    expect(onSave.mock.calls[0]![0].endpointVariant).toBe("coding-plan");
-    // 切回默认 → undefined
     fireEvent.click(screen.getByRole("button", { name: "Pay-as-you-go" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(onSave.mock.calls[0]![0].endpointVariant).toBe("payg");
+    // 切回默认（Coding Plan）→ undefined
+    fireEvent.click(screen.getByRole("button", { name: "Coding Plan" }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(onSave.mock.calls[1]![0].endpointVariant).toBeUndefined();
   });
@@ -174,10 +173,10 @@ describe("endpoint variant switch", () => {
     const onSave = vi.fn();
     render(
       <InstanceForm {...base} mode="edit" provider="zhipu" existingApiKey="sk-x"
-        initialEndpointVariant="coding-plan" onSave={onSave} />,
+        initialEndpointVariant="payg" onSave={onSave} />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    expect(onSave.mock.calls[0]![0].endpointVariant).toBe("coding-plan");
+    expect(onSave.mock.calls[0]![0].endpointVariant).toBe("payg");
   });
 
   it("variant placeholder overrides the provider placeholder (mimo payg)", () => {
@@ -187,12 +186,14 @@ describe("endpoint variant switch", () => {
     expect(screen.getByLabelText("api key").getAttribute("placeholder")).toBe("sk-...");
   });
 
-  it("model list follows a models-override variant (moonshot kimi-code)", () => {
+  it("model list follows the endpoint: default Kimi Code → payg swaps to Moonshot models", () => {
     render(<InstanceForm {...base} provider="moonshot" onSave={noop} />);
-    expect(screen.getByText("kimi-k2.6")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Kimi Code Plan" }));
-    expect(screen.queryByText("kimi-k2.6")).toBeNull();
+    // Default = Kimi Code Plan → pinned single model.
     expect(screen.getByText("kimi-for-coding")).toBeTruthy();
+    expect(screen.queryByText("kimi-k2.6")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Pay-as-you-go" }));
+    expect(screen.queryByText("kimi-for-coding")).toBeNull();
+    expect(screen.getByText("kimi-k2.6")).toBeTruthy();
   });
 
   it("stale initialEndpointVariant (removed from registry) normalizes to undefined", () => {

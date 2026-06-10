@@ -29,6 +29,7 @@ import { cleanupLegacySkipPermissions } from "@/background/cleanup-migration";
 import { runSessionMigrations } from "@/lib/sessions/migration";
 import { migrateLegacyKeyboardFlag } from "@/lib/cdp-input-enabled";
 import { migrateV2toV3 } from "@/lib/migration-v3";
+import { migrateEndpointDefaultToPayg } from "@/lib/migrate-endpoint-default-payg";
 
 let pipelinePromise: Promise<void> | null = null;
 
@@ -48,9 +49,10 @@ async function runPipeline(): Promise<void> {
   // ── Phase 2: the V2→V3 sweep — chrome.storage.local → IndexedDB, then clear.
   await migrateV2toV3();
 
-  // ── Phase 3: IDB-post migrations — read/write the IDB config-store, so they
-  // must run only after the sweep has populated it.
+  // ── Phase 3: IDB-post migrations — read/write the IDB config-store / instances
+  // store, so they must run only after the sweep has populated them.
   await migrateLegacyKeyboardFlag();
+  await migrateEndpointDefaultToPayg();
 }
 
 /**
