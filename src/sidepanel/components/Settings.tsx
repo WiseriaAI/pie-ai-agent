@@ -107,10 +107,11 @@ export default function Settings({ onBack, onRunSkill }: Props) {
       setTestResult((p) => ({ ...p, [key]: { ok: false, message: `Unknown provider: ${provider}` } }));
       return;
     }
-    // 端点与模型池跟随表单里未保存的 variant 选择（而非存量 instance 字段）
+    // 端点与模型池跟随表单里未保存的 variant 选择（而非存量 instance 字段）；
+    // 兜底也传 variantOverride（null=强制默认池），避免读到存量 variant 的模型与 baseUrl 不同源
     const variant = resolveEndpointVariant(meta, payload.endpointVariant);
     const model = variant?.models?.[0]?.id
-      ?? (await firstModelForProvider(provider, id ?? undefined))
+      ?? (await firstModelForProvider(provider, id ?? undefined, payload.endpointVariant ?? null))
       ?? "";
     const cfg = {
       provider,

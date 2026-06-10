@@ -301,6 +301,18 @@ describe("endpoint variants", () => {
     expect(await firstModelForProvider("moonshot", id3)).toBe("my-model");
   });
 
+  it("firstModelForProvider: variantOverride null forces the default pool over the stored variant", async () => {
+    // 存量 instance 选了 kimi-code，但表单已切回默认端点（payload.endpointVariant=undefined → null）
+    const id = await createInstance({ provider: "moonshot", nickname: "K", apiKey: "k", endpointVariant: "kimi-code" });
+    expect(await firstModelForProvider("moonshot", id, null)).toBe("kimi-k2.6");
+  });
+
+  it("firstModelForProvider: variantOverride string resolves that variant regardless of stored field", async () => {
+    // 存量 instance 无 variant，表单里选了 kimi-code（尚未保存）
+    const id = await createInstance({ provider: "moonshot", nickname: "K", apiKey: "k" });
+    expect(await firstModelForProvider("moonshot", id, "kimi-code")).toBe("kimi-for-coding");
+  });
+
   it("updateInstance: empty string also clears (same hygiene as create's conditional spread)", async () => {
     const id = await createInstance({ provider: "zhipu", nickname: "Z", apiKey: "k", endpointVariant: "coding-plan" });
     await updateInstance(id, { endpointVariant: "" });

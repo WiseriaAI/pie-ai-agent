@@ -174,17 +174,23 @@ export async function resolveModelConfig(instanceId: string, model: string): Pro
 }
 
 /** provider 的「第一个可用 model」：instance.customModels[0]（用户/eval 显式）
- *  → variant.models[0]（instance 选了带 models override 的端点变体）
+ *  → variant.models[0]（端点变体带 models override）
  *  → registry[0] → fetched[0]。用于 D3 兜底（普通 instance 无 customModels →
- *  registry[0]）与 eval（把指定 model 存进 customModels）。 */
-export async function firstModelForProvider(provider: ProviderRef, instanceId?: string): Promise<string | null> {
+ *  registry[0]）与 eval（把指定 model 存进 customModels）。
+ *
+ *  `variantOverride` 控制 variant 池取自哪个端点（连接测试需跟随表单里未保存的选择）：
+ *  - `undefined`：沿用存量 instance 的 `endpointVariant`（默认行为）
+ *  - `null`：强制默认端点池（跳过 inst.endpointVariant）
+ *  - `string`：按该 variant id 解析 */
+export async function firstModelForProvider(provider: ProviderRef, instanceId?: string, variantOverride?: string | null): Promise<string | null> {
   const inst = instanceId
     ? await getInstance(instanceId)
     : (await listInstances()).find((i) => i.provider === provider);
   if (inst?.customModels && inst.customModels.length > 0) return inst.customModels[0]!;
   const meta = getProviderMeta(provider as BuiltinProvider);
   // variant 带 models override → 该 instance 的默认模型来自 variant 池
-  const variant = meta ? resolveEndpointVariant(meta, inst?.endpointVariant) : undefined;
+  const variantId = variantOverride === undefined ? inst?.endpointVariant : variantOverride ?? undefined;
+  const variant = meta ? resolveEndpointVariant(meta, variantId) : undefined;
   if (variant?.models && variant.models.length > 0) return variant.models[0]!.id;
   if (meta && meta.models.length > 0) return meta.models[0]!.id;
   return inst?.fetchedModels?.[0]?.id ?? null;
