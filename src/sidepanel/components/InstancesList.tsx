@@ -1,4 +1,7 @@
 import type { DecryptedInstance } from "@/lib/instances";
+import type { BuiltinProvider } from "@/lib/model-router";
+import { getProviderMeta, resolveEndpointVariant } from "@/lib/model-router";
+import { CUSTOM_PREFIX } from "@/lib/custom-providers";
 import ProviderIcon from "./ProviderIcon";
 
 interface Props {
@@ -13,6 +16,11 @@ export default function InstancesList(props: Props) {
     <div className="flex flex-col overflow-hidden rounded-[14px] border border-line bg-surface">
       {props.instances.map((inst, i) => {
         const isOpen = props.expandedId === inst.id;
+        const variantLabel = (() => {
+          if (!inst.endpointVariant || inst.provider.startsWith(CUSTOM_PREFIX)) return null;
+          const meta = getProviderMeta(inst.provider as BuiltinProvider);
+          return meta ? resolveEndpointVariant(meta, inst.endpointVariant)?.label ?? null : null;
+        })();
         return (
           <div key={inst.id} className={i > 0 ? "border-t border-line" : ""}>
             <div
@@ -32,6 +40,9 @@ export default function InstancesList(props: Props) {
                 <div className="text-[14px] font-medium text-fg-1">
                   {inst.nickname}
                   <span className="ml-1 text-[11px] font-normal text-fg-3">· {inst.provider}</span>
+                  {variantLabel && (
+                    <span className="ml-1.5 whitespace-nowrap rounded bg-line px-1 py-px text-[10px] font-normal text-fg-2">{variantLabel}</span>
+                  )}
                 </div>
                 <div className="truncate font-mono text-[11px] text-fg-3">{maskKey(inst.apiKey)}</div>
               </div>

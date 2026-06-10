@@ -38,4 +38,19 @@ describe("ProviderModelList", () => {
     fireEvent.click(screen.getByText(/add custom model/i));
     expect(screen.getByPlaceholderText("model id")).toBeTruthy();
   });
+
+  it("models-override variant (payg) replaces the default list AND skips fetchedModels", () => {
+    render(
+      <ProviderModelList
+        provider="moonshot"
+        endpointVariant="payg"
+        customModels={[]}
+        fetchedModels={[{ id: "should-not-appear", vision: false, tools: true, maxContextTokens: 1000 }]}
+      />,
+    );
+    // payg variant pool = MOONSHOT_MODELS; default (Plan) model is replaced; fetched skipped.
+    expect(screen.getByText("kimi-k2.6")).toBeTruthy();
+    expect(screen.queryByText("kimi-for-coding")).toBeNull();
+    expect(screen.queryByText("should-not-appear")).toBeNull();
+  });
 });

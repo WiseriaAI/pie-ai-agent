@@ -1,5 +1,5 @@
 import type { ProviderRef, BuiltinProvider, ModelConfig } from "@/lib/model-router";
-import { resolveProviderMeta, getProviderMeta, resolveModelVision, resolveModelMeta } from "@/lib/model-router/providers/registry";
+import { resolveProviderMeta, getProviderMeta, resolveModelVision, resolveModelMeta, resolveEndpointVariant } from "@/lib/model-router/providers/registry";
 import { getOrCreateEncryptionKey, encrypt, decrypt } from "@/lib/crypto";
 import { getCustomProvider, providerRefToId } from "@/lib/custom-providers";
 import { tx, txMulti, STORES } from "@/lib/idb/db";
@@ -15,6 +15,8 @@ export interface StoredInstance {
   fetchedModels?: { id: string; vision: boolean; tools: boolean; maxContextTokens: number }[];
   fetchedAt?: number;
   maxTokens?: number;
+  /** EndpointVariant.id（见 registry.endpointVariants）。缺省 = 默认端点。 */
+  endpointVariant?: string;
   createdAt: number;
 }
 
@@ -41,6 +43,7 @@ export async function createInstance(input: {
   /** Optional. Provider-level custom model ids associated with this instance
    *  (back-compat pool). Model selection itself lives in the Composer, not here. */
   customModels?: string[];
+  endpointVariant?: string;
 }): Promise<string> {
   if (!input.apiKey.trim()) throw new Error("API key cannot be empty");
   const id = crypto.randomUUID();
@@ -51,6 +54,7 @@ export async function createInstance(input: {
     nickname: input.nickname,
     encryptedKey: await encrypt(input.apiKey, key),
     ...(input.customModels && input.customModels.length > 0 && { customModels: input.customModels }),
+    ...(input.endpointVariant && { endpointVariant: input.endpointVariant }),
     createdAt: Date.now(),
   };
   const idx = await readIndex();
@@ -138,6 +142,7 @@ export async function resolveModelConfig(instanceId: string, model: string): Pro
   if (!inst) return null;
   const meta = await resolveProviderMeta(inst.provider);
   if (!meta) return null;
+  const variant = resolveEndpointVariant(meta, inst.endpointVariant);
   // Custom providers: read the stored CustomModelMeta.vision (#62).
   // Builtin providers: registry/fetched catalog first; on a miss, consult the
   // pcmm sidecar (resolveModelMeta) so user-added custom models with vision:true
@@ -161,7 +166,7 @@ export async function resolveModelConfig(instanceId: string, model: string): Pro
     providerName: meta.name,
     model,
     apiKey: inst.apiKey,
-    baseUrl: meta.defaultBaseUrl,
+    baseUrl: variant?.baseUrl ?? meta.defaultBaseUrl,
     ...(inst.maxTokens != null && { maxTokens: inst.maxTokens }),
     ...(maxOutputTokens != null && { maxOutputTokens }),
     ...(vision !== undefined && { vision }),
@@ -169,14 +174,24 @@ export async function resolveModelConfig(instanceId: string, model: string): Pro
 }
 
 /** provider 的「第一个可用 model」：instance.customModels[0]（用户/eval 显式）
+ *  → variant.models[0]（端点变体带 models override）
  *  → registry[0] → fetched[0]。用于 D3 兜底（普通 instance 无 customModels →
- *  registry[0]）与 eval（把指定 model 存进 customModels）。 */
-export async function firstModelForProvider(provider: ProviderRef, instanceId?: string): Promise<string | null> {
+ *  registry[0]）与 eval（把指定 model 存进 customModels）。
+ *
+ *  `variantOverride` 控制 variant 池取自哪个端点（连接测试需跟随表单里未保存的选择）：
+ *  - `undefined`：沿用存量 instance 的 `endpointVariant`（默认行为）
+ *  - `null`：强制默认端点池（跳过 inst.endpointVariant）
+ *  - `string`：按该 variant id 解析 */
+export async function firstModelForProvider(provider: ProviderRef, instanceId?: string, variantOverride?: string | null): Promise<string | null> {
   const inst = instanceId
     ? await getInstance(instanceId)
     : (await listInstances()).find((i) => i.provider === provider);
   if (inst?.customModels && inst.customModels.length > 0) return inst.customModels[0]!;
   const meta = getProviderMeta(provider as BuiltinProvider);
+  // variant 带 models override → 该 instance 的默认模型来自 variant 池
+  const variantId = variantOverride === undefined ? inst?.endpointVariant : variantOverride ?? undefined;
+  const variant = meta ? resolveEndpointVariant(meta, variantId) : undefined;
+  if (variant?.models && variant.models.length > 0) return variant.models[0]!.id;
   if (meta && meta.models.length > 0) return meta.models[0]!.id;
   return inst?.fetchedModels?.[0]?.id ?? null;
 }
@@ -198,6 +213,7 @@ export async function updateInstance(id: string, patch: Partial<{
   fetchedModels: StoredInstance["fetchedModels"];
   fetchedAt: number;
   maxTokens: number;
+  endpointVariant: string | null;
 }>): Promise<void> {
   const stored = await tx<StoredInstance | undefined>(STORES.instances, "readonly", (s) => s.get(id));
   if (!stored) throw new Error(`Instance ${id} not found`);
@@ -211,6 +227,11 @@ export async function updateInstance(id: string, patch: Partial<{
   if (patch.fetchedModels !== undefined) next.fetchedModels = patch.fetchedModels;
   if (patch.fetchedAt !== undefined) next.fetchedAt = patch.fetchedAt;
   if (patch.maxTokens !== undefined) next.maxTokens = patch.maxTokens;
+  if (patch.endpointVariant !== undefined) {
+    // null / 空串 = 显式清除（切回默认端点）；非空 string = 设置。可选字段不留空值。
+    if (!patch.endpointVariant) delete next.endpointVariant;
+    else next.endpointVariant = patch.endpointVariant;
+  }
   await tx(STORES.instances, "readwrite", (s) => s.put(next));
   publishChange("instances", "put", id);
 }

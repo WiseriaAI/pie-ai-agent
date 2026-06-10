@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { getProviderMeta, getModelMeta, PROVIDER_REGISTRY, resolveModelVision, resolveModelMeta } from "./registry";
+import { getProviderMeta, getModelMeta, PROVIDER_REGISTRY, resolveModelVision, resolveModelMeta, resolveEndpointVariant } from "./registry";
 import type { ModelMeta } from "./registry";
 import { setProviderCustomModelMeta } from "@/lib/provider-custom-model-meta";
 import { chromeMock } from "@/test/setup";
@@ -54,7 +54,8 @@ describe("ProviderMeta schema", () => {
 
   it("StepFun is registered", () => {
     expect(getProviderMeta("stepfun")).toBeDefined();
-    expect(getProviderMeta("stepfun")!.defaultBaseUrl).toBe("https://api.stepfun.com");
+    // Default endpoint is the Step Plan (subscription); pay-as-you-go is a variant.
+    expect(getProviderMeta("stepfun")!.defaultBaseUrl).toBe("https://api.stepfun.com/step_plan");
     expect(getProviderMeta("stepfun")!.name).toBe("StepFun");
   });
 });
@@ -158,8 +159,12 @@ describe("ModelMeta capability flags (per-model)", () => {
     expect(getModelMeta("stepfun", "step-3.5-flash")?.maxContextTokens).toBe(256_000);
   });
 
-  it("StepFun does NOT expose the step_plan-only router model", () => {
-    expect(getModelMeta("stepfun", "step-router-v1")).toBeUndefined();
+  it("StepFun exposes the router model on Step Plan (default) but not on pay-as-you-go", () => {
+    // After the default→Plan flip, step-router-v1 lives in the default (Step Plan)
+    // model list; the pay-as-you-go variant pool intentionally omits it.
+    expect(getProviderMeta("stepfun")!.models.find((m) => m.id === "step-router-v1")).toBeDefined();
+    const payg = getProviderMeta("stepfun")!.endpointVariants!.find((v) => v.id === "payg")!;
+    expect(payg.models!.find((m) => m.id === "step-router-v1")).toBeUndefined();
   });
 
   it("MiMo does NOT expose TTS models (mimo-v2.5-tts, etc.)", () => {
@@ -239,25 +244,32 @@ describe("resolveModelMeta + pcmm", () => {
 });
 
 describe("Moonshot (Kimi) — dual-region registration", () => {
-  it("international entry registered with api.moonshot.ai", () => {
+  // After the default→Plan flip both entries default to the single global Kimi
+  // Code endpoint (no region split for the subscription); the region distinction
+  // moved to the pay-as-you-go variant (api.moonshot.ai vs api.moonshot.cn).
+  it("international entry defaults to Kimi Code, payg variant on api.moonshot.ai", () => {
     const meta = getProviderMeta("moonshot")!;
     expect(meta).toBeDefined();
-    expect(meta.defaultBaseUrl).toBe("https://api.moonshot.ai");
+    expect(meta.defaultBaseUrl).toBe("https://api.kimi.com/coding");
     expect(meta.name).toBe("Moonshot(Kimi)");
+    expect(meta.endpointVariants!.find((v) => v.id === "payg")!.baseUrl).toBe("https://api.moonshot.ai");
   });
 
-  it("China entry registered with api.moonshot.cn", () => {
+  it("China entry defaults to Kimi Code, payg variant on api.moonshot.cn", () => {
     const meta = getProviderMeta("moonshot-cn")!;
     expect(meta).toBeDefined();
-    expect(meta.defaultBaseUrl).toBe("https://api.moonshot.cn");
+    expect(meta.defaultBaseUrl).toBe("https://api.kimi.com/coding");
     expect(meta.name).toBe("Moonshot(Kimi) China");
+    expect(meta.endpointVariants!.find((v) => v.id === "payg")!.baseUrl).toBe("https://api.moonshot.cn");
   });
 
-  it("both regions expose the same model list", () => {
-    const intl = getProviderMeta("moonshot")!.models.map((m) => m.id);
-    const cn = getProviderMeta("moonshot-cn")!.models.map((m) => m.id);
+  it("both regions' pay-as-you-go variants expose the same Moonshot model list", () => {
+    const intl = getProviderMeta("moonshot")!.endpointVariants!.find((v) => v.id === "payg")!.models!.map((m) => m.id);
+    const cn = getProviderMeta("moonshot-cn")!.endpointVariants!.find((v) => v.id === "payg")!.models!.map((m) => m.id);
     expect(cn).toEqual(intl);
     expect(intl).toContain("kimi-k2.6");
+    // Default (Kimi Code Plan) model list is the pinned single id for both.
+    expect(getProviderMeta("moonshot")!.models.map((m) => m.id)).toEqual(["kimi-for-coding"]);
   });
 
   it("kimi-k2.6 / kimi-k2.5 have vision + tools + 256K context", () => {
@@ -313,6 +325,97 @@ describe("maxOutputTokens (anthropic-wire, sourced from provider docs)", () => {
           expect(m.maxOutputTokens, `${p.id}/${m.id}`).toBeTypeOf("number");
         }
       }
+    }
+  });
+});
+
+describe("endpoint variants", () => {
+  it("zhipu defaults to Coding Plan; payg variant carries the pay-as-you-go base URL", () => {
+    const meta = getProviderMeta("zhipu")!;
+    expect(meta.defaultEndpointLabel).toBe("Coding Plan");
+    expect(meta.defaultBaseUrl).toBe("https://open.bigmodel.cn/api/coding/paas/v4");
+    const v = meta.endpointVariants?.find((x) => x.id === "payg");
+    expect(v?.baseUrl).toBe("https://open.bigmodel.cn/api/paas/v4");
+    expect(v?.models).toBeUndefined(); // 全量清单是超集，default 与 payg 都不 override
+  });
+
+  it("moonshot and moonshot-cn default to Kimi Code (pinned model); payg variant per region", () => {
+    for (const id of ["moonshot", "moonshot-cn"] as const) {
+      const meta = getProviderMeta(id)!;
+      expect(meta.defaultBaseUrl).toBe("https://api.kimi.com/coding");
+      expect(meta.defaultEndpointLabel).toBe("Kimi Code Plan");
+      expect(meta.placeholder).toBe("sk-kimi-...");
+      expect(meta.models.map((m) => m.id)).toEqual(["kimi-for-coding"]);
+      const v = meta.endpointVariants?.find((x) => x.id === "payg");
+      expect(v?.placeholder).toBe("sk-...");
+      expect(v?.models?.map((m) => m.id)).toContain("kimi-k2.6");
+    }
+    expect(getProviderMeta("moonshot")!.endpointVariants![0]!.baseUrl).toBe("https://api.moonshot.ai");
+    expect(getProviderMeta("moonshot-cn")!.endpointVariants![0]!.baseUrl).toBe("https://api.moonshot.cn");
+  });
+
+  it("mimo default stays the Token Plan endpoint; payg is the variant", () => {
+    const meta = getProviderMeta("mimo")!;
+    expect(meta.defaultBaseUrl).toBe("https://token-plan-cn.xiaomimimo.com");
+    expect(meta.defaultEndpointLabel).toBe("Token Plan");
+    expect(meta.placeholder).toBe("tp-...");
+    const v = meta.endpointVariants?.find((x) => x.id === "payg");
+    expect(v?.baseUrl).toBe("https://api.xiaomimimo.com");
+    expect(v?.placeholder).toBe("sk-...");
+    expect(v?.models).toBeUndefined();
+  });
+
+  it("stepfun defaults to Step Plan (base WITHOUT /v1, full pool); payg variant trims the pool", () => {
+    const meta = getProviderMeta("stepfun")!;
+    // SDK appends /v1/messages → default base must NOT carry /v1.
+    expect(meta.defaultBaseUrl).toBe("https://api.stepfun.com/step_plan");
+    expect(meta.defaultEndpointLabel).toBe("Step Plan");
+    expect(meta.models.map((m) => m.id)).toEqual([
+      "step-3.7-flash", "step-3.5-flash-2603", "step-3.5-flash", "step-router-v1",
+    ]);
+    const v = meta.endpointVariants?.find((x) => x.id === "payg");
+    expect(v?.baseUrl).toBe("https://api.stepfun.com");
+    expect(v?.models?.map((m) => m.id)).toEqual(["step-3.7-flash", "step-3.5-flash"]);
+  });
+
+  it("getModelMeta unions variant models after the default list", () => {
+    expect(getModelMeta("moonshot", "kimi-for-coding")?.maxContextTokens).toBe(256_000); // default (Kimi Code)
+    expect(getModelMeta("moonshot", "kimi-k2.6")).toBeDefined(); // payg variant → union hit
+    expect(getModelMeta("stepfun", "step-router-v1")?.vision).toBe(false); // default (Step Plan)
+    // 默认清单优先：step-3.7-flash 在默认清单与 payg variant 清单都存在 → 返回默认条目
+    expect(getModelMeta("stepfun", "step-3.7-flash")?.vision).toBe(true);
+  });
+
+  it("resolveEndpointVariant: hit / miss / undefined", () => {
+    const meta = getProviderMeta("zhipu")!;
+    expect(resolveEndpointVariant(meta, "payg")?.id).toBe("payg");
+    expect(resolveEndpointVariant(meta, "no-such")).toBeUndefined();
+    expect(resolveEndpointVariant(meta, undefined)).toBeUndefined();
+    expect(resolveEndpointVariant(getProviderMeta("anthropic")!, "payg")).toBeUndefined();
+  });
+
+  it("providers without variants are untouched", () => {
+    for (const id of ["anthropic", "openai", "minimax", "deepseek", "gemini", "bailian", "openrouter"] as const) {
+      expect(getProviderMeta(id)!.endpointVariants).toBeUndefined();
+    }
+  });
+
+  it("every provider with endpointVariants has a defaultEndpointLabel and unique variant ids", () => {
+    for (const p of PROVIDER_REGISTRY) {
+      if (!p.endpointVariants?.length) continue;
+      expect(p.defaultEndpointLabel, `${p.id} must label its default endpoint`).toBeTypeOf("string");
+      expect(p.defaultEndpointLabel!.length, `${p.id} defaultEndpointLabel must be non-empty`).toBeGreaterThan(0);
+      const ids = p.endpointVariants.map((v) => v.id);
+      expect(new Set(ids).size, `${p.id} variant ids must be unique`).toBe(ids.length);
+    }
+  });
+
+  it("every provider with variants uses the payg-as-variant convention (Plan is default)", () => {
+    // The four flipped providers + mimo all model pay-as-you-go as the "payg"
+    // variant, so the switch renders [Plan, Pay-as-you-go] uniformly.
+    for (const id of ["zhipu", "moonshot", "moonshot-cn", "stepfun", "mimo"] as const) {
+      const meta = getProviderMeta(id)!;
+      expect(meta.endpointVariants!.some((v) => v.id === "payg"), `${id} must expose a payg variant`).toBe(true);
     }
   });
 });

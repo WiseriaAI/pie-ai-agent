@@ -1,6 +1,6 @@
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { describe, it, expect, vi, afterEach } from "vitest";
-import ModelPicker from "./ModelPicker";
+import ModelPicker, { modelsFor } from "./ModelPicker";
 import type { DecryptedInstance } from "@/lib/instances";
 
 const insts: DecryptedInstance[] = [
@@ -67,5 +67,40 @@ describe("ModelPicker", () => {
     renderPicker({ locked: true });
     fireEvent.click(screen.getAllByRole("button")[0]!);
     expect(screen.queryByText("OpenAI")).toBeNull();
+  });
+});
+
+function inst(over: Partial<DecryptedInstance>): DecryptedInstance {
+  return { id: "i1", provider: "moonshot", nickname: "K", apiKey: "k", createdAt: 0, ...over };
+}
+
+describe("modelsFor with endpoint variants", () => {
+  it("payg variant with models replaces the default (Plan) list; custom appended, fetched skipped", () => {
+    const ids = modelsFor(
+      inst({
+        endpointVariant: "payg", // moonshot payg pool = MOONSHOT_MODELS
+        customModels: ["my-model"],
+        fetchedModels: [{ id: "should-not-appear", vision: false, tools: true, maxContextTokens: 1 }],
+      }),
+    ).map((r) => r.id);
+    expect(ids).toContain("kimi-k2.6"); // from the payg pool
+    expect(ids).not.toContain("kimi-for-coding"); // default (Plan) model is replaced
+    expect(ids).toContain("my-model"); // custom pool still appended
+    expect(ids).not.toContain("should-not-appear"); // fetched skipped when variant has models
+  });
+
+  it("payg variant without models keeps the default list (zhipu — both share the full GLM list)", () => {
+    const rows = modelsFor(inst({ provider: "zhipu", endpointVariant: "payg" }));
+    expect(rows.map((r) => r.id)).toContain("glm-5.1");
+  });
+
+  it("no variant → default (Plan) registry list", () => {
+    const rows = modelsFor(inst({}));
+    expect(rows[0]!.id).toBe("kimi-for-coding"); // moonshot default = Kimi Code Plan
+  });
+
+  it("dangling variant id falls back to the default (Plan) list", () => {
+    const rows = modelsFor(inst({ endpointVariant: "gone" }));
+    expect(rows[0]!.id).toBe("kimi-for-coding");
   });
 });

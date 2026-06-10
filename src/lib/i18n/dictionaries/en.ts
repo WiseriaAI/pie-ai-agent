@@ -244,6 +244,8 @@ export const enDict = {
     cancelKeepKey: "Cancel — keep current key",
     model: "MODEL",
     models: "MODELS",
+    endpoint: "ENDPOINT",
+    endpointDefault: "Default",
     test: "Test",
     save: "Save",
     forgetConfig: "Forget config",

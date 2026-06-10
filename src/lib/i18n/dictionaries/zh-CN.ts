@@ -245,6 +245,8 @@ export const zhCNDict = {
     cancelKeepKey: "取消 — 保留当前 Key",
     model: "模型",
     models: "模型列表",
+    endpoint: "端点",
+    endpointDefault: "默认",
     test: "测试",
     save: "保存",
     forgetConfig: "删除配置",

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import type { ProviderRef, BuiltinProvider, ModelMeta } from "@/lib/model-router";
-import { getProviderMeta } from "@/lib/model-router";
+import { getProviderMeta, resolveEndpointVariant } from "@/lib/model-router";
 import { useProviderMeta } from "@/sidepanel/hooks/useProviderMeta";
 import { CUSTOM_PREFIX } from "@/lib/custom-providers";
 import { useT, providerDisplayName } from "@/lib/i18n";
@@ -11,6 +11,8 @@ export interface InstanceFormPayload {
   nickname: string;
   apiKey: string;
   customModels: string[];
+  /** EndpointVariant.id；undefined = 默认端点。 */
+  endpointVariant?: string;
 }
 
 /** Render-prop API exposed when the parent wants to compose a custom action footer
@@ -29,6 +31,7 @@ interface Props {
   provider: ProviderRef;
   initialNickname: string;
   initialCustomModels?: string[];
+  initialEndpointVariant?: string;
   fetchedModels?: ModelMeta[];
   fetchedAt?: number;
   isFetching?: boolean;
@@ -95,13 +98,24 @@ export default function InstanceForm(props: Props) {
       return changed ? merged : prev;
     });
   }, [props.initialCustomModels]);
+  // Lazy init normalizes stale variant ids: if a registry update removed the
+  // stored variant, the UI falls back to the default endpoint and saving the
+  // form clears the stale id — same semantics as the runtime fallback in
+  // instances.ts. Safe at init time: builtin meta resolves synchronously via
+  // getProviderMeta, and custom providers never have endpointVariants.
+  const [endpointVariant, setEndpointVariant] = useState<string | undefined>(() =>
+    meta && resolveEndpointVariant(meta, props.initialEndpointVariant) ? props.initialEndpointVariant : undefined,
+  );
+  const variants = meta?.endpointVariants ?? [];
+  const selectedVariant = meta ? resolveEndpointVariant(meta, endpointVariant) : undefined;
+
   // Edit mode: start in read-only partial-reveal; create mode: always in replacing state
   const [replacing, setReplacing] = useState(props.mode === "create" || !props.existingApiKey);
 
   const requireApiKey = props.mode === "create" || replacing;
   const canSave = !requireApiKey || apiKey.trim().length > 0;
 
-  const payload: InstanceFormPayload = { nickname, apiKey, customModels };
+  const payload: InstanceFormPayload = { nickname, apiKey, customModels, endpointVariant };
 
   return (
     <div className="flex flex-col">
@@ -128,6 +142,38 @@ export default function InstanceForm(props: Props) {
         </Field>
       )}
 
+      {variants.length > 0 && (
+        <FieldDiv label={t("instanceForm.endpoint")} hint={selectedVariant?.baseUrl ?? meta?.defaultBaseUrl}>
+          <div role="group" aria-label={t("instanceForm.endpoint")} className="flex w-full overflow-hidden rounded-[10px] border border-line">
+            {/* 默认端点（Plan）在左、Pay-as-you-go variant 在右——跨 provider 对齐。 */}
+            {[{ id: undefined as string | undefined, label: meta?.defaultEndpointLabel ?? t("instanceForm.endpointDefault") },
+              ...variants.map((v) => ({ id: v.id as string | undefined, label: v.label }))].map((opt, i) => {
+              const active = endpointVariant === opt.id;
+              return (
+                <button
+                  key={opt.id ?? "_default"}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => setEndpointVariant(opt.id)}
+                  className={`flex flex-1 items-center justify-center gap-1 px-1.5 py-2 text-[12px] ${i > 0 ? "border-l border-line" : ""} ${
+                    active
+                      ? "bg-accent-tint font-semibold text-accent"
+                      : "bg-transparent text-fg-3 hover:bg-field hover:text-fg-1"
+                  }`}
+                >
+                  {active && (
+                    <svg width="11" height="11" viewBox="0 0 11 11" aria-hidden className="shrink-0">
+                      <path d="M2 5.5L4.5 8L9 3" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  )}
+                  <span className="truncate">{opt.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </FieldDiv>
+      )}
+
       <Field label={t("instanceForm.apiKey")} hint={t("instanceForm.aesGcmLocal")}>
         {!replacing && props.existingApiKey ? (
           <div className="flex flex-col gap-1.5">
@@ -152,7 +198,7 @@ export default function InstanceForm(props: Props) {
                 type={showKey ? "text" : "password"}
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
-                placeholder={meta?.placeholder ?? ""}
+                placeholder={selectedVariant?.placeholder ?? meta?.placeholder ?? ""}
                 className="min-w-0 flex-1 rounded-[10px] bg-field border border-line focus:border-accent-line px-3 py-2.5 text-[13px] text-fg-1"
               />
               <button
@@ -179,6 +225,7 @@ export default function InstanceForm(props: Props) {
       <Field label={t("instanceForm.models")}>
         <ProviderModelList
           provider={props.provider}
+          endpointVariant={endpointVariant}
           customModels={customModels}
           customModelMetas={props.customModelMetas}
           fetchedModels={effectiveFetchedModels}
@@ -253,6 +300,21 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
       </div>
       {children}
     </label>
+  );
+}
+
+/** Like Field but uses a <div> instead of <label> — use when children contain
+ *  interactive controls (buttons) whose accessible names must not inherit the
+ *  surrounding label text (e.g. segmented button groups). */
+function FieldDiv({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-baseline justify-between">
+        <span className="text-[12px] font-medium text-fg-2">{label}</span>
+        {hint && <span className="font-mono text-[10px] text-fg-3">{hint}</span>}
+      </div>
+      {children}
+    </div>
   );
 }
 
