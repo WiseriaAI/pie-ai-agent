@@ -102,6 +102,9 @@ export default function ModelPicker(props: Props) {
       const meta = inst.provider.startsWith(CUSTOM_PREFIX)
         ? undefined
         : getProviderMeta(inst.provider as BuiltinProvider);
+      // 前提：唯一 lazy provider（openrouter）没有 endpointVariants，而所有带
+      // variant 的 provider 默认 models 非空，所以这里暂不感知 variant。若未来
+      // 某个 lazy provider 挂上带 models override 的 variant，需改为按 modelsFor 判断。
       const lazyEmpty = (meta?.models.length ?? 0) === 0 && (inst.fetchedModels?.length ?? 0) === 0;
       if (lazyEmpty) props.onRefreshModels?.(inst.id);
     }

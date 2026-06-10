@@ -76,7 +76,13 @@ function inst(over: Partial<DecryptedInstance>): DecryptedInstance {
 
 describe("modelsFor with endpoint variants", () => {
   it("variant with models replaces the registry list (custom pool still appended)", () => {
-    const rows = modelsFor(inst({ endpointVariant: "kimi-code", customModels: ["my-model"] }));
+    const rows = modelsFor(
+      inst({
+        endpointVariant: "kimi-code",
+        customModels: ["my-model"],
+        fetchedModels: [{ id: "should-not-appear", vision: false, tools: true, maxContextTokens: 1 }],
+      }),
+    );
     expect(rows.map((r) => r.id)).toEqual(["kimi-for-coding", "my-model"]);
   });
 
