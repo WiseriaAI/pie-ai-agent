@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, within } from "@testing-library/react";
 import { describe, it, expect, vi, afterEach } from "vitest";
 import InstanceForm from "./InstanceForm";
 
@@ -142,6 +142,19 @@ describe("endpoint variant switch", () => {
     expect(screen.getByRole("button", { name: "Coding Plan" })).toBeTruthy();
     rerender(<InstanceForm {...base} provider="anthropic" onSave={noop} />);
     expect(screen.queryByRole("button", { name: "Pay-as-you-go" })).toBeNull();
+  });
+
+  it("keeps Pay-as-you-go rightmost across providers (defaultEndpointLast vs payg-variant)", () => {
+    // zhipu: 默认即 PAYG，defaultEndpointLast → [Coding Plan, Pay-as-you-go]
+    const { rerender } = render(<InstanceForm {...base} provider="zhipu" onSave={noop} />);
+    let labels = within(screen.getByRole("group", { name: "ENDPOINT" }))
+      .getAllByRole("button").map((b) => b.textContent);
+    expect(labels).toEqual(["Coding Plan", "Pay-as-you-go"]);
+    // mimo: PAYG 本就是 variant（默认是 Token Plan）→ [Token Plan, Pay-as-you-go]
+    rerender(<InstanceForm {...base} provider="mimo" onSave={noop} />);
+    labels = within(screen.getByRole("group", { name: "ENDPOINT" }))
+      .getAllByRole("button").map((b) => b.textContent);
+    expect(labels).toEqual(["Token Plan", "Pay-as-you-go"]);
   });
 
   it("selecting a variant flows into the onSave payload; default = undefined", () => {

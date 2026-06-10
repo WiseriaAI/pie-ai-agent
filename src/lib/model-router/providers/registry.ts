@@ -63,6 +63,11 @@ export interface ProviderMeta {
   endpointVariants?: EndpointVariant[];
   /** 有 endpointVariants 时，默认端点在切换控件里的文案。 */
   defaultEndpointLabel?: string;
+  /** 切换控件里把默认端点渲染到最右而非最左。用于「默认端点即按量计费」的
+   *  provider（zhipu/moonshot/stepfun）：打开后 Plan 端点在左、Pay-as-you-go 在右，
+   *  与「默认即订阅、按量是 variant」的 mimo（PAYG 天然在右）跨 provider 对齐。
+   *  纯显示，不影响 default 端点「无 endpointVariant」的存储语义。 */
+  defaultEndpointLast?: boolean;
 }
 
 // Kimi (Moonshot) curated models — shared by both the international
@@ -192,6 +197,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
       { id: "glm-4v-flash", vision: true, tools: true, maxContextTokens: 16_000 },
     ],
     defaultEndpointLabel: "Pay-as-you-go",
+    defaultEndpointLast: true,
     // Coding Plan 专属 OpenAI-compat 端点（FAQ：走通用端点不扣套餐额度）。
     // Plan 限 GLM-5.1/5-Turbo/4.7/4.5-Air，但按量清单是超集 → 不 override，
     // 选错模型由运行期报错自纠，免维护两份清单。
@@ -261,6 +267,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     placeholder: "sk-...",
     models: MOONSHOT_MODELS,
     defaultEndpointLabel: "Pay-as-you-go",
+    defaultEndpointLast: true,
     endpointVariants: [KIMI_CODE_VARIANT],
   },
   {
@@ -271,6 +278,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     placeholder: "sk-...",
     models: MOONSHOT_MODELS,
     defaultEndpointLabel: "Pay-as-you-go",
+    defaultEndpointLast: true,
     endpointVariants: [KIMI_CODE_VARIANT],
   },
   {
@@ -289,6 +297,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     // 退回 anthropic-sdk-core 的 ANTHROPIC_WIRE_FALLBACK_MAX_TOKENS。
     models: [STEP_37_FLASH, STEP_35_FLASH],
     defaultEndpointLabel: "Pay-as-you-go",
+    defaultEndpointLast: true,
     endpointVariants: [
       {
         id: "step-plan",

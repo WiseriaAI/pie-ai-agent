@@ -145,8 +145,13 @@ export default function InstanceForm(props: Props) {
       {variants.length > 0 && (
         <FieldDiv label={t("instanceForm.endpoint")} hint={selectedVariant?.baseUrl ?? meta?.defaultBaseUrl}>
           <div role="group" aria-label={t("instanceForm.endpoint")} className="flex w-full overflow-hidden rounded-[10px] border border-line">
-            {[{ id: undefined as string | undefined, label: meta?.defaultEndpointLabel ?? t("instanceForm.endpointDefault") },
-              ...variants.map((v) => ({ id: v.id as string | undefined, label: v.label }))].map((opt, i) => {
+            {(() => {
+              const defaultOpt = { id: undefined as string | undefined, label: meta?.defaultEndpointLabel ?? t("instanceForm.endpointDefault") };
+              const variantOpts = variants.map((v) => ({ id: v.id as string | undefined, label: v.label }));
+              // defaultEndpointLast：默认端点即按量计费的 provider 把 default 排到最右，
+              // 让 Pay-as-you-go 跨 provider 对齐（mimo 的 PAYG 是 variant、本就在右）。
+              return meta?.defaultEndpointLast ? [...variantOpts, defaultOpt] : [defaultOpt, ...variantOpts];
+            })().map((opt, i) => {
               const active = endpointVariant === opt.id;
               return (
                 <button

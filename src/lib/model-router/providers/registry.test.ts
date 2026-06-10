@@ -387,4 +387,11 @@ describe("endpoint variants", () => {
       expect(new Set(ids).size, `${p.id} variant ids must be unique`).toBe(ids.length);
     }
   });
+
+  it("PAYG-default providers set defaultEndpointLast; mimo (PAYG-as-variant) does not", () => {
+    for (const id of ["zhipu", "moonshot", "moonshot-cn", "stepfun"] as const) {
+      expect(getProviderMeta(id)!.defaultEndpointLast, `${id} should render default endpoint last`).toBe(true);
+    }
+    expect(getProviderMeta("mimo")!.defaultEndpointLast).toBeUndefined();
+  });
 });
