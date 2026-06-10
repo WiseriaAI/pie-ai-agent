@@ -222,3 +222,44 @@ describe("actByIdxInjected op=focusClick", () => {
     expect(clicked).toBe(true);
   });
 });
+
+describe("actByIdxInjected op=click", () => {
+  it("dispatches the full event sequence ending with native click", async () => {
+    document.body.innerHTML = `<button data-pie-idx="3">Go</button>`;
+    const el = document.querySelector("button")!;
+    const seen: string[] = [];
+    for (const t of ["pointerdown", "mousedown", "pointerup", "mouseup", "click"]) {
+      el.addEventListener(t, () => seen.push(t));
+    }
+    const result = await actByIdxInjected({ op: "click", idx: 3 });
+    expect(result).toEqual({ ok: true, op: "click", observation: "Clicked element [3]" });
+    expect(seen).toEqual(["pointerdown", "mousedown", "pointerup", "mouseup", "click"]);
+  });
+
+  it("focuses a focusable element before clicking", async () => {
+    document.body.innerHTML = `<input data-pie-idx="5" type="checkbox" />`;
+    const el = document.querySelector("input")!;
+    await actByIdxInjected({ op: "click", idx: 5 });
+    expect(document.activeElement).toBe(el);
+    expect(el.checked).toBe(true); // native click() toggles the checkbox
+  });
+
+  it("locates elements inside open shadow roots", async () => {
+    document.body.innerHTML = `<div id="host"></div>`;
+    const host = document.getElementById("host")!;
+    const sr = host.attachShadow({ mode: "open" });
+    sr.innerHTML = `<button data-pie-idx="9">Inner</button>`;
+    let clicked = false;
+    sr.querySelector("button")!.addEventListener("click", () => { clicked = true; });
+    const result = await actByIdxInjected({ op: "click", idx: 9 });
+    expect(result.ok).toBe(true);
+    expect(clicked).toBe(true);
+  });
+
+  it("returns ok:false for a missing idx", async () => {
+    document.body.innerHTML = `<div></div>`;
+    const result = await actByIdxInjected({ op: "click", idx: 404 });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toContain("not found");
+  });
+});
