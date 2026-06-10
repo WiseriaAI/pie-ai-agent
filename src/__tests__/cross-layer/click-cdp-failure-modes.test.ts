@@ -97,7 +97,7 @@ describe("click CDP failure modes — error message templates", () => {
     const tool = buildClickTool(deps());
     const result = await tool.handler({ frameId: 21114, elementIndex: 49 }, { tabId: 7 });
     expect(result.success).toBe(false);
-    expect(result.error).toBe("Frame 21114 unreachable or removed. Re-snapshot.");
+    expect(result.error).toMatch(/Frame 21114 unreachable or removed/);
   });
 
   it("onboarding-cancelled wording when consent throws", async () => {

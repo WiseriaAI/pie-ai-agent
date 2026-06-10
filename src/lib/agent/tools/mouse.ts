@@ -86,6 +86,8 @@ export function buildHoverTool(deps: MouseToolDeps): Tool {
 USE WHEN:
 - An element reveals new content on mouseover — dropdown menus, tooltips, hover cards.
 
+**Top frame only** (frameId 0). Hover is not supported inside iframes — click directly, or re-run read_page to check whether the content is already visible.
+
 **DO NOT USE WHEN:**
 - You want to activate or open the element — use click.`,
     parameters: {
@@ -152,7 +154,8 @@ export function buildClickTool(deps: MouseToolDeps): Tool {
   return {
     name: "click",
     description:
-      `Click an interactive element by its data-pie-idx from the latest read_page <interactive_index>. Uses real mouse events (CDP). If the element is gone (page changed), returns 'Element not found' — call read_page({mode:"interactive"}) again for current indices.
+      `Click an interactive element by its data-pie-idx from the latest read_page <interactive_index>. If the element is gone (page changed), returns 'Element not found' — call read_page({mode:"interactive"}) again for current indices.
+Top-frame elements (frameId 0) get real mouse events (CDP). Elements inside iframes (frameId > 0) get synthetic in-frame events — works on virtually all sites, but controls demanding trusted input may ignore it.
 
 USE WHEN:
 - You need to activate a clickable element — button, link, checkbox, radio, menu item, tab.
