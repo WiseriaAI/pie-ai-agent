@@ -106,6 +106,27 @@ describe("Settings 4-tab IA", () => {
     });
   });
 
+  it("configs tab header shows Add config action instead of config count", async () => {
+    render(<Settings onBack={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /^\+ Add config$/i })).toBeTruthy();
+    });
+    expect(screen.queryByText(/^0 configs$/i)).toBeNull();
+  });
+
+  it("configs tab shows an empty-config banner before any config exists", async () => {
+    render(<Settings onBack={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          "Configure a model service to continue. Click Add config in the top-right and use your existing API Key to get Pie working.",
+        ),
+      ).toBeTruthy();
+    });
+  });
+
   it("clicking the 4th tab (General) reveals the CDP toggle", async () => {
     render(<Settings onBack={vi.fn()} />);
 
@@ -127,6 +148,17 @@ describe("Settings 4-tab IA", () => {
     await waitFor(() => {
       expect(screen.getByRole("switch")).toBeTruthy();
     });
+  });
+
+  it("general tab About section links to the official website", async () => {
+    render(<Settings onBack={vi.fn()} />);
+
+    await waitFor(() => expect(screen.queryByRole("switch")).toBeNull());
+    const tabButtons = within(screen.getByTestId("settings-tabs")).getAllByRole("button");
+    fireEvent.click(tabButtons[3]);
+
+    const link = await screen.findByRole("link", { name: /official website/i });
+    expect(link.getAttribute("href")).toBe("https://www.pie.chat/");
   });
 
   it("configs tab: after switching back from General, switch is gone again", async () => {

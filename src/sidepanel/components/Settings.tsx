@@ -1,6 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
-import type { ProviderRef, BuiltinProvider } from "@/lib/model-router";
-import { chat } from "@/lib/model-router";
+import { useState, useEffect, useCallback, useRef } from "react";
+import type { ProviderRef, BuiltinProvider, ModelMeta } from "@/lib/model-router";
 import {
   createInstance, listInstances, deleteInstance,
   updateInstance, firstModelForProvider,
@@ -22,16 +21,18 @@ import { fetchOpenRouterModels } from "@/lib/openrouter-models-fetch";
 import { isCdpInputEnabled, setCdpInputEnabled } from "@/lib/cdp-input-enabled";
 import {
   addCustomProviderModel, updateCustomProviderModel, removeCustomProviderModel,
-  CUSTOM_PREFIX, providerRefToId,
+  CUSTOM_PREFIX, providerRefToId, listCustomProviders,
 } from "@/lib/custom-providers";
 import SkillsList from "./SkillsList";
 import SearchProviderSection from "./SearchProviderSection";
 import InstanceForm, { type InstanceFormPayload } from "./InstanceForm";
 import InstancesList from "./InstancesList";
 import NewConfigWizard from "./NewConfigWizard";
+import type { ProviderTestOptions } from "./NewConfigWizard";
 import LanguageSelect from "./LanguageSelect";
 import { useT, getLocale } from "@/lib/i18n";
 import { buildGithubNewIssueUrl, buildFeedbackMailto, type FeedbackEnv } from "@/lib/feedback";
+import { testProviderConnection } from "@/lib/provider-test";
 
 interface Props {
   onBack: () => void;
@@ -48,10 +49,13 @@ export default function Settings({ onBack, onRunSkill }: Props) {
   const [showWizard, setShowWizard] = useState(false);
   const [cdpInput, setCdpInput] = useState<boolean | undefined>(undefined);
   const [testResult, setTestResult] = useState<Record<string, { ok: boolean; message: string }>>({});
+  const [testingIds, setTestingIds] = useState<Record<string, boolean>>({});
+  const testingIdsRef = useRef<Set<string>>(new Set());
   // Per-provider custom models pool — sticky across instances of the same provider.
   const [providerPools, setProviderPools] = useState<Record<string, string[]>>({});
   // Per-provider custom model meta (vision, maxContextTokens) keyed by provider then modelId.
   const [providerMetas, setProviderMetas] = useState<Record<string, Record<string, StoredCustomModelMeta>>>({});
+  const [customProviderNames, setCustomProviderNames] = useState<Record<string, string>>({});
 
   const reload = useCallback(async () => {
     const list = await listInstances();
@@ -66,6 +70,10 @@ export default function Settings({ onBack, onRunSkill }: Props) {
       builtinProviders.map((p) => getProviderCustomModelMetas(p as BuiltinProvider).then((v) => [p, v] as const)),
     );
     setProviderMetas(Object.fromEntries(metas));
+    const customProviders = await listCustomProviders();
+    setCustomProviderNames(
+      Object.fromEntries(customProviders.map((cp) => [`${CUSTOM_PREFIX}${cp.id}`, cp.name])),
+    );
   }, []);
 
   useEffect(() => {
@@ -80,8 +88,7 @@ export default function Settings({ onBack, onRunSkill }: Props) {
   }
 
   async function handleSaveEdit(id: string, payload: InstanceFormPayload) {
-    const patch: { nickname: string; apiKey?: string; endpointVariant: string | null } = {
-      nickname: payload.nickname,
+    const patch: { apiKey?: string; endpointVariant: string | null } = {
       // undefined = 用户选了默认端点 → null 显式清除存储字段
       endpointVariant: payload.endpointVariant ?? null,
     };
@@ -100,17 +107,38 @@ export default function Settings({ onBack, onRunSkill }: Props) {
     await reload();
   }
 
-  async function handleTest(id: string | null, provider: ProviderRef, payload: InstanceFormPayload) {
-    const meta = await resolveProviderMeta(provider);
+  async function handleTest(
+    id: string | null,
+    provider: ProviderRef,
+    payload: InstanceFormPayload,
+    options: ProviderTestOptions = {},
+  ) {
+    const key = id ?? "_new";
+    if (testingIdsRef.current.has(key)) return;
+    testingIdsRef.current.add(key);
+    setTestingIds((p) => ({ ...p, [key]: true }));
+    setTestResult((p) => {
+      const next = { ...p };
+      delete next[key];
+      return next;
+    });
+
+    const meta = await resolveProviderMeta(provider) ?? draftProviderMeta(provider, options);
     if (!meta) {
-      const key = id ?? "_new";
       setTestResult((p) => ({ ...p, [key]: { ok: false, message: `Unknown provider: ${provider}` } }));
+      testingIdsRef.current.delete(key);
+      setTestingIds((p) => ({ ...p, [key]: false }));
       return;
     }
     // 端点与模型池跟随表单里未保存的 variant 选择（而非存量 instance 字段）；
     // 兜底也传 variantOverride（null=强制默认池），避免读到存量 variant 的模型与 baseUrl 不同源
     const variant = resolveEndpointVariant(meta, payload.endpointVariant);
-    const model = variant?.models?.[0]?.id
+    const inst = id ? instances.find((i) => i.id === id) : undefined;
+    const model = payload.customModels[0]
+      ?? variant?.models?.[0]?.id
+      ?? meta.models[0]?.id
+      ?? options.candidateModels?.[0]?.id
+      ?? inst?.fetchedModels?.[0]?.id
       ?? (await firstModelForProvider(provider, id ?? undefined, payload.endpointVariant ?? null))
       ?? "";
     const cfg = {
@@ -119,18 +147,21 @@ export default function Settings({ onBack, onRunSkill }: Props) {
       // If apiKey is empty (edit mode, user didn't retype), fall back to instance's stored key
       apiKey: payload.apiKey.trim() || (() => {
         if (!id) return payload.apiKey;
-        const inst = instances.find((i) => i.id === id);
         return inst?.apiKey ?? payload.apiKey;
       })(),
-      baseUrl: variant?.baseUrl ?? meta.defaultBaseUrl,
-      maxTokens: 1,
+      baseUrl: ((options.baseUrl?.trim() || variant?.baseUrl) ?? meta.defaultBaseUrl).replace(/\/+$/, ""),
+      providerName: options.providerName ?? meta.name,
     };
-    const key = id ?? "_new";
     try {
-      await chat(cfg, [{ role: "user", content: "Hi" }]);
-      setTestResult((p) => ({ ...p, [key]: { ok: true, message: "Connection successful" } }));
+      if (!cfg.apiKey.trim()) throw new Error("API key cannot be empty");
+      if (!cfg.model.trim()) throw new Error("No model available for test");
+      await testProviderConnection(cfg);
+      setTestResult((p) => ({ ...p, [key]: { ok: true, message: "" } }));
     } catch (e) {
       setTestResult((p) => ({ ...p, [key]: { ok: false, message: e instanceof Error ? e.message : "Failed" } }));
+    } finally {
+      testingIdsRef.current.delete(key);
+      setTestingIds((p) => ({ ...p, [key]: false }));
     }
   }
 
@@ -157,15 +188,27 @@ export default function Settings({ onBack, onRunSkill }: Props) {
         {tab === "configs" ? (
           <div className="flex flex-col gap-7">
             <section className="flex flex-col gap-3.5">
-              <div className="flex items-baseline justify-between">
+              <div className="flex items-center justify-between gap-3">
                 <span className="text-[16px] font-semibold tracking-[-0.01em] text-fg-1">{t("settings.myConfigs.title")}</span>
-                <span className="font-mono text-[10px] text-fg-3">
-                  {instances.length} {t("settings.myConfigs.countSuffix")}
-                </span>
+                {!showWizard && (
+                  <button
+                    onClick={() => setShowWizard(true)}
+                    className="flex h-8 items-center gap-2 rounded-[10px] border border-line bg-transparent px-3 text-[12px] text-accent hover:bg-field"
+                  >
+                    {t("settings.myConfigs.newConfigButton")}
+                  </button>
+                )}
               </div>
+
+              {instances.length === 0 && !showWizard && (
+                <div className="rounded-[10px] border border-accent-line bg-accent-tint px-3 py-2 text-[12px] leading-5 text-fg-1">
+                  {t("settings.myConfigs.emptyBanner")}
+                </div>
+              )}
 
               <InstancesList
                 instances={instances}
+                customProviderNames={customProviderNames}
                 expandedId={expandedId}
                 onToggleExpand={(id) => setExpandedId(expandedId === id ? null : id)}
                 renderForm={(id) => {
@@ -200,6 +243,8 @@ export default function Settings({ onBack, onRunSkill }: Props) {
                         existingApiKey={inst.apiKey}
                         onSave={(p) => handleSaveEdit(id, p)}
                         onTest={(p) => handleTest(id, inst.provider, p)}
+                        testing={!!testingIds[id]}
+                        testStatus={result?.ok === true ? "success" : "idle"}
                         onDelete={() => handleDelete(id)}
                         onAddCustomModel={async (mid, meta) => {
                           if (isCustom && cpId) {
@@ -260,15 +305,11 @@ export default function Settings({ onBack, onRunSkill }: Props) {
                           }
                         }}
                       />
-                      {result && (
+                      {result?.ok === false && (
                         <div
-                          className={`mx-3.5 mb-3 rounded border px-2.5 py-1.5 text-[11px] ${
-                            result.ok
-                              ? "border-line bg-field text-fg-2"
-                              : "border-warning-line bg-warning-tint text-warning"
-                          }`}
+                          className="mx-3.5 mb-3 rounded border border-warning-line bg-warning-tint px-2.5 py-1.5 text-[11px] text-warning"
                         >
-                          {result.message}
+                          {t("customProvider.testFailed", { error: result.message })}
                         </div>
                       )}
                     </>
@@ -276,19 +317,15 @@ export default function Settings({ onBack, onRunSkill }: Props) {
                 }}
               />
 
-              {showWizard ? (
+              {showWizard && (
                 <NewConfigWizard
                   onCreate={handleCreate}
-                  onTest={(p, payload) => handleTest(null, p, payload)}
+                  onTest={(p, payload, options) => handleTest(null, p, payload, options)}
+                  existingProviderRefs={instances.map((i) => i.provider)}
+                  testing={!!testingIds["_new"]}
+                  testResult={testResult["_new"] ?? null}
                   onCancel={() => setShowWizard(false)}
                 />
-              ) : (
-                <button
-                  onClick={() => setShowWizard(true)}
-                  className="flex items-center gap-2 self-start rounded-[10px] border border-line bg-transparent px-3.5 py-2 text-[12px] text-accent hover:bg-field"
-                >
-                  {t("settings.myConfigs.newConfigButton")}
-                </button>
               )}
             </section>
 
@@ -315,6 +352,22 @@ export default function Settings({ onBack, onRunSkill }: Props) {
       </div>
     </div>
   );
+}
+
+function draftProviderMeta(
+  provider: ProviderRef,
+  options: ProviderTestOptions,
+): { id: ProviderRef; name: string; defaultBaseUrl: string; placeholder: string; models: ModelMeta[]; endpointVariants?: undefined } | null {
+  const baseUrl = options.baseUrl?.trim();
+  if (!provider.startsWith(CUSTOM_PREFIX) || !baseUrl || !/^https?:\/\//.test(baseUrl)) return null;
+  return {
+    id: provider,
+    name: options.providerName || provider,
+    defaultBaseUrl: baseUrl,
+    placeholder: "Custom",
+    models: options.candidateModels ?? [],
+    endpointVariants: undefined,
+  };
 }
 
 function SegmentedTabs({ value, onChange }: { value: Tab; onChange: (t: Tab) => void }) {
@@ -457,7 +510,10 @@ function AboutSection() {
           <span className="text-[11px] text-fg-3">{t("settings.about.tagline")}</span>
         </div>
         <div className="flex-1" />
-        <a href="https://github.com/WiseriaAI/pie-ai-agent/releases" target="_blank" rel="noopener noreferrer" className="text-[12px] text-fg-2 hover:text-fg-1">{t("settings.about.changelog")} ↗</a>
+        <div className="flex items-center gap-3">
+          <a href="https://www.pie.chat/" target="_blank" rel="noopener noreferrer" className="text-[12px] text-fg-2 hover:text-fg-1">{t("settings.about.website")} ↗</a>
+          <a href="https://github.com/WiseriaAI/pie-ai-agent/releases" target="_blank" rel="noopener noreferrer" className="text-[12px] text-fg-2 hover:text-fg-1">{t("settings.about.changelog")} ↗</a>
+        </div>
       </div>
     </section>
   );

@@ -30,6 +30,7 @@ import { runSessionMigrations } from "@/lib/sessions/migration";
 import { migrateLegacyKeyboardFlag } from "@/lib/cdp-input-enabled";
 import { migrateV2toV3 } from "@/lib/migration-v3";
 import { migrateEndpointDefaultToPayg } from "@/lib/migrate-endpoint-default-payg";
+import { migrateOneConfigPerProvider } from "@/lib/migrate-one-config-per-provider";
 
 let pipelinePromise: Promise<void> | null = null;
 
@@ -53,6 +54,7 @@ async function runPipeline(): Promise<void> {
   // store, so they must run only after the sweep has populated them.
   await migrateLegacyKeyboardFlag();
   await migrateEndpointDefaultToPayg();
+  await migrateOneConfigPerProvider();
 }
 
 /**

@@ -55,8 +55,9 @@ export const enDict = {
     },
     myConfigs: {
       title: "MY CONFIGS",
-      countSuffix: "configs",
-      newConfigButton: "+ New config",
+      newConfigButton: "+ Add config",
+      emptyBanner:
+        "Configure a model service to continue. Click Add config in the top-right and use your existing API Key to get Pie working.",
     },
     backToAgent: "Back to agent",
     title: "Settings",
@@ -64,6 +65,7 @@ export const enDict = {
     tabs: { configs: "Configs", skills: "Skills", search: "Search", general: "General" },
     about: {
       tagline: "BYOK · Local-first · Open source",
+      website: "Official website",
       changelog: "Changelog",
     },
     active: "ACTIVE",
@@ -232,12 +234,10 @@ export const enDict = {
     pickProviderHint: "Select a provider to begin",
   },
   instanceForm: {
-    nickname: "nickname",
     provider: "PROVIDER",
     locked: "LOCKED",
     apiKey: "API KEY",
     aesGcmLocal: "AES-GCM · LOCAL",
-    replaceKey: "Replace key",
     apiKeyLabel: "api key",
     hideKey: "Hide",
     showKey: "Show",
@@ -247,6 +247,7 @@ export const enDict = {
     endpoint: "ENDPOINT",
     endpointDefault: "Default",
     test: "Test",
+    testOk: "Test OK",
     save: "Save",
     forgetConfig: "Forget config",
   },
@@ -403,6 +404,7 @@ export const enDict = {
     baseUrlWarningHttp: "Unencrypted connection — API key sent in plain text",
     testing: "Testing...",
     testConnection: "Test connection",
+    testFailed: "Test failed. Error: {error}. Please check your network, API Key, and endpoint.",
     editModelCaps: "EDIT MODEL",
     addModelCaps: "ADD MODEL",
     modelId: "MODEL ID",

@@ -37,9 +37,91 @@ describe("NewConfigWizard (builtin path)", () => {
     fireEvent.click(screen.getByRole("button", { name: /^create$/i }));
     expect(onCreate).toHaveBeenCalledWith("anthropic", expect.objectContaining({ apiKey: "sk-ant-x" }));
   });
+
+  it("hides providers that already have a config", async () => {
+    render(
+      <NewConfigWizard
+        existingProviderRefs={["anthropic"]}
+        onCreate={vi.fn()}
+        onCancel={vi.fn()}
+        onTest={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /select provider/i }));
+    expect(screen.queryByText("Anthropic")).toBeNull();
+    expect(screen.getByText("OpenAI")).toBeTruthy();
+  });
 });
 
 describe("NewConfigWizard (custom path)", () => {
+  it("new custom: Test uses draft baseUrl and candidate model before saving", async () => {
+    const onTest = vi.fn();
+    render(<NewConfigWizard onCreate={vi.fn()} onCancel={vi.fn()} onTest={onTest} />);
+    fireEvent.click(screen.getByRole("button", { name: /select provider/i }));
+    fireEvent.click(screen.getByText(/new custom provider/i));
+    fireEvent.change(screen.getByPlaceholderText(/my custom provider/i), { target: { value: "Proxy" } });
+    fireEvent.change(screen.getByPlaceholderText(/api\.example\.com/i), { target: { value: "https://proxy/v1" } });
+    fireEvent.click(screen.getByText(/add custom model/i));
+    fireEvent.change(screen.getByPlaceholderText(/^model id$/i), { target: { value: "gpt-test" } });
+    fireEvent.click(screen.getByText("Save", { selector: "button" }));
+    const keyInput = (await screen.findAllByLabelText(/api key/i)).find(
+      (e) => e.tagName === "INPUT" && e.getAttribute("aria-label") === "api key",
+    )!;
+    fireEvent.change(keyInput, { target: { value: "sk-x" } });
+    fireEvent.click(screen.getByText("Test", { selector: "button" }));
+
+    expect(onTest).toHaveBeenCalledWith(
+      "custom:__draft__",
+      expect.objectContaining({ apiKey: "sk-x", customModels: ["gpt-test"] }),
+      expect.objectContaining({
+        baseUrl: "https://proxy/v1",
+        providerName: "Proxy",
+        candidateModels: [expect.objectContaining({ id: "gpt-test" })],
+      }),
+    );
+  });
+
+  it("shows success in the Test button and failure in the footer banner", async () => {
+    const { rerender } = render(
+      <NewConfigWizard
+        onCreate={vi.fn()}
+        onCancel={vi.fn()}
+        onTest={vi.fn()}
+        testing
+        testResult={null}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /select provider/i }));
+    fireEvent.click(screen.getByText("Anthropic"));
+    const keyInput = (await screen.findAllByLabelText(/api key/i)).find((e) => e.tagName === "INPUT")!;
+    fireEvent.change(keyInput, { target: { value: "sk-ant-x" } });
+    const testButton = screen.getByRole("button", { name: /testing/i }) as HTMLButtonElement;
+    expect(testButton.disabled).toBe(true);
+
+    rerender(
+      <NewConfigWizard
+        onCreate={vi.fn()}
+        onCancel={vi.fn()}
+        onTest={vi.fn()}
+        testing={false}
+        testResult={{ ok: true, message: "" }}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /test ok/i })).toBeTruthy();
+    expect(screen.queryByText(/test ok/i, { selector: "div" })).toBeNull();
+
+    rerender(
+      <NewConfigWizard
+        onCreate={vi.fn()}
+        onCancel={vi.fn()}
+        onTest={vi.fn()}
+        testing={false}
+        testResult={{ ok: false, message: "timeout" }}
+      />,
+    );
+    expect(screen.getByText("Test failed. Error: timeout. Please check your network, API Key, and endpoint.")).toBeTruthy();
+  });
+
   it("new custom: atomic saveCustomProvider then onCreate with custom ref", async () => {
     const saveSpy = vi.spyOn(cp, "saveCustomProvider").mockResolvedValue("newid");
     const onCreate = vi.fn();

@@ -36,7 +36,16 @@ import CustomProviderFields from "./CustomProviderFields";
 interface Props {
   onCreate: (provider: ProviderRef, payload: InstanceFormPayload) => void;
   onCancel: () => void;
-  onTest: (provider: ProviderRef, payload: InstanceFormPayload) => void;
+  onTest: (provider: ProviderRef, payload: InstanceFormPayload, options?: ProviderTestOptions) => void;
+  existingProviderRefs?: ProviderRef[];
+  testing?: boolean;
+  testResult?: { ok: boolean; message: string } | null;
+}
+
+export interface ProviderTestOptions {
+  baseUrl?: string;
+  providerName?: string;
+  candidateModels?: ModelMeta[];
 }
 
 /** Sentinel ref for a not-yet-saved custom provider being authored in the form. */
@@ -117,8 +126,16 @@ export default function NewConfigWizard(props: Props) {
     () =>
       [...PROVIDER_REGISTRY].sort((a, b) =>
         providerDisplayName(a, t).localeCompare(providerDisplayName(b, t)),
+      ).filter((p) => !(props.existingProviderRefs ?? []).includes(p.id)),
+    [props.existingProviderRefs, t],
+  );
+
+  const selectableCustomProviders = useMemo(
+    () =>
+      customProviders.filter(
+        (cp) => !(props.existingProviderRefs ?? []).includes(`${CUSTOM_PREFIX}${cp.id}`),
       ),
-    [t],
+    [customProviders, props.existingProviderRefs],
   );
 
   // Selecting a builtin (or existing custom) provider via the dropdown.
@@ -226,7 +243,7 @@ export default function NewConfigWizard(props: Props) {
       <ProviderDropdown
         value={provider}
         builtinProviders={sortedProviders}
-        customProviders={customProviders}
+        customProviders={selectableCustomProviders}
         onSelect={handleSelect}
         onCreateCustom={() => {
           setCustomMode("new");
@@ -266,6 +283,7 @@ export default function NewConfigWizard(props: Props) {
           onTest={handleCustomTest}
           testing={testing}
           testError={testError}
+          showTestButton={false}
         />
       )}
       {customMode === "edit" && (
@@ -277,6 +295,7 @@ export default function NewConfigWizard(props: Props) {
           onTest={handleCustomTest}
           testing={testing}
           testError={testError}
+          showTestButton={false}
           dependentCount={dependentCount}
           onDelete={() => {
             const id = providerRefToId(provider!);
@@ -308,8 +327,29 @@ export default function NewConfigWizard(props: Props) {
           fetchedAt={fetchedAt}
           isFetching={isFetching}
           saveLabel={t("newConfigWizard.create")}
+          testing={props.testing}
+          testStatus={props.testResult?.ok === true ? "success" : "idle"}
           onSave={handleSubmit}
-          onTest={(p) => props.onTest(provider, p)}
+          onTest={(p) => {
+            const editingCustom = customMode === "new" || customMode === "edit";
+            const candidateModels = isDraft
+              ? draftModels.map((id) => ({
+                  id,
+                  displayName: draftMetas[id]?.displayName,
+                  vision: draftMetas[id]?.vision ?? false,
+                  tools: true,
+                  maxContextTokens: draftMetas[id]?.maxContextTokens ?? DEFAULT_CUSTOM_MODEL_MAX_CONTEXT,
+                }))
+              : customMode === "edit"
+                ? (customFetched.length > 0
+                    ? customFetched
+                    : customProviders.find((c) => `${CUSTOM_PREFIX}${c.id}` === provider)?.models ?? [])
+                : (fetchedModels ?? []);
+            props.onTest(provider, p, {
+              ...(editingCustom && { baseUrl: draftBaseUrl.trim(), providerName: draftName.trim() || undefined }),
+              ...(candidateModels.length > 0 && { candidateModels }),
+            });
+          }}
           onAddCustomModel={async (id, meta) => {
             if (isDraft) {
               // Draft provider doesn't exist yet — accumulate locally; the
@@ -382,7 +422,7 @@ export default function NewConfigWizard(props: Props) {
               setIsFetching(false);
             }
           }}
-          renderActions={({ canSave, triggerSave, triggerTest, saveLabel }) => {
+          renderActions={({ canSave, testing, testStatus, triggerSave, triggerTest, saveLabel }) => {
             // In "new" custom mode, also require valid draft name + baseUrl
             // before the create button is enabled (InstanceForm only gates
             // on key+model).
@@ -392,27 +432,39 @@ export default function NewConfigWizard(props: Props) {
                 (!!draftName.trim() && /^https?:\/\//.test(draftBaseUrl)));
             return (
               <div className="flex flex-wrap items-center gap-1.5 border-t border-line px-3.5 py-3">
+                {props.testResult?.ok === false && (
+                  <div
+                    className="min-w-full rounded border border-warning-line bg-warning-tint px-2.5 py-1.5 text-[11px] text-warning"
+                  >
+                    {t("customProvider.testFailed", { error: props.testResult.message })}
+                  </div>
+                )}
                 <div className="flex-1" />
                 <button
                   type="button"
                   onClick={props.onCancel}
-                  className="rounded-[10px] border border-line bg-transparent px-3 py-2 text-[12px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
+                  className="h-8 rounded-[10px] border border-line bg-transparent px-3 text-[12px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
                 >
                   {t("common.cancel")}
                 </button>
                 <button
                   type="button"
                   onClick={triggerTest}
-                  disabled={!effectiveCanSave}
-                  className="rounded-[10px] border border-line bg-transparent px-3 py-2 text-[12px] text-fg-2 hover:border-fg-3 disabled:opacity-30"
+                  disabled={!effectiveCanSave || testing}
+                  className="flex h-8 items-center gap-1.5 rounded-[10px] border border-line bg-transparent px-3 text-[12px] text-fg-2 hover:border-fg-3 disabled:opacity-30"
                 >
-                  {t("common.test")}
+                  {testing && <Spinner />}
+                  {testing
+                    ? t("customProvider.testing")
+                    : testStatus === "success"
+                      ? t("instanceForm.testOk")
+                      : t("common.test")}
                 </button>
                 <button
                   type="button"
                   onClick={triggerSave}
                   disabled={!effectiveCanSave}
-                  className="rounded-[10px] bg-fg-1 px-4 py-2 text-[12px] font-medium text-canvas disabled:opacity-30"
+                  className="h-8 rounded-[10px] bg-fg-1 px-4 text-[12px] font-medium text-canvas disabled:opacity-30"
                 >
                   {saveLabel}
                 </button>
@@ -437,5 +489,14 @@ export default function NewConfigWizard(props: Props) {
         </div>
       )}
     </div>
+  );
+}
+
+function Spinner() {
+  return (
+    <svg className="h-3 w-3 animate-spin" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="2" opacity="0.3" />
+      <path d="M14 8A6 6 0 1 1 2 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
   );
 }

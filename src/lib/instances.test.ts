@@ -100,6 +100,13 @@ describe("instances CRUD", () => {
     const inst = await getInstance(id);
     expect(inst!.customModels).toBeUndefined();
   });
+
+  it("createInstance rejects a second config for the same provider", async () => {
+    await createInstance({ provider: "anthropic", nickname: "A", apiKey: "sk-ant-a" });
+    await expect(
+      createInstance({ provider: "anthropic", nickname: "A2", apiKey: "sk-ant-b" }),
+    ).rejects.toThrow(/already has a config/i);
+  });
 });
 
 describe("firstModelForProvider", () => {
@@ -295,11 +302,11 @@ describe("endpoint variants", () => {
     const id = await createInstance({ provider: "moonshot", nickname: "K", apiKey: "k", endpointVariant: "payg" });
     expect(await firstModelForProvider("moonshot", id)).toBe("kimi-k2.6");
     // 无 variant 的 instance 取默认（Plan）registry[0] = kimi-for-coding
-    const id2 = await createInstance({ provider: "moonshot", nickname: "K2", apiKey: "k" });
-    expect(await firstModelForProvider("moonshot", id2)).toBe("kimi-for-coding");
+    await updateInstance(id, { endpointVariant: null });
+    expect(await firstModelForProvider("moonshot", id)).toBe("kimi-for-coding");
     // customModels 仍最优先
-    const id3 = await createInstance({ provider: "moonshot", nickname: "K3", apiKey: "k", endpointVariant: "payg", customModels: ["my-model"] });
-    expect(await firstModelForProvider("moonshot", id3)).toBe("my-model");
+    await updateInstance(id, { endpointVariant: "payg", customModels: ["my-model"] });
+    expect(await firstModelForProvider("moonshot", id)).toBe("my-model");
   });
 
   it("firstModelForProvider: variantOverride null forces the default (Plan) pool over the stored variant", async () => {
