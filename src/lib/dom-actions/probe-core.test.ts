@@ -1077,6 +1077,26 @@ describe("probePageInjected op=atlas", () => {
       expect(t!.label).toBe("Table 1");
     });
 
+    it("前置兄弟自身是容器/控件时不当标题（工具条形状）", () => {
+      document.body.innerHTML = `
+        <div>
+          <button>Export CSV</button>
+          <div><table>${tableHtml}</table></div>
+        </div>`;
+      const t = atlasTargets().find((x) => x.type === "table");
+      expect(t!.label).toBe("Table 1");
+    });
+
+    it("无兄弟标题但祖先 section 有 heading 时走 nearestSection", () => {
+      document.body.innerHTML = `
+        <section>
+          <div><div><table>${tableHtml}</table></div></div>
+          <h2>Sales Overview</h2>
+        </section>`;
+      const t = atlasTargets().find((x) => x.type === "table");
+      expect(t!.label).toBe("Sales Overview");
+    });
+
     it("collection 容器同样取前置兄弟标题", () => {
       document.body.innerHTML = `
         <div>

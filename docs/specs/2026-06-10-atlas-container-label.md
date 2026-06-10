@@ -43,7 +43,7 @@
 1. **显式 ARIA/title**：`aria-label` → `aria-labelledby`（textById 解析）→ `title` 属性。
 2. **`<caption>`**：table 专属，取 caption 可见文本。
 3. **祖先 tabpanel**：向上找最近的 `[role="tabpanel"]` 祖先，解析其 `aria-labelledby` / `aria-label`（真 tab 页面的标准关联）。
-4. **前置兄弟标题启发式**（新增，本案例的关键）：从 `el` 起向上走 ≤3 层祖先；每层沿 `previousElementSibling` 链找第一个**短文本元素**——可见、文本 ≤60 字符且非空、自身不含 table/list 等容器。命中取其文本。层内就近优先，层间由内向外。
+4. **前置兄弟标题启发式**（新增，本案例的关键）：从 `el` 起向上走 ≤3 层祖先；每层沿前置兄弟链最多回看 8 个，候选须自身不是也不含 table/列表/表单控件，文本 ≤60 字符且非空、可见。命中取其文本。层内就近优先，层间由内向外。
 5. **`nearestSection`**：保留现有逻辑（祖先内 heading）。
 6. **fallback**：调用方传入的 `Table N` / collection fallback。
 

@@ -751,14 +751,17 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
       return safeText(visibleText(el)) !== "";
     }
 
+    function labelledByText(el: Element): string {
+      const labelled = el.getAttribute("aria-labelledby");
+      if (!labelled) return "";
+      return normalizeSpace(labelled.split(/\s+/).map(textById).filter(Boolean).join(" "));
+    }
+
     function explicitName(el: Element): string {
       const aria = normalizeSpace(el.getAttribute("aria-label") ?? "");
       if (aria) return aria;
-      const labelled = el.getAttribute("aria-labelledby");
-      if (labelled) {
-        const text = normalizeSpace(labelled.split(/\s+/).map(textById).filter(Boolean).join(" "));
-        if (text) return text;
-      }
+      const labelled = labelledByText(el);
+      if (labelled) return labelled;
       return normalizeSpace(el.getAttribute("title") ?? "");
     }
 
@@ -770,19 +773,21 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
     function ancestorTabpanelLabel(el: Element): string {
       const panel = el.closest('[role="tabpanel"]');
       if (!panel) return "";
-      const labelled = panel.getAttribute("aria-labelledby");
-      if (labelled) {
-        const text = normalizeSpace(labelled.split(/\s+/).map(textById).filter(Boolean).join(" "));
-        if (text) return text;
-      }
-      return normalizeSpace(panel.getAttribute("aria-label") ?? "");
+      const aria = normalizeSpace(panel.getAttribute("aria-label") ?? "");
+      if (aria) return aria;
+      return labelledByText(panel);
     }
 
     // 前置兄弟标题启发式：容器(表格/列表)的标题常是紧邻其前的短文本元素
     // (Magento 仪表盘形状：<div><div>Top Search Terms</div><div><table/></div></div>)。
     function shortTitleText(el: Element): string {
-      if (el.querySelector("table, ul, ol, form, input, select, textarea, button")) return "";
+      // 候选自身是容器/控件（如工具条 <button>、相邻 <ul>/<table>）或包含它们时，
+      // 其文本是内容/操作而非标题，一律不取。
+      const containerish = "table, ul, ol, form, input, select, textarea, button";
+      if (el.matches(containerish) || el.querySelector(containerish)) return "";
       if (!isAtlasVisible(el)) return "";
+      // 有意用 textContent 而非 visibleText：与 accessibleName/nearestSection 同模式；
+      // 隐藏后代文本可能令真标题超 60 字被拒，接受此噪声换取模式一致与低成本。
       const text = normalizeSpace(el.textContent ?? "");
       return text && text.length <= 60 ? text : "";
     }
@@ -790,7 +795,9 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
     function precedingSiblingTitle(el: Element): string {
       let node: Element | null = el;
       for (let depth = 0; node && node !== document.body && depth < 3; depth++) {
-        for (let sib = node.previousElementSibling; sib; sib = sib.previousElementSibling) {
+        // 每层最多回看 8 个兄弟：更远的短文本（导航/badge）不是这张表的标题，
+        // 也避免 body 级数百兄弟时每个都付一次全子树扫描。
+        for (let sib = node.previousElementSibling, seen = 0; sib && seen < 8; sib = sib.previousElementSibling, seen++) {
           const text = shortTitleText(sib);
           if (text) return text;
         }
