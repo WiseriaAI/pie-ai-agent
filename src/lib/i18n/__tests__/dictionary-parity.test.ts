@@ -14,6 +14,17 @@ function collectKeys(node: unknown, prefix = ""): string[] {
 }
 
 describe("dictionary parity", () => {
+  it("localizes the general feedback invitation without task-report instructions", () => {
+    expect(zhCNDict.settings.feedback.githubHint).toBe(
+      "我们非常重视您的意见和建议，欢迎随时向我们反馈"
+    );
+    expect(enDict.settings.feedback.githubHint).toBe(
+      "We greatly value your feedback and suggestions, and welcome you to share them with us anytime."
+    );
+    expect(zhCNDict.settings.feedback.githubHint).not.toContain("/report-issue");
+    expect(enDict.settings.feedback.githubHint).not.toContain("/report-issue");
+  });
+
   it("en and zh-CN have identical key sets", () => {
     const enKeys = collectKeys(enDict);
     const zhKeys = collectKeys(zhCNDict);
