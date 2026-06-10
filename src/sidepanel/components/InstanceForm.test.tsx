@@ -20,6 +20,20 @@ describe("InstanceForm", () => {
     expect(screen.queryByText(/base url/i)).toBeFalsy();
   });
 
+  it("does NOT render a Nickname field", () => {
+    render(
+      <InstanceForm
+        mode="create"
+        provider="anthropic"
+        initialNickname="Anthropic"
+        onSave={() => {}}
+        onTest={() => {}}
+      />,
+    );
+    expect(screen.queryByLabelText("nickname")).toBeNull();
+    expect(screen.queryByText(/^nickname$/i)).toBeNull();
+  });
+
   it("provider field is read-only in edit mode", () => {
     render(
       <InstanceForm
@@ -35,6 +49,20 @@ describe("InstanceForm", () => {
     expect(providers.length).toBeGreaterThan(0);
     // No combobox / button for provider
     expect(screen.queryByRole("combobox", { name: /provider/i })).toBeFalsy();
+  });
+
+  it("does not show the provider base URL next to the provider title", () => {
+    render(
+      <InstanceForm
+        mode="create"
+        provider="anthropic"
+        initialNickname="Anthropic"
+        onSave={() => {}}
+        onTest={() => {}}
+      />,
+    );
+    expect(screen.getByText(/^PROVIDER$/)).toBeTruthy();
+    expect(screen.queryByText("https://api.anthropic.com")).toBeNull();
   });
 
   it("fires onSave with form payload", () => {
@@ -78,7 +106,7 @@ describe("InstanceForm", () => {
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ apiKey: "" }));
   });
 
-  it("edit mode Replace key reveals input", () => {
+  it("edit mode clicking the partial key reveal enters replace mode", () => {
     render(
       <InstanceForm
         mode="edit"
@@ -89,9 +117,8 @@ describe("InstanceForm", () => {
         onTest={() => {}}
       />,
     );
-    // The button is inside a <label> so use getByText to locate it
-    fireEvent.click(screen.getByText("Replace key"));
-    // Now an input should appear with aria-label="api key"
+    expect(screen.queryByText("Replace key")).toBeNull();
+    fireEvent.click(screen.getByText(/sk-ant-/i));
     const input = screen.getAllByLabelText(/api key/i).find(
       (el) => el.tagName === "INPUT",
     );
@@ -125,6 +152,70 @@ describe("InstanceForm", () => {
       />,
     );
     expect(screen.getByText(/LOCKED/)).toBeTruthy();
+  });
+
+  it("disables Test and shows progress while testing", () => {
+    render(
+      <InstanceForm
+        mode="create"
+        provider="anthropic"
+        initialNickname="Anthropic"
+        testing
+        onSave={() => {}}
+        onTest={() => {}}
+      />,
+    );
+    const testButton = screen.getByRole("button", { name: /testing/i }) as HTMLButtonElement;
+    expect(testButton.disabled).toBe(true);
+    expect(testButton.querySelector(".animate-spin")).toBeTruthy();
+  });
+
+  it("shows Test OK in the Test button after a successful test", () => {
+    render(
+      <InstanceForm
+        mode="create"
+        provider="anthropic"
+        initialNickname="Anthropic"
+        testStatus="success"
+        onSave={() => {}}
+        onTest={() => {}}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /test ok/i })).toBeTruthy();
+  });
+
+  it("orders edit actions as delete left and test/save right with equal button height", () => {
+    render(
+      <InstanceForm
+        mode="edit"
+        provider="anthropic"
+        initialNickname="Anthropic"
+        existingApiKey="sk-ant-1234567890abcdefXYZ"
+        onSave={() => {}}
+        onTest={() => {}}
+        onDelete={() => {}}
+      />,
+    );
+    const deleteButton = screen.getByRole("button", { name: /forget config/i });
+    const row = deleteButton.parentElement!;
+    const labels = within(row).getAllByRole("button").map((b) => b.textContent);
+    expect(labels).toEqual(["Forget config", "Test", "Save"]);
+    expect(screen.getByRole("button", { name: /^test$/i }).className).toContain("h-8");
+    expect(screen.getByRole("button", { name: /^save$/i }).className).toContain("h-8");
+  });
+
+  it("does not open the add-model modal when clicking the MODELS section label", () => {
+    render(
+      <InstanceForm
+        mode="create"
+        provider="anthropic"
+        initialNickname="Anthropic"
+        onSave={() => {}}
+        onTest={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByText("MODELS"));
+    expect(screen.queryByPlaceholderText("model id")).toBeNull();
   });
 });
 

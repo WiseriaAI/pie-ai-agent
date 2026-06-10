@@ -19,6 +19,8 @@ export interface InstanceFormPayload {
  *  (e.g. NewConfigWizard merges Test/Create with ← provider/取消 in one row). */
 export interface InstanceFormActionsApi {
   canSave: boolean;
+  testing: boolean;
+  testStatus: "idle" | "success";
   replacing: boolean;
   triggerSave: () => void;
   triggerTest: () => void;
@@ -47,6 +49,8 @@ interface Props {
   /** Receives the form's effective apiKey (just-typed or existing) so the
    *  parent can fetch /v1/models without forcing the user to save first. */
   onRefreshModels?: (apiKey: string) => void | Promise<void>;
+  testing?: boolean;
+  testStatus?: "idle" | "success";
   saveLabel?: string;
   /** Optional render-prop replacing the default Test/Save/Forget action row.
    *  When provided, InstanceForm renders ONLY the form fields; the parent
@@ -69,7 +73,6 @@ export default function InstanceForm(props: Props) {
     if (isCustomProvider && meta?.models) return meta.models;
     return props.fetchedModels;
   }, [isCustomProvider, meta?.models, props.fetchedModels]);
-  const [nickname, setNickname] = useState(props.initialNickname);
   const [apiKey, setApiKey] = useState("");
   const [showKey, setShowKey] = useState(false);
   // Locally-tracked custom models. Initialised from initialCustomModels but
@@ -114,23 +117,16 @@ export default function InstanceForm(props: Props) {
 
   const requireApiKey = props.mode === "create" || replacing;
   const canSave = !requireApiKey || apiKey.trim().length > 0;
+  const testing = props.testing === true;
+  const testStatus = props.testStatus ?? "idle";
 
-  const payload: InstanceFormPayload = { nickname, apiKey, customModels, endpointVariant };
+  const payload: InstanceFormPayload = { nickname: props.initialNickname, apiKey, customModels, endpointVariant };
 
   return (
     <div className="flex flex-col">
       <div className="flex flex-col gap-3 px-3.5 py-3.5">
-      <Field label={t("instanceForm.nickname")}>
-        <input
-          aria-label="nickname"
-          value={nickname}
-          onChange={(e) => setNickname(e.target.value)}
-          className="rounded-[10px] bg-field border border-line focus:border-accent-line px-3 py-2.5 text-[13px] text-fg-1"
-        />
-      </Field>
-
       {!props.hideProviderField && (
-        <Field label={t("instanceForm.provider")} hint={metaLoading && isCustomProvider ? undefined : meta?.defaultBaseUrl}>
+        <Field label={t("instanceForm.provider")}>
           {metaLoading && isCustomProvider ? (
             <div className="h-[38px] animate-pulse rounded border border-line bg-field" />
           ) : (
@@ -177,18 +173,13 @@ export default function InstanceForm(props: Props) {
       <Field label={t("instanceForm.apiKey")} hint={t("instanceForm.aesGcmLocal")}>
         {!replacing && props.existingApiKey ? (
           <div className="flex flex-col gap-1.5">
-            <div className="flex gap-1.5">
-              <div className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap rounded-[10px] bg-field border border-line px-3 py-2.5 font-mono text-[13px] text-fg-1 select-all">
-                {partialReveal(props.existingApiKey)}
-              </div>
-              <button
-                type="button"
-                onClick={() => setReplacing(true)}
-                className="shrink-0 rounded-[10px] border border-line bg-transparent px-2.5 py-2 text-[12px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
-              >
-                {t("instanceForm.replaceKey")}
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => setReplacing(true)}
+              className="min-w-0 overflow-x-auto whitespace-nowrap rounded-[10px] border border-line bg-field px-3 py-2.5 text-left font-mono text-[13px] text-fg-1 hover:border-fg-3 focus:border-accent-line"
+            >
+              {partialReveal(props.existingApiKey)}
+            </button>
           </div>
         ) : (
           <div className="flex flex-col gap-1.5">
@@ -222,7 +213,7 @@ export default function InstanceForm(props: Props) {
         )}
       </Field>
 
-      <Field label={t("instanceForm.models")}>
+      <FieldDiv label={t("instanceForm.models")}>
         <ProviderModelList
           provider={props.provider}
           endpointVariant={endpointVariant}
@@ -250,44 +241,71 @@ export default function InstanceForm(props: Props) {
             props.onRefreshModels?.(effective);
           }}
         />
-      </Field>
+      </FieldDiv>
 
       {!props.renderActions && (
-        <div className="flex flex-wrap gap-1.5 pt-1">
-          <button
-            onClick={() => props.onTest(payload)}
-            disabled={!canSave}
-            className="rounded-[10px] border border-line bg-transparent px-3 py-2 text-[12px] text-fg-2 hover:border-fg-3 hover:text-fg-1 disabled:opacity-30"
-          >
-            {t("instanceForm.test")}
-          </button>
-          <button
-            onClick={() => props.onSave(payload)}
-            disabled={!canSave}
-            className="rounded-[10px] bg-fg-1 px-4 py-2 text-[12px] font-medium text-canvas disabled:opacity-30"
-          >
-            {props.saveLabel ?? t("instanceForm.save")}
-          </button>
+        <div className="flex flex-wrap items-center gap-1.5 pt-1">
           {props.mode === "edit" && props.onDelete && (
             <button
               onClick={() => props.onDelete!()}
-              className="ml-auto rounded-[10px] bg-transparent px-3 py-2 text-[12px] text-warning hover:bg-warning-tint"
+              className="h-8 rounded-[10px] bg-transparent px-3 text-[12px] text-warning hover:bg-warning-tint"
             >
               {t("instanceForm.forgetConfig")}
             </button>
           )}
+          <div className="flex-1" />
+          <button
+            onClick={() => {
+              if (!testing) props.onTest(payload);
+            }}
+            disabled={!canSave || testing}
+            className="flex h-8 items-center gap-1.5 rounded-[10px] border border-line bg-transparent px-3 text-[12px] text-fg-2 hover:border-fg-3 hover:text-fg-1 disabled:opacity-30"
+          >
+            {testing && <Spinner />}
+            {testButtonLabel(t, testing, testStatus)}
+          </button>
+          <button
+            onClick={() => props.onSave(payload)}
+            disabled={!canSave}
+            className="h-8 rounded-[10px] bg-fg-1 px-4 text-[12px] font-medium text-canvas disabled:opacity-30"
+          >
+            {props.saveLabel ?? t("instanceForm.save")}
+          </button>
         </div>
       )}
       </div>
       {props.renderActions && props.renderActions({
         canSave,
         replacing,
+        testing,
+        testStatus,
         saveLabel: props.saveLabel ?? t("instanceForm.save"),
         triggerSave: () => props.onSave(payload),
-        triggerTest: () => props.onTest(payload),
+        triggerTest: () => {
+          if (!testing) props.onTest(payload);
+        },
         triggerDelete: props.onDelete,
       })}
     </div>
+  );
+}
+
+function testButtonLabel(
+  t: ReturnType<typeof useT>,
+  testing: boolean,
+  status: "idle" | "success",
+): string {
+  if (testing) return t("customProvider.testing");
+  if (status === "success") return t("instanceForm.testOk");
+  return t("instanceForm.test");
+}
+
+function Spinner() {
+  return (
+    <svg className="h-3 w-3 animate-spin" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="2" opacity="0.3" />
+      <path d="M14 8A6 6 0 1 1 2 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
   );
 }
 

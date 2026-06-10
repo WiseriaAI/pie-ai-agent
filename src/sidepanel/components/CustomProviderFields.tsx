@@ -8,6 +8,7 @@ interface Props {
   onTest: () => void;
   testing?: boolean;
   testError?: string | null;
+  showTestButton?: boolean;
   /** When editing an existing provider, show "shared by N config(s)" notice (N>0). */
   dependentCount?: number;
   /** When editing an existing provider, render a "Delete this provider" button; omit for create. */
@@ -97,35 +98,37 @@ export default function CustomProviderFields(props: Props) {
         </div>
       </Field>
 
-      <div className="flex flex-col gap-1.5">
-        <button
-          onClick={props.onTest}
-          disabled={testDisabled}
-          className="flex items-center gap-1.5 self-start rounded border border-line bg-transparent px-3 py-1.5 text-[11px] text-fg-2 hover:border-fg-3 disabled:opacity-30"
-        >
-          {props.testing && (
-            <svg className="h-3 w-3 animate-spin" viewBox="0 0 16 16" fill="none">
-              <circle
-                cx="8"
-                cy="8"
-                r="6"
-                stroke="currentColor"
-                strokeWidth="2"
-                opacity="0.3"
-              />
-              <path
-                d="M14 8A6 6 0 1 1 2 8"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-              />
-            </svg>
-          )}
-          {props.testing
-            ? t("customProvider.testing")
-            : t("customProvider.testConnection")}
-        </button>
-      </div>
+      {props.showTestButton !== false && (
+        <div className="flex flex-col gap-1.5">
+          <button
+            onClick={props.onTest}
+            disabled={testDisabled}
+            className="flex items-center gap-1.5 self-start rounded border border-line bg-transparent px-3 py-1.5 text-[11px] text-fg-2 hover:border-fg-3 disabled:opacity-30"
+          >
+            {props.testing && (
+              <svg className="h-3 w-3 animate-spin" viewBox="0 0 16 16" fill="none">
+                <circle
+                  cx="8"
+                  cy="8"
+                  r="6"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  opacity="0.3"
+                />
+                <path
+                  d="M14 8A6 6 0 1 1 2 8"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                />
+              </svg>
+            )}
+            {props.testing
+              ? t("customProvider.testing")
+              : t("customProvider.testConnection")}
+          </button>
+        </div>
+      )}
 
       {props.testError && (
         <div className="font-mono text-[11px] text-warning">

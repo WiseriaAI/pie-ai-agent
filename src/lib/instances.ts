@@ -36,6 +36,10 @@ async function readIndex(): Promise<string[]> {
   return ((await getConfig<string[]>(INDEX_KEY)) ?? []).slice();
 }
 
+async function readStoredInstance(id: string): Promise<StoredInstance | undefined> {
+  return tx<StoredInstance | undefined>(STORES.instances, "readonly", (s) => s.get(id));
+}
+
 export async function createInstance(input: {
   provider: ProviderRef;
   nickname: string;
@@ -46,6 +50,13 @@ export async function createInstance(input: {
   endpointVariant?: string;
 }): Promise<string> {
   if (!input.apiKey.trim()) throw new Error("API key cannot be empty");
+  const idx = await readIndex();
+  for (const existingId of idx) {
+    const existing = await readStoredInstance(existingId);
+    if (existing?.provider === input.provider) {
+      throw new Error(`Provider ${input.provider} already has a config`);
+    }
+  }
   const id = crypto.randomUUID();
   const key = await getOrCreateEncryptionKey();
   const stored: StoredInstance = {
@@ -57,7 +68,6 @@ export async function createInstance(input: {
     ...(input.endpointVariant && { endpointVariant: input.endpointVariant }),
     createdAt: Date.now(),
   };
-  const idx = await readIndex();
   idx.push(id);
   // Write the instance record and the index in a single multi-store transaction
   // so they commit all-or-nothing (D9 atomicity) — a crash / SW termination
@@ -76,7 +86,7 @@ export async function createInstance(input: {
 }
 
 export async function getInstance(id: string): Promise<DecryptedInstance | null> {
-  const stored = await tx<StoredInstance | undefined>(STORES.instances, "readonly", (s) => s.get(id));
+  const stored = await readStoredInstance(id);
   if (!stored) return null;
   const key = await getOrCreateEncryptionKey();
   const apiKey = await decrypt(stored.encryptedKey, key);

@@ -1,5 +1,11 @@
 import { runAgentLoop } from "@/lib/agent/loop";
-import { createInstance, setActiveInstance, resolveActiveInstanceModelConfig } from "@/lib/instances";
+import {
+  createInstance,
+  listInstances,
+  setActiveInstance,
+  resolveActiveInstanceModelConfig,
+  updateInstance,
+} from "@/lib/instances";
 import { setCdpInputEnabled } from "@/lib/cdp-input-enabled";
 import { clearAllStores } from "@/lib/idb/db";
 import { setSessionMeta, setSessionAgent } from "@/lib/sessions/storage";
@@ -52,7 +58,13 @@ function makeBridge() {
       // Model decoupled from instance: stash the eval's target model in
       // customModels[0] so firstModelForProvider (used by
       // resolveActiveInstanceModelConfig) resolves to exactly cfg.model.
-      const id = await createInstance({ provider: cfg.provider as any, nickname: "eval", apiKey: cfg.apiKey, customModels: [cfg.model] });
+      const existing = (await listInstances()).find((inst) => inst.provider === cfg.provider);
+      const id = existing
+        ? existing.id
+        : await createInstance({ provider: cfg.provider as any, nickname: "eval", apiKey: cfg.apiKey, customModels: [cfg.model] });
+      if (existing) {
+        await updateInstance(id, { apiKey: cfg.apiKey, customModels: [cfg.model] });
+      }
       await setActiveInstance(id);
       // Headless harness has no human to grant CDP-input consent — without this,
       // every click/type tool hits requestCdpInputConsent and fails ("no sidepanel
