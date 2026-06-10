@@ -17,7 +17,7 @@ import {
   removeProviderCustomModelMeta,
   type StoredCustomModelMeta,
 } from "@/lib/provider-custom-model-meta";
-import { getProviderMeta, resolveProviderMeta } from "@/lib/model-router/providers/registry";
+import { getProviderMeta, resolveProviderMeta, resolveEndpointVariant } from "@/lib/model-router/providers/registry";
 import { fetchOpenRouterModels } from "@/lib/openrouter-models-fetch";
 import { isCdpInputEnabled, setCdpInputEnabled } from "@/lib/cdp-input-enabled";
 import {
@@ -80,8 +80,10 @@ export default function Settings({ onBack, onRunSkill }: Props) {
   }
 
   async function handleSaveEdit(id: string, payload: InstanceFormPayload) {
-    const patch: { nickname: string; apiKey?: string } = {
+    const patch: { nickname: string; apiKey?: string; endpointVariant: string | null } = {
       nickname: payload.nickname,
+      // undefined = 用户选了默认端点 → null 显式清除存储字段
+      endpointVariant: payload.endpointVariant ?? null,
     };
     // Only re-encrypt the key if the user actually typed a new one.
     // An empty apiKey means "keep existing" — do NOT pass it to updateInstance.
@@ -105,9 +107,11 @@ export default function Settings({ onBack, onRunSkill }: Props) {
       setTestResult((p) => ({ ...p, [key]: { ok: false, message: `Unknown provider: ${provider}` } }));
       return;
     }
-    // Model decoupled from instance: connection test uses the provider's first
-    // available model (registry[0] / custom[0]).
-    const model = (await firstModelForProvider(provider, id ?? undefined)) ?? "";
+    // 端点与模型池跟随表单里未保存的 variant 选择（而非存量 instance 字段）
+    const variant = resolveEndpointVariant(meta, payload.endpointVariant);
+    const model = variant?.models?.[0]?.id
+      ?? (await firstModelForProvider(provider, id ?? undefined))
+      ?? "";
     const cfg = {
       provider,
       model,
@@ -117,7 +121,7 @@ export default function Settings({ onBack, onRunSkill }: Props) {
         const inst = instances.find((i) => i.id === id);
         return inst?.apiKey ?? payload.apiKey;
       })(),
-      baseUrl: meta.defaultBaseUrl,
+      baseUrl: variant?.baseUrl ?? meta.defaultBaseUrl,
       maxTokens: 1,
     };
     const key = id ?? "_new";
@@ -186,6 +190,7 @@ export default function Settings({ onBack, onRunSkill }: Props) {
                         mode="edit"
                         provider={inst.provider}
                         initialNickname={inst.nickname}
+                        initialEndpointVariant={inst.endpointVariant}
                         initialCustomModels={mergedCustomModels}
                         customModelMetas={providerMetas[inst.provider] ?? {}}
                         fetchedModels={inst.fetchedModels}
