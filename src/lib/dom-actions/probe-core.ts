@@ -122,6 +122,18 @@ export type ProbeResult =
  * VERBATIM copies of _shared/interactive.ts; parity tests guard against drift.
  */
 export function probePageInjected(params: ProbeParams): ProbeResult {
+  // executeScript 把本函数 toString 后在页面 **sloppy mode** 环境重新求值。
+  // sloppy 下 Annex B 会把"块内 function 声明"提升到整个函数作用域，而 minifier
+  // 按 ES module 严格模式的块级作用域分配重命名——两者冲突时块内函数会覆盖外层
+  // 同名（minified）函数（曾实测 atlas 块内 helper 与外层 cssEscape 同被命名 `_`，
+  // labelFor 调到错误函数抛 TypeError，整个 atlas op 报废）。
+  // 防护分两层：
+  // 1. 真正的产物层修复：op 块内的 helper 一律用 `const f = () => {}`（let/const
+  //    在 sloppy/strict 语义一致，永不发生 Annex B 提升）——atlas 块已全量转换，
+  //    新增 helper 必须沿用 const 箭头形式，禁止在 if 块内写 function 声明。
+  // 2. 本指令：minifier 会把它从产物里删掉（视为 ESM 冗余），只保护未压缩的
+  //    dev 注入路径，使开发期行为与严格语义对齐，属 defense-in-depth。
+  "use strict";
   // ── Constants ──
   const ATTR_WHITELIST = new Set([
     "href", "src", "alt", "role", "type", "value", "checked", "disabled",
@@ -680,24 +692,24 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
     const liveBodyElements = [...walkDeep(document.body)];
     stampLiveDom(liveBodyElements, new Map<Element, Element>());
 
-    function controlIdForPieIdx(pieIdx: number): string {
+    const controlIdForPieIdx = (pieIdx: number): string => {
       return `ctrl_${pieIdx}`;
-    }
+    };
 
-    function atlasLabel(el: Element, fallback: string): string {
+    const atlasLabel = (el: Element, fallback: string): string => {
       return safeText(labelFor(el) || accessibleName(el) || nearestSection(el) || fallback);
-    }
+    };
 
-    function safeText(s: string): string {
+    const safeText = (s: string): string => {
       return sanitizeText(escapeWrapperMarkup(s))
         .replace(SUMMARY_MARKUP_RE, "[filtered]")
         .replace(/[<>]/g, "[filtered]")
         .replace(/\s+/g, " ")
         .trim()
         .slice(0, SUMMARY_TEXT_MAX);
-    }
+    };
 
-    function controlValue(el: Element): string | undefined {
+    const controlValue = (el: Element): string | undefined => {
       if (el instanceof HTMLInputElement) {
         const type = el.type.toLowerCase();
         const auto = (el.getAttribute("autocomplete") ?? "").toLowerCase();
@@ -711,24 +723,24 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
         return el.value ? safeText(el.value) : undefined;
       }
       return undefined;
-    }
+    };
 
-    function supportsDisabled(el: Element): boolean {
+    const supportsDisabled = (el: Element): boolean => {
       const tag = el.tagName.toLowerCase();
       return tag === "button" || tag === "input" || tag === "select" ||
         tag === "textarea" || tag === "option" || tag === "fieldset";
-    }
+    };
 
-    function rescuedControlFor(el: Element): HTMLInputElement | null {
+    const rescuedControlFor = (el: Element): HTMLInputElement | null => {
       if (el.tagName.toLowerCase() !== "label") return null;
       const control = (el as HTMLLabelElement).control;
       if (!(control instanceof HTMLInputElement)) return null;
       const type = control.type.toLowerCase();
       if (type !== "checkbox" && type !== "radio") return null;
       return control;
-    }
+    };
 
-    function hasHiddenAncestor(el: Element): boolean {
+    const hasHiddenAncestor = (el: Element): boolean => {
       let node: Element | null = el;
       while (node && node !== document.body) {
         const style = window.getComputedStyle(node);
@@ -739,9 +751,9 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
         node = node.parentElement;
       }
       return false;
-    }
+    };
 
-    function isAtlasVisible(el: Element): boolean {
+    const isAtlasVisible = (el: Element): boolean => {
       if (hasHiddenAncestor(el)) return false;
       const style = window.getComputedStyle(el);
       if (style.display === "none" || style.visibility === "hidden") return false;
@@ -749,38 +761,38 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
       const rect = el.getBoundingClientRect();
       if (rect.width > 0 && rect.height > 0) return true;
       return safeText(visibleText(el)) !== "";
-    }
+    };
 
-    function labelledByText(el: Element): string {
+    const labelledByText = (el: Element): string => {
       const labelled = el.getAttribute("aria-labelledby");
       if (!labelled) return "";
       return normalizeSpace(labelled.split(/\s+/).map(textById).filter(Boolean).join(" "));
-    }
+    };
 
-    function explicitName(el: Element): string {
+    const explicitName = (el: Element): string => {
       const aria = normalizeSpace(el.getAttribute("aria-label") ?? "");
       if (aria) return aria;
       const labelled = labelledByText(el);
       if (labelled) return labelled;
       return normalizeSpace(el.getAttribute("title") ?? "");
-    }
+    };
 
-    function captionText(el: Element): string {
+    const captionText = (el: Element): string => {
       if (!(el instanceof HTMLTableElement) || !el.caption) return "";
       return normalizeSpace(el.caption.textContent ?? "");
-    }
+    };
 
-    function ancestorTabpanelLabel(el: Element): string {
+    const ancestorTabpanelLabel = (el: Element): string => {
       const panel = el.closest('[role="tabpanel"]');
       if (!panel) return "";
       const aria = normalizeSpace(panel.getAttribute("aria-label") ?? "");
       if (aria) return aria;
       return labelledByText(panel);
-    }
+    };
 
     // 前置兄弟标题启发式：容器(表格/列表)的标题常是紧邻其前的短文本元素
     // (Magento 仪表盘形状：<div><div>Top Search Terms</div><div><table/></div></div>)。
-    function shortTitleText(el: Element): string {
+    const shortTitleText = (el: Element): string => {
       // 候选自身是容器/控件（如工具条 <button>、相邻 <ul>/<table>）或包含它们时，
       // 其文本是内容/操作而非标题，一律不取。
       const containerish = "table, ul, ol, form, input, select, textarea, button";
@@ -790,9 +802,9 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
       // 隐藏后代文本可能令真标题超 60 字被拒，接受此噪声换取模式一致与低成本。
       const text = normalizeSpace(el.textContent ?? "");
       return text && text.length <= 60 ? text : "";
-    }
+    };
 
-    function precedingSiblingTitle(el: Element): string {
+    const precedingSiblingTitle = (el: Element): string => {
       let node: Element | null = el;
       for (let depth = 0; node && node !== document.body && depth < 3; depth++) {
         // 每层最多回看 8 个兄弟：更远的短文本（导航/badge）不是这张表的标题，
@@ -804,11 +816,11 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
         node = node.parentElement;
       }
       return "";
-    }
+    };
 
     // 容器型 target(table/collection)取名：内容摘要(descendantText)永远不是名字——
     // 它既误导模型(eval task 127)又遮蔽 nearestSection，故此链不含 descendantText。
-    function targetLabel(el: Element, fallback: string): string {
+    const targetLabel = (el: Element, fallback: string): string => {
       return safeText(
         explicitName(el) ||
         captionText(el) ||
@@ -817,13 +829,13 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
         nearestSection(el) ||
         fallback,
       );
-    }
+    };
 
-    function textFrom(el: Element | null | undefined): string {
+    const textFrom = (el: Element | null | undefined): string => {
       return el ? safeText(visibleText(el)) : "";
-    }
+    };
 
-    function visibleText(el: Element): string {
+    const visibleText = (el: Element): string => {
       if (hasHiddenAncestor(el)) return "";
       let text = "";
       for (const child of el.childNodes) {
@@ -834,7 +846,7 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
         }
       }
       return text;
-    }
+    };
 
     const controls: AtlasProbeControl[] = [];
     const controlByElement = new Map<Element, string>();
@@ -936,7 +948,7 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
       });
     }
 
-    function shapeKey(el: Element): string {
+    const shapeKey = (el: Element): string => {
       const childTags = Array.from(el.children)
         .slice(0, 8)
         .map((child) => `${child.tagName.toLowerCase()}:${child.children.length}`)
@@ -948,23 +960,23 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
         el.className && typeof el.className === "string" ? `class:${el.className.trim().split(/\s+/).sort().join(".")}` : "",
       ].filter(Boolean).join("|");
       return `${el.tagName.toLowerCase()}|${childTags}|${markers}`;
-    }
+    };
 
-    function fieldConfidence(name: string): "high" | "medium" | "low" {
+    const fieldConfidence = (name: string): "high" | "medium" | "low" => {
       if (name === "title") return "high";
       if (name === "link") return "medium";
       return "low";
-    }
+    };
 
-    function fieldGuessesFromRecords(records: AtlasProbeRecord[]): AtlasProbeFieldGuess[] {
+    const fieldGuessesFromRecords = (records: AtlasProbeRecord[]): AtlasProbeFieldGuess[] => {
       const names = new Set<string>();
       for (const record of records) {
         for (const name of Object.keys(record.fields)) names.add(name);
       }
       return Array.from(names).map((name) => ({ name, confidence: fieldConfidence(name) }));
-    }
+    };
 
-    function collectionRecord(el: Element, id: string): AtlasProbeRecord {
+    const collectionRecord = (el: Element, id: string): AtlasProbeRecord => {
       const link = el.querySelector("a[href]") as HTMLAnchorElement | null;
       const heading = el.querySelector("h1,h2,h3,h4,h5,h6");
       const fields: Record<string, string> = {};
@@ -987,19 +999,19 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
         text: textFrom(el),
         evidence: evidence || el.tagName.toLowerCase(),
       };
-    }
+    };
 
-    function isUnsafeHrefValue(href: string): boolean {
+    const isUnsafeHrefValue = (href: string): boolean => {
       const collapsed = href.replace(/[\u0000-\u0020]+/g, "");
       return UNSAFE_URL.test(collapsed);
-    }
+    };
 
-    function safeLinkHref(link: HTMLAnchorElement): string {
+    const safeLinkHref = (link: HTMLAnchorElement): string => {
       const raw = link.getAttribute("href") ?? "";
       const normalized = link.href || raw;
       if (isUnsafeHrefValue(raw) || isUnsafeHrefValue(normalized)) return "";
       return safeText(raw || normalized);
-    }
+    };
 
     let collectionIndex = 0;
     const seenCollectionParents = new Set<Element>();
@@ -1043,18 +1055,18 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
       }
     }
 
-    function bucket(value: number, size: number): number {
+    const bucket = (value: number, size: number): number => {
       return Math.round(value / size) * size;
-    }
+    };
 
-    function fullTextLength(s: string): number {
+    const fullTextLength = (s: string): number => {
       return sanitizeText(escapeWrapperMarkup(s))
         .replace(SUMMARY_MARKUP_RE, "[filtered]")
         .replace(/[<>]/g, "[filtered]")
         .replace(/\s+/g, " ")
         .trim()
         .length;
-    }
+    };
 
     const fingerprint: AtlasProbeFingerprint = {
       url: window.location.href,

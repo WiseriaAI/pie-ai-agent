@@ -1112,3 +1112,22 @@ describe("probePageInjected op=atlas", () => {
     });
   });
 });
+
+describe("injected-function sloppy-mode safety guards", () => {
+  it("probePageInjected 序列化源码以 'use strict' 开头（dev 注入路径与严格语义对齐；产物层会被 minifier 删除）", () => {
+    const src = probePageInjected.toString();
+    const bodyStart = src.indexOf("{");
+    const head = src.slice(bodyStart + 1, bodyStart + 1200);
+    expect(head).toMatch(/^\s*(\/\/[^\n]*\n|\s)*["']use strict["']/);
+  });
+
+  it("atlas 块内不得有 function 声明（Annex B 提升 + minifier 块级重命名会撞名覆盖外层 helper，须用 const 箭头）", () => {
+    const src = probePageInjected.toString();
+    const atlasStart = src.indexOf('=== "atlas"');
+    const atlasEnd = src.indexOf('op: "atlas"', atlasStart);
+    expect(atlasStart).toBeGreaterThan(-1);
+    expect(atlasEnd).toBeGreaterThan(atlasStart);
+    const atlasBlock = src.slice(atlasStart, atlasEnd);
+    expect(atlasBlock).not.toMatch(/\bfunction\b/);
+  });
+});
