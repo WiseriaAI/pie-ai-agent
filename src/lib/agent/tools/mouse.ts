@@ -3,6 +3,7 @@ import type { CdpSession } from "@/background/cdp-session";
 import type { Tool, ToolHandlerContext } from "../types";
 import type { ActionResult } from "@/lib/dom-actions/types";
 import { elementToPagePoint, type GeometryError } from "@/lib/dom-actions/geometry";
+import { execActInTab } from "@/lib/dom-actions/exec-act";
 import { withActionSettle } from "../wait-for-settle";
 
 /**
@@ -115,6 +116,14 @@ USE WHEN:
     handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
       const a = args as { frameId: number; elementIndex: number };
 
+      if (a.frameId !== 0) {
+        return {
+          success: false,
+          error:
+            "hover is only supported in the top frame for now. For elements inside iframes, try clicking directly, or use read_page to check whether the target content is already visible.",
+        };
+      }
+
       const gate = await requireCdpInput({
         sessionId: deps.sessionId,
         requestConsent: deps.requestConsent,
@@ -179,6 +188,25 @@ USE WHEN:
     },
     handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
       const a = args as { frameId: number; elementIndex: number };
+
+      if (a.frameId !== 0) {
+        // Subframe path — in-frame synthetic click. No CDP: the chrome↔CDP
+        // frame mapping was the broken link (OOPIF frames invisible to the
+        // root session). executeScript reaches exactly the frames read_page
+        // can snapshot, so anything the agent can see it can click.
+        return withActionSettle(ctx.tabId, async () => {
+          const result = await execActInTab(
+            ctx.tabId,
+            { op: "click", idx: a.elementIndex },
+            a.frameId,
+          );
+          if (!result.ok) return { success: false, error: result.error };
+          return {
+            success: true,
+            observation: `Clicked [${a.elementIndex}] in frame ${a.frameId} via synthetic events (real mouse input is top-frame only). If the page did not react, the control may require trusted input.`,
+          };
+        });
+      }
 
       const gate = await requireCdpInput({
         sessionId: deps.sessionId,

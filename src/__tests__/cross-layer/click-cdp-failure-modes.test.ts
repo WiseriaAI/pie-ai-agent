@@ -90,11 +90,15 @@ describe("click CDP failure modes — error message templates", () => {
     });
   });
 
+  // TEMPORARY: subframe clicks (frameId>0) no longer route through CDP
+  // geometry, so these two cases now call with frameId 0 to keep testing
+  // the geometry-error → message mapping. Both error kinds become
+  // unreachable and will be deleted along with the kinds in Task 4.
   it("frame-gone wording when geometry reports frame missing", async () => {
     await setCdpInputEnabled(true);
     vi.mocked(elementToPagePoint).mockResolvedValue({ kind: "frame-gone", frameId: 42 });
     const tool = buildClickTool(deps());
-    const r = await tool.handler({ frameId: 42, elementIndex: 9 }, { tabId: 7 });
+    const r = await tool.handler({ frameId: 0, elementIndex: 9 }, { tabId: 7 });
     expect(r).toMatchObject({
       success: false,
       error: expect.stringMatching(/Frame 42 unreachable/),
@@ -105,7 +109,7 @@ describe("click CDP failure modes — error message templates", () => {
     await setCdpInputEnabled(true);
     vi.mocked(elementToPagePoint).mockResolvedValue({ kind: "cdp-frame-id-unresolved", frameId: 17 });
     const tool = buildClickTool(deps());
-    const r = await tool.handler({ frameId: 17, elementIndex: 9 }, { tabId: 7 });
+    const r = await tool.handler({ frameId: 0, elementIndex: 9 }, { tabId: 7 });
     expect(r).toMatchObject({
       success: false,
       error: expect.stringMatching(/frame mapping failed for frameId 17/),
