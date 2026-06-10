@@ -456,10 +456,15 @@ export async function actByIdxInjected(params: ActParams): Promise<ActResult> {
 
   if (params.op === "click") {
     // Synthetic in-frame click — used for subframe elements where real CDP
-    // mouse input is unavailable (cross-frame geometry was the broken link;
-    // OOPIF frames are invisible to the root CDP session's frame tree).
-    // Full pointer/mouse sequence approximates a user click for standard
-    // handlers; isTrusted stays false by nature of synthetic events.
+    // mouse input is unavailable. Full pointer/mouse sequence approximates a
+    // user click for standard handlers; isTrusted stays false by nature of
+    // synthetic events.
+    if ((el as HTMLInputElement).disabled) {
+      return {
+        ok: false,
+        error: `Element [${params.idx}] is disabled; clicking it has no effect.`,
+      };
+    }
     (el as unknown as { scrollIntoViewIfNeeded?: (a: unknown) => void }).scrollIntoViewIfNeeded?.({
       block: "center",
     });

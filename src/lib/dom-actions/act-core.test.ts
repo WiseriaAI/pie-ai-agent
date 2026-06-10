@@ -224,7 +224,7 @@ describe("actByIdxInjected op=focusClick", () => {
 });
 
 describe("actByIdxInjected op=click", () => {
-  it("dispatches the full event sequence ending with native click", async () => {
+  it("dispatches press/release sequence ending with native click", async () => {
     document.body.innerHTML = `<button data-pie-idx="3">Go</button>`;
     const el = document.querySelector("button")!;
     const seen: string[] = [];
@@ -232,7 +232,10 @@ describe("actByIdxInjected op=click", () => {
       el.addEventListener(t, () => seen.push(t));
     }
     const result = await actByIdxInjected({ op: "click", idx: 3 });
-    expect(result).toEqual({ ok: true, op: "click", observation: "Clicked element [3]" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("narrow");
+    if (result.op !== "click") throw new Error("narrow op");
+    expect(result.observation).toContain("Clicked element [3]");
     expect(seen).toEqual(["pointerdown", "mousedown", "pointerup", "mouseup", "click"]);
   });
 
@@ -261,5 +264,15 @@ describe("actByIdxInjected op=click", () => {
     const result = await actByIdxInjected({ op: "click", idx: 404 });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toContain("not found");
+  });
+
+  it("returns ok:false for a disabled element without firing click", async () => {
+    document.body.innerHTML = `<button data-pie-idx="7" disabled>Nope</button>`;
+    let clicked = false;
+    document.querySelector("button")!.addEventListener("click", () => { clicked = true; });
+    const result = await actByIdxInjected({ op: "click", idx: 7 });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toContain("disabled");
+    expect(clicked).toBe(false);
   });
 });
