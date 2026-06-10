@@ -751,8 +751,65 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
       return safeText(visibleText(el)) !== "";
     }
 
+    function explicitName(el: Element): string {
+      const aria = normalizeSpace(el.getAttribute("aria-label") ?? "");
+      if (aria) return aria;
+      const labelled = el.getAttribute("aria-labelledby");
+      if (labelled) {
+        const text = normalizeSpace(labelled.split(/\s+/).map(textById).filter(Boolean).join(" "));
+        if (text) return text;
+      }
+      return normalizeSpace(el.getAttribute("title") ?? "");
+    }
+
+    function captionText(el: Element): string {
+      if (!(el instanceof HTMLTableElement) || !el.caption) return "";
+      return normalizeSpace(el.caption.textContent ?? "");
+    }
+
+    function ancestorTabpanelLabel(el: Element): string {
+      const panel = el.closest('[role="tabpanel"]');
+      if (!panel) return "";
+      const labelled = panel.getAttribute("aria-labelledby");
+      if (labelled) {
+        const text = normalizeSpace(labelled.split(/\s+/).map(textById).filter(Boolean).join(" "));
+        if (text) return text;
+      }
+      return normalizeSpace(panel.getAttribute("aria-label") ?? "");
+    }
+
+    // 前置兄弟标题启发式：容器(表格/列表)的标题常是紧邻其前的短文本元素
+    // (Magento 仪表盘形状：<div><div>Top Search Terms</div><div><table/></div></div>)。
+    function shortTitleText(el: Element): string {
+      if (el.querySelector("table, ul, ol, form, input, select, textarea, button")) return "";
+      if (!isAtlasVisible(el)) return "";
+      const text = normalizeSpace(el.textContent ?? "");
+      return text && text.length <= 60 ? text : "";
+    }
+
+    function precedingSiblingTitle(el: Element): string {
+      let node: Element | null = el;
+      for (let depth = 0; node && node !== document.body && depth < 3; depth++) {
+        for (let sib = node.previousElementSibling; sib; sib = sib.previousElementSibling) {
+          const text = shortTitleText(sib);
+          if (text) return text;
+        }
+        node = node.parentElement;
+      }
+      return "";
+    }
+
+    // 容器型 target(table/collection)取名：内容摘要(descendantText)永远不是名字——
+    // 它既误导模型(eval task 127)又遮蔽 nearestSection，故此链不含 descendantText。
     function targetLabel(el: Element, fallback: string): string {
-      return safeText(accessibleName(el) || nearestSection(el) || fallback);
+      return safeText(
+        explicitName(el) ||
+        captionText(el) ||
+        ancestorTabpanelLabel(el) ||
+        precedingSiblingTitle(el) ||
+        nearestSection(el) ||
+        fallback,
+      );
     }
 
     function textFrom(el: Element | null | undefined): string {
