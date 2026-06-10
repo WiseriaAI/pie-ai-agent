@@ -22,6 +22,21 @@ export interface ModelMeta {
   maxOutputTokens?: number;
 }
 
+export interface EndpointVariant {
+  /** 稳定 id，持久化进 StoredInstance.endpointVariant。 */
+  id: string;
+  /** 切换控件文案（与 provider name 一样不做 i18n）。 */
+  label: string;
+  /** 替换 defaultBaseUrl 进 ModelConfig.baseUrl；anthropic-wire 家族的
+   *  baseUrlSuffix hook 照常在 core 层拼接。 */
+  baseUrl: string;
+  /** 可选：整体替换该变体下的展示模型清单（如 Kimi Code 只认 kimi-for-coding）。
+   *  缺省沿用 ProviderMeta.models。getModelMeta 做 union 查找，元数据链路不感知。 */
+  models?: ModelMeta[];
+  /** 可选：替换 API key 输入框 placeholder（Plan key 前缀不同时）。 */
+  placeholder?: string;
+}
+
 export interface ProviderMeta {
   id: ProviderRef;
   name: string;
@@ -44,6 +59,10 @@ export interface ProviderMeta {
    *  monogram fallback（见 ProviderIcon）。svg 已用 fill="currentColor"，由
    *  组件按主题给色。 */
   iconAsset?: string;
+  /** 额外端点变体（按量/Plan 双计费等）。缺省 = 无变体，UI 不渲染切换。 */
+  endpointVariants?: EndpointVariant[];
+  /** 有 endpointVariants 时，默认端点在切换控件里的文案。 */
+  defaultEndpointLabel?: string;
 }
 
 // Kimi (Moonshot) curated models — shared by both the international
@@ -55,6 +74,19 @@ const MOONSHOT_MODELS: ModelMeta[] = [
   { id: "moonshot-v1-128k", vision: false, tools: true, maxContextTokens: 128_000 },
   { id: "moonshot-v1-32k", vision: false, tools: true, maxContextTokens: 32_000 },
 ];
+
+// Kimi Code 订阅端点（api.kimi.com）。订阅 API 只接受统一 model id
+// "kimi-for-coding"（官方要求请求体固定用它，不暴露真实模型名）。
+// TODO(vision): 官方未明确 kimi-for-coding 是否收图片输入，fail-closed false，核实后更新。
+const KIMI_CODE_VARIANT: EndpointVariant = {
+  id: "kimi-code",
+  label: "Kimi Code Plan",
+  baseUrl: "https://api.kimi.com/coding",
+  placeholder: "sk-kimi-...",
+  models: [
+    { id: "kimi-for-coding", vision: false, tools: true, maxContextTokens: 256_000 },
+  ],
+};
 
 export const PROVIDER_REGISTRY: ProviderMeta[] = [
   {
@@ -153,6 +185,13 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
       { id: "glm-4.1v-thinking-flash", vision: true, tools: true, maxContextTokens: 64_000 },
       { id: "glm-4v-flash", vision: true, tools: true, maxContextTokens: 16_000 },
     ],
+    defaultEndpointLabel: "Pay-as-you-go",
+    // Coding Plan 专属 OpenAI-compat 端点（FAQ：走通用端点不扣套餐额度）。
+    // Plan 限 GLM-5.1/5-Turbo/4.7/4.5-Air，但按量清单是超集 → 不 override，
+    // 选错模型由运行期报错自纠，免维护两份清单。
+    endpointVariants: [
+      { id: "coding-plan", label: "Coding Plan", baseUrl: "https://open.bigmodel.cn/api/coding/paas/v4" },
+    ],
   },
   {
     id: "bailian",
@@ -193,13 +232,19 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     name: "Mimo(Xiaomi)",
     iconAsset: "provider-icons/mimo.svg",
     defaultBaseUrl: "https://token-plan-cn.xiaomimimo.com",
-    placeholder: "API key",
+    placeholder: "tp-...",
     models: [
       { id: "mimo-v2.5-pro", vision: false, tools: true, maxContextTokens: 1_000_000, maxOutputTokens: 131_072 },
       { id: "mimo-v2.5",     vision: true,  tools: true, maxContextTokens: 1_000_000, maxOutputTokens: 131_072 },
       { id: "mimo-v2-pro",   vision: false, tools: true, maxContextTokens: 1_000_000, maxOutputTokens: 131_072 },
       { id: "mimo-v2-omni",  vision: true,  tools: true, maxContextTokens: 256_000,   maxOutputTokens: 131_072 },
       { id: "mimo-v2-flash", vision: false, tools: true, maxContextTokens: 256_000,   maxOutputTokens: 65_536 },
+    ],
+    // 注意：mimo 的 defaultBaseUrl 本就是 Token Plan（订阅）端点 —— 保持不动，
+    // 存量 instance（tp- key）零破坏；按量（sk- key）才是 variant。
+    defaultEndpointLabel: "Token Plan",
+    endpointVariants: [
+      { id: "payg", label: "Pay-as-you-go", baseUrl: "https://api.xiaomimimo.com", placeholder: "sk-..." },
     ],
   },
   {
@@ -209,6 +254,8 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     defaultBaseUrl: "https://api.moonshot.ai",
     placeholder: "sk-...",
     models: MOONSHOT_MODELS,
+    defaultEndpointLabel: "Pay-as-you-go",
+    endpointVariants: [KIMI_CODE_VARIANT],
   },
   {
     id: "moonshot-cn",
@@ -217,6 +264,8 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     defaultBaseUrl: "https://api.moonshot.cn",
     placeholder: "sk-...",
     models: MOONSHOT_MODELS,
+    defaultEndpointLabel: "Pay-as-you-go",
+    endpointVariants: [KIMI_CODE_VARIANT],
   },
   {
     id: "stepfun",
@@ -236,6 +285,24 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
       { id: "step-3.7-flash", vision: true, tools: true, maxContextTokens: 256_000 },
       { id: "step-3.5-flash", vision: false, tools: true, maxContextTokens: 256_000 },
     ],
+    defaultEndpointLabel: "Pay-as-you-go",
+    endpointVariants: [
+      {
+        id: "step-plan",
+        label: "Step Plan",
+        // Anthropic SDK 会自动在 base_url 后拼 /v1/messages，故 base 不带 /v1
+        // （官方 Step Plan 文档明示；OpenAI SDK 才用 .../step_plan/v1）。
+        baseUrl: "https://api.stepfun.com/step_plan",
+        // Step Plan 限定池（¥49–699/月档位）。maxOutputTokens 官方未披露，
+        // 留空退回 ANTHROPIC_WIRE_FALLBACK_MAX_TOKENS（同默认清单的 TODO）。
+        models: [
+          { id: "step-3.7-flash", vision: true, tools: true, maxContextTokens: 256_000 },
+          { id: "step-3.5-flash-2603", vision: false, tools: true, maxContextTokens: 256_000 },
+          { id: "step-3.5-flash", vision: false, tools: true, maxContextTokens: 256_000 },
+          { id: "step-router-v1", vision: false, tools: true, maxContextTokens: 256_000 },
+        ],
+      },
+    ],
   },
 ];
 
@@ -244,7 +311,18 @@ export function getProviderMeta(id: BuiltinProvider): ProviderMeta | undefined {
 }
 
 export function getModelMeta(provider: BuiltinProvider, modelId: string): ModelMeta | undefined {
-  return getProviderMeta(provider)?.models.find((m) => m.id === modelId);
+  const meta = getProviderMeta(provider);
+  if (!meta) return undefined;
+  // 默认清单优先；未命中再扫各 variant 的 override 清单（union 查找）。
+  // 这样 resolveModelMeta / resolveModelVision / resolveModelConfig 的
+  // vision、maxOutputTokens 链路对 variant 模型零改动自动覆盖。
+  const direct = meta.models.find((m) => m.id === modelId);
+  if (direct) return direct;
+  for (const v of meta.endpointVariants ?? []) {
+    const hit = v.models?.find((m) => m.id === modelId);
+    if (hit) return hit;
+  }
+  return undefined;
 }
 
 /**
@@ -335,4 +413,13 @@ export function resolveModelVision(
   const fetchedHit = fetchedModels?.find((m) => m.id === modelId);
   if (fetchedHit) return fetchedHit.vision;
   return undefined;
+}
+
+/** instance 選中的 endpoint variant；id 悬空（registry 已删）或未选 → undefined（落回默认端点）。 */
+export function resolveEndpointVariant(
+  meta: Pick<ProviderMeta, "endpointVariants">,
+  variantId: string | undefined,
+): EndpointVariant | undefined {
+  if (!variantId) return undefined;
+  return meta.endpointVariants?.find((v) => v.id === variantId);
 }

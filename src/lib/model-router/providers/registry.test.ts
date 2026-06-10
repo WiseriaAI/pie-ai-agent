@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { getProviderMeta, getModelMeta, PROVIDER_REGISTRY, resolveModelVision, resolveModelMeta } from "./registry";
+import { getProviderMeta, getModelMeta, PROVIDER_REGISTRY, resolveModelVision, resolveModelMeta, resolveEndpointVariant } from "./registry";
 import type { ModelMeta } from "./registry";
 import { setProviderCustomModelMeta } from "@/lib/provider-custom-model-meta";
 import { chromeMock } from "@/test/setup";
@@ -158,8 +158,10 @@ describe("ModelMeta capability flags (per-model)", () => {
     expect(getModelMeta("stepfun", "step-3.5-flash")?.maxContextTokens).toBe(256_000);
   });
 
-  it("StepFun does NOT expose the step_plan-only router model", () => {
-    expect(getModelMeta("stepfun", "step-router-v1")).toBeUndefined();
+  it("StepFun does NOT expose the step_plan-only router model in the default list", () => {
+    // step-router-v1 is intentionally absent from the default (pay-as-you-go) model list.
+    // It is accessible only via the step-plan endpoint variant (union lookup in getModelMeta).
+    expect(getProviderMeta("stepfun")!.models.find((m) => m.id === "step-router-v1")).toBeUndefined();
   });
 
   it("MiMo does NOT expose TTS models (mimo-v2.5-tts, etc.)", () => {
@@ -313,6 +315,66 @@ describe("maxOutputTokens (anthropic-wire, sourced from provider docs)", () => {
           expect(m.maxOutputTokens, `${p.id}/${m.id}`).toBeTypeOf("number");
         }
       }
+    }
+  });
+});
+
+describe("endpoint variants", () => {
+  it("zhipu declares a coding-plan variant with the Coding Plan base URL", () => {
+    const meta = getProviderMeta("zhipu")!;
+    expect(meta.defaultEndpointLabel).toBe("Pay-as-you-go");
+    const v = meta.endpointVariants?.find((x) => x.id === "coding-plan");
+    expect(v?.baseUrl).toBe("https://open.bigmodel.cn/api/coding/paas/v4");
+    expect(v?.models).toBeUndefined(); // 按量清单是超集，不 override
+  });
+
+  it("moonshot and moonshot-cn share the kimi-code variant (api.kimi.com/coding, model pinned)", () => {
+    for (const id of ["moonshot", "moonshot-cn"] as const) {
+      const v = getProviderMeta(id)!.endpointVariants?.find((x) => x.id === "kimi-code");
+      expect(v?.baseUrl).toBe("https://api.kimi.com/coding");
+      expect(v?.models?.map((m) => m.id)).toEqual(["kimi-for-coding"]);
+      expect(v?.placeholder).toBe("sk-kimi-...");
+    }
+  });
+
+  it("mimo default stays the Token Plan endpoint; payg is the variant", () => {
+    const meta = getProviderMeta("mimo")!;
+    expect(meta.defaultBaseUrl).toBe("https://token-plan-cn.xiaomimimo.com");
+    expect(meta.defaultEndpointLabel).toBe("Token Plan");
+    expect(meta.placeholder).toBe("tp-...");
+    const v = meta.endpointVariants?.find((x) => x.id === "payg");
+    expect(v?.baseUrl).toBe("https://api.xiaomimimo.com");
+    expect(v?.placeholder).toBe("sk-...");
+    expect(v?.models).toBeUndefined();
+  });
+
+  it("stepfun step-plan variant: base WITHOUT /v1 (SDK appends /v1/messages), plan model pool", () => {
+    const v = getProviderMeta("stepfun")!.endpointVariants?.find((x) => x.id === "step-plan");
+    expect(v?.baseUrl).toBe("https://api.stepfun.com/step_plan");
+    expect(v?.models?.map((m) => m.id)).toEqual([
+      "step-3.7-flash", "step-3.5-flash-2603", "step-3.5-flash", "step-router-v1",
+    ]);
+  });
+
+  it("getModelMeta unions variant models after the default list", () => {
+    expect(getModelMeta("moonshot", "kimi-for-coding")?.maxContextTokens).toBe(256_000);
+    expect(getModelMeta("moonshot", "kimi-k2.6")).toBeDefined(); // 默认清单仍命中
+    expect(getModelMeta("stepfun", "step-router-v1")?.vision).toBe(false);
+    // 默认清单优先：step-3.7-flash 在默认清单与 variant 清单都存在 → 返回默认条目
+    expect(getModelMeta("stepfun", "step-3.7-flash")?.vision).toBe(true);
+  });
+
+  it("resolveEndpointVariant: hit / miss / undefined", () => {
+    const meta = getProviderMeta("zhipu")!;
+    expect(resolveEndpointVariant(meta, "coding-plan")?.id).toBe("coding-plan");
+    expect(resolveEndpointVariant(meta, "no-such")).toBeUndefined();
+    expect(resolveEndpointVariant(meta, undefined)).toBeUndefined();
+    expect(resolveEndpointVariant(getProviderMeta("anthropic")!, "coding-plan")).toBeUndefined();
+  });
+
+  it("providers without variants are untouched", () => {
+    for (const id of ["anthropic", "openai", "minimax", "deepseek", "gemini", "bailian", "openrouter"] as const) {
+      expect(getProviderMeta(id)!.endpointVariants).toBeUndefined();
     }
   });
 });
