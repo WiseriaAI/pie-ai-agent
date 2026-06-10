@@ -222,8 +222,8 @@ export async function updateInstance(id: string, patch: Partial<{
   if (patch.fetchedAt !== undefined) next.fetchedAt = patch.fetchedAt;
   if (patch.maxTokens !== undefined) next.maxTokens = patch.maxTokens;
   if (patch.endpointVariant !== undefined) {
-    // null = 显式清除（切回默认端点）；string = 设置。沿用可选字段不留空值的存储习惯。
-    if (patch.endpointVariant === null) delete next.endpointVariant;
+    // null / 空串 = 显式清除（切回默认端点）；非空 string = 设置。可选字段不留空值。
+    if (!patch.endpointVariant) delete next.endpointVariant;
     else next.endpointVariant = patch.endpointVariant;
   }
   await tx(STORES.instances, "readwrite", (s) => s.put(next));

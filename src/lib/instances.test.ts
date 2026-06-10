@@ -300,4 +300,25 @@ describe("endpoint variants", () => {
     const id3 = await createInstance({ provider: "moonshot", nickname: "K3", apiKey: "k", endpointVariant: "kimi-code", customModels: ["my-model"] });
     expect(await firstModelForProvider("moonshot", id3)).toBe("my-model");
   });
+
+  it("updateInstance: empty string also clears (same hygiene as create's conditional spread)", async () => {
+    const id = await createInstance({ provider: "zhipu", nickname: "Z", apiKey: "k", endpointVariant: "coding-plan" });
+    await updateInstance(id, { endpointVariant: "" });
+    expect((await getInstance(id))!.endpointVariant).toBeUndefined();
+  });
+
+  it("firstModelForProvider without instanceId picks the provider's instance and honours its variant", async () => {
+    await createInstance({ provider: "moonshot", nickname: "K", apiKey: "k", endpointVariant: "kimi-code" });
+    expect(await firstModelForProvider("moonshot")).toBe("kimi-for-coding");
+  });
+
+  it("resolveModelConfig: custom provider with dangling endpointVariant falls back to cp.baseUrl", async () => {
+    const cpId = await saveCustomProvider({
+      name: "MyLLM", baseUrl: "https://api.myllm.test/v1",
+      models: [{ id: "text-1", vision: false, tools: true, maxContextTokens: 128_000 }],
+    });
+    const id = await createInstance({ provider: `custom:${cpId}`, nickname: "Custom", apiKey: "k", endpointVariant: "ghost-variant" });
+    const cfg = await resolveModelConfig(id, "text-1");
+    expect(cfg!.baseUrl).toBe("https://api.myllm.test/v1");
+  });
 });
