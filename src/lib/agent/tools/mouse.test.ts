@@ -156,22 +156,6 @@ describe("hover tool", () => {
     expect(result.error).toMatch(/zero size|Element \[3\]/);
   });
 
-  it("returns frame-gone error from geometry", async () => {
-    vi.mocked(elementToPagePoint).mockResolvedValue({ kind: "frame-gone", frameId: 7 });
-    const tool = buildHoverTool(deps());
-    const result = await tool.handler({ frameId: 7, elementIndex: 3 }, { tabId: 7 });
-    expect(result.success).toBe(false);
-    expect(result.error).toMatch(/Frame 7 unreachable/);
-  });
-
-  it("returns cdp-frame-id-unresolved error from geometry", async () => {
-    vi.mocked(elementToPagePoint).mockResolvedValue({ kind: "cdp-frame-id-unresolved", frameId: 9 });
-    const tool = buildHoverTool(deps());
-    const result = await tool.handler({ frameId: 9, elementIndex: 3 }, { tabId: 7 });
-    expect(result.success).toBe(false);
-    expect(result.error).toMatch(/frame mapping failed for frameId 9/);
-  });
-
   it("returns cdp-attach-conflict on acquireSession conflict", async () => {
     const tool = buildHoverTool(
       deps({ acquireSession: vi.fn().mockRejectedValue(new Error("Another debugger is attached")) }),
@@ -273,6 +257,112 @@ describe("click tool (CDP)", () => {
     const result = await tool.handler({ frameId: 0, elementIndex: 5 }, { tabId: 7 });
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/Element not found at index 5/);
+  });
+
+  it("missing frameId falls into the CDP top-frame path (not synthetic)", async () => {
+    const session = fakeSession();
+    const acquireSession = vi.fn().mockResolvedValue(session);
+    vi.mocked(elementToPagePoint).mockResolvedValue({ x: 80, y: 90 });
+    const tool = buildClickTool(deps({ acquireSession }));
+    const result = await tool.handler({ elementIndex: 4 }, { tabId: 7 });
+    expect(result.success).toBe(true);
+    expect(acquireSession).toHaveBeenCalledWith(7);
+    expect(result.observation).not.toContain("synthetic");
+  });
+});
+
+describe("click tool — subframe synthetic path", () => {
+  // NOTE: no setCdpInputEnabled here — these cases verify the subframe path
+  // never touches the CDP gate (no consent prompt, no attach).
+
+  function deps(overrides?: Partial<MouseToolDeps>): MouseToolDeps {
+    const session = fakeSession();
+    return {
+      acquireSession: vi.fn().mockResolvedValue(session),
+      sessionId: "S1",
+      requestConsent: vi.fn().mockResolvedValue(true),
+      ...overrides,
+    };
+  }
+
+  it("frameId>0 clicks in-frame without CDP attach or consent", async () => {
+    // withActionSettle probes also go through executeScript (no `args`);
+    // return the act result only for the act-core invocation so the settle
+    // loop sees a clean numeric timestamp and exits on quietMs.
+    (chrome.scripting.executeScript as ReturnType<typeof vi.fn>).mockImplementation(
+      async (injection: { args?: unknown[] }) =>
+        injection.args
+          ? [{ result: { ok: true, op: "click", observation: "Clicked element [4]" } }]
+          : [{ result: undefined }],
+    );
+    const acquireSession = vi.fn();
+    const requestConsent = vi.fn();
+    const tool = buildClickTool({ acquireSession, sessionId: "S1", requestConsent });
+    const result = await tool.handler({ frameId: 5, elementIndex: 4 }, { tabId: 7 });
+    expect(result.success).toBe(true);
+    expect(result.observation).toContain("synthetic events");
+    expect(result.observation).toContain("frame 5");
+    expect(acquireSession).not.toHaveBeenCalled();
+    expect(requestConsent).not.toHaveBeenCalled();
+    expect(chrome.scripting.executeScript).toHaveBeenCalledWith(
+      expect.objectContaining({ target: { tabId: 7, frameIds: [5] } }),
+    );
+  });
+
+  it("string frameId is coerced and routed to the synthetic path", async () => {
+    (chrome.scripting.executeScript as ReturnType<typeof vi.fn>).mockImplementation(
+      async (injection: { args?: unknown[] }) =>
+        injection.args
+          ? [{ result: { ok: true, op: "click", observation: "Clicked element [4]" } }]
+          : [{ result: undefined }],
+    );
+    const acquireSession = vi.fn();
+    const requestConsent = vi.fn();
+    const tool = buildClickTool({ acquireSession, sessionId: "S1", requestConsent });
+    const result = await tool.handler(
+      { frameId: "5" as unknown as number, elementIndex: 4 },
+      { tabId: 7 },
+    );
+    expect(result.success).toBe(true);
+    expect(result.observation).toContain("frame 5");
+    expect(acquireSession).not.toHaveBeenCalled();
+    expect(requestConsent).not.toHaveBeenCalled();
+    expect(chrome.scripting.executeScript).toHaveBeenCalledWith(
+      expect.objectContaining({ target: { tabId: 7, frameIds: [5] } }),
+    );
+  });
+
+  it("frameId>0 with vanished frame returns unreachable error", async () => {
+    (chrome.scripting.executeScript as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error("No frame with id 21114 in tab 7"),
+    );
+    const tool = buildClickTool(deps());
+    const result = await tool.handler({ frameId: 21114, elementIndex: 49 }, { tabId: 7 });
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("Frame 21114 unreachable or removed. Re-snapshot.");
+  });
+
+  it("frameId>0 element-not-found passes act-core error through", async () => {
+    (chrome.scripting.executeScript as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { result: { ok: false, error: "Element not found at index 4. The page may have changed; try snapshotting again." } },
+    ]);
+    const tool = buildClickTool(deps());
+    const result = await tool.handler({ frameId: 5, elementIndex: 4 }, { tabId: 7 });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Element not found at index 4");
+  });
+});
+
+describe("hover tool — subframe gate", () => {
+  it("frameId>0 returns top-frame-only error without CDP attach or consent", async () => {
+    const acquireSession = vi.fn();
+    const requestConsent = vi.fn();
+    const tool = buildHoverTool({ acquireSession, sessionId: "S1", requestConsent });
+    const result = await tool.handler({ frameId: 3, elementIndex: 1 }, { tabId: 7 });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("top frame");
+    expect(acquireSession).not.toHaveBeenCalled();
+    expect(requestConsent).not.toHaveBeenCalled();
   });
 });
 

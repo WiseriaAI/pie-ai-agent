@@ -3,6 +3,7 @@ import type { CdpSession } from "@/background/cdp-session";
 import type { Tool, ToolHandlerContext } from "../types";
 import type { ActionResult } from "@/lib/dom-actions/types";
 import { elementToPagePoint, type GeometryError } from "@/lib/dom-actions/geometry";
+import { execActInTab } from "@/lib/dom-actions/exec-act";
 import { withActionSettle } from "../wait-for-settle";
 
 /**
@@ -67,16 +68,6 @@ function geometryErrorToActionResult(e: GeometryError): ActionResult {
         success: false,
         error: `Element [${e.index}] has zero size (display:none / removed from layout). Call read_page again.`,
       };
-    case "frame-gone":
-      return {
-        success: false,
-        error: `Frame ${e.frameId} unreachable; re-snapshot.`,
-      };
-    case "cdp-frame-id-unresolved":
-      return {
-        success: false,
-        error: `Internal: frame mapping failed for frameId ${e.frameId}. Try in top frame.`,
-      };
     default: {
       // Exhaustiveness check — if GeometryError gains a new kind, this
       // triggers a compile error so the mapping must be updated.
@@ -94,6 +85,8 @@ export function buildHoverTool(deps: MouseToolDeps): Tool {
 
 USE WHEN:
 - An element reveals new content on mouseover — dropdown menus, tooltips, hover cards.
+
+**Top frame only** (frameId 0). Hover is not supported inside iframes — click directly, or re-run read_page to check whether the content is already visible.
 
 **DO NOT USE WHEN:**
 - You want to activate or open the element — use click.`,
@@ -113,7 +106,19 @@ USE WHEN:
       additionalProperties: false,
     },
     handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
-      const a = args as { frameId: number; elementIndex: number };
+      // Models sometimes send frameId as a JSON string ("5"); coerce before
+      // routing. undefined/NaN → 0 (CDP top-frame path).
+      const a = args as { frameId: number | string; elementIndex: number };
+      const rawFrameId = Number(a.frameId);
+      const frameId = Number.isFinite(rawFrameId) ? rawFrameId : 0;
+
+      if (frameId !== 0) {
+        return {
+          success: false,
+          error:
+            "hover is only supported in the top frame for now. For elements inside iframes, try clicking directly, or use read_page to check whether the target content is already visible.",
+        };
+      }
 
       const gate = await requireCdpInput({
         sessionId: deps.sessionId,
@@ -136,7 +141,7 @@ USE WHEN:
       }
 
       return withActionSettle(ctx.tabId, async () => {
-        const point = await elementToPagePoint(ctx.tabId, a.frameId, a.elementIndex, session);
+        const point = await elementToPagePoint(ctx.tabId, a.elementIndex);
         if ("kind" in point) return geometryErrorToActionResult(point);
 
         await dispatchMouseAt(session, point.x, point.y, "mouseMoved");
@@ -153,7 +158,8 @@ export function buildClickTool(deps: MouseToolDeps): Tool {
   return {
     name: "click",
     description:
-      `Click an interactive element by its data-pie-idx from the latest read_page <interactive_index>. Uses real mouse events (CDP). If the element is gone (page changed), returns 'Element not found' — call read_page({mode:"interactive"}) again for current indices.
+      `Click an interactive element by its data-pie-idx from the latest read_page <interactive_index>. If the element is gone (page changed), returns 'Element not found' — call read_page({mode:"interactive"}) again for current indices.
+Top-frame elements (frameId 0) get real mouse events (CDP). Elements inside iframes (frameId > 0) get synthetic in-frame events — works on virtually all sites, but controls demanding trusted input may ignore it.
 
 USE WHEN:
 - You need to activate a clickable element — button, link, checkbox, radio, menu item, tab.
@@ -178,7 +184,33 @@ USE WHEN:
       additionalProperties: false,
     },
     handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
-      const a = args as { frameId: number; elementIndex: number };
+      // Models sometimes send frameId as a JSON string ("5"); coerce before
+      // routing. undefined/NaN → 0 (CDP top-frame path).
+      const a = args as { frameId: number | string; elementIndex: number };
+      const rawFrameId = Number(a.frameId);
+      const frameId = Number.isFinite(rawFrameId) ? rawFrameId : 0;
+
+      if (frameId !== 0) {
+        // Subframe path — in-frame synthetic click. No CDP: the chrome↔CDP
+        // frame mapping was the broken link (OOPIF frames invisible to the
+        // root session). executeScript reaches exactly the frames read_page
+        // can snapshot, so anything the agent can see it can click.
+        // Settle signals are top-frame scoped: the mutation tracker injects at
+        // {tabId} and nav events with frameId!==0 are ignored — in-iframe-only
+        // updates just ride out the quiet floor.
+        return withActionSettle(ctx.tabId, async () => {
+          const result = await execActInTab(
+            ctx.tabId,
+            { op: "click", idx: a.elementIndex },
+            frameId,
+          );
+          if (!result.ok) return { success: false, error: result.error };
+          return {
+            success: true,
+            observation: `Clicked [${a.elementIndex}] in frame ${frameId} via synthetic events (real mouse input is top-frame only). If the page did not react, the control may require trusted input.`,
+          };
+        });
+      }
 
       const gate = await requireCdpInput({
         sessionId: deps.sessionId,
@@ -201,7 +233,7 @@ USE WHEN:
       }
 
       return withActionSettle(ctx.tabId, async () => {
-        const point = await elementToPagePoint(ctx.tabId, a.frameId, a.elementIndex, session);
+        const point = await elementToPagePoint(ctx.tabId, a.elementIndex);
         if ("kind" in point) return geometryErrorToActionResult(point);
 
         await dispatchMouseAt(session, point.x, point.y, "mouseMoved");

@@ -1,5 +1,6 @@
 import { buildClickTool, buildHoverTool, type MouseToolDeps } from "./tools/mouse";
-import { actByIdxInjected, type ActParams, type ActResult } from "../dom-actions/act-core";
+import type { ActResult } from "../dom-actions/act-core";
+import { execActInTab } from "../dom-actions/exec-act";
 import { scroll } from "../dom-actions/scroll";
 import { wait } from "../dom-actions/wait";
 import type { ActionResult } from "../dom-actions/types";
@@ -84,41 +85,6 @@ async function execInTab<T extends unknown[]>(
     if (frameId !== undefined && /Frame with ID .* not found|No frame with id/i.test(msg)) {
       return {
         success: false,
-        error: `Frame ${frameId} unreachable or removed. Re-snapshot.`,
-      };
-    }
-    throw err;
-  }
-}
-
-// actByIdxInjected returns the ActResult shape (op-tagged success | {ok:false}).
-// This helper runs it in the target frame with the same frame-gone handling as
-// execInTab, then leaves shape adaptation to the caller (ActResult → ActionResult).
-async function execActInTab(
-  tabId: number,
-  params: ActParams,
-  frameId?: number,
-): Promise<ActResult> {
-  const target: chrome.scripting.InjectionTarget = frameId !== undefined
-    ? { tabId, frameIds: [frameId] }
-    : { tabId };
-  try {
-    const results = await chrome.scripting.executeScript({
-      target,
-      func: actByIdxInjected,
-      args: [params],
-    });
-    return (
-      (results[0]?.result as ActResult | undefined) ?? {
-        ok: false,
-        error: "Execution failed",
-      }
-    );
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (frameId !== undefined && /Frame with ID .* not found|No frame with id/i.test(msg)) {
-      return {
-        ok: false,
         error: `Frame ${frameId} unreachable or removed. Re-snapshot.`,
       };
     }

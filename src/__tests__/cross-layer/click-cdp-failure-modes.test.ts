@@ -90,26 +90,14 @@ describe("click CDP failure modes — error message templates", () => {
     });
   });
 
-  it("frame-gone wording when geometry reports frame missing", async () => {
-    await setCdpInputEnabled(true);
-    vi.mocked(elementToPagePoint).mockResolvedValue({ kind: "frame-gone", frameId: 42 });
+  it("subframe path: vanished frame wording", async () => {
+    (chrome.scripting.executeScript as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error("No frame with id 21114 in tab 7"),
+    );
     const tool = buildClickTool(deps());
-    const r = await tool.handler({ frameId: 42, elementIndex: 9 }, { tabId: 7 });
-    expect(r).toMatchObject({
-      success: false,
-      error: expect.stringMatching(/Frame 42 unreachable/),
-    });
-  });
-
-  it("cdp-frame-id-unresolved wording when mapping fails", async () => {
-    await setCdpInputEnabled(true);
-    vi.mocked(elementToPagePoint).mockResolvedValue({ kind: "cdp-frame-id-unresolved", frameId: 17 });
-    const tool = buildClickTool(deps());
-    const r = await tool.handler({ frameId: 17, elementIndex: 9 }, { tabId: 7 });
-    expect(r).toMatchObject({
-      success: false,
-      error: expect.stringMatching(/frame mapping failed for frameId 17/),
-    });
+    const result = await tool.handler({ frameId: 21114, elementIndex: 49 }, { tabId: 7 });
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/Frame 21114 unreachable or removed/);
   });
 
   it("onboarding-cancelled wording when consent throws", async () => {

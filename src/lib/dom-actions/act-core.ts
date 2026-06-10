@@ -5,12 +5,13 @@
  * chrome.scripting.executeScript — no imports may be used inside the function
  * body at runtime. All helpers are nested inside the exported function.
  *
- * All four ops implemented: rect, type, select, focusClick.
+ * All five ops implemented: rect, type, select, focusClick, click.
  */
 
 export type ActParams =
   | { op: "rect"; idx: number }
   | { op: "focusClick"; idx: number }
+  | { op: "click"; idx: number }
   | { op: "type"; idx: number; text: string; clear: boolean }
   | { op: "select"; idx: number; value: string };
 
@@ -19,6 +20,7 @@ export type ActResult =
   | { ok: true; op: "type"; observation: string }
   | { ok: true; op: "select"; observation: string }
   | { ok: true; op: "focusClick"; observation: string }
+  | { ok: true; op: "click"; observation: string }
   | { ok: false; error: string };
 
 export async function actByIdxInjected(params: ActParams): Promise<ActResult> {
@@ -452,7 +454,45 @@ export async function actByIdxInjected(params: ActParams): Promise<ActResult> {
     };
   }
 
-  // Unreachable: all four ActParams ops are handled above. `satisfies never`
+  if (params.op === "click") {
+    // Synthetic in-frame click — used for subframe elements where real CDP
+    // mouse input is unavailable. Full pointer/mouse sequence approximates a
+    // user click for standard handlers; isTrusted stays false by nature of
+    // synthetic events.
+    if ((el as HTMLInputElement).disabled) {
+      return {
+        ok: false,
+        error: `Element [${params.idx}] is disabled; clicking it has no effect.`,
+      };
+    }
+    (el as unknown as { scrollIntoViewIfNeeded?: (a: unknown) => void }).scrollIntoViewIfNeeded?.({
+      block: "center",
+    });
+    const r = (el as HTMLElement).getBoundingClientRect();
+    const init: MouseEventInit = {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      clientX: r.x + r.width / 2,
+      clientY: r.y + r.height / 2,
+      button: 0,
+    };
+    // happy-dom / older runtimes may lack PointerEvent — MouseEvent carries
+    // the same type string and listeners on "pointer*" still fire.
+    const PointerCtor: typeof MouseEvent =
+      typeof PointerEvent !== "undefined" ? PointerEvent : MouseEvent;
+    el.dispatchEvent(new PointerCtor("pointerover", init));
+    el.dispatchEvent(new MouseEvent("mouseover", init));
+    el.dispatchEvent(new PointerCtor("pointerdown", init));
+    el.dispatchEvent(new MouseEvent("mousedown", init));
+    (el as HTMLElement).focus?.();
+    el.dispatchEvent(new PointerCtor("pointerup", init));
+    el.dispatchEvent(new MouseEvent("mouseup", init));
+    (el as HTMLElement).click();
+    return { ok: true, op: "click", observation: `Clicked element [${params.idx}]` };
+  }
+
+  // Unreachable: all five ActParams ops are handled above. `satisfies never`
   // makes a future unhandled op a compile error (exhaustiveness guard).
   params satisfies never;
   return { ok: false, error: "unknown op" };
