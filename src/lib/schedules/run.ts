@@ -35,6 +35,25 @@ import {
   getSessionAgent,
 } from "@/lib/sessions/storage";
 
+// ── Task 7: Headless destructive-action prevention ────────────────────────────
+//
+// Headless runs run unattended and are a prompt-injection surface, so they must
+// not be able to perform ANY write-class schedule-meta operation: an injected
+// page could otherwise make the scheduled agent create, modify, or permanently
+// delete schedules (delete_schedule wipes the schedule + its entire run history,
+// irreversibly). All three write-class tools are excluded from the agent's tool
+// set via AgentLoopContext.excludeToolNames for every headless schedule run.
+//
+// list_schedules (read-class) is intentionally NOT excluded: observing the
+// schedule list is harmless and may be useful (e.g. "am I already scheduled for
+// X?"). One-shot self-cleanup needs no delete permission — a one-shot schedule
+// auto-completes via maxRuns.
+export const HEADLESS_EXCLUDE_TOOL_NAMES = [
+  "create_schedule",
+  "update_schedule",
+  "delete_schedule",
+] as const;
+
 // ── Injectable deps ──────────────────────────────────────────────────────────
 
 export interface RunDeps {
@@ -296,6 +315,10 @@ export async function runSchedule(
         sessionId,
         // Task 5.3 — optional step cap: maxStepsPerRun. Absent = no ceiling.
         ...(sched.maxStepsPerRun != null ? { maxSteps: sched.maxStepsPerRun } : {}),
+        // Task 7 — recursive creation prevention: exclude create/update from
+        // the agent's tool set so a scheduled run cannot spawn or modify
+        // schedules on its own.
+        excludeToolNames: HEADLESS_EXCLUDE_TOOL_NAMES,
         onStepSnapshot: async (snapshot) => {
           // Use the canonical merge (DRY with makeStepSnapshotHandler): it
           // preserves carry-over fields (currentFocusTabId, pendingConfirm) on

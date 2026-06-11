@@ -2,8 +2,9 @@
 //
 // Schedule-specific restricted-URL guard.
 //
-// The agent loop's `isRestrictedUrl` (loop.ts) only inspects the URL *scheme*
-// (chrome://, about:, file:, data:, …). That is insufficient for schedule
+// The shared `isRestrictedUrl` (src/lib/url/restricted.ts; re-exported by
+// loop.ts) only inspects the URL *scheme* (chrome://, about:, file:, data:, …).
+// That is insufficient for schedule
 // startUrls because the Chrome Web Store is served over plain https:// — its
 // scheme passes, but Chrome forbids extensions from injecting/executing scripts
 // on Web Store pages, so a schedule that opened a Web Store tab would run the
@@ -23,7 +24,7 @@
 // surface gated by the user's "Allow access to file URLs" permission, not a
 // restricted page.
 
-import { isRestrictedUrl } from "@/lib/agent/loop";
+import { isRestrictedUrl } from "@/lib/url/restricted";
 import { isWebStoreUrl } from "@/lib/web-store-urls";
 
 /**

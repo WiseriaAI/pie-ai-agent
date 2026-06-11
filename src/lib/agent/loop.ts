@@ -43,6 +43,10 @@ import {
 import { queryScratchpad as svcQueryScratchpad } from "../scratchpad/sql-bridge";
 import { getEnabledSkillPackages } from "../skills";
 import { isFilePdfUrl } from "../pdf/detect";
+// isRestrictedUrl is owned by the shared util (src/lib/url/restricted.ts).
+// Imported here for loop-internal use AND re-exported below so existing
+// `import { isRestrictedUrl } from "../agent/loop"` call sites keep working.
+import { isRestrictedUrl } from "../url/restricted";
 import {
   acquireCdpSession,
   type CdpSession,
@@ -252,6 +256,18 @@ export interface AgentLoopContext {
    * with an explicit `maxStepsPerRun` schedule field set this.
    */
   maxSteps?: number;
+  /**
+   * Task 7 — tool names to exclude from the loop's available tool set for
+   * this run. Used by headless schedule runs (run.ts) to prevent a scheduled
+   * agent from creating or modifying schedules (recursive creation guard).
+   *
+   * Example: `["create_schedule", "update_schedule"]`
+   *
+   * When absent, no tools are excluded (normal interactive behavior).
+   * The filter is applied after vision-gating (filterToolsByVision) so
+   * the two exclusion paths compose cleanly without order dependency.
+   */
+  excludeToolNames?: readonly string[];
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -352,23 +368,12 @@ function withSession<T extends object>(msg: T, sessionId: string): T & { session
   return { ...msg, sessionId };
 }
 
-export function isRestrictedUrl(url: string): boolean {
-  // Reject schemes whose origin collapses to the string "null" or that the agent
-  // has no sensible way to pin: file://, data:, javascript:, blob:. Without these
-  // checks, any subsequent navigation within one of these schemes would pass the
-  // per-round origin comparison (`"null" === "null"`), defeating the isolation.
-  if (isFilePdfUrl(url)) return false;
-  return (
-    url.startsWith("chrome://") ||
-    url.startsWith("chrome-extension://") ||
-    url.startsWith("about:") ||
-    url.startsWith("edge://") ||
-    url.startsWith("file://") ||
-    url.startsWith("data:") ||
-    url.startsWith("javascript:") ||
-    url.startsWith("blob:")
-  );
-}
+// isRestrictedUrl moved to src/lib/url/restricted.ts (a zero-agent-dependency
+// util) so url-guard.ts can import it without the url-guard → loop → tools →
+// schedule-meta → url-guard cycle. Re-exported here (the value is imported at
+// the top of the file) to keep every existing
+// `import { isRestrictedUrl } from "../agent/loop"` call site working.
+export { isRestrictedUrl };
 
 export function safeParseOrigin(url: string): string | null {
   // For file://*.pdf, use the URL itself as pin identity since the parsed
@@ -1536,10 +1541,20 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         clearScratchpad: (collection) => svcClearScratchpad(sessionId, collection),
         queryScratchpad: (args) => svcQueryScratchpad(sessionId, args),
       });
-      const allTools = filterToolsByVision(
+      const allToolsBeforeExclude = filterToolsByVision(
         [...BUILT_IN_TOOLS, ...mouseTools, ...keyboardTools, ...editorTools, readLocalFileTool, requestLocalFileTool, outputFileTool, ...scratchpadTools],
         modelConfig.vision,
       );
+      // Task 7 — recursive creation guard: headless schedule runs pass
+      // excludeToolNames to strip create_schedule / update_schedule from the
+      // tool set so a scheduled agent cannot create or modify schedules on its
+      // own. The filter is a simple set-membership check (O(1) per tool).
+      const excludeSet = ctx.excludeToolNames && ctx.excludeToolNames.length > 0
+        ? new Set(ctx.excludeToolNames)
+        : null;
+      const allTools = excludeSet
+        ? allToolsBeforeExclude.filter((t) => !excludeSet.has(t.name))
+        : allToolsBeforeExclude;
       const toolDefinitions = toolsToDefinitions(allTools);
 
       // Stream from LLM

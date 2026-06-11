@@ -61,6 +61,7 @@ import {
   handleAlarm,
   type SchedulerDeps,
 } from "@/lib/schedules/scheduler";
+import { setScheduleRunDep } from "@/lib/agent/tools/schedule-meta";
 import {
   handleExternalDetach,
   detachAllSessions,
@@ -195,6 +196,12 @@ const schedulerDeps: SchedulerDeps = {
   runSchedule: runScheduleWithDeps,
   now: () => Date.now(),
 };
+
+// C1 — inject the deps-bound runSchedule into the schedule-meta tool layer so
+// create_schedule / update_schedule can dispatch an IMMEDIATE first run (no
+// startAt) through the real agent loop. Without this, schedule-meta would arm
+// with a no-op dispatcher and silently drop every immediate/one-shot first run.
+setScheduleRunDep(runScheduleWithDeps);
 
 // Task 4 — alarm fires (name = "schedule:<id>") route into handleAlarm, which
 // dispatches the run + re-arms the next fire (or disarms). Registered at SW top

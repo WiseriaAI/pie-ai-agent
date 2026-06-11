@@ -30,6 +30,7 @@ import {
 } from "./runtime-map";
 import { createPortHandlers } from "./port-handlers";
 import { isFilePdfUrl } from "@/lib/pdf/detect";
+import { isRestrictedUrl } from "@/lib/url/restricted";
 import {
   type DownloadResult,
   registerDownload,
@@ -76,25 +77,6 @@ import {
 // The DisplayMessage type satisfies TitleableMessage (has role + content fields).
 
 /**
- * Schemes the agent loop refuses to operate on (mirrors `isRestrictedUrl`
- * in lib/agent/loop.ts). Kept inline here to avoid a panel→agent-runtime
- * import; if these two lists ever diverge the loop will hard-stop the
- * task on iteration 1 with "restricted URL" — but the panel UI would
- * have shown the session as pinnable, which is confusing. Easier to
- * filter at capture time so a restricted-URL session never gets a pin.
- */
-const RESTRICTED_PIN_PREFIXES = [
-  "chrome://",
-  "chrome-extension://",
-  "about:",
-  "edge://",
-  "file://",
-  "data:",
-  "javascript:",
-  "blob:",
-];
-
-/**
  * M3-U2 — capture the user's currently-active tab + its origin so a new
  * session can anchor to it at creation time. Returns null when the
  * active tab can't be resolved (no window focused, restricted URL, etc.) —
@@ -103,10 +85,10 @@ const RESTRICTED_PIN_PREFIXES = [
  * that displays as pinned should actually be runnable.
  *
  * Filters two layers:
- *   1. URL prefix list (chrome://, file://, blob:, etc.) — same as the
- *      loop's isRestrictedUrl. blob:https://example.com/abc parses to a
- *      non-"null" origin, so the prefix check (not origin equality) is
- *      what stops the pin from sneaking through.
+ *   1. isRestrictedUrl (shared util src/lib/url/restricted.ts) — the SAME
+ *      check the agent loop uses. blob:https://example.com/abc parses to a
+ *      non-"null" origin, so the scheme check (not origin equality) is what
+ *      stops the pin from sneaking through.
  *   2. URL.origin === "null" — opaque-origin schemes the URL spec gives up on.
  */
 async function captureActivePinned(): Promise<
@@ -122,11 +104,16 @@ async function captureActivePinned(): Promise<
     // explicitly: only pin to a real, addressable tab.
     if (!Number.isInteger(tab.id) || tab.id < 0) return null;
     // file://*.pdf exception: PDF viewer is sealed, so URL itself is the pin
-    // identity (mirrors loop.ts isFilePdfUrl handling).
+    // identity (mirrors isFilePdfUrl handling). Checked before isRestrictedUrl
+    // so the early-return wins (isRestrictedUrl also returns false for file
+    // PDFs, but the pin identity here is the full URL, not the origin).
     if (isFilePdfUrl(tab.url)) {
       return { pinnedTabId: tab.id, pinnedOrigin: tab.url };
     }
-    if (RESTRICTED_PIN_PREFIXES.some((p) => tab.url!.startsWith(p))) return null;
+    // Shared single source of truth (src/lib/url/restricted.ts) — same check the
+    // agent loop uses to gate pinning, so the panel never shows a session as
+    // pinnable that the loop would then hard-stop on iteration 1.
+    if (isRestrictedUrl(tab.url)) return null;
     const origin = new URL(tab.url).origin;
     if (!origin || origin === "null") return null;
     return { pinnedTabId: tab.id, pinnedOrigin: origin };
