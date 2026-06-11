@@ -138,6 +138,112 @@ describe("appendRun circular buffer + getRun", () => {
   });
 });
 
+describe("patchSchedule", () => {
+  it("patchSchedule 局部更新指定字段，不丢 runIds", async () => {
+    const { putSchedule, appendRun, patchSchedule, getSchedule } = await import("./store");
+    await putSchedule(makeSched({ id: "sched_p", runIds: [] }));
+    await appendRun("sched_p", makeRun({ recordId: "run_p1", scheduleId: "sched_p" }));
+    // Concurrent appendRun has populated runIds; patchSchedule must NOT clobber it.
+    await patchSchedule("sched_p", { nextRunAt: 5000, lastRunAt: 4000 });
+    const s = await getSchedule("sched_p");
+    expect(s?.nextRunAt).toBe(5000);
+    expect(s?.lastRunAt).toBe(4000);
+    // runIds set by appendRun survives the patch (no lost-update).
+    expect(s?.runIds).toEqual(["run_p1"]);
+  });
+
+  it("patchSchedule preserves unmodified fields", async () => {
+    const { putSchedule, patchSchedule, getSchedule } = await import("./store");
+    await putSchedule(makeSched({ id: "sched_pre", title: "Original", runCount: 3 }));
+    await patchSchedule("sched_pre", { nextRunAt: 9000 });
+    const s = await getSchedule("sched_pre");
+    expect(s?.title).toBe("Original");
+    expect(s?.runCount).toBe(3);
+    expect(s?.nextRunAt).toBe(9000);
+  });
+
+  it("patchSchedule is a no-op for unknown id (does not throw)", async () => {
+    const { patchSchedule, getSchedule } = await import("./store");
+    await expect(patchSchedule("sched_unknown", { nextRunAt: 1 })).resolves.not.toThrow();
+    expect(await getSchedule("sched_unknown")).toBeNull();
+  });
+
+  it("patchSchedule assigns an inner onerror that aborts the transaction", async () => {
+    // Reuse the captureGetHandlers harness shape inline; mirrors the other
+    // read-modify-write inner-get-failure tests below.
+    const { putSchedule, patchSchedule } = await import("./store");
+    await putSchedule(makeSched({ id: "sched_patchfail", runIds: [] }));
+    const box: { req: IDBRequest | null; aborted: boolean } = { req: null, aborted: false };
+    vi.spyOn(IDBObjectStore.prototype, "get").mockImplementation(function (
+      this: IDBObjectStore,
+    ) {
+      const txn = this.transaction as IDBTransaction & { __abortWrapped?: boolean };
+      if (!txn.__abortWrapped) {
+        const realAbort = txn.abort.bind(txn);
+        txn.abort = () => {
+          box.aborted = true;
+          try {
+            realAbort();
+          } catch {
+            /* already settled in test env — fine */
+          }
+        };
+        txn.__abortWrapped = true;
+      }
+      const synthetic = {
+        onsuccess: null,
+        onerror: null,
+        result: undefined,
+        error: null,
+        readyState: "pending",
+        source: this,
+        transaction: txn,
+      } as unknown as IDBRequest;
+      box.req = synthetic;
+      return synthetic;
+    });
+    const p = patchSchedule("sched_patchfail", { nextRunAt: 1 }).catch(() => undefined);
+    await Promise.resolve();
+    expect(box.req?.onerror != null).toBe(true);
+    box.req?.onerror?.call(box.req, new Event("error"));
+    expect(box.aborted).toBe(true);
+    await p;
+    vi.restoreAllMocks();
+  });
+});
+
+describe("listRunningRuns", () => {
+  it("lists only running ScheduleRunRecords (clean, no phantom id)", async () => {
+    const { putSchedule, appendRun, updateRun, listRunningRuns } = await import("./store");
+    await putSchedule(makeSched({ id: "sched_lr", runIds: [] }));
+    await appendRun("sched_lr", makeRun({ recordId: "run_r1", scheduleId: "sched_lr", runIndex: 1, status: "running" }));
+    await appendRun("sched_lr", makeRun({ recordId: "run_r2", scheduleId: "sched_lr", runIndex: 2, status: "running" }));
+    // Move one to success — it must drop out of the running list.
+    await updateRun("run_r2", { status: "success", endedAt: 2 });
+    const running = await listRunningRuns();
+    const ids = running.map((r) => r.recordId).sort();
+    expect(ids).toEqual(["run_r1"]);
+    // Clean record (no phantom id field leaks through).
+    expect(Object.keys(running[0]!)).not.toContain("id");
+  });
+
+  it("returns empty array when no runs are running", async () => {
+    const { putSchedule, appendRun, updateRun, listRunningRuns } = await import("./store");
+    await putSchedule(makeSched({ id: "sched_none", runIds: [] }));
+    await appendRun("sched_none", makeRun({ recordId: "run_done", scheduleId: "sched_none" }));
+    await updateRun("run_done", { status: "success" });
+    expect(await listRunningRuns()).toEqual([]);
+  });
+
+  it("does not pick up sched_ records (only run_ keys)", async () => {
+    const { putSchedule, appendRun, listRunningRuns } = await import("./store");
+    await putSchedule(makeSched({ id: "sched_mix", runIds: [], status: "active" }));
+    await appendRun("sched_mix", makeRun({ recordId: "run_mix", scheduleId: "sched_mix", status: "running" }));
+    const running = await listRunningRuns();
+    expect(running.every((r) => r.recordId.startsWith("run_"))).toBe(true);
+  });
+});
+
 describe("updateRun", () => {
   it("updateRun 局部更新 run 状态", async () => {
     const { putSchedule, appendRun, updateRun, getRun } = await import("./store");

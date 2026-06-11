@@ -45,6 +45,24 @@ export async function listSchedules(): Promise<ScheduleRecord[]> {
   return all;
 }
 
+/** List all currently-running ScheduleRunRecords (run_* keys, status==="running").
+ *  Runs are persisted with a phantom `id` field (= recordId); strip it on read
+ *  so consumers get clean ScheduleRunRecords. Used by orphan cleanup on SW
+ *  wake-up to find runs whose owning loop died with the previous SW. */
+export async function listRunningRuns(): Promise<ScheduleRunRecord[]> {
+  const all = await tx<(ScheduleRunRecord & { id?: string })[]>(
+    STORES.schedules,
+    "readonly",
+    (s) => {
+      const range = IDBKeyRange.bound(RUN_KEY_PREFIX, RUN_KEY_PREFIX + "￿");
+      return s.getAll(range) as IDBRequest<(ScheduleRunRecord & { id?: string })[]>;
+    },
+  );
+  return all
+    .filter((r) => r.status === "running")
+    .map(({ id: _id, ...rest }) => rest as ScheduleRunRecord);
+}
+
 /** Get a ScheduleRunRecord by recordId, or null if not found.
  *  Runs are persisted with a phantom `id` field (= recordId) to satisfy the
  *  store's keyPath:"id"; strip it on read so consumers get a clean
@@ -66,6 +84,35 @@ export async function getRun(recordId: string): Promise<ScheduleRunRecord | null
 export async function putSchedule(record: ScheduleRecord): Promise<void> {
   await tx<IDBValidKey>(STORES.schedules, "readwrite", (s) => s.put(record));
   publishChange(STORES.schedules, "put", record.id);
+}
+
+/**
+ * Partially update a ScheduleRecord (atomic read-merge-write). Silently no-ops
+ * for unknown ids.
+ *
+ * Why not putSchedule: a full put would clobber `runIds`, which is concurrently
+ * mutated by appendRun (which read-modify-writes runIds inside its own txMulti).
+ * A read-then-full-put here would lose any run appended between the read and the
+ * write (lost-update). patchSchedule does the read + merge + write in a SINGLE
+ * transaction so the merge always sees the latest runIds.
+ */
+export async function patchSchedule(
+  id: string,
+  patch: Partial<Omit<ScheduleRecord, "id">>,
+): Promise<void> {
+  await txMulti([STORES.schedules], "readwrite", (m) => {
+    const store = m[STORES.schedules];
+    const getReq = store.get(id) as IDBRequest<ScheduleRecord | undefined>;
+    // If the inner get fails, abort the transaction so txMulti rejects rather
+    // than committing empty and resolving while silently dropping the patch.
+    getReq.onerror = () => store.transaction.abort();
+    getReq.onsuccess = () => {
+      const existing = getReq.result;
+      if (!existing) return; // schedule not found — silently no-op
+      store.put({ ...existing, ...patch, id });
+    };
+  });
+  publishChange(STORES.schedules, "put", id);
 }
 
 /** Delete a ScheduleRecord and cascade-delete all run records it references.

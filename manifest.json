@@ -4,7 +4,7 @@
   "name": "__MSG_extension_name__",
   "version": "1.0.0",
   "description": "__MSG_extension_description__",
-  "permissions": ["activeTab", "sidePanel", "storage", "tabs", "tabGroups", "scripting", "debugger", "webNavigation", "offscreen", "downloads"],
+  "permissions": ["activeTab", "sidePanel", "storage", "tabs", "tabGroups", "scripting", "debugger", "webNavigation", "offscreen", "downloads", "alarms"],
   "host_permissions": [
     "<all_urls>",
     "https://api.anthropic.com/*",

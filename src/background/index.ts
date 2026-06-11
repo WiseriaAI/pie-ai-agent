@@ -16,7 +16,11 @@ import type {
   ContentBlock,
   ModelConfig,
 } from "@/lib/model-router";
-import { resolveModelConfig } from "@/lib/instances";
+import {
+  resolveModelConfig,
+  getInstance,
+  firstModelForProvider,
+} from "@/lib/instances";
 import { resolveSelection } from "@/lib/model-selection-resolver";
 import {
   runAgentLoop,
@@ -49,7 +53,14 @@ import { escapeUntrustedWrappers } from "@/lib/agent/untrusted-wrappers";
 import {
   detectAndMarkPaused,
   transitionPortInFlightSessionsToPaused,
+  markOrphanRunsInterrupted,
 } from "./session-recovery";
+import { runSchedule } from "@/lib/schedules/run";
+import {
+  reconcileAlarms,
+  handleAlarm,
+  type SchedulerDeps,
+} from "@/lib/schedules/scheduler";
 import {
   handleExternalDetach,
   detachAllSessions,
@@ -138,6 +149,75 @@ const portsBySession = new Map<string, chrome.runtime.Port>();
 // for resume but must NOT block a foreground session's close_tabs. Module-level
 // (not per-port) so a loop running in a sibling sidepanel is visible too.
 const runningSessionIds = new Set<string>();
+
+// --- Task 4 — schedule alarm dispatch + keep-alive ---
+//
+// Schedule runs are headless (no sidepanel port), so they can't reuse the
+// per-port keep-alive. A dedicated module-level controller keeps the SW alive
+// while any scheduled run is in flight; `runningScheduleIds` is its inFlight set.
+// ensure() before each dispatch, maybeStop() in the dispatch's finally (stops
+// only when no schedule run remains in flight). This mirrors the foreground
+// keep-alive scoping (#30) — alive only while real work is pending.
+const runningScheduleIds = new Set<string>();
+const scheduleKeepAlive: KeepAlive = createKeepAlive({
+  tick: () => chrome.runtime.getPlatformInfo(),
+  inFlight: runningScheduleIds,
+});
+
+/**
+ * Bound runSchedule with the REAL RunDeps + keep-alive owner = the schedule run.
+ * runSchedule is fire-and-forget at the alarm layer (handleAlarm awaits it only
+ * to re-arm the next fire from post-run state); here we wrap it so:
+ *   - the SW stays alive for the whole headless run (ensure before, maybeStop
+ *     after — guarded by runningScheduleIds), and
+ *   - a thrown exception still reaches the finally (runSchedule already converts
+ *     soft failures to a `failed` run record; this guards a hard JS throw).
+ */
+async function runScheduleWithDeps(scheduleId: string): Promise<void> {
+  runningScheduleIds.add(scheduleId);
+  scheduleKeepAlive.ensure();
+  try {
+    await runSchedule(scheduleId, {
+      runAgentLoop,
+      getInstance,
+      firstModelForProvider,
+      resolveModelConfig,
+    });
+  } finally {
+    runningScheduleIds.delete(scheduleId);
+    scheduleKeepAlive.maybeStop();
+  }
+}
+
+// Shared SchedulerDeps — the real runSchedule (deps + keep-alive baked in) +
+// Date.now. Used by the onAlarm handler and the startup reconcile.
+const schedulerDeps: SchedulerDeps = {
+  runSchedule: runScheduleWithDeps,
+  now: () => Date.now(),
+};
+
+// Task 4 — alarm fires (name = "schedule:<id>") route into handleAlarm, which
+// dispatches the run + re-arms the next fire (or disarms). Registered at SW top
+// level so it re-binds on every SW restart.
+//
+// MUST await scheduleStartupReady BEFORE dispatching: a SW that wakes *because*
+// of an alarm fires onAlarm concurrently with the startup orphan-sweep
+// (markOrphanRunsInterrupted) + reconcile, which are still in flight. Awaiting
+// here guarantees orphan-sweep-before-dispatch holds for the LIVE onAlarm path
+// too — not just the startup reconcile path — so once Task 5 adds its
+// skip-if-running guard, a stale "running" orphan can't wedge the new run.
+// scheduleStartupReady is a module-level const referenced inside this closure
+// (which only runs post-module-eval, so no TDZ); in steady state it's already
+// resolved → ~zero cost. Listener still never rejects: await, then catch+log.
+if (chrome.alarms) {
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    void scheduleStartupReady
+      .then(() => handleAlarm(alarm.name, schedulerDeps))
+      .catch((e) => {
+        console.warn(`[sw] handleAlarm(${alarm.name}) failed:`, e);
+      });
+  });
+}
 
 // Bug-fix — when a quote is stashed because the SW has no live streaming port
 // (it idled/restarted while the side panel stayed mounted on the user's current
@@ -236,6 +316,23 @@ const recoveryReady: Promise<void> = startupMigrationsReady
     console.warn("[sw] recovery on top-level failed:", e);
   }) as Promise<void>;
 
+// Task 4 — schedule cold-start: clear orphan runs (running records whose driving
+// loop died with the previous SW) BEFORE reconciling alarms, so an overdue /
+// re-armed schedule never dispatches a new run while a dead "running" record
+// still blocks Task 5's skip-if-running guard. Then reconcile alarms (re-arm any
+// active schedule that lost its alarm to an SW reinstall/upgrade or a broken
+// re-arm chain). Chained off recoveryReady so it reads a populated, migrated IDB.
+// Module-level so all SW startup entry points share one ordered run; the alarm
+// listener above is independent (it only needs to be registered, not awaited).
+const scheduleStartupReady: Promise<void> = recoveryReady
+  .then(async () => {
+    await markOrphanRunsInterrupted();
+    await reconcileAlarms(Date.now(), schedulerDeps);
+  })
+  .catch((e) => {
+    console.warn("[sw] schedule startup (orphan-cleanup + reconcile) failed:", e);
+  }) as Promise<void>;
+
 // First install handler
 chrome.runtime.onInstalled.addListener((details) => {
   if (details.reason === "install") {
@@ -245,6 +342,11 @@ chrome.runtime.onInstalled.addListener((details) => {
   // recoveryReady deduplicates via 30s guard.
   recoveryReady.catch((e) => {
     console.warn("[sw] recovery on onInstalled failed:", e);
+  });
+  // Task 4 — onInstalled clears all alarms; re-run orphan-cleanup + reconcile so
+  // active schedules get their alarms re-created after an install/update.
+  scheduleStartupReady.catch((e) => {
+    console.warn("[sw] schedule startup on onInstalled failed:", e);
   });
   // ROADMAP §14 v1.1 — re-inject content scripts into already-open tabs so
   // they get a live runtime after extension reload/update. Without this,
@@ -269,6 +371,12 @@ chrome.runtime.onInstalled.addListener((details) => {
 chrome.runtime.onStartup.addListener(() => {
   recoveryReady.catch((e) => {
     console.warn("[sw] recovery on onStartup failed:", e);
+  });
+  // Task 4 — Chrome process start: re-run schedule orphan-cleanup + alarm
+  // reconcile on the same chain (shared module-level promise; reconcile is a
+  // no-op for already-armed alarms).
+  scheduleStartupReady.catch((e) => {
+    console.warn("[sw] schedule startup on onStartup failed:", e);
   });
 });
 
