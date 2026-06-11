@@ -259,10 +259,19 @@ export default function NewConfigWizard(props: Props) {
       </div>
 
       {entryMode === "managed" ? (
-        <ManagedSubscribePanel
-          deps={props.__managedDeps}
-          onCreated={(apiKey, email) => props.onCreate("managed", { nickname: email, apiKey, customModels: [] })}
-        />
+        (props.existingProviderRefs ?? []).includes("managed") ? (
+          // A managed config already exists — re-running the subscribe flow would
+          // call createInstance again and throw "already has a config". Show a
+          // pointer to Settings instead of the login panel.
+          <div className="rounded-[14px] border border-line bg-surface p-3.5 text-[13px] text-fg-2">
+            Official subscription already configured — manage it in Settings.
+          </div>
+        ) : (
+          <ManagedSubscribePanel
+            deps={props.__managedDeps}
+            onCreated={(apiKey, email) => props.onCreate("managed", { nickname: email, apiKey, customModels: [] })}
+          />
+        )
       ) : (
         <>
       <ProviderDropdown

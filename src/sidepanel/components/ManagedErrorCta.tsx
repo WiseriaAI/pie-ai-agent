@@ -39,7 +39,9 @@ export default function ManagedErrorCta({ kind, deps }: { kind: ErrorKind | null
   return (
     <button
       type="button"
-      onClick={() => portal(key)}
+      // No err state here (compact inline CTA) — swallow rejection so a failed
+      // portal open never surfaces as an unhandled promise rejection.
+      onClick={() => { void portal(key).catch(() => {}); }}
       className="mt-1.5 h-8 rounded-[10px] bg-accent px-3 text-[12px] font-medium text-canvas"
     >
       Manage subscription

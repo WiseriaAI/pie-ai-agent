@@ -24,6 +24,18 @@ export default function ManagedAccountPanel({ apiKey, deps }: { apiKey: string; 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { void load(); }, [apiKey]);
 
+  async function handleCheckout() {
+    setErr(null);
+    try { await checkout(apiKey); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Failed to open checkout"); }
+  }
+
+  async function handlePortal() {
+    setErr(null);
+    try { await portal(apiKey); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Failed to open portal"); }
+  }
+
   return (
     <div className="flex flex-col gap-2 rounded-[14px] border border-line bg-surface p-3.5 text-[13px]">
       {ent ? (
@@ -31,10 +43,10 @@ export default function ManagedAccountPanel({ apiKey, deps }: { apiKey: string; 
           <div className="text-fg-1"><span className="font-mono">{ent.email}</span></div>
           <div className="text-fg-3">Plan: <span className="text-fg-1">{ent.plan}</span> · Remaining: ${ent.budgetRemainingUsd.toFixed(2)}</div>
           {ent.plan === "active" ? (
-            <button type="button" onClick={() => portal(apiKey)}
+            <button type="button" onClick={handlePortal}
               className="h-9 rounded-[10px] border border-line px-4 text-[12px] text-fg-1 hover:border-fg-3">Manage subscription</button>
           ) : (
-            <button type="button" onClick={() => checkout(apiKey)}
+            <button type="button" onClick={handleCheckout}
               className="h-9 rounded-[10px] bg-accent px-4 text-[12px] font-medium text-canvas">{ent.plan === "blocked" ? "Renew subscription" : "Subscribe"}</button>
           )}
           <button type="button" onClick={load} className="h-7 text-[11px] text-fg-3 hover:text-fg-1">Refresh</button>

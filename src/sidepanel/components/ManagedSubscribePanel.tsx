@@ -40,6 +40,16 @@ export default function ManagedSubscribePanel({ onCreated, deps }: Props) {
     }
   }
 
+  async function handleCheckout() {
+    if (!session) return;
+    setErr(null);
+    try {
+      await checkout(session.apiKey);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Failed to open checkout");
+    }
+  }
+
   async function handleRefresh() {
     if (!session) return;
     setBusy(true);
@@ -82,7 +92,7 @@ export default function ManagedSubscribePanel({ onCreated, deps }: Props) {
           <button
             type="button"
             disabled={busy}
-            onClick={() => checkout(session.apiKey)}
+            onClick={handleCheckout}
             className="h-9 rounded-[10px] bg-accent px-4 text-[12px] font-medium text-canvas disabled:opacity-40"
           >
             Subscribe

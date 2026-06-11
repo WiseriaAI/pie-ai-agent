@@ -2,6 +2,15 @@ import { render, screen, fireEvent, cleanup, within } from "@testing-library/rea
 import { describe, it, expect, vi, afterEach } from "vitest";
 import InstanceForm from "./InstanceForm";
 
+// ManagedAccountPanel (rendered by the managed branch when existingApiKey is set)
+// fires getEntitlement on mount — stub it so the managed delete test never hits
+// the network and never produces an unhandled rejection.
+vi.mock("@/lib/managed-account", () => ({
+  getEntitlement: vi.fn(() => new Promise(() => {})),
+  openCheckout: vi.fn(async () => {}),
+  openPortal: vi.fn(async () => {}),
+}));
+
 afterEach(() => {
   cleanup();
 });
@@ -202,6 +211,25 @@ describe("InstanceForm", () => {
     expect(labels).toEqual(["Forget config", "Test", "Save"]);
     expect(screen.getByRole("button", { name: /^test$/i }).className).toContain("h-8");
     expect(screen.getByRole("button", { name: /^save$/i }).className).toContain("h-8");
+  });
+
+  it("managed edit mode renders a delete button (same label as BYOK Forget) that calls onDelete", () => {
+    const onDelete = vi.fn();
+    render(
+      <InstanceForm
+        mode="edit"
+        provider="managed"
+        initialNickname="u@x.com"
+        existingApiKey="sk-v"
+        onSave={() => {}}
+        onTest={() => {}}
+        onDelete={onDelete}
+      />,
+    );
+    const deleteButton = screen.getByRole("button", { name: /forget config/i });
+    expect(deleteButton).toBeTruthy();
+    fireEvent.click(deleteButton);
+    expect(onDelete).toHaveBeenCalledTimes(1);
   });
 
   it("does not open the add-model modal when clicking the MODELS section label", () => {

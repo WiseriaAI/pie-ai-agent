@@ -35,4 +35,18 @@ describe("NewConfigWizard managed toggle", () => {
       ),
     );
   });
+
+  it("shows an 'already configured' notice (and no Google sign-in) when a managed config exists", () => {
+    render(
+      <NewConfigWizard
+        onCreate={() => {}}
+        onCancel={() => {}}
+        onTest={() => {}}
+        existingProviderRefs={["managed"]}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /official subscription/i }));
+    expect(screen.getByText(/already configured/i)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /sign in with google/i })).toBeNull();
+  });
 });

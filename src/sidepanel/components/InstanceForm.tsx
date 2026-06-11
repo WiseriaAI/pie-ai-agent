@@ -130,6 +130,18 @@ export default function InstanceForm(props: Props) {
         {props.existingApiKey
           ? <ManagedAccountPanel apiKey={props.existingApiKey} />
           : <div className="text-[12px] text-fg-3">Sign in from the &ldquo;Official subscription&rdquo; tab to set this up.</div>}
+        {/* Edit-mode parents (Settings) don't pass renderActions, so the only way to
+            remove a managed config is this delete button — visually/text aligned with
+            the BYOK "Forget config" button below. */}
+        {props.onDelete && (
+          <button
+            type="button"
+            onClick={() => props.onDelete!()}
+            className="self-start h-8 rounded-[10px] bg-transparent px-3 text-[12px] text-warning hover:bg-warning-tint"
+          >
+            {t("instanceForm.forgetConfig")}
+          </button>
+        )}
         {props.renderActions?.({
           canSave: false,
           replacing: false,
