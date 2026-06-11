@@ -5,7 +5,9 @@ import SessionDrawer from "@/sidepanel/components/SessionDrawer";
 import TopBarListButton from "@/sidepanel/components/TopBarListButton";
 import TopBarNewSessionButton from "@/sidepanel/components/TopBarNewSessionButton";
 import TopBarSettingsButton from "@/sidepanel/components/TopBarSettingsButton";
+import TopBarSchedulesButton from "@/sidepanel/components/TopBarSchedulesButton";
 import TopBarThemeButton, { type ThemeMode } from "@/sidepanel/components/TopBarThemeButton";
+import SchedulesPanel from "@/sidepanel/components/Schedules/SchedulesPanel";
 import { getInstance } from "@/lib/instances";
 import { resolveSelection } from "@/lib/model-selection-resolver";
 import { normalizeSkillSlashKey } from "@/lib/skills";
@@ -18,7 +20,7 @@ import { getConfig, setConfig, removeConfig } from "@/lib/idb/config-store";
 import { useStoreChange } from "@/sidepanel/hooks/useStoreChange";
 import type { SessionIndexEntry } from "@/lib/sessions/types";
 
-type View = "agent" | "settings";
+type View = "agent" | "settings" | "schedules";
 
 /**
  * App — root component.
@@ -215,10 +217,9 @@ export default function App() {
 
   const handleSelectSession = useCallback(async (id: string) => {
     const ok = await session.setActive(id);
-    // P1-3: if setActive returned null (refused because streaming=true),
-    // keep the drawer open — the streaming guard in setActive already emits
-    // nothing; we let the P0-1 createAndActivate guard's toast guide the user.
-    // Only close the drawer when the switch actually succeeded.
+    // setActive returns null only when the session meta no longer exists (the
+    // streaming guard was removed in #30). In that case keep the drawer open;
+    // only close it when the switch actually succeeded.
     if (ok != null) setDrawerOpen(false);
   }, [session]);
 
@@ -235,6 +236,16 @@ export default function App() {
     }
     // Close drawer only if we actually switched to the session.
     if (result === id) setDrawerOpen(false);
+  }, [session]);
+
+  // ── Open a session from the Schedules run history ─────────────────────────
+  // A run row carries its 1:1 sessionId; clicking it activates that session and
+  // returns to the chat view so the user sees the scheduled run's conversation.
+  // setActive returns null only when the session meta no longer exists (e.g. it
+  // was hard-deleted) — in that case stay on the current view.
+  const handleOpenSessionFromSchedule = useCallback(async (id: string) => {
+    const ok = await session.setActive(id);
+    if (ok != null) setView("agent");
   }, [session]);
 
   // ── New session ───────────────────────────────────────────────────────────
@@ -302,6 +313,12 @@ export default function App() {
         {/* Theme toggle (light / dark / system cycle) */}
         <TopBarThemeButton mode={themeMode} onModeChange={setThemeMode} />
 
+        {/* Schedules */}
+        <TopBarSchedulesButton
+          isActive={view === "schedules"}
+          onClick={() => setView(view === "schedules" ? "agent" : "schedules")}
+        />
+
         {/* Settings */}
         <TopBarSettingsButton
           isActive={view === "settings"}
@@ -340,6 +357,8 @@ export default function App() {
                 : undefined
             }
           />
+        ) : view === "schedules" ? (
+          <SchedulesPanel onOpenSession={(id) => void handleOpenSessionFromSchedule(id)} />
         ) : (
           <Settings
             onBack={() => setView("agent")}

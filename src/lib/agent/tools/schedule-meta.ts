@@ -20,20 +20,15 @@
 
 import type { ActionResult } from "../../dom-actions/types";
 import type { Tool } from "../types";
+import { listSchedules } from "../../schedules/store";
 import {
-  getSchedule,
-  listSchedules,
-  putSchedule,
-  deleteSchedule,
-  patchSchedule,
-} from "../../schedules/store";
-import { armSchedule, disarmSchedule } from "../../schedules/scheduler";
-import { isRestrictedScheduleUrl } from "../../schedules/url-guard";
+  createScheduleOp,
+  updateScheduleOp,
+  deleteScheduleOp,
+  setScheduleOpsRunDep,
+} from "../../schedules/schedule-ops";
 import {
-  newScheduleId,
   MIN_INTERVAL_MINUTES,
-  MAX_SCHEDULES,
-  type ScheduleRecord,
   type ScheduleSpec,
 } from "../../schedules/types";
 import { getConfig } from "../../idb/config-store";
@@ -54,56 +49,17 @@ async function getActiveInstanceId(): Promise<string | null> {
   return (await getConfig<string>(ACTIVE_KEY)) ?? null;
 }
 
-/**
- * Validate a ScheduleSpec patch for the interval constraint.
- * Returns an error string if invalid, or null if valid.
- */
-function validateSpec(spec: Partial<ScheduleSpec>): string | null {
-  if (
-    spec.intervalMinutes !== undefined &&
-    spec.intervalMinutes < MIN_INTERVAL_MINUTES
-  ) {
-    return `intervalMinutes must be >= ${MIN_INTERVAL_MINUTES} (got ${spec.intervalMinutes})`;
-  }
-  return null;
-}
-
 // ── Injected runSchedule dispatcher (C1 fix) ─────────────────────────────────
 //
-// armSchedule needs SchedulerDeps.runSchedule: for a schedule with NO startAt
-// (default = run immediately), armSchedule takes the immediate-fire branch and
-// calls `dispatchRun(deps)` → deps.runSchedule(id) right away (no alarm is
-// created). If we passed a no-op here, that FIRST run would be silently dropped
-// and the schedule would sit `active` with a past nextRunAt and no armed alarm
-// until the next SW restart's reconcile picked it up (spec §156 violation —
-// immediate schedules must dispatch their first run on create).
-//
-// The tool layer is a static module and can't reach the SW's deps-bound
-// runSchedule (background/index.ts `runScheduleWithDeps`, with RunDeps +
-// keep-alive baked in). So the SW injects it at boot via `setScheduleRunDep`.
-// Until injected (only true in non-SW contexts / before boot), we fall back to
-// a no-op + warn so a stray call can never throw.
-//
-// (armSchedule / disarmSchedule are imported directly from scheduler.ts so
-// vitest can `vi.mock("../../schedules/scheduler", …)`; the real-dispatch test
-// instead leaves them unmocked and stubs chrome.alarms + setScheduleRunDep.)
-
-type RunScheduleDispatcher = (scheduleId: string) => Promise<void>;
-
-let runScheduleDep: RunScheduleDispatcher = async (id) => {
-  console.warn(
-    `[schedule-meta] runScheduleDep not injected — immediate run for ${id} dropped. ` +
-      `setScheduleRunDep() must be called at SW boot.`,
-  );
-};
-
-/**
- * Inject the SW's deps-bound runSchedule so create/update_schedule can dispatch
- * an immediate first run through the REAL agent loop (not a no-op). Called once
- * from background/index.ts after `schedulerDeps` is defined.
- */
-export function setScheduleRunDep(fn: RunScheduleDispatcher): void {
-  runScheduleDep = fn;
+// The create/update/delete store + arm/disarm sequences now live in the shared
+// schedule-ops module (src/lib/schedules/schedule-ops.ts), reused by both these
+// agent tools and the SW message handler (panel write channel). The injected
+// deps-bound runSchedule (needed so an immediate first run dispatches through
+// the real agent loop instead of being dropped) is held there. setScheduleRunDep
+// is re-exported here for back-compat with background/index.ts's single boot-time
+// injection call; it forwards to setScheduleOpsRunDep.
+export function setScheduleRunDep(fn: (scheduleId: string) => Promise<void>): void {
+  setScheduleOpsRunDep(fn);
 }
 
 // ── Tool: create_schedule ────────────────────────────────────────────────────
@@ -178,15 +134,6 @@ const createScheduleTool: Tool = {
       if (s.maxRuns !== undefined) spec.maxRuns = s.maxRuns as number;
     }
 
-    const specErr = validateSpec(spec);
-    if (specErr) return err(specErr);
-
-    if (isNonEmptyString(a.startUrl) && isRestrictedScheduleUrl(a.startUrl)) {
-      return err(
-        `startUrl "${a.startUrl}" is a restricted page that cannot be used as a schedule startUrl (chrome://, about:, chrome-extension://, and the Chrome Web Store are not injectable).`,
-      );
-    }
-
     // Resolve instanceId: explicit arg or fall back to active instance
     let instanceId: string;
     if (isNonEmptyString(a.instanceId)) {
@@ -197,42 +144,21 @@ const createScheduleTool: Tool = {
       instanceId = active;
     }
 
-    // Quota gate
-    const existing = await listSchedules();
-    if (existing.length >= MAX_SCHEDULES) {
-      return err(
-        `schedule quota exceeded (max ${MAX_SCHEDULES}). Delete unused schedules via delete_schedule.`,
-      );
-    }
-
-    const id = newScheduleId();
-    const rec: ScheduleRecord = {
-      id,
-      title: a.title.trim(),
-      prompt: a.prompt.trim(),
+    // Delegate to the shared ops core (validation, quota gate, store put + arm).
+    const res = await createScheduleOp({
+      title: a.title,
+      prompt: a.prompt,
+      instanceId,
       spec,
       ...(isNonEmptyString(a.startUrl) ? { startUrl: a.startUrl } : {}),
-      instanceId,
-      enabled: true,
-      status: "active",
       ...(a.maxStepsPerRun !== undefined ? { maxStepsPerRun: a.maxStepsPerRun as number } : {}),
       ...(a.maxRunMs !== undefined ? { maxRunMs: a.maxRunMs as number } : {}),
-      runCount: 0,
-      consecutiveFailures: 0,
-      runIds: [],
-      createdAt: Date.now(),
-    };
-
-    await putSchedule(rec);
-    // Arm the schedule. For a future startAt this creates a chrome.alarm; for an
-    // immediate schedule (no startAt) armSchedule dispatches the first run NOW
-    // via runScheduleDep (the SW-injected, deps-bound runSchedule). Passing the
-    // injected dep (not a no-op) is what keeps that first run from being dropped.
-    await armSchedule(rec, { runSchedule: runScheduleDep });
+    });
+    if (!res.ok) return err(res.error);
 
     return {
       success: true,
-      observation: `schedule created: id=${id} title="${rec.title}" instanceId=${instanceId}. It will run automatically as scheduled.`,
+      observation: `schedule created: id=${res.id} title="${a.title.trim()}" instanceId=${instanceId}. It will run automatically as scheduled.`,
     };
   },
 };
@@ -270,54 +196,27 @@ const updateScheduleTool: Tool = {
     if (!isNonEmptyString(a.id)) return err("id is required");
     const id = a.id;
 
-    const existing = await getSchedule(id);
-    if (!existing) return err(`schedule not found: ${id}`);
-
-    const patch: Partial<Omit<ScheduleRecord, "id">> = {};
-    if ("title" in a) {
-      if (!isNonEmptyString(a.title)) return err("title must be a non-empty string");
-      patch.title = a.title.trim();
-    }
-    if ("prompt" in a) {
-      if (!isNonEmptyString(a.prompt)) return err("prompt must be a non-empty string");
-      patch.prompt = a.prompt.trim();
-    }
-
-    let specChanged = false;
+    // Build a partial spec only from the keys explicitly present, so the ops
+    // layer can tell "set to undefined" apart from "not touched".
+    let specInput: Partial<ScheduleSpec> | undefined;
     if ("spec" in a && a.spec && typeof a.spec === "object") {
       const s = a.spec as Record<string, unknown>;
-      const newSpec: ScheduleSpec = { ...existing.spec };
-      if ("startAt" in s) { newSpec.startAt = s.startAt as number | undefined; specChanged = true; }
-      if ("intervalMinutes" in s) { newSpec.intervalMinutes = s.intervalMinutes as number | undefined; specChanged = true; }
-      if ("maxRuns" in s) { newSpec.maxRuns = s.maxRuns as number | undefined; }
-
-      const specErr = validateSpec(newSpec);
-      if (specErr) return err(specErr);
-      patch.spec = newSpec;
+      specInput = {};
+      if ("startAt" in s) specInput.startAt = s.startAt as number | undefined;
+      if ("intervalMinutes" in s) specInput.intervalMinutes = s.intervalMinutes as number | undefined;
+      if ("maxRuns" in s) specInput.maxRuns = s.maxRuns as number | undefined;
     }
 
-    if ("startUrl" in a) {
-      if (isNonEmptyString(a.startUrl) && isRestrictedScheduleUrl(a.startUrl)) {
-        return err(`startUrl "${a.startUrl}" is restricted and cannot be used.`);
-      }
-      patch.startUrl = a.startUrl as string | undefined;
-    }
-    if ("maxStepsPerRun" in a) patch.maxStepsPerRun = a.maxStepsPerRun as number;
-    if ("maxRunMs" in a) patch.maxRunMs = a.maxRunMs as number;
-
-    await patchSchedule(id, patch);
-
-    // Re-arm when spec timing changed (startAt or intervalMinutes). Uses the
-    // injected runScheduleDep so an immediate re-arm dispatches through the real
-    // agent loop (same C1 reasoning as create_schedule).
-    if (specChanged) {
-      await disarmSchedule(id);
-      // Re-read post-patch to get the merged record
-      const updated = await getSchedule(id);
-      if (updated && updated.status === "active") {
-        await armSchedule(updated, { runSchedule: runScheduleDep });
-      }
-    }
+    const res = await updateScheduleOp({
+      id,
+      ...("title" in a ? { title: a.title as string } : {}),
+      ...("prompt" in a ? { prompt: a.prompt as string } : {}),
+      ...(specInput ? { spec: specInput } : {}),
+      ...("startUrl" in a ? { startUrl: (a.startUrl as string | undefined) ?? "" } : {}),
+      ...("maxStepsPerRun" in a ? { maxStepsPerRun: a.maxStepsPerRun as number } : {}),
+      ...("maxRunMs" in a ? { maxRunMs: a.maxRunMs as number } : {}),
+    });
+    if (!res.ok) return err(res.error);
 
     return { success: true, observation: `schedule updated: id=${id}` };
   },
@@ -341,11 +240,8 @@ const deleteScheduleTool: Tool = {
     if (!isNonEmptyString(a.id)) return err("id is required");
     const id = a.id;
 
-    const existing = await getSchedule(id);
-    if (!existing) return err(`schedule not found: ${id}`);
-
-    await deleteSchedule(id);
-    await disarmSchedule(id);
+    const res = await deleteScheduleOp(id);
+    if (!res.ok) return err(res.error);
 
     return { success: true, observation: `schedule deleted: ${id}` };
   },

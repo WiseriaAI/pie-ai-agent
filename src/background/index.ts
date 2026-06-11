@@ -63,6 +63,8 @@ import {
 } from "@/lib/schedules/scheduler";
 import { handleScheduleNotificationClick } from "@/lib/schedules/notify";
 import { setScheduleRunDep } from "@/lib/agent/tools/schedule-meta";
+import { handleScheduleAction } from "@/lib/schedules/action-handler";
+import { SCHEDULE_ACTION_MESSAGE, type ScheduleActionMessage } from "@/lib/schedules/panel-actions";
 import {
   handleExternalDetach,
   detachAllSessions,
@@ -656,6 +658,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === "extract-page") {
     handleExtractPage().then(sendResponse);
+    return true; // async response
+  }
+
+  // Task 9 — panel write channel for schedule mutations. The panel reads
+  // schedules straight from IDB but routes every MUTATION here so it runs with
+  // the SW's real deps-bound runSchedule (setScheduleRunDep injected at boot),
+  // which chrome.alarms' immediate-dispatch branch needs. handleScheduleAction
+  // never rejects — it resolves { ok, error? } which we forward to the panel.
+  if (message?.type === SCHEDULE_ACTION_MESSAGE) {
+    const m = message as ScheduleActionMessage;
+    handleScheduleAction({ action: m.action, payload: m.payload })
+      .then(sendResponse)
+      .catch((e) => sendResponse({ ok: false, error: String(e) }));
     return true; // async response
   }
 

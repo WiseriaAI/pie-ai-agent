@@ -197,6 +197,23 @@ describe("reconcileAlarms", () => {
     expect(runSchedule).not.toHaveBeenCalled();
     expect(stub.create).not.toHaveBeenCalled();
   });
+
+  // 9.1 — reconcile must respect `enabled`: a disabled (but still active)
+  // schedule must NOT be re-armed or dispatched even if its alarm was lost.
+  it("does NOT revive a disabled schedule (enabled=false), even if active + overdue", async () => {
+    const { putSchedule } = await import("./store");
+    const { reconcileAlarms } = await import("./scheduler");
+    const past = NOW - 10 * 60_000;
+    const future = NOW + 60 * 60_000;
+    await putSchedule(makeSched({ id: "sched_dis_past", status: "active", enabled: false, nextRunAt: past }));
+    await putSchedule(makeSched({ id: "sched_dis_future", status: "active", enabled: false, nextRunAt: future }));
+    const runSchedule = vi.fn(async () => {});
+
+    await reconcileAlarms(NOW, { runSchedule, now: () => NOW });
+
+    expect(runSchedule).not.toHaveBeenCalled();
+    expect(stub.create).not.toHaveBeenCalled();
+  });
 });
 
 // ── handleAlarm ───────────────────────────────────────────────────────────────
@@ -251,6 +268,23 @@ describe("handleAlarm", () => {
     await handleAlarm("schedule:sched_gone", { runSchedule, now: () => NOW });
     // runSchedule itself bails on missing schedule, but the wrapper should not throw.
     expect(stub.create).not.toHaveBeenCalled();
+  });
+
+  // 9.1 — a fired alarm for a disabled schedule must NOT dispatch a run nor
+  // re-arm (defensive: even though toggle disarms, a stray alarm can't run it).
+  it("does NOT dispatch or re-arm when the schedule is disabled (enabled=false)", async () => {
+    const { putSchedule } = await import("./store");
+    const { handleAlarm } = await import("./scheduler");
+    await putSchedule(
+      makeSched({ id: "sched_disfire", status: "active", enabled: false, spec: { intervalMinutes: 60 }, nextRunAt: NOW, runCount: 0 }),
+    );
+    const runSchedule = vi.fn(async () => {});
+
+    await handleAlarm("schedule:sched_disfire", { runSchedule, now: () => NOW });
+
+    expect(runSchedule).not.toHaveBeenCalled();
+    expect(stub.create).not.toHaveBeenCalled();
+    expect(stub.clear).toHaveBeenCalledWith("schedule:sched_disfire");
   });
 });
 

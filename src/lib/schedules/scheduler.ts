@@ -92,6 +92,10 @@ export async function reconcileAlarms(
   const all = await listSchedules();
   for (const rec of all) {
     if (rec.status !== "active") continue;
+    // 9.1 — respect `enabled`. A disabled schedule keeps status "active" (the
+    // two fields are orthogonal) but must never be re-armed or dispatched.
+    // Defensive: toggle already disarms it, but reconcile must not revive it.
+    if (rec.enabled === false) continue;
     const existing = await chrome.alarms.get(alarmName(rec.id));
     if (existing) continue; // already armed — leave it
 
@@ -128,6 +132,16 @@ export async function handleAlarm(
   // Anchor = the time this fire was scheduled for (pre-run), so the next fire is
   // anchor + interval — no drift if the run itself runs late.
   const before = await getSchedule(id);
+
+  // 9.1 — respect `enabled`. If a stray alarm fires for a disabled schedule
+  // (e.g. raced a disarm), do NOT dispatch the run and clear the alarm so it
+  // can't fire again. `enabled` is orthogonal to `status` (a disabled schedule
+  // may still be status "active").
+  if (before && before.enabled === false) {
+    await disarmSchedule(id);
+    return;
+  }
+
   const anchor = before?.nextRunAt ?? deps.now?.() ?? Date.now();
 
   // Await the run so the re-arm below sees Task 5's post-run schedule state
