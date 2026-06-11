@@ -132,6 +132,19 @@ export interface SessionMeta {
    * model) snapshot 进 checkpoint（C1 不变量）。
    */
   model?: string;
+  /**
+   * Schedule-originated sessions carry these three fields so that run
+   * history links back to the owning ScheduleRecord / ScheduleRunRecord.
+   *
+   * `origin: "schedule"` is the discriminator; the other two carry the
+   * IDs needed for cross-referencing. All three are absent on ordinary
+   * user-initiated sessions (backward compatible: undefined = normal).
+   */
+  origin?: "schedule";
+  /** scheduleId of the owning ScheduleRecord (sched_<uuid>). */
+  scheduleId?: string;
+  /** recordId of the ScheduleRunRecord that spawned this session (run_<uuid>). */
+  recordId?: string;
 }
 
 /**
