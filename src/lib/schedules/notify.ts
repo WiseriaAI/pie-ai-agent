@@ -149,13 +149,17 @@ export interface NotifyScheduleStatusChangeOpts {
 export async function notifyScheduleStatusChange(
   opts: NotifyScheduleStatusChangeOpts,
 ): Promise<void> {
-  const { scheduleId, scheduleTitle, status, reason, count } = opts;
+  const { scheduleId, scheduleTitle, status, count } = opts;
 
   let title: string;
   let message: string;
   let notificationId: string;
 
-  if (status === "paused" || reason === "auto_pause_failures") {
+  // `status` and `reason` are always consistent at every call site (paused ⇔
+  // auto_pause_failures, completed ⇔ max_runs_reached), so `status` alone is the
+  // discriminant. `reason` stays on the opts type for call-site documentation +
+  // future divergence, but isn't needed to choose the message here.
+  if (status === "paused") {
     title = `Schedule Paused: ${scheduleTitle}`;
     message = `Auto-paused after ${count} consecutive failures. Re-enable it in Schedules.`;
     notificationId = `${PAUSED_NOTIF_PREFIX}${scheduleId}`;

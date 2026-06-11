@@ -214,6 +214,69 @@ describe("reconcileAlarms", () => {
     expect(runSchedule).not.toHaveBeenCalled();
     expect(stub.create).not.toHaveBeenCalled();
   });
+
+  // Concurrency cap on the OVERDUE batch path (spec §7). After a long SW outage
+  // many schedules can be overdue at once; reconcile must NOT dispatch the whole
+  // batch concurrently — at-cap overdue fires stagger (re-arm) instead of run.
+  // This mirrors handleAlarm's cap behavior via the shared staggerIfAtCap helper.
+  it("staggers overdue schedules instead of dispatching when runningCount is at the cap", async () => {
+    const { putSchedule, getSchedule } = await import("./store");
+    const { reconcileAlarms } = await import("./scheduler");
+    const { MAX_CONCURRENT_SCHEDULE_RUNS, CONCURRENCY_DEFER_MS } = await import("./types");
+    const past = NOW - 10 * 60_000;
+    // 6 overdue active schedules, all sharing the wakeup.
+    const ids = ["sched_b1", "sched_b2", "sched_b3", "sched_b4", "sched_b5", "sched_b6"];
+    for (const id of ids) {
+      await putSchedule(makeSched({ id, status: "active", nextRunAt: past, runCount: 3 }));
+    }
+    const runSchedule = vi.fn(async () => {});
+
+    await reconcileAlarms(NOW, {
+      runSchedule,
+      now: () => NOW,
+      runningCount: () => MAX_CONCURRENT_SCHEDULE_RUNS, // already full
+    });
+
+    // NONE dispatched — the whole overdue batch is load-shed, not run 6×.
+    expect(runSchedule).not.toHaveBeenCalled();
+    // Each is re-armed (staggered) at now + defer.
+    for (const id of ids) {
+      expect(stub.create).toHaveBeenCalledWith(`schedule:${id}`, { when: NOW + CONCURRENCY_DEFER_MS });
+      // nextRunAt NOT advanced — the defer retries the SAME overdue fire.
+      expect((await getSchedule(id))?.nextRunAt).toBe(past);
+      // runCount untouched — a stagger is not a run.
+      expect((await getSchedule(id))?.runCount).toBe(3);
+    }
+  });
+
+  it("dispatches overdue schedules normally when runningCount is below the cap", async () => {
+    const { putSchedule } = await import("./store");
+    const { reconcileAlarms } = await import("./scheduler");
+    const { MAX_CONCURRENT_SCHEDULE_RUNS } = await import("./types");
+    const past = NOW - 10 * 60_000;
+    await putSchedule(makeSched({ id: "sched_underrec", status: "active", nextRunAt: past }));
+    const runSchedule = vi.fn(async () => {});
+
+    await reconcileAlarms(NOW, {
+      runSchedule,
+      now: () => NOW,
+      runningCount: () => MAX_CONCURRENT_SCHEDULE_RUNS - 1,
+    });
+
+    expect(runSchedule).toHaveBeenCalledWith("sched_underrec");
+  });
+
+  it("dispatches overdue schedules when no runningCount provider is supplied (cap unenforced)", async () => {
+    const { putSchedule } = await import("./store");
+    const { reconcileAlarms } = await import("./scheduler");
+    const past = NOW - 10 * 60_000;
+    await putSchedule(makeSched({ id: "sched_nocountrec", status: "active", nextRunAt: past }));
+    const runSchedule = vi.fn(async () => {});
+
+    await reconcileAlarms(NOW, { runSchedule, now: () => NOW });
+
+    expect(runSchedule).toHaveBeenCalledWith("sched_nocountrec");
+  });
 });
 
 // ── handleAlarm ───────────────────────────────────────────────────────────────
@@ -285,6 +348,89 @@ describe("handleAlarm", () => {
     expect(runSchedule).not.toHaveBeenCalled();
     expect(stub.create).not.toHaveBeenCalled();
     expect(stub.clear).toHaveBeenCalledWith("schedule:sched_disfire");
+  });
+});
+
+// ── handleAlarm concurrency cap (Issue: batch-wakeup spike, spec §7) ───────────
+//
+// When MAX_CONCURRENT_SCHEDULE_RUNS scheduled runs are already in flight, an
+// alarm that fires must NOT start a concurrent run — it staggers itself by
+// re-arming at now + CONCURRENCY_DEFER_MS and does NOT count an outcome (this
+// is a load-shed, not a skip/failure of the schedule).
+
+describe("handleAlarm — concurrency cap", () => {
+  it("defers (re-arms, no dispatch) when runningCount is at the cap", async () => {
+    const { putSchedule, getSchedule } = await import("./store");
+    const { handleAlarm } = await import("./scheduler");
+    const { MAX_CONCURRENT_SCHEDULE_RUNS, CONCURRENCY_DEFER_MS } = await import("./types");
+    await putSchedule(
+      makeSched({ id: "sched_cap", status: "active", spec: { intervalMinutes: 60 }, nextRunAt: NOW, runCount: 0 }),
+    );
+    const runSchedule = vi.fn(async () => {});
+
+    await handleAlarm("schedule:sched_cap", {
+      runSchedule,
+      now: () => NOW,
+      runningCount: () => MAX_CONCURRENT_SCHEDULE_RUNS,
+    });
+
+    // No dispatch — load-shed.
+    expect(runSchedule).not.toHaveBeenCalled();
+    // Re-armed (staggered) at now + defer.
+    expect(stub.create).toHaveBeenCalledWith("schedule:sched_cap", { when: NOW + CONCURRENCY_DEFER_MS });
+    // nextRunAt is NOT advanced (the run hasn't happened); the defer is a retry
+    // of the SAME scheduled fire, so the anchor/nextRunAt stays put.
+    expect((await getSchedule("sched_cap"))?.nextRunAt).toBe(NOW);
+  });
+
+  it("dispatches normally when runningCount is below the cap", async () => {
+    const { putSchedule } = await import("./store");
+    const { handleAlarm } = await import("./scheduler");
+    const { MAX_CONCURRENT_SCHEDULE_RUNS } = await import("./types");
+    await putSchedule(
+      makeSched({ id: "sched_under", status: "active", spec: { intervalMinutes: 60 }, nextRunAt: NOW, runCount: 0 }),
+    );
+    const runSchedule = vi.fn(async () => {});
+
+    await handleAlarm("schedule:sched_under", {
+      runSchedule,
+      now: () => NOW,
+      runningCount: () => MAX_CONCURRENT_SCHEDULE_RUNS - 1,
+    });
+
+    expect(runSchedule).toHaveBeenCalledWith("sched_under");
+  });
+
+  it("dispatches normally when no runningCount provider is supplied (cap unenforced)", async () => {
+    const { putSchedule } = await import("./store");
+    const { handleAlarm } = await import("./scheduler");
+    await putSchedule(
+      makeSched({ id: "sched_nocount", status: "active", spec: { intervalMinutes: 60 }, nextRunAt: NOW, runCount: 0 }),
+    );
+    const runSchedule = vi.fn(async () => {});
+
+    await handleAlarm("schedule:sched_nocount", { runSchedule, now: () => NOW });
+
+    expect(runSchedule).toHaveBeenCalledWith("sched_nocount");
+  });
+
+  it("a deferred alarm does not count an outcome (runCount unchanged)", async () => {
+    const { putSchedule, getSchedule } = await import("./store");
+    const { handleAlarm } = await import("./scheduler");
+    const { MAX_CONCURRENT_SCHEDULE_RUNS } = await import("./types");
+    await putSchedule(
+      makeSched({ id: "sched_cap2", status: "active", spec: { intervalMinutes: 60 }, nextRunAt: NOW, runCount: 7 }),
+    );
+    const runSchedule = vi.fn(async () => {});
+
+    await handleAlarm("schedule:sched_cap2", {
+      runSchedule,
+      now: () => NOW,
+      runningCount: () => MAX_CONCURRENT_SCHEDULE_RUNS,
+    });
+
+    // runCount untouched — defer is not a run.
+    expect((await getSchedule("sched_cap2"))?.runCount).toBe(7);
   });
 });
 

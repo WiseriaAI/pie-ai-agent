@@ -54,10 +54,17 @@ export function computeNextFireAt(args: {
  *   skipped     → no change (overlapping run — does not count)
  *   interrupted → no change (SW killed mid-run — does not count)
  *
- * Status determination order (failure pause priority over run cap):
- *   1. consecutiveFailures >= FAILURE_PAUSE_THRESHOLD → "paused"
- *   2. maxRuns != null && runCount >= maxRuns          → "completed"
- *   3. else                                            → "active"
+ * Status determination order (failure pause priority over completion):
+ *   1. consecutiveFailures >= FAILURE_PAUSE_THRESHOLD            → "paused"
+ *   2. one-shot (!intervalMinutes) OR run cap reached            → "completed"
+ *   3. else                                                      → "active"
+ *
+ * Rule 2 mirrors computeNextFireAt's terminal cases exactly (spec §4: "no
+ * intervalMinutes → run once, equivalent to maxRuns=1"). A natural one-shot (no
+ * interval, no maxRuns) MUST flip to "completed" after its single run; leaving
+ * it "active" with a past nextRunAt and no alarm makes reconcileAlarms re-dispatch
+ * it on every SW wake (unattended re-runs, burned tokens). computeNextFireAt
+ * already returns null for one-shots; applyOutcome must mirror that here.
  *
  * No chrome / IDB side effects — purely a counter → patch mapper.
  */
@@ -78,11 +85,15 @@ export function applyOutcome(
   const newCf =
     outcome === "success" ? 0 : sched.consecutiveFailures + 1;
 
-  // Determine new status: failure-pause priority first
+  // Determine new status: failure-pause priority first, then terminal-completion
+  // (one-shot OR run cap reached — mirrors computeNextFireAt's null cases).
   let newStatus: ScheduleRecord["status"];
   if (newCf >= FAILURE_PAUSE_THRESHOLD) {
     newStatus = "paused";
-  } else if (sched.spec.maxRuns != null && newRunCount >= sched.spec.maxRuns) {
+  } else if (
+    !sched.spec.intervalMinutes ||
+    (sched.spec.maxRuns != null && newRunCount >= sched.spec.maxRuns)
+  ) {
     newStatus = "completed";
   } else {
     newStatus = "active";

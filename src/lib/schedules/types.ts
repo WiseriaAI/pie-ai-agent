@@ -66,6 +66,21 @@ export const FAILURE_PAUSE_THRESHOLD = 3;
 /** Minimum allowed intervalMinutes to prevent accidental spam. */
 export const MIN_INTERVAL_MINUTES = 15;
 
+/**
+ * Max number of scheduled agent runs allowed to execute CONCURRENTLY (spec §7 —
+ * bound the batch-wakeup spike when N schedules share the same fire minute).
+ * When the cap is hit, the extra alarm is short-delayed (staggered), not run.
+ */
+export const MAX_CONCURRENT_SCHEDULE_RUNS = 3;
+
+/**
+ * Stagger delay applied to an alarm whose dispatch was deferred because the
+ * concurrency cap was full. Re-armed at `now + this` so it retries shortly after
+ * (other in-flight runs release slots). Kept short so a deferred run isn't
+ * starved, but long enough to actually let a slot free up.
+ */
+export const CONCURRENCY_DEFER_MS = 90_000;
+
 export function newScheduleId(): string {
   return SCHEDULE_KEY_PREFIX + crypto.randomUUID();
 }

@@ -194,10 +194,14 @@ async function runScheduleWithDeps(scheduleId: string): Promise<void> {
 }
 
 // Shared SchedulerDeps — the real runSchedule (deps + keep-alive baked in) +
-// Date.now. Used by the onAlarm handler and the startup reconcile.
+// Date.now + the live concurrency count. Used by the onAlarm handler and the
+// startup reconcile. `runningCount` reads runningScheduleIds.size so handleAlarm
+// can shed load (stagger) when a batch wakeup would exceed
+// MAX_CONCURRENT_SCHEDULE_RUNS concurrent headless runs (spec §7).
 const schedulerDeps: SchedulerDeps = {
   runSchedule: runScheduleWithDeps,
   now: () => Date.now(),
+  runningCount: () => runningScheduleIds.size,
 };
 
 // C1 — inject the deps-bound runSchedule into the schedule-meta tool layer so

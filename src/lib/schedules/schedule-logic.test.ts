@@ -136,11 +136,54 @@ describe("applyOutcome — success increments runCount, clears consecutiveFailur
     expect(patch.status).toBe("completed");
   });
 
-  it("success → status=active when no maxRuns cap set", () => {
+  it("success → status=active when no maxRuns cap set (recurring)", () => {
     const sched = makeSched({ id: "s5", runCount: 999, consecutiveFailures: 0, spec: { intervalMinutes: 60 } });
     const patch = applyOutcome(sched, "success");
     expect(patch.runCount).toBe(1000);
     expect(patch.status).toBe("active");
+  });
+});
+
+describe("applyOutcome — one-shot terminal state (no intervalMinutes → completed)", () => {
+  // Mirrors computeNextFireAt's `!spec.intervalMinutes → null` rule: a natural
+  // one-shot (no interval, no maxRuns) is equivalent to maxRuns=1 — it must flip
+  // to `completed` after its single run, NOT stay `active` (which reconcileAlarms
+  // would re-dispatch on every SW wake → unattended re-runs, burned tokens).
+
+  it("success → status=completed for a natural one-shot (no interval, no maxRuns)", () => {
+    const sched = makeSched({ id: "os1", runCount: 0, consecutiveFailures: 0, spec: {} });
+    const patch = applyOutcome(sched, "success");
+    expect(patch.runCount).toBe(1);
+    expect(patch.status).toBe("completed");
+  });
+
+  it("failed → status=completed for a natural one-shot (single run exhausted)", () => {
+    const sched = makeSched({ id: "os2", runCount: 0, consecutiveFailures: 0, spec: {} });
+    const patch = applyOutcome(sched, "failed");
+    expect(patch.runCount).toBe(1);
+    expect(patch.consecutiveFailures).toBe(1);
+    expect(patch.status).toBe("completed");
+  });
+
+  it("one-shot with startAt but no interval → still completed after its run", () => {
+    // A timed one-shot (startAt set, no intervalMinutes) is also a one-shot.
+    const sched = makeSched({ id: "os3", runCount: 0, spec: { startAt: NINE_AM } });
+    const patch = applyOutcome(sched, "success");
+    expect(patch.status).toBe("completed");
+  });
+
+  it("failure-pause still beats one-shot-completed (cf priority preserved)", () => {
+    // A one-shot whose single run is its 3rd consecutive failure overall should
+    // still report `paused` (rule 1 priority) rather than `completed`.
+    const sched = makeSched({
+      id: "os4",
+      runCount: 0,
+      consecutiveFailures: FAILURE_PAUSE_THRESHOLD - 1,
+      spec: {},
+    });
+    const patch = applyOutcome(sched, "failed");
+    expect(patch.consecutiveFailures).toBe(FAILURE_PAUSE_THRESHOLD);
+    expect(patch.status).toBe("paused");
   });
 });
 

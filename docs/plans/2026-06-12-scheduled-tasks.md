@@ -681,4 +681,4 @@ git commit -m "feat(schedules): management UI (list/form/run-history)"
 
 **3. Type 一致性：** `ScheduleRecord`/`ScheduleRunRecord`/`AgentEmit`/`ScheduleSpec` 全 Task 引用一致；`recordId`/`ownedTabId`/`consecutiveFailures`/`runCount` 命名跨 Task 统一；`computeNextFireAt`/`applyOutcome`/`armSchedule`/`disarmSchedule`/`runSchedule`/`notifyRunDone`/`markOrphanRunsInterrupted`/`isRestrictedUrl` 签名前后一致。
 
-**并发限流补充**（§7 待办，执行 Task 4 时落地）：SW 维护一个 `runningScheduleRunCount`，`handleAlarm` 时若已达上限（默认 3）则把本次记 `skipped` 或短延迟重排，不并发启动。
+**并发限流补充**（§7，✅ 已落地 final-review）：SW 通过 `SchedulerDeps.runningCount` 暴露当前在跑的 schedule run 数（`runningScheduleIds.size`）。`handleAlarm` 在 dispatch 前检查：若 `runningCount() >= MAX_CONCURRENT_SCHEDULE_RUNS`（默认 3，types.ts），则把本次 alarm **短延迟重排**（`now + CONCURRENCY_DEFER_MS`，默认 90s 错峰），**不并发启动、不计 outcome、不记 skipped**（这是 load-shed 而非该 schedule 的失败）；in-flight run 完成释放 slot，重排的 alarm 稍后再试，不饿死。最终选了「短延迟重排」而非「记 skipped」——skipped 会污染 run 历史且语义错（这不是重叠跑，是错峰）。
