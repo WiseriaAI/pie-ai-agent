@@ -1,7 +1,9 @@
 # 官方托管服务档（Managed Service Tier）—— 设计文档
 
+> ⚠️ **已作废（2026-06-11）**：后端选型已改为 LiteLLM + Hono 胶水服务（非 Supabase 自建），计费由 credit/JWT 改为订阅 + 长效 virtual key。本设计的契约/计费假设已过时。现行设计见工作区根 `docs/brainstorming/2026-06-11-managed-provider-litellm-design.md`。
+
 - 日期：2026-05-30
-- 状态：Design（待 plan）
+- 状态：Design（待 plan）— 已作废，见上方标注
 - 关联：BYOK 之外的第二个接入入口；目标是压低非技术用户的接入摩擦
 
 ## 1. 背景与目标
