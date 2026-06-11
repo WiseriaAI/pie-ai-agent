@@ -1,5 +1,7 @@
 # Managed Service Tier — 客户端实施 Plan（pie-ai-agent）
 
+> ⚠️ **已作废（2026-06-11）**：后端方案已从 Supabase 自建改为 LiteLLM + Hono 胶水服务；认证由 JWT/refresh 改为长效 LiteLLM virtual key，错误码无 402（额度耗尽为 429 + `error.type:"budget_exceeded"`）。本 plan 的契约假设已过时，勿据此实施。现行设计见工作区根 `docs/brainstorming/2026-06-11-managed-provider-litellm-design.md`，对客户端契约见 `pie-managed-backend/docs/contract.md`。客户端接入 plan 待据新契约重写。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 在 BYOK 之外，给 Pie 客户端接入"官方托管"provider：用户用 OAuth 登录领免费额度、零 API key 跑 agent，不暴露真实模型名（只露"思考强度"档位）。
