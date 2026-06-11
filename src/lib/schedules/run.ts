@@ -5,13 +5,20 @@
 // runAgentLoop, then marks the run success/failed by consuming the loop's
 // terminal signal (NOT by "the promise resolved").
 //
-// NOT wired to Chrome alarms, tabs, or notifications — those are Task 4+.
 // All heavy deps (getInstance, firstModelForProvider, resolveModelConfig,
-// runAgentLoop) are injected so this module stays unit-testable without a
-// real Chrome extension runtime.
+// runAgentLoop) are injected via RunDeps so this module stays unit-testable
+// without a real Chrome extension runtime.
+//
+// Task 6 wired the startUrl background-tab lifecycle (open via
+// chrome.tabs.create({active:false}) before the loop, close via
+// chrome.tabs.remove in finally). Those two calls reach the ambient
+// `chrome.tabs` global directly — NOT through RunDeps — and are the ONLY part
+// of this module that does so (matching session-recovery's pragmatic choice).
+// Tests therefore mock `globalThis.chrome.tabs` rather than injecting it.
 
 import type { runAgentLoop as RunAgentLoopType } from "@/lib/agent/loop";
 import { mergeSessionAgentSnapshot } from "@/lib/agent/loop";
+import { isRestrictedScheduleUrl } from "./url-guard";
 import type {
   getInstance as GetInstanceType,
   firstModelForProvider as FirstModelForProviderType,
@@ -53,6 +60,34 @@ async function countOutcome(
 ): Promise<void> {
   const s = await getSchedule(scheduleId);
   if (s) await patchSchedule(scheduleId, applyOutcome(s, outcome));
+}
+
+/**
+ * Task 6.2 — Open a background (non-focused) tab for a schedule with startUrl.
+ * Returns the created tab's id. Throws when chrome.tabs.create yields a tab
+ * without an id (a number is required so the caller never propagates an
+ * undefined into pinnedTabs / ownedTabId / chrome.tabs.remove). The caller
+ * routes that throw through the normal failed-run path — honest over a silent
+ * non-null assertion.
+ */
+async function openScheduleTab(startUrl: string): Promise<number> {
+  const tab = await chrome.tabs.create({ url: startUrl, active: false });
+  if (tab.id == null) {
+    throw new Error("chrome.tabs.create returned a tab without an id");
+  }
+  return tab.id;
+}
+
+/**
+ * Task 6.2 — Close the headless schedule tab (best-effort; tab may already
+ * be gone if the user closed it manually).
+ */
+async function closeScheduleTab(tabId: number): Promise<void> {
+  try {
+    await chrome.tabs.remove(tabId);
+  } catch {
+    // Tab already gone — not an error for the run.
+  }
 }
 
 // ── Main export ───────────────────────────────────────────────────────────────
@@ -176,6 +211,25 @@ export async function runSchedule(
     status: "running",
   });
 
+  // ── 3a. Task 6: startUrl — restricted guard + background tab open ────────
+  // If the schedule has a startUrl, validate it before opening any tab.
+  // Restricted URLs (chrome://, about:, etc. — AND the Chrome Web Store, which
+  // is https:// but un-injectable; see isRestrictedScheduleUrl) cannot be
+  // scripted into, so we fail the run immediately without touching the tab API.
+  if (sched.startUrl && isRestrictedScheduleUrl(sched.startUrl)) {
+    await updateRun(recordId, {
+      status: "failed",
+      error: `startUrl is a restricted page that cannot be used: ${sched.startUrl}`,
+      endedAt: Date.now(),
+    });
+    await countOutcome(scheduleId, "failed");
+    return;
+  }
+
+  // Track the headless tab id so the finally block can close it and
+  // markOrphanRunsInterrupted (Task 4) can find it on SW restart.
+  let ownedTabId: number | undefined;
+
   // ── 4. Drive headless agent loop ─────────────────────────────────────────
   // Terminal-signal capture. runAgentLoop drives these through `emit`.
   let doneMsg: Omit<AgentDoneTaskMessage, "sessionId"> | undefined;
@@ -185,6 +239,28 @@ export async function runSchedule(
   let pureTextSummary = "";
 
   try {
+    // Task 6.2 — open a non-focused background tab when startUrl is set.
+    // The tab is opened AFTER the run record exists so markOrphanRunsInterrupted
+    // can close it if the SW dies between open and loop-start.
+    let pinnedTabs: Array<{ tabId: number; origin: string }> = [];
+    if (sched.startUrl) {
+      ownedTabId = await openScheduleTab(sched.startUrl);
+      // Persist ownedTabId immediately so the orphan-cleanup in Task 4 sees it
+      // even if the SW is killed before the loop finishes.
+      await updateRun(recordId, { ownedTabId });
+      // Build the pinned-tabs context the loop needs to navigate the tab.
+      const origin = new URL(sched.startUrl).origin;
+      pinnedTabs = [{ tabId: ownedTabId, origin }];
+      // Pin the tab into the session meta so panel / recovery tooling can link back.
+      await setSessionMeta({
+        ...session,
+        origin: "schedule",
+        scheduleId,
+        recordId,
+        pinnedTabs,
+      });
+    }
+
     const abort = new AbortController();
 
     // Task 5.2 — optional wall-clock budget: maxRunMs.
@@ -229,8 +305,9 @@ export async function runSchedule(
           const existing = await getSessionAgent(sessionId);
           await setSessionAgent(sessionId, mergeSessionAgentSnapshot(existing, snapshot));
         },
-        // Headless: no pinned tabs, no cross-session registry, no pin cleanup.
-        pinnedTabs: [],
+        // Task 6.2 — pass pinnedTabs when a background tab was opened; empty otherwise.
+        pinnedTabs,
+        ...(ownedTabId != null ? { initialFocusTabId: ownedTabId } : {}),
         refreshCrossSessionPinnedTabIds: async () => new Set<number>(),
       });
     } finally {
@@ -238,6 +315,9 @@ export async function runSchedule(
       // timeout that aborts the next run's abort controller by accident.
       // Guarded: budgetTimer is undefined when maxRunMs wasn't set.
       if (budgetTimer) clearTimeout(budgetTimer);
+      // Task 6.2 — close the background tab (best-effort; tab may already be
+      // gone if the user closed it or the SW was killed and Task 4 cleaned it).
+      if (ownedTabId != null) await closeScheduleTab(ownedTabId);
     }
 
     // ── 5. Decide success/failed from the terminal signal ────────────────
