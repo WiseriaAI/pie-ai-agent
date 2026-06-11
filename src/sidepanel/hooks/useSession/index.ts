@@ -179,6 +179,9 @@ export interface UseSession {
   streamingText: string;
   streamingThinking: string;
   error: string | null;
+  /** 最近一次 chat-error 的机读分类（见 ErrorKind）。null = 无/未分类。
+   *  驱动 Chat 错误气泡下的 managed CTA（budget→管理订阅 / auth→重登提示）。 */
+  errorKind: import("@/lib/model-router/types").ErrorKind | null;
   /** M2-U2 — transient toast from the SW (e.g. SEC-PLAN-009 flood warn).
    *  Rendered by Chat as a dismissable banner. Not persisted. */
   toast: { level: "warn" | "error" | "info"; text: string } | null;
@@ -1086,6 +1089,7 @@ export function useSession(): UseSession {
     streamingText: active.streamingText,
     streamingThinking: active.streamingThinking,
     error: active.error,
+    errorKind: active.errorKind,
     toast: active.toast,
     quotes: active.quotes,
     usage: active.usage, // Issue #59
