@@ -28,6 +28,7 @@ import type { AgentDoneTaskMessage } from "@/types/messages";
 import { getSchedule, appendRun, updateRun, listRunningRuns, patchSchedule } from "./store";
 import { newRunId } from "./types";
 import { applyOutcome } from "./schedule-logic";
+import { notifyRunDone, notifyScheduleStatusChange } from "./notify";
 import {
   createSession,
   setSessionMeta,
@@ -72,13 +73,44 @@ export interface RunDeps {
  * Re-reads the schedule first so the merge sees the latest runIds (mutated by
  * the preceding appendRun in the same txMulti), then applies the atomic patch
  * via applyOutcome. No-ops if the schedule was deleted mid-run.
+ *
+ * Task 8 (transition notifications, spec §9/§11) — when applyOutcome flips the
+ * schedule's status (active → paused on consecutiveFailures ≥ threshold, or
+ * active → completed on runCount ≥ maxRuns), fire a one-shot status-change
+ * notification. This is SEPARATE from the per-run notifyRunDone in runSchedule:
+ * the user learns both "this run failed" AND "the schedule itself was
+ * auto-paused/completed". Compared before/after so it fires exactly once on the
+ * transition, not on every counted run. Fire-and-forget; never affects counting.
  */
 async function countOutcome(
   scheduleId: string,
   outcome: "success" | "failed",
 ): Promise<void> {
   const s = await getSchedule(scheduleId);
-  if (s) await patchSchedule(scheduleId, applyOutcome(s, outcome));
+  if (!s) return;
+  const patch = applyOutcome(s, outcome);
+  await patchSchedule(scheduleId, patch);
+
+  // Detect an actual status transition (before !== after) and notify once.
+  if (patch.status !== s.status) {
+    if (patch.status === "paused") {
+      notifyScheduleStatusChange({
+        scheduleId: s.id,
+        scheduleTitle: s.title,
+        status: "paused",
+        reason: "auto_pause_failures",
+        count: patch.consecutiveFailures,
+      }).catch(() => {/* already caught inside notifyScheduleStatusChange */});
+    } else if (patch.status === "completed") {
+      notifyScheduleStatusChange({
+        scheduleId: s.id,
+        scheduleTitle: s.title,
+        status: "completed",
+        reason: "max_runs_reached",
+        count: patch.runCount,
+      }).catch(() => {/* already caught inside notifyScheduleStatusChange */});
+    }
+  }
 }
 
 /**
@@ -206,6 +238,15 @@ export async function runSchedule(
     });
     // Task 5.2 — count the early-fail toward consecutiveFailures / auto-pause.
     await countOutcome(scheduleId, "failed");
+    // Task 8 — early-fail is still a `failed` run; notify for consistency
+    // (every success/failed run notifies). No sessionId on this path.
+    notifyRunDone({
+      recordId,
+      sessionId: "",
+      status: "failed",
+      summary: "instance unavailable",
+      scheduleTitle: sched.title,
+    }).catch(() => {/* already caught inside notifyRunDone */});
     return;
   }
 
@@ -236,12 +277,22 @@ export async function runSchedule(
   // is https:// but un-injectable; see isRestrictedScheduleUrl) cannot be
   // scripted into, so we fail the run immediately without touching the tab API.
   if (sched.startUrl && isRestrictedScheduleUrl(sched.startUrl)) {
+    const restrictedErr = `startUrl is a restricted page that cannot be used: ${sched.startUrl}`;
     await updateRun(recordId, {
       status: "failed",
-      error: `startUrl is a restricted page that cannot be used: ${sched.startUrl}`,
+      error: restrictedErr,
       endedAt: Date.now(),
     });
     await countOutcome(scheduleId, "failed");
+    // Task 8 — restricted-startUrl is still a `failed` run; notify for
+    // consistency (this path has a sessionId from the minted session above).
+    notifyRunDone({
+      recordId,
+      sessionId,
+      status: "failed",
+      summary: restrictedErr,
+      scheduleTitle: sched.title,
+    }).catch(() => {/* already caught inside notifyRunDone */});
     return;
   }
 
@@ -345,18 +396,21 @@ export async function runSchedule(
 
     // ── 5. Decide success/failed from the terminal signal ────────────────
     let runOutcome: "success" | "failed";
+    let runSummary = "";
     if (doneMsg) {
       // agent-done-task is the authoritative terminal signal.
       runOutcome = doneMsg.success ? "success" : "failed";
+      runSummary = doneMsg.summary.slice(0, 200);
       await updateRun(recordId, {
         status: runOutcome,
-        summary: doneMsg.summary.slice(0, 200),
+        summary: runSummary,
         ...(doneMsg.success ? {} : { error: doneMsg.summary.slice(0, 500) }),
         endedAt: Date.now(),
       });
     } else if (chatErrorText) {
       // A chat-error without an agent-done-task still means failure.
       runOutcome = "failed";
+      runSummary = chatErrorText.slice(0, 200);
       await updateRun(recordId, {
         status: runOutcome,
         error: chatErrorText.slice(0, 500),
@@ -365,24 +419,46 @@ export async function runSchedule(
     } else {
       // Pure-text reply path: chat-done only. Success; summary from text.
       runOutcome = "success";
+      runSummary = pureTextSummary.slice(0, 200);
       await updateRun(recordId, {
         status: runOutcome,
-        summary: pureTextSummary.slice(0, 200),
+        summary: runSummary,
         endedAt: Date.now(),
       });
     }
 
     // Task 5.2 — apply outcome counters to the schedule (atomic patchSchedule).
     await countOutcome(scheduleId, runOutcome);
+
+    // Task 8 — notify the user that the run completed. Fire-and-forget;
+    // notifyRunDone wraps chrome.notifications in try/catch so a broken
+    // notifications API never affects the run record's outcome counters.
+    notifyRunDone({
+      recordId,
+      sessionId,
+      status: runOutcome,
+      summary: runSummary,
+      scheduleTitle: sched.title,
+    }).catch(() => {/* already caught inside notifyRunDone */});
   } catch (e) {
     // Backstop for a JS exception escaping runAgentLoop (not a soft failure —
     // those go through the terminal-signal branch above).
+    const errMsg = e instanceof Error ? e.message : String(e);
     await updateRun(recordId, {
       status: "failed",
-      error: e instanceof Error ? e.message : String(e),
+      error: errMsg,
       endedAt: Date.now(),
     });
     // Count the exception as a failed run for auto-pause purposes.
     await countOutcome(scheduleId, "failed");
+
+    // Task 8 — notify on backstop failure too.
+    notifyRunDone({
+      recordId,
+      sessionId,
+      status: "failed",
+      summary: errMsg.slice(0, 200),
+      scheduleTitle: sched.title,
+    }).catch(() => {/* already caught inside notifyRunDone */});
   }
 }

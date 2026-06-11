@@ -44,6 +44,9 @@ export interface ScheduleRunRecord {
   summary?: string;
   error?: string;
   outputs?: unknown;
+  /** Task 8 — set true when a notification click could not open the side panel
+   *  (user-gesture constraint). Task 9 UI reads this to highlight the run. */
+  unread?: boolean;
 }
 
 // ── Key helpers ────────────────────────────────────────────────────────────────

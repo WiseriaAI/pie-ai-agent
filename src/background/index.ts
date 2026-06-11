@@ -61,6 +61,7 @@ import {
   handleAlarm,
   type SchedulerDeps,
 } from "@/lib/schedules/scheduler";
+import { handleScheduleNotificationClick } from "@/lib/schedules/notify";
 import { setScheduleRunDep } from "@/lib/agent/tools/schedule-meta";
 import {
   handleExternalDetach,
@@ -223,6 +224,19 @@ if (chrome.alarms) {
       .catch((e) => {
         console.warn(`[sw] handleAlarm(${alarm.name}) failed:`, e);
       });
+  });
+}
+
+// Task 8 — route notification clicks for schedule-run notifications.
+// notifications.onClicked is NOT a trusted user gesture for chrome.sidePanel.open,
+// so handleScheduleNotificationClick implements a catch → unread fallback.
+// Guard matches alarms guard: only register when the API is present (test contexts
+// may not provide chrome.notifications).
+if (chrome.notifications) {
+  chrome.notifications.onClicked.addListener((notificationId) => {
+    handleScheduleNotificationClick(notificationId).catch((e) => {
+      console.warn(`[sw] handleScheduleNotificationClick(${notificationId}) failed:`, e);
+    });
   });
 }
 

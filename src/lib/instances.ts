@@ -7,6 +7,7 @@ import { getConfig, setConfig, removeConfig } from "@/lib/idb/config-store";
 import { publishChange } from "@/lib/store-bus";
 import { listSchedules, patchSchedule } from "@/lib/schedules/store";
 import { disarmSchedule } from "@/lib/schedules/scheduler";
+import { notifySchedulePaused } from "@/lib/schedules/notify";
 
 export interface StoredInstance {
   id: string;
@@ -129,10 +130,14 @@ export async function cascadeInstanceDelete(instanceId: string): Promise<void> {
   for (const sched of affected) {
     await patchSchedule(sched.id, { status: "paused" });
     await disarmSchedule(sched.id);
-    // TODO(Task 8): notify user that schedule "${sched.title}" was paused
-    // because its bound instance was deleted. Call the Task 8 notification
-    // stub here once it is implemented:
-    //   notifySchedulePaused(sched.id, sched.title, "instance_deleted");
+    // Task 8 — notify the user that the schedule was auto-paused because its
+    // bound instance was deleted. Fire-and-forget; notifySchedulePaused wraps
+    // chrome.notifications in try/catch so a broken API is non-fatal.
+    notifySchedulePaused({
+      scheduleId: sched.id,
+      scheduleTitle: sched.title,
+      reason: "instance_deleted",
+    }).catch(() => {/* already caught inside notifySchedulePaused */});
   }
 }
 
