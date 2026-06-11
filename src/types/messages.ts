@@ -1,4 +1,5 @@
 import type { ChatMessage } from "@/lib/model-router";
+import type { ErrorKind } from "@/lib/model-router/types";
 import type { Attachment } from "@/lib/images";
 import type { FileAttachment } from "@/lib/files/types";
 import type { CapturedActionPayload, RecordedAction } from "@/lib/recording/types";
@@ -132,6 +133,8 @@ export interface ChatDoneMessage {
 export interface ChatErrorMessage {
   type: "chat-error";
   error: string;
+  /** 错误分类，用于 UI 分流（额度耗尽弹订阅 CTA 等）。仅 LLM-stream 错误带，本地错误省略。 */
+  kind?: ErrorKind;
   /** M2-U2 — session routing. See ChatChunkMessage.sessionId. */
   sessionId: string;
 }

@@ -648,6 +648,7 @@ export function useSession(): UseSession {
         streamingText: "",
         streamingThinking: "",
         error: null,
+        errorKind: null,
       });
 
       // Build the LLM-facing chat history (text-only, slash-expanded).
@@ -846,6 +847,7 @@ export function useSession(): UseSession {
       accumulated: "",
       streamFinished: false,
       error: null,
+      errorKind: null,
     });
     const sent = postWithReconnect(id, { type: "resume-task", sessionId: id });
     if (!sent) {
@@ -877,12 +879,12 @@ export function useSession(): UseSession {
   const clearMessages = useCallback(async () => {
     const id = sessionIdRef.current;
     if (!id) return;
-    patchSlot(id, { messages: [], error: null, toast: null });
+    patchSlot(id, { messages: [], error: null, errorKind: null, toast: null });
     await persistMessagesById(id, []);
   }, [patchSlot, persistMessagesById]);
 
   const clearError = useCallback(() => {
-    if (sessionIdRef.current) patchSlot(sessionIdRef.current, { error: null });
+    if (sessionIdRef.current) patchSlot(sessionIdRef.current, { error: null, errorKind: null });
   }, [patchSlot]);
   const clearToast = useCallback(() => {
     if (sessionIdRef.current) patchSlot(sessionIdRef.current, { toast: null });
@@ -948,6 +950,7 @@ export function useSession(): UseSession {
       return {
         messages: metaForActivate.messages ?? [],
         error: null,
+        errorKind: null,
         toast: null,
         accumulated: "",
         streamingText: "",

@@ -1597,7 +1597,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             lastStepUsage = event.usage;
           }
         } else if (event.type === "error") {
-          port.postMessage(withSession({ type: "chat-error", error: event.error }, sessionId));
+          port.postMessage(withSession({ type: "chat-error", error: event.error, kind: event.kind }, sessionId));
           await emitDone({
             type: "agent-done-task",
             success: false,
