@@ -1183,3 +1183,69 @@ describe("EmptyState centered greeting", () => {
     expect(screen.queryByText("推荐")).toBeNull();
   });
 });
+
+// ── Composer keyboard guards — IME composition + rapid double-Enter ──────────
+// Bug 1: rapid consecutive Enter presses dispatched the same message multiple
+//        times (the `streaming`/`input` state guards only take effect after a
+//        React re-render, leaving a same-frame window).
+// Bug 2: Enter pressed to commit an IME composition (isComposing=true /
+//        keyCode 229) was treated as a send, truncating the composition.
+
+describe("Chat — composer keyboard guards", () => {
+  it("Enter during IME composition does NOT send and preserves the input", async () => {
+    seedProvider("anthropic");
+    const sendMock = vi.fn();
+    render(
+      <Chat
+        providerLabel="Anthropic"
+        onOpenSettings={vi.fn()}
+        session={makeSession({ sendMessage: sendMock })}
+      />,
+    );
+
+    await screen.findByRole("button", { name: /more tools/i });
+    const textarea = screen.getByPlaceholderText(/Tell the agent/i) as HTMLTextAreaElement;
+    await act(async () => {
+      fireEvent.change(textarea, { target: { value: "你好" } });
+    });
+
+    await act(async () => {
+      fireEvent.keyDown(textarea, { key: "Enter", isComposing: true, keyCode: 229 });
+    });
+
+    expect(sendMock).not.toHaveBeenCalled();
+    expect(textarea.value).toBe("你好");
+  });
+
+  it("two Enter keydowns in the same frame (before re-render) send only once", async () => {
+    seedProvider("anthropic");
+    const sendMock = vi.fn();
+    render(
+      <Chat
+        providerLabel="Anthropic"
+        onOpenSettings={vi.fn()}
+        session={makeSession({ sendMessage: sendMock })}
+      />,
+    );
+
+    await screen.findByRole("button", { name: /more tools/i });
+    const textarea = screen.getByPlaceholderText(/Tell the agent/i) as HTMLTextAreaElement;
+    await act(async () => {
+      fireEvent.change(textarea, { target: { value: "Hello" } });
+    });
+
+    // Dispatch two raw keydown events inside ONE act so React cannot re-render
+    // in between — mirrors the real-world rapid double-press window where the
+    // `streaming` / cleared-`input` guards have not committed yet.
+    await act(async () => {
+      textarea.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+      );
+      textarea.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+      );
+    });
+
+    expect(sendMock).toHaveBeenCalledTimes(1);
+  });
+});

@@ -235,6 +235,18 @@ export default function Chat({
   const [maxContextTokens, setMaxContextTokens] = useState<number | undefined>(undefined);
   const [attachLocalToast, setAttachLocalToast] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  // Synchronous submit lock — the `streaming` / cleared-`input` guards only
+  // take effect after a React re-render commits, so rapid double-Enter (or
+  // double-click on Send) in the same frame would dispatch the same message
+  // twice. The ref locks at dispatch time and is released after the next
+  // commit (see the dep-less effect below), when the state guards take over.
+  const submitLockRef = useRef(false);
+  // Release the submit lock once any render commits — every dispatch path
+  // triggers state updates (cleared input / slot patch), so after commit the
+  // fresh closures' own guards (`streaming`, empty input) are in force.
+  useEffect(() => {
+    submitLockRef.current = false;
+  });
   // Dedicated picker for request_local_file (kept separate from fileInputRef so
   // the pick routes to the SW round-trip, not the normal attach flow).
   const localFileRequestInputRef = useRef<HTMLInputElement | null>(null);
@@ -787,6 +799,8 @@ export default function Chat({
     // Allow empty userInput when a pendingRecording exists (LLM still gets
     // the full trace + an empty user-prompt).
     if (!userInput && !pendingRecording) return;
+    if (submitLockRef.current) return;
+    submitLockRef.current = true;
 
     setInput("");
     clearError();
@@ -916,6 +930,8 @@ After the skill completes, briefly summarize what was created (the user will see
     if (streaming) {
       const userInput = input.trim();
       if (!userInput) return;
+      if (submitLockRef.current) return;
+      submitLockRef.current = true;
 
       // Build simple payload — slash expansion is not meaningful during
       // streaming (the active task already has its expanded prompt).
@@ -995,6 +1011,12 @@ After the skill completes, briefly summarize what was created (the user will see
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
+    // IME composition — Enter/arrow keys during composition belong to the
+    // IME candidate window, not the composer (Chrome delivers the commit
+    // Enter with isComposing=true; Safari fires it after compositionend
+    // with keyCode 229). Treating them as submit would send a truncated
+    // message and break the composition.
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
     if (popoverOpen && slashState && slashState.results.length > 0) {
       const list = slashState.results;
       if (e.key === "ArrowDown") {
