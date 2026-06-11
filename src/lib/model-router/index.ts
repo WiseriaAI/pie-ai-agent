@@ -22,7 +22,8 @@ export type BuiltinProvider =
   | "mimo"
   | "moonshot"
   | "moonshot-cn"
-  | "stepfun";
+  | "stepfun"
+  | "managed";
 
 export type ProviderRef = BuiltinProvider | `custom:${string}`;
 
