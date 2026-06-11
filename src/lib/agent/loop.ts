@@ -243,6 +243,15 @@ export interface AgentLoopContext {
    * the pure loop module.
    */
   onHistoryRepaired?: (violations: RoleViolation[], messages: AgentMessage[]) => void;
+  /**
+   * Task 5.3 — optional hard step cap for scheduled headless runs. When
+   * set, the loop terminates with outcome=failed (emitDone success:false)
+   * once `stepIndex` reaches this value. Front-end and non-scheduled paths
+   * do NOT pass this — absence means "no ceiling" (existing invariant:
+   * LLM-controlled termination, no hard step limit). Only scheduled runs
+   * with an explicit `maxStepsPerRun` schedule field set this.
+   */
+  maxSteps?: number;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -1238,6 +1247,21 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
     for (let stepIndex = startStepIndex; !signal.aborted; stepIndex++) {
       lastStepIndex = stepIndex;
       if (signal.aborted) return; // → finally
+
+      // Task 5.3 — optional hard step cap (scheduled runs only).
+      // Front-end paths do NOT pass maxSteps; absence = no ceiling (existing
+      // "LLM-controlled termination" invariant unchanged). When set and the
+      // step limit is reached we emit a failed agent-done-task so the run is
+      // counted as `failed` by applyOutcome, which may auto-pause the schedule.
+      if (ctx.maxSteps !== undefined && stepIndex > ctx.maxSteps) {
+        await emitDone({
+          type: "agent-done-task",
+          success: false,
+          summary: `Schedule step limit reached (maxStepsPerRun=${ctx.maxSteps}); run terminated.`,
+          stepCount: stepIndex,
+        }, "fail");
+        return;
+      }
 
       // v1.5 Task 6+7 — per-iteration focus + pinnedTabs refresh.
       const refreshed = await readFocusFromStorage(

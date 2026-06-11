@@ -18,8 +18,9 @@ import type {
   resolveModelConfig as ResolveModelConfigType,
 } from "@/lib/instances";
 import type { AgentDoneTaskMessage } from "@/types/messages";
-import { getSchedule, appendRun, updateRun } from "./store";
+import { getSchedule, appendRun, updateRun, listRunningRuns, patchSchedule } from "./store";
 import { newRunId } from "./types";
+import { applyOutcome } from "./schedule-logic";
 import {
   createSession,
   setSessionMeta,
@@ -36,6 +37,22 @@ export interface RunDeps {
   /** Resolve the instance's current model id (firstModelForProvider). */
   firstModelForProvider: typeof FirstModelForProviderType;
   resolveModelConfig: typeof ResolveModelConfigType;
+}
+
+// ── Internal helpers ──────────────────────────────────────────────────────────
+
+/**
+ * Task 5.2 — count a completed run outcome onto the schedule's counters/status.
+ * Re-reads the schedule first so the merge sees the latest runIds (mutated by
+ * the preceding appendRun in the same txMulti), then applies the atomic patch
+ * via applyOutcome. No-ops if the schedule was deleted mid-run.
+ */
+async function countOutcome(
+  scheduleId: string,
+  outcome: "success" | "failed",
+): Promise<void> {
+  const s = await getSchedule(scheduleId);
+  if (s) await patchSchedule(scheduleId, applyOutcome(s, outcome));
 }
 
 // ── Main export ───────────────────────────────────────────────────────────────
@@ -75,6 +92,29 @@ export async function runSchedule(
   const sched = await getSchedule(scheduleId);
   if (!sched) return;
 
+  // ── 1a. Task 5.2 — skip-if-running ──────────────────────────────────────
+  // If this schedule already has a `running` run (concurrency overlap), append
+  // a `skipped` run record and return immediately. Skipped runs do NOT count
+  // toward runCount / consecutiveFailures (spec §11).
+  const runningRuns = await listRunningRuns();
+  const alreadyRunning = runningRuns.some((r) => r.scheduleId === scheduleId);
+  if (alreadyRunning) {
+    const skippedId = newRunId();
+    await appendRun(scheduleId, {
+      recordId: skippedId,
+      scheduleId,
+      // A skipped run intentionally shares the NEXT ordinal (runCount + 1) but
+      // does NOT increment runCount — it's filler/audit, not a counted run. So
+      // the real run that follows reuses this same runIndex. Don't treat
+      // runIndex as a unique key in the UI (Task 9).
+      runIndex: sched.runCount + 1,
+      startedAt: Date.now(),
+      endedAt: Date.now(),
+      status: "skipped",
+    });
+    return;
+  }
+
   const recordId = newRunId();
   const runIndex = sched.runCount + 1;
 
@@ -110,6 +150,8 @@ export async function runSchedule(
       error: "instance unavailable",
       endedAt: Date.now(),
     });
+    // Task 5.2 — count the early-fail toward consecutiveFailures / auto-pause.
+    await countOutcome(scheduleId, "failed");
     return;
   }
 
@@ -145,63 +187,90 @@ export async function runSchedule(
   try {
     const abort = new AbortController();
 
-    await deps.runAgentLoop({
-      emit: (m) => {
-        if (m.type === "agent-done-task") {
-          // Canonical terminal signal for tool-using tasks, agent done/fail,
-          // and LLM/stream errors. Carries success + synthesized summary.
-          doneMsg = m;
-        } else if (m.type === "chat-error") {
-          chatErrorText = m.error;
-        } else if (m.type === "chat-chunk") {
-          // Only meaningful for the pure-text terminal path (see above).
-          pureTextSummary += m.text;
-        }
-        // thinking-chunk / agent-step / agent-usage / needs-file-access /
-        // chat-done → discarded in headless mode.
-      },
-      task: sched.prompt,
-      modelConfig: cfg,
-      signal: abort.signal,
-      sessionId,
-      onStepSnapshot: async (snapshot) => {
-        // Use the canonical merge (DRY with makeStepSnapshotHandler): it
-        // preserves carry-over fields (currentFocusTabId, pendingConfirm) on
-        // live steps AND applies the tombstone reset semantics + carries
-        // lastTaskSynth / contextUsage from the done snapshot — exactly what
-        // makes a headless run browsable in the panel.
-        const existing = await getSessionAgent(sessionId);
-        await setSessionAgent(sessionId, mergeSessionAgentSnapshot(existing, snapshot));
-      },
-      // Headless: no pinned tabs, no cross-session registry, no pin cleanup.
-      pinnedTabs: [],
-      refreshCrossSessionPinnedTabIds: async () => new Set<number>(),
-    });
+    // Task 5.2 — optional wall-clock budget: maxRunMs.
+    // When the schedule sets maxRunMs, we arm a timeout that aborts the loop
+    // after that many milliseconds. The abort causes the loop to emit
+    // agent-done-task(success:false) via its `finally` path, which applyOutcome
+    // then counts as `failed`. The timer is cleared on run completion so a
+    // fast run does not leave a dangling timeout.
+    let budgetTimer: ReturnType<typeof setTimeout> | undefined;
+    if (sched.maxRunMs != null && sched.maxRunMs > 0) {
+      budgetTimer = setTimeout(() => abort.abort(), sched.maxRunMs);
+    }
+
+    try {
+      await deps.runAgentLoop({
+        emit: (m) => {
+          if (m.type === "agent-done-task") {
+            // Canonical terminal signal for tool-using tasks, agent done/fail,
+            // and LLM/stream errors. Carries success + synthesized summary.
+            doneMsg = m;
+          } else if (m.type === "chat-error") {
+            chatErrorText = m.error;
+          } else if (m.type === "chat-chunk") {
+            // Only meaningful for the pure-text terminal path (see above).
+            pureTextSummary += m.text;
+          }
+          // thinking-chunk / agent-step / agent-usage / needs-file-access /
+          // chat-done → discarded in headless mode.
+        },
+        task: sched.prompt,
+        modelConfig: cfg,
+        signal: abort.signal,
+        sessionId,
+        // Task 5.3 — optional step cap: maxStepsPerRun. Absent = no ceiling.
+        ...(sched.maxStepsPerRun != null ? { maxSteps: sched.maxStepsPerRun } : {}),
+        onStepSnapshot: async (snapshot) => {
+          // Use the canonical merge (DRY with makeStepSnapshotHandler): it
+          // preserves carry-over fields (currentFocusTabId, pendingConfirm) on
+          // live steps AND applies the tombstone reset semantics + carries
+          // lastTaskSynth / contextUsage from the done snapshot — exactly what
+          // makes a headless run browsable in the panel.
+          const existing = await getSessionAgent(sessionId);
+          await setSessionAgent(sessionId, mergeSessionAgentSnapshot(existing, snapshot));
+        },
+        // Headless: no pinned tabs, no cross-session registry, no pin cleanup.
+        pinnedTabs: [],
+        refreshCrossSessionPinnedTabIds: async () => new Set<number>(),
+      });
+    } finally {
+      // Always clear the budget timer so a fast run doesn't leave a dangling
+      // timeout that aborts the next run's abort controller by accident.
+      // Guarded: budgetTimer is undefined when maxRunMs wasn't set.
+      if (budgetTimer) clearTimeout(budgetTimer);
+    }
 
     // ── 5. Decide success/failed from the terminal signal ────────────────
+    let runOutcome: "success" | "failed";
     if (doneMsg) {
       // agent-done-task is the authoritative terminal signal.
+      runOutcome = doneMsg.success ? "success" : "failed";
       await updateRun(recordId, {
-        status: doneMsg.success ? "success" : "failed",
+        status: runOutcome,
         summary: doneMsg.summary.slice(0, 200),
         ...(doneMsg.success ? {} : { error: doneMsg.summary.slice(0, 500) }),
         endedAt: Date.now(),
       });
     } else if (chatErrorText) {
       // A chat-error without an agent-done-task still means failure.
+      runOutcome = "failed";
       await updateRun(recordId, {
-        status: "failed",
+        status: runOutcome,
         error: chatErrorText.slice(0, 500),
         endedAt: Date.now(),
       });
     } else {
       // Pure-text reply path: chat-done only. Success; summary from text.
+      runOutcome = "success";
       await updateRun(recordId, {
-        status: "success",
+        status: runOutcome,
         summary: pureTextSummary.slice(0, 200),
         endedAt: Date.now(),
       });
     }
+
+    // Task 5.2 — apply outcome counters to the schedule (atomic patchSchedule).
+    await countOutcome(scheduleId, runOutcome);
   } catch (e) {
     // Backstop for a JS exception escaping runAgentLoop (not a soft failure —
     // those go through the terminal-signal branch above).
@@ -210,5 +279,7 @@ export async function runSchedule(
       error: e instanceof Error ? e.message : String(e),
       endedAt: Date.now(),
     });
+    // Count the exception as a failed run for auto-pause purposes.
+    await countOutcome(scheduleId, "failed");
   }
 }

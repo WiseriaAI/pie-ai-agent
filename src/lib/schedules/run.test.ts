@@ -457,3 +457,241 @@ describe("runSchedule — schedule not found", () => {
     expect(fakeLoop).not.toHaveBeenCalled();
   });
 });
+
+// ── Task 5.1+5.2: applyOutcome wired into runSchedule ───────────────────────
+
+describe("runSchedule — applyOutcome: schedule counters updated after run", () => {
+  it("success → runCount+1, consecutiveFailures=0 after successful agent-done-task", async () => {
+    const { putSchedule, getSchedule } = await import("./store");
+    const { runSchedule } = await import("./run");
+
+    await putSchedule(makeSched({ id: "sched_cnt_ok", runCount: 2, consecutiveFailures: 2 }));
+
+    await runSchedule("sched_cnt_ok", okDeps({ runAgentLoop: doneLoop({ success: true, summary: "ok" }) }));
+
+    const s = await getSchedule("sched_cnt_ok");
+    expect(s!.runCount).toBe(3);
+    expect(s!.consecutiveFailures).toBe(0);
+    expect(s!.status).toBe("active");
+  });
+
+  it("failed → runCount+1, consecutiveFailures+1 after agent-done-task success:false", async () => {
+    const { putSchedule, getSchedule } = await import("./store");
+    const { runSchedule } = await import("./run");
+
+    await putSchedule(makeSched({ id: "sched_cnt_fail", runCount: 1, consecutiveFailures: 0 }));
+
+    await runSchedule("sched_cnt_fail", okDeps({ runAgentLoop: doneLoop({ success: false, summary: "fail" }) }));
+
+    const s = await getSchedule("sched_cnt_fail");
+    expect(s!.runCount).toBe(2);
+    expect(s!.consecutiveFailures).toBe(1);
+    expect(s!.status).toBe("active");
+  });
+
+  it("3 consecutive failures → status=paused (FAILURE_PAUSE_THRESHOLD=3)", async () => {
+    const { putSchedule, getSchedule } = await import("./store");
+    const { runSchedule } = await import("./run");
+
+    // Already at 2 failures — one more pauses
+    await putSchedule(makeSched({ id: "sched_pause", runCount: 2, consecutiveFailures: 2 }));
+
+    await runSchedule("sched_pause", okDeps({ runAgentLoop: doneLoop({ success: false, summary: "fail" }) }));
+
+    const s = await getSchedule("sched_pause");
+    expect(s!.consecutiveFailures).toBe(3);
+    expect(s!.status).toBe("paused");
+  });
+
+  it("success after previous failures → consecutiveFailures reset to 0", async () => {
+    const { putSchedule, getSchedule } = await import("./store");
+    const { runSchedule } = await import("./run");
+
+    await putSchedule(makeSched({ id: "sched_reset_cf", runCount: 5, consecutiveFailures: 2 }));
+
+    await runSchedule("sched_reset_cf", okDeps({ runAgentLoop: doneLoop({ success: true, summary: "recovered" }) }));
+
+    const s = await getSchedule("sched_reset_cf");
+    expect(s!.consecutiveFailures).toBe(0);
+    expect(s!.status).toBe("active");
+  });
+
+  it("runCount reaches maxRuns → status=completed", async () => {
+    const { putSchedule, getSchedule } = await import("./store");
+    const { runSchedule } = await import("./run");
+
+    await putSchedule(makeSched({
+      id: "sched_capped",
+      runCount: 4,
+      consecutiveFailures: 0,
+      spec: { intervalMinutes: 60, maxRuns: 5 },
+    }));
+
+    await runSchedule("sched_capped", okDeps({ runAgentLoop: doneLoop({ success: true, summary: "done" }) }));
+
+    const s = await getSchedule("sched_capped");
+    expect(s!.runCount).toBe(5);
+    expect(s!.status).toBe("completed");
+  });
+
+  it("instance unavailable (early-fail) → runCount+1, consecutiveFailures+1, may pause", async () => {
+    const { putSchedule, getSchedule } = await import("./store");
+    const { runSchedule } = await import("./run");
+
+    // At cf=2, one more failure from a bad instance should push cf to 3 → paused
+    await putSchedule(makeSched({ id: "sched_instfail", runCount: 2, consecutiveFailures: 2 }));
+
+    await runSchedule("sched_instfail", okDeps({
+      getInstance: async () => null, // instance unavailable — early fail path
+    }));
+
+    const s = await getSchedule("sched_instfail");
+    expect(s!.consecutiveFailures).toBe(3);
+    expect(s!.status).toBe("paused");
+  });
+});
+
+// ── Task 5.2: skip-if-running ─────────────────────────────────────────────────
+
+describe("runSchedule — skip-if-running", () => {
+  it("已有 running 的 run → appendRun 一条 skipped run 且不调用 loop", async () => {
+    const { putSchedule, getSchedule, appendRun, getRun } = await import("./store");
+    const { newRunId } = await import("./types");
+    const { runSchedule } = await import("./run");
+
+    // Seed a running run first
+    await putSchedule(makeSched({ id: "sched_skip", runCount: 0, consecutiveFailures: 0 }));
+    const existingRunId = newRunId();
+    await appendRun("sched_skip", {
+      recordId: existingRunId,
+      scheduleId: "sched_skip",
+      runIndex: 1,
+      startedAt: Date.now(),
+      status: "running",
+    });
+
+    const fakeLoop = vi.fn();
+    await runSchedule("sched_skip", okDeps({ runAgentLoop: fakeLoop }));
+
+    // Loop must NOT have been called
+    expect(fakeLoop).not.toHaveBeenCalled();
+
+    // A skipped run record must have been appended
+    const s = await getSchedule("sched_skip");
+    // runIds: original running run + the new skipped run
+    expect(s!.runIds.length).toBe(2);
+
+    // The second run (just appended) must be "skipped" with no sessionId
+    const skippedRun = await getRun(s!.runIds[1]!);
+    expect(skippedRun!.status).toBe("skipped");
+    expect(skippedRun!.sessionId).toBeUndefined();
+
+    // schedule counters must NOT change (skipped doesn't count)
+    expect(s!.runCount).toBe(0);
+    expect(s!.consecutiveFailures).toBe(0);
+  });
+
+  it("无 running run → 正常执行（调用 loop）", async () => {
+    const { putSchedule } = await import("./store");
+    const { runSchedule } = await import("./run");
+
+    await putSchedule(makeSched({ id: "sched_noskip" }));
+
+    const fakeLoop = vi.fn(async (ctx: AgentLoopContext) => {
+      ctx.emit({ type: "chat-done", sessionId: ctx.sessionId });
+    });
+
+    await runSchedule("sched_noskip", okDeps({ runAgentLoop: fakeLoop }));
+
+    expect(fakeLoop).toHaveBeenCalledOnce();
+  });
+});
+
+// ── Task 5.2: maxRunMs budget ─────────────────────────────────────────────────
+
+describe("runSchedule — maxRunMs timeout budget", () => {
+  it("maxRunMs 超时 → abort signal 被触发 (abort.signal.aborted = true)", async () => {
+    const { putSchedule } = await import("./store");
+    const { runSchedule } = await import("./run");
+
+    // Use a very short maxRunMs so the timeout fires in real time
+    await putSchedule(makeSched({ id: "sched_timeout", maxRunMs: 50 }));
+
+    let capturedSignal: AbortSignal | undefined;
+    // A loop that captures the signal then resolves immediately (simulates
+    // a task that defers to the signal but doesn't actually block)
+    const fakeLoop = vi.fn(async (ctx: AgentLoopContext) => {
+      capturedSignal = ctx.signal;
+      // Wait for abort or a tick — whichever comes first
+      await new Promise<void>((resolve) => {
+        if (ctx.signal.aborted) { resolve(); return; }
+        ctx.signal.addEventListener("abort", () => resolve(), { once: true });
+        // Safety: also resolve after 200ms so the test doesn't hang
+        setTimeout(resolve, 200);
+      });
+      // Emit failed outcome as the real loop does on abort
+      ctx.emit({
+        type: "agent-done-task",
+        success: false,
+        summary: "aborted by timeout",
+        stepCount: 1,
+        sessionId: ctx.sessionId,
+      });
+    });
+
+    await runSchedule("sched_timeout", okDeps({ runAgentLoop: fakeLoop }));
+
+    // The signal should have been aborted by the maxRunMs timer
+    expect(capturedSignal).toBeDefined();
+    expect(capturedSignal!.aborted).toBe(true);
+  });
+
+  it("run 在 maxRunMs 之前正常完成 → budget timer 被 finally 清除，不泄漏去 abort", async () => {
+    // Covers the no-leak guarantee promised by the finally clearTimeout:
+    // a fast run that completes before maxRunMs must NOT leave a pending
+    // timeout that fires later and aborts a subsequent run's signal.
+    //
+    // Real timers are kept (runSchedule awaits real IDB ops that don't play
+    // well with vi.useFakeTimers()); instead we spy on setTimeout/clearTimeout
+    // and assert the exact timer the budget armed was cleared, and that the
+    // captured signal stays unaborted even after the maxRunMs window elapses.
+    const { putSchedule } = await import("./store");
+    const { runSchedule } = await import("./run");
+
+    const setSpy = vi.spyOn(globalThis, "setTimeout");
+    const clearSpy = vi.spyOn(globalThis, "clearTimeout");
+
+    try {
+      // Tiny budget so any leaked timer would fire fast during the wait below.
+      await putSchedule(makeSched({ id: "sched_fast", maxRunMs: 20 }));
+
+      let capturedSignal: AbortSignal | undefined;
+      const fastLoop = vi.fn(async (ctx: AgentLoopContext) => {
+        capturedSignal = ctx.signal;
+        // Completes immediately — pure-text path, well before maxRunMs.
+        ctx.emit({ type: "chat-done", sessionId: ctx.sessionId });
+      });
+
+      await runSchedule("sched_fast", okDeps({ runAgentLoop: fastLoop }));
+
+      // Identify the budget timer by its delay (maxRunMs=20) — other awaited
+      // code might schedule unrelated timers, so don't assume call index 0.
+      const budgetCallIdx = setSpy.mock.calls.findIndex((c) => c[1] === 20);
+      expect(budgetCallIdx).toBeGreaterThanOrEqual(0);
+      const budgetHandle = setSpy.mock.results[budgetCallIdx]!.value;
+      // That exact timer handle must have been cleared by the finally block.
+      expect(clearSpy).toHaveBeenCalledWith(budgetHandle);
+
+      // The signal must NOT be aborted — the run completed cleanly.
+      expect(capturedSignal!.aborted).toBe(false);
+
+      // Wait past the (tiny) maxRunMs window; a leaked timer would have fired
+      // by now and aborted the signal. It must remain unaborted.
+      await new Promise((r) => setTimeout(r, 60));
+      expect(capturedSignal!.aborted).toBe(false);
+    } finally {
+      setSpy.mockRestore();
+      clearSpy.mockRestore();
+    }
+  });
+});

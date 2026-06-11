@@ -4,7 +4,8 @@
 // (never Date.now()). Kept separate from scheduler.ts (the chrome.alarms
 // wrapper) so this layer is deterministically unit-testable.
 
-import type { ScheduleSpec } from "./types";
+import type { ScheduleSpec, ScheduleRecord } from "./types";
+import { FAILURE_PAUSE_THRESHOLD } from "./types";
 
 const MS_PER_MINUTE = 60_000;
 
@@ -41,4 +42,55 @@ export function computeNextFireAt(args: {
   if (!spec.intervalMinutes) return null;
   if (spec.maxRuns != null && runCount >= spec.maxRuns) return null;
   return anchor + spec.intervalMinutes * MS_PER_MINUTE;
+}
+
+/**
+ * Task 5.1 — Pure function: given a completed run outcome, compute the patch
+ * to apply to the parent ScheduleRecord's counters + status.
+ *
+ * Count rules (spec §11):
+ *   success     → runCount+1, consecutiveFailures = 0
+ *   failed      → runCount+1, consecutiveFailures+1
+ *   skipped     → no change (overlapping run — does not count)
+ *   interrupted → no change (SW killed mid-run — does not count)
+ *
+ * Status determination order (failure pause priority over run cap):
+ *   1. consecutiveFailures >= FAILURE_PAUSE_THRESHOLD → "paused"
+ *   2. maxRuns != null && runCount >= maxRuns          → "completed"
+ *   3. else                                            → "active"
+ *
+ * No chrome / IDB side effects — purely a counter → patch mapper.
+ */
+export function applyOutcome(
+  sched: ScheduleRecord,
+  outcome: "success" | "failed" | "skipped" | "interrupted",
+): { runCount: number; consecutiveFailures: number; status: ScheduleRecord["status"] } {
+  // skipped / interrupted: no counter change, status unchanged
+  if (outcome === "skipped" || outcome === "interrupted") {
+    return {
+      runCount: sched.runCount,
+      consecutiveFailures: sched.consecutiveFailures,
+      status: sched.status,
+    };
+  }
+
+  const newRunCount = sched.runCount + 1;
+  const newCf =
+    outcome === "success" ? 0 : sched.consecutiveFailures + 1;
+
+  // Determine new status: failure-pause priority first
+  let newStatus: ScheduleRecord["status"];
+  if (newCf >= FAILURE_PAUSE_THRESHOLD) {
+    newStatus = "paused";
+  } else if (sched.spec.maxRuns != null && newRunCount >= sched.spec.maxRuns) {
+    newStatus = "completed";
+  } else {
+    newStatus = "active";
+  }
+
+  return {
+    runCount: newRunCount,
+    consecutiveFailures: newCf,
+    status: newStatus,
+  };
 }

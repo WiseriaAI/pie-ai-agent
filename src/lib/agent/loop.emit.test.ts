@@ -254,3 +254,84 @@ describe("runAgentLoop emit sink (ADR 0002)", () => {
     ).resolves.not.toThrow();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Task 5.3 — maxSteps hard cap for scheduled runs
+// ---------------------------------------------------------------------------
+describe("runAgentLoop — maxSteps hard cap (Task 5.3)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("maxSteps=0 → immediately terminates with agent-done-task success:false before any LLM call", async () => {
+    // maxSteps=0 means stepIndex=1 (startStepIndex) > 0 fires immediately at
+    // the first iteration, before streamChat is ever called.
+    const { runAgentLoop } = await import("./loop");
+    const { streamChat } = await import("../model-router");
+
+    const emitted: unknown[] = [];
+    const emit: AgentEmit = (msg) => { emitted.push(msg); };
+
+    const controller = new AbortController();
+    await runAgentLoop({
+      emit,
+      task: "test task with step cap",
+      modelConfig: {
+        provider: "openai",
+        model: "gpt-4o",
+        apiKey: "sk-test",
+        vision: false,
+      },
+      signal: controller.signal,
+      sessionId: "test-maxsteps-0",
+      pinnedTabs: [{ tabId: 1, origin: "https://example.com" }],
+      initialFocusTabId: 1,
+      maxSteps: 0,
+    });
+
+    // Must emit agent-done-task with success=false
+    const doneMsgs = emitted.filter(
+      (m) => (m as { type: string }).type === "agent-done-task",
+    );
+    expect(doneMsgs.length).toBe(1);
+    expect((doneMsgs[0] as { success: boolean }).success).toBe(false);
+
+    // streamChat must NOT have been called (terminated before the LLM call)
+    expect(streamChat).not.toHaveBeenCalled();
+  });
+
+  it("no maxSteps → loop reaches LLM (streamChat called), normal completion", async () => {
+    // Without maxSteps, the loop runs normally until the LLM returns a
+    // plain-text reply (→ chat-done). Verifies that absent maxSteps does not
+    // change existing behavior.
+    const { runAgentLoop } = await import("./loop");
+    const { streamChat } = await import("../model-router");
+
+    const emitted: unknown[] = [];
+    const emit: AgentEmit = (msg) => { emitted.push(msg); };
+
+    const controller = new AbortController();
+    await runAgentLoop({
+      emit,
+      task: "task without cap",
+      modelConfig: {
+        provider: "openai",
+        model: "gpt-4o",
+        apiKey: "sk-test",
+        vision: false,
+      },
+      signal: controller.signal,
+      sessionId: "test-maxsteps-none",
+      pinnedTabs: [{ tabId: 1, origin: "https://example.com" }],
+      initialFocusTabId: 1,
+      // maxSteps intentionally absent
+    });
+
+    // streamChat must have been called (loop reached LLM)
+    expect(streamChat).toHaveBeenCalled();
+
+    // Should end with chat-done (pure-text mock path), not agent-done-task(failed)
+    const chatDone = emitted.find((m) => (m as { type: string }).type === "chat-done");
+    expect(chatDone).toBeDefined();
+  });
+});
