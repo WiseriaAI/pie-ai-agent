@@ -50,6 +50,7 @@ import {
 import type {
   AgentStepMessage,
   AgentDoneTaskMessage,
+  PortMessageToPanel,
 } from "../../types/messages";
 import type { SessionAgentState } from "../sessions/types";
 import {
@@ -83,8 +84,12 @@ const REACT_BIG_CAP = 60;
 /** #58 — provider 元数据缺失时的回退上下文窗口(与 window-token-budget 一致)。 */
 const COMPACTION_FALLBACK_MAX_TOKENS = 32_000;
 
+/** Outbound message sink. Front-end path: `(m) => port.postMessage(m)`.
+ *  Headless / scheduled path: write to Run record or discard streaming chunks. */
+export type AgentEmit = (msg: PortMessageToPanel) => void;
+
 export interface AgentLoopContext {
-  port: chrome.runtime.Port;
+  emit: AgentEmit;
   task: string;
   modelConfig: ModelConfig;
   signal: AbortSignal;
@@ -318,17 +323,17 @@ export function filterToolsByVision<T extends { name: string }>(
 
 
 function sendAgentStep(
-  port: chrome.runtime.Port,
+  emit: AgentEmit,
   msg: AgentStepMessage,
 ): void {
-  port.postMessage(msg);
+  emit(msg);
 }
 
 function sendAgentDone(
-  port: chrome.runtime.Port,
+  emit: AgentEmit,
   msg: AgentDoneTaskMessage,
 ): void {
-  port.postMessage(msg);
+  emit(msg);
 }
 
 /** M2-U2 P1-11 — inject sessionId onto any PortMessageToPanel variant
@@ -905,7 +910,7 @@ function redactArgsForPanel(toolName: string, args: unknown): unknown {
 // ── Main loop ─────────────────────────────────────────────────────────────────
 
 export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
-  const { port, task, modelConfig } = ctx;
+  const { emit, task, modelConfig } = ctx;
   const sessionId = ctx.sessionId;
 
   // Phase 2.5 lifecycle plumbing.
@@ -987,7 +992,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       }
     }
 
-    sendAgentDone(port, { ...msg, sessionId });
+    sendAgentDone(emit, { ...msg, sessionId });
 
     // Phase 5 — R13 path (a): evict image cache on any terminal state.
     // Also free the per-task screenshot budget so a future task on the
@@ -1029,7 +1034,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
   };
   // M2-U2 P1-11 — session-bound sendAgentStep that auto-injects sessionId.
   const emitStep = (msg: Omit<AgentStepMessage, "sessionId">): void => {
-    sendAgentStep(port, { ...msg, sessionId });
+    sendAgentStep(emit, { ...msg, sessionId });
   };
 
   // 1. Anchor tab + origin at task start.
@@ -1266,7 +1271,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         history.push(midTaskMsg);
         // Broadcast empty pending so panel updates UI immediately
         // (without waiting for next step write).
-        await broadcastInstructionState(port, sessionId);
+        await broadcastInstructionState(emit, sessionId);
       }
 
       // Advisory origin check. interpretPinnedTabUrl NEVER terminates the
@@ -1490,7 +1495,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // tools are only offered to models KNOWN to support vision; non-vision
       // and unknown-vision models never see them.
       const readLocalFileTool = buildReadLocalFileTool({
-        notifyNeedsFileAccess: () => port.postMessage({ type: "needs-file-access" }),
+        notifyNeedsFileAccess: () => emit({ type: "needs-file-access" }),
       });
       const requestLocalFileTool = buildRequestLocalFileTool({
         sessionId,
@@ -1545,13 +1550,13 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         if (event.type === "text-delta") {
           accumulatedText += event.text;
           // Stream text to panel as it arrives (Phase 1 compatible)
-          port.postMessage(withSession({ type: "chat-chunk", text: event.text }, sessionId));
+          emit(withSession({ type: "chat-chunk", text: event.text }, sessionId));
         } else if (event.type === "thinking-start") {
           thinkingAccum = "";
           thinkingReplay = event.replay;
         } else if (event.type === "thinking-delta") {
           thinkingAccum += event.text;
-          port.postMessage(withSession({ type: "thinking-chunk", text: event.text }, sessionId));
+          emit(withSession({ type: "thinking-chunk", text: event.text }, sessionId));
         } else if (event.type === "thinking-end") {
           if (thinkingReplay && thinkingAccum) {
             thinkingBlocks.push({
@@ -1597,7 +1602,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             lastStepUsage = event.usage;
           }
         } else if (event.type === "error") {
-          port.postMessage(withSession({ type: "chat-error", error: event.error }, sessionId));
+          emit(withSession({ type: "chat-error", error: event.error }, sessionId));
           await emitDone({
             type: "agent-done-task",
             success: false,
@@ -1634,7 +1639,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           };
           await setSessionAgent(sessionId, { ...base, contextUsage: nextUsage });
           try {
-            port.postMessage(
+            emit(
               withSession(
                 {
                   type: "agent-usage",
@@ -1647,7 +1652,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
               ),
             );
           } catch (e) {
-            // Port disconnected mid-step — panel will rehydrate from
+            // Emit threw (e.g. port disconnected) — panel will rehydrate from
             // SessionAgentState on next mount via useSession.setActive.
             console.warn(
               `[agent] post agent-usage failed for session=${sessionId}:`,
@@ -1682,7 +1687,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           "模型在产出任何回复前就触达输出 token 上限（stop_reason=length），" +
           "通常是长推理吃光了输出预算。请在该 instance 调高最大输出（maxTokens），" +
           "或简化任务后重试。";
-        port.postMessage(withSession({ type: "chat-error", error: msg }, sessionId));
+        emit(withSession({ type: "chat-error", error: msg }, sessionId));
         await emitDone({
           type: "agent-done-task",
           success: false,
@@ -1693,7 +1698,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       }
       if (completion === "truncated-partial") {
         // 部分答案已流式发出但不完整——追加可见提示，再走正常 pure-text 收尾。
-        port.postMessage(
+        emit(
           withSession(
             { type: "chat-chunk", text: "\n\n⚠️ [回复被输出 token 上限截断，未必完整。可在该 instance 调高最大输出后重试。]" },
             sessionId,
@@ -1737,7 +1742,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             );
           }
         }
-        port.postMessage(withSession({ type: "chat-done" }, sessionId));
+        emit(withSession({ type: "chat-done" }, sessionId));
         normalTextReply = true;
         // M1-U3 v2 — pure-text replies don't push history, so no
         // per-step snapshot has fired this turn. But a prior task's
@@ -2044,7 +2049,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         // output_file — hand the panel a download card. The agent-step above
         // keeps the call visible in the step stream; this drives the card.
         if (result.fileOutput) {
-          port.postMessage(
+          emit(
             withSession(
               {
                 type: "file-output",

@@ -641,7 +641,7 @@ async function handlePanelMounted(
 
   // Issue #34 — sync pending instructions to the panel so the reconnected
   // UI can re-decorate any pending bubbles in slot.messages.
-  await broadcastInstructionState(port, sessionId);
+  await broadcastInstructionState((m) => port.postMessage(m), sessionId);
 }
 
 // --- M1-U5: Resume + Discard handlers ---
@@ -841,7 +841,7 @@ async function handleResumeRequest(
   }
 
   await runAgentLoop({
-    port,
+    emit: (m) => port.postMessage(m),
     task: taskForPrompt,
     modelConfig,
     signal,
@@ -1096,7 +1096,7 @@ async function handleChatStream(
         messages = merged;
       }
       // Broadcast empty pending so panel removes pending decorations
-      await broadcastInstructionState(port, sessionId);
+      await broadcastInstructionState((m) => port.postMessage(m), sessionId);
     }
 
     // U2 — task is always the last message (panel sendMessage puts the
@@ -1211,7 +1211,7 @@ async function handleChatStream(
     const chatTaskId = crypto.randomUUID();
 
     await runAgentLoop({
-      port,
+      emit: (m) => port.postMessage(m),
       task,
       modelConfig,
       signal,
@@ -1406,7 +1406,7 @@ chrome.runtime.onConnect.addListener((port) => {
             ...(message.quotes?.length ? { quotes: message.quotes } : {}),
             createdAt: Date.now(),
           });
-          await broadcastInstructionState(port, message.sessionId);
+          await broadcastInstructionState((m) => port.postMessage(m), message.sessionId);
         } catch (e) {
           console.warn("[sw] chat-instruction-add failed:", e);
         }
@@ -1416,7 +1416,7 @@ chrome.runtime.onConnect.addListener((port) => {
       void (async () => {
         try {
           await cancelPending(message.sessionId, message.chatMessageId);
-          await broadcastInstructionState(port, message.sessionId);
+          await broadcastInstructionState((m) => port.postMessage(m), message.sessionId);
         } catch (e) {
           console.warn("[sw] chat-instruction-cancel failed:", e);
         }

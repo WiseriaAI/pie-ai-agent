@@ -4,11 +4,15 @@ import type { ChatInstructionStateMessage } from "@/types/messages";
 /**
  * Issue #34 — read current pendingInstructions from storage and broadcast
  * the slim payload (chatMessageId + createdAt only) to the panel via the
- * given port. Centralizes broadcast so callers (add handler, cancel handler,
- * drain in loop, reconnect) all use the same shape.
+ * given emit sink. Centralizes broadcast so callers (add handler, cancel
+ * handler, drain in loop, reconnect) all use the same shape.
+ *
+ * ADR 0002: accepts a generic emit sink so the loop (headless path) can
+ * pass ctx.emit directly without a chrome.runtime.Port. Front-end callers
+ * pass `(m) => port.postMessage(m)`.
  */
 export async function broadcastInstructionState(
-  port: chrome.runtime.Port,
+  emit: (msg: ChatInstructionStateMessage) => void,
   sessionId: string,
 ): Promise<void> {
   const state = await getSessionAgent(sessionId);
@@ -21,8 +25,8 @@ export async function broadcastInstructionState(
     })),
   };
   try {
-    port.postMessage(payload);
+    emit(payload);
   } catch (e) {
-    console.warn("[sw] broadcastInstructionState postMessage failed:", e);
+    console.warn("[sw] broadcastInstructionState emit failed:", e);
   }
 }

@@ -24,18 +24,6 @@ interface SessionRun {
   agentMessages: unknown[];
 }
 
-/** 满足 chrome.runtime.Port 形状的最小实现:runAgentLoop 只调 postMessage。 */
-function makeMockPort(sessionId: string, onMsg: (m: PortMessageToPanel) => void): chrome.runtime.Port {
-  const noop = { addListener() {}, removeListener() {}, hasListener: () => false } as any;
-  return {
-    name: `chat-stream-${sessionId}`,
-    postMessage: (m: PortMessageToPanel) => onMsg(m),
-    disconnect() {},
-    onMessage: noop,
-    onDisconnect: noop,
-  } as unknown as chrome.runtime.Port;
-}
-
 function makeBridge() {
   const runs = new Map<string, SessionRun>();
   let seq = 0;
@@ -133,7 +121,7 @@ function makeBridge() {
         'requested fields (e.g. `[{"month": "May", "count": 8}]`).';
 
       void runAgentLoop({
-        port: makeMockPort(sessionId, (m) => onMessage(sessionId, m)),
+        emit: (m) => onMessage(sessionId, m),
         task,
         modelConfig,
         signal: controller.signal,
