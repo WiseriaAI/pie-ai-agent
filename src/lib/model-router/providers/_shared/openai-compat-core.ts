@@ -152,19 +152,26 @@ export async function* streamChatOpenAICompat(
     response = await fetch(endpoint, { method: "POST", headers, body: JSON.stringify(requestBody), signal });
   } catch (e) {
     if (signal?.aborted) return;
-    yield { type: "error", error: `Network error: ${e instanceof Error ? e.message : `Failed to connect to ${displayProviderName(config)} API`}` };
+    yield { type: "error", error: `Network error: ${e instanceof Error ? e.message : `Failed to connect to ${displayProviderName(config)} API`}`, kind: "network" };
     return;
   }
 
   if (!response.ok) {
     const text = await response.text().catch(() => "");
     const name = displayProviderName(config);
-    if (response.status === 401) yield { type: "error", error: `Invalid ${name} API key` };
-    else if (response.status === 429) {
-      const retryAfter = response.headers.get("retry-after");
-      yield { type: "error", error: `${name} rate limit exceeded${retryAfter ? `. Retry after ${retryAfter}s` : ""}` };
+    let errorType: string | undefined;
+    try { errorType = JSON.parse(text)?.error?.type; } catch { /* 非 JSON body */ }
+    if (response.status === 401) {
+      yield { type: "error", error: `Invalid ${name} API key`, kind: "auth" };
+    } else if (response.status === 429) {
+      if (errorType === "budget_exceeded") {
+        yield { type: "error", error: `${name}: quota exhausted — manage your subscription`, kind: "budget" };
+      } else {
+        const retryAfter = response.headers.get("retry-after");
+        yield { type: "error", error: `${name} rate limit exceeded${retryAfter ? `. Retry after ${retryAfter}s` : ""}`, kind: "ratelimit" };
+      }
     } else {
-      yield { type: "error", error: `${name} API error (${response.status}): ${text}` };
+      yield { type: "error", error: `${name} API error (${response.status}): ${text}`, kind: "http" };
     }
     return;
   }
@@ -298,7 +305,7 @@ export async function* streamChatOpenAICompat(
     yield { type: "done", usage };
   } catch (e) {
     if (signal?.aborted) return;
-    yield { type: "error", error: `Stream interrupted: ${e instanceof Error ? e.message : "Unknown error"}` };
+    yield { type: "error", error: `Stream interrupted: ${e instanceof Error ? e.message : "Unknown error"}`, kind: "network" };
   }
 }
 

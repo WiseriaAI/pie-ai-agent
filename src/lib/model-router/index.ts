@@ -4,7 +4,7 @@ import { dispatchStreamChat } from "./providers";
 import { resolveProviderMeta } from "./providers/registry";
 import type { Attachment } from "@/lib/images";
 
-export type { StreamEvent, AgentMessage, ContentBlock, TextBlock, ToolUseBlock, ToolResultBlock, ImageBlock, ToolDefinition } from "./types";
+export type { StreamEvent, ErrorKind, AgentMessage, ContentBlock, TextBlock, ToolUseBlock, ToolResultBlock, ImageBlock, ToolDefinition } from "./types";
 export { PROVIDER_REGISTRY, getProviderMeta, resolveProviderMeta, resolveModelMeta, resolveEndpointVariant } from "./providers/registry";
 export type { ProviderMeta, ModelMeta, EndpointVariant } from "./providers/registry";
 export { getModelMeta } from "./providers/registry";
