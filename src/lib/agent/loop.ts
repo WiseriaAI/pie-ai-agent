@@ -1249,7 +1249,6 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
   const systemMsg: AgentMessage = {
     role: "system",
     content: buildAgentSystemPrompt(
-      task,
       // CDP tools are always offered (calling while disabled prompts the user
       // to enable), so always include the keyboard/editor usage guidance.
       /* hasKeyboardTools */ true,
