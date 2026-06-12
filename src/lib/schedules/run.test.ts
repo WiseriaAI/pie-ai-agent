@@ -607,6 +607,77 @@ describe("runSchedule — skip-if-running", () => {
   });
 });
 
+// ── Run-history viewability: meta.messages persisted from the emit stream ─────
+
+describe("runSchedule — persists a panel-renderable transcript to meta.messages", () => {
+  it("成功 run → meta.messages に user/assistant/agent-step/agent-summary が並ぶ + title 由来 prompt", async () => {
+    const { putSchedule, getSchedule, getRun } = await import("./store");
+    const { getSessionMeta } = await import("@/lib/sessions/storage");
+    const { runSchedule } = await import("./run");
+
+    await putSchedule(makeSched({ id: "sched_tx", prompt: "find the cheapest flight" }));
+
+    // A realistic emit script: assistant text → a tool step → terminal summary.
+    const fakeLoop = vi.fn(async (ctx: AgentLoopContext) => {
+      ctx.emit({ type: "chat-chunk", text: "Searching now", sessionId: ctx.sessionId });
+      ctx.emit({
+        type: "agent-step",
+        stepIndex: 0,
+        tool: "navigate",
+        args: { url: "https://example.com" },
+        status: "ok",
+        observation: "loaded",
+        sessionId: ctx.sessionId,
+      });
+      ctx.emit({
+        type: "agent-done-task",
+        success: true,
+        summary: "Found a $120 flight",
+        stepCount: 1,
+        sessionId: ctx.sessionId,
+      });
+    });
+
+    await runSchedule("sched_tx", okDeps({ runAgentLoop: fakeLoop }));
+
+    const s = await getSchedule("sched_tx");
+    const run = await getRun(s!.runIds[0]!);
+    const meta = await getSessionMeta(run!.sessionId!);
+    expect(meta).not.toBeNull();
+    expect((meta!.messages ?? []).map((m) => m.role)).toEqual([
+      "user",
+      "assistant",
+      "agent-step",
+      "agent-summary",
+    ]);
+    // First message is the prompt; title derived from it (foreground parity).
+    expect(meta!.messages![0]).toEqual({ role: "user", content: "find the cheapest flight" });
+    expect(meta!.title).toBe("find the cheapest flight");
+  });
+
+  it("loop が例外を投げても、それまでに溜まった transcript は meta.messages に残る", async () => {
+    const { putSchedule, getSchedule, getRun } = await import("./store");
+    const { getSessionMeta } = await import("@/lib/sessions/storage");
+    const { runSchedule } = await import("./run");
+
+    await putSchedule(makeSched({ id: "sched_tx_boom", prompt: "do a thing" }));
+
+    const boomLoop = vi.fn(async (ctx: AgentLoopContext) => {
+      ctx.emit({ type: "chat-chunk", text: "partial work", sessionId: ctx.sessionId });
+      throw new Error("kaboom");
+    });
+
+    await runSchedule("sched_tx_boom", okDeps({ runAgentLoop: boomLoop }));
+
+    const s = await getSchedule("sched_tx_boom");
+    const run = await getRun(s!.runIds[0]!);
+    const meta = await getSessionMeta(run!.sessionId!);
+    // The user prompt + the partial assistant text survived the crash.
+    expect((meta!.messages ?? []).map((m) => m.role)).toEqual(["user", "assistant"]);
+    expect(meta!.messages![1]).toMatchObject({ role: "assistant", content: "partial work" });
+  });
+});
+
 // ── Task 5.2: maxRunMs budget ─────────────────────────────────────────────────
 
 describe("runSchedule — maxRunMs timeout budget", () => {

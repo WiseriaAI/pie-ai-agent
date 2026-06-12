@@ -29,12 +29,15 @@ import { getSchedule, appendRun, updateRun, listRunningRuns, patchSchedule } fro
 import { newRunId } from "./types";
 import { applyOutcome } from "./schedule-logic";
 import { notifyRunDone, notifyScheduleStatusChange } from "./notify";
+import { HeadlessTranscript } from "./headless-transcript";
 import {
   createSession,
   setSessionMeta,
+  getSessionMeta,
   setSessionAgent,
   getSessionAgent,
 } from "@/lib/sessions/storage";
+import { deriveTitleFromMessages } from "@/lib/sessions/title";
 
 // ── Task 7: Headless destructive-action prevention ────────────────────────────
 //
@@ -111,6 +114,28 @@ async function countOutcome(
       }).catch(() => {/* already caught inside notifyScheduleStatusChange */});
     }
   }
+}
+
+/**
+ * Persist the headless run's panel-renderable transcript onto the session's
+ * `meta.messages`, so opening the run from the run history shows the same
+ * conversation a foreground task would (instead of a blank page — the bug this
+ * fixes). Re-reads the latest meta first and merges, because the run may have
+ * patched the meta in the meantime (origin/scheduleId/pinnedTabs) and those
+ * fields must survive. Derives a fallback title from the first user message
+ * when the session has none yet (mirrors the foreground persistMessages path).
+ * Best-effort: a missing session (deleted mid-run) is a silent no-op.
+ */
+async function persistTranscript(
+  sessionId: string,
+  transcript: HeadlessTranscript,
+): Promise<void> {
+  const cur = await getSessionMeta(sessionId);
+  if (!cur) return;
+  const messages = transcript.snapshot();
+  const title =
+    cur.title && cur.title.length > 0 ? cur.title : deriveTitleFromMessages(messages);
+  await setSessionMeta({ ...cur, messages, ...(title != null ? { title } : {}) });
 }
 
 /**
@@ -254,6 +279,11 @@ export async function runSchedule(
   const session = await createSession({ pinMode: "auto" });
   const sessionId = session.id;
 
+  // Build the panel-renderable transcript as the loop emits, seeded with the
+  // user prompt. Persisted to meta.messages at every terminal exit so the run
+  // is browsable from the run history (headless has no panel to do this).
+  const transcript = new HeadlessTranscript(sched.prompt);
+
   // Mark this session as schedule-originated (backward-compatible fields).
   await setSessionMeta({
     ...session,
@@ -284,6 +314,9 @@ export async function runSchedule(
       endedAt: Date.now(),
     });
     await countOutcome(scheduleId, "failed");
+    // Persist the (user-prompt-only) transcript so opening this failed run
+    // shows the prompt rather than a blank page; the run row carries the error.
+    await persistTranscript(sessionId, transcript);
     // Task 8 — restricted-startUrl is still a `failed` run; notify for
     // consistency (this path has a sessionId from the minted session above).
     notifyRunDone({
@@ -347,6 +380,9 @@ export async function runSchedule(
     try {
       await deps.runAgentLoop({
         emit: (m) => {
+          // Fold every emitted message into the panel transcript (persisted to
+          // meta.messages on terminal exit so the run renders in the panel).
+          transcript.push(m);
           if (m.type === "agent-done-task") {
             // Canonical terminal signal for tool-using tasks, agent done/fail,
             // and LLM/stream errors. Carries success + synthesized summary.
@@ -427,6 +463,10 @@ export async function runSchedule(
       });
     }
 
+    // Persist the panel transcript onto the session so the finished run opens
+    // to its conversation (not a blank page) from the run history.
+    await persistTranscript(sessionId, transcript);
+
     // Task 5.2 — apply outcome counters to the schedule (atomic patchSchedule).
     await countOutcome(scheduleId, runOutcome);
 
@@ -449,6 +489,9 @@ export async function runSchedule(
       error: errMsg,
       endedAt: Date.now(),
     });
+    // Persist whatever the transcript captured before the exception so the
+    // failed run is still browsable from the run history.
+    await persistTranscript(sessionId, transcript);
     // Count the exception as a failed run for auto-pause purposes.
     await countOutcome(scheduleId, "failed");
 
