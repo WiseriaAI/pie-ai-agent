@@ -40,23 +40,19 @@ describe("locale registry", () => {
 });
 
 describe("normalizeBrowserLocale", () => {
-  it("zh-CN → zh-CN", () => {
-    expect(normalizeBrowserLocale("zh-CN")).toBe("zh-CN");
-  });
-  it("zh-TW → zh-CN (any zh* maps to zh-CN — v1 only ships Simplified)", () => {
-    expect(normalizeBrowserLocale("zh-TW")).toBe("zh-CN");
-  });
-  it("zh-Hans → zh-CN", () => {
-    expect(normalizeBrowserLocale("zh-Hans")).toBe("zh-CN");
-  });
-  it("en-US → en", () => {
-    expect(normalizeBrowserLocale("en-US")).toBe("en");
-  });
-  it("fr-FR → en (unsupported falls back)", () => {
-    expect(normalizeBrowserLocale("fr-FR")).toBe("en");
-  });
-  it("empty string → en", () => {
-    expect(normalizeBrowserLocale("")).toBe("en");
+  it.each([
+    ["zh-CN", "zh-CN"],
+    ["zh-TW", "zh-CN"],
+    ["en-US", "en"],
+    ["es-MX", "es-419"],
+    ["es-AR", "es-419"],
+    ["ja-JP", "ja"],
+    ["pt-BR", "pt-BR"],
+    ["pt-PT", "en"],
+    ["fr-FR", "en"],
+    ["", "en"],
+  ] as const)("%s → %s", (raw, expected) => {
+    expect(normalizeBrowserLocale(raw)).toBe(expected);
   });
 });
 
@@ -74,6 +70,21 @@ describe("resolveLocale", () => {
   it("returns 'zh-CN' when storage override is 'zh-CN'", async () => {
     await setConfig(STORAGE_KEY_UI_LOCALE, "zh-CN");
     expect(await resolveLocale()).toBe("zh-CN");
+  });
+
+  it("returns 'es-419' when storage override is 'es-419'", async () => {
+    await setConfig(STORAGE_KEY_UI_LOCALE, "es-419");
+    expect(await resolveLocale()).toBe("es-419");
+  });
+
+  it("returns 'ja' when storage override is 'ja'", async () => {
+    await setConfig(STORAGE_KEY_UI_LOCALE, "ja");
+    expect(await resolveLocale()).toBe("ja");
+  });
+
+  it("returns 'pt-BR' when storage override is 'pt-BR'", async () => {
+    await setConfig(STORAGE_KEY_UI_LOCALE, "pt-BR");
+    expect(await resolveLocale()).toBe("pt-BR");
   });
 
   it("falls back to chrome.i18n when override is 'auto'", async () => {
