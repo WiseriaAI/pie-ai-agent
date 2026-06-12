@@ -310,4 +310,12 @@ export interface SessionIndexEntry {
    * so we never accidentally hide a real session.
    */
   messageCount?: number;
+  /**
+   * Mirrors `SessionMeta.origin`. Schedule-originated sessions (`"schedule"`)
+   * are managed from the Schedules page (opened via a run-history row) and are
+   * deliberately hidden from the SessionDrawer, so the drawer filter needs the
+   * discriminator at the index level without loading every meta. Absent for
+   * ordinary user sessions.
+   */
+  origin?: "schedule";
 }

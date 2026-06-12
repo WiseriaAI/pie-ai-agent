@@ -101,8 +101,10 @@ export default function App() {
     // always shown so the user can resume / discard work.
     // `messageCount` is optional on legacy entries; treat undefined as
     // non-empty (1) to avoid hiding pre-upgrade sessions.
+    // Schedule-originated sessions are managed from the Schedules page (opened
+    // via a run-history row), so they are never listed in the drawer.
     const visible = list.filter(
-      (e) => e.status !== "active" || (e.messageCount ?? 1) > 0,
+      (e) => e.origin !== "schedule" && (e.status !== "active" || (e.messageCount ?? 1) > 0),
     );
     setSessions(visible);
   }, []);

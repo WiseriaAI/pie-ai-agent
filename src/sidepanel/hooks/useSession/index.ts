@@ -438,6 +438,7 @@ export function useSession(): UseSession {
         const list = await listSessionIndex();
         if (cancelled) return;
         for (const entry of list) {
+          if (entry.origin === "schedule") continue; // never GC schedule runs
           if (entry.status !== "active") continue;
           if ((entry.messageCount ?? 1) > 0) continue;
           if (entry.lastAccessedAt < REAL_CLOCK_MIN_MS) continue;
