@@ -49,15 +49,16 @@ const STATUS_STYLE: Record<ScheduleRecord["status"], string> = {
 };
 
 /**
- * Badge label + style. `status` and the user `enabled` toggle are orthogonal, so
- * an active-but-user-disabled schedule must read as DISABLED — distinct from
- * system-PAUSED (auto-paused on failures / instance deletion) and terminal
- * COMPLETED. Dashed outline = "you turned it off, can re-enable"; filled grey
- * COMPLETED = terminal. enabled is only meaningful while active (paused/completed
- * keep their own badge regardless of the toggle).
+ * Badge label + style. The user's off-switch wins over the lifecycle status:
+ * `enabled === false` is ALWAYS a deliberate user action (auto-pause on failures
+ * / instance deletion and terminal completion never touch `enabled`), so it
+ * reads as DISABLED regardless of status — including a completed or paused
+ * schedule the user has turned off. Dashed outline = "you turned it off".
+ * When enabled, the badge reflects the lifecycle status (active / paused /
+ * completed).
  */
 function badgeFor(rec: ScheduleRecord, t: T): { label: string; className: string } {
-  if (rec.status === "active" && !rec.enabled) {
+  if (!rec.enabled) {
     return {
       label: t("schedules.statusDisabled"),
       className: "border-dashed border-line bg-transparent text-fg-3",

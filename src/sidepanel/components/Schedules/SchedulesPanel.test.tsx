@@ -78,11 +78,20 @@ describe("SchedulesPanel", () => {
     expect(screen.queryByText("Active")).toBeNull();
   });
 
-  it("paused badge 不受 enabled 开关影响（仍显示 paused，非 disabled）", async () => {
-    schedules.push(makeSched({ id: "sched_p", status: "paused", enabled: false }));
+  it("paused + enabled=true（系统自动暂停，未被用户关闭）→ 显示 paused", async () => {
+    schedules.push(makeSched({ id: "sched_p", status: "paused", enabled: true }));
     render(<SchedulesPanel onOpenSession={vi.fn()} />);
     expect(await screen.findByText("Paused")).toBeTruthy();
     expect(screen.queryByText("Disabled")).toBeNull();
+  });
+
+  it("用户关闭优先级最高：completed/paused + enabled=false 都显示 disabled", async () => {
+    schedules.push(makeSched({ id: "sched_c", status: "completed", enabled: false }));
+    schedules.push(makeSched({ id: "sched_p2", status: "paused", enabled: false }));
+    render(<SchedulesPanel onOpenSession={vi.fn()} />);
+    expect(await screen.findAllByText("Disabled")).toHaveLength(2);
+    expect(screen.queryByText("Completed")).toBeNull();
+    expect(screen.queryByText("Paused")).toBeNull();
   });
 
   it("toggle switch calls toggleSchedule with the negated enabled", async () => {
