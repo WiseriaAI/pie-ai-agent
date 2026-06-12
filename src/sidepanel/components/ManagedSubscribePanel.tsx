@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { startManagedLogin, type LoginResult } from "@/lib/managed-auth";
 import { getEntitlement, openCheckout } from "@/lib/managed-account";
 
@@ -12,9 +12,18 @@ interface Props {
   /** Called once subscription is confirmed active. */
   onCreated: (apiKey: string, email: string) => void;
   deps?: ManagedSubscribeDeps;
+  /** Poll interval in ms. Default 4000. Inject a smaller value in tests. */
+  pollIntervalMs?: number;
 }
 
-export default function ManagedSubscribePanel({ onCreated, deps }: Props) {
+/** Max number of polls before giving up (~5 min at 4s interval). */
+const MAX_POLLS = 75;
+
+export default function ManagedSubscribePanel({
+  onCreated,
+  deps,
+  pollIntervalMs = 4000,
+}: Props) {
   const login = deps?.login ?? (() => startManagedLogin());
   const refresh = deps?.refresh ?? ((k: string) => getEntitlement(k));
   const checkout = deps?.checkout ?? ((k: string) => openCheckout(k));
@@ -22,6 +31,91 @@ export default function ManagedSubscribePanel({ onCreated, deps }: Props) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [session, setSession] = useState<LoginResult | null>(null);
+  const [polling, setPolling] = useState(false);
+  const [pollTimedOut, setPollTimedOut] = useState(false);
+
+  // Refs for cleanup without stale closures
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollCountRef = useRef(0);
+  const mountedRef = useRef(true);
+
+  // Keep latest session in a ref for use inside callbacks without re-registering effects
+  const sessionRef = useRef<LoginResult | null>(null);
+  sessionRef.current = session;
+
+  // Keep onCreated in a ref so the polling callback always uses the latest
+  const onCreatedRef = useRef(onCreated);
+  onCreatedRef.current = onCreated;
+
+  const stopPolling = useCallback(() => {
+    if (intervalRef.current !== null) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    if (mountedRef.current) {
+      setPolling(false);
+    }
+  }, []);
+
+  const checkEntitlement = useCallback(async () => {
+    const currentSession = sessionRef.current;
+    if (!currentSession) return;
+
+    try {
+      const ent = await refresh(currentSession.apiKey);
+      if (!mountedRef.current) return;
+
+      if (ent.plan === "active") {
+        stopPolling();
+        onCreatedRef.current(currentSession.apiKey, ent.email);
+        return;
+      }
+
+      pollCountRef.current += 1;
+      if (pollCountRef.current >= MAX_POLLS) {
+        stopPolling();
+        setPollTimedOut(true);
+      }
+    } catch {
+      // Silently swallow poll errors; don't surface noise to user during background polling
+    }
+  }, [refresh, stopPolling]);
+
+  const startPolling = useCallback(() => {
+    if (intervalRef.current !== null) return; // already polling
+    pollCountRef.current = 0;
+    setPollTimedOut(false);
+    setPolling(true);
+    intervalRef.current = setInterval(() => {
+      void checkEntitlement();
+    }, pollIntervalMs);
+  }, [checkEntitlement, pollIntervalMs]);
+
+  // Focus listener: immediate check when user switches back to the extension
+  useEffect(() => {
+    if (!polling) return;
+
+    function handleFocus() {
+      void checkEntitlement();
+    }
+
+    window.addEventListener("focus", handleFocus);
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [polling, checkEntitlement]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (intervalRef.current !== null) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, []);
 
   async function handleLogin() {
     setBusy(true);
@@ -45,6 +139,8 @@ export default function ManagedSubscribePanel({ onCreated, deps }: Props) {
     setErr(null);
     try {
       await checkout(session.apiKey);
+      // Start auto-polling after checkout opens the Stripe tab
+      startPolling();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Failed to open checkout");
     }
@@ -57,6 +153,7 @@ export default function ManagedSubscribePanel({ onCreated, deps }: Props) {
     try {
       const ent = await refresh(session.apiKey);
       if (ent.plan === "active") {
+        stopPolling();
         onCreated(session.apiKey, ent.email);
         return;
       }
@@ -97,14 +194,21 @@ export default function ManagedSubscribePanel({ onCreated, deps }: Props) {
           >
             Subscribe
           </button>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={handleRefresh}
-            className="h-8 rounded-[10px] border border-line px-4 text-[12px] text-fg-2 disabled:opacity-40"
-          >
-            I&apos;ve paid — refresh status
-          </button>
+          {polling && (
+            <p className="text-[12px] text-fg-3">
+              Waiting for payment confirmation…
+            </p>
+          )}
+          {(!polling || pollTimedOut) && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={handleRefresh}
+              className="h-8 rounded-[10px] border border-line px-4 text-[12px] text-fg-2 disabled:opacity-40"
+            >
+              I&apos;ve paid — refresh status
+            </button>
+          )}
         </>
       )}
       {err && (
