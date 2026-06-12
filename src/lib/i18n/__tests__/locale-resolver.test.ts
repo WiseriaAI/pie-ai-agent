@@ -1,9 +1,43 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { chromeMock } from "@/test/setup";
 import { resolveLocale, normalizeBrowserLocale } from "../locale-resolver";
+import { SUPPORTED_LOCALES, LOCALE_REGISTRY } from "../locales";
+import { enDict } from "../dictionaries/en";
+import { zhCNDict } from "../dictionaries/zh-CN";
+import { STORAGE_KEY_ASSISTANT_LANGUAGE } from "../index";
 import { STORAGE_KEY_UI_LOCALE } from "../types";
 import { setConfig } from "@/lib/idb/config-store";
 import { _resetForTests } from "@/lib/idb/db";
+
+describe("locale registry", () => {
+  it("registers all launch locales in stable order", () => {
+    expect(SUPPORTED_LOCALES).toEqual(["en", "zh-CN", "es-419", "ja", "pt-BR"]);
+  });
+
+  it("maps app locales to Chrome locale folder ids", () => {
+    expect(LOCALE_REGISTRY["es-419"].chromeLocale).toBe("es_419");
+    expect(LOCALE_REGISTRY.ja.chromeLocale).toBe("ja");
+    expect(LOCALE_REGISTRY["pt-BR"].chromeLocale).toBe("pt_BR");
+  });
+
+  it("marks every launch locale as ltr in this release", () => {
+    for (const locale of SUPPORTED_LOCALES) {
+      expect(LOCALE_REGISTRY[locale].dir).toBe("ltr");
+    }
+  });
+
+  it("maps launch locales to their current dictionaries", () => {
+    expect(LOCALE_REGISTRY.en.dictionary).toBe(enDict);
+    expect(LOCALE_REGISTRY["zh-CN"].dictionary).toBe(zhCNDict);
+    expect(LOCALE_REGISTRY["es-419"].dictionary).toBe(enDict);
+    expect(LOCALE_REGISTRY.ja.dictionary).toBe(enDict);
+    expect(LOCALE_REGISTRY["pt-BR"].dictionary).toBe(enDict);
+  });
+
+  it("exports assistant language settings through the i18n barrel", () => {
+    expect(STORAGE_KEY_ASSISTANT_LANGUAGE).toBe("assistant_language");
+  });
+});
 
 describe("normalizeBrowserLocale", () => {
   it("zh-CN → zh-CN", () => {

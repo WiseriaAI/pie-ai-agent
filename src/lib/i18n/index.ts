@@ -9,7 +9,9 @@ export {
 } from "./use-t";
 export {
   SUPPORTED_LOCALES,
+  STORAGE_KEY_ASSISTANT_LANGUAGE,
   STORAGE_KEY_UI_LOCALE,
+  type AssistantLanguageSetting,
   type Locale,
   type LocaleSetting,
   type TParams,
