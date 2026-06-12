@@ -1,5 +1,58 @@
 import { describe, expect, it } from "vitest";
-import { buildAgentSystemPrompt, buildObservationMessage, buildSkillCatalogBlock } from "./prompt";
+import {
+  buildAgentSystemPrompt,
+  buildCurrentTimeBlock,
+  buildObservationMessage,
+  buildSkillCatalogBlock,
+} from "./prompt";
+
+describe("buildCurrentTimeBlock — time injection (block A)", () => {
+  const NOW = 1749712200000;
+
+  it("wraps the time in a <current_time>…</current_time> tag", () => {
+    const block = buildCurrentTimeBlock(NOW);
+    expect(block.startsWith("<current_time>")).toBe(true);
+    expect(block.endsWith("</current_time>")).toBe(true);
+  });
+
+  it("includes the raw epochMs of the passed `now` (not Date.now())", () => {
+    const block = buildCurrentTimeBlock(NOW);
+    expect(block).toContain(`epochMs=${NOW}`);
+  });
+
+  it("includes the IANA timezone and a UTC offset", () => {
+    const block = buildCurrentTimeBlock(NOW);
+    // resolvedOptions().timeZone in the test env is the machine TZ; assert the
+    // shape (a Region/City IANA id and a UTC±N marker) rather than an exact zone.
+    expect(block).toMatch(/[A-Za-z]+\/[A-Za-z_]+/); // IANA region/city
+    expect(block).toMatch(/UTC[+-]\d/); // UTC offset marker
+  });
+
+  it("is a pure function of `now` — different inputs differ, same input is stable", () => {
+    const a = buildCurrentTimeBlock(NOW);
+    const b = buildCurrentTimeBlock(NOW);
+    const c = buildCurrentTimeBlock(NOW + 24 * 60 * 60 * 1000);
+    expect(a).toBe(b);
+    expect(a).not.toBe(c);
+    expect(c).toContain(`epochMs=${NOW + 24 * 60 * 60 * 1000}`);
+  });
+
+  it("includes a human-readable local date/time (YYYY-MM-DD HH:MM)", () => {
+    const block = buildCurrentTimeBlock(NOW);
+    expect(block).toMatch(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}/);
+  });
+});
+
+describe("STATIC_AGENT_SYSTEM_PROMPT — current-time rule (block A)", () => {
+  it("explains the <current_time> block, its device-clock caveat, and time-expression usage", () => {
+    const prompt = buildAgentSystemPrompt("t");
+    expect(prompt).toContain("<current_time>");
+    // device-clock caveat
+    expect(prompt).toMatch(/local clock|device|may.*(differ|偏差|approximate|inaccurate)/i);
+    // anchoring relative time expressions (e.g. schedules)
+    expect(prompt).toMatch(/tomorrow|N hours|every day|schedule|relative/i);
+  });
+});
 
 describe("buildAgentSystemPrompt — M3-U2 pinned-context block (single-pin back-compat)", () => {
   it("includes the pinned tab id and origin when a single pin is provided", () => {

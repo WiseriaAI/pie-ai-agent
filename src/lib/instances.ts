@@ -5,6 +5,9 @@ import { getCustomProvider, providerRefToId } from "@/lib/custom-providers";
 import { tx, txMulti, STORES } from "@/lib/idb/db";
 import { getConfig, setConfig, removeConfig } from "@/lib/idb/config-store";
 import { publishChange } from "@/lib/store-bus";
+import { listSchedules, patchSchedule } from "@/lib/schedules/store";
+import { disarmSchedule } from "@/lib/schedules/scheduler";
+import { notifySchedulePaused } from "@/lib/schedules/notify";
 
 export interface StoredInstance {
   id: string;
@@ -104,6 +107,40 @@ export async function listInstances(): Promise<DecryptedInstance[]> {
   return out;
 }
 
+/**
+ * Task 7.5 — ADR 0001: cascade an instance deletion to its bound schedules.
+ *
+ * When an instance is deleted, any schedule that was bound to it at creation
+ * can no longer run (the model/key is gone). We pause those schedules and
+ * disarm their alarms so no further runs are attempted.
+ *
+ * Exported separately so:
+ *   1. deleteInstance calls it as a post-deletion hook.
+ *   2. Tests can invoke it directly without needing a full StoredInstance in IDB.
+ *   3. Task 8 (notifications) can call it as the notification stub hook point.
+ *
+ * Only `status === "active"` schedules are affected — already-paused or
+ * completed schedules are left untouched (idempotent).
+ */
+export async function cascadeInstanceDelete(instanceId: string): Promise<void> {
+  const all = await listSchedules();
+  const affected = all.filter(
+    (s) => s.instanceId === instanceId && s.status === "active",
+  );
+  for (const sched of affected) {
+    await patchSchedule(sched.id, { status: "paused" });
+    await disarmSchedule(sched.id);
+    // Task 8 — notify the user that the schedule was auto-paused because its
+    // bound instance was deleted. Fire-and-forget; notifySchedulePaused wraps
+    // chrome.notifications in try/catch so a broken API is non-fatal.
+    notifySchedulePaused({
+      scheduleId: sched.id,
+      scheduleTitle: sched.title,
+      reason: "instance_deleted",
+    }).catch(() => {/* already caught inside notifySchedulePaused */});
+  }
+}
+
 export async function deleteInstance(id: string): Promise<void> {
   const idx = (await readIndex()).filter((x) => x !== id);
   // Delete the instance record and update the index in a single multi-store
@@ -123,6 +160,9 @@ export async function deleteInstance(id: string): Promise<void> {
     if (idx.length > 0) await setActiveInstance(idx[0]!);
     else await removeConfig(ACTIVE_KEY);
   }
+
+  // Task 7.5 — cascade: pause + disarm schedules bound to the deleted instance.
+  await cascadeInstanceDelete(id);
 }
 
 export async function setActiveInstance(id: string): Promise<void> {

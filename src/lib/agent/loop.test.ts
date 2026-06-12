@@ -15,6 +15,8 @@ import {
   mergeSessionAgentSnapshot,
   mergeContextUsage,
   buildFirstTurnReadPageHint,
+  buildSeededTaskContent,
+  prependTimeToLastUserMessage,
 } from "./loop";
 import { TAB_TOOLS } from "./tools/tabs";
 import { BUILT_IN_TOOLS } from "./tools";
@@ -1707,6 +1709,98 @@ describe("Task 3.3 — buildFirstTurnReadPageHint", () => {
     const hint = buildFirstTurnReadPageHint(1);
     expect(hint).not.toContain("<untrusted_");
     expect(hint).not.toContain("</untrusted_");
+  });
+});
+
+
+// ── Block A — first user message current-time injection ──────────────────────
+// Two seed paths get the <current_time> block:
+//   (3) headless schedule run (raw task string, ctx.messages empty) →
+//       buildSeededTaskContent
+//   (2) foreground chat (ctx.messages non-empty) → prependTimeToLastUserMessage
+//       injects into the LAST mapped user message only (the current prompt).
+// (1) resume reuses persisted history and does NOT re-inject.
+describe("buildSeededTaskContent (block A — headless seed path 3)", () => {
+  const NOW = 1749712200000;
+
+  it("prepends the <current_time> block, then a blank line, then the task", () => {
+    const content = buildSeededTaskContent(NOW, "summarize this page");
+    expect(content.startsWith("<current_time>")).toBe(true);
+    expect(content).toContain(`epochMs=${NOW}`);
+    expect(content.endsWith("summarize this page")).toBe(true);
+    // time block and task are separated by a blank line
+    expect(content).toContain("</current_time>\n\nsummarize this page");
+  });
+
+  it("preserves the task text verbatim", () => {
+    const task = "click the blue button then report the result";
+    const content = buildSeededTaskContent(NOW, task);
+    expect(content).toContain(task);
+  });
+});
+
+describe("prependTimeToLastUserMessage (block A — foreground chat seed path 2)", () => {
+  const NOW = 1749712200000;
+
+  it("injects the <current_time> block into ONLY the last user message (string content)", () => {
+    const mapped: AgentMessage[] = [
+      { role: "user", content: "<untrusted_user_message>first question</untrusted_user_message>" },
+      { role: "assistant", content: "an answer" },
+      { role: "user", content: "<untrusted_user_message>second question</untrusted_user_message>" },
+    ];
+    const out = prependTimeToLastUserMessage(mapped, NOW);
+    // last user message gets the time block, before the untrusted wrapper
+    const last = out[2]!.content as string;
+    expect(last.startsWith("<current_time>")).toBe(true);
+    expect(last).toContain(`epochMs=${NOW}`);
+    expect(last).toContain("</current_time>\n\n<untrusted_user_message>second question</untrusted_user_message>");
+    // earlier user message is untouched (no accumulation)
+    expect(out[0]!.content).toBe(
+      "<untrusted_user_message>first question</untrusted_user_message>",
+    );
+    expect(out[0]!.content).not.toContain("<current_time>");
+    // assistant message untouched
+    expect(out[1]!.content).toBe("an answer");
+  });
+
+  it("injects a leading text block when the last user message is ContentBlock[] (image attachment)", () => {
+    const mapped: AgentMessage[] = [
+      {
+        role: "user",
+        content: [
+          { type: "image", source: { type: "base64", mediaType: "image/png", data: "abc" } },
+          { type: "text", text: "<untrusted_user_message>describe this</untrusted_user_message>" },
+        ],
+      },
+    ];
+    const out = prependTimeToLastUserMessage(mapped, NOW);
+    const blocks = out[0]!.content as ContentBlock[];
+    // a new leading text block carries the time
+    expect(blocks[0]).toMatchObject({ type: "text" });
+    const head = blocks[0] as { type: "text"; text: string };
+    expect(head.text.startsWith("<current_time>")).toBe(true);
+    expect(head.text).toContain(`epochMs=${NOW}`);
+    // original blocks preserved after it (image still present)
+    expect(blocks[1]).toMatchObject({ type: "image" });
+    expect(blocks).toHaveLength(3);
+  });
+
+  it("is a no-op when there is no user message", () => {
+    const mapped: AgentMessage[] = [
+      { role: "assistant", content: "hello" },
+    ];
+    const out = prependTimeToLastUserMessage(mapped, NOW);
+    expect(out[0]!.content).toBe("hello");
+    expect(JSON.stringify(out)).not.toContain("<current_time>");
+  });
+
+  it("does not mutate the input array's messages (returns prepended copy)", () => {
+    const mapped: AgentMessage[] = [
+      { role: "user", content: "<untrusted_user_message>q</untrusted_user_message>" },
+    ];
+    prependTimeToLastUserMessage(mapped, NOW);
+    // original input untouched
+    expect(mapped[0]!.content).toBe("<untrusted_user_message>q</untrusted_user_message>");
   });
 });
 

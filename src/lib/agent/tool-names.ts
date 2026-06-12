@@ -26,6 +26,18 @@ const SKILL_META_TOOL_NAMES_FOR_REGISTRY = [
   "list_skills",
 ] as const;
 
+// Task 7 — Schedule CRUD meta tools (always present in BUILT_IN_TOOLS).
+//   create_schedule / update_schedule / delete_schedule — write (mutate persistent
+//       schedule state; headless runs exclude create/update via excludeToolNames
+//       to prevent self-replicating schedules).
+//   list_schedules — read (pure query, no mutation).
+const SCHEDULE_META_TOOL_NAMES_FOR_REGISTRY = [
+  "create_schedule",
+  "update_schedule",
+  "delete_schedule",
+  "list_schedules",
+] as const;
+
 // Standard skill mediation tools — use_skill invokes a skill by name;
 // read_skill_file reads a file from a skill's bundle. Both are pure text
 // producers (no tab/page side effects) → class=read.
@@ -126,6 +138,7 @@ export const SCRATCHPAD_TOOL_NAMES = [
 export const KNOWN_BUILT_IN_TOOL_NAMES = [
   ...PHASE_2_TOOL_NAMES,
   ...SKILL_META_TOOL_NAMES_FOR_REGISTRY,
+  ...SCHEDULE_META_TOOL_NAMES_FOR_REGISTRY,
   ...SKILL_MEDIATION_TOOL_NAMES,
   ...TAB_TOOL_NAMES,
   ...SCREENSHOT_TOOL_NAMES,
@@ -198,6 +211,13 @@ export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
   update_skill: "write",
   delete_skill: "write",
   list_skills: "read",
+  // Task 7 schedule meta tools — write (mutate persistent schedule/alarm state).
+  // list_schedules is read (pure query). create/update are excluded from headless
+  // runs via excludeToolNames in run.ts to prevent self-replicating schedules.
+  create_schedule: "write",
+  update_schedule: "write",
+  delete_schedule: "write",
+  list_schedules: "read",
   // Standard skill mediation tools — pure text producers, no tab/page side effects
   use_skill: "read",
   read_skill_file: "read",

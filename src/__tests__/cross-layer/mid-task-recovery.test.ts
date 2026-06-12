@@ -225,7 +225,7 @@ describe("T17b — panel reconnect: SW broadcasts current pending state", () => 
     // Simulate panel reconnect: new port is created, panel-mounted handler
     // calls broadcastInstructionState on the new port
     const reconnectedPort = makeFakePort();
-    await broadcastInstructionState(reconnectedPort, SESSION_ID);
+    await broadcastInstructionState((m) => reconnectedPort.postMessage(m), SESSION_ID);
 
     expect(reconnectedPort.postMessage).toHaveBeenCalledOnce();
     const msg = (reconnectedPort.postMessage as ReturnType<typeof vi.fn>).mock
@@ -247,7 +247,7 @@ describe("T17b — panel reconnect: SW broadcasts current pending state", () => 
     });
 
     const port = makeFakePort();
-    await broadcastInstructionState(port, SESSION_ID);
+    await broadcastInstructionState((m) => port.postMessage(m), SESSION_ID);
 
     const msg = (port.postMessage as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     const entry = msg.pending[0];
@@ -263,7 +263,7 @@ describe("T17b — panel reconnect: SW broadcasts current pending state", () => 
     // No pending added (task completed cleanly or never started)
 
     const port = makeFakePort();
-    await broadcastInstructionState(port, SESSION_ID);
+    await broadcastInstructionState((m) => port.postMessage(m), SESSION_ID);
 
     const msg = (port.postMessage as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(msg.type).toBe("chat-instruction-state");
@@ -289,7 +289,7 @@ describe("T17b — panel reconnect: SW broadcasts current pending state", () => 
 
     // Panel reconnects → broadcast should show only 'stay-1'
     const port = makeFakePort();
-    await broadcastInstructionState(port, SESSION_ID);
+    await broadcastInstructionState((m) => port.postMessage(m), SESSION_ID);
 
     const msg = (port.postMessage as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(msg.pending).toHaveLength(1);
@@ -301,7 +301,7 @@ describe("T17b — panel reconnect: SW broadcasts current pending state", () => 
     const missingSessionId = "session-that-does-not-exist";
 
     const port = makeFakePort();
-    await broadcastInstructionState(port, missingSessionId);
+    await broadcastInstructionState((m) => port.postMessage(m), missingSessionId);
 
     const msg = (port.postMessage as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(msg.type).toBe("chat-instruction-state");
@@ -320,7 +320,7 @@ describe("T17b — panel reconnect: SW broadcasts current pending state", () => 
     const port = makeFakePort();
 
     // First reconnect
-    await broadcastInstructionState(port, SESSION_ID);
+    await broadcastInstructionState((m) => port.postMessage(m), SESSION_ID);
     const call1 = (port.postMessage as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(call1.pending).toHaveLength(1);
 
@@ -332,7 +332,7 @@ describe("T17b — panel reconnect: SW broadcasts current pending state", () => 
     });
 
     // Second reconnect (port re-mounts) — fresh call reflects updated queue
-    await broadcastInstructionState(port, SESSION_ID);
+    await broadcastInstructionState((m) => port.postMessage(m), SESSION_ID);
     const call2 = (port.postMessage as ReturnType<typeof vi.fn>).mock.calls[1]![0];
     expect(call2.pending).toHaveLength(2);
   });

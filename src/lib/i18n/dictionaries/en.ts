@@ -437,6 +437,83 @@ export const enDict = {
     deleteProvider: "Delete provider",
     newCustomProvider: "+ New custom provider",
   },
+  schedules: {
+    // Page chrome
+    title: "Schedules",
+    newButton: "New schedule",
+    emptyState:
+      "No schedules yet. Create one to have the agent run a task automatically on a recurring basis.",
+    // New-schedule choice menu
+    newChoiceTitle: "How do you want to set this up?",
+    newChoiceManualLabel: "Fill in the form",
+    newChoiceManualHint: "Set the prompt, interval, and limits yourself.",
+    newChoiceChatLabel: "Describe it in chat",
+    newChoiceChatHint: "Tell the agent what to schedule and it creates it for you.",
+    chatTemplate:
+      "Create a scheduled task for me: every 30 minutes, [describe what you want done here].",
+    closeChoice: "Close",
+    // Status badges
+    statusActive: "Active",
+    statusPaused: "Paused",
+    statusCompleted: "Completed",
+    statusDisabled: "Disabled",
+    // Card summary line
+    summaryEvery: "every {n}m",
+    summaryOnce: "once",
+    summaryRunsCapped: "{count}/{max} runs",
+    summaryRuns: "{count} runs",
+    nextPrefix: "next",
+    // Card actions
+    runNow: "Run now",
+    edit: "Edit",
+    showRuns: "Runs",
+    hideRuns: "Hide runs",
+    delete: "Delete",
+    confirmDelete: "Confirm",
+    cancel: "Cancel",
+    enableAria: "Enable {title}",
+    disableAria: "Disable {title}",
+    // Run history
+    loadingRuns: "Loading runs…",
+    noRuns: "No runs yet.",
+    runStatusRunning: "Running",
+    runStatusSuccess: "Success",
+    runStatusFailed: "Failed",
+    runStatusInterrupted: "Interrupted",
+    runStatusSkipped: "Skipped",
+    unreadAria: "unread",
+    // Form — titles, fields, placeholders, hints
+    formNewTitle: "New schedule",
+    formEditTitle: "Edit schedule",
+    fieldTitle: "Title",
+    fieldTitlePlaceholder: "Daily news digest",
+    fieldPrompt: "Prompt",
+    fieldPromptPlaceholder: "The task the agent runs each time…",
+    fieldConfig: "Config",
+    configNone: "No config available",
+    fieldStartAt: "Start at",
+    fieldInterval: "Interval (min)",
+    fieldRuns: "Runs",
+    fieldStartUrl: "Start URL",
+    startUrlHint: "optional — opens before each run",
+    advancedSummary: "Per-run limits (advanced)",
+    fieldMaxSteps: "Max steps / run",
+    fieldMaxMs: "Max run (ms)",
+    hintOptional: "optional",
+    hintInfinityBlank: "∞ if blank",
+    placeholderOnce: "once",
+    placeholderNone: "none",
+    save: "Save changes",
+    create: "Create schedule",
+    // Form — validation
+    errTitleRequired: "Title is required",
+    errPromptRequired: "Prompt is required",
+    errIntervalMin: "Interval must be at least {min} minutes",
+    errRunsMin: "Number of runs must be 1 or more",
+    errStartUrlRestricted:
+      "Start URL is a restricted page (chrome://, about:, extension pages, Web Store) and cannot be used",
+    errSelectConfig: "Select a config to run with",
+  },
 } as const satisfies DictNode;
 
 export type EnDict = typeof enDict;

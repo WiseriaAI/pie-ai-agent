@@ -17,7 +17,11 @@ import type { Tool } from "./types";
 import { getToolClass, SCREENSHOT_TOOL_NAMES } from "./tool-names";
 import { escapeUntrustedWrappers } from "./untrusted-wrappers";
 import { classifyStreamCompletion } from "./stream-completion";
-import { buildAgentSystemPrompt, buildObservationMessage } from "./prompt";
+import {
+  buildAgentSystemPrompt,
+  buildCurrentTimeBlock,
+  buildObservationMessage,
+} from "./prompt";
 import { applySlidingWindow } from "./window";
 import { elideStaleObservations } from "./elide-stale-observations";
 import { applyTokenBudget } from "./window-token-budget";
@@ -43,6 +47,10 @@ import {
 import { queryScratchpad as svcQueryScratchpad } from "../scratchpad/sql-bridge";
 import { getEnabledSkillPackages } from "../skills";
 import { isFilePdfUrl } from "../pdf/detect";
+// isRestrictedUrl is owned by the shared util (src/lib/url/restricted.ts).
+// Imported here for loop-internal use AND re-exported below so existing
+// `import { isRestrictedUrl } from "../agent/loop"` call sites keep working.
+import { isRestrictedUrl } from "../url/restricted";
 import {
   acquireCdpSession,
   type CdpSession,
@@ -50,6 +58,7 @@ import {
 import type {
   AgentStepMessage,
   AgentDoneTaskMessage,
+  PortMessageToPanel,
 } from "../../types/messages";
 import type { SessionAgentState } from "../sessions/types";
 import {
@@ -83,8 +92,12 @@ const REACT_BIG_CAP = 60;
 /** #58 — provider 元数据缺失时的回退上下文窗口(与 window-token-budget 一致)。 */
 const COMPACTION_FALLBACK_MAX_TOKENS = 32_000;
 
+/** Outbound message sink. Front-end path: `(m) => port.postMessage(m)`.
+ *  Headless / scheduled path: write to Run record or discard streaming chunks. */
+export type AgentEmit = (msg: PortMessageToPanel) => void;
+
 export interface AgentLoopContext {
-  port: chrome.runtime.Port;
+  emit: AgentEmit;
   task: string;
   modelConfig: ModelConfig;
   signal: AbortSignal;
@@ -238,6 +251,27 @@ export interface AgentLoopContext {
    * the pure loop module.
    */
   onHistoryRepaired?: (violations: RoleViolation[], messages: AgentMessage[]) => void;
+  /**
+   * Task 5.3 — optional hard step cap for scheduled headless runs. When
+   * set, the loop terminates with outcome=failed (emitDone success:false)
+   * once `stepIndex` reaches this value. Front-end and non-scheduled paths
+   * do NOT pass this — absence means "no ceiling" (existing invariant:
+   * LLM-controlled termination, no hard step limit). Only scheduled runs
+   * with an explicit `maxStepsPerRun` schedule field set this.
+   */
+  maxSteps?: number;
+  /**
+   * Task 7 — tool names to exclude from the loop's available tool set for
+   * this run. Used by headless schedule runs (run.ts) to prevent a scheduled
+   * agent from creating or modifying schedules (recursive creation guard).
+   *
+   * Example: `["create_schedule", "update_schedule"]`
+   *
+   * When absent, no tools are excluded (normal interactive behavior).
+   * The filter is applied after vision-gating (filterToolsByVision) so
+   * the two exclusion paths compose cleanly without order dependency.
+   */
+  excludeToolNames?: readonly string[];
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -318,17 +352,17 @@ export function filterToolsByVision<T extends { name: string }>(
 
 
 function sendAgentStep(
-  port: chrome.runtime.Port,
+  emit: AgentEmit,
   msg: AgentStepMessage,
 ): void {
-  port.postMessage(msg);
+  emit(msg);
 }
 
 function sendAgentDone(
-  port: chrome.runtime.Port,
+  emit: AgentEmit,
   msg: AgentDoneTaskMessage,
 ): void {
-  port.postMessage(msg);
+  emit(msg);
 }
 
 /** M2-U2 P1-11 — inject sessionId onto any PortMessageToPanel variant
@@ -338,23 +372,12 @@ function withSession<T extends object>(msg: T, sessionId: string): T & { session
   return { ...msg, sessionId };
 }
 
-export function isRestrictedUrl(url: string): boolean {
-  // Reject schemes whose origin collapses to the string "null" or that the agent
-  // has no sensible way to pin: file://, data:, javascript:, blob:. Without these
-  // checks, any subsequent navigation within one of these schemes would pass the
-  // per-round origin comparison (`"null" === "null"`), defeating the isolation.
-  if (isFilePdfUrl(url)) return false;
-  return (
-    url.startsWith("chrome://") ||
-    url.startsWith("chrome-extension://") ||
-    url.startsWith("about:") ||
-    url.startsWith("edge://") ||
-    url.startsWith("file://") ||
-    url.startsWith("data:") ||
-    url.startsWith("javascript:") ||
-    url.startsWith("blob:")
-  );
-}
+// isRestrictedUrl moved to src/lib/url/restricted.ts (a zero-agent-dependency
+// util) so url-guard.ts can import it without the url-guard → loop → tools →
+// schedule-meta → url-guard cycle. Re-exported here (the value is imported at
+// the top of the file) to keep every existing
+// `import { isRestrictedUrl } from "../agent/loop"` call site working.
+export { isRestrictedUrl };
 
 export function safeParseOrigin(url: string): string | null {
   // For file://*.pdf, use the URL itself as pin identity since the parsed
@@ -735,6 +758,73 @@ export function buildFirstTurnReadPageHint(pinnedTabId: number): string {
 }
 
 /**
+ * Block A — current-time seed for the headless single-task path (seed path 3).
+ *
+ * Prepends a trusted `<current_time>` block (see buildCurrentTimeBlock) to the
+ * raw task string, separated by a blank line. Hit ONLY when `ctx.messages` is
+ * empty — i.e. headless schedule runs (run.ts passes a bare `task`, no
+ * messages). Foreground chat carries `ctx.messages` and is handled by
+ * prependTimeToLastUserMessage instead (seed path 2). Resume reuses persisted
+ * history and never re-injects.
+ *
+ * Pure: `now` is passed in for deterministic tests; the time block is in front,
+ * the task verbatim behind.
+ */
+export function buildSeededTaskContent(now: number, task: string): string {
+  return `${buildCurrentTimeBlock(now)}\n\n${task}`;
+}
+
+/**
+ * Block A — current-time seed for the foreground multi-turn chat path (seed
+ * path 2). Foreground chat passes the full `ctx.messages` prefix (rebuilt from
+ * the session's raw conversation, which never contains a time block), mapped
+ * through chatMessageToAgentMessage. The current user prompt is ALWAYS the last
+ * message (background/index.ts puts it last), so we inject the `<current_time>`
+ * block into the LAST `role:"user"` AgentMessage only:
+ *   - earlier user turns stay untouched → the block never accumulates across
+ *     turns; each task carries exactly one current-time stamp on the newest
+ *     prompt.
+ *   - the block is prepended OUTSIDE the `<untrusted_user_message>` wrapper —
+ *     it is trusted runtime content, not user-supplied data.
+ *   - string content → `"<current_time>…</current_time>\n\n" + original`.
+ *   - ContentBlock[] content (image attachments) → a fresh leading text block
+ *     carrying the time, with the original blocks preserved after it.
+ *
+ * Returns a shallow-rebuilt array (the target message object is replaced, not
+ * mutated in place); a no-op pass-through when there is no user message.
+ * Pure: `now` is supplied for deterministic tests.
+ */
+export function prependTimeToLastUserMessage(
+  messages: AgentMessage[],
+  now: number,
+): AgentMessage[] {
+  let lastUserIdx = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]!.role === "user") {
+      lastUserIdx = i;
+      break;
+    }
+  }
+  if (lastUserIdx === -1) return messages;
+
+  const timeBlock = buildCurrentTimeBlock(now);
+  const target = messages[lastUserIdx]!;
+  let injected: AgentMessage;
+  if (typeof target.content === "string") {
+    injected = { role: "user", content: `${timeBlock}\n\n${target.content}` };
+  } else {
+    injected = {
+      role: "user",
+      content: [{ type: "text", text: timeBlock }, ...target.content],
+    };
+  }
+
+  const out = messages.slice();
+  out[lastUserIdx] = injected;
+  return out;
+}
+
+/**
  * v1.5 Task 6+7 — per-iteration focus refresh helper.
  *
  * Re-reads storage so that:
@@ -905,7 +995,7 @@ function redactArgsForPanel(toolName: string, args: unknown): unknown {
 // ── Main loop ─────────────────────────────────────────────────────────────────
 
 export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
-  const { port, task, modelConfig } = ctx;
+  const { emit, task, modelConfig } = ctx;
   const sessionId = ctx.sessionId;
 
   // Phase 2.5 lifecycle plumbing.
@@ -987,7 +1077,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       }
     }
 
-    sendAgentDone(port, { ...msg, sessionId });
+    sendAgentDone(emit, { ...msg, sessionId });
 
     // Phase 5 — R13 path (a): evict image cache on any terminal state.
     // Also free the per-task screenshot budget so a future task on the
@@ -1029,7 +1119,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
   };
   // M2-U2 P1-11 — session-bound sendAgentStep that auto-injects sessionId.
   const emitStep = (msg: Omit<AgentStepMessage, "sessionId">): void => {
-    sendAgentStep(port, { ...msg, sessionId });
+    sendAgentStep(emit, { ...msg, sessionId });
   };
 
   // 1. Anchor tab + origin at task start.
@@ -1190,10 +1280,24 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
   }
 
   history = ctx.resumedAgentMessages
-    ? structuredClone(ctx.resumedAgentMessages)
+    ? // (1) resume — reuse persisted history verbatim; no time re-injection.
+      structuredClone(ctx.resumedAgentMessages)
     : ctx.messages && ctx.messages.length > 0
-      ? [systemMsg, ...ctx.messages.map(chatMessageToAgentMessage)]
-      : [systemMsg, { role: "user", content: task }];
+      ? // (2) foreground chat — full conversation prefix. Inject the
+        // <current_time> block into the LAST user message only (the current
+        // prompt) so each task carries one fresh stamp and the block never
+        // accumulates across turns. now=Date.now() (impure here; the pure
+        // assembly lives in prependTimeToLastUserMessage).
+        [
+          systemMsg,
+          ...prependTimeToLastUserMessage(
+            ctx.messages.map(chatMessageToAgentMessage),
+            Date.now(),
+          ),
+        ]
+      : // (3) headless single task — bare task string (run.ts passes no
+        // messages). Prepend the <current_time> block to the task.
+        [systemMsg, { role: "user", content: buildSeededTaskContent(Date.now(), task) }];
 
   // M1-U5 — flag that the first iteration of the loop should skip the
   // observation merge. The prior step's snapshot already contains an
@@ -1234,6 +1338,21 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       lastStepIndex = stepIndex;
       if (signal.aborted) return; // → finally
 
+      // Task 5.3 — optional hard step cap (scheduled runs only).
+      // Front-end paths do NOT pass maxSteps; absence = no ceiling (existing
+      // "LLM-controlled termination" invariant unchanged). When set and the
+      // step limit is reached we emit a failed agent-done-task so the run is
+      // counted as `failed` by applyOutcome, which may auto-pause the schedule.
+      if (ctx.maxSteps !== undefined && stepIndex > ctx.maxSteps) {
+        await emitDone({
+          type: "agent-done-task",
+          success: false,
+          summary: `Schedule step limit reached (maxStepsPerRun=${ctx.maxSteps}); run terminated.`,
+          stepCount: stepIndex,
+        }, "fail");
+        return;
+      }
+
       // v1.5 Task 6+7 — per-iteration focus + pinnedTabs refresh.
       const refreshed = await readFocusFromStorage(
         sessionId,
@@ -1266,7 +1385,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         history.push(midTaskMsg);
         // Broadcast empty pending so panel updates UI immediately
         // (without waiting for next step write).
-        await broadcastInstructionState(port, sessionId);
+        await broadcastInstructionState(emit, sessionId);
       }
 
       // Advisory origin check. interpretPinnedTabUrl NEVER terminates the
@@ -1490,7 +1609,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // tools are only offered to models KNOWN to support vision; non-vision
       // and unknown-vision models never see them.
       const readLocalFileTool = buildReadLocalFileTool({
-        notifyNeedsFileAccess: () => port.postMessage({ type: "needs-file-access" }),
+        notifyNeedsFileAccess: () => emit({ type: "needs-file-access" }),
       });
       const requestLocalFileTool = buildRequestLocalFileTool({
         sessionId,
@@ -1507,10 +1626,20 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         clearScratchpad: (collection) => svcClearScratchpad(sessionId, collection),
         queryScratchpad: (args) => svcQueryScratchpad(sessionId, args),
       });
-      const allTools = filterToolsByVision(
+      const allToolsBeforeExclude = filterToolsByVision(
         [...BUILT_IN_TOOLS, ...mouseTools, ...keyboardTools, ...editorTools, readLocalFileTool, requestLocalFileTool, outputFileTool, ...scratchpadTools],
         modelConfig.vision,
       );
+      // Task 7 — recursive creation guard: headless schedule runs pass
+      // excludeToolNames to strip create_schedule / update_schedule from the
+      // tool set so a scheduled agent cannot create or modify schedules on its
+      // own. The filter is a simple set-membership check (O(1) per tool).
+      const excludeSet = ctx.excludeToolNames && ctx.excludeToolNames.length > 0
+        ? new Set(ctx.excludeToolNames)
+        : null;
+      const allTools = excludeSet
+        ? allToolsBeforeExclude.filter((t) => !excludeSet.has(t.name))
+        : allToolsBeforeExclude;
       const toolDefinitions = toolsToDefinitions(allTools);
 
       // Stream from LLM
@@ -1545,13 +1674,13 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         if (event.type === "text-delta") {
           accumulatedText += event.text;
           // Stream text to panel as it arrives (Phase 1 compatible)
-          port.postMessage(withSession({ type: "chat-chunk", text: event.text }, sessionId));
+          emit(withSession({ type: "chat-chunk", text: event.text }, sessionId));
         } else if (event.type === "thinking-start") {
           thinkingAccum = "";
           thinkingReplay = event.replay;
         } else if (event.type === "thinking-delta") {
           thinkingAccum += event.text;
-          port.postMessage(withSession({ type: "thinking-chunk", text: event.text }, sessionId));
+          emit(withSession({ type: "thinking-chunk", text: event.text }, sessionId));
         } else if (event.type === "thinking-end") {
           if (thinkingReplay && thinkingAccum) {
             thinkingBlocks.push({
@@ -1597,7 +1726,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             lastStepUsage = event.usage;
           }
         } else if (event.type === "error") {
-          port.postMessage(withSession({ type: "chat-error", error: event.error }, sessionId));
+          emit(withSession({ type: "chat-error", error: event.error }, sessionId));
           await emitDone({
             type: "agent-done-task",
             success: false,
@@ -1634,7 +1763,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           };
           await setSessionAgent(sessionId, { ...base, contextUsage: nextUsage });
           try {
-            port.postMessage(
+            emit(
               withSession(
                 {
                   type: "agent-usage",
@@ -1647,7 +1776,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
               ),
             );
           } catch (e) {
-            // Port disconnected mid-step — panel will rehydrate from
+            // Emit threw (e.g. port disconnected) — panel will rehydrate from
             // SessionAgentState on next mount via useSession.setActive.
             console.warn(
               `[agent] post agent-usage failed for session=${sessionId}:`,
@@ -1682,7 +1811,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           "模型在产出任何回复前就触达输出 token 上限（stop_reason=length），" +
           "通常是长推理吃光了输出预算。请在该 instance 调高最大输出（maxTokens），" +
           "或简化任务后重试。";
-        port.postMessage(withSession({ type: "chat-error", error: msg }, sessionId));
+        emit(withSession({ type: "chat-error", error: msg }, sessionId));
         await emitDone({
           type: "agent-done-task",
           success: false,
@@ -1693,7 +1822,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       }
       if (completion === "truncated-partial") {
         // 部分答案已流式发出但不完整——追加可见提示，再走正常 pure-text 收尾。
-        port.postMessage(
+        emit(
           withSession(
             { type: "chat-chunk", text: "\n\n⚠️ [回复被输出 token 上限截断，未必完整。可在该 instance 调高最大输出后重试。]" },
             sessionId,
@@ -1737,7 +1866,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             );
           }
         }
-        port.postMessage(withSession({ type: "chat-done" }, sessionId));
+        emit(withSession({ type: "chat-done" }, sessionId));
         normalTextReply = true;
         // M1-U3 v2 — pure-text replies don't push history, so no
         // per-step snapshot has fired this turn. But a prior task's
@@ -2044,7 +2173,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         // output_file — hand the panel a download card. The agent-step above
         // keeps the call visible in the step stream; this drives the card.
         if (result.fileOutput) {
-          port.postMessage(
+          emit(
             withSession(
               {
                 type: "file-output",

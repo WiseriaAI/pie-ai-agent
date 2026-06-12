@@ -9,7 +9,7 @@ export const DB_NAME = "pie";
 // Bump DB_VERSION and add a new `if (!db.objectStoreNames.contains(...))` branch
 // in onupgradeneeded whenever a new store is added (onupgradeneeded only runs
 // when the version increases).
-export const DB_VERSION = 2;
+export const DB_VERSION = 3;
 
 export const STORES = {
   sessions: "sessions",
@@ -17,6 +17,7 @@ export const STORES = {
   instances: "instances",
   config: "config",
   scratchpads: "scratchpads",
+  schedules: "schedules",
 } as const;
 
 export type StoreName = (typeof STORES)[keyof typeof STORES];
@@ -42,6 +43,12 @@ export function openDb(): Promise<IDBDatabase> {
         db.createObjectStore(STORES.config, { keyPath: "key" });
       if (!db.objectStoreNames.contains(STORES.scratchpads))
         db.createObjectStore(STORES.scratchpads, { keyPath: "id" });
+      // The `schedules` store holds two record shapes, both keyed by `id`:
+      //   - ScheduleRecord: native `id` ("sched_<uuid>")
+      //   - ScheduleRunRecord: phantom `id` (= its `recordId`, "run_<uuid>"),
+      //     injected on write and stripped on read by schedules/store.ts.
+      if (!db.objectStoreNames.contains(STORES.schedules))
+        db.createObjectStore(STORES.schedules, { keyPath: "id" });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => { dbPromise = null; reject(req.error); };
@@ -103,7 +110,7 @@ export function txMulti(
  *  Production use (e.g. eval harness reset between runs). */
 export async function clearAllStores(): Promise<void> {
   await txMulti(
-    [STORES.sessions, STORES.sessionIndex, STORES.instances, STORES.config, STORES.scratchpads],
+    [STORES.sessions, STORES.sessionIndex, STORES.instances, STORES.config, STORES.scratchpads, STORES.schedules],
     "readwrite",
     (m) => {
       m[STORES.sessions].clear();
@@ -111,6 +118,7 @@ export async function clearAllStores(): Promise<void> {
       m[STORES.instances].clear();
       m[STORES.config].clear();
       m[STORES.scratchpads].clear();
+      m[STORES.schedules].clear();
     },
   );
 }
