@@ -1,4 +1,7 @@
 import { enDict } from "./dictionaries/en";
+import { es419Dict } from "./dictionaries/es-419";
+import { jaDict } from "./dictionaries/ja";
+import { ptBRDict } from "./dictionaries/pt-BR";
 import { zhCNDict } from "./dictionaries/zh-CN";
 import type { DictNode } from "./types";
 
@@ -45,7 +48,7 @@ export const LOCALE_REGISTRY = {
     englishLabel: "Spanish (Latin America)",
     dir: "ltr",
     assistantLanguage: true,
-    dictionary: enDict,
+    dictionary: es419Dict,
   },
   ja: {
     locale: "ja",
@@ -54,7 +57,7 @@ export const LOCALE_REGISTRY = {
     englishLabel: "Japanese",
     dir: "ltr",
     assistantLanguage: true,
-    dictionary: enDict,
+    dictionary: jaDict,
   },
   "pt-BR": {
     locale: "pt-BR",
@@ -63,6 +66,6 @@ export const LOCALE_REGISTRY = {
     englishLabel: "Portuguese (Brazil)",
     dir: "ltr",
     assistantLanguage: true,
-    dictionary: enDict,
+    dictionary: ptBRDict,
   },
 } satisfies LocaleRegistry;

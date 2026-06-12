@@ -3,6 +3,9 @@ import { chromeMock } from "@/test/setup";
 import { resolveLocale, normalizeBrowserLocale } from "../locale-resolver";
 import { SUPPORTED_LOCALES, LOCALE_REGISTRY } from "../locales";
 import { enDict } from "../dictionaries/en";
+import { es419Dict } from "../dictionaries/es-419";
+import { jaDict } from "../dictionaries/ja";
+import { ptBRDict } from "../dictionaries/pt-BR";
 import { zhCNDict } from "../dictionaries/zh-CN";
 import { STORAGE_KEY_ASSISTANT_LANGUAGE } from "../index";
 import { STORAGE_KEY_UI_LOCALE } from "../types";
@@ -29,9 +32,9 @@ describe("locale registry", () => {
   it("maps launch locales to their current dictionaries", () => {
     expect(LOCALE_REGISTRY.en.dictionary).toBe(enDict);
     expect(LOCALE_REGISTRY["zh-CN"].dictionary).toBe(zhCNDict);
-    expect(LOCALE_REGISTRY["es-419"].dictionary).toBe(enDict);
-    expect(LOCALE_REGISTRY.ja.dictionary).toBe(enDict);
-    expect(LOCALE_REGISTRY["pt-BR"].dictionary).toBe(enDict);
+    expect(LOCALE_REGISTRY["es-419"].dictionary).toBe(es419Dict);
+    expect(LOCALE_REGISTRY.ja.dictionary).toBe(jaDict);
+    expect(LOCALE_REGISTRY["pt-BR"].dictionary).toBe(ptBRDict);
   });
 
   it("exports assistant language settings through the i18n barrel", () => {
