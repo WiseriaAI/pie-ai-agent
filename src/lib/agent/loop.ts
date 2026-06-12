@@ -15,7 +15,7 @@ import {
 } from "./tools";
 import type { Tool } from "./types";
 import { getToolClass, SCREENSHOT_TOOL_NAMES } from "./tool-names";
-import { escapeUntrustedWrappers } from "./untrusted-wrappers";
+import { escapeUntrustedWrappers, escapeTrustedWrappers } from "./untrusted-wrappers";
 import { classifyStreamCompletion } from "./stream-completion";
 import {
   buildAgentSystemPrompt,
@@ -283,6 +283,10 @@ export interface AgentLoopContext {
  * - `user` messages are wrapped in
  *   `<untrusted_user_message>…</untrusted_user_message>` with
  *   `escapeUntrustedWrappers` applied first (D7 idempotent).
+ *   When `asLiveTask=true` the current turn is instead wrapped in the
+ *   trusted `<user_task>…</user_task>` marker with `escapeTrustedWrappers`
+ *   applied to neutralise any literal `</user_task>` in the input.
+ *   Default is `false` so all existing call sites are unaffected.
  * - `assistant` messages pass through verbatim (lastTaskSynth-injected
  *   turns are already wrapped by U3 in
  *   `<untrusted_prior_task_summary>`; real chat replies are trusted
@@ -293,12 +297,17 @@ export interface AgentLoopContext {
  *
  * Exported for unit testing (D7 wrap invariant).
  */
-export function chatMessageToAgentMessage(m: ChatMessage): AgentMessage {
+export function chatMessageToAgentMessage(
+  m: ChatMessage,
+  asLiveTask = false,
+): AgentMessage {
   if (m.role !== "user") return { role: m.role, content: m.content };
 
   const wrappedText =
     m.content.length > 0
-      ? `<untrusted_user_message>${escapeUntrustedWrappers(m.content)}</untrusted_user_message>`
+      ? asLiveTask
+        ? `<user_task>${escapeTrustedWrappers(m.content)}</user_task>`
+        : `<untrusted_user_message>${escapeUntrustedWrappers(m.content)}</untrusted_user_message>`
       : "";
 
   if (!m.attachments?.length) {
@@ -1290,7 +1299,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         [
           systemMsg,
           ...prependTimeToLastUserMessage(
-            ctx.messages.map(chatMessageToAgentMessage),
+            ctx.messages.map((m) => chatMessageToAgentMessage(m)),
             Date.now(),
           ),
         ]
