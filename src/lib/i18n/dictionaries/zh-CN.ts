@@ -460,7 +460,7 @@ export const zhCNDict = {
       "帮我创建一个定时任务：每隔 30 分钟执行一次，[在这里描述要让我做的事]。",
     closeChoice: "关闭",
     // 状态标签
-    statusActive: "运行中",
+    statusActive: "已启用",
     statusPaused: "已暂停",
     statusCompleted: "已完成",
     statusDisabled: "已关闭",
