@@ -6,6 +6,7 @@ import {
   markPaused,
 } from "@/lib/sessions/storage";
 import { getConfig, setConfig } from "@/lib/idb/config-store";
+import { listRunningRuns, updateRun } from "@/lib/schedules/store";
 
 /**
  * M1-U5 — SW cold-start recovery: detect in-flight tasks that died
@@ -134,6 +135,44 @@ export async function detectAndMarkPaused(
   await bumpGuard(now);
 
   return stats;
+}
+
+/**
+ * Schedule orphan-run cleanup (Task 4.3). A ScheduleRunRecord left in the
+ * "running" state after the SW died is an orphan: the headless agent loop that
+ * owned it is gone with the previous SW instance, so it can never reach a
+ * terminal state on its own. Walk every `status === "running"` run, mark it
+ * `interrupted` (+ endedAt), and remove its headless owned tab if any.
+ *
+ * Trigger: runs on the SAME SW wake-up chain as detectAndMarkPaused (SW
+ * top-level + onStartup + onInstalled + panel-mounted). It MUST run BEFORE any
+ * alarm dispatches a new run, so Task 5's skip-if-already-running guard isn't
+ * permanently wedged on a dead "running" record.
+ *
+ * Tab removal is best-effort: the owned tab may already be closed (user closed
+ * it, or the SW death itself orphaned it), so chrome.tabs.remove failures are
+ * caught and ignored — the run is still marked interrupted regardless.
+ */
+export async function markOrphanRunsInterrupted(): Promise<{ interrupted: number }> {
+  const running = await listRunningRuns();
+  let interrupted = 0;
+  for (const run of running) {
+    // Close the headless owned tab first (best-effort). Do this before the
+    // status flip so a thrown tab-remove still leaves the record updated below.
+    if (typeof run.ownedTabId === "number") {
+      try {
+        await chrome.tabs.remove(run.ownedTabId);
+      } catch {
+        // Tab already gone (closed by user, or orphaned by the SW death).
+      }
+    }
+    await updateRun(run.recordId, {
+      status: "interrupted",
+      endedAt: Date.now(),
+    });
+    interrupted += 1;
+  }
+  return { interrupted };
 }
 
 /**

@@ -3,6 +3,8 @@
 // content script became "orphaned" (Extension context invalidated)
 // get a live instance again — without the user having to refresh.
 
+import { isWebStoreUrl } from "@/lib/web-store-urls";
+
 const SKIP_URL_PREFIXES = [
   "chrome://",
   "chrome-extension://",
@@ -13,15 +15,12 @@ const SKIP_URL_PREFIXES = [
   "file://",
 ];
 
-const SKIP_URL_CONTAINS = [
-  "chrome.google.com/webstore",
-  "chromewebstore.google.com",
-];
-
 export function shouldSkipUrl(url: string | undefined): boolean {
   if (!url) return true;
   if (SKIP_URL_PREFIXES.some((p) => url.startsWith(p))) return true;
-  if (SKIP_URL_CONTAINS.some((s) => url.includes(s))) return true;
+  // Web Store host check sourced from the shared blocklist (single source of
+  // truth — also used by src/lib/schedules/url-guard.ts).
+  if (isWebStoreUrl(url)) return true;
   return false;
 }
 

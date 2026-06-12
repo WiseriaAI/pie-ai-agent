@@ -129,6 +129,9 @@ function indexEntryFromMeta(meta: SessionMeta): SessionIndexEntry {
   if (meta.pinnedTabs && meta.pinnedTabs.length > 0) {
     entry.pinnedTabIds = meta.pinnedTabs.map((p) => p.tabId);
   }
+  // Carry the schedule discriminator so the drawer can hide schedule sessions
+  // without loading each meta (see SessionIndexEntry.origin).
+  if (meta.origin) entry.origin = meta.origin;
   return entry;
 }
 
@@ -337,7 +340,8 @@ export async function setSessionMeta(meta: SessionMeta): Promise<void> {
     existingEntry.status !== nextEntry.status ||
     existingEntry.title !== nextEntry.title ||
     JSON.stringify(existingEntry.pinnedTabIds) !== JSON.stringify(nextEntry.pinnedTabIds) ||
-    existingEntry.messageCount !== nextEntry.messageCount;
+    existingEntry.messageCount !== nextEntry.messageCount ||
+    existingEntry.origin !== nextEntry.origin;
 
   const batch: WriteBatch = { [metaKey(scrubbedMeta.id)]: scrubbedMeta };
   if (indexChanged) {

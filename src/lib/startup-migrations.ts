@@ -31,6 +31,7 @@ import { migrateLegacyKeyboardFlag } from "@/lib/cdp-input-enabled";
 import { migrateV2toV3 } from "@/lib/migration-v3";
 import { migrateEndpointDefaultToPayg } from "@/lib/migrate-endpoint-default-payg";
 import { migrateOneConfigPerProvider } from "@/lib/migrate-one-config-per-provider";
+import { migrateScheduleSessionOrigin } from "@/lib/sessions/migrate-schedule-session-origin";
 
 let pipelinePromise: Promise<void> | null = null;
 
@@ -55,6 +56,7 @@ async function runPipeline(): Promise<void> {
   await migrateLegacyKeyboardFlag();
   await migrateEndpointDefaultToPayg();
   await migrateOneConfigPerProvider();
+  await migrateScheduleSessionOrigin();
 }
 
 /**

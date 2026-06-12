@@ -104,3 +104,49 @@ Workflow 内置 invariant（任一失败则 CI fail，不会上传）：
 - `planning` skill 产出（实施 plan）→ `docs/plans/<YYYY-MM-DD>-<slug>.md`
 - 不再使用 `docs/superpowers/` 子目录或 `docs/brainstorms/`（已合并迁出）
 - 历史与新产出在同一目录共存；按文件名日期前缀排序即可区分新旧
+
+## Agent skills
+
+### Issue tracker
+
+Issues live as GitHub issues in `WiseriaAI/pie-ai-agent`, managed via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Five canonical triage roles map 1:1 to their default label strings (`needs-triage` / `needs-info` / `ready-for-agent` / `ready-for-human` / `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
+### Skill 路由（Matt Pocock skills × superpowers 消歧）
+
+两套 skill 触发器高度重叠，但方法论同源、不矛盾；冲突只在「触发竞争 + 双倍仪式」。按下表分工：
+
+**重叠区一律走 superpowers**（SessionStart 的 `using-superpowers` hook 已默认锁定它，且 Matt Pocock 同名 skill 方法论与之一致）：
+- TDD → `superpowers:test-driven-development`（**不**用 Matt Pocock `tdd`）
+- 调试 / bug / 测试失败 → `superpowers:systematic-debugging`（**不**用 `diagnose`）
+- 写 / 改 skill → `superpowers:writing-skills`（**不**用 `write-a-skill` / `skill-creator`）
+- 发散探索需求 → `superpowers:brainstorming`
+
+**Matt Pocock 只用 superpowers 没有的独占能力**：`grill-with-docs`（质询收敛 + 维护 `CONTEXT.md`/ADR）、`to-issues`、`triage`、`improve-codebase-architecture`、`prototype`。
+
+`triage` 是**平行的被动入口**（外部报进来的 bug / feature request 分诊状态机），不在下面的主动迭代链路里。
+
+### 完整迭代工作流（主动发起的特性开发）
+
+文档三层：**spec**(`docs/specs/`) → **issue**(GitHub) → **plan**(`docs/plans/`)。**不单出 PRD**——spec 即「设计 + 需求」权威源，`to-prd` 这一步砍掉。
+
+1. `superpowers:brainstorming` — 发散探索，产出 spec → `docs/specs/<date>-<slug>.md`
+2. `grill-with-docs` — 收敛压测 spec，并把锐化出的术语 / 决策写进 `CONTEXT.md` 与 `docs/adr/`（可打回 1）
+3. `prototype`（**可选**）— 仅当设计含状态机 / 数据模型 / UI 方向这类不确定性时才造抛弃式原型；其发现**回流**改 spec，别让定稿后再返工
+4. `to-issues` — 把定稿 spec 拆成 tracer-bullet 垂直切片 issue。**issue 只写 what + 验收标准，不写实现步骤**
+5. 逐个 issue：
+   - `superpowers:writing-plans` — 实现 plan → `docs/plans/<date>-<slug>.md`。**plan 只写 how + 步骤，不重述需求**（与 issue 职责互补、不重叠）
+   - `superpowers:subagent-driven-development` — 当前 session 派 subagent 执行；每个 task 走 `superpowers:test-driven-development`。⚠️ subagent cwd 不随 worktree 切换，派活 prompt 必须强制 `cd <worktree 绝对路径>`
+   - `superpowers:verification-before-completion` — 跑 `pnpm test` / `pnpm typecheck` / `pnpm build` 拿到证据再宣称完成
+   - `superpowers:requesting-code-review`
+   - `gh issue close <n>`
+6. `superpowers:finishing-a-development-branch` — main 受保护，走 PR（`gh`，先 `gh auth switch --user WiseriaAI`）
+
+**塌缩档**：小改动可跳过 3（prototype），spec 直接 `to-issues`，甚至 issue 直接实现不写 plan。链路是默认 happy path，不是每次必须全程。

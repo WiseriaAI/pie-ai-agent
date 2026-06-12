@@ -9,6 +9,7 @@ import { buildKeyboardTools, type KeyboardToolDeps } from "./tools/keyboard";
 import { buildEditorTools, type EditorToolDeps } from "./tools/editor";
 import { SKILL_META_TOOLS } from "./tools/skill-meta";
 import { SKILL_ACCESS_TOOLS } from "./tools/skill-access";
+import { SCHEDULE_META_TOOLS } from "./tools/schedule-meta";
 import { TAB_TOOLS } from "./tools/tabs";
 import { searchWebTool } from "./tools/search";
 import { readPageTool } from "./tools/read-page";
@@ -27,6 +28,12 @@ export {
   isSkillMetaToolName,
   type SkillMetaToolName,
 } from "./tools/skill-meta";
+
+export {
+  SCHEDULE_META_TOOL_NAMES,
+  isScheduleMetaToolName,
+  type ScheduleMetaToolName,
+} from "./tools/schedule-meta";
 
 /**
  * Phase 2.5 keyboard tools (dispatch_keyboard_input + press_key). Returned
@@ -295,6 +302,9 @@ USE WHEN:
 
   // Phase 2.6 — Skill autonomous CRUD meta tools (see tools/skill-meta.ts)
   ...SKILL_META_TOOLS,
+
+  // Task 7 — Schedule CRUD meta tools (see tools/schedule-meta.ts)
+  ...SCHEDULE_META_TOOLS,
 
   // SP-1 — Skill access tools: use_skill + read_skill_file (see tools/skill-access.ts)
   ...SKILL_ACCESS_TOOLS,

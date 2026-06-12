@@ -93,12 +93,20 @@ async function verifyConfirmedOrigin(
 
 const TITLE_MAX_LEN = 100;
 const DOMAIN_MAX_LEN = 50;
-// Keep in sync with isRestrictedUrl in src/lib/agent/loop.ts (which gates
-// task pinning at start + per-iteration origin re-check). Asymmetry between
-// the two lists is a real exploit vector — a scheme rejected by loop.ts
-// (e.g. file://) but accepted here would let group_tabs
-// operate on local-file pages or blob: pages that the agent should never
-// touch (correctness review finding).
+// Intentional SUPERSET of the canonical `isRestrictedUrl`
+// (src/lib/url/restricted.ts): this list adds `chrome-search://` and
+// `view-source:` because tab-grouping operates on arbitrary user tabs that may
+// sit on those schemes, whereas the loop's pin-gate never encounters them. It
+// must remain a superset — every scheme rejected by the canonical check is also
+// rejected here (a scheme rejected by the loop but accepted here would let
+// group_tabs touch local-file / blob: pages the agent should never touch). The
+// canonical list is NOT imported directly because this constant is also read
+// inside a `chrome.scripting`-injected self-contained function (must stay
+// closure-free); the file-PDF exception is deliberately dropped here since
+// grouping a file PDF tab is harmless metadata-only.
+//
+// Follow-up (deferred, low risk): a build-time assertion that this array is a
+// superset of the canonical scheme set would mechanically guard the invariant.
 const RESTRICTED_URL_PREFIXES = [
   "chrome://",
   "chrome-extension://",

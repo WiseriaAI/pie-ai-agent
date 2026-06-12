@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach } from "vitest";
+import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import {
   createSession,
   getSessionAgent,
@@ -10,7 +10,10 @@ import {
 import {
   detectAndMarkPaused,
   transitionPortInFlightSessionsToPaused,
+  markOrphanRunsInterrupted,
 } from "./session-recovery";
+import { putSchedule, appendRun, getRun } from "@/lib/schedules/store";
+import type { ScheduleRecord } from "@/lib/schedules/types";
 import { getConfig } from "@/lib/idb/config-store";
 import { _resetForTests } from "@/lib/idb/db";
 
@@ -389,5 +392,115 @@ describe("transitionPortInFlightSessionsToPaused — per-port subset", () => {
     expect(stats.paused).toBe(1);
     expect(stats.failed).toBe(0);
     expect((await getSessionMeta(meta.id))!.status).toBe("paused");
+  });
+});
+
+// markOrphanRunsInterrupted — schedule-run cold-start cleanup. A run record left
+// in "running" after the SW died is an orphan: its driving loop is gone. We mark
+// it interrupted (+ endedAt) and remove its headless owned tab. Runs on the same
+// SW wake-up chain as detectAndMarkPaused, BEFORE any alarm dispatches a new run,
+// so skip-if-running (Task 5) doesn't get stuck on a dead run forever.
+
+function makeSched(overrides: Partial<ScheduleRecord> & { id: string }): ScheduleRecord {
+  const defaults: ScheduleRecord = {
+    id: overrides.id,
+    title: "t",
+    prompt: "p",
+    spec: { intervalMinutes: 60 },
+    instanceId: "inst_1",
+    enabled: true,
+    status: "active",
+    createdAt: 1000,
+    runCount: 0,
+    consecutiveFailures: 0,
+    runIds: [],
+  };
+  return { ...defaults, ...overrides };
+}
+
+describe("markOrphanRunsInterrupted", () => {
+  let tabsRemove: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    tabsRemove = vi.fn(() => Promise.resolve());
+    (globalThis as unknown as { chrome: unknown }).chrome = {
+      tabs: { remove: tabsRemove },
+    };
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    delete (globalThis as unknown as { chrome?: unknown }).chrome;
+  });
+
+  it("marks a running run interrupted (+ endedAt) and removes its owned tab", async () => {
+    await putSchedule(makeSched({ id: "sched_o1", runIds: [] }));
+    await appendRun("sched_o1", {
+      recordId: "run_o1",
+      scheduleId: "sched_o1",
+      runIndex: 1,
+      sessionId: "sess_1",
+      ownedTabId: 42,
+      startedAt: 1000,
+      status: "running",
+    });
+
+    await markOrphanRunsInterrupted();
+
+    const run = await getRun("run_o1");
+    expect(run?.status).toBe("interrupted");
+    expect(run?.endedAt).toBeTypeOf("number");
+    expect(tabsRemove).toHaveBeenCalledWith(42);
+  });
+
+  it("interrupts a running run with no owned tab (no chrome.tabs.remove call)", async () => {
+    await putSchedule(makeSched({ id: "sched_o2", runIds: [] }));
+    await appendRun("sched_o2", {
+      recordId: "run_o2",
+      scheduleId: "sched_o2",
+      runIndex: 1,
+      startedAt: 1000,
+      status: "running",
+    });
+
+    await markOrphanRunsInterrupted();
+
+    expect((await getRun("run_o2"))?.status).toBe("interrupted");
+    expect(tabsRemove).not.toHaveBeenCalled();
+  });
+
+  it("leaves non-running runs untouched", async () => {
+    await putSchedule(makeSched({ id: "sched_o3", runIds: [] }));
+    await appendRun("sched_o3", {
+      recordId: "run_done",
+      scheduleId: "sched_o3",
+      runIndex: 1,
+      startedAt: 1000,
+      endedAt: 2000,
+      status: "success",
+    });
+
+    await markOrphanRunsInterrupted();
+
+    const run = await getRun("run_done");
+    expect(run?.status).toBe("success");
+    expect(run?.endedAt).toBe(2000);
+  });
+
+  it("tolerates chrome.tabs.remove rejecting (tab already gone)", async () => {
+    tabsRemove.mockRejectedValue(new Error("No tab with id: 99"));
+    await putSchedule(makeSched({ id: "sched_o4", runIds: [] }));
+    await appendRun("sched_o4", {
+      recordId: "run_o4",
+      scheduleId: "sched_o4",
+      runIndex: 1,
+      ownedTabId: 99,
+      startedAt: 1000,
+      status: "running",
+    });
+
+    await expect(markOrphanRunsInterrupted()).resolves.not.toThrow();
+    // Still marked interrupted despite the tab-remove failure.
+    expect((await getRun("run_o4"))?.status).toBe("interrupted");
   });
 });

@@ -141,7 +141,7 @@ describe("T15 — mid-task happy path: add → drain → LLM merge", () => {
     await drainPending(SESSION_ID);
 
     const port = makeFakePort();
-    await broadcastInstructionState(port, SESSION_ID);
+    await broadcastInstructionState((m) => port.postMessage(m), SESSION_ID);
 
     expect(port.postMessage).toHaveBeenCalledOnce();
     const msg = (port.postMessage as ReturnType<typeof vi.fn>).mock.calls[0]![0];
@@ -245,7 +245,7 @@ describe("T16a — cancel: canceled instruction does not appear in next LLM call
     await cancelPending(SESSION_ID, "zap");
 
     const port = makeFakePort();
-    await broadcastInstructionState(port, SESSION_ID);
+    await broadcastInstructionState((m) => port.postMessage(m), SESSION_ID);
 
     const msg = (port.postMessage as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(msg.type).toBe("chat-instruction-state");
