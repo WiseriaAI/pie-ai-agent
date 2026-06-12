@@ -111,14 +111,38 @@ describe("SchedulesPanel", () => {
     await waitFor(() => expect(actionMocks.deleteSchedule).toHaveBeenCalledWith("sched_1"));
   });
 
-  it("opens the create form via New schedule and submits through createSchedule", async () => {
+  it("New schedule first offers a choice (manual vs chat) instead of the form", async () => {
     render(<SchedulesPanel onOpenSession={vi.fn()} />);
     await screen.findByText(/no schedules/i);
     fireEvent.click(screen.getByRole("button", { name: /new schedule/i }));
+    // The choice menu appears; the form does NOT open yet.
+    expect(await screen.findByTestId("new-schedule-choice")).toBeTruthy();
+    expect(screen.queryByLabelText(/title/i)).toBeNull();
+  });
+
+  it("choosing 'fill in the form' opens the create form and submits through createSchedule", async () => {
+    render(<SchedulesPanel onOpenSession={vi.fn()} />);
+    await screen.findByText(/no schedules/i);
+    fireEvent.click(screen.getByRole("button", { name: /new schedule/i }));
+    fireEvent.click(await screen.findByTestId("new-choice-manual"));
     fireEvent.change(await screen.findByLabelText(/title/i), { target: { value: "Hourly" } });
     fireEvent.change(screen.getByLabelText(/prompt/i), { target: { value: "check feeds" } });
     fireEvent.change(screen.getByLabelText(/interval/i), { target: { value: "60" } });
     fireEvent.click(screen.getByRole("button", { name: /create schedule/i }));
     await waitFor(() => expect(actionMocks.createSchedule).toHaveBeenCalledTimes(1));
+  });
+
+  it("choosing 'describe it in chat' calls onCreateViaChat with the localized template and does not open the form", async () => {
+    const onCreateViaChat = vi.fn();
+    render(<SchedulesPanel onOpenSession={vi.fn()} onCreateViaChat={onCreateViaChat} />);
+    await screen.findByText(/no schedules/i);
+    fireEvent.click(screen.getByRole("button", { name: /new schedule/i }));
+    fireEvent.click(await screen.findByTestId("new-choice-chat"));
+    expect(onCreateViaChat).toHaveBeenCalledTimes(1);
+    // The template is passed through (English fallback dict outside I18nProvider).
+    expect(onCreateViaChat.mock.calls[0]![0]).toMatch(/scheduled task/i);
+    // Form must NOT have opened.
+    expect(screen.queryByLabelText(/title/i)).toBeNull();
+    expect(actionMocks.createSchedule).not.toHaveBeenCalled();
   });
 });

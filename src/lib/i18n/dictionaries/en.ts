@@ -437,6 +437,15 @@ export const enDict = {
     deleteProvider: "Delete provider",
     newCustomProvider: "+ New custom provider",
   },
+  schedules: {
+    newChoiceTitle: "How do you want to set this up?",
+    newChoiceManualLabel: "Fill in the form",
+    newChoiceManualHint: "Set the prompt, interval, and limits yourself.",
+    newChoiceChatLabel: "Describe it in chat",
+    newChoiceChatHint: "Tell the agent what to schedule and it creates it for you.",
+    chatTemplate:
+      "Create a scheduled task for me: every 30 minutes, [describe what you want done here].",
+  },
 } as const satisfies DictNode;
 
 export type EnDict = typeof enDict;

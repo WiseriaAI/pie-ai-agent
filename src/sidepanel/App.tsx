@@ -248,6 +248,18 @@ export default function App() {
     if (ok != null) setView("agent");
   }, [session]);
 
+  // ── Create a schedule via chat ────────────────────────────────────────────
+  // From the Schedules page, the user can choose to describe the schedule in
+  // chat instead of filling the form. Start a fresh session (a new schedule is
+  // a new task, not a continuation), prefill the composer with the localized
+  // template, and switch to the chat view. createAndActivate refuses (null)
+  // only while a task is streaming — then we just prefill the current session.
+  const handleCreateScheduleViaChat = useCallback(async (template: string) => {
+    await session.createAndActivate();
+    setChatPrefill(template);
+    setView("agent");
+  }, [session]);
+
   // ── New session ───────────────────────────────────────────────────────────
   const handleNewSession = useCallback(async () => {
     const newId = await session.createAndActivate();
@@ -358,7 +370,10 @@ export default function App() {
             }
           />
         ) : view === "schedules" ? (
-          <SchedulesPanel onOpenSession={(id) => void handleOpenSessionFromSchedule(id)} />
+          <SchedulesPanel
+            onOpenSession={(id) => void handleOpenSessionFromSchedule(id)}
+            onCreateViaChat={(template) => void handleCreateScheduleViaChat(template)}
+          />
         ) : (
           <Settings
             onBack={() => setView("agent")}

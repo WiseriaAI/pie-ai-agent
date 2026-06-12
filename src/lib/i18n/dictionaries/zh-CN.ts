@@ -445,4 +445,13 @@ export const zhCNDict = {
     deleteProvider: "删除 Provider",
     newCustomProvider: "+ 新建自定义 Provider",
   },
+  schedules: {
+    newChoiceTitle: "想怎么创建这个定时任务？",
+    newChoiceManualLabel: "手动填写表单",
+    newChoiceManualHint: "自己设置提示词、执行间隔和运行上限。",
+    newChoiceChatLabel: "在聊天里描述",
+    newChoiceChatHint: "把要定时做的事告诉 agent，由它来帮你创建。",
+    chatTemplate:
+      "帮我创建一个定时任务：每隔 30 分钟执行一次，[在这里描述要让我做的事]。",
+  },
 } as const satisfies Translations<EnDict>;

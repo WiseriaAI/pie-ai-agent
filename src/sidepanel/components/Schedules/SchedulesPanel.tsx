@@ -23,12 +23,17 @@ import {
 import { listInstances, getActiveInstance } from "@/lib/instances";
 import type { DecryptedInstance } from "@/lib/instances";
 import type { ScheduleRecord } from "@/lib/schedules/types";
+import { useT } from "@/lib/i18n/use-t";
 import ScheduleForm from "./ScheduleForm";
 import ScheduleRunHistory from "./ScheduleRunHistory";
 
 interface Props {
   /** Open a session by id (wired in App → session.setActive + switch to chat). */
   onOpenSession: (sessionId: string) => void;
+  /** Delegate schedule creation to chat: jump to the chat view with a localized
+   *  template prefilled in the composer (wired in App). No-op default keeps the
+   *  panel usable in isolation (e.g. unit tests). */
+  onCreateViaChat?: (template: string) => void;
 }
 
 const STATUS_STYLE: Record<ScheduleRecord["status"], string> = {
@@ -79,11 +84,15 @@ function scheduleSummary(rec: ScheduleRecord): string {
   return parts.join(" · ");
 }
 
-export default function SchedulesPanel({ onOpenSession }: Props) {
+export default function SchedulesPanel({ onOpenSession, onCreateViaChat }: Props) {
+  const t = useT();
   const [schedules, setSchedules] = useState<ScheduleRecord[]>([]);
   const [instances, setInstances] = useState<DecryptedInstance[]>([]);
   const [activeInstanceId, setActiveInstanceId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // "New schedule" first offers a choice: fill the form manually, or describe
+  // it in chat. showChoice gates that menu; showCreate gates the actual form.
+  const [showChoice, setShowChoice] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -147,7 +156,7 @@ export default function SchedulesPanel({ onOpenSession }: Props) {
         <span className="text-[16px] font-semibold tracking-[-0.01em] text-fg-1">Schedules</span>
         {!showCreate && !editingId && (
           <button
-            onClick={() => setShowCreate(true)}
+            onClick={() => setShowChoice((v) => !v)}
             className="flex h-8 items-center gap-2 rounded-[10px] border border-line bg-transparent px-3 text-[12px] text-accent hover:bg-field"
           >
             New schedule
@@ -157,6 +166,39 @@ export default function SchedulesPanel({ onOpenSession }: Props) {
 
       <div className="flex-1 overflow-y-auto px-4 py-5">
         <div className="flex flex-col gap-4">
+          {showChoice && !showCreate && !editingId && (
+            <div
+              data-testid="new-schedule-choice"
+              className="flex flex-col gap-2 rounded-[14px] border border-line bg-surface p-3"
+            >
+              <span className="px-0.5 text-[12px] font-medium text-fg-2">
+                {t("schedules.newChoiceTitle")}
+              </span>
+              <button
+                data-testid="new-choice-manual"
+                onClick={() => {
+                  setShowChoice(false);
+                  setShowCreate(true);
+                }}
+                className="flex flex-col gap-0.5 rounded-[10px] border border-line bg-transparent px-3 py-2.5 text-left hover:border-fg-3 hover:bg-field"
+              >
+                <span className="text-[13px] font-medium text-fg-1">{t("schedules.newChoiceManualLabel")}</span>
+                <span className="text-[11px] leading-[15px] text-fg-3">{t("schedules.newChoiceManualHint")}</span>
+              </button>
+              <button
+                data-testid="new-choice-chat"
+                onClick={() => {
+                  setShowChoice(false);
+                  onCreateViaChat?.(t("schedules.chatTemplate"));
+                }}
+                className="flex flex-col gap-0.5 rounded-[10px] border border-line bg-transparent px-3 py-2.5 text-left hover:border-fg-3 hover:bg-field"
+              >
+                <span className="text-[13px] font-medium text-fg-1">{t("schedules.newChoiceChatLabel")}</span>
+                <span className="text-[11px] leading-[15px] text-fg-3">{t("schedules.newChoiceChatHint")}</span>
+              </button>
+            </div>
+          )}
+
           {showCreate && (
             <ScheduleForm
               instances={instances}
@@ -176,7 +218,7 @@ export default function SchedulesPanel({ onOpenSession }: Props) {
             />
           )}
 
-          {!loading && schedules.length === 0 && !showCreate && (
+          {!loading && schedules.length === 0 && !showCreate && !showChoice && (
             <div className="rounded-[10px] border border-line bg-surface px-3 py-4 text-[12px] leading-[18px] text-fg-2">
               No schedules yet. Create one to have the agent run a task automatically on a recurring basis.
             </div>
