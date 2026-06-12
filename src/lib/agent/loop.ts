@@ -770,17 +770,18 @@ export function buildFirstTurnReadPageHint(pinnedTabId: number): string {
  * Block A — current-time seed for the headless single-task path (seed path 3).
  *
  * Prepends a trusted `<current_time>` block (see buildCurrentTimeBlock) to the
- * raw task string, separated by a blank line. Hit ONLY when `ctx.messages` is
- * empty — i.e. headless schedule runs (run.ts passes a bare `task`, no
- * messages). Foreground chat carries `ctx.messages` and is handled by
- * prependTimeToLastUserMessage instead (seed path 2). Resume reuses persisted
- * history and never re-injects.
+ * task wrapped in a trusted `<user_task>` wrapper, separated by a blank line.
+ * Hit ONLY when `ctx.messages` is empty — i.e. headless schedule runs (run.ts
+ * passes a bare `task`, no messages). Foreground chat carries `ctx.messages`
+ * and is handled by prependTimeToLastUserMessage instead (seed path 2). Resume
+ * reuses persisted history and never re-injects.
  *
- * Pure: `now` is passed in for deterministic tests; the time block is in front,
- * the task verbatim behind.
+ * Pure: `now` is passed in for deterministic tests; the time block is in front
+ * (outside the wrapper), the task is inside the trusted `<user_task>` wrapper.
+ * The task text is escaped via escapeTrustedWrappers to prevent injection.
  */
 export function buildSeededTaskContent(now: number, task: string): string {
-  return `${buildCurrentTimeBlock(now)}\n\n${task}`;
+  return `${buildCurrentTimeBlock(now)}\n\n<user_task>${escapeTrustedWrappers(task)}</user_task>`;
 }
 
 /**
@@ -1299,7 +1300,15 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         [
           systemMsg,
           ...prependTimeToLastUserMessage(
-            ctx.messages.map((m) => chatMessageToAgentMessage(m)),
+            // #175 — the current prompt is ALWAYS the last message
+            // (background/index.ts puts it last). Wrap it as the trusted
+            // <user_task> (live task); earlier turns stay untrusted.
+            // NOTE: explicit (m, i) arrow is required — a bare
+            // .map(chatMessageToAgentMessage) would forward the array index
+            // as the asLiveTask boolean.
+            ctx.messages.map((m, i) =>
+              chatMessageToAgentMessage(m, i === ctx.messages!.length - 1),
+            ),
             Date.now(),
           ),
         ]
