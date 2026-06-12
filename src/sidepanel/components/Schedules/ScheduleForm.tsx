@@ -2,7 +2,8 @@
 //
 // Task 9.2 — create / edit form for a Schedule. Functional UI aligned with the
 // slate token system (mirrors SkillForm / InstanceForm). Validation is local
-// (title/prompt required, interval >= 15, startUrl not restricted); the actual
+// (title/prompt required, interval >= MIN_INTERVAL_MINUTES, startUrl not
+// restricted); the actual
 // mutation goes through onSubmit → SW write channel, whose { ok, error } is
 // surfaced inline.
 

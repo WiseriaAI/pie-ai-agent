@@ -17,7 +17,11 @@ import type { Tool } from "./types";
 import { getToolClass, SCREENSHOT_TOOL_NAMES } from "./tool-names";
 import { escapeUntrustedWrappers } from "./untrusted-wrappers";
 import { classifyStreamCompletion } from "./stream-completion";
-import { buildAgentSystemPrompt, buildObservationMessage } from "./prompt";
+import {
+  buildAgentSystemPrompt,
+  buildCurrentTimeBlock,
+  buildObservationMessage,
+} from "./prompt";
 import { applySlidingWindow } from "./window";
 import { elideStaleObservations } from "./elide-stale-observations";
 import { applyTokenBudget } from "./window-token-budget";
@@ -754,6 +758,73 @@ export function buildFirstTurnReadPageHint(pinnedTabId: number): string {
 }
 
 /**
+ * Block A — current-time seed for the headless single-task path (seed path 3).
+ *
+ * Prepends a trusted `<current_time>` block (see buildCurrentTimeBlock) to the
+ * raw task string, separated by a blank line. Hit ONLY when `ctx.messages` is
+ * empty — i.e. headless schedule runs (run.ts passes a bare `task`, no
+ * messages). Foreground chat carries `ctx.messages` and is handled by
+ * prependTimeToLastUserMessage instead (seed path 2). Resume reuses persisted
+ * history and never re-injects.
+ *
+ * Pure: `now` is passed in for deterministic tests; the time block is in front,
+ * the task verbatim behind.
+ */
+export function buildSeededTaskContent(now: number, task: string): string {
+  return `${buildCurrentTimeBlock(now)}\n\n${task}`;
+}
+
+/**
+ * Block A — current-time seed for the foreground multi-turn chat path (seed
+ * path 2). Foreground chat passes the full `ctx.messages` prefix (rebuilt from
+ * the session's raw conversation, which never contains a time block), mapped
+ * through chatMessageToAgentMessage. The current user prompt is ALWAYS the last
+ * message (background/index.ts puts it last), so we inject the `<current_time>`
+ * block into the LAST `role:"user"` AgentMessage only:
+ *   - earlier user turns stay untouched → the block never accumulates across
+ *     turns; each task carries exactly one current-time stamp on the newest
+ *     prompt.
+ *   - the block is prepended OUTSIDE the `<untrusted_user_message>` wrapper —
+ *     it is trusted runtime content, not user-supplied data.
+ *   - string content → `"<current_time>…</current_time>\n\n" + original`.
+ *   - ContentBlock[] content (image attachments) → a fresh leading text block
+ *     carrying the time, with the original blocks preserved after it.
+ *
+ * Returns a shallow-rebuilt array (the target message object is replaced, not
+ * mutated in place); a no-op pass-through when there is no user message.
+ * Pure: `now` is supplied for deterministic tests.
+ */
+export function prependTimeToLastUserMessage(
+  messages: AgentMessage[],
+  now: number,
+): AgentMessage[] {
+  let lastUserIdx = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]!.role === "user") {
+      lastUserIdx = i;
+      break;
+    }
+  }
+  if (lastUserIdx === -1) return messages;
+
+  const timeBlock = buildCurrentTimeBlock(now);
+  const target = messages[lastUserIdx]!;
+  let injected: AgentMessage;
+  if (typeof target.content === "string") {
+    injected = { role: "user", content: `${timeBlock}\n\n${target.content}` };
+  } else {
+    injected = {
+      role: "user",
+      content: [{ type: "text", text: timeBlock }, ...target.content],
+    };
+  }
+
+  const out = messages.slice();
+  out[lastUserIdx] = injected;
+  return out;
+}
+
+/**
  * v1.5 Task 6+7 — per-iteration focus refresh helper.
  *
  * Re-reads storage so that:
@@ -1209,10 +1280,24 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
   }
 
   history = ctx.resumedAgentMessages
-    ? structuredClone(ctx.resumedAgentMessages)
+    ? // (1) resume — reuse persisted history verbatim; no time re-injection.
+      structuredClone(ctx.resumedAgentMessages)
     : ctx.messages && ctx.messages.length > 0
-      ? [systemMsg, ...ctx.messages.map(chatMessageToAgentMessage)]
-      : [systemMsg, { role: "user", content: task }];
+      ? // (2) foreground chat — full conversation prefix. Inject the
+        // <current_time> block into the LAST user message only (the current
+        // prompt) so each task carries one fresh stamp and the block never
+        // accumulates across turns. now=Date.now() (impure here; the pure
+        // assembly lives in prependTimeToLastUserMessage).
+        [
+          systemMsg,
+          ...prependTimeToLastUserMessage(
+            ctx.messages.map(chatMessageToAgentMessage),
+            Date.now(),
+          ),
+        ]
+      : // (3) headless single task — bare task string (run.ts passes no
+        // messages). Prepend the <current_time> block to the task.
+        [systemMsg, { role: "user", content: buildSeededTaskContent(Date.now(), task) }];
 
   // M1-U5 — flag that the first iteration of the loop should skip the
   // observation merge. The prior step's snapshot already contains an

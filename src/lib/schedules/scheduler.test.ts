@@ -87,17 +87,31 @@ describe("armSchedule", () => {
     expect((await getSchedule("sched_future"))?.nextRunAt).toBe(future);
   });
 
-  it("immediate (no startAt) → dispatches first run + patches nextRunAt=now (does NOT create an alarm)", async () => {
+  it("recurring (no startAt) → creates alarm at now+interval, does NOT dispatch immediately", async () => {
     const { putSchedule, getSchedule } = await import("./store");
     const { armSchedule } = await import("./scheduler");
-    const rec = makeSched({ id: "sched_now", spec: { intervalMinutes: 60 } });
+    const rec = makeSched({ id: "sched_recur", spec: { intervalMinutes: 60 } });
+    await putSchedule(rec);
+    const runSchedule = vi.fn(async () => {});
+
+    await armSchedule(rec, { runSchedule, now: () => NOW });
+
+    // Periodic schedule must NOT ambush the user with an immediate first run.
+    expect(runSchedule).not.toHaveBeenCalled();
+    expect(stub.create).toHaveBeenCalledWith("schedule:sched_recur", { when: NOW + 60 * 60_000 });
+    expect((await getSchedule("sched_recur"))?.nextRunAt).toBe(NOW + 60 * 60_000);
+  });
+
+  it("one-shot (no startAt, no interval) → dispatches first run now (does NOT create an alarm)", async () => {
+    const { putSchedule, getSchedule } = await import("./store");
+    const { armSchedule } = await import("./scheduler");
+    const rec = makeSched({ id: "sched_now", spec: {} });
     await putSchedule(rec);
     const runSchedule = vi.fn(async () => {});
 
     await armSchedule(rec, { runSchedule, now: () => NOW });
 
     expect(runSchedule).toHaveBeenCalledWith("sched_now");
-    // No "when" alarm for the immediate first fire (it dispatches directly).
     expect(stub.create).not.toHaveBeenCalled();
     expect((await getSchedule("sched_now"))?.nextRunAt).toBe(NOW);
   });

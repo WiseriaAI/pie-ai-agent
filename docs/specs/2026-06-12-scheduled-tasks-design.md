@@ -163,7 +163,7 @@ interface ScheduleRunRecord {   // 一等实体，后续操作的稳定锚
 
 **并发**：schedule 的 Run 复用现有多 session 并发机制（sessionId 加进 `runningSessionIds`，R7 lock 自动仲裁跨 session tab 冲突），**不是新机制**。唯一 schedule 特有的「N 个 schedule 撞同一时刻批量唤醒」峰值 → **plan 阶段加一个全局并发上限（同时最多 N 个，超出排队）**，记为 plan 待办。
 
-**最小间隔产品约束**：`chrome.alarms` 技术上支持约 30s 周期，但本功能无人值守、烧用户自己 token，UI 层 `intervalMinutes` 最小允许 **15 分钟**（不暴露更短）；one-shot 不受此限。
+**最小间隔约束**：`intervalMinutes` 最小允许 **1 分钟**——这是 `chrome.alarms` 的硬下限（packed 扩展里更短的 alarm delay 会被 Chrome 钳到 1 分钟，设更短无意义）；one-shot（省略 `intervalMinutes`）不受此限。（注：早期版本曾按产品节流取 15 分钟，后改为贴合平台硬下限的 1 分钟，把节流交给失败自停 + 可选预算两道闸。）
 
 ## 8. 后台执行路径（headless run）+ tab 策略
 
@@ -276,7 +276,7 @@ agent tool 与 UI 共用 §6 store + §7 scheduler，互为镜像。
 ## 15. 体验风险（文档/首次创建时告知）
 
 - agent 在 background tab 上用 CDP（键盘/编辑器类工具）→ Chrome 挂"正在调试此浏览器"横幅，后台自动冒出来可能让用户困惑。无法消除，只能说明。
-- 后台自动跑消耗用户自己 provider 的 token。失败自停 + 可选预算 + 最小 15 分钟间隔是三道节流。
+- 后台自动跑消耗用户自己 provider 的 token。失败自停 + 可选预算是两道节流（最小间隔 1 分钟只是平台硬下限，不再当作节流手段）。
 
 ## 16. 非目标（YAGNI，v1 明确不做）
 

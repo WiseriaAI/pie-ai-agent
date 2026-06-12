@@ -123,14 +123,14 @@ describe("schedule-meta CRUD tools", () => {
   it(`create_schedule 拒绝 intervalMinutes < ${MIN_INTERVAL_MINUTES}`, async () => {
     await setActiveInstanceId(TEST_INSTANCE_ID);
     const r = await create.handler(
-      { title: "T", prompt: "p", spec: { intervalMinutes: 5 } },
+      { title: "T", prompt: "p", spec: { intervalMinutes: MIN_INTERVAL_MINUTES - 1 } },
       ctx,
     );
     expect(r.success).toBe(false);
     expect(r.error).toContain(`${MIN_INTERVAL_MINUTES}`);
   });
 
-  it("create_schedule 允许 intervalMinutes = 15 (边界值)", async () => {
+  it(`create_schedule 允许 intervalMinutes = ${MIN_INTERVAL_MINUTES} (边界值)`, async () => {
     await setActiveInstanceId(TEST_INSTANCE_ID);
     const r = await create.handler(
       { title: "T", prompt: "p", spec: { intervalMinutes: MIN_INTERVAL_MINUTES } },
@@ -158,6 +158,58 @@ describe("schedule-meta CRUD tools", () => {
     const r = await create.handler({ title: "Extra", prompt: "p" }, ctx);
     expect(r.success).toBe(false);
     expect(r.error).toContain(`${MAX_SCHEDULES}`);
+  });
+
+  // ── Block B — startAt accepts a local-time ISO string ────────────────────────
+
+  it("create_schedule 接受本地时间 ISO 字符串 startAt → 存为 epoch ms (number)", async () => {
+    await setActiveInstanceId(TEST_INSTANCE_ID);
+    const iso = "2026-06-13T09:00";
+    const r = await create.handler(
+      { title: "T", prompt: "p", spec: { startAt: iso } },
+      ctx,
+    );
+    expect(r.success).toBe(true);
+    const all = await listSchedules();
+    expect(all).toHaveLength(1);
+    const stored = all[0]!.spec.startAt;
+    expect(typeof stored).toBe("number");
+    expect(stored).toBe(new Date(iso).getTime());
+  });
+
+  it("create_schedule 拒绝非法 startAt 字符串", async () => {
+    await setActiveInstanceId(TEST_INSTANCE_ID);
+    const r = await create.handler(
+      { title: "T", prompt: "p", spec: { startAt: "not-a-date" } },
+      ctx,
+    );
+    expect(r.success).toBe(false);
+    expect(r.error).toMatch(/startAt/i);
+  });
+
+  it("update_schedule 接受 startAt ISO 字符串 → 存为 epoch ms", async () => {
+    await setActiveInstanceId(TEST_INSTANCE_ID);
+    await create.handler({ title: "T", prompt: "p" }, ctx);
+    const all = await listSchedules();
+    const id = all[0]!.id;
+
+    const iso = "2026-12-25T18:30";
+    const r = await update.handler({ id, spec: { startAt: iso } }, ctx);
+    expect(r.success).toBe(true);
+    const updated = await getSchedule(id);
+    expect(typeof updated!.spec.startAt).toBe("number");
+    expect(updated!.spec.startAt).toBe(new Date(iso).getTime());
+  });
+
+  it("update_schedule 拒绝非法 startAt 字符串", async () => {
+    await setActiveInstanceId(TEST_INSTANCE_ID);
+    await create.handler({ title: "T", prompt: "p" }, ctx);
+    const all = await listSchedules();
+    const id = all[0]!.id;
+
+    const r = await update.handler({ id, spec: { startAt: "garbage" } }, ctx);
+    expect(r.success).toBe(false);
+    expect(r.error).toMatch(/startAt/i);
   });
 
   it("create_schedule 初始 status=active, enabled=true, runCount=0", async () => {
@@ -239,7 +291,10 @@ describe("schedule-meta CRUD tools", () => {
     const all = await listSchedules();
     const id = all[0]!.id;
 
-    const r = await update.handler({ id, spec: { intervalMinutes: 1 } }, ctx);
+    const r = await update.handler(
+      { id, spec: { intervalMinutes: MIN_INTERVAL_MINUTES - 1 } },
+      ctx,
+    );
     expect(r.success).toBe(false);
     expect(r.error).toContain(`${MIN_INTERVAL_MINUTES}`);
   });

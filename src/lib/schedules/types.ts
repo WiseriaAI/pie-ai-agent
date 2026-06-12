@@ -63,8 +63,10 @@ export const MAX_SCHEDULES = 20;
 /** Consecutive-failure threshold before auto-pausing a schedule. */
 export const FAILURE_PAUSE_THRESHOLD = 3;
 
-/** Minimum allowed intervalMinutes to prevent accidental spam. */
-export const MIN_INTERVAL_MINUTES = 15;
+/** Minimum allowed intervalMinutes. 1 = chrome.alarms 的硬下限（packed 扩展的
+ *  最小 alarm delay 是 1 分钟，更短会被 Chrome 钳到 1 分钟）。one-shot（省略
+ *  intervalMinutes）不受此限。 */
+export const MIN_INTERVAL_MINUTES = 1;
 
 /**
  * Max number of scheduled agent runs allowed to execute CONCURRENTLY (spec §7 —

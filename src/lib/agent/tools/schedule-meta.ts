@@ -8,7 +8,7 @@
 //
 // Security / quota guards:
 //   - title / prompt must be non-empty strings
-//   - intervalMinutes (if set) must be >= MIN_INTERVAL_MINUTES (15)
+//   - intervalMinutes (if set) must be >= MIN_INTERVAL_MINUTES
 //   - startUrl (if set) must not be a restricted URL (chrome://, Web Store, etc.)
 //   - total schedules < MAX_SCHEDULES (20)
 //   - instanceId defaults to the active instance when not provided
@@ -41,6 +41,29 @@ function err(reason: string): ActionResult {
 
 function isNonEmptyString(v: unknown): v is string {
   return typeof v === "string" && v.trim().length > 0;
+}
+
+/**
+ * Block B — coerce a tool-supplied `startAt` to epoch ms.
+ *
+ * The tool interface accepts a local-time ISO string (e.g. "2026-06-13T09:00",
+ * no zone = device local) so the LLM can compute it from the `<current_time>`
+ * block. Storage (`ScheduleSpec.startAt`) stays a plain epoch-ms number — this
+ * is the single conversion point. A bare number is also accepted (back-compat:
+ * `new Date(ms)` round-trips epoch ms). Returns `{ ok:false }` on an unparseable
+ * value so the handler can surface a clear error instead of persisting NaN.
+ */
+function coerceStartAt(
+  v: unknown,
+): { ok: true; ms: number } | { ok: false; error: string } {
+  const ms = new Date(v as string | number).getTime();
+  if (!Number.isFinite(ms)) {
+    return {
+      ok: false,
+      error: `invalid startAt: ${JSON.stringify(v)} — expected a local-time ISO string like "2026-06-13T09:00"`,
+    };
+  }
+  return { ok: true, ms };
 }
 
 const ACTIVE_KEY = "active_instance_id";
@@ -87,8 +110,9 @@ const createScheduleTool: Tool = {
         description: "Timing specification.",
         properties: {
           startAt: {
-            type: "number",
-            description: "First run timestamp in ms (epoch). Defaults to run immediately.",
+            type: "string",
+            description:
+              'First run time as a local-time ISO string (e.g. "2026-06-13T09:00"; no time zone = the device\'s local zone). Compute it from the `<current_time>` block at the start of the conversation. Omit to start a recurring task from the next interval, or a one-shot immediately.',
           },
           intervalMinutes: {
             type: "number",
@@ -129,7 +153,11 @@ const createScheduleTool: Tool = {
     const spec: ScheduleSpec = {};
     if (a.spec && typeof a.spec === "object") {
       const s = a.spec as Record<string, unknown>;
-      if (s.startAt !== undefined) spec.startAt = s.startAt as number;
+      if (s.startAt !== undefined) {
+        const r = coerceStartAt(s.startAt);
+        if (!r.ok) return err(r.error);
+        spec.startAt = r.ms;
+      }
       if (s.intervalMinutes !== undefined) spec.intervalMinutes = s.intervalMinutes as number;
       if (s.maxRuns !== undefined) spec.maxRuns = s.maxRuns as number;
     }
@@ -181,7 +209,11 @@ const updateScheduleTool: Tool = {
         type: "object",
         additionalProperties: false,
         properties: {
-          startAt: { type: "number" },
+          startAt: {
+            type: "string",
+            description:
+              'New first-run time as a local-time ISO string (e.g. "2026-06-13T09:00"; no time zone = device local). Compute it from the `<current_time>` block.',
+          },
           intervalMinutes: { type: "number" },
           maxRuns: { type: "number" },
         },
@@ -202,7 +234,15 @@ const updateScheduleTool: Tool = {
     if ("spec" in a && a.spec && typeof a.spec === "object") {
       const s = a.spec as Record<string, unknown>;
       specInput = {};
-      if ("startAt" in s) specInput.startAt = s.startAt as number | undefined;
+      if ("startAt" in s) {
+        if (s.startAt === undefined) {
+          specInput.startAt = undefined; // explicit clear
+        } else {
+          const r = coerceStartAt(s.startAt);
+          if (!r.ok) return err(r.error);
+          specInput.startAt = r.ms;
+        }
+      }
       if ("intervalMinutes" in s) specInput.intervalMinutes = s.intervalMinutes as number | undefined;
       if ("maxRuns" in s) specInput.maxRuns = s.maxRuns as number | undefined;
     }

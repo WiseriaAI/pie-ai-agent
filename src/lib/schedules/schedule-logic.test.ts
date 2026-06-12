@@ -20,12 +20,12 @@ describe("computeFirstFireAt", () => {
     expect(computeFirstFireAt(spec, TEN_AM)).toBe(NINE_AM);
   });
 
-  it("falls back to `now` when startAt is absent", () => {
+  it("recurring with no startAt → now + one interval (does NOT fire immediately)", () => {
     const spec: ScheduleSpec = { intervalMinutes: 60 };
-    expect(computeFirstFireAt(spec, NINE_AM)).toBe(NINE_AM);
+    expect(computeFirstFireAt(spec, NINE_AM)).toBe(NINE_AM + 60 * MIN);
   });
 
-  it("falls back to `now` for a one-shot (no interval) with no startAt", () => {
+  it("one-shot (no interval) with no startAt → now (immediate = run once now)", () => {
     const spec: ScheduleSpec = {};
     expect(computeFirstFireAt(spec, NINE_AM)).toBe(NINE_AM);
   });

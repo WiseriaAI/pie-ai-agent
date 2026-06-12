@@ -11,11 +11,18 @@ const MS_PER_MINUTE = 60_000;
 
 /**
  * When should a schedule fire for the FIRST time?
- *   - `spec.startAt` if the user pinned a start time.
- *   - otherwise `now` (run immediately).
+ *   - `spec.startAt` if the user pinned a start time → fire then.
+ *   - else recurring (has `intervalMinutes`) → `now + interval`: wait one full
+ *     interval before the first run. Creating a periodic schedule ("every N
+ *     minutes / daily") should NOT ambush the user with an immediate run —
+ *     especially agent-created ones, which rarely set `startAt`.
+ *   - else one-shot (no interval) → `now`: immediate, which IS the meaning of a
+ *     start-time-less one-shot ("run once, now").
  */
 export function computeFirstFireAt(spec: ScheduleSpec, now: number): number {
-  return spec.startAt ?? now;
+  if (spec.startAt != null) return spec.startAt;
+  if (spec.intervalMinutes) return now + spec.intervalMinutes * MS_PER_MINUTE;
+  return now;
 }
 
 /**

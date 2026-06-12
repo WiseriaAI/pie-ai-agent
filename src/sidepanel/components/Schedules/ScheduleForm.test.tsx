@@ -2,6 +2,7 @@ import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { describe, it, expect, vi, afterEach } from "vitest";
 import ScheduleForm from "./ScheduleForm";
 import type { DecryptedInstance } from "@/lib/instances";
+import { MIN_INTERVAL_MINUTES } from "@/lib/schedules/types";
 
 afterEach(() => cleanup());
 
@@ -31,15 +32,19 @@ describe("ScheduleForm", () => {
     expect(screen.getByText(/title is required/i)).toBeTruthy();
   });
 
-  it("rejects interval below 15 minutes with an inline error", async () => {
+  it("rejects interval below MIN_INTERVAL_MINUTES with an inline error", async () => {
     const onSubmit = vi.fn().mockResolvedValue({ ok: true });
     renderForm({ onSubmit });
     fireEvent.change(screen.getByLabelText(/title/i), { target: { value: "Digest" } });
     fireEvent.change(screen.getByLabelText(/prompt/i), { target: { value: "summarize" } });
-    fireEvent.change(screen.getByLabelText(/interval/i), { target: { value: "5" } });
+    fireEvent.change(screen.getByLabelText(/interval/i), {
+      target: { value: String(MIN_INTERVAL_MINUTES - 1) },
+    });
     fireEvent.click(screen.getByRole("button", { name: /create/i }));
     expect(onSubmit).not.toHaveBeenCalled();
-    expect(screen.getByText(/at least 15/i)).toBeTruthy();
+    expect(
+      screen.getByText(new RegExp(`at least ${MIN_INTERVAL_MINUTES}`, "i")),
+    ).toBeTruthy();
   });
 
   it("rejects a restricted startUrl", async () => {

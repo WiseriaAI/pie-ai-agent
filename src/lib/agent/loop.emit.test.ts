@@ -59,6 +59,9 @@ vi.mock("./stream-completion", () => ({
 vi.mock("./prompt", () => ({
   buildAgentSystemPrompt: vi.fn(() => "sys"),
   buildObservationMessage: vi.fn((obs: string) => ({ role: "user", content: obs })),
+  // Block A — loop seeds the first user message via buildSeededTaskContent,
+  // which calls buildCurrentTimeBlock; provide a deterministic stub here.
+  buildCurrentTimeBlock: vi.fn((now: number) => `<current_time>epochMs=${now}</current_time>`),
 }));
 vi.mock("./window", () => ({
   applySlidingWindow: vi.fn((hist: unknown) => hist),
