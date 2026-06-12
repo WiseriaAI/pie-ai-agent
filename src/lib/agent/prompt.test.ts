@@ -246,8 +246,6 @@ describe("SEARCH_TOOL_GUIDANCE", () => {
     const prompt = buildAgentSystemPrompt(
       /* hasKeyboardTools */ false,
       /* hasMetaTools */ true,
-      [],
-      undefined,
     );
     expect(prompt).toContain("search_web");
     expect(prompt).toContain("Tavily");
@@ -347,12 +345,13 @@ describe("Page tools locator guidance (#113)", () => {
 });
 
 describe("buildAgentSystemPrompt — STATIC / cache invariant (#175)", () => {
-  it("output is byte-identical regardless of task and contains no populated <user_task> block", () => {
+  it("contains no populated <user_task> block and is deterministic across calls", () => {
     const a = buildAgentSystemPrompt(true, true, [{ tabId: 1, origin: "https://e.com" }], 1);
-    const b = buildAgentSystemPrompt(true, true, [{ tabId: 1, origin: "https://e.com" }], 1);
-    expect(a).toBe(b);
-    // The static prompt may mention `<user_task>` as a tag name in trust-model docs,
-    // but must never contain a populated (opened+closed) <user_task>…</user_task> block.
+    // the populated-block closing tag must never appear (task lives on the user message now)
     expect(a).not.toContain("</user_task>");
+    // same inputs → byte-identical output (no Date.now()/random leaking in → cache-stable)
+    expect(a).toBe(
+      buildAgentSystemPrompt(true, true, [{ tabId: 1, origin: "https://e.com" }], 1),
+    );
   });
 });
