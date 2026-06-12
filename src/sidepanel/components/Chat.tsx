@@ -22,6 +22,7 @@ import { FileChip } from "./FileChip";
 import { QuoteGlyph } from "./icons";
 import type { UseSession } from "@/sidepanel/hooks/useSession";
 import AgentStepGroup, { type AgentStepData } from "./AgentStepGroup";
+import ManagedErrorCta from "./ManagedErrorCta";
 import PinnedTabDropdown from "./PinnedTabDropdown";
 import type { DisplayMessage } from "@/types";
 import { QuoteChip } from "./QuoteChip";
@@ -164,6 +165,7 @@ export default function Chat({
     streamingText,
     streamingThinking,
     error,
+    errorKind,
     toast,
     pinnedTabs,
     pinMode,
@@ -1280,6 +1282,7 @@ After the skill completes, briefly summarize what was created (the user will see
             {error && (
               <div className="rounded-lg border border-warning-line bg-warning-tint px-3 py-2 text-[12px] text-warning">
                 {error}
+                <ManagedErrorCta kind={errorKind} />
               </div>
             )}
 

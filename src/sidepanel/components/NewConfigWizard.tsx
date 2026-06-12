@@ -32,6 +32,7 @@ import { fetchOpenAICompatModels } from "@/lib/openai-compat-models-fetch";
 import InstanceForm, { type InstanceFormPayload } from "./InstanceForm";
 import ProviderDropdown from "./ProviderDropdown";
 import CustomProviderFields from "./CustomProviderFields";
+import ManagedSubscribePanel from "./ManagedSubscribePanel";
 
 interface Props {
   onCreate: (provider: ProviderRef, payload: InstanceFormPayload) => void;
@@ -40,6 +41,8 @@ interface Props {
   existingProviderRefs?: ProviderRef[];
   testing?: boolean;
   testResult?: { ok: boolean; message: string } | null;
+  /** Test-only injection for the managed subscribe flow. */
+  __managedDeps?: import("./ManagedSubscribePanel").ManagedSubscribeDeps;
 }
 
 export interface ProviderTestOptions {
@@ -53,6 +56,7 @@ const DRAFT_CUSTOM_REF = "custom:__draft__";
 
 export default function NewConfigWizard(props: Props) {
   const t = useT();
+  const [entryMode, setEntryMode] = useState<"byok" | "managed">("byok");
   const [provider, setProvider] = useState<ProviderRef | null>(null);
   const [customProviders, setCustomProviders] = useState<StoredCustomProvider[]>([]);
   // Provider-level custom models pool — pre-populates the form's dropdown
@@ -126,7 +130,10 @@ export default function NewConfigWizard(props: Props) {
     () =>
       [...PROVIDER_REGISTRY].sort((a, b) =>
         providerDisplayName(a, t).localeCompare(providerDisplayName(b, t)),
-      ).filter((p) => !(props.existingProviderRefs ?? []).includes(p.id)),
+      )
+        .filter((p) => !(props.existingProviderRefs ?? []).includes(p.id))
+        // 排除 managed —— 它只通过顶部「官方订阅」切换进入，不进 BYOK 下拉。
+        .filter((p) => p.id !== "managed"),
     [props.existingProviderRefs, t],
   );
 
@@ -240,6 +247,33 @@ export default function NewConfigWizard(props: Props) {
 
   return (
     <div className="flex flex-col gap-3 rounded-[14px] border border-line bg-surface p-3.5">
+      <div role="group" aria-label="Config type" className="flex w-full overflow-hidden rounded-[10px] border border-line">
+        {([["byok", "Bring your own key"], ["managed", "Official subscription"]] as const).map(([m, label], i) => (
+          <button key={m} type="button" aria-pressed={entryMode === m}
+            onClick={() => setEntryMode(m)}
+            className={`flex flex-1 items-center justify-center px-1.5 py-2 text-[12px] ${i > 0 ? "border-l border-line" : ""} ${
+              entryMode === m ? "bg-accent-tint font-semibold text-accent" : "bg-transparent text-fg-3 hover:bg-field hover:text-fg-1"}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {entryMode === "managed" ? (
+        (props.existingProviderRefs ?? []).includes("managed") ? (
+          // A managed config already exists — re-running the subscribe flow would
+          // call createInstance again and throw "already has a config". Show a
+          // pointer to Settings instead of the login panel.
+          <div className="rounded-[14px] border border-line bg-surface p-3.5 text-[13px] text-fg-2">
+            Official subscription already configured — manage it in Settings.
+          </div>
+        ) : (
+          <ManagedSubscribePanel
+            deps={props.__managedDeps}
+            onCreated={(apiKey, email) => props.onCreate("managed", { nickname: email, apiKey, customModels: [] })}
+          />
+        )
+      ) : (
+        <>
       <ProviderDropdown
         value={provider}
         builtinProviders={sortedProviders}
@@ -487,6 +521,8 @@ export default function NewConfigWizard(props: Props) {
             </button>
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );

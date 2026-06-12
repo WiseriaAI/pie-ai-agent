@@ -125,6 +125,7 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
       const { next } = buildAssistant(baseMessages, accumulated, thinking);
       patchSlot(id, {
         error: msg.error,
+        errorKind: msg.kind ?? null,
         messages: next,
         accumulated: "",
         streamingThinking: "",
@@ -288,6 +289,7 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
         accumulated: "",
         streamingText: "",
         error: null,
+        errorKind: null,
       });
       postMessageRef?.current?.(msg.sessionId, {
         type: "chat-start",

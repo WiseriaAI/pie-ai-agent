@@ -166,6 +166,9 @@ export interface UseSession {
   streamingText: string;
   streamingThinking: string;
   error: string | null;
+  /** 最近一次 chat-error 的机读分类（见 ErrorKind）。null = 无/未分类。
+   *  驱动 Chat 错误气泡下的 managed CTA（budget→管理订阅 / auth→重登提示）。 */
+  errorKind: import("@/lib/model-router/types").ErrorKind | null;
   /** M2-U2 — transient toast from the SW (e.g. SEC-PLAN-009 flood warn).
    *  Rendered by Chat as a dismissable banner. Not persisted. */
   toast: { level: "warn" | "error" | "info"; text: string } | null;
@@ -636,6 +639,7 @@ export function useSession(): UseSession {
         streamingText: "",
         streamingThinking: "",
         error: null,
+        errorKind: null,
       });
 
       // Build the LLM-facing chat history (text-only, slash-expanded).
@@ -834,6 +838,7 @@ export function useSession(): UseSession {
       accumulated: "",
       streamFinished: false,
       error: null,
+      errorKind: null,
     });
     const sent = postWithReconnect(id, { type: "resume-task", sessionId: id });
     if (!sent) {
@@ -865,12 +870,12 @@ export function useSession(): UseSession {
   const clearMessages = useCallback(async () => {
     const id = sessionIdRef.current;
     if (!id) return;
-    patchSlot(id, { messages: [], error: null, toast: null });
+    patchSlot(id, { messages: [], error: null, errorKind: null, toast: null });
     await persistMessagesById(id, []);
   }, [patchSlot, persistMessagesById]);
 
   const clearError = useCallback(() => {
-    if (sessionIdRef.current) patchSlot(sessionIdRef.current, { error: null });
+    if (sessionIdRef.current) patchSlot(sessionIdRef.current, { error: null, errorKind: null });
   }, [patchSlot]);
   const clearToast = useCallback(() => {
     if (sessionIdRef.current) patchSlot(sessionIdRef.current, { toast: null });
@@ -936,6 +941,7 @@ export function useSession(): UseSession {
       return {
         messages: metaForActivate.messages ?? [],
         error: null,
+        errorKind: null,
         toast: null,
         accumulated: "",
         streamingText: "",
@@ -1071,6 +1077,7 @@ export function useSession(): UseSession {
     streamingText: active.streamingText,
     streamingThinking: active.streamingThinking,
     error: active.error,
+    errorKind: active.errorKind,
     toast: active.toast,
     quotes: active.quotes,
     usage: active.usage, // Issue #59

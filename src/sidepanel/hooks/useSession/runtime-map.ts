@@ -13,6 +13,8 @@ export type SessionRuntimeSlot = {
   streaming: boolean;
   streamingText: string;
   error: string | null;
+  /** 最近一次 chat-error 的分类（见 ErrorKind）。null = 无/未分类。 */
+  errorKind: import("@/lib/model-router/types").ErrorKind | null;
   toast: { level: "warn" | "error" | "info"; text: string } | null;
   messages: DisplayMessage[];
   /** Mid-stream text accumulator. Equivalent to the legacy
@@ -39,6 +41,7 @@ export const EMPTY_SLOT: SessionRuntimeSlot = {
   streaming: false,
   streamingText: "",
   error: null,
+  errorKind: null,
   toast: null,
   messages: [],
   accumulated: "",

@@ -13,6 +13,7 @@ import { streamChat as deepseekChat } from "./deepseek";
 import { streamChat as mimoChat } from "./mimo";
 import { streamChat as moonshotChat } from "./moonshot";
 import { streamChat as stepfunChat } from "./stepfun";
+import { streamChat as managedChat } from "./managed";
 import { streamChatOpenAICompat } from "./_shared/openai-compat-core";
 
 export type StreamChatFn = (
@@ -35,6 +36,7 @@ export const streamChatByProvider: Record<BuiltinProvider, StreamChatFn> = {
   moonshot: moonshotChat,
   "moonshot-cn": moonshotChat,
   stepfun: stepfunChat,
+  managed: managedChat,
 };
 
 const BUILTIN_DISPATCH: Record<BuiltinProvider, StreamChatFn> = streamChatByProvider;

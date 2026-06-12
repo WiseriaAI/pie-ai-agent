@@ -1726,7 +1726,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             lastStepUsage = event.usage;
           }
         } else if (event.type === "error") {
-          emit(withSession({ type: "chat-error", error: event.error }, sessionId));
+          emit(withSession({ type: "chat-error", error: event.error, kind: event.kind }, sessionId));
           await emitDone({
             type: "agent-done-task",
             success: false,

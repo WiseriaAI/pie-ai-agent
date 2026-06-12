@@ -49,6 +49,8 @@ export interface ToolDefinition {
   parameters: Record<string, unknown>; // JSON Schema object
 }
 
+export type ErrorKind = "auth" | "budget" | "ratelimit" | "http" | "network";
+
 export type StreamEvent =
   | { type: "text-delta"; text: string }
   | { type: "thinking-start"; replay: boolean }
@@ -62,4 +64,4 @@ export type StreamEvent =
       stopReason?: "end" | "tool_calls" | "length";
       usage?: { inputTokens: number; outputTokens: number };
     }
-  | { type: "error"; error: string };
+  | { type: "error"; error: string; kind?: ErrorKind };
