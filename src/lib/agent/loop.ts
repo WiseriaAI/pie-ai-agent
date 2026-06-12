@@ -794,8 +794,10 @@ export function buildSeededTaskContent(now: number, task: string): string {
  *   - earlier user turns stay untouched → the block never accumulates across
  *     turns; each task carries exactly one current-time stamp on the newest
  *     prompt.
- *   - the block is prepended OUTSIDE the `<untrusted_user_message>` wrapper —
- *     it is trusted runtime content, not user-supplied data.
+ *   - the block is prepended OUTSIDE the content's wrapper tag
+ *     (`<untrusted_user_message>` for earlier turns, `<user_task>` for the
+ *     live-task message) — it is trusted runtime content, not user-supplied
+ *     data.
  *   - string content → `"<current_time>…</current_time>\n\n" + original`.
  *   - ContentBlock[] content (image attachments) → a fresh leading text block
  *     carrying the time, with the original blocks preserved after it.

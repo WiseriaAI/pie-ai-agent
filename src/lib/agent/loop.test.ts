@@ -1786,6 +1786,7 @@ describe("#175 — foreground seed marks the latest user message as trusted <use
       { role: "assistant" as const, content: "ok" },
       { role: "user" as const, content: "second turn" },
     ];
+    // mirrors the production .map in runAgentLoop's path-2 seed branch
     const mapped = msgs.map((m, i) =>
       chatMessageToAgentMessage(m, i === msgs.length - 1),
     );
@@ -1793,6 +1794,8 @@ describe("#175 — foreground seed marks the latest user message as trusted <use
     expect(seeded[0]!.content).toBe(
       "<untrusted_user_message>first turn</untrusted_user_message>",
     );
+    // assistant turn passes through untouched
+    expect(seeded[1]!.content).toBe("ok");
     const last = seeded[2]!.content as string;
     expect(last).toContain(
       "</current_time>\n\n<user_task>second turn</user_task>",
