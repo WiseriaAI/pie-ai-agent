@@ -9,6 +9,7 @@
 import { useEffect, useState } from "react";
 import { getRun, updateRun } from "@/lib/schedules/store";
 import type { ScheduleRunRecord } from "@/lib/schedules/types";
+import { useT } from "@/lib/i18n/use-t";
 
 interface Props {
   runIds: string[];
@@ -21,6 +22,14 @@ const OUTCOME_STYLE: Record<ScheduleRunRecord["status"], string> = {
   failed: "text-warning",
   interrupted: "text-warning",
   skipped: "text-fg-3",
+};
+
+const RUN_STATUS_KEY: Record<ScheduleRunRecord["status"], Parameters<ReturnType<typeof useT>>[0]> = {
+  running: "schedules.runStatusRunning",
+  success: "schedules.runStatusSuccess",
+  failed: "schedules.runStatusFailed",
+  interrupted: "schedules.runStatusInterrupted",
+  skipped: "schedules.runStatusSkipped",
 };
 
 function fmtTime(ms: number): string {
@@ -37,6 +46,7 @@ function fmtTime(ms: number): string {
 }
 
 export default function ScheduleRunHistory({ runIds, onOpenSession }: Props) {
+  const t = useT();
   const [runs, setRuns] = useState<ScheduleRunRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -75,11 +85,11 @@ export default function ScheduleRunHistory({ runIds, onOpenSession }: Props) {
   }
 
   if (loading) {
-    return <p className="px-3.5 py-2 text-[11px] text-fg-3">Loading runs…</p>;
+    return <p className="px-3.5 py-2 text-[11px] text-fg-3">{t("schedules.loadingRuns")}</p>;
   }
 
   if (runs.length === 0) {
-    return <p className="px-3.5 py-2 text-[11px] text-fg-3">No runs yet.</p>;
+    return <p className="px-3.5 py-2 text-[11px] text-fg-3">{t("schedules.noRuns")}</p>;
   }
 
   return (
@@ -99,10 +109,15 @@ export default function ScheduleRunHistory({ runIds, onOpenSession }: Props) {
           >
             <div className="flex items-center gap-2">
               {run.unread && (
-                <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-accent" aria-label="unread" />
+                <span
+                  className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-accent"
+                  aria-label={t("schedules.unreadAria")}
+                />
               )}
               <span className="font-mono text-[11px] text-fg-2">#{run.runIndex}</span>
-              <span className={`text-[11px] font-medium ${OUTCOME_STYLE[run.status]}`}>{run.status}</span>
+              <span className={`text-[11px] font-medium ${OUTCOME_STYLE[run.status]}`}>
+                {t(RUN_STATUS_KEY[run.status])}
+              </span>
               <span className="ml-auto font-mono text-[10px] text-fg-3">{fmtTime(run.startedAt)}</span>
             </div>
             {(run.summary || run.error) && (

@@ -36,31 +36,43 @@ interface Props {
   onCreateViaChat?: (template: string) => void;
 }
 
+type T = ReturnType<typeof useT>;
+
+// Filled pills so each state reads clearly at a glance (the previous 8%-tint
+// chips were too faint): active = accent fill, paused = warning fill, completed
+// = neutral filled. disabled (below) = dashed outline. All use high-contrast
+// text-canvas on the saturated fills.
 const STATUS_STYLE: Record<ScheduleRecord["status"], string> = {
-  active: "text-accent border-accent-line bg-accent-tint",
-  paused: "text-warning border-warning-line bg-warning-tint",
-  completed: "text-fg-3 border-line bg-field",
+  active: "border-transparent bg-accent text-canvas",
+  paused: "border-transparent bg-warning text-canvas",
+  completed: "border-line bg-field text-fg-2",
 };
 
 /**
  * Badge label + style. `status` and the user `enabled` toggle are orthogonal, so
  * an active-but-user-disabled schedule must read as DISABLED — distinct from
  * system-PAUSED (auto-paused on failures / instance deletion) and terminal
- * COMPLETED. Dashed border = "you turned it off, can re-enable"; solid grey
+ * COMPLETED. Dashed outline = "you turned it off, can re-enable"; filled grey
  * COMPLETED = terminal. enabled is only meaningful while active (paused/completed
  * keep their own badge regardless of the toggle).
  */
-function badgeFor(rec: ScheduleRecord): { label: string; className: string } {
+function badgeFor(rec: ScheduleRecord, t: T): { label: string; className: string } {
   if (rec.status === "active" && !rec.enabled) {
-    return { label: "disabled", className: "text-fg-3 border-line border-dashed bg-field" };
+    return {
+      label: t("schedules.statusDisabled"),
+      className: "border-dashed border-line bg-transparent text-fg-3",
+    };
   }
-  return { label: rec.status, className: STATUS_STYLE[rec.status] };
+  const label = {
+    active: t("schedules.statusActive"),
+    paused: t("schedules.statusPaused"),
+    completed: t("schedules.statusCompleted"),
+  }[rec.status];
+  return { label, className: STATUS_STYLE[rec.status] };
 }
 
 function fmtNextRun(ms: number | undefined, enabled: boolean, status: ScheduleRecord["status"]): string {
-  if (!enabled) return "disabled";
-  if (status !== "active") return "—";
-  if (ms == null) return "—";
+  if (!enabled || status !== "active" || ms == null) return "—";
   const d = new Date(ms);
   try {
     return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -69,18 +81,18 @@ function fmtNextRun(ms: number | undefined, enabled: boolean, status: ScheduleRe
   }
 }
 
-function scheduleSummary(rec: ScheduleRecord): string {
+function scheduleSummary(rec: ScheduleRecord, t: T): string {
   const parts: string[] = [];
-  if (rec.spec.intervalMinutes != null) {
-    parts.push(`every ${rec.spec.intervalMinutes}m`);
-  } else {
-    parts.push("once");
-  }
-  if (rec.spec.maxRuns != null) {
-    parts.push(`${rec.runCount}/${rec.spec.maxRuns} runs`);
-  } else {
-    parts.push(`${rec.runCount} runs`);
-  }
+  parts.push(
+    rec.spec.intervalMinutes != null
+      ? t("schedules.summaryEvery", { n: rec.spec.intervalMinutes })
+      : t("schedules.summaryOnce"),
+  );
+  parts.push(
+    rec.spec.maxRuns != null
+      ? t("schedules.summaryRunsCapped", { count: rec.runCount, max: rec.spec.maxRuns })
+      : t("schedules.summaryRuns", { count: rec.runCount }),
+  );
   return parts.join(" · ");
 }
 
@@ -153,13 +165,15 @@ export default function SchedulesPanel({ onOpenSession, onCreateViaChat }: Props
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between px-4 pt-5">
-        <span className="text-[16px] font-semibold tracking-[-0.01em] text-fg-1">Schedules</span>
+        <span className="text-[16px] font-semibold tracking-[-0.01em] text-fg-1">
+          {t("schedules.title")}
+        </span>
         {!showCreate && !editingId && (
           <button
             onClick={() => setShowChoice((v) => !v)}
             className="flex h-8 items-center gap-2 rounded-[10px] border border-line bg-transparent px-3 text-[12px] text-accent hover:bg-field"
           >
-            New schedule
+            {t("schedules.newButton")}
           </button>
         )}
       </div>
@@ -169,9 +183,19 @@ export default function SchedulesPanel({ onOpenSession, onCreateViaChat }: Props
           {showChoice && !showCreate && !editingId && (
             <div
               data-testid="new-schedule-choice"
-              className="flex flex-col gap-2 rounded-[14px] border border-line bg-surface p-3"
+              className="scale-in relative flex flex-col gap-2 rounded-[14px] border border-line bg-surface p-3"
             >
-              <span className="px-0.5 text-[12px] font-medium text-fg-2">
+              <button
+                data-testid="new-choice-close"
+                aria-label={t("schedules.closeChoice")}
+                onClick={() => setShowChoice(false)}
+                className="absolute right-2.5 top-2.5 flex h-5 w-5 items-center justify-center rounded-[6px] text-fg-3 hover:bg-field hover:text-fg-1"
+              >
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                  <path d="M2 2 L10 10 M10 2 L2 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+              </button>
+              <span className="px-0.5 pr-6 text-[12px] font-medium text-fg-2">
                 {t("schedules.newChoiceTitle")}
               </span>
               <button
@@ -220,7 +244,7 @@ export default function SchedulesPanel({ onOpenSession, onCreateViaChat }: Props
 
           {!loading && schedules.length === 0 && !showCreate && !showChoice && (
             <div className="rounded-[10px] border border-line bg-surface px-3 py-4 text-[12px] leading-[18px] text-fg-2">
-              No schedules yet. Create one to have the agent run a task automatically on a recurring basis.
+              {t("schedules.emptyState")}
             </div>
           )}
 
@@ -276,16 +300,33 @@ function ScheduleCard({
   onDelete: () => void;
   onOpenSession: (sessionId: string) => void;
 }) {
+  const t = useT();
+  const badge = badgeFor(rec, t);
   return (
     <section className="flex flex-col overflow-hidden rounded-[14px] border border-line bg-surface">
       <div className="flex flex-col gap-2 px-3.5 py-3">
-        <div className="flex items-center gap-2.5">
+        {/* Title + status badge on the left; the enable toggle on the right. */}
+        <div className="flex items-center gap-2">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <span className="min-w-0 truncate text-[13px] font-medium text-fg-1" title={rec.title}>
+              {rec.title}
+            </span>
+            <span
+              className={`flex-shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium tracking-[0.02em] ${badge.className}`}
+            >
+              {badge.label}
+            </span>
+          </div>
           <button
             data-testid={`toggle-${rec.id}`}
             onClick={onToggle}
             role="switch"
             aria-checked={rec.enabled}
-            aria-label={rec.enabled ? `Disable ${rec.title}` : `Enable ${rec.title}`}
+            aria-label={
+              rec.enabled
+                ? t("schedules.disableAria", { title: rec.title })
+                : t("schedules.enableAria", { title: rec.title })
+            }
             className={`relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full border transition-colors ${
               rec.enabled ? "border-accent-line bg-accent-tint" : "border-line bg-field"
             }`}
@@ -296,41 +337,35 @@ function ScheduleCard({
               }`}
             />
           </button>
-          <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-fg-1" title={rec.title}>
-            {rec.title}
-          </span>
-          <span
-            className={`flex-shrink-0 rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.06em] ${badgeFor(rec).className}`}
-          >
-            {badgeFor(rec).label}
-          </span>
         </div>
 
-        <div className="flex items-center gap-2 pl-[46px] font-mono text-[10px] text-fg-3">
-          <span>{scheduleSummary(rec)}</span>
+        {/* Summary + next-run, left-aligned. */}
+        <div className="flex items-center gap-2 font-mono text-[10px] text-fg-3">
+          <span>{scheduleSummary(rec, t)}</span>
           <span>·</span>
-          <span>next {fmtNextRun(rec.nextRunAt, rec.enabled, rec.status)}</span>
+          <span>{t("schedules.nextPrefix")} {fmtNextRun(rec.nextRunAt, rec.enabled, rec.status)}</span>
         </div>
 
-        <div className="flex items-center gap-2 pl-[46px] pt-1">
+        {/* Actions, left-aligned. */}
+        <div className="flex items-center gap-2 pt-1">
           <button
             data-testid={`runnow-${rec.id}`}
             onClick={onRunNow}
             className="rounded-[10px] border border-line bg-transparent px-2.5 py-1 text-[11px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
           >
-            Run now
+            {t("schedules.runNow")}
           </button>
           <button
             onClick={onEdit}
             className="rounded-[10px] border border-line bg-transparent px-2.5 py-1 text-[11px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
           >
-            Edit
+            {t("schedules.edit")}
           </button>
           <button
             onClick={onToggleExpand}
             className="rounded-[10px] border border-line bg-transparent px-2.5 py-1 text-[11px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
           >
-            {expanded ? "Hide runs" : "Runs"}
+            {expanded ? t("schedules.hideRuns") : t("schedules.showRuns")}
           </button>
           <div className="flex-1" />
           {confirmDelete ? (
@@ -340,13 +375,13 @@ function ScheduleCard({
                 onClick={onDelete}
                 className="rounded-[10px] border border-warning-line bg-transparent px-2.5 py-1 text-[11px] text-warning hover:bg-warning-tint"
               >
-                Confirm
+                {t("schedules.confirmDelete")}
               </button>
               <button
                 onClick={onCancelDelete}
                 className="rounded-[10px] border border-line bg-transparent px-2.5 py-1 text-[11px] text-fg-2 hover:text-fg-1"
               >
-                Cancel
+                {t("schedules.cancel")}
               </button>
             </>
           ) : (
@@ -355,7 +390,7 @@ function ScheduleCard({
               onClick={onAskDelete}
               className="rounded-[10px] border border-line bg-transparent px-2.5 py-1 text-[11px] text-fg-3 hover:border-warning-line hover:text-warning"
             >
-              Delete
+              {t("schedules.delete")}
             </button>
           )}
         </div>

@@ -12,6 +12,7 @@ import type { DecryptedInstance } from "@/lib/instances";
 import type { ScheduleRecord } from "@/lib/schedules/types";
 import { MIN_INTERVAL_MINUTES } from "@/lib/schedules/types";
 import { isRestrictedScheduleUrl } from "@/lib/schedules/url-guard";
+import { useT } from "@/lib/i18n/use-t";
 import type {
   ScheduleCreatePayload,
   ScheduleUpdatePayload,
@@ -77,6 +78,7 @@ function initialState(editing: ScheduleRecord | undefined, activeInstanceId: str
 }
 
 export default function ScheduleForm({ instances, activeInstanceId, editing, onSubmit, onCancel }: Props) {
+  const t = useT();
   const isEdit = !!editing;
   const [form, setForm] = useState<FormState>(() => initialState(editing, activeInstanceId, instances));
   const [error, setError] = useState<string | null>(null);
@@ -87,22 +89,22 @@ export default function ScheduleForm({ instances, activeInstanceId, editing, onS
   }
 
   function validate(): string | null {
-    if (!form.title.trim()) return "Title is required";
-    if (!form.prompt.trim()) return "Prompt is required";
+    if (!form.title.trim()) return t("schedules.errTitleRequired");
+    if (!form.prompt.trim()) return t("schedules.errPromptRequired");
     if (form.intervalMinutes.trim()) {
       const n = Number(form.intervalMinutes);
       if (!Number.isFinite(n) || n < MIN_INTERVAL_MINUTES) {
-        return `Interval must be at least ${MIN_INTERVAL_MINUTES} minutes`;
+        return t("schedules.errIntervalMin", { min: MIN_INTERVAL_MINUTES });
       }
     }
     if (form.maxRuns.trim()) {
       const n = Number(form.maxRuns);
-      if (!Number.isFinite(n) || n < 1) return "Number of runs must be 1 or more";
+      if (!Number.isFinite(n) || n < 1) return t("schedules.errRunsMin");
     }
     if (form.startUrl.trim() && isRestrictedScheduleUrl(form.startUrl.trim())) {
-      return "Start URL is a restricted page (chrome://, about:, extension pages, Web Store) and cannot be used";
+      return t("schedules.errStartUrlRestricted");
     }
-    if (!form.instanceId) return "Select a config to run with";
+    if (!form.instanceId) return t("schedules.errSelectConfig");
     return null;
   }
 
@@ -153,13 +155,13 @@ export default function ScheduleForm({ instances, activeInstanceId, editing, onS
     <section className="flex flex-col gap-3 rounded-[14px] border border-line bg-surface p-3.5">
       <div className="flex items-baseline justify-between">
         <span className="text-[15px] font-semibold tracking-[-0.005em] text-fg-1">
-          {isEdit ? "Edit schedule" : "New schedule"}
+          {isEdit ? t("schedules.formEditTitle") : t("schedules.formNewTitle")}
         </span>
         <button
           onClick={onCancel}
           className="rounded-[10px] border border-line bg-transparent px-2.5 py-1 text-[11px] text-fg-2 hover:text-fg-1"
         >
-          Cancel
+          {t("schedules.cancel")}
         </button>
       </div>
 
@@ -169,36 +171,36 @@ export default function ScheduleForm({ instances, activeInstanceId, editing, onS
         </div>
       )}
 
-      <Field label="Title" htmlFor="sched-title">
+      <Field label={t("schedules.fieldTitle")} htmlFor="sched-title">
         <input
           id="sched-title"
           value={form.title}
           onChange={(e) => set("title", e.target.value)}
           className="w-full rounded-[10px] border border-line bg-field px-3 py-2 text-[12px] text-fg-1 placeholder:text-fg-3 focus:border-accent-line"
-          placeholder="Daily news digest"
+          placeholder={t("schedules.fieldTitlePlaceholder")}
         />
       </Field>
 
-      <Field label="Prompt" htmlFor="sched-prompt">
+      <Field label={t("schedules.fieldPrompt")} htmlFor="sched-prompt">
         <textarea
           id="sched-prompt"
           value={form.prompt}
           onChange={(e) => set("prompt", e.target.value)}
           rows={4}
           className="w-full rounded-[10px] border border-line bg-field px-3 py-2 text-[12px] leading-[18px] text-fg-1 placeholder:text-fg-3 focus:border-accent-line"
-          placeholder="The task the agent runs each time…"
+          placeholder={t("schedules.fieldPromptPlaceholder")}
         />
       </Field>
 
       {!isEdit && (
-        <Field label="Config" htmlFor="sched-instance">
+        <Field label={t("schedules.fieldConfig")} htmlFor="sched-instance">
           <select
             id="sched-instance"
             value={form.instanceId}
             onChange={(e) => set("instanceId", e.target.value)}
             className="w-full rounded-[10px] border border-line bg-field px-3 py-2 text-[12px] text-fg-1 focus:border-accent-line"
           >
-            {instances.length === 0 && <option value="">No config available</option>}
+            {instances.length === 0 && <option value="">{t("schedules.configNone")}</option>}
             {instances.map((inst) => (
               <option key={inst.id} value={inst.id}>
                 {inst.nickname} · {inst.provider}
@@ -209,7 +211,7 @@ export default function ScheduleForm({ instances, activeInstanceId, editing, onS
       )}
 
       <div className="grid grid-cols-3 gap-2">
-        <Field label="Start at" htmlFor="sched-startat" hint="optional">
+        <Field label={t("schedules.fieldStartAt")} htmlFor="sched-startat" hint={t("schedules.hintOptional")}>
           <input
             id="sched-startat"
             type="datetime-local"
@@ -218,7 +220,7 @@ export default function ScheduleForm({ instances, activeInstanceId, editing, onS
             className="w-full rounded-[10px] border border-line bg-field px-2 py-2 text-[11px] text-fg-1 focus:border-accent-line"
           />
         </Field>
-        <Field label="Interval (min)" htmlFor="sched-interval" hint={`≥${MIN_INTERVAL_MINUTES}`}>
+        <Field label={t("schedules.fieldInterval")} htmlFor="sched-interval" hint={`≥${MIN_INTERVAL_MINUTES}`}>
           <input
             id="sched-interval"
             type="number"
@@ -226,10 +228,10 @@ export default function ScheduleForm({ instances, activeInstanceId, editing, onS
             value={form.intervalMinutes}
             onChange={(e) => set("intervalMinutes", e.target.value)}
             className="w-full rounded-[10px] border border-line bg-field px-3 py-2 text-[12px] text-fg-1 placeholder:text-fg-3 focus:border-accent-line"
-            placeholder="once"
+            placeholder={t("schedules.placeholderOnce")}
           />
         </Field>
-        <Field label="Runs" htmlFor="sched-maxruns" hint="∞ if blank">
+        <Field label={t("schedules.fieldRuns")} htmlFor="sched-maxruns" hint={t("schedules.hintInfinityBlank")}>
           <input
             id="sched-maxruns"
             type="number"
@@ -242,7 +244,7 @@ export default function ScheduleForm({ instances, activeInstanceId, editing, onS
         </Field>
       </div>
 
-      <Field label="Start URL" htmlFor="sched-starturl" hint="optional — opens before each run">
+      <Field label={t("schedules.fieldStartUrl")} htmlFor="sched-starturl" hint={t("schedules.startUrlHint")}>
         <input
           id="sched-starturl"
           value={form.startUrl}
@@ -254,10 +256,10 @@ export default function ScheduleForm({ instances, activeInstanceId, editing, onS
 
       <details className="text-[12px] text-fg-2">
         <summary className="cursor-pointer select-none text-[12px] text-fg-3 hover:text-fg-2">
-          Per-run limits (advanced)
+          {t("schedules.advancedSummary")}
         </summary>
         <div className="mt-2 grid grid-cols-2 gap-2">
-          <Field label="Max steps / run" htmlFor="sched-maxsteps" hint="optional">
+          <Field label={t("schedules.fieldMaxSteps")} htmlFor="sched-maxsteps" hint={t("schedules.hintOptional")}>
             <input
               id="sched-maxsteps"
               type="number"
@@ -265,10 +267,10 @@ export default function ScheduleForm({ instances, activeInstanceId, editing, onS
               value={form.maxStepsPerRun}
               onChange={(e) => set("maxStepsPerRun", e.target.value)}
               className="w-full rounded-[10px] border border-line bg-field px-3 py-2 text-[12px] text-fg-1 placeholder:text-fg-3 focus:border-accent-line"
-              placeholder="none"
+              placeholder={t("schedules.placeholderNone")}
             />
           </Field>
-          <Field label="Max run (ms)" htmlFor="sched-maxms" hint="optional">
+          <Field label={t("schedules.fieldMaxMs")} htmlFor="sched-maxms" hint={t("schedules.hintOptional")}>
             <input
               id="sched-maxms"
               type="number"
@@ -276,7 +278,7 @@ export default function ScheduleForm({ instances, activeInstanceId, editing, onS
               value={form.maxRunMs}
               onChange={(e) => set("maxRunMs", e.target.value)}
               className="w-full rounded-[10px] border border-line bg-field px-3 py-2 text-[12px] text-fg-1 placeholder:text-fg-3 focus:border-accent-line"
-              placeholder="none"
+              placeholder={t("schedules.placeholderNone")}
             />
           </Field>
         </div>
@@ -287,14 +289,14 @@ export default function ScheduleForm({ instances, activeInstanceId, editing, onS
           onClick={onCancel}
           className="rounded-[10px] border border-line bg-transparent px-3 py-1.5 text-[11px] text-fg-2 hover:text-fg-1"
         >
-          Cancel
+          {t("schedules.cancel")}
         </button>
         <button
           onClick={() => void handleSubmit()}
           disabled={submitting}
           className="rounded-[10px] bg-fg-1 px-3 py-1.5 text-[11px] font-medium text-canvas hover:opacity-90 disabled:opacity-50"
         >
-          {isEdit ? "Save changes" : "Create schedule"}
+          {isEdit ? t("schedules.save") : t("schedules.create")}
         </button>
       </div>
     </section>

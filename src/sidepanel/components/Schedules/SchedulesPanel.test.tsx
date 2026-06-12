@@ -73,15 +73,16 @@ describe("SchedulesPanel", () => {
   it("active 但 enabled=false → badge 显示 disabled（而非 active）", async () => {
     schedules.push(makeSched({ id: "sched_1", status: "active", enabled: false }));
     render(<SchedulesPanel onOpenSession={vi.fn()} />);
-    expect(await screen.findByText("disabled")).toBeTruthy();
-    expect(screen.queryByText("active")).toBeNull();
+    // i18n labels (English fallback dict outside I18nProvider).
+    expect(await screen.findByText("Disabled")).toBeTruthy();
+    expect(screen.queryByText("Active")).toBeNull();
   });
 
   it("paused badge 不受 enabled 开关影响（仍显示 paused，非 disabled）", async () => {
     schedules.push(makeSched({ id: "sched_p", status: "paused", enabled: false }));
     render(<SchedulesPanel onOpenSession={vi.fn()} />);
-    expect(await screen.findByText("paused")).toBeTruthy();
-    expect(screen.queryByText("disabled")).toBeNull();
+    expect(await screen.findByText("Paused")).toBeTruthy();
+    expect(screen.queryByText("Disabled")).toBeNull();
   });
 
   it("toggle switch calls toggleSchedule with the negated enabled", async () => {
