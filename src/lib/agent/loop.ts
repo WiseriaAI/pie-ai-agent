@@ -283,7 +283,7 @@ export interface AgentLoopContext {
  * - `user` messages are wrapped in
  *   `<untrusted_user_message>…</untrusted_user_message>` with
  *   `escapeUntrustedWrappers` applied first (D7 idempotent).
- *   When `asLiveTask=true` the current turn is instead wrapped in the
+ *   When `asLiveTask = true` the current turn is instead wrapped in the
  *   trusted `<user_task>…</user_task>` marker with `escapeTrustedWrappers`
  *   applied to neutralise any literal `</user_task>` in the input.
  *   Default is `false` so all existing call sites are unaffected.

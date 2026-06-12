@@ -813,6 +813,7 @@ describe("U2 — chatMessageToAgentMessage (D7 wrap invariants)", () => {
       type: "text",
       text: "<user_task>describe</user_task>",
     });
+    expect(blocks).toHaveLength(2);
   });
 
   it("default (asLiveTask omitted) still wraps untrusted (regression)", () => {
