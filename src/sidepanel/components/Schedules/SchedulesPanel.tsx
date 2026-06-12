@@ -37,6 +37,21 @@ const STATUS_STYLE: Record<ScheduleRecord["status"], string> = {
   completed: "text-fg-3 border-line bg-field",
 };
 
+/**
+ * Badge label + style. `status` and the user `enabled` toggle are orthogonal, so
+ * an active-but-user-disabled schedule must read as DISABLED — distinct from
+ * system-PAUSED (auto-paused on failures / instance deletion) and terminal
+ * COMPLETED. Dashed border = "you turned it off, can re-enable"; solid grey
+ * COMPLETED = terminal. enabled is only meaningful while active (paused/completed
+ * keep their own badge regardless of the toggle).
+ */
+function badgeFor(rec: ScheduleRecord): { label: string; className: string } {
+  if (rec.status === "active" && !rec.enabled) {
+    return { label: "disabled", className: "text-fg-3 border-line border-dashed bg-field" };
+  }
+  return { label: rec.status, className: STATUS_STYLE[rec.status] };
+}
+
 function fmtNextRun(ms: number | undefined, enabled: boolean, status: ScheduleRecord["status"]): string {
   if (!enabled) return "disabled";
   if (status !== "active") return "—";
@@ -243,9 +258,9 @@ function ScheduleCard({
             {rec.title}
           </span>
           <span
-            className={`flex-shrink-0 rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.06em] ${STATUS_STYLE[rec.status]}`}
+            className={`flex-shrink-0 rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.06em] ${badgeFor(rec).className}`}
           >
-            {rec.status}
+            {badgeFor(rec).label}
           </span>
         </div>
 
