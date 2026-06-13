@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import { render, screen, act, waitFor, cleanup } from "@testing-library/react";
 import { chromeMock } from "@/test/setup";
-import { I18nProvider, useT, setLocale, getLocale } from "../use-t";
+import { I18nProvider, useT, useI18n, setLocale, getLocale } from "../use-t";
 import { STORAGE_KEY_UI_LOCALE } from "../types";
 import { getConfig, setConfig } from "@/lib/idb/config-store";
 import { publishChange } from "@/lib/store-bus";
@@ -10,6 +10,15 @@ import { _resetForTests } from "@/lib/idb/db";
 function Probe({ k, params }: { k: Parameters<ReturnType<typeof useT>>[0]; params?: Record<string, string | number> }) {
   const t = useT();
   return <span data-testid="probe">{t(k as never, params)}</span>;
+}
+
+function LocaleProbe() {
+  const { locale, t } = useI18n();
+  return (
+    <span data-testid="locale-probe">
+      {locale}:{t("common.cancel")}
+    </span>
+  );
 }
 
 afterEach(() => {
@@ -39,6 +48,43 @@ describe("t / useT / I18nProvider", () => {
       </I18nProvider>,
     );
     await waitFor(() => expect(screen.getByTestId("probe").textContent).toBe("取消"));
+  });
+
+  it("renders Spanish from the registry dictionary", async () => {
+    await setConfig(STORAGE_KEY_UI_LOCALE, "es-419");
+    render(
+      <I18nProvider>
+        <Probe k="common.cancel" />
+      </I18nProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId("probe").textContent).toBe("Cancelar"));
+  });
+
+  it("renders Japanese from the registry dictionary", async () => {
+    await setConfig(STORAGE_KEY_UI_LOCALE, "ja");
+    render(
+      <I18nProvider>
+        <Probe k="common.cancel" />
+      </I18nProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId("probe").textContent).toBe("キャンセル"));
+  });
+
+  it("useI18n exposes the effective locale and translator", async () => {
+    await setConfig(STORAGE_KEY_UI_LOCALE, "pt-BR");
+    render(
+      <I18nProvider>
+        <LocaleProbe />
+      </I18nProvider>,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("locale-probe").textContent).toBe("pt-BR:Cancelar"),
+    );
+  });
+
+  it("useI18n falls back to English outside I18nProvider", () => {
+    render(<LocaleProbe />);
+    expect(screen.getByTestId("locale-probe").textContent).toBe("en:Cancel");
   });
 
   it("setLocale writes storage and re-renders the tree", async () => {

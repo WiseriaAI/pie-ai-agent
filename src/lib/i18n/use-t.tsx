@@ -105,13 +105,17 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }
 
-export function useT() {
+export function useI18n(): I18nContextValue {
   const ctx = useContext(I18nContext);
   if (!ctx) {
     // Outside Provider (e.g. early SSR-style render) — fall back to English.
-    return makeT("en");
+    return { locale: "en", t: makeT("en") };
   }
-  return ctx.t;
+  return ctx;
+}
+
+export function useT() {
+  return useI18n().t;
 }
 
 export async function setLocale(next: LocaleSetting): Promise<void> {
