@@ -1,10 +1,17 @@
-export type Locale = "en" | "zh-CN";
+import type { Locale } from "./locales";
+export type { Locale } from "./locales";
 
-export const SUPPORTED_LOCALES: readonly Locale[] = ["en", "zh-CN"] as const;
+export { SUPPORTED_LOCALES } from "./locales";
 
 export type LocaleSetting = "auto" | Locale;
 
+export type AssistantLanguageSetting =
+  | "auto-follow-ui"
+  | "auto-detect-user-message"
+  | Locale;
+
 export const STORAGE_KEY_UI_LOCALE = "ui_locale";
+export const STORAGE_KEY_ASSISTANT_LANGUAGE = "assistant_language";
 
 // Dictionary tree is plain nested objects of strings. We don't allow arrays or
 // other shapes — keeps the parity test and type derivation simple.

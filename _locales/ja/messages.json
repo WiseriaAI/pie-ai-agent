@@ -1,0 +1,10 @@
+{
+  "extension_name": {
+    "message": "Pie · ブラウザで動くオープンなAIエージェント",
+    "description": "Extension name shown in Chrome and the Web Store."
+  },
+  "extension_description": {
+    "message": "自分のAPIキーでページ理解とブラウザ操作を行うオープンなAIエージェント。バックエンド、テレメトリ、プロキシなし。",
+    "description": "Short description shown in the Web Store and chrome://extensions."
+  }
+}

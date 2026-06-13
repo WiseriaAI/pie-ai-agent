@@ -6,10 +6,10 @@
 // Clicking a run that has a sessionId opens that session (onOpenSession, wired
 // in App → session.setActive) and clears its unread flag (updateRun).
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { getRun, updateRun } from "@/lib/schedules/store";
 import type { ScheduleRunRecord } from "@/lib/schedules/types";
-import { useT } from "@/lib/i18n/use-t";
+import { useI18n } from "@/lib/i18n";
 
 interface Props {
   runIds: string[];
@@ -24,7 +24,7 @@ const OUTCOME_STYLE: Record<ScheduleRunRecord["status"], string> = {
   skipped: "text-fg-3",
 };
 
-const RUN_STATUS_KEY: Record<ScheduleRunRecord["status"], Parameters<ReturnType<typeof useT>>[0]> = {
+const RUN_STATUS_KEY: Record<ScheduleRunRecord["status"], Parameters<ReturnType<typeof useI18n>["t"]>[0]> = {
   running: "schedules.runStatusRunning",
   success: "schedules.runStatusSuccess",
   failed: "schedules.runStatusFailed",
@@ -32,9 +32,9 @@ const RUN_STATUS_KEY: Record<ScheduleRunRecord["status"], Parameters<ReturnType<
   skipped: "schedules.runStatusSkipped",
 };
 
-function fmtTime(ms: number): string {
+function fmtTime(ms: number, locale: string): string {
   try {
-    return new Date(ms).toLocaleString(undefined, {
+    return new Date(ms).toLocaleString(locale, {
       month: "short",
       day: "numeric",
       hour: "2-digit",
@@ -46,7 +46,8 @@ function fmtTime(ms: number): string {
 }
 
 export default function ScheduleRunHistory({ runIds, onOpenSession }: Props) {
-  const t = useT();
+  const { locale, t } = useI18n();
+  const numberFormat = useMemo(() => new Intl.NumberFormat(locale), [locale]);
   const [runs, setRuns] = useState<ScheduleRunRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -114,11 +115,11 @@ export default function ScheduleRunHistory({ runIds, onOpenSession }: Props) {
                   aria-label={t("schedules.unreadAria")}
                 />
               )}
-              <span className="font-mono text-[11px] text-fg-2">#{run.runIndex}</span>
+              <span className="font-mono text-[11px] text-fg-2">#{numberFormat.format(run.runIndex)}</span>
               <span className={`text-[11px] font-medium ${OUTCOME_STYLE[run.status]}`}>
                 {t(RUN_STATUS_KEY[run.status])}
               </span>
-              <span className="ml-auto font-mono text-[10px] text-fg-3">{fmtTime(run.startedAt)}</span>
+              <span className="ml-auto font-mono text-[10px] text-fg-3">{fmtTime(run.startedAt, locale)}</span>
             </div>
             {(run.summary || run.error) && (
               <p className="text-[11px] leading-[16px] text-fg-2">{run.error ?? run.summary}</p>

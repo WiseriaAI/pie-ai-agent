@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { ProviderRef, ModelMeta, BuiltinProvider } from "@/lib/model-router";
 import { getProviderMeta, resolveEndpointVariant } from "@/lib/model-router";
 import { CUSTOM_PREFIX } from "@/lib/custom-providers";
-import { useT } from "@/lib/i18n";
+import { useI18n } from "@/lib/i18n";
 import { type StoredCustomModelMeta, DEFAULT_CUSTOM_MODEL_MAX_CONTEXT } from "@/lib/provider-custom-model-meta";
 import ModelMetaEditor, { type ModelMetaDraft } from "./ModelMetaEditor";
 
@@ -28,7 +28,7 @@ interface Props {
  * 在 Composer 的 ModelPicker 里做。
  */
 export default function ProviderModelList(props: Props) {
-  const t = useT();
+  const { locale, t } = useI18n();
   const isCustomProvider = props.provider.startsWith(CUSTOM_PREFIX);
   const meta = isCustomProvider ? undefined : getProviderMeta(props.provider as BuiltinProvider);
   const variant = meta ? resolveEndpointVariant(meta, props.endpointVariant) : undefined;
@@ -53,7 +53,7 @@ export default function ProviderModelList(props: Props) {
       {isLazy && props.onRefresh && (
         <div className="flex items-center justify-between border-b border-line px-3 py-1.5 text-[10px] text-fg-3">
           <span className="font-mono">
-            {props.fetchedAt ? new Date(props.fetchedAt).toLocaleString() : t("modelDropdown.notFetched")}
+            {props.fetchedAt ? new Date(props.fetchedAt).toLocaleString(locale) : t("modelDropdown.notFetched")}
           </span>
           <button onClick={props.onRefresh} className="hover:text-fg-1">
             {props.isFetching ? t("modelDropdown.fetching") : t("modelDropdown.refresh")}

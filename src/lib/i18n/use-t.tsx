@@ -17,13 +17,8 @@ import {
 import { setConfig } from "@/lib/idb/config-store";
 import { onStoreChange } from "@/lib/store-bus";
 import { enDict, type EnDict } from "./dictionaries/en";
-import { zhCNDict } from "./dictionaries/zh-CN";
 import { resolveLocale, normalizeBrowserLocale } from "./locale-resolver";
-
-const dictionaries: Record<Locale, DictNode> = {
-  en: enDict,
-  "zh-CN": zhCNDict,
-};
+import { LOCALE_REGISTRY } from "./locales";
 
 export type DictKey = DotPathKey<EnDict>;
 
@@ -53,7 +48,7 @@ function substitute(template: string, params?: TParams): string {
 
 function makeT(locale: Locale) {
   return function t<K extends DictKey>(key: K, params?: TParams): string {
-    const dict = dictionaries[locale];
+    const dict = LOCALE_REGISTRY[locale].dictionary;
     const hit = lookup(dict, key);
     if (hit !== undefined) return substitute(hit, params);
     const enHit = lookup(enDict, key);
@@ -110,13 +105,17 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }
 
-export function useT() {
+export function useI18n(): I18nContextValue {
   const ctx = useContext(I18nContext);
   if (!ctx) {
     // Outside Provider (e.g. early SSR-style render) — fall back to English.
-    return makeT("en");
+    return { locale: "en", t: makeT("en") };
   }
-  return ctx.t;
+  return ctx;
+}
+
+export function useT() {
+  return useI18n().t;
 }
 
 export async function setLocale(next: LocaleSetting): Promise<void> {

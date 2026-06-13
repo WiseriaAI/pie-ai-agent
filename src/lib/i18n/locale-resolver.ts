@@ -7,9 +7,13 @@ import {
 import { getConfig } from "@/lib/idb/config-store";
 
 export function normalizeBrowserLocale(raw: string): Locale {
-  if (!raw) return "en";
-  if (raw.toLowerCase().startsWith("zh")) return "zh-CN";
-  if (raw.toLowerCase().startsWith("en")) return "en";
+  const v = raw.toLowerCase();
+  if (!v) return "en";
+  if (v.startsWith("zh")) return "zh-CN";
+  if (v.startsWith("es")) return "es-419";
+  if (v === "ja" || v.startsWith("ja-")) return "ja";
+  if (v === "pt-br") return "pt-BR";
+  if (v.startsWith("en")) return "en";
   return "en";
 }
 

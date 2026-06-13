@@ -1,5 +1,8 @@
 import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
+import { I18nProvider, STORAGE_KEY_UI_LOCALE } from "@/lib/i18n";
+import { setConfig } from "@/lib/idb/config-store";
+import { _resetForTests } from "@/lib/idb/db";
 import ScheduleRunHistory from "./ScheduleRunHistory";
 import type { ScheduleRunRecord } from "@/lib/schedules/types";
 
@@ -22,7 +25,8 @@ function makeRun(o: Partial<ScheduleRunRecord> & { recordId: string }): Schedule
   };
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  await _resetForTests();
   runs.clear();
   vi.clearAllMocks();
 });
@@ -62,5 +66,18 @@ describe("ScheduleRunHistory", () => {
   it("does not call getRun for an empty list", async () => {
     render(<ScheduleRunHistory runIds={[]} onOpenSession={vi.fn()} />);
     await waitFor(() => expect(getRun).not.toHaveBeenCalled());
+  });
+
+  it("formats run index with the effective locale", async () => {
+    await setConfig(STORAGE_KEY_UI_LOCALE, "pt-BR");
+    runs.set("run_locale", makeRun({ recordId: "run_locale", runIndex: 1234 }));
+
+    render(
+      <I18nProvider>
+        <ScheduleRunHistory runIds={["run_locale"]} onOpenSession={vi.fn()} />
+      </I18nProvider>,
+    );
+
+    expect(await screen.findByText("#1.234")).toBeTruthy();
   });
 });
