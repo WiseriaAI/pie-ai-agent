@@ -63,7 +63,8 @@ export default function ManagedErrorCta({ kind, deps }: { kind: ErrorKind | null
       setEnt(null);
     }
     return () => { live = false; };
-  }, [kind, getManagedKey, getEnt]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kind]);
 
   if (!key || (kind !== "budget" && kind !== "auth")) return null;
   if (!ent) return null; // entitlement 未就绪 → 暂不渲染，避免闪烁

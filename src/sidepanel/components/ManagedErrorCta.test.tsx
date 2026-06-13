@@ -67,4 +67,18 @@ describe("ManagedErrorCta", () => {
     }} />);
     await waitFor(() => expect(container.textContent).toBe(""));
   });
+
+  it("不随 re-render 重复拉取 entitlement（effect 仅依赖 kind）", async () => {
+    const getEnt = vi.fn(async () => ent({ plan: "active" }));
+    const props = () => ({
+      kind: "budget" as const,
+      deps: { getManagedKey: async () => "sk-v", getEnt },
+    });
+    const { rerender } = render(<ManagedErrorCta {...props()} />);
+    await screen.findByText(/used this week's quota/i);
+    rerender(<ManagedErrorCta {...props()} />);
+    rerender(<ManagedErrorCta {...props()} />);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(getEnt).toHaveBeenCalledTimes(1);
+  });
 });
