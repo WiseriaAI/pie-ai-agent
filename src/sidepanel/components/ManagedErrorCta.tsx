@@ -4,6 +4,7 @@ import type { Entitlement } from "@/lib/managed-auth";
 import { listInstances } from "@/lib/instances";
 import { getEntitlement, openCheckout, openPortal } from "@/lib/managed-account";
 import { formatResetDate } from "@/lib/managed-format";
+import { useI18n } from "@/lib/i18n";
 
 export interface ManagedErrorCtaDeps {
   getManagedKey?: () => Promise<string | null>;
@@ -39,6 +40,7 @@ function CtaCard({ tone, title, body, action }: {
 }
 
 export default function ManagedErrorCta({ kind, deps }: { kind: ErrorKind | null; deps?: ManagedErrorCtaDeps }) {
+  const { t, locale } = useI18n();
   const getManagedKey = deps?.getManagedKey ?? defaultGetManagedKey;
   const getEnt = deps?.getEnt ?? ((k: string) => getEntitlement(k));
   const portal = deps?.portal ?? ((k: string) => openPortal(k));
@@ -72,27 +74,27 @@ export default function ManagedErrorCta({ kind, deps }: { kind: ErrorKind | null
   // 欠费 dunning：blocked 不论 auth/budget 都引导更新支付
   if (ent.plan === "blocked") {
     return (
-      <CtaCard tone="warning" title="Payment failed" body="Update your payment method to continue."
-        action={{ label: "Update payment", on: () => { void portal(key).catch(() => {}); } }} />
+      <CtaCard tone="warning" title={t("managed.cta.dunningTitle")} body={t("managed.cta.dunningBody")}
+        action={{ label: t("managed.cta.dunningAction"), on: () => { void portal(key).catch(() => {}); } }} />
     );
   }
 
   if (kind === "auth") {
     // 非 blocked 的 401 → key 真失效/过期
-    return <div className="mt-1.5 text-[12px] text-fg-3">Your session expired — sign in again from Settings → Configs.</div>;
+    return <div className="mt-1.5 text-[12px] text-fg-3">{t("managed.cta.sessionExpired")}</div>;
   }
 
   // kind === "budget"
   if (ent.plan === "active") {
-    const reset = formatResetDate(ent.quota?.weekly?.resetAt);
+    const reset = formatResetDate(ent.quota?.weekly?.resetAt, locale);
     return (
-      <CtaCard tone="neutral" title="You've used this week's quota"
-        body={reset ? `Resets ${reset}. You can keep chatting then.` : "Resets soon. You can keep chatting then."} />
+      <CtaCard tone="neutral" title={t("managed.cta.weeklyTitle")}
+        body={reset ? t("managed.cta.weeklyBody", { date: reset }) : t("managed.cta.weeklyBodyNoDate")} />
     );
   }
   // plan === "none"
   return (
-    <CtaCard tone="neutral" title="Subscribe to keep chatting" body="Your subscription isn't active."
-      action={{ label: "Subscribe", on: () => { void checkout(key).catch(() => {}); } }} />
+    <CtaCard tone="neutral" title={t("managed.cta.subscribeTitle")} body={t("managed.cta.subscribeBody")}
+      action={{ label: t("managed.cta.subscribeAction"), on: () => { void checkout(key).catch(() => {}); } }} />
   );
 }

@@ -22,9 +22,9 @@ export const TIER_TEXT_CLASS: Record<QuotaTier, string> = {
 };
 
 /** unix 秒 → "Jun 20, 2026"；null/非有限 → null（调用方据此省略整行）。 */
-export function formatDate(unixSec: number | null | undefined): string | null {
+export function formatDate(unixSec: number | null | undefined, locale: string = "en"): string | null {
   if (unixSec == null || !Number.isFinite(unixSec)) return null;
-  return new Date(unixSec * 1000).toLocaleDateString("en-US", {
+  return new Date(unixSec * 1000).toLocaleDateString(locale, {
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -32,9 +32,9 @@ export function formatDate(unixSec: number | null | undefined): string | null {
 }
 
 /** unix 秒 → "Mon, Jun 16"；null/非有限 → null。 */
-export function formatResetDate(unixSec: number | null | undefined): string | null {
+export function formatResetDate(unixSec: number | null | undefined, locale: string = "en"): string | null {
   if (unixSec == null || !Number.isFinite(unixSec)) return null;
-  return new Date(unixSec * 1000).toLocaleDateString("en-US", {
+  return new Date(unixSec * 1000).toLocaleDateString(locale, {
     weekday: "short",
     month: "short",
     day: "numeric",
