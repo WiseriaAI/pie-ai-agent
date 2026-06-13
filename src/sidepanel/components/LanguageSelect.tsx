@@ -1,11 +1,15 @@
 import { useState, useEffect, useRef } from "react";
-import { useT, setLocale, type LocaleSetting, type DictKey } from "@/lib/i18n";
+import { useT, setLocale, type LocaleSetting } from "@/lib/i18n";
 import { getConfig } from "@/lib/idb/config-store";
+import { LOCALE_REGISTRY, SUPPORTED_LOCALES } from "@/lib/i18n/locales";
+import { STORAGE_KEY_UI_LOCALE } from "@/lib/i18n";
 
-const OPTIONS: { value: LocaleSetting; labelKey: DictKey }[] = [
-  { value: "auto", labelKey: "settings.language.optionAuto" },
-  { value: "en", labelKey: "settings.language.optionEn" },
-  { value: "zh-CN", labelKey: "settings.language.optionZhCN" },
+const OPTIONS: { value: LocaleSetting; label: string; labelKey?: Parameters<ReturnType<typeof useT>>[0] }[] = [
+  { value: "auto", label: "", labelKey: "settings.language.optionAuto" },
+  ...SUPPORTED_LOCALES.map((locale) => ({
+    value: locale,
+    label: LOCALE_REGISTRY[locale].nativeLabel,
+  })),
 ];
 
 export default function LanguageSelect() {
@@ -15,8 +19,8 @@ export default function LanguageSelect() {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    getConfig<string>("ui_locale").then((v) => {
-      if (v === "auto" || v === "en" || v === "zh-CN") setValue(v);
+    getConfig<string>(STORAGE_KEY_UI_LOCALE).then((v) => {
+      if (OPTIONS.some((o) => o.value === v)) setValue(v as LocaleSetting);
     });
   }, []);
 
@@ -34,7 +38,8 @@ export default function LanguageSelect() {
     setOpen(false);
     void setLocale(v);
   };
-  const currentLabel = t(OPTIONS.find((o) => o.value === value)!.labelKey);
+  const labelFor = (o: (typeof OPTIONS)[number]) => o.labelKey ? t(o.labelKey) : o.label;
+  const currentLabel = labelFor(OPTIONS.find((o) => o.value === value)!);
 
   return (
     <div ref={ref} className="relative">
@@ -74,7 +79,7 @@ export default function LanguageSelect() {
                   active ? "bg-accent-tint font-medium text-fg-1" : "text-fg-2 hover:text-fg-1"
                 }`}
               >
-                <span>{t(o.labelKey)}</span>
+                <span>{labelFor(o)}</span>
                 {active && (
                   <svg width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden="true" className="text-accent">
                     <path
