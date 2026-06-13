@@ -50,6 +50,10 @@ vi.mock("./tool-names", () => ({
   getToolClass: vi.fn(() => "read"),
   SCREENSHOT_TOOL_NAMES: [],
   SCREENSHOT_TOOL_NAME_SET: new Set<string>(),
+  // Task 7 — disclosure selectTools() resolves each tool's group via
+  // getToolGroup. "core" keeps every tool selected (core is always active).
+  getToolGroup: vi.fn(() => "core"),
+  TOOL_GROUPS: {},
 }));
 vi.mock("./untrusted-wrappers", () => ({
   escapeUntrustedWrappers: vi.fn((s: string) => s),
@@ -110,7 +114,7 @@ vi.mock("../scratchpad/service", () => ({
 }));
 vi.mock("../scratchpad/sql-bridge", () => ({ queryScratchpad: vi.fn() }));
 vi.mock("../skills", () => ({ getEnabledSkillPackages: vi.fn(async () => []) }));
-vi.mock("../pdf/detect", () => ({ isFilePdfUrl: vi.fn(() => false) }));
+vi.mock("../pdf/detect", () => ({ isFilePdfUrl: vi.fn(() => false), isPdfTab: vi.fn(() => false) }));
 vi.mock("../../background/cdp-session", () => ({
   acquireCdpSession: vi.fn(async () => null),
 }));

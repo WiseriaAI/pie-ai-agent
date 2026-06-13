@@ -46,6 +46,9 @@ const SKILL_MEDIATION_TOOL_NAMES = [
   "read_skill_file",
 ] as const;
 
+// The progressive-disclosure mediator tool. Always core.
+export const DISCLOSURE_TOOL_NAMES = ["load_tools"] as const;
+
 // Phase 3 cross-tab tools (always present in BUILT_IN_TOOLS).
 //
 // list_tabs is an example where behavior depends on args (currentWindow vs
@@ -148,6 +151,7 @@ export const KNOWN_BUILT_IN_TOOL_NAMES = [
   ...PDF_TOOL_NAMES,
   ...LOCAL_FILE_TOOL_NAMES,
   ...SCRATCHPAD_TOOL_NAMES,
+  ...DISCLOSURE_TOOL_NAMES,
 ] as const;
 
 export const KNOWN_KEYBOARD_TOOL_NAMES = [
@@ -240,6 +244,8 @@ export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
   capture_fullpage_tab: "read",
   // Web search tool — reads external data, no browser tab mutation
   search_web: "read",
+  // Progressive disclosure mediator — read (returns a tool manifest, no side effects)
+  load_tools: "read",
   // Page snapshot tool — reads page DOM structure, no tab/page state mutation
   read_page: "read",
   // Page Atlas target tools — reads structured atlas targets, no tab/page state mutation
@@ -302,4 +308,72 @@ export function getToolClass(name: string): ToolClass {
   // Unknown tool names default to read. Downstream tool calls
   // (click / type / etc.) carry their own class.
   return TOOL_CLASSES[name] ?? "read";
+}
+
+// ── Progressive tool disclosure — disclosure group registry ──────────────────
+//
+// Every tool belongs to exactly one DisclosureGroup. The agent loop discloses
+// only the tools whose group is currently active (core is always active; env
+// groups light up from runtime signals; lazy groups are pulled in via the
+// load_tools tool). Mirrors the TOOL_CLASSES build-time-invariant pattern above.
+//
+// v1 keeps tabs / keyboard / editor / output_file in `core` (see the spec's
+// §4.2 for the v2 plan to env-gate editor/keyboard and split tab-advanced).
+
+export type DisclosureGroup =
+  | "core"
+  | "screenshot"
+  | "skill-mediation"
+  | "pdf"
+  | "local-file"
+  | "scratchpad"
+  | "schedule"
+  | "skill-authoring";
+
+export const TOOL_GROUPS: Readonly<Record<string, DisclosureGroup>> = {
+  // core — basic sense/act/control loop
+  click: "core", hover: "core", type: "core", scroll: "core", select: "core",
+  wait: "core", done: "core", fail: "core",
+  read_page: "core",
+  find_target: "core", read_collection: "core", read_table: "core",
+  read_target: "core", extract_records: "core",
+  list_tabs: "core", close_tabs: "core", activate_tab: "core", group_tabs: "core",
+  ungroup_tabs: "core", move_tabs: "core", focus_tab: "core", open_url: "core",
+  unpin_tab: "core",
+  search_web: "core",
+  output_file: "core",
+  dispatch_keyboard_input: "core", press_key: "core",
+  read_editor: "core", set_editor_value: "core",
+  load_tools: "core",
+  // env-lit
+  capture_visible_tab: "screenshot", capture_fullpage_tab: "screenshot",
+  use_skill: "skill-mediation", read_skill_file: "skill-mediation",
+  read_pdf: "pdf", search_pdf: "pdf", get_pdf_outline: "pdf",
+  read_local_file: "local-file", request_local_file: "local-file",
+  // lazy
+  save_records: "scratchpad", update_notes: "scratchpad", read_records: "scratchpad",
+  clear_scratchpad: "scratchpad", query_scratchpad: "scratchpad",
+  create_schedule: "schedule", update_schedule: "schedule",
+  delete_schedule: "schedule", list_schedules: "schedule",
+  create_skill: "skill-authoring", update_skill: "skill-authoring",
+  delete_skill: "skill-authoring", list_skills: "skill-authoring",
+};
+
+// Build-time exhaustive check — every known tool MUST declare a group.
+for (const name of [
+  ...KNOWN_BUILT_IN_TOOL_NAMES,
+  ...KNOWN_KEYBOARD_TOOL_NAMES,
+  ...KNOWN_EDITOR_TOOL_NAMES,
+]) {
+  if (!(name in TOOL_GROUPS)) {
+    throw new Error(
+      `[disclosure] tool "${name}" is in KNOWN_*_TOOL_NAMES but not assigned a ` +
+        `DisclosureGroup in TOOL_GROUPS (src/lib/agent/tool-names.ts). Every tool ` +
+        `MUST belong to exactly one group so progressive disclosure can filter it.`,
+    );
+  }
+}
+
+export function getToolGroup(name: string): DisclosureGroup {
+  return TOOL_GROUPS[name] ?? "core";
 }
