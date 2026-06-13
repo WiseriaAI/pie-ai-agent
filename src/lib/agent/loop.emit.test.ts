@@ -52,6 +52,7 @@ vi.mock("./tool-names", () => ({
 }));
 vi.mock("./untrusted-wrappers", () => ({
   escapeUntrustedWrappers: vi.fn((s: string) => s),
+  escapeTrustedWrappers: vi.fn((s: string) => s),
 }));
 vi.mock("./stream-completion", () => ({
   classifyStreamCompletion: vi.fn(() => "normal"),
