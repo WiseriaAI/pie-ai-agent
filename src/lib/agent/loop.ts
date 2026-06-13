@@ -46,7 +46,11 @@ import {
 } from "../scratchpad/service";
 import { queryScratchpad as svcQueryScratchpad } from "../scratchpad/sql-bridge";
 import { getEnabledSkillPackages } from "../skills";
-import { isFilePdfUrl } from "../pdf/detect";
+import { isFilePdfUrl, isPdfTab } from "../pdf/detect";
+import { groupsForEnv, selectTools, buildActivationNotice, ALL_GROUPS, type EnvSignals } from "./disclosure";
+import type { DisclosureGroup } from "./tool-names";
+import { buildLoadToolsTool } from "./tools/disclosure";
+import { getProgressiveDisclosureFlag } from "../progressive-tool-disclosure-flag";
 // isRestrictedUrl is owned by the shared util (src/lib/url/restricted.ts).
 // Imported here for loop-internal use AND re-exported below so existing
 // `import { isRestrictedUrl } from "../agent/loop"` call sites keep working.
@@ -151,6 +155,15 @@ export interface AgentLoopContext {
    * fail-on-image precondition across restarts.
    */
   resumedHasImageContent?: boolean;
+  /**
+   * Task 7 (progressive disclosure) — when resuming a paused task, the
+   * persisted `SessionAgentState.activeToolGroups` (groups lit up by env
+   * detection + load_tools during the prior run). Non-empty → the loop seeds
+   * its live `activeToolGroups` from this instead of recomputing the env seed,
+   * so lazily-loaded groups (pulled via load_tools) survive an SW restart.
+   * Absent / empty → fall back to a fresh env seed.
+   */
+  resumedActiveToolGroups?: string[];
   /**
    * Phase 5 — unique identifier for this task invocation, used to key
    * the per-task screenshot budget (screenshot.ts `budgetByTask`).
@@ -357,6 +370,18 @@ export function filterToolsByVision<T extends { name: string }>(
 ): T[] {
   if (vision === true) return tools;
   return tools.filter((t) => !SCREENSHOT_TOOL_NAME_SET.has(t.name));
+}
+
+/**
+ * Seed the task's active disclosure groups. Flag OFF → all groups (full
+ * disclosure, the degenerate config). Flag ON → core + env-triggered groups.
+ */
+export function seedActiveGroups(
+  env: EnvSignals,
+  opts: { progressiveDisclosure: boolean },
+): Set<string> {
+  if (!opts.progressiveDisclosure) return new Set<string>(ALL_GROUPS);
+  return new Set<string>(["core", ...groupsForEnv(env)]);
 }
 
 
@@ -580,14 +605,21 @@ export function buildSessionAgentSnapshot(
   history: AgentMessage[],
   stepIndex: number,
   hasImageContent: boolean = false,
+  activeToolGroups?: string[],
 ): SessionAgentState {
   // pendingInstructions is intentionally omitted: mergeSessionAgentSnapshot (non-tombstone
   // path) spreads existing first so storage's pendingInstructions value is preserved.
   // The cast satisfies SessionAgentState's type while keeping the field absent at runtime.
+  //
+  // Task 7 — persist activeToolGroups (the env-lit + load_tools-armed groups)
+  // so a resume after SW restart re-arms the same lazily-loaded groups rather
+  // than collapsing back to the env seed. Only included when provided (the
+  // tombstone/legacy callers omit it → spread-merge preserves storage's value).
   return {
     agentMessages: structuredClone(history),
     stepIndex,
     hasImageContent,
+    ...(activeToolGroups ? { activeToolGroups } : {}),
   } as SessionAgentState;
 }
 
@@ -1258,6 +1290,31 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
     description: p.frontmatter.description,
   }));
 
+  // Task 7 — progressive tool disclosure. Seed the live `activeToolGroups`
+  // set BEFORE the (static, once-per-task) system prompt is built so the
+  // available-tools catalog block reflects exactly what's offered this turn.
+  // Resume: reuse the persisted set (keeps lazily-loaded groups across SW
+  // restart). Fresh task: seed core + env-triggered groups (flag ON) or ALL
+  // groups (flag OFF, full disclosure). `announcedGroups` tracks groups whose
+  // activation guidance the model has already seen — already-known groups are
+  // never re-announced.
+  const progressiveDisclosure = await getProgressiveDisclosureFlag();
+  const seedEnv: EnvSignals = {
+    vision: modelConfig.vision === true,
+    hasSkills: skillCatalog.length > 0,
+    isPdf: false,
+    isFile: false,
+  };
+  const activeToolGroups: Set<string> =
+    ctx.resumedActiveToolGroups && ctx.resumedActiveToolGroups.length > 0
+      ? new Set<string>(ctx.resumedActiveToolGroups)
+      : seedActiveGroups(seedEnv, { progressiveDisclosure });
+  const announcedGroups = new Set<string>(activeToolGroups); // already-known → never re-announce
+  // Headless (scheduled) run = no resumed history AND no multi-turn chat prefix
+  // (case 3 in the history seed below). Constant per task. load_tools refuses to
+  // arm the `schedule` group in headless runs (recursive-scheduling guard).
+  const isHeadless = !ctx.resumedAgentMessages && !(ctx.messages && ctx.messages.length > 0);
+
   const systemMsg: AgentMessage = {
     role: "system",
     content: buildAgentSystemPrompt(
@@ -1275,6 +1332,9 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       ctx.pinnedTabs ?? [],
       pinnedTabId,
       skillCatalog,
+      // Task 7 — drives the <available_tools_catalog> block: lists only the
+      // loadable groups NOT already in the seed.
+      activeToolGroups,
     ),
   };
 
@@ -1469,6 +1529,33 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
 
       console.log(`[loop] step=${stepIndex} url=${currentUrl}`);
 
+      // Progressive disclosure — re-detect env each iteration; monotonic grow.
+      // `currentUrl` is the resolved focused-tab URL (or a placeholder string
+      // when the tab is unavailable, which matches neither isPdfTab nor file://
+      // → no spurious env signal). The `|| activeToolGroups.has(...)` legs make
+      // the pdf/local-file signals sticky once lit (env detection never
+      // un-lights a group). Only meaningful when progressiveDisclosure is on;
+      // harmless otherwise (flag off seeds ALL groups → newlyLit always empty).
+      {
+        const tabUrl = currentUrl ?? "";
+        const env: EnvSignals = {
+          vision: modelConfig.vision === true,
+          hasSkills: skillCatalog.length > 0,
+          isPdf: isPdfTab({ url: tabUrl }) || activeToolGroups.has("pdf"),
+          isFile: tabUrl.startsWith("file://") || activeToolGroups.has("local-file"),
+        };
+        const newlyLit: DisclosureGroup[] = [];
+        for (const g of groupsForEnv(env)) {
+          if (!activeToolGroups.has(g)) { activeToolGroups.add(g); newlyLit.push(g); }
+        }
+        const fresh = newlyLit.filter((g) => !announcedGroups.has(g));
+        if (fresh.length > 0) {
+          fresh.forEach((g) => announcedGroups.add(g));
+          const notice = buildActivationNotice(fresh);
+          if (notice) sysNotices.push(notice); // rides the same <system_notice> block
+        }
+      }
+
       // Build observation text
       let observationText = buildObservationMessage(pageTitle, currentUrl);
       // Advisory runtime notices (trusted block, NOT untrusted page data).
@@ -1645,10 +1732,24 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         clearScratchpad: (collection) => svcClearScratchpad(sessionId, collection),
         queryScratchpad: (args) => svcQueryScratchpad(sessionId, args),
       });
-      const allToolsBeforeExclude = filterToolsByVision(
-        [...BUILT_IN_TOOLS, ...mouseTools, ...keyboardTools, ...editorTools, readLocalFileTool, requestLocalFileTool, outputFileTool, ...scratchpadTools],
-        modelConfig.vision,
-      );
+      // Progressive disclosure (Task 7) — `load_tools` lets the model arm a
+      // lazy group; its handler mutates the live `activeToolGroups` set (passed
+      // by reference via getActiveGroups). `selectTools` then narrows the schema
+      // list to active groups when the flag is on; flag off → full list (no-op,
+      // since the seed already contains every group). `filterToolsByVision` runs
+      // AFTER selectTools as fail-closed defense — screenshot tools never reach a
+      // non-vision model even if the `screenshot` group is somehow active.
+      const loadToolsTool = buildLoadToolsTool({
+        getActiveGroups: () => activeToolGroups,
+        headless: isHeadless,
+      });
+      const fullToolList = [
+        ...BUILT_IN_TOOLS, ...mouseTools, ...keyboardTools, ...editorTools,
+        readLocalFileTool, requestLocalFileTool, outputFileTool, ...scratchpadTools,
+        loadToolsTool,
+      ];
+      const disclosed = progressiveDisclosure ? selectTools(fullToolList, activeToolGroups) : fullToolList;
+      const allToolsBeforeExclude = filterToolsByVision(disclosed, modelConfig.vision);
       // Task 7 — recursive creation guard: headless schedule runs pass
       // excludeToolNames to strip create_schedule / update_schedule from the
       // tool set so a scheduled agent cannot create or modify schedules on its
@@ -2235,7 +2336,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // panel-display redaction happens via redactArgsForPanel on the
       // sendAgentStep path, which is a separate code path.
       if (ctx.onStepSnapshot) {
-        const snapshot = buildSessionAgentSnapshot(history, stepIndex, hasImageContent);
+        const snapshot = buildSessionAgentSnapshot(history, stepIndex, hasImageContent, [...activeToolGroups]);
         ctx.onStepSnapshot(snapshot).catch((e) => {
           console.warn(
             `[agent] snapshot failed for session=${ctx.sessionId} step=${stepIndex}:`,

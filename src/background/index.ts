@@ -1000,6 +1000,12 @@ async function handleResumeRequest(
     resumedFromStep: agent.stepIndex,
     // Phase 5 — propagate prior hasImageContent flag across resume.
     resumedHasImageContent: agent.hasImageContent,
+    // Task 7 (progressive disclosure) — restore the env-lit + load_tools-armed
+    // tool groups so a resume after SW restart re-arms the same lazily-loaded
+    // groups instead of collapsing back to the fresh env seed. undefined for
+    // legacy snapshots written before this field existed → loop falls back to
+    // the env seed.
+    resumedActiveToolGroups: agent.activeToolGroups,
     // v1.5 multi-pin: replace single `pinned` with the full array.
     // Resume path restores currentFocusTabId from persisted agent state.
     pinnedTabs: meta.pinnedTabs ?? [],
