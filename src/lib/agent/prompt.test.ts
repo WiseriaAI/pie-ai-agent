@@ -171,14 +171,18 @@ describe("buildAgentSystemPrompt — v1.5 multi-pin block", () => {
     }
   });
 
-  it("meta tools guidance is appended when hasMetaTools=true", () => {
-    const prompt = buildAgentSystemPrompt(false, true);
-    expect(prompt).toContain("Skill authoring tools (list_skills, create_skill");
+  it("skill-authoring is a loadable group surfaced via the catalog, not inlined", () => {
+    // Progressive disclosure: skill-authoring usage guidance is no longer inlined
+    // into the static prompt (it arrives on activation via the load_tools result).
+    // With a core-only start it shows up in the catalog instead.
+    const prompt = buildAgentSystemPrompt(false, true, [], undefined, [], new Set(["core"]));
+    expect(prompt).not.toContain("Skill authoring tools (list_skills, create_skill");
+    expect(prompt).toContain("skill-authoring —");
   });
 
-  it("meta tools guidance is omitted when hasMetaTools=false", () => {
-    const prompt = buildAgentSystemPrompt(false, false);
-    expect(prompt).not.toContain("Skill authoring tools");
+  it("inline skill-authoring guidance is never present regardless of hasMetaTools", () => {
+    expect(buildAgentSystemPrompt(false, false)).not.toContain("Skill authoring tools");
+    expect(buildAgentSystemPrompt(false, true)).not.toContain("Skill authoring tools");
   });
 
   it("keyboard simulation guidance is appended when hasKeyboardTools=true", () => {
@@ -278,21 +282,26 @@ describe("buildAgentSystemPrompt Phase 3", () => {
 });
 
 describe("PDF guidance", () => {
-  it("includes PDF tools in the system prompt", () => {
+  // Progressive disclosure: the detailed PDF usage guidance (get_pdf_outline-first,
+  // search_pdf, pdf_tab self-correction) is no longer inlined into the static
+  // prompt. It is delivered on activation via the load_tools result (disclosure.ts).
+  // With a core-only start the static prompt only names the tools in the
+  // "Choosing Tools" section and surfaces the pdf group via the catalog.
+  it("still names the PDF tools in the static prompt (Choosing Tools section)", () => {
     const prompt = buildAgentSystemPrompt();
     expect(prompt).toMatch(/read_pdf/);
     expect(prompt).toMatch(/search_pdf/);
     expect(prompt).toMatch(/get_pdf_outline/);
   });
 
-  it("advises starting with get_pdf_outline on unfamiliar PDFs", () => {
-    const prompt = buildAgentSystemPrompt();
-    expect(prompt).toMatch(/get_pdf_outline.*(?:first|start)/is);
+  it("surfaces the loadable pdf group via the catalog when inactive at start", () => {
+    const prompt = buildAgentSystemPrompt(false, false, [], undefined, [], new Set(["core"]));
+    expect(prompt).toContain("pdf —");
   });
 
-  it("documents the pdf_tab error self-correction protocol", () => {
+  it("does NOT inline the always-on PDF Tools guidance heading", () => {
     const prompt = buildAgentSystemPrompt();
-    expect(prompt).toMatch(/pdf_tab/);
+    expect(prompt).not.toContain("## PDF Tools");
   });
 });
 
@@ -353,5 +362,28 @@ describe("buildAgentSystemPrompt — STATIC / cache invariant (#175)", () => {
     expect(a).toBe(
       buildAgentSystemPrompt(true, true, [{ tabId: 1, origin: "https://e.com" }], 1),
     );
+  });
+});
+
+describe("buildAgentSystemPrompt — disclosure catalog (progressive disclosure)", () => {
+  it("core-only start lists loadable groups in the catalog", () => {
+    const p = buildAgentSystemPrompt(true, true, [], undefined, [], new Set(["core"]));
+    expect(p).toContain("<available_tools_catalog>");
+    expect(p).toContain("pdf —");
+    expect(p).toContain("scratchpad —");
+  });
+  it("does NOT inline PDF/scratchpad guidance headings when those groups are inactive at start", () => {
+    const p = buildAgentSystemPrompt(true, true, [], undefined, [], new Set(["core"]));
+    expect(p).not.toContain("## PDF Tools");
+    expect(p).not.toContain("## Scratchpad");
+  });
+  it("byte-identical across calls with the same startActiveGroups (static invariant)", () => {
+    const a = buildAgentSystemPrompt(true, true, [{ tabId: 1, origin: "https://e.com" }], 1, [], new Set(["core"]));
+    const b = buildAgentSystemPrompt(true, true, [{ tabId: 1, origin: "https://e.com" }], 1, [], new Set(["core"]));
+    expect(a).toBe(b);
+  });
+  it("when pdf is active at start, the catalog omits pdf", () => {
+    const p = buildAgentSystemPrompt(true, true, [], undefined, [], new Set(["core", "pdf"]));
+    expect(p).not.toContain("pdf —");
   });
 });
