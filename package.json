@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "pnpm icons && vite",
     "build": "pnpm icons && vite build",
+    "sync:dist": "bash scripts/sync-dist.sh",
     "preview": "vite preview",
     "icons": "node scripts/build-icons.mjs",
     "test": "vitest run",

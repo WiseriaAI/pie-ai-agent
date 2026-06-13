@@ -43,8 +43,16 @@ BYOK (Bring Your Own Key) Chrome Extension — 用户插入自己的 API key 获
 
 1. `pnpm dev` 启 Vite dev server
 2. `chrome://extensions` 开启 Developer mode
-3. Load unpacked 加载 `dist/` 目录
+3. Load unpacked 加载 `dist/` 目录（指向**主仓库**的 `dist/`，一次指定后只认这个路径）
 4. 点击扩展图标打开 side panel
+
+## 本地开发约定（worktree 默认 + dist 同步）
+
+两条默认规则，无需每次提醒：
+
+1. **开发新功能默认起一个 worktree（不是在主检出上开新分支）。** 用 `superpowers:using-git-worktrees` / 原生 `EnterWorktree`，CC 原生 worktree 落在 `.claude/worktrees/<name>/`。主仓库检出始终留在 `main`，供 Chrome 加载 dist。文档/小 chore 可直接在 main 上做，不强制 worktree。
+2. **用户说「需要测试 / 测一下」时，自动把 worktree 的构建产物同步到主仓库 dist——不必等用户再提醒。** 流程：在 worktree 里 `pnpm build`，再 `pnpm sync:dist`（= `scripts/sync-dist.sh`），然后让用户去 `chrome://extensions` 点刷新即可测到新代码。`dist/` 已 gitignore，灌进主仓库不污染 git。脚本用 git 自发现「当前 worktree → 主仓库」两端路径，从任意 worktree 子目录运行都对；已在主仓库时自动跳过。
+   - 为何不是 hook：`UserPromptSubmit` hook 会在「用户发话、尚未 build」时触发，复制到的是旧/空 dist（时序错）；`PostToolUse` on build 又会被提交前的例行 `pnpm build` 过度触发。正确做法是 build 之后按口令执行同步，因此落在约定+脚本，而非 hook。
 
 ## Release
 
