@@ -44,6 +44,9 @@ export const zhCNDict = {
     language: {
       sectionTitle: "语言",
       label: "界面语言",
+      assistantLabel: "助手语言",
+      assistantFollowUi: "跟随界面语言",
+      assistantDetectMessage: "根据用户消息检测",
       optionAuto: "自动（跟随浏览器）",
       optionEn: "English",
       optionZhCN: "中文（简体）",

@@ -44,6 +44,9 @@ export const ptBRDict = {
     language: {
       sectionTitle: "Idioma",
       label: "Idioma da interface",
+      assistantLabel: "Idioma do assistente",
+      assistantFollowUi: "Seguir idioma da interface",
+      assistantDetectMessage: "Detectar pela mensagem do usuário",
       optionAuto: "Automático (seguir navegador)",
       optionEn: "Inglês",
       optionZhCN: "中文 (chinês simplificado)",

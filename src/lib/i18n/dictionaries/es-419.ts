@@ -44,6 +44,9 @@ export const es419Dict = {
     language: {
       sectionTitle: "Idioma",
       label: "Idioma de la interfaz",
+      assistantLabel: "Idioma del asistente",
+      assistantFollowUi: "Seguir idioma de la interfaz",
+      assistantDetectMessage: "Detectar desde el mensaje del usuario",
       optionAuto: "Automático (seguir navegador)",
       optionEn: "Inglés",
       optionZhCN: "中文 (chino simplificado)",

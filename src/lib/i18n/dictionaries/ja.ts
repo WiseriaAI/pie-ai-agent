@@ -44,6 +44,9 @@ export const jaDict = {
     language: {
       sectionTitle: "言語",
       label: "UI 言語",
+      assistantLabel: "アシスタントの言語",
+      assistantFollowUi: "UI 言語に合わせる",
+      assistantDetectMessage: "ユーザーメッセージから検出",
       optionAuto: "自動 (ブラウザーに合わせる)",
       optionEn: "英語",
       optionZhCN: "中文 (簡体字中国語)",

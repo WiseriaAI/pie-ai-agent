@@ -17,4 +17,11 @@ export {
   type LocaleSetting,
   type TParams,
 } from "./types";
+export {
+  DEFAULT_ASSISTANT_LANGUAGE,
+  getAssistantLanguageSetting,
+  isAssistantLanguageSetting,
+  resolveAssistantLanguage,
+  setAssistantLanguageSetting,
+} from "./assistant-language";
 export { providerDisplayName } from "./provider-display-name";
