@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useT } from "@/lib/i18n";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useI18n } from "@/lib/i18n";
 
 export interface ContextRingProps {
   lastInputTokens: number | undefined;
@@ -30,8 +30,6 @@ function colorForPercent(pct: number): string {
   return COLOR_LOW;
 }
 
-const numberFormat = new Intl.NumberFormat("en");
-
 export default function ContextRing(props: ContextRingProps) {
   const {
     lastInputTokens,
@@ -42,7 +40,8 @@ export default function ContextRing(props: ContextRingProps) {
   } = props;
   void _lastOutputTokens;
 
-  const t = useT();
+  const { locale, t } = useI18n();
+  const numberFormat = useMemo(() => new Intl.NumberFormat(locale), [locale]);
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -100,7 +99,7 @@ export default function ContextRing(props: ContextRingProps) {
   const tooltipText = t("chat.contextRing.lastCall", {
     used: numberFormat.format(lastInputTokens!),
     max: numberFormat.format(maxContextTokens!),
-    pct,
+    pct: numberFormat.format(pct),
   });
 
   return (
@@ -183,10 +182,12 @@ export default function ContextRing(props: ContextRingProps) {
           <PopoverRow
             label={t("chat.contextRing.input")}
             value={totalInputTokens}
+            numberFormat={numberFormat}
           />
           <PopoverRow
             label={t("chat.contextRing.output")}
             value={totalOutputTokens}
+            numberFormat={numberFormat}
           />
           <div
             style={{
@@ -226,7 +227,15 @@ export default function ContextRing(props: ContextRingProps) {
   );
 }
 
-function PopoverRow({ label, value }: { label: string; value: number }) {
+function PopoverRow({
+  label,
+  value,
+  numberFormat,
+}: {
+  label: string;
+  value: number;
+  numberFormat: Intl.NumberFormat;
+}) {
   return (
     <div
       style={{

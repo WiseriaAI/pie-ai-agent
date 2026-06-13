@@ -1,3 +1,4 @@
+import type { Locale } from "@/lib/i18n";
 
 /**
  * Block A — current-time block.
@@ -305,6 +306,25 @@ export function buildSkillCatalogBlock(entries: SkillCatalogEntry[]): string {
   return `\n\nAvailable skills (reusable playbooks). When the user's request matches one, call use_skill({skillId}) to load its instructions, then carry out the task with the regular tools as directed. Skills take no business parameters — infer needed inputs from context. If a loaded skill lists reference files, fetch them with read_skill_file.\n${lines}`;
 }
 
+const RESPONSE_LANGUAGE_LABELS: Record<Locale, string> = {
+  en: "English (en)",
+  "zh-CN": "Simplified Chinese (zh-CN)",
+  "es-419": "Latin American Spanish (es-419)",
+  ja: "Japanese (ja)",
+  "pt-BR": "Brazilian Portuguese (pt-BR)",
+};
+
+export function buildResponseLanguageBlock(
+  responseLanguage: Locale | "auto-detect-user-message" | undefined,
+): string {
+  if (!responseLanguage || responseLanguage === "auto-detect-user-message") return "";
+  return `\n\n<response_language>
+Default assistant response language: ${RESPONSE_LANGUAGE_LABELS[responseLanguage]}.
+If the user's latest message explicitly asks for another language, follow the user's request.
+Do not translate tool names, tool arguments, URLs, code, selectors, or quoted page content unless asked.
+</response_language>`;
+}
+
 /**
  * Builds the STATIC agent system prompt. Contains NO task and NO page data —
  * it is byte-identical across all turns of a conversation (and across
@@ -321,6 +341,7 @@ export function buildSkillCatalogBlock(entries: SkillCatalogEntry[]): string {
  * @param currentFocusTabId v1.5 — focused tab id, renders the "← current
  *   focus" marker in the multi-pin block.
  * @param skillCatalog Enabled skill catalog entries for the system-prompt list.
+ * @param responseLanguage Optional trusted default response language preference.
  */
 export function buildAgentSystemPrompt(
   hasKeyboardTools = false,
@@ -328,6 +349,7 @@ export function buildAgentSystemPrompt(
   pinnedTabs: ReadonlyArray<{ tabId: number; origin: string }> = [],
   currentFocusTabId?: number,
   skillCatalog: SkillCatalogEntry[] = [],
+  responseLanguage?: Locale | "auto-detect-user-message",
 ): string {
   const keyboardGuidance = hasKeyboardTools ? KEYBOARD_SIM_GUIDANCE : "";
   const editorGuidance = hasKeyboardTools ? EDITOR_TOOLS_GUIDANCE : "";
@@ -335,8 +357,9 @@ export function buildAgentSystemPrompt(
   const skillCatalogBlock = buildSkillCatalogBlock(skillCatalog);
   const tabGuidance = TAB_TOOLS_GUIDANCE;
   const pinnedContext = buildPinnedContextBlock(pinnedTabs, currentFocusTabId);
+  const responseLanguageBlock = buildResponseLanguageBlock(responseLanguage);
   return (
-    `${STATIC_AGENT_SYSTEM_PROMPT}${READ_PAGE_GUIDANCE}${FRAME_AWARENESS_GUIDANCE}${keyboardGuidance}${editorGuidance}${metaGuidance}${skillCatalogBlock}${tabGuidance}${SEARCH_TOOL_GUIDANCE}${PDF_TOOLS_GUIDANCE}${SCRATCHPAD_GUIDANCE}${pinnedContext}\n\n${R15_IMAGE_UNTRUSTED}`
+    `${STATIC_AGENT_SYSTEM_PROMPT}${READ_PAGE_GUIDANCE}${FRAME_AWARENESS_GUIDANCE}${keyboardGuidance}${editorGuidance}${metaGuidance}${skillCatalogBlock}${tabGuidance}${SEARCH_TOOL_GUIDANCE}${PDF_TOOLS_GUIDANCE}${SCRATCHPAD_GUIDANCE}${pinnedContext}${responseLanguageBlock}\n\n${R15_IMAGE_UNTRUSTED}`
   );
 }
 

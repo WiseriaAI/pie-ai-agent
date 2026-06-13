@@ -120,6 +120,186 @@ const I18N = {
     "foot.releases":"历史版本", "foot.roadmap":"路线图", "foot.github":"GitHub", "foot.store":"Chrome 应用商店",
     "foot.copy":"© 2026 Pie · 开源 · Apache-2.0", "foot.made":"为 Chrome 打造",
   },
+  "es-419": {
+    "nav.install":"Agregar a Chrome", "nav.star":"Star",
+    "hero.eyebrow":"IA en tu navegador",
+    "hero.title":"Dile a tu navegador qué hacer.",
+    "hero.sub":"Pie es un agente de navegador abierto que puede leer páginas, operar sitios, convertir contenido desordenado en datos útiles y repetir tus flujos como habilidades, todo con tu propia clave de modelo.",
+    "hero.cta":"Agregar a Chrome", "hero.star":"Star en GitHub",
+    "hero.micro":"Código abierto  ·  BYOK  ·  Sin telemetría",
+    "panel.title":"Resumir página",
+    "panel.user":"Resume esta página en 3 puntos",
+    "panel.done":"Listo · 3 pasos",
+    "panel.b1":"Entiende la página actual sin pedirte que copies texto de un lado a otro.",
+    "panel.b2":"Usa herramientas del navegador para hacer clic, escribir, buscar, leer y moverse entre pestañas.",
+    "panel.b3":"Convierte trabajo repetido en habilidades reutilizables que puedes volver a ejecutar.",
+    "panel.input":"Pregunta o describe una tarea…",
+    "tour.eyebrow":"Cómo funciona", "tour.title":"Di esto. Obtén eso.",
+    "tour.sub":"Sin scripts ni rituales de configuración. Pide el resultado; Pie lee la página, elige las herramientas correctas y avanza paso a paso.",
+    "you":"Tú dices",
+    "s1.tag":"· PREGUNTAS SOBRE PÁGINAS Y PDF", "s1.cmd":"“¿Cuál es la política de reembolso en esta página?”",
+    "s1.out":"Pregunta cualquier cosa sobre la página actual, una pantalla larga de una app o un PDF. Pie extrae el contenido relevante para que no tengas que copiar, pegar ni buscar en el DOM.",
+    "s1.done":"Listo · 2 pasos",
+    "s1.ans":"Se aceptan reembolsos dentro de los 30 días posteriores a la entrega. Los artículos abiertos califican solo si el sello original está intacto, y los costos de envío no son reembolsables.",
+    "s2.tag":"· EXTRACCIÓN DE DATOS", "s2.cmd":"“Saca el precio de cada una de estas pestañas y ponlo en una tabla.”",
+    "s2.out":"Pie puede recopilar datos estructurados de páginas, compararlos, limpiarlos y devolverte una tabla o archivo cuando la respuesta necesita más que texto plano.",
+    "s2.done":"Listo · 6 pasos", "s2.colA":"Producto", "s2.colB":"Precio",
+    "s3.tag":"· HABILIDADES Y AUTOMATIZACIÓN", "s3.cmd":"“Esto es difícil de explicar; mejor te lo muestro.”",
+    "s3.out":"Algunos flujos son más fáciles de demostrar. Hazlo una vez y Pie lo guarda como habilidad; después ejecuta toda la rutina con un solo /comando, limitado a las herramientas que necesita.",
+    "pop.count":"2 habilidades",
+    "pop.d1":"Reúne las pestañas abiertas de esta semana y resume cada una.",
+    "pop.d2":"Redacta una nota de standup con las pestañas y documentos de ayer.",
+    "pop.tag":"Usuario", "pop.nav":"↑↓ navegar", "pop.run":"↵ ejecutar", "pop.esc":"esc",
+    "rec.label":"GRABANDO", "rec.steps":"8 PASOS", "rec.cancel":"Cancelar", "rec.finish":"Finalizar",
+    "trust.byok":"BYOK", "trust.byok.d":"Usa tu propia clave de modelo. Permanece cifrada en tu dispositivo.",
+    "trust.oss":"Código abierto", "trust.oss.d":"El código, la licencia y el historial de versiones son públicos en GitHub.",
+    "trust.tel":"Sin telemetría", "trust.tel.d":"Sin backend ni proxy. Nada pasa por nosotros.",
+    "trust.prov":"11 proveedores", "trust.prov.d":"Claude, GPT, Gemini, DeepSeek, Kimi, StepFun y más.",
+    "cap.eyebrow":"Capacidades", "cap.title":"En qué es bueno Pie.",
+    "cap.sub":"Lo importante no es una caja de prompt más larga. Es un agente de navegador con contexto de página, herramientas, habilidades, salida de datos y valores de privacidad que puedes entender.",
+    "cap.1":"Trabajo de agente", "cap.1d":"Pie planifica tareas de varios pasos y usa herramientas del navegador para leer, hacer clic, escribir, buscar, desplazarse, manejar pestañas, PDFs y editores de página.",
+    "cap.2":"Contenido de página", "cap.2d":"Pregunta sobre la página donde estás. Pie puede leer páginas largas, pantallas de apps, PDFs, tablas, texto seleccionado y contenido de pestañas abiertas.",
+    "cap.3":"Procesamiento de datos", "cap.3d":"Extrae campos, compara elementos, reorganiza contenido de páginas en tablas y produce archivos CSV, JSON, Markdown o texto descargables.",
+    "cap.4":"Habilidades", "cap.4d":"Guarda flujos repetibles como comandos slash. Graba una tarea una vez y vuelve a ejecutarla sin explicar cada paso pequeño.",
+    "cap.5":"Automatización web", "cap.5d":"Úsalo para el trabajo aburrido del navegador: llenar formularios, recopilar investigación, moverte entre pestañas y operar apps web complejas.",
+    "cap.6":"Seguridad y privacidad", "cap.6d":"Trae tu propia clave, mantén secretos cifrados localmente, evita backends operados por Pie y mantén aislado el contenido no confiable de las páginas.",
+    "project.eyebrow":"Proyecto abierto", "project.title":"Transparente por defecto.",
+    "project.sub":"Pie se desarrolla en abierto. La licencia, las notas de versión y las versiones históricas son fáciles de revisar antes de instalar o actualizar.",
+    "project.license.k":"Licencia", "project.license.t":"Apache-2.0", "project.license.d":"Una licencia permisiva de código abierto con una concesión explícita de patentes.",
+    "project.latest.k":"Notas recientes", "project.latest.t":"v1.0.0", "project.latest.d":"El primer major estable de Pie: herramientas para tareas de largo alcance, una capa de almacenamiento reconstruida y un panel lateral rediseñado.",
+    "project.history.k":"Historial de versiones", "project.history.t":"Todas las versiones", "project.history.d":"Explora etiquetas, assets y notas anteriores directamente en GitHub.",
+    "version.100":"Primer major estable: memoria para tareas de largo alcance, nueva base de almacenamiento y panel lateral rediseñado.",
+    "version.0195":"Selector de modelo, lectura/escritura en editores de página y reanudación tras abortar.",
+    "version.0192":"Mejor lectura de páginas grandes, búsqueda, fidelidad de grabación y seguridad en pestañas fijadas.",
+    "version.0190":"Proveedor Kimi, visualización de pensamiento, search_page y atributos por modelo.",
+    "cta.eyebrow":"Empieza", "cta.title":"Pon tu navegador a trabajar",
+    "cta.sub":"Instala Pie, describe una tarea y deja que se encargue de los pasos.",
+    "cta.install":"Agregar a Chrome", "cta.star":"Star en GitHub", "cta.meta":"Chrome · Manifest V3 · v1.0.0",
+    "foot.tagline":"Un agente de IA abierto que vive en tu navegador.",
+    "foot.privacy":"Privacidad", "foot.license":"Licencia", "foot.release":"Notas de versión",
+    "foot.releases":"Versiones", "foot.roadmap":"Roadmap", "foot.github":"GitHub", "foot.store":"Chrome Web Store",
+    "foot.copy":"© 2026 Pie · Código abierto · Apache-2.0", "foot.made":"Hecho para Chrome",
+  },
+  ja: {
+    "nav.install":"Chrome に追加", "nav.star":"Star",
+    "hero.eyebrow":"ブラウザ内の AI",
+    "hero.title":"ブラウザにやってほしいことを伝えるだけ。",
+    "hero.sub":"Pie は、ページを読み、サイトを操作し、散らかったページ内容を使えるデータに変え、自分の作業手順をスキルとして再実行できるオープンなブラウザエージェントです。使うのは自分のモデルキーです。",
+    "hero.cta":"Chrome に追加", "hero.star":"GitHub で Star",
+    "hero.micro":"オープンソース  ·  BYOK  ·  テレメトリなし",
+    "panel.title":"ページを要約",
+    "panel.user":"このページを3点で要約して",
+    "panel.done":"完了 · 3ステップ",
+    "panel.b1":"テキストをコピーして渡さなくても、現在のページを理解します。",
+    "panel.b2":"ブラウザツールでクリック、入力、検索、読み取り、タブ移動を行います。",
+    "panel.b3":"繰り返し作業を再利用できるスキルに変え、次回も実行できます。",
+    "panel.input":"質問する、またはタスクを書く…",
+    "tour.eyebrow":"使い方", "tour.title":"こう言う。こう返る。",
+    "tour.sub":"スクリプトも面倒な設定も不要です。ほしい結果を伝えると、Pie がページを読み、適切なツールを選び、手順を進めます。",
+    "you":"あなたの指示",
+    "s1.tag":"· ページ & PDF Q&A", "s1.cmd":"「このページの返金ポリシーは？」",
+    "s1.out":"現在のページ、長いアプリ画面、PDF について何でも質問できます。Pie が関連内容を取り出すので、コピー、貼り付け、DOM 探しは不要です。",
+    "s1.done":"完了 · 2ステップ",
+    "s1.ans":"返金は配送日から30日以内に受け付けます。開封済み商品は元の封印が無傷の場合のみ対象で、送料は返金されません。",
+    "s2.tag":"· データ抽出", "s2.cmd":"「これらのタブから価格を抜き出して表にして。」",
+    "s2.out":"Pie はページから構造化された事実を集め、比較し、整え、プレーンテキストだけでは足りないときに表やファイルとして返せます。",
+    "s2.done":"完了 · 6ステップ", "s2.colA":"商品", "s2.colB":"価格",
+    "s3.tag":"· スキル & 自動化", "s3.cmd":"「説明しづらいから、一度見せるね。」",
+    "s3.out":"説明するより実演した方が早い作業があります。一度手順を進めると Pie がスキルとして保存し、次回は必要なツールだけに絞って1つの /コマンドで実行します。",
+    "pop.count":"2個のスキル",
+    "pop.d1":"今週開いたタブを集め、それぞれを要約します。",
+    "pop.d2":"昨日のタブとドキュメントからスタンドアップメモを下書きします。",
+    "pop.tag":"ユーザー", "pop.nav":"↑↓ 移動", "pop.run":"↵ 実行", "pop.esc":"esc",
+    "rec.label":"記録中", "rec.steps":"8ステップ", "rec.cancel":"キャンセル", "rec.finish":"完了",
+    "trust.byok":"BYOK", "trust.byok.d":"自分のモデルキーを使います。キーはデバイス上で暗号化されたままです。",
+    "trust.oss":"オープンソース", "trust.oss.d":"コード、ライセンス、リリース履歴は GitHub で公開されています。",
+    "trust.tel":"テレメトリなし", "trust.tel.d":"バックエンドもプロキシもありません。何も私たちを経由しません。",
+    "trust.prov":"11プロバイダー", "trust.prov.d":"Claude、GPT、Gemini、DeepSeek、Kimi、StepFun など。",
+    "cap.eyebrow":"機能", "cap.title":"Pie が得意なこと。",
+    "cap.sub":"大事なのは長いプロンプト欄ではありません。ページ文脈、ツール、スキル、データ出力、理解しやすいプライバシー既定値を備えたブラウザエージェントです。",
+    "cap.1":"エージェント作業", "cap.1d":"Pie は複数ステップのタスクを計画し、読み取り、クリック、入力、検索、スクロール、タブ、PDF、ページエディタ向けのブラウザツールを使います。",
+    "cap.2":"ページ内容", "cap.2d":"今見ているページについて質問できます。長いページ、アプリ画面、PDF、表、選択テキスト、開いているタブの内容を読めます。",
+    "cap.3":"データ処理", "cap.3d":"フィールド抽出、項目比較、ページ内容の表への整形を行い、CSV、JSON、Markdown、テキストファイルとしてダウンロードできます。",
+    "cap.4":"スキル", "cap.4d":"繰り返し可能な作業をスラッシュコマンドとして保存します。一度記録すれば、細かい手順を毎回説明せずに再実行できます。",
+    "cap.5":"Web 自動化", "cap.5d":"フォーム入力、調査の収集、タブ間の移動、複雑な Web アプリ操作など、退屈なブラウザ作業に使えます。",
+    "cap.6":"セキュリティ & プライバシー", "cap.6d":"自分のキーを使い、秘密情報をローカルで暗号化し、Pie 運営のバックエンドを避け、信頼できないページ内容を隔離します。",
+    "project.eyebrow":"オープンプロジェクト", "project.title":"最初から透明。",
+    "project.sub":"Pie はオープンに開発されています。インストールやアップグレードの前に、ライセンス、リリースノート、過去バージョンを確認できます。",
+    "project.license.k":"ライセンス", "project.license.t":"Apache-2.0", "project.license.d":"明示的な特許許諾を含む、寛容なオープンソースライセンスです。",
+    "project.latest.k":"最新ノート", "project.latest.t":"v1.0.0", "project.latest.d":"Pie 初の安定メジャー版。長期タスク向けツール、再構築されたストレージ層、刷新されたサイドパネルを含みます。",
+    "project.history.k":"バージョン履歴", "project.history.t":"すべてのリリース", "project.history.d":"タグ、アセット、過去のノートを GitHub で直接確認できます。",
+    "version.100":"初の安定メジャー版: 長期タスクメモリ、新しいストレージ基盤、刷新されたサイドパネル。",
+    "version.0195":"モデルピッカー、ページエディタの読み書き、中断後の再開。",
+    "version.0192":"大きなページの読み取り、検索、記録の再現性、固定タブの安全性を改善。",
+    "version.0190":"Kimi プロバイダー、thinking 表示、search_page、モデル別属性。",
+    "cta.eyebrow":"はじめる", "cta.title":"ブラウザに仕事を任せよう",
+    "cta.sub":"Pie をインストールし、タスクを説明すれば、残りの手順は Pie が処理します。",
+    "cta.install":"Chrome に追加", "cta.star":"GitHub で Star", "cta.meta":"Chrome · Manifest V3 · v1.0.0",
+    "foot.tagline":"ブラウザで動くオープンな AI エージェント。",
+    "foot.privacy":"プライバシー", "foot.license":"ライセンス", "foot.release":"リリースノート",
+    "foot.releases":"バージョン", "foot.roadmap":"ロードマップ", "foot.github":"GitHub", "foot.store":"Chrome Web Store",
+    "foot.copy":"© 2026 Pie · オープンソース · Apache-2.0", "foot.made":"Chrome 向け",
+  },
+  "pt-BR": {
+    "nav.install":"Adicionar ao Chrome", "nav.star":"Star",
+    "hero.eyebrow":"IA no seu navegador",
+    "hero.title":"Diga ao navegador o que fazer.",
+    "hero.sub":"Pie é um agente de navegador aberto que lê páginas, opera sites, transforma conteúdo bagunçado em dados úteis e repete seus fluxos como habilidades, tudo com sua própria chave de modelo.",
+    "hero.cta":"Adicionar ao Chrome", "hero.star":"Star no GitHub",
+    "hero.micro":"Open source  ·  BYOK  ·  Sem telemetria",
+    "panel.title":"Resumir página",
+    "panel.user":"Resuma esta página em 3 pontos",
+    "panel.done":"Concluído · 3 etapas",
+    "panel.b1":"Entende a página atual sem pedir que você copie texto de um lado para outro.",
+    "panel.b2":"Usa ferramentas do navegador para clicar, digitar, buscar, ler e mover-se entre abas.",
+    "panel.b3":"Transforma trabalho repetido em habilidades reutilizáveis que você pode rodar de novo.",
+    "panel.input":"Pergunte ou descreva uma tarefa…",
+    "tour.eyebrow":"Como funciona", "tour.title":"Diga isto. Receba aquilo.",
+    "tour.sub":"Sem scripts, sem ritual de configuração. Peça o resultado; Pie lê a página, escolhe as ferramentas certas e percorre as etapas.",
+    "you":"Você diz",
+    "s1.tag":"· PÁGINA & PDF Q&A", "s1.cmd":"“Qual é a política de reembolso nesta página?”",
+    "s1.out":"Pergunte qualquer coisa sobre a página atual, uma tela longa de app ou um PDF. Pie extrai o conteúdo relevante para você não precisar copiar, colar ou vasculhar o DOM.",
+    "s1.done":"Concluído · 2 etapas",
+    "s1.ans":"Reembolsos são aceitos em até 30 dias após a entrega. Itens abertos se qualificam apenas se o lacre original estiver intacto, e custos de envio não são reembolsáveis.",
+    "s2.tag":"· EXTRAÇÃO DE DADOS", "s2.cmd":"“Pegue o preço de cada uma destas abas e coloque em uma tabela.”",
+    "s2.out":"Pie pode coletar fatos estruturados de páginas, compará-los, limpá-los e devolver uma tabela ou arquivo quando a resposta precisa de mais que texto simples.",
+    "s2.done":"Concluído · 6 etapas", "s2.colA":"Produto", "s2.colB":"Preço",
+    "s3.tag":"· HABILIDADES & AUTOMAÇÃO", "s3.cmd":"“Isso é difícil de explicar; vou mostrar uma vez.”",
+    "s3.out":"Alguns fluxos são mais fáceis de demonstrar. Faça uma vez e Pie salva como habilidade; depois executa a rotina inteira com um único /comando, limitado às ferramentas necessárias.",
+    "pop.count":"2 habilidades",
+    "pop.d1":"Reúne as abas abertas desta semana e resume cada uma.",
+    "pop.d2":"Rascunha uma nota de standup a partir das abas e docs de ontem.",
+    "pop.tag":"Usuário", "pop.nav":"↑↓ navegar", "pop.run":"↵ executar", "pop.esc":"esc",
+    "rec.label":"GRAVANDO", "rec.steps":"8 ETAPAS", "rec.cancel":"Cancelar", "rec.finish":"Concluir",
+    "trust.byok":"BYOK", "trust.byok.d":"Use sua própria chave de modelo. Ela fica criptografada no seu dispositivo.",
+    "trust.oss":"Open source", "trust.oss.d":"Código, licença e histórico de versões são públicos no GitHub.",
+    "trust.tel":"Sem telemetria", "trust.tel.d":"Sem backend, sem proxy. Nada passa por nós.",
+    "trust.prov":"11 provedores", "trust.prov.d":"Claude, GPT, Gemini, DeepSeek, Kimi, StepFun e mais.",
+    "cap.eyebrow":"Capacidades", "cap.title":"No que Pie é bom.",
+    "cap.sub":"O ponto principal não é uma caixa de prompt mais longa. É um agente de navegador com contexto de página, ferramentas, habilidades, saída de dados e padrões de privacidade que você entende.",
+    "cap.1":"Trabalho de agente", "cap.1d":"Pie planeja tarefas de várias etapas e usa ferramentas do navegador para ler, clicar, digitar, buscar, rolar, lidar com abas, PDFs e editores de página.",
+    "cap.2":"Conteúdo da página", "cap.2d":"Pergunte sobre a página em que você está. Pie lê páginas longas, telas de apps, PDFs, tabelas, texto selecionado e conteúdo de abas abertas.",
+    "cap.3":"Processamento de dados", "cap.3d":"Extraia campos, compare itens, reorganize conteúdo de páginas em tabelas e gere arquivos CSV, JSON, Markdown ou texto para download.",
+    "cap.4":"Habilidades", "cap.4d":"Salve fluxos repetíveis como comandos slash. Grave uma tarefa uma vez e rode novamente sem explicar cada pequeno passo.",
+    "cap.5":"Automação web", "cap.5d":"Use para o trabalho chato do navegador: preencher formulários, coletar pesquisa, mover-se entre abas e operar apps web complexos.",
+    "cap.6":"Segurança & privacidade", "cap.6d":"Traga sua própria chave, mantenha segredos criptografados localmente, evite backends operados pela Pie e isole conteúdo não confiável das páginas.",
+    "project.eyebrow":"Projeto aberto", "project.title":"Transparente por padrão.",
+    "project.sub":"Pie é desenvolvido em aberto. Licença, notas de versão e versões históricas são fáceis de inspecionar antes de instalar ou atualizar.",
+    "project.license.k":"Licença", "project.license.t":"Apache-2.0", "project.license.d":"Uma licença open source permissiva com concessão explícita de patente.",
+    "project.latest.k":"Notas recentes", "project.latest.t":"v1.0.0", "project.latest.d":"O primeiro major estável do Pie: ferramentas para tarefas longas, camada de armazenamento reconstruída e painel lateral redesenhado.",
+    "project.history.k":"Histórico de versões", "project.history.t":"Todos os releases", "project.history.d":"Veja tags, assets e notas antigas diretamente no GitHub.",
+    "version.100":"Primeiro major estável: memória para tarefas longas, nova base de armazenamento e painel lateral redesenhado.",
+    "version.0195":"Seletor de modelo, leitura/escrita em editor na página e retomada após abortar.",
+    "version.0192":"Melhor leitura de páginas grandes, busca, fidelidade de gravação e segurança em abas fixadas.",
+    "version.0190":"Provedor Kimi, exibição de thinking, search_page e atributos por modelo.",
+    "cta.eyebrow":"Comece", "cta.title":"Coloque seu navegador para trabalhar",
+    "cta.sub":"Instale Pie, descreva uma tarefa e deixe que ele cuide das etapas.",
+    "cta.install":"Adicionar ao Chrome", "cta.star":"Star no GitHub", "cta.meta":"Chrome · Manifest V3 · v1.0.0",
+    "foot.tagline":"Um agente de IA aberto que vive no seu navegador.",
+    "foot.privacy":"Privacidade", "foot.license":"Licença", "foot.release":"Notas de versão",
+    "foot.releases":"Versões", "foot.roadmap":"Roadmap", "foot.github":"GitHub", "foot.store":"Chrome Web Store",
+    "foot.copy":"© 2026 Pie · Open source · Apache-2.0", "foot.made":"Feito para Chrome",
+  },
 };
 
 // 外链常量（实施时确认）
@@ -143,11 +323,18 @@ const LINKS = {
 let langTransitionTimers = [];
 
 function normalizedLang(lang) {
-  return lang === "zh" ? "zh" : "en";
+  if (lang === "zh" || lang === "zh-CN") return "zh";
+  if (lang === "es-419") return "es-419";
+  if (lang === "ja") return "ja";
+  if (lang === "pt-BR") return "pt-BR";
+  return "en";
 }
 
 function currentLang() {
-  return document.documentElement.lang === "zh-CN" ? "zh" : "en";
+  const lang = document.documentElement.lang;
+  if (lang === "zh-CN") return "zh";
+  if (lang === "es-419" || lang === "ja" || lang === "pt-BR") return lang;
+  return "en";
 }
 
 function clearLangTransition() {
@@ -156,10 +343,16 @@ function clearLangTransition() {
   document.documentElement.classList.remove("lang-animating", "lang-fade-out", "lang-fade-in");
 }
 
-function setLangContent(lang) {
+function setLangContent(lang, options = {}) {
   lang = normalizedLang(lang);
+  const persist = options.persist !== false;
   const dict = I18N[lang] || I18N.en;
-  document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
+  document.documentElement.lang =
+    lang === "zh" ? "zh-CN" :
+    lang === "es-419" ? "es-419" :
+    lang === "ja" ? "ja" :
+    lang === "pt-BR" ? "pt-BR" :
+    "en";
   document.querySelectorAll("[data-i18n]").forEach(el => {
     const v = dict[el.dataset.i18n]; if (v != null) el.textContent = v;
   });
@@ -169,13 +362,25 @@ function setLangContent(lang) {
       if (v != null) el.setAttribute(attr, v);
     });
   });
-  document.querySelectorAll("[data-lang-btn]").forEach(b =>
-    b.setAttribute("aria-pressed", String(b.dataset.langBtn === lang)));
-  try { localStorage.setItem("pie-lang", lang); } catch {}
+  document.querySelectorAll("[data-lang-option]").forEach(option => {
+    const active = option.dataset.langOption === lang;
+    if (option.tagName === "BUTTON") {
+      option.setAttribute("aria-pressed", String(active));
+    }
+    if (active) {
+      option.setAttribute("aria-current", "page");
+    } else {
+      option.removeAttribute("aria-current");
+    }
+  });
+  if (persist) {
+    try { localStorage.setItem("pie-lang", lang); } catch {}
+  }
 }
 
 function applyLang(lang, options = {}) {
   const nextLang = normalizedLang(lang);
+  const persist = options.persist !== false;
   const reduceMotion = typeof matchMedia === "function" &&
     matchMedia("(prefers-reduced-motion: reduce)").matches;
   const shouldAnimate = Boolean(options.animate) && nextLang !== currentLang() && !reduceMotion;
@@ -183,13 +388,13 @@ function applyLang(lang, options = {}) {
   clearLangTransition();
 
   if (!shouldAnimate) {
-    setLangContent(nextLang);
+    setLangContent(nextLang, { persist });
     return;
   }
 
   document.documentElement.classList.add("lang-animating", "lang-fade-out");
   langTransitionTimers.push(setTimeout(() => {
-    setLangContent(nextLang);
+    setLangContent(nextLang, { persist });
     document.documentElement.classList.remove("lang-fade-out");
     document.documentElement.classList.add("lang-fade-in");
     langTransitionTimers.push(setTimeout(() => {
@@ -199,11 +404,35 @@ function applyLang(lang, options = {}) {
 }
 
 function initLang() {
-  let lang = "en";
-  try { const s = localStorage.getItem("pie-lang"); if (s === "en" || s === "zh") lang = s; } catch {}
-  applyLang(lang);
+  let initialLang = "en";
+  const firstPath = location.pathname.split("/").filter(Boolean)[0];
+  if (["es-419", "ja", "pt-BR"].includes(firstPath)) {
+    initialLang = firstPath;
+  }
+  applyLang(initialLang, { persist: false });
+  const toggle = document.querySelector("[data-lang-toggle]");
+  const panel = document.querySelector("[data-lang-panel]");
+  const closeMenu = () => {
+    if (!toggle || !panel) return;
+    panel.hidden = true;
+    toggle.setAttribute("aria-expanded", "false");
+  };
+  toggle?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const open = panel?.hidden !== false;
+    if (panel) panel.hidden = !open;
+    toggle.setAttribute("aria-expanded", String(open));
+  });
+  panel?.addEventListener("click", (event) => event.stopPropagation());
+  document.addEventListener("click", closeMenu);
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeMenu();
+  });
   document.querySelectorAll("[data-lang-btn]").forEach(b =>
-    b.addEventListener("click", () => applyLang(b.dataset.langBtn, { animate: true })));
+    b.addEventListener("click", () => {
+      applyLang(b.dataset.langBtn, { animate: true });
+      closeMenu();
+    }));
 }
 
 // ── scroll reveal (scenario rows slide in L/R; other blocks fade up) ──────

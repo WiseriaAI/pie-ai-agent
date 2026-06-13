@@ -3,6 +3,7 @@ import {
   buildAgentSystemPrompt,
   buildCurrentTimeBlock,
   buildObservationMessage,
+  buildResponseLanguageBlock,
   buildSkillCatalogBlock,
 } from "./prompt";
 
@@ -51,6 +52,36 @@ describe("STATIC_AGENT_SYSTEM_PROMPT — current-time rule (block A)", () => {
     expect(prompt).toMatch(/local clock|device|may.*(differ|偏差|approximate|inaccurate)/i);
     // anchoring relative time expressions (e.g. schedules)
     expect(prompt).toMatch(/tomorrow|N hours|every day|schedule|relative/i);
+  });
+});
+
+describe("buildResponseLanguageBlock", () => {
+  it("returns empty string for auto-detect-user-message", () => {
+    expect(buildResponseLanguageBlock("auto-detect-user-message")).toBe("");
+  });
+
+  it("renders explicit Japanese response guidance", () => {
+    const block = buildResponseLanguageBlock("ja");
+    expect(block).toContain("<response_language>");
+    expect(block).toContain("Japanese (ja)");
+    expect(block).toContain("If the user's latest message explicitly asks for another language");
+    expect(block).toContain("Do not translate tool names");
+  });
+
+  it("places response_language after pinned context without reintroducing user_task", () => {
+    const prompt = buildAgentSystemPrompt(
+      false,
+      true,
+      [{ tabId: 5, origin: "https://example.com" }],
+      undefined,
+      [],
+      "pt-BR",
+    );
+    expect(prompt.indexOf("<response_language>")).toBeGreaterThan(
+      prompt.indexOf("<pinned_context>"),
+    );
+    expect(prompt).not.toContain("</user_task>");
+    expect(prompt).not.toContain("<user_task>my task</user_task>");
   });
 });
 

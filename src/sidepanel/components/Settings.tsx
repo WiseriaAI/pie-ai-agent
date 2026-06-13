@@ -29,6 +29,7 @@ import InstanceForm, { type InstanceFormPayload } from "./InstanceForm";
 import InstancesList from "./InstancesList";
 import NewConfigWizard from "./NewConfigWizard";
 import type { ProviderTestOptions } from "./NewConfigWizard";
+import AssistantLanguageSelect from "./AssistantLanguageSelect";
 import LanguageSelect from "./LanguageSelect";
 import { useT, getLocale } from "@/lib/i18n";
 import { buildGithubNewIssueUrl, buildFeedbackMailto, type FeedbackEnv } from "@/lib/feedback";
@@ -335,6 +336,12 @@ export default function Settings({ onBack, onRunSkill }: Props) {
             <section className="flex flex-col gap-3.5">
               <div className="text-[15px] font-semibold tracking-[-0.005em] text-fg-1">{t("settings.language.sectionTitle")}</div>
               <LanguageSelect />
+              <div className="flex flex-col gap-1.5">
+                <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-fg-3">
+                  {t("settings.language.assistantLabel")}
+                </div>
+                <AssistantLanguageSelect />
+              </div>
             </section>
             <CdpInputSection
               state={cdpInput}
