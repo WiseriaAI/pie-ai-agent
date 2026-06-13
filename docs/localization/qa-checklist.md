@@ -44,3 +44,20 @@ Run this checklist for each locale before launch.
 
 - Launch approved:
 - Required changes:
+
+## Verification Commands
+
+- `pnpm typecheck`: 2026-06-13 1d982da5 PASS
+- `pnpm test`: 2026-06-13 1d982da5 PASS
+- `pnpm build`: 2026-06-13 1d982da5 PASS
+- `pnpm check:i18n`: 2026-06-13 1d982da5 PASS
+
+## Launch Gate
+
+Launch is blocked until each locale has reviewer approval for:
+
+- Extension UI activation path.
+- Chrome Web Store copy.
+- Landing page route.
+- README setup guide.
+- Screenshot captions.
