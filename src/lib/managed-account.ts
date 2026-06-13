@@ -13,7 +13,20 @@ export async function getEntitlement(apiKey: string, deps: ManagedAccountDeps = 
     headers: { authorization: `Bearer ${apiKey}` },
   });
   if (!resp.ok) throw new Error(`Failed to load entitlement (${resp.status})`);
-  return (await resp.json()) as Entitlement;
+  return normalizeEntitlement(await resp.json());
+}
+
+/** 容忍后端缺字段/新激活边缘：补齐 v2 安全默认，绝不抛。 */
+export function normalizeEntitlement(raw: unknown): Entitlement {
+  const r = (raw ?? {}) as Record<string, unknown>;
+  const plan = r.plan === "active" || r.plan === "blocked" ? r.plan : "none";
+  return {
+    plan,
+    email: typeof r.email === "string" ? r.email : "",
+    subscription: (r.subscription as Entitlement["subscription"]) ?? null,
+    quota: (r.quota as Entitlement["quota"]) ?? null,
+    models: Array.isArray(r.models) ? (r.models as Entitlement["models"]) : [],
+  };
 }
 
 async function openBilling(path: "/billing/checkout" | "/billing/portal", apiKey: string, deps: ManagedAccountDeps): Promise<void> {

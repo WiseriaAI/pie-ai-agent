@@ -7,7 +7,7 @@ const deps = (over: Partial<Parameters<typeof startManagedLogin>[0]> = {}) => ({
   launchWebAuthFlow: vi.fn(async () => `${redirectUri}?code=AUTHCODE`),
   fetchFn: vi.fn(async () => ({
     ok: true, status: 200,
-    json: async () => ({ apiKey: "sk-virtual", entitlement: { plan: "none", email: "u@x.com", budgetRemainingUsd: 0 } }),
+    json: async () => ({ apiKey: "sk-virtual", entitlement: { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [] } }),
   })) as unknown as typeof fetch,
   ...over,
 });
@@ -24,7 +24,7 @@ describe("startManagedLogin", () => {
       method: "POST",
       body: JSON.stringify({ code: "AUTHCODE", redirectUri }),
     }));
-    expect(res).toEqual({ apiKey: "sk-virtual", entitlement: { plan: "none", email: "u@x.com", budgetRemainingUsd: 0 } });
+    expect(res).toEqual({ apiKey: "sk-virtual", entitlement: { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [] } });
   });
 
   it("throws when the user cancels (no code in redirect)", async () => {
