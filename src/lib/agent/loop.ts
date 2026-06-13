@@ -15,7 +15,7 @@ import {
 } from "./tools";
 import type { Tool } from "./types";
 import { getToolClass, SCREENSHOT_TOOL_NAMES } from "./tool-names";
-import { escapeUntrustedWrappers } from "./untrusted-wrappers";
+import { escapeUntrustedWrappers, escapeTrustedWrappers } from "./untrusted-wrappers";
 import { classifyStreamCompletion } from "./stream-completion";
 import {
   buildAgentSystemPrompt,
@@ -288,6 +288,10 @@ export interface AgentLoopContext {
  * - `user` messages are wrapped in
  *   `<untrusted_user_message>…</untrusted_user_message>` with
  *   `escapeUntrustedWrappers` applied first (D7 idempotent).
+ *   When `asLiveTask = true` the current turn is instead wrapped in the
+ *   trusted `<user_task>…</user_task>` marker with `escapeTrustedWrappers`
+ *   applied to neutralise any literal `</user_task>` in the input.
+ *   Default is `false` so all existing call sites are unaffected.
  * - `assistant` messages pass through verbatim (lastTaskSynth-injected
  *   turns are already wrapped by U3 in
  *   `<untrusted_prior_task_summary>`; real chat replies are trusted
@@ -298,12 +302,17 @@ export interface AgentLoopContext {
  *
  * Exported for unit testing (D7 wrap invariant).
  */
-export function chatMessageToAgentMessage(m: ChatMessage): AgentMessage {
+export function chatMessageToAgentMessage(
+  m: ChatMessage,
+  asLiveTask = false,
+): AgentMessage {
   if (m.role !== "user") return { role: m.role, content: m.content };
 
   const wrappedText =
     m.content.length > 0
-      ? `<untrusted_user_message>${escapeUntrustedWrappers(m.content)}</untrusted_user_message>`
+      ? asLiveTask
+        ? `<user_task>${escapeTrustedWrappers(m.content)}</user_task>`
+        : `<untrusted_user_message>${escapeUntrustedWrappers(m.content)}</untrusted_user_message>`
       : "";
 
   if (!m.attachments?.length) {
@@ -766,17 +775,18 @@ export function buildFirstTurnReadPageHint(pinnedTabId: number): string {
  * Block A — current-time seed for the headless single-task path (seed path 3).
  *
  * Prepends a trusted `<current_time>` block (see buildCurrentTimeBlock) to the
- * raw task string, separated by a blank line. Hit ONLY when `ctx.messages` is
- * empty — i.e. headless schedule runs (run.ts passes a bare `task`, no
- * messages). Foreground chat carries `ctx.messages` and is handled by
- * prependTimeToLastUserMessage instead (seed path 2). Resume reuses persisted
- * history and never re-injects.
+ * task wrapped in a trusted `<user_task>` wrapper, separated by a blank line.
+ * Hit ONLY when `ctx.messages` is empty — i.e. headless schedule runs (run.ts
+ * passes a bare `task`, no messages). Foreground chat carries `ctx.messages`
+ * and is handled by prependTimeToLastUserMessage instead (seed path 2). Resume
+ * reuses persisted history and never re-injects.
  *
- * Pure: `now` is passed in for deterministic tests; the time block is in front,
- * the task verbatim behind.
+ * Pure: `now` is passed in for deterministic tests; the time block is in front
+ * (outside the wrapper), the task is inside the trusted `<user_task>` wrapper.
+ * The task text is escaped via escapeTrustedWrappers to prevent injection.
  */
 export function buildSeededTaskContent(now: number, task: string): string {
-  return `${buildCurrentTimeBlock(now)}\n\n${task}`;
+  return `${buildCurrentTimeBlock(now)}\n\n<user_task>${escapeTrustedWrappers(task)}</user_task>`;
 }
 
 /**
@@ -789,8 +799,10 @@ export function buildSeededTaskContent(now: number, task: string): string {
  *   - earlier user turns stay untouched → the block never accumulates across
  *     turns; each task carries exactly one current-time stamp on the newest
  *     prompt.
- *   - the block is prepended OUTSIDE the `<untrusted_user_message>` wrapper —
- *     it is trusted runtime content, not user-supplied data.
+ *   - the block is prepended OUTSIDE the content's wrapper tag
+ *     (`<untrusted_user_message>` for earlier turns, `<user_task>` for the
+ *     live-task message) — it is trusted runtime content, not user-supplied
+ *     data.
  *   - string content → `"<current_time>…</current_time>\n\n" + original`.
  *   - ContentBlock[] content (image attachments) → a fresh leading text block
  *     carrying the time, with the original blocks preserved after it.
@@ -1257,7 +1269,6 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
   const systemMsg: AgentMessage = {
     role: "system",
     content: buildAgentSystemPrompt(
-      task,
       // CDP tools are always offered (calling while disabled prompts the user
       // to enable), so always include the keyboard/editor usage guidance.
       /* hasKeyboardTools */ true,
@@ -1300,7 +1311,15 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         [
           systemMsg,
           ...prependTimeToLastUserMessage(
-            ctx.messages.map(chatMessageToAgentMessage),
+            // #175 — the current prompt is ALWAYS the last message
+            // (background/index.ts puts it last). Wrap it as the trusted
+            // <user_task> (live task); earlier turns stay untrusted.
+            // NOTE: explicit (m, i) arrow is required — a bare
+            // .map(chatMessageToAgentMessage) would forward the array index
+            // as the asLiveTask boolean.
+            ctx.messages.map((m, i) =>
+              chatMessageToAgentMessage(m, i === ctx.messages!.length - 1),
+            ),
             Date.now(),
           ),
         ]

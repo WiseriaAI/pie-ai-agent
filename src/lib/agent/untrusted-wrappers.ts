@@ -109,6 +109,35 @@ export function escapeUntrustedWrappers(text: string): string {
 }
 
 /**
+ * Trusted wrapper tags — these carry authority (system-equivalent instruction
+ * source). When the user's own task text is wrapped in <user_task>, any literal
+ * <user_task> / </user_task> inside that text must be neutralized so it cannot
+ * prematurely close the real wrapper and split the user's instruction. Reuses
+ * the same bracket / slash / zero-width attack coverage as escapeUntrustedWrappers.
+ *
+ * NOTE: kept SEPARATE from UNTRUSTED_WRAPPER_TAGS on purpose — that list feeds
+ * the dual-list invariant (page-snapshot.ts WRAPPER_TAGS_LIST) and many
+ * untrusted-only scanners; user_task is trusted and must not pollute it.
+ */
+export const TRUSTED_WRAPPER_TAGS = ["user_task"] as const;
+
+const TRUSTED_TAG_ALT = TRUSTED_WRAPPER_TAGS.join("|");
+
+const TRUSTED_WRAPPER_RE = new RegExp(
+  `${LT_CLASS}\\s*${SLASH_CLASS}{0,3}\\s*(?:${TRUSTED_TAG_ALT})${NOT_GT_CLASS}{0,200}${GT_CLASS}`,
+  "gi",
+);
+
+export function escapeTrustedWrappers(text: string): string {
+  if (!text) return "";
+  const noZeroWidth = text.replace(ZERO_WIDTH_RE, "");
+  return noZeroWidth.replace(TRUSTED_WRAPPER_RE, (match) => {
+    const inner = match.slice(1, -1);
+    return `&lt;${inner}&gt;`;
+  });
+}
+
+/**
  * iframe spec §4 — sanitize attribute values before embedding into wrapper
  * open tags (e.g. <untrusted_page_content frame_url="${escape(url)}">).
  *
