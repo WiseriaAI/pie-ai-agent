@@ -268,6 +268,7 @@ html.lang-fade-in [data-i18n] { animation:langFadeIn 220ms var(--ease) both; }
 @media (max-width: 640px) {
   .section { padding-top:72px; padding-bottom:72px; padding-left:22px; padding-right:22px; }
   .topbar-in, .trust-in, .cta-dark, .foot { padding-left:22px; padding-right:22px; }
+  .topbar-in { flex-wrap:wrap; align-items:flex-start; gap:10px; }
   .hero-title { font-size:40px; }
   .h-section { font-size:34px; } .h-section.sm { font-size:30px; }
   .trust-in { flex-wrap:wrap; gap:28px 0; } .trust-item { flex-basis:50%; flex:0 0 50%; padding:0 16px 0 0; } .trust-div { display:none; }
@@ -275,5 +276,9 @@ html.lang-fade-in [data-i18n] { animation:langFadeIn 220ms var(--ease) both; }
   .version-row { align-items:flex-start; gap:10px; flex-direction:column; }
   .rec-bar { left:0; bottom:-16px; gap:8px; padding:8px 10px; } .rec-cancel { display:none; }
   .foot-top { flex-direction:column; gap:24px; }
-  .nav-right { gap:10px; } .gh-pill { display:none; }
+  .nav-right { width:100%; justify-content:flex-start; gap:10px; }
+  .lang-links { min-width:0; max-width:100%; overflow-x:auto; scrollbar-width:none; }
+  .lang-links::-webkit-scrollbar { display:none; }
+  .lang-btn { flex:0 0 auto; }
+  .gh-pill, .nav-right > .btn-ink { display:none; }
 }
