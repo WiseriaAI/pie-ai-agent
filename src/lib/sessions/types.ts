@@ -221,6 +221,16 @@ export interface SessionAgentState {
    */
   currentFocusTabId?: number;
   /**
+   * Progressive tool disclosure — the monotonic set of active DisclosureGroups
+   * for the in-flight task (always includes "core"). Seeded at task start from
+   * env signals + the progressiveToolDisclosure flag; grown by env detection
+   * and load_tools. Persisted so a SW-restart resume restores lazily-loaded
+   * groups (env groups re-light from signals regardless). Written via the
+   * spread-existing-first merge path (like currentFocusTabId), not the bare
+   * snapshot.
+   */
+  activeToolGroups?: string[];
+  /**
    * U3 (Half B SW-side synth) — synthesized assistant turn from the last
    * completed agent task. Moved from `SessionMeta` to `SessionAgentState`
    * (AD1 fix) so both writers to this key are SW-only: `emitDone` sets it

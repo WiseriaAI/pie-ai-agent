@@ -7,7 +7,10 @@
   </p>
   <p>
     <a href="README.md">English</a> ·
-    <strong>简体中文</strong>
+    <strong>简体中文</strong> ·
+    <a href="README.es-419.md">Español (Latinoamérica)</a> ·
+    <a href="README.ja.md">日本語</a> ·
+    <a href="README.pt-BR.md">Português (Brasil)</a>
   </p>
   <p>
     <a href="#安装">安装</a> ·

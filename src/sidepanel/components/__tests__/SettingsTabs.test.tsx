@@ -144,9 +144,9 @@ describe("Settings 4-tab IA", () => {
     // Click the 4th tab (General)
     fireEvent.click(tabButtons[3]);
 
-    // The CDP switch should now appear
+    // The CDP switch (and progressive disclosure switch) should now appear
     await waitFor(() => {
-      expect(screen.getByRole("switch")).toBeTruthy();
+      expect(screen.getAllByRole("switch").length).toBeGreaterThan(0);
     });
   });
 
@@ -170,7 +170,7 @@ describe("Settings 4-tab IA", () => {
 
     // Go to General
     fireEvent.click(tabButtons[3]);
-    await waitFor(() => expect(screen.getByRole("switch")).toBeTruthy());
+    await waitFor(() => expect(screen.getAllByRole("switch").length).toBeGreaterThan(0));
 
     // Go back to Configs (first tab)
     fireEvent.click(tabButtons[0]);
