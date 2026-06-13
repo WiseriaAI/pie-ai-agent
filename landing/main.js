@@ -362,8 +362,17 @@ function setLangContent(lang, options = {}) {
       if (v != null) el.setAttribute(attr, v);
     });
   });
-  document.querySelectorAll("[data-lang-btn]").forEach(b =>
-    b.setAttribute("aria-pressed", String(b.dataset.langBtn === lang)));
+  document.querySelectorAll("[data-lang-option]").forEach(option => {
+    const active = option.dataset.langOption === lang;
+    if (option.tagName === "BUTTON") {
+      option.setAttribute("aria-pressed", String(active));
+    }
+    if (active) {
+      option.setAttribute("aria-current", "page");
+    } else {
+      option.removeAttribute("aria-current");
+    }
+  });
   if (persist) {
     try { localStorage.setItem("pie-lang", lang); } catch {}
   }
@@ -401,8 +410,29 @@ function initLang() {
     initialLang = firstPath;
   }
   applyLang(initialLang, { persist: false });
+  const toggle = document.querySelector("[data-lang-toggle]");
+  const panel = document.querySelector("[data-lang-panel]");
+  const closeMenu = () => {
+    if (!toggle || !panel) return;
+    panel.hidden = true;
+    toggle.setAttribute("aria-expanded", "false");
+  };
+  toggle?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const open = panel?.hidden !== false;
+    if (panel) panel.hidden = !open;
+    toggle.setAttribute("aria-expanded", String(open));
+  });
+  panel?.addEventListener("click", (event) => event.stopPropagation());
+  document.addEventListener("click", closeMenu);
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeMenu();
+  });
   document.querySelectorAll("[data-lang-btn]").forEach(b =>
-    b.addEventListener("click", () => applyLang(b.dataset.langBtn, { animate: true })));
+    b.addEventListener("click", () => {
+      applyLang(b.dataset.langBtn, { animate: true });
+      closeMenu();
+    }));
 }
 
 // ── scroll reveal (scenario rows slide in L/R; other blocks fade up) ──────

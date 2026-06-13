@@ -12,7 +12,7 @@
   <meta property="og:image" content="/og-image.png" />
   <meta name="twitter:card" content="summary_large_image" />
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/styles.css?v=20260613-lang-menu" />
 </head>
 <body>
   <main id="app"><span id="top"></span>
@@ -23,13 +23,21 @@
           <span class="brand-word">Pie</span>
         </a>
         <div class="nav-right">
-          <nav class="lang lang-links" aria-label="Language">
-            <a class="lang-btn" href="/">English</a>
-            <a class="lang-btn" href="/es-419/">Español</a>
-            <a class="lang-btn" href="/ja/">日本語</a>
-            <a class="lang-btn" href="/pt-BR/">Português</a>
-            <button class="lang-btn" type="button" data-lang-btn="zh" aria-pressed="false">中文</button>
-          </nav>
+          <div class="lang-menu">
+            <button class="lang-toggle" type="button" aria-label="Language" aria-haspopup="true" aria-expanded="false" data-lang-toggle>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5A6470" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="9"/>
+                <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>
+              </svg>
+            </button>
+            <nav class="lang-panel" aria-label="Language" data-lang-panel hidden>
+              <a class="lang-option" href="/" data-lang-option="en">English</a>
+              <a class="lang-option" href="/es-419/" data-lang-option="es-419">Español</a>
+              <a class="lang-option" href="/ja/" data-lang-option="ja">日本語</a>
+              <a class="lang-option" href="/pt-BR/" data-lang-option="pt-BR">Português</a>
+              <button class="lang-option" type="button" data-lang-btn="zh" data-lang-option="zh" aria-pressed="false">中文</button>
+            </nav>
+          </div>
           <a class="ghost gh-pill" data-href="github">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="#5A6470"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.3.8-.6v-2c-3.2.7-3.9-1.5-3.9-1.5-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2 1-.3 2-.4 3-.4s2 .1 3 .4c2.3-1.6 3.3-1.2 3.3-1.2.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5z"/></svg>
             <span data-i18n="nav.star">Star</span>
@@ -308,6 +316,6 @@
       </div>
     </footer>
   </main>
-  <script type="module" src="/main.js"></script>
+  <script type="module" src="/main.js?v=20260613-lang-menu"></script>
 </body>
 </html>
