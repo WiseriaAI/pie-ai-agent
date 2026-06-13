@@ -126,7 +126,7 @@ export default function InstanceForm(props: Props) {
   // Managed provider: skip the BYOK form entirely — show account panel instead.
   if (props.provider === "managed") {
     return (
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-3 px-3.5 py-3.5">
         {props.existingApiKey
           ? <ManagedAccountPanel apiKey={props.existingApiKey} />
           : <div className="text-[12px] text-fg-3">Sign in from the &ldquo;Official subscription&rdquo; tab to set this up.</div>}

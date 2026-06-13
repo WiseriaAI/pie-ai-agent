@@ -52,7 +52,10 @@ export default function ManagedAccountPanel({ apiKey, deps }: { apiKey: string; 
     catch (e) { setErr(e instanceof Error ? e.message : "Failed to open checkout"); }
   }
 
-  const container = "flex flex-col gap-[18px] rounded-[14px] border border-line bg-surface p-4 text-[13px]";
+  // No card chrome: this panel renders inside InstanceForm's expanded area, which
+  // already provides the bordered bg-surface container + padding (see InstanceForm
+  // managed branch). A self-border here would double up with the list card.
+  const container = "flex flex-col gap-[18px] text-[13px]";
 
   if (!ent) {
     return <div className={container}><div className="text-fg-3">Loading…</div></div>;
