@@ -123,6 +123,21 @@ export function buildToolCatalogBlock(startActive: ReadonlySet<string>): string 
   );
 }
 
+/**
+ * Guidance for the groups that are active AT TASK START (the seed). For a
+ * typical progressive seed (core + screenshot/skill-mediation, none of which
+ * carry guidance) this is empty — guidance for groups that light up later
+ * arrives via the activation notice instead. When the progressiveToolDisclosure
+ * flag is OFF the seed is ALL groups, so every group's guidance is inlined here,
+ * restoring full-disclosure parity with the pre-feature system prompt.
+ */
+export function buildActiveGuidanceBlock(active: ReadonlySet<string>): string {
+  const parts = ALL_GROUPS
+    .filter((g) => active.has(g) && GROUP_META[g].guidance)
+    .map((g) => GROUP_META[g].guidance as string);
+  return parts.length ? "\n\n" + parts.join("\n\n") : "";
+}
+
 export function buildActivationNotice(groups: readonly DisclosureGroup[]): string {
   const parts = groups
     .filter((g) => GROUP_META[g].guidance)

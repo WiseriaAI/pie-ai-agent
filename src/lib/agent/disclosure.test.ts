@@ -147,3 +147,23 @@ describe("growActiveGroups — monotonic grow + warn-once", () => {
     expect(r.notice).toBe(""); // pdf already known → no notice
   });
 });
+
+import { buildActiveGuidanceBlock } from "./disclosure";
+
+describe("buildActiveGuidanceBlock — inline guidance for seed-active groups", () => {
+  it("core-only seed → empty (progressive: guidance arrives on activation)", () => {
+    expect(buildActiveGuidanceBlock(new Set(["core"]))).toBe("");
+  });
+  it("core + screenshot + skill-mediation seed → still empty (no guidance fields)", () => {
+    expect(buildActiveGuidanceBlock(new Set(["core", "screenshot", "skill-mediation"]))).toBe("");
+  });
+  it("all-groups seed (flag OFF) → inlines pdf + scratchpad + schedule + skill-authoring + local-file guidance", () => {
+    const all = new Set(["core", "screenshot", "skill-mediation", "pdf", "local-file", "scratchpad", "schedule", "skill-authoring"]);
+    const block = buildActiveGuidanceBlock(all);
+    expect(block).toContain("read_pdf");
+    expect(block).toContain("save_records");
+    expect(block).toContain("create_schedule");
+    expect(block).toContain("create_skill");
+    expect(block).toContain("read_local_file");
+  });
+});

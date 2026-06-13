@@ -386,4 +386,11 @@ describe("buildAgentSystemPrompt — disclosure catalog (progressive disclosure)
     const p = buildAgentSystemPrompt(true, true, [], undefined, [], new Set(["core", "pdf"]));
     expect(p).not.toContain("pdf —");
   });
+  it("flag-OFF (all groups seeded active) inlines the PDF + scratchpad guidance and drops the catalog", () => {
+    const all = new Set(["core", "screenshot", "skill-mediation", "pdf", "local-file", "scratchpad", "schedule", "skill-authoring"]);
+    const p = buildAgentSystemPrompt(true, true, [], undefined, [], all);
+    expect(p).toContain("get_pdf_outline"); // pdf guidance inlined
+    expect(p).toContain("save_records");    // scratchpad guidance inlined
+    expect(p).not.toContain("<available_tools_catalog>"); // all loadable active → no catalog
+  });
 });

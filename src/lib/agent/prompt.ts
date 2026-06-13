@@ -1,4 +1,4 @@
-import { buildToolCatalogBlock } from "./disclosure";
+import { buildToolCatalogBlock, buildActiveGuidanceBlock } from "./disclosure";
 
 /**
  * Block A — current-time block.
@@ -315,9 +315,10 @@ export function buildAgentSystemPrompt(
   const skillCatalogBlock = buildSkillCatalogBlock(skillCatalog);
   const tabGuidance = TAB_TOOLS_GUIDANCE;
   const pinnedContext = buildPinnedContextBlock(pinnedTabs, currentFocusTabId);
+  const activeGuidance = buildActiveGuidanceBlock(startActiveGroups);
   const catalogBlock = buildToolCatalogBlock(startActiveGroups);
   return (
-    `${STATIC_AGENT_SYSTEM_PROMPT}${READ_PAGE_GUIDANCE}${FRAME_AWARENESS_GUIDANCE}${keyboardGuidance}${editorGuidance}${skillCatalogBlock}${tabGuidance}${SEARCH_TOOL_GUIDANCE}${pinnedContext}${catalogBlock}\n\n${R15_IMAGE_UNTRUSTED}`
+    `${STATIC_AGENT_SYSTEM_PROMPT}${READ_PAGE_GUIDANCE}${FRAME_AWARENESS_GUIDANCE}${keyboardGuidance}${editorGuidance}${skillCatalogBlock}${tabGuidance}${SEARCH_TOOL_GUIDANCE}${pinnedContext}${activeGuidance}${catalogBlock}\n\n${R15_IMAGE_UNTRUSTED}`
   );
 }
 
