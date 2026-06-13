@@ -82,6 +82,10 @@ export const enDict = {
       warning2: "All hover/click/keyboard actions use real CDP events; existing Chrome DevTools sessions on the same tab will conflict.",
       warning3: "Toggle off any time to disable; running tasks abort cleanly.",
     },
+    progressiveDisclosure: {
+      title: "Progressive tool disclosure",
+      description: "Only disclose the tools the current context needs; the rest load on demand. Reduces noise and improves tool selection. Turn off to disclose all tools at once.",
+    },
     searchProvider: {
       caps: "Search provider",
       statusNotSet: "Not set",

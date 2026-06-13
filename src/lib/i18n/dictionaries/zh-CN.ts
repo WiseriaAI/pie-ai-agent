@@ -82,6 +82,10 @@ export const zhCNDict = {
       warning2: "所有 hover/click/键盘操作都走真实 CDP 事件；同一标签的现有 DevTools 会话会冲突。",
       warning3: "可随时关闭；运行中的任务会干净中止。",
     },
+    progressiveDisclosure: {
+      title: "渐进式工具披露",
+      description: "仅向模型披露当前环境需要的工具，其余按需自动加载，可减少干扰、提升工具选择质量。关闭则一次性披露全部工具。",
+    },
     searchProvider: {
       caps: "网页搜索",
       statusNotSet: "未配置",
