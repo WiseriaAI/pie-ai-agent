@@ -86,11 +86,6 @@ export const jaDict = {
       warning2: "すべての hover/クリック/キーボード操作は実際の CDP イベントを使います。同じタブの既存 Chrome DevTools セッションとは競合します。",
       warning3: "いつでもオフにできます。実行中のタスクは安全に中止されます。",
     },
-    progressiveDisclosure: {
-      title: "ツールの段階的開示",
-      description:
-        "現在の状況で必要なツールだけを開示し、残りは必要に応じて読み込みます。ノイズを減らし、ツール選択の精度を高めます。オフにするとすべてのツールを一度に開示します。",
-    },
     searchProvider: {
       caps: "検索プロバイダー",
       statusNotSet: "未設定",

@@ -47,9 +47,8 @@ import {
 import { queryScratchpad as svcQueryScratchpad } from "../scratchpad/sql-bridge";
 import { getEnabledSkillPackages } from "../skills";
 import { isFilePdfUrl, isPdfTab } from "../pdf/detect";
-import { groupsForEnv, selectTools, growActiveGroups, ALL_GROUPS, type EnvSignals } from "./disclosure";
+import { groupsForEnv, selectTools, growActiveGroups, type EnvSignals } from "./disclosure";
 import { buildLoadToolsTool } from "./tools/disclosure";
-import { getProgressiveDisclosureFlag } from "../progressive-tool-disclosure-flag";
 // isRestrictedUrl is owned by the shared util (src/lib/url/restricted.ts).
 // Imported here for loop-internal use AND re-exported below so existing
 // `import { isRestrictedUrl } from "../agent/loop"` call sites keep working.
@@ -377,14 +376,13 @@ export function filterToolsByVision<T extends { name: string }>(
 }
 
 /**
- * Seed the task's active disclosure groups. Flag OFF → all groups (full
- * disclosure, the degenerate config). Flag ON → core + env-triggered groups.
+ * Seed the task's active disclosure groups: `core` plus whatever groups the
+ * task-start environment lights up (vision → screenshot, enabled skills →
+ * skill-mediation; pdf/local-file light up during the loop, not at seed time).
+ * Progressive disclosure is always on — there is no user-facing toggle; the
+ * tool set is a runtime concern the user does not configure.
  */
-export function seedActiveGroups(
-  env: EnvSignals,
-  opts: { progressiveDisclosure: boolean },
-): Set<string> {
-  if (!opts.progressiveDisclosure) return new Set<string>(ALL_GROUPS);
+export function seedActiveGroups(env: EnvSignals): Set<string> {
   return new Set<string>(["core", ...groupsForEnv(env)]);
 }
 
@@ -1305,7 +1303,6 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
   // groups (flag OFF, full disclosure). `announcedGroups` tracks groups whose
   // activation guidance the model has already seen — already-known groups are
   // never re-announced.
-  const progressiveDisclosure = await getProgressiveDisclosureFlag();
   const seedEnv: EnvSignals = {
     vision: modelConfig.vision === true,
     hasSkills: skillCatalog.length > 0,
@@ -1315,7 +1312,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
   const activeToolGroups: Set<string> =
     ctx.resumedActiveToolGroups && ctx.resumedActiveToolGroups.length > 0
       ? new Set<string>(ctx.resumedActiveToolGroups)
-      : seedActiveGroups(seedEnv, { progressiveDisclosure });
+      : seedActiveGroups(seedEnv);
   const announcedGroups = new Set<string>(activeToolGroups); // already-known → never re-announce
   // Headless (scheduled) run = no resumed history AND no multi-turn chat prefix
   // (case 3 in the history seed below). Constant per task. load_tools refuses to
@@ -1542,8 +1539,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // when the tab is unavailable, which matches neither isPdfTab nor file://
       // → no spurious env signal). The `|| activeToolGroups.has(...)` legs make
       // the pdf/local-file signals sticky once lit (env detection never
-      // un-lights a group). Only meaningful when progressiveDisclosure is on;
-      // harmless otherwise (flag off seeds ALL groups → newlyLit always empty).
+      // un-lights a group).
       {
         const tabUrl = currentUrl ?? "";
         const env: EnvSignals = {
@@ -1748,7 +1744,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         readLocalFileTool, requestLocalFileTool, outputFileTool, ...scratchpadTools,
         loadToolsTool,
       ];
-      const disclosed = progressiveDisclosure ? selectTools(fullToolList, activeToolGroups) : fullToolList;
+      const disclosed = selectTools(fullToolList, activeToolGroups);
       const allToolsBeforeExclude = filterToolsByVision(disclosed, modelConfig.vision);
       // Task 7 — recursive creation guard: headless schedule runs pass
       // excludeToolNames to strip create_schedule / update_schedule from the

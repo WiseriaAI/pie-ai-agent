@@ -86,11 +86,6 @@ export const es419Dict = {
       warning2: "Todas las acciones de hover/clic/teclado usan eventos CDP reales; las sesiones existentes de Chrome DevTools en la misma pestaña tendrán conflicto.",
       warning3: "Puedes desactivarlo en cualquier momento; las tareas en ejecución se cancelan limpiamente.",
     },
-    progressiveDisclosure: {
-      title: "Divulgación progresiva de herramientas",
-      description:
-        "Solo expone las herramientas que el contexto actual necesita; las demás se cargan según se requieran. Reduce el ruido y mejora la selección de herramientas. Desactívalo para exponer todas las herramientas a la vez.",
-    },
     searchProvider: {
       caps: "Proveedor de búsqueda",
       statusNotSet: "Sin configurar",

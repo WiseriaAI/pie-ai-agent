@@ -19,7 +19,6 @@ import {
 import { getProviderMeta, resolveProviderMeta, resolveEndpointVariant } from "@/lib/model-router/providers/registry";
 import { fetchOpenRouterModels } from "@/lib/openrouter-models-fetch";
 import { isCdpInputEnabled, setCdpInputEnabled } from "@/lib/cdp-input-enabled";
-import { getProgressiveDisclosureFlag, setProgressiveDisclosureFlag } from "@/lib/progressive-tool-disclosure-flag";
 import {
   addCustomProviderModel, updateCustomProviderModel, removeCustomProviderModel,
   CUSTOM_PREFIX, providerRefToId, listCustomProviders,
@@ -50,7 +49,6 @@ export default function Settings({ onBack, onRunSkill }: Props) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showWizard, setShowWizard] = useState(false);
   const [cdpInput, setCdpInput] = useState<boolean | undefined>(undefined);
-  const [progressiveDisclosure, setProgressiveDisclosure] = useState<boolean>(true);
   const [testResult, setTestResult] = useState<Record<string, { ok: boolean; message: string }>>({});
   const [testingIds, setTestingIds] = useState<Record<string, boolean>>({});
   const testingIdsRef = useRef<Set<string>>(new Set());
@@ -82,7 +80,6 @@ export default function Settings({ onBack, onRunSkill }: Props) {
   useEffect(() => {
     reload();
     isCdpInputEnabled().then(setCdpInput);
-    getProgressiveDisclosureFlag().then(setProgressiveDisclosure);
   }, [reload]);
 
   async function handleCreate(provider: ProviderRef, payload: InstanceFormPayload) {
@@ -350,10 +347,6 @@ export default function Settings({ onBack, onRunSkill }: Props) {
               state={cdpInput}
               onSet={async (next) => { setCdpInput(next); await setCdpInputEnabled(next); }}
             />
-            <ProgressiveDisclosureSection
-              enabled={progressiveDisclosure}
-              onSet={async (next) => { setProgressiveDisclosure(next); await setProgressiveDisclosureFlag(next); }}
-            />
             <FeedbackSection activeInstance={instances[0]} />
             <AboutSection />
           </div>
@@ -475,27 +468,6 @@ function CdpInputSection({
         )}
       </div>
     </section>
-  );
-}
-
-function ProgressiveDisclosureSection({
-  enabled,
-  onSet,
-}: {
-  enabled: boolean;
-  onSet: (next: boolean) => void;
-}) {
-  const t = useT();
-  return (
-    <div className="flex flex-col gap-3 rounded-[14px] border border-line bg-surface p-3.5">
-      <div className="flex items-start gap-3">
-        <div className="flex flex-1 flex-col gap-1">
-          <div className="text-[13px] font-medium text-fg-1">{t("settings.progressiveDisclosure.title")}</div>
-          <p className="text-[12px] leading-[18px] text-fg-2">{t("settings.progressiveDisclosure.description")}</p>
-        </div>
-        <Switch checked={enabled} onChange={onSet} />
-      </div>
-    </div>
   );
 }
 

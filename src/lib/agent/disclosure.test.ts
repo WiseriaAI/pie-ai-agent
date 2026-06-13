@@ -157,7 +157,7 @@ describe("buildActiveGuidanceBlock — inline guidance for seed-active groups", 
   it("core + screenshot + skill-mediation seed → still empty (no guidance fields)", () => {
     expect(buildActiveGuidanceBlock(new Set(["core", "screenshot", "skill-mediation"]))).toBe("");
   });
-  it("all-groups seed (flag OFF) → inlines pdf + scratchpad + schedule + skill-authoring + local-file guidance", () => {
+  it("all groups active (e.g. resume) → inlines pdf + scratchpad + schedule + skill-authoring + local-file guidance", () => {
     const all = new Set(["core", "screenshot", "skill-mediation", "pdf", "local-file", "scratchpad", "schedule", "skill-authoring"]);
     const block = buildActiveGuidanceBlock(all);
     expect(block).toContain("read_pdf");

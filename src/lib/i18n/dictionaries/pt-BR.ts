@@ -86,11 +86,6 @@ export const ptBRDict = {
       warning2: "Todas as ações de hover/clique/teclado usam eventos CDP reais; sessões existentes do Chrome DevTools na mesma aba entrarão em conflito.",
       warning3: "Desative a qualquer momento; tarefas em execução são abortadas corretamente.",
     },
-    progressiveDisclosure: {
-      title: "Divulgação progressiva de ferramentas",
-      description:
-        "Expõe apenas as ferramentas que o contexto atual precisa; as demais são carregadas sob demanda. Reduz o ruído e melhora a seleção de ferramentas. Desative para expor todas as ferramentas de uma vez.",
-    },
     searchProvider: {
       caps: "Provedor de busca",
       statusNotSet: "Não definido",
