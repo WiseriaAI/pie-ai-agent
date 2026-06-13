@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getEntitlement, openCheckout, openPortal } from "@/lib/managed-account";
+import { getCachedEntitlement, getEntitlement, openCheckout, openPortal } from "@/lib/managed-account";
 import type { Entitlement } from "@/lib/managed-auth";
 import { formatDate } from "@/lib/managed-format";
 import QuotaBar from "./QuotaBar";
@@ -30,7 +30,9 @@ export default function ManagedAccountPanel({ apiKey, deps }: { apiKey: string; 
   const checkout = deps?.checkout ?? ((k: string) => openCheckout(k));
   const portal = deps?.portal ?? ((k: string) => openPortal(k));
 
-  const [ent, setEnt] = useState<Entitlement | null>(null);
+  // 初始用进程内缓存回显（上次展开拿到的状态），避免每次展开都闪空 loading；
+  // useEffect 仍会后台拉一次刷新用量等数值。
+  const [ent, setEnt] = useState<Entitlement | null>(() => getCachedEntitlement(apiKey));
   const [err, setErr] = useState<string | null>(null);
 
   async function load() {
@@ -120,7 +122,7 @@ export default function ManagedAccountPanel({ apiKey, deps }: { apiKey: string; 
 
       <div className="flex items-center gap-2 pt-0.5">
         <button type="button" onClick={primary.on}
-          className="h-9 rounded-[10px] bg-fg-1 px-4 text-[13px] font-semibold text-canvas">{primary.label}</button>
+          className="h-9 rounded-[10px] bg-fg-1 px-4 text-[13px] font-semibold text-canvas transition-opacity hover:opacity-90 active:opacity-80">{primary.label}</button>
         <div className="flex-1" />
         <button type="button" onClick={load}
           className="h-9 px-2 text-[13px] text-fg-2 hover:text-fg-1">Refresh</button>

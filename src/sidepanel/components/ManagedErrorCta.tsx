@@ -32,7 +32,7 @@ function CtaCard({ tone, title, body, action }: {
       </div>
       {action && (
         <button type="button" onClick={action.on}
-          className="shrink-0 rounded-[9px] bg-fg-1 px-3.5 py-2 text-[12px] font-semibold text-canvas">{action.label}</button>
+          className="shrink-0 rounded-[9px] bg-fg-1 px-3.5 py-2 text-[12px] font-semibold text-canvas transition-opacity hover:opacity-90 active:opacity-80">{action.label}</button>
       )}
     </div>
   );

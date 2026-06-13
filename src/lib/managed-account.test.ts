@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { getEntitlement, openCheckout, openPortal } from "./managed-account";
+import { getCachedEntitlement, getEntitlement, openCheckout, openPortal } from "./managed-account";
 
 describe("managed-account", () => {
   it("getEntitlement GETs /me/entitlement with Bearer and parses v2", async () => {
@@ -21,6 +21,14 @@ describe("managed-account", () => {
     const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ email: "u@x.com" }) })) as unknown as typeof fetch;
     const res = await getEntitlement("sk-virtual", { fetchFn });
     expect(res).toEqual({ plan: "none", email: "u@x.com", subscription: null, quota: null, models: [] });
+  });
+
+  it("getEntitlement 写入进程内缓存，getCachedEntitlement 可读回", async () => {
+    expect(getCachedEntitlement("sk-cache")).toBeNull();
+    const v2 = { plan: "active", email: "c@x.com", subscription: null, quota: { weekly: { usedFraction: 0.3, resetAt: 1750400000 } }, models: [] };
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => v2 })) as unknown as typeof fetch;
+    const res = await getEntitlement("sk-cache", { fetchFn });
+    expect(getCachedEntitlement("sk-cache")).toEqual(res);
   });
 
   it("openCheckout POSTs /billing/checkout and opens the returned url", async () => {

@@ -59,6 +59,9 @@ export interface ProviderMeta {
    *  monogram fallback（见 ProviderIcon）。svg 已用 fill="currentColor"，由
    *  组件按主题给色。 */
   iconAsset?: string;
+  /** 全彩品牌徽标路径（相对扩展根）。与 iconAsset（单色 mask）互斥：设此项时
+   *  ProviderIcon 按原色 <img> 渲染，用于带底色/多色的官方徽标（见 managed）。 */
+  iconColorAsset?: string;
   /** 额外端点变体（Plan/按量 双计费等）。缺省 = 无变体，UI 不渲染切换。
    *  约定：默认端点 = 订阅 Plan（无 endpointVariant），按量计费是 id "payg" 的 variant，
    *  这样切换控件 `[默认, ...variants]` 天然渲染成 `[Plan, Pay-as-you-go]`，跨 provider 对齐。
@@ -328,6 +331,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
   {
     id: "managed",
     name: "Pie 官方订阅",
+    iconColorAsset: "icons/icon-128.svg",
     // 网关基址 = GATEWAY_BASE（见 managed-config.ts）。聊天打 /v1/chat/completions。
     defaultBaseUrl: "https://api.pie.chat",
     placeholder: "",

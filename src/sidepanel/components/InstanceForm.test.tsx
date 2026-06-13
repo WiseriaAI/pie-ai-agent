@@ -6,6 +6,7 @@ import InstanceForm from "./InstanceForm";
 // fires getEntitlement on mount — stub it so the managed delete test never hits
 // the network and never produces an unhandled rejection.
 vi.mock("@/lib/managed-account", () => ({
+  getCachedEntitlement: vi.fn(() => null),
   getEntitlement: vi.fn(() => new Promise(() => {})),
   openCheckout: vi.fn(async () => {}),
   openPortal: vi.fn(async () => {}),
