@@ -43,6 +43,9 @@ export const enDict = {
     language: {
       sectionTitle: "Language",
       label: "UI language",
+      assistantLabel: "Assistant language",
+      assistantFollowUi: "Follow UI language",
+      assistantDetectMessage: "Detect from user message",
       optionAuto: "Auto (follow browser)",
       optionEn: "English",
       optionZhCN: "中文 (Simplified Chinese)",

@@ -1,8 +1,15 @@
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { I18nProvider, STORAGE_KEY_UI_LOCALE } from "@/lib/i18n";
+import { setConfig } from "@/lib/idb/config-store";
+import { _resetForTests } from "@/lib/idb/db";
 import ContextRing from "../ContextRing";
 
 afterEach(cleanup);
+
+beforeEach(async () => {
+  await _resetForTests();
+});
 
 describe("ContextRing — render gates (#59)", () => {
   it("renders nothing when lastInputTokens is undefined", () => {
@@ -166,5 +173,32 @@ describe("ContextRing — popover interaction", () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
     fireEvent.mouseDown(screen.getByTestId("outside-button"));
     expect(screen.queryByTestId("context-ring-popover")).toBeNull();
+  });
+});
+
+describe("ContextRing — locale formatting", () => {
+  it("formats tooltip and popover numbers with the effective locale", async () => {
+    await setConfig(STORAGE_KEY_UI_LOCALE, "pt-BR");
+    render(
+      <I18nProvider>
+        <ContextRing
+          lastInputTokens={124_000}
+          lastOutputTokens={1400}
+          totalInputTokens={8_243}
+          totalOutputTokens={1_402}
+          maxContextTokens={200_000}
+        />
+      </I18nProvider>,
+    );
+
+    const ring = await screen.findByTestId("context-ring");
+    await waitFor(() => expect(ring.getAttribute("title")).toContain("124.000"));
+    expect(ring.getAttribute("title")).toContain("200.000");
+
+    fireEvent.click(ring);
+    const popover = screen.getByTestId("context-ring-popover");
+    expect(popover.textContent).toContain("8.243");
+    expect(popover.textContent).toContain("1.402");
+    expect(popover.textContent).toContain("9.645");
   });
 });

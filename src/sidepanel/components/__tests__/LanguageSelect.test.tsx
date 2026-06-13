@@ -1,24 +1,9 @@
-/**
- * LanguageSelect — custom dropdown component test
- *
- * Tests:
- * 1. Collapsed by default (menu options not visible).
- * 2. Clicking the trigger opens the menu.
- * 3. Clicking an option calls setLocale with that option's value.
- *
- * Locale-robustness: "English" is the same string in both dictionaries,
- * so we query options by text "English" to avoid locale flakiness.
- */
-
-import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
-import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
-import * as i18n from "@/lib/i18n";
+import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { I18nProvider, STORAGE_KEY_UI_LOCALE } from "@/lib/i18n";
+import { getConfig } from "@/lib/idb/config-store";
+import { _resetForTests } from "@/lib/idb/db";
 import LanguageSelect from "../LanguageSelect";
-
-// Mock getConfig so the useEffect doesn't hit real IndexedDB
-vi.mock("@/lib/idb/config-store", () => ({
-  getConfig: vi.fn().mockResolvedValue("auto"),
-}));
 
 // chrome.i18n.getUILanguage — needed by locale-resolver used internally
 (globalThis as unknown as { chrome: { i18n: { getUILanguage: () => string } } }).chrome = {
@@ -28,51 +13,59 @@ vi.mock("@/lib/idb/config-store", () => ({
   },
 };
 
-afterEach(() => {
-  cleanup();
-  vi.restoreAllMocks();
-});
+afterEach(cleanup);
+
+function renderLanguageSelect() {
+  return render(
+    <I18nProvider>
+      <LanguageSelect />
+    </I18nProvider>,
+  );
+}
 
 describe("LanguageSelect", () => {
-  beforeEach(() => {
-    vi.spyOn(i18n, "setLocale").mockResolvedValue(undefined);
+  beforeEach(async () => {
+    await _resetForTests();
   });
 
   it("is collapsed by default — listbox menu is not visible", () => {
-    render(<LanguageSelect />);
-    // The listbox (open menu) should NOT be in the document
+    renderLanguageSelect();
+
     expect(screen.queryByRole("listbox")).toBeNull();
   });
 
   it("clicking the trigger button opens the menu", async () => {
-    render(<LanguageSelect />);
+    renderLanguageSelect();
 
-    const trigger = screen.getByRole("button", { name: /auto|english|中文/i });
-    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole("button"));
 
     await waitFor(() => {
       expect(screen.getByRole("listbox")).toBeTruthy();
     });
   });
 
-  it("clicking 'English' option calls setLocale('en') and closes the menu", async () => {
-    const spy = vi.spyOn(i18n, "setLocale").mockResolvedValue(undefined);
+  it("renders every registered launch locale", async () => {
+    renderLanguageSelect();
 
-    render(<LanguageSelect />);
+    fireEvent.click(screen.getByRole("button"));
 
-    // Open the dropdown
-    const trigger = screen.getByRole("button");
-    fireEvent.click(trigger);
+    expect(await screen.findByText("English")).toBeTruthy();
+    expect(screen.getByText("中文（简体）")).toBeTruthy();
+    expect(screen.getByText("Español (Latinoamérica)")).toBeTruthy();
+    expect(screen.getByText("日本語")).toBeTruthy();
+    expect(screen.getByText("Português (Brasil)")).toBeTruthy();
+  });
 
-    await waitFor(() => expect(screen.getByRole("listbox")).toBeTruthy());
+  it("writes a selected locale to config and closes the menu", async () => {
+    renderLanguageSelect();
 
-    // Click the "English" option
-    const englishOption = screen.getByText("English");
-    fireEvent.click(englishOption);
+    fireEvent.click(screen.getByRole("button"));
+    fireEvent.click(await screen.findByText("日本語"));
 
-    expect(spy).toHaveBeenCalledWith("en");
+    await waitFor(async () => {
+      expect(await getConfig<string>(STORAGE_KEY_UI_LOCALE)).toBe("ja");
+    });
 
-    // Menu should close after selection
     await waitFor(() => {
       expect(screen.queryByRole("listbox")).toBeNull();
     });

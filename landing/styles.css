@@ -54,9 +54,14 @@ html.lang-fade-in [data-i18n] { animation:langFadeIn 220ms var(--ease) both; }
 .brand { display:flex; align-items:center; gap:11px; }
 .brand-word { font-weight:600; font-size:19px; letter-spacing:-0.01em; }
 .nav-right { display:flex; align-items:center; gap:16px; }
-.lang { display:flex; align-items:center; gap:2px; padding:3px; background:var(--c-field); border-radius:9px; }
-.lang-btn { font-family:var(--font-mono); font-size:11px; font-weight:500; padding:5px 11px; border:0; background:transparent; color:var(--c-fg-3); border-radius:7px; cursor:pointer; }
-.lang-btn[aria-pressed="true"] { background:#fff; color:var(--c-fg-1); box-shadow:0 1px 2px rgba(20,24,29,0.06); }
+.lang-menu { position:relative; }
+.lang-toggle { display:flex; align-items:center; justify-content:center; width:40px; height:40px; border:1px solid var(--c-line); background:#fff; border-radius:10px; cursor:pointer; transition:border-color 150ms var(--ease), transform 150ms var(--ease), box-shadow 150ms var(--ease); }
+.lang-toggle:hover, .lang-toggle[aria-expanded="true"] { border-color:var(--c-fg-3); box-shadow:0 8px 20px rgba(20,24,29,0.08); }
+.lang-toggle:hover { transform:translateY(-1px); }
+.lang-panel { position:absolute; top:calc(100% + 8px); right:0; min-width:178px; padding:6px; background:#fff; border:1px solid var(--c-line); border-radius:12px; box-shadow:0 20px 48px rgba(20,24,29,0.14); }
+.lang-panel[hidden] { display:none; }
+.lang-option { display:flex; align-items:center; width:100%; padding:9px 10px; border:0; background:transparent; border-radius:8px; color:var(--c-fg-2); font-family:var(--font-mono); font-size:12px; font-weight:500; text-align:left; cursor:pointer; }
+.lang-option:hover, .lang-option[aria-current="page"], .lang-option[aria-pressed="true"] { background:var(--c-field); color:var(--c-fg-1); }
 .ghost.gh-pill { display:flex; align-items:center; gap:8px; padding:9px 14px; border:1px solid var(--c-line); border-radius:10px; font-size:14px; font-weight:500; color:var(--c-fg-2); cursor:pointer; }
 .gh-count { font-size:13px; color:var(--c-fg-3); }
 .btn-ink { display:inline-flex; align-items:center; gap:9px; padding:10px 18px; background:var(--c-fg-1); color:var(--c-canvas); border-radius:10px; font-size:14px; font-weight:600; cursor:pointer; transition:transform 150ms var(--ease); }
@@ -248,7 +253,7 @@ html.lang-fade-in [data-i18n] { animation:langFadeIn 220ms var(--ease) both; }
 .js-reveal .reveal-up.in { opacity:1; transform:none; }
 
 /* ── focus states (a11y) ─────────────────────────────────────────────── */
-.lang-btn:focus-visible, .btn-ink:focus-visible, .btn-outline:focus-visible, .btn-light:focus-visible, .btn-ghost-dark:focus-visible, .gh-pill:focus-visible, .foot-links a:focus-visible { outline:2px solid var(--c-accent); outline-offset:2px; }
+.lang-toggle:focus-visible, .lang-option:focus-visible, .btn-ink:focus-visible, .btn-outline:focus-visible, .btn-light:focus-visible, .btn-ghost-dark:focus-visible, .gh-pill:focus-visible, .foot-links a:focus-visible { outline:2px solid var(--c-accent); outline-offset:2px; }
 
 /* ── responsive ──────────────────────────────────────────────────────── */
 @media (max-width: 1024px) {
@@ -268,6 +273,7 @@ html.lang-fade-in [data-i18n] { animation:langFadeIn 220ms var(--ease) both; }
 @media (max-width: 640px) {
   .section { padding-top:72px; padding-bottom:72px; padding-left:22px; padding-right:22px; }
   .topbar-in, .trust-in, .cta-dark, .foot { padding-left:22px; padding-right:22px; }
+  .topbar-in { flex-wrap:wrap; align-items:flex-start; gap:10px; }
   .hero-title { font-size:40px; }
   .h-section { font-size:34px; } .h-section.sm { font-size:30px; }
   .trust-in { flex-wrap:wrap; gap:28px 0; } .trust-item { flex-basis:50%; flex:0 0 50%; padding:0 16px 0 0; } .trust-div { display:none; }
@@ -275,5 +281,6 @@ html.lang-fade-in [data-i18n] { animation:langFadeIn 220ms var(--ease) both; }
   .version-row { align-items:flex-start; gap:10px; flex-direction:column; }
   .rec-bar { left:0; bottom:-16px; gap:8px; padding:8px 10px; } .rec-cancel { display:none; }
   .foot-top { flex-direction:column; gap:24px; }
-  .nav-right { gap:10px; } .gh-pill { display:none; }
+  .nav-right { gap:10px; }
+  .gh-pill, .nav-right > .btn-ink { display:none; }
 }

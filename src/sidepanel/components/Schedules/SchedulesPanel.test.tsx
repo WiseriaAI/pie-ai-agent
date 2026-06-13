@@ -1,5 +1,8 @@
 import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
+import { I18nProvider, STORAGE_KEY_UI_LOCALE } from "@/lib/i18n";
+import { setConfig } from "@/lib/idb/config-store";
+import { _resetForTests } from "@/lib/idb/db";
 import SchedulesPanel from "./SchedulesPanel";
 import type { ScheduleRecord } from "@/lib/schedules/types";
 import type { DecryptedInstance } from "@/lib/instances";
@@ -31,6 +34,7 @@ vi.mock("@/lib/instances", () => ({
 // store-bus subscription — return an unsubscribe noop.
 vi.mock("@/lib/store-bus", () => ({
   onStoreChange: vi.fn(() => () => {}),
+  publishChange: vi.fn(),
 }));
 
 import { listSchedules } from "@/lib/schedules/store";
@@ -51,7 +55,8 @@ function makeSched(o: Partial<ScheduleRecord> & { id: string }): ScheduleRecord 
   };
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  await _resetForTests();
   schedules.length = 0;
   vi.clearAllMocks();
 });
@@ -154,5 +159,31 @@ describe("SchedulesPanel", () => {
     // Form must NOT have opened.
     expect(screen.queryByLabelText(/title/i)).toBeNull();
     expect(actionMocks.createSchedule).not.toHaveBeenCalled();
+  });
+
+  it("formats schedule summary numbers with the effective locale", async () => {
+    await setConfig(STORAGE_KEY_UI_LOCALE, "pt-BR");
+    schedules.push(
+      makeSched({
+        id: "sched_locale",
+        spec: { intervalMinutes: 1234, maxRuns: 67890 },
+        runCount: 12345,
+      }),
+    );
+
+    render(
+      <I18nProvider>
+        <SchedulesPanel onOpenSession={vi.fn()} />
+      </I18nProvider>,
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByText((text) =>
+          text.includes("a cada 1.234 min") &&
+          text.includes("12.345/67.890 execuções"),
+        ),
+      ).toBeTruthy();
+    });
   });
 });

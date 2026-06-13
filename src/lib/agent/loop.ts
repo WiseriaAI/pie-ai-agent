@@ -74,6 +74,11 @@ import { addPinToMeta, removePinFromMeta } from "../sessions/pin-state";
 import { drainPending } from "../sessions/pending-instructions";
 import { buildMidTaskUserMessage } from "./loop-drain";
 import { broadcastInstructionState } from "@/background/instruction-broadcast";
+import {
+  getAssistantLanguageSetting,
+  resolveAssistantLanguage,
+  resolveLocale,
+} from "@/lib/i18n";
 import { synthesizeAgentTurnText, type TerminationReason } from "./synthesize-agent-turn";
 import { waitForUrlSettle, type UrlSettleResult } from "./wait-for-url-settle";
 import { assembleAssistantBlocks, type ThinkingContentBlock } from "./assistant-blocks";
@@ -1288,6 +1293,9 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
     name: p.frontmatter.name,
     description: p.frontmatter.description,
   }));
+  const uiLocale = await resolveLocale();
+  const assistantLanguageSetting = await getAssistantLanguageSetting();
+  const responseLanguage = resolveAssistantLanguage(assistantLanguageSetting, uiLocale);
 
   // Task 7 — progressive tool disclosure. Seed the live `activeToolGroups`
   // set BEFORE the (static, once-per-task) system prompt is built so the
@@ -1331,6 +1339,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       ctx.pinnedTabs ?? [],
       pinnedTabId,
       skillCatalog,
+      responseLanguage,
       // Task 7 — drives the <available_tools_catalog> block: lists only the
       // loadable groups NOT already in the seed.
       activeToolGroups,

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { enDict } from "../dictionaries/en";
 import { zhCNDict } from "../dictionaries/zh-CN";
+import { LOCALE_REGISTRY, SUPPORTED_LOCALES } from "../locales";
 
 function collectKeys(node: unknown, prefix = ""): string[] {
   if (typeof node !== "object" || node === null) return [];
@@ -11,6 +12,12 @@ function collectKeys(node: unknown, prefix = ""): string[] {
     else out.push(...collectKeys(v, path));
   }
   return out.sort();
+}
+
+function valueAt(dict: unknown, path: string): unknown {
+  return path
+    .split(".")
+    .reduce<unknown>((acc, k) => (acc as Record<string, unknown>)[k], dict);
 }
 
 describe("dictionary parity", () => {
@@ -25,25 +32,30 @@ describe("dictionary parity", () => {
     expect(enDict.settings.feedback.githubHint).not.toContain("/report-issue");
   });
 
-  it("en and zh-CN have identical key sets", () => {
+  it("every registered locale has the same key set as English", () => {
     const enKeys = collectKeys(enDict);
-    const zhKeys = collectKeys(zhCNDict);
-    expect(zhKeys).toEqual(enKeys);
+    for (const locale of SUPPORTED_LOCALES) {
+      expect(collectKeys(LOCALE_REGISTRY[locale].dictionary), locale).toEqual(enKeys);
+    }
   });
 
-  it("every value in both dictionaries is a non-empty string", () => {
-    for (const [dictName, dict] of [
-      ["en", enDict],
-      ["zh-CN", zhCNDict],
-    ] as const) {
-      const keys = collectKeys(dict);
+  it("every registered dictionary value is a non-empty string", () => {
+    const keys = collectKeys(enDict);
+    for (const locale of SUPPORTED_LOCALES) {
       for (const path of keys) {
-        const v = path
-          .split(".")
-          .reduce<unknown>((acc, k) => (acc as Record<string, unknown>)[k], dict);
-        expect(typeof v, `${dictName}: ${path}`).toBe("string");
-        expect((v as string).length, `${dictName}: ${path}`).toBeGreaterThan(0);
+        const v = valueAt(LOCALE_REGISTRY[locale].dictionary, path);
+        expect(typeof v, `${locale}: ${path}`).toBe("string");
+        expect((v as string).length, `${locale}: ${path}`).toBeGreaterThan(0);
       }
     }
+  });
+
+  it("launch locales translate critical activation labels", () => {
+    expect(LOCALE_REGISTRY["es-419"].dictionary.common.cancel).toBe("Cancelar");
+    expect(LOCALE_REGISTRY["es-419"].dictionary.common.save).toBe("Guardar");
+    expect(LOCALE_REGISTRY.ja.dictionary.common.cancel).toBe("キャンセル");
+    expect(LOCALE_REGISTRY.ja.dictionary.common.save).toBe("保存");
+    expect(LOCALE_REGISTRY["pt-BR"].dictionary.common.cancel).toBe("Cancelar");
+    expect(LOCALE_REGISTRY["pt-BR"].dictionary.common.save).toBe("Salvar");
   });
 });

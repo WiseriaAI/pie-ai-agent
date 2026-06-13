@@ -7,6 +7,20 @@ cd landing && python3 -m http.server 8000
 # open http://localhost:8000
 ```
 
+## Localized Routes
+
+Preview localized pages with the same static server:
+
+- `/` English
+- `/es-419/` Latin American Spanish
+- `/ja/` Japanese
+- `/pt-BR/` Brazilian Portuguese
+
+The root path stays English and does not auto-redirect.
+
+Localized route directories contain static `index.html` entry files that mirror the root page.
+Keep them in sync with `landing/index.html`; `main.js` applies the locale from the path.
+
 ## 结构
 - `index.html` — 页面骨架，所有可见文案用 `data-i18n="<key>"` 标记
 - `styles.css` — 设计 token（复用扩展 `src/sidepanel/index.css`）、各 section 样式、点阵/聚光、响应式

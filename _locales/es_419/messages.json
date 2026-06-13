@@ -1,0 +1,10 @@
+{
+  "extension_name": {
+    "message": "Pie · Agente de IA abierto para tu navegador",
+    "description": "Extension name shown in Chrome and the Web Store."
+  },
+  "extension_description": {
+    "message": "Agente de IA abierto para navegar, leer páginas y automatizar tareas con tu propia clave. Sin backend, telemetría ni proxy.",
+    "description": "Short description shown in the Web Store and chrome://extensions."
+  }
+}

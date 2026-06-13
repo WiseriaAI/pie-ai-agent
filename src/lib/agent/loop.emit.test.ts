@@ -20,6 +20,7 @@ const chromeMock = {
   scripting: { executeScript: vi.fn().mockResolvedValue([{ result: "<body>hi</body>" }]) },
   storage: { local: { get: vi.fn().mockResolvedValue({}), set: vi.fn() } },
   runtime: { id: "test-ext-id", getURL: vi.fn((p: string) => `chrome-extension://test/${p}`) },
+  i18n: { getUILanguage: vi.fn(() => "en") },
 };
 // @ts-expect-error global chrome stub
 globalThis.chrome = chromeMock;

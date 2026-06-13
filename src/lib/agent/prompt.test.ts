@@ -3,6 +3,7 @@ import {
   buildAgentSystemPrompt,
   buildCurrentTimeBlock,
   buildObservationMessage,
+  buildResponseLanguageBlock,
   buildSkillCatalogBlock,
 } from "./prompt";
 
@@ -51,6 +52,36 @@ describe("STATIC_AGENT_SYSTEM_PROMPT — current-time rule (block A)", () => {
     expect(prompt).toMatch(/local clock|device|may.*(differ|偏差|approximate|inaccurate)/i);
     // anchoring relative time expressions (e.g. schedules)
     expect(prompt).toMatch(/tomorrow|N hours|every day|schedule|relative/i);
+  });
+});
+
+describe("buildResponseLanguageBlock", () => {
+  it("returns empty string for auto-detect-user-message", () => {
+    expect(buildResponseLanguageBlock("auto-detect-user-message")).toBe("");
+  });
+
+  it("renders explicit Japanese response guidance", () => {
+    const block = buildResponseLanguageBlock("ja");
+    expect(block).toContain("<response_language>");
+    expect(block).toContain("Japanese (ja)");
+    expect(block).toContain("If the user's latest message explicitly asks for another language");
+    expect(block).toContain("Do not translate tool names");
+  });
+
+  it("places response_language after pinned context without reintroducing user_task", () => {
+    const prompt = buildAgentSystemPrompt(
+      false,
+      true,
+      [{ tabId: 5, origin: "https://example.com" }],
+      undefined,
+      [],
+      "pt-BR",
+    );
+    expect(prompt.indexOf("<response_language>")).toBeGreaterThan(
+      prompt.indexOf("<pinned_context>"),
+    );
+    expect(prompt).not.toContain("</user_task>");
+    expect(prompt).not.toContain("<user_task>my task</user_task>");
   });
 });
 
@@ -175,7 +206,7 @@ describe("buildAgentSystemPrompt — v1.5 multi-pin block", () => {
     // Progressive disclosure: skill-authoring usage guidance is no longer inlined
     // into the static prompt (it arrives on activation via the load_tools result).
     // With a core-only start it shows up in the catalog instead.
-    const prompt = buildAgentSystemPrompt(false, true, [], undefined, [], new Set(["core"]));
+    const prompt = buildAgentSystemPrompt(false, true, [], undefined, [], undefined, new Set(["core"]));
     expect(prompt).not.toContain("Skill authoring tools (list_skills, create_skill");
     expect(prompt).toContain("skill-authoring —");
   });
@@ -295,7 +326,7 @@ describe("PDF guidance", () => {
   });
 
   it("surfaces the loadable pdf group via the catalog when inactive at start", () => {
-    const prompt = buildAgentSystemPrompt(false, false, [], undefined, [], new Set(["core"]));
+    const prompt = buildAgentSystemPrompt(false, false, [], undefined, [], undefined, new Set(["core"]));
     expect(prompt).toContain("pdf —");
   });
 
@@ -367,28 +398,28 @@ describe("buildAgentSystemPrompt — STATIC / cache invariant (#175)", () => {
 
 describe("buildAgentSystemPrompt — disclosure catalog (progressive disclosure)", () => {
   it("core-only start lists loadable groups in the catalog", () => {
-    const p = buildAgentSystemPrompt(true, true, [], undefined, [], new Set(["core"]));
+    const p = buildAgentSystemPrompt(true, true, [], undefined, [], undefined, new Set(["core"]));
     expect(p).toContain("<available_tools_catalog>");
     expect(p).toContain("pdf —");
     expect(p).toContain("scratchpad —");
   });
   it("does NOT inline PDF/scratchpad guidance headings when those groups are inactive at start", () => {
-    const p = buildAgentSystemPrompt(true, true, [], undefined, [], new Set(["core"]));
+    const p = buildAgentSystemPrompt(true, true, [], undefined, [], undefined, new Set(["core"]));
     expect(p).not.toContain("## PDF Tools");
     expect(p).not.toContain("## Scratchpad");
   });
   it("byte-identical across calls with the same startActiveGroups (static invariant)", () => {
-    const a = buildAgentSystemPrompt(true, true, [{ tabId: 1, origin: "https://e.com" }], 1, [], new Set(["core"]));
-    const b = buildAgentSystemPrompt(true, true, [{ tabId: 1, origin: "https://e.com" }], 1, [], new Set(["core"]));
+    const a = buildAgentSystemPrompt(true, true, [{ tabId: 1, origin: "https://e.com" }], 1, [], undefined, new Set(["core"]));
+    const b = buildAgentSystemPrompt(true, true, [{ tabId: 1, origin: "https://e.com" }], 1, [], undefined, new Set(["core"]));
     expect(a).toBe(b);
   });
   it("when pdf is active at start, the catalog omits pdf", () => {
-    const p = buildAgentSystemPrompt(true, true, [], undefined, [], new Set(["core", "pdf"]));
+    const p = buildAgentSystemPrompt(true, true, [], undefined, [], undefined, new Set(["core", "pdf"]));
     expect(p).not.toContain("pdf —");
   });
   it("flag-OFF (all groups seeded active) inlines the PDF + scratchpad guidance and drops the catalog", () => {
     const all = new Set(["core", "screenshot", "skill-mediation", "pdf", "local-file", "scratchpad", "schedule", "skill-authoring"]);
-    const p = buildAgentSystemPrompt(true, true, [], undefined, [], all);
+    const p = buildAgentSystemPrompt(true, true, [], undefined, [], undefined, all);
     expect(p).toContain("get_pdf_outline"); // pdf guidance inlined
     expect(p).toContain("save_records");    // scratchpad guidance inlined
     expect(p).not.toContain("<available_tools_catalog>"); // all loadable active → no catalog

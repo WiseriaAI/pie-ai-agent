@@ -7,7 +7,7 @@
 // from the panel. Row actions: toggle enabled, run now, edit, delete, expand
 // run history.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { listSchedules } from "@/lib/schedules/store";
 import { onStoreChange } from "@/lib/store-bus";
 import {
@@ -23,7 +23,7 @@ import {
 import { listInstances, getActiveInstance } from "@/lib/instances";
 import type { DecryptedInstance } from "@/lib/instances";
 import type { ScheduleRecord } from "@/lib/schedules/types";
-import { useT } from "@/lib/i18n/use-t";
+import { useI18n } from "@/lib/i18n";
 import ScheduleForm from "./ScheduleForm";
 import ScheduleRunHistory from "./ScheduleRunHistory";
 
@@ -36,7 +36,7 @@ interface Props {
   onCreateViaChat?: (template: string) => void;
 }
 
-type T = ReturnType<typeof useT>;
+type T = ReturnType<typeof useI18n>["t"];
 
 // Filled pills so each state reads clearly at a glance (the previous 8%-tint
 // chips were too faint): active = accent fill, paused = warning fill, completed
@@ -72,33 +72,42 @@ function badgeFor(rec: ScheduleRecord, t: T): { label: string; className: string
   return { label, className: STATUS_STYLE[rec.status] };
 }
 
-function fmtNextRun(ms: number | undefined, enabled: boolean, status: ScheduleRecord["status"]): string {
+function fmtNextRun(
+  ms: number | undefined,
+  enabled: boolean,
+  status: ScheduleRecord["status"],
+  locale: string,
+): string {
   if (!enabled || status !== "active" || ms == null) return "—";
   const d = new Date(ms);
   try {
-    return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    return d.toLocaleString(locale, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
   } catch {
     return d.toISOString();
   }
 }
 
-function scheduleSummary(rec: ScheduleRecord, t: T): string {
+function scheduleSummary(rec: ScheduleRecord, t: T, numberFormat: Intl.NumberFormat): string {
   const parts: string[] = [];
   parts.push(
     rec.spec.intervalMinutes != null
-      ? t("schedules.summaryEvery", { n: rec.spec.intervalMinutes })
+      ? t("schedules.summaryEvery", { n: numberFormat.format(rec.spec.intervalMinutes) })
       : t("schedules.summaryOnce"),
   );
   parts.push(
     rec.spec.maxRuns != null
-      ? t("schedules.summaryRunsCapped", { count: rec.runCount, max: rec.spec.maxRuns })
-      : t("schedules.summaryRuns", { count: rec.runCount }),
+      ? t("schedules.summaryRunsCapped", {
+          count: numberFormat.format(rec.runCount),
+          max: numberFormat.format(rec.spec.maxRuns),
+        })
+      : t("schedules.summaryRuns", { count: numberFormat.format(rec.runCount) }),
   );
   return parts.join(" · ");
 }
 
 export default function SchedulesPanel({ onOpenSession, onCreateViaChat }: Props) {
-  const t = useT();
+  const { locale, t } = useI18n();
+  const numberFormat = useMemo(() => new Intl.NumberFormat(locale), [locale]);
   const [schedules, setSchedules] = useState<ScheduleRecord[]>([]);
   const [instances, setInstances] = useState<DecryptedInstance[]>([]);
   const [activeInstanceId, setActiveInstanceId] = useState<string | null>(null);
@@ -268,6 +277,8 @@ export default function SchedulesPanel({ onOpenSession, onCreateViaChat }: Props
                 onCancelDelete={() => setConfirmDeleteId(null)}
                 onDelete={() => void handleDelete(rec.id)}
                 onOpenSession={onOpenSession}
+                locale={locale}
+                numberFormat={numberFormat}
               />
             ))}
         </div>
@@ -288,6 +299,8 @@ function ScheduleCard({
   onCancelDelete,
   onDelete,
   onOpenSession,
+  locale,
+  numberFormat,
 }: {
   rec: ScheduleRecord;
   expanded: boolean;
@@ -300,8 +313,10 @@ function ScheduleCard({
   onCancelDelete: () => void;
   onDelete: () => void;
   onOpenSession: (sessionId: string) => void;
+  locale: string;
+  numberFormat: Intl.NumberFormat;
 }) {
-  const t = useT();
+  const { t } = useI18n();
   const badge = badgeFor(rec, t);
   return (
     <section className="flex flex-col overflow-hidden rounded-[14px] border border-line bg-surface">
@@ -342,9 +357,9 @@ function ScheduleCard({
 
         {/* Summary + next-run, left-aligned. */}
         <div className="flex items-center gap-2 font-mono text-[10px] text-fg-3">
-          <span>{scheduleSummary(rec, t)}</span>
+          <span>{scheduleSummary(rec, t, numberFormat)}</span>
           <span>·</span>
-          <span>{t("schedules.nextPrefix")} {fmtNextRun(rec.nextRunAt, rec.enabled, rec.status)}</span>
+          <span>{t("schedules.nextPrefix")} {fmtNextRun(rec.nextRunAt, rec.enabled, rec.status, locale)}</span>
         </div>
 
         {/* Actions, left-aligned. */}
