@@ -112,3 +112,38 @@ describe("resolveLoadTools — validate + partition", () => {
     expect(active.has("schedule")).toBe(false);
   });
 });
+
+import { growActiveGroups } from "./disclosure";
+
+describe("growActiveGroups — monotonic grow + warn-once", () => {
+  const envPdf = { vision: false, hasSkills: false, isPdf: true, isFile: false };
+  it("lights a freshly-detected group and returns its notice once", () => {
+    const active = new Set<string>(["core"]);
+    const announced = new Set<string>(["core"]);
+    const r = growActiveGroups(active, announced, envPdf);
+    expect(active.has("pdf")).toBe(true);
+    expect(r.notice).toContain("read_pdf");
+  });
+  it("does NOT re-announce an already-announced group (warn-once)", () => {
+    const active = new Set<string>(["core"]);
+    const announced = new Set<string>(["core"]);
+    growActiveGroups(active, announced, envPdf);     // first sighting → notice
+    const r2 = growActiveGroups(active, announced, envPdf); // second → silent
+    expect(r2.notice).toBe("");
+    expect(active.has("pdf")).toBe(true);
+  });
+  it("never removes a group when its env signal goes away (sticky)", () => {
+    const active = new Set<string>(["core", "pdf"]);
+    const announced = new Set<string>(["core", "pdf"]);
+    const noSignals = { vision: false, hasSkills: false, isPdf: false, isFile: false };
+    const r = growActiveGroups(active, announced, noSignals);
+    expect(active.has("pdf")).toBe(true); // stays
+    expect(r.notice).toBe("");
+  });
+  it("seeded-active group is not re-announced on first detection", () => {
+    const active = new Set<string>(["core", "pdf"]);
+    const announced = new Set<string>(["core", "pdf"]); // seeded as already-announced
+    const r = growActiveGroups(active, announced, envPdf);
+    expect(r.notice).toBe(""); // pdf already known → no notice
+  });
+});

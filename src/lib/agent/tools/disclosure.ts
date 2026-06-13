@@ -55,7 +55,8 @@ export function buildLoadToolsTool(deps: LoadToolsDeps): Tool {
       const r = resolveLoadTools(groups, active, { headless: deps.headless });
       const lines: string[] = [];
       if (r.loaded.length) {
-        lines.push(buildActivationNotice(r.loaded as DisclosureGroup[]));
+        const notice = buildActivationNotice(r.loaded as DisclosureGroup[]);
+        if (notice) lines.push(notice);
       }
       if (r.alreadyActive.length) {
         lines.push(`Already active: ${r.alreadyActive.join(", ")}.`);

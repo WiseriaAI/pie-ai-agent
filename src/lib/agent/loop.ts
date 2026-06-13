@@ -47,8 +47,7 @@ import {
 import { queryScratchpad as svcQueryScratchpad } from "../scratchpad/sql-bridge";
 import { getEnabledSkillPackages } from "../skills";
 import { isFilePdfUrl, isPdfTab } from "../pdf/detect";
-import { groupsForEnv, selectTools, buildActivationNotice, ALL_GROUPS, type EnvSignals } from "./disclosure";
-import type { DisclosureGroup } from "./tool-names";
+import { groupsForEnv, selectTools, growActiveGroups, ALL_GROUPS, type EnvSignals } from "./disclosure";
 import { buildLoadToolsTool } from "./tools/disclosure";
 import { getProgressiveDisclosureFlag } from "../progressive-tool-disclosure-flag";
 // isRestrictedUrl is owned by the shared util (src/lib/url/restricted.ts).
@@ -1544,16 +1543,8 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           isPdf: isPdfTab({ url: tabUrl }) || activeToolGroups.has("pdf"),
           isFile: tabUrl.startsWith("file://") || activeToolGroups.has("local-file"),
         };
-        const newlyLit: DisclosureGroup[] = [];
-        for (const g of groupsForEnv(env)) {
-          if (!activeToolGroups.has(g)) { activeToolGroups.add(g); newlyLit.push(g); }
-        }
-        const fresh = newlyLit.filter((g) => !announcedGroups.has(g));
-        if (fresh.length > 0) {
-          fresh.forEach((g) => announcedGroups.add(g));
-          const notice = buildActivationNotice(fresh);
-          if (notice) sysNotices.push(notice); // rides the same <system_notice> block
-        }
+        const { notice } = growActiveGroups(activeToolGroups, announcedGroups, env);
+        if (notice) sysNotices.push(notice); // rides the same <system_notice> block
       }
 
       // Build observation text
