@@ -1,4 +1,4 @@
-import { type DisclosureGroup, getToolGroup } from "./tool-names";
+import { type DisclosureGroup, getToolGroup, TOOL_GROUPS } from "./tool-names";
 
 export interface EnvSignals {
   /** modelConfig.vision === true */
@@ -100,4 +100,65 @@ export function selectTools<T extends { name: string }>(
   active: ReadonlySet<string>,
 ): T[] {
   return tools.filter((t) => active.has(getToolGroup(t.name)));
+}
+
+// ── Task 3: catalog block, activation notice, resolveLoadTools ────────────────
+
+function toolNamesForGroup(group: DisclosureGroup): string[] {
+  return Object.keys(TOOL_GROUPS).filter((n) => TOOL_GROUPS[n] === group);
+}
+
+export function buildToolCatalogBlock(startActive: ReadonlySet<string>): string {
+  const lines = LOADABLE_GROUPS
+    .filter((g) => !startActive.has(g))
+    .map((g) => `- ${GROUP_META[g].catalogLine}`);
+  if (lines.length === 0) return "";
+  return (
+    `\n\n<available_tools_catalog>\n` +
+    `你当前可见的是常用核心工具。以下能力按需加载——判断需要时调 ` +
+    `load_tools({groups:[...]})，下一轮即可用：\n` +
+    `${lines.join("\n")}\n` +
+    `</available_tools_catalog>`
+  );
+}
+
+export function buildActivationNotice(groups: readonly DisclosureGroup[]): string {
+  const parts = groups
+    .filter((g) => GROUP_META[g].guidance)
+    .map((g) => {
+      const tools = toolNamesForGroup(g).join(", ");
+      return `${GROUP_META[g].guidance}\n(Now available: ${tools}.)`;
+    });
+  return parts.length === 0 ? "" : parts.join("\n\n");
+}
+
+export interface LoadToolsResult {
+  loaded: string[];
+  alreadyActive: string[];
+  unknown: string[];
+}
+
+export function resolveLoadTools(
+  groups: readonly string[],
+  active: Set<string>,
+  opts: { headless: boolean },
+): LoadToolsResult {
+  const loaded: string[] = [];
+  const alreadyActive: string[] = [];
+  const unknown: string[] = [];
+  for (const raw of groups) {
+    const g = String(raw).trim();
+    const isLoadable =
+      (LOADABLE_GROUPS as string[]).includes(g) &&
+      !(opts.headless && g === "schedule");
+    if (!isLoadable) {
+      unknown.push(g);
+    } else if (active.has(g)) {
+      alreadyActive.push(g);
+    } else {
+      active.add(g);
+      loaded.push(g);
+    }
+  }
+  return { loaded, alreadyActive, unknown };
 }
