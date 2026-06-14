@@ -5,6 +5,7 @@ import type { StoredCustomProvider } from "@/lib/custom-providers";
 import { CUSTOM_PREFIX } from "@/lib/custom-providers";
 import { useT, providerDisplayName } from "@/lib/i18n";
 import ProviderIcon from "./ProviderIcon";
+import { DropdownPanel } from "./ui/DropdownPanel";
 
 interface Props {
   value: ProviderRef | null;
@@ -72,8 +73,10 @@ export default function ProviderDropdown(props: Props) {
         </svg>
       </button>
 
-      {open && (
-        <div className="scale-in origin-top flex flex-col rounded-[10px] border border-line bg-surface">
+      <DropdownPanel
+        open={open}
+        className="flex flex-col rounded-[10px] border border-line bg-surface"
+      >
           {/* Search input */}
           <div className="border-b border-line p-2">
             <input
@@ -180,8 +183,7 @@ export default function ProviderDropdown(props: Props) {
               {t("providerDropdown.newCustomProvider")}
             </button>
           </div>
-        </div>
-      )}
+      </DropdownPanel>
     </div>
   );
 }

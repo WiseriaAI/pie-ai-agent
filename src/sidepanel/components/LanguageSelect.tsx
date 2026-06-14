@@ -3,6 +3,7 @@ import { useT, setLocale, type LocaleSetting } from "@/lib/i18n";
 import { getConfig } from "@/lib/idb/config-store";
 import { LOCALE_REGISTRY, SUPPORTED_LOCALES } from "@/lib/i18n/locales";
 import { STORAGE_KEY_UI_LOCALE } from "@/lib/i18n";
+import { DropdownPanel } from "./ui/DropdownPanel";
 
 const OPTIONS: { value: LocaleSetting; label: string; labelKey?: Parameters<ReturnType<typeof useT>>[0] }[] = [
   { value: "auto", label: "", labelKey: "settings.language.optionAuto" },
@@ -61,41 +62,40 @@ export default function LanguageSelect() {
           />
         </svg>
       </button>
-      {open && (
-        <div
-          role="listbox"
-          className="scale-in origin-top absolute z-10 mt-1 flex w-full flex-col gap-0.5 rounded-[9px] border border-line bg-surface p-1"
-        >
-          {OPTIONS.map((o) => {
-            const active = o.value === value;
-            return (
-              <button
-                key={o.value}
-                type="button"
-                role="option"
-                aria-selected={active}
-                onClick={() => choose(o.value)}
-                className={`flex items-center justify-between rounded-md px-2.5 py-2 text-left text-[13px] ${
-                  active ? "bg-accent-tint font-medium text-fg-1" : "text-fg-2 hover:text-fg-1"
-                }`}
-              >
-                <span>{labelFor(o)}</span>
-                {active && (
-                  <svg width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden="true" className="text-accent">
-                    <path
-                      d="M2.5 7.5L5.5 10.5L11.5 4"
-                      stroke="currentColor"
-                      strokeWidth="1.4"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                )}
-              </button>
-            );
-          })}
-        </div>
-      )}
+      <DropdownPanel
+        open={open}
+        role="listbox"
+        className="absolute z-10 mt-1 flex w-full flex-col gap-0.5 rounded-[9px] border border-line bg-surface p-1"
+      >
+        {OPTIONS.map((o) => {
+          const active = o.value === value;
+          return (
+            <button
+              key={o.value}
+              type="button"
+              role="option"
+              aria-selected={active}
+              onClick={() => choose(o.value)}
+              className={`flex items-center justify-between rounded-md px-2.5 py-2 text-left text-[13px] ${
+                active ? "bg-accent-tint font-medium text-fg-1" : "text-fg-2 hover:text-fg-1"
+              }`}
+            >
+              <span>{labelFor(o)}</span>
+              {active && (
+                <svg width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden="true" className="text-accent">
+                  <path
+                    d="M2.5 7.5L5.5 10.5L11.5 4"
+                    stroke="currentColor"
+                    strokeWidth="1.4"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              )}
+            </button>
+          );
+        })}
+      </DropdownPanel>
     </div>
   );
 }

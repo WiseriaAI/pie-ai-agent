@@ -25,6 +25,8 @@ import type { UseSession } from "@/sidepanel/hooks/useSession";
 import AgentStepGroup, { type AgentStepData } from "./AgentStepGroup";
 import ManagedErrorCta from "./ManagedErrorCta";
 import PinnedTabDropdown from "./PinnedTabDropdown";
+import { Popover } from "./ui/Popover";
+import { useAnchorRect } from "./ui/useAnchorRect";
 import type { DisplayMessage } from "@/types";
 import { QuoteChip } from "./QuoteChip";
 import { escapeWrapperAttribute } from "@/lib/agent/untrusted-wrappers";
@@ -199,10 +201,9 @@ export default function Chat({
   // M5 — PinnedTabDropdown open state. Lives in Chat (not the dropdown
   // itself) because the dropdown's anchor is the PINNED row in the info bar.
   const [pinDropdownOpen, setPinDropdownOpen] = useState(false);
-  // Keep the dropdown mounted through its leave animation: `open` drives the
-  // animation direction; `visible` drives actual mount/unmount (set false only
-  // once the dropdown reports its leave animation finished via onExited).
-  const [pinDropdownVisible, setPinDropdownVisible] = useState(false);
+  // The info-bar row the dropdown hangs off of — measured by useAnchorRect to
+  // position the portaled <Popover> (left-aligned, full width, just below it).
+  const pinBarRef = useRef<HTMLDivElement>(null);
   const pinAnchorRef = useRef<HTMLButtonElement>(null);
   const [pickerActive, setPickerActive] = useState(false);
   const [enabledSkills, setEnabledSkills] = useState<SkillPackage[]>([]);
@@ -374,11 +375,13 @@ export default function Chat({
     atBottomRef.current = c.scrollHeight - c.scrollTop - c.clientHeight <= 60;
   };
 
-  // Mount the pin dropdown as soon as it opens; unmounting waits for the
-  // dropdown's leave animation (onExited).
-  useEffect(() => {
-    if (pinDropdownOpen) setPinDropdownVisible(true);
-  }, [pinDropdownOpen]);
+  // Position the portaled pin dropdown just below the info-bar row, matching
+  // its left edge + width. <Popover> owns mount/leave animation, so there's no
+  // separate "visible" state to keep it mounted through the exit anymore.
+  const pinRect = useAnchorRect(pinBarRef, pinDropdownOpen);
+  const pinDropdownStyle = pinRect
+    ? { left: pinRect.left, top: pinRect.bottom + 4, width: pinRect.width }
+    : undefined;
 
   useEffect(() => {
     if (prefillInput) {
@@ -1116,7 +1119,7 @@ After the skill completes, briefly summarize what was created (the user will see
        *  the new PinnedTabDropdown button. Provider info still visible in
        *  Settings; users typically switch there, not from the chat header. */}
       {(displayPinnedOrigin || (streaming && stepCount > 0)) && (
-        <div className="relative flex flex-shrink-0 items-center gap-2 border-b border-line bg-canvas px-4 py-1.5">
+        <div ref={pinBarRef} className="relative flex flex-shrink-0 items-center gap-2 border-b border-line bg-canvas px-4 py-1.5">
           {displayPinnedOrigin && (
             <>
               <button
@@ -1140,9 +1143,13 @@ After the skill completes, briefly summarize what was created (the user will see
                 ) : null}
                 <span className="text-fg-3 text-[10px]" aria-hidden="true">▾</span>
               </button>
-              {pinDropdownVisible && (
+              <Popover
+                open={pinDropdownOpen && !!pinDropdownStyle}
+                style={pinDropdownStyle}
+                placement="below"
+                className="fixed z-20"
+              >
                 <PinnedTabDropdown
-                  open={pinDropdownOpen}
                   anchorRef={pinAnchorRef}
                   pinMode={pinMode}
                   pinnedTabs={pinnedTabs}
@@ -1154,9 +1161,8 @@ After the skill completes, briefly summarize what was created (the user will see
                     void clearUserPin();
                   }}
                   onClose={() => setPinDropdownOpen(false)}
-                  onExited={() => setPinDropdownVisible(false)}
                 />
-              )}
+              </Popover>
             </>
           )}
           {!displayPinnedOrigin && <div className="flex-1" />}

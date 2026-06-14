@@ -8,10 +8,11 @@
 // tabs. The "Auto" row clears all pins and closes. ESC / outside-click
 // also close without changing the pin state.
 //
-// Lifecycle: the dropdown is uncontrolled (its visibility is owned by the
-// parent Chat.tsx state). It self-fetches the tab list on mount via
-// chrome.tabs.query({currentWindow: true}); no event subscription needed
-// since the user typically picks immediately.
+// Lifecycle: visibility is owned by Chat.tsx, which wraps this in a portaled
+// <Popover> (open → mount + enter animation; close → leave animation, then
+// unmount). It self-fetches the tab list on mount via
+// chrome.tabs.query({currentWindow: true}) — so each open re-fetches; no event
+// subscription needed since the user typically picks immediately.
 
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { useT } from "@/lib/i18n";
@@ -39,19 +40,14 @@ interface PinnedTabDropdownProps {
   onToggle: (tabId: number, origin: string) => void;
   /** User picked "Auto" → caller writes meta with pinMode='auto'. */
   onClearPin: () => void;
-  /** ESC / outside click / Auto row click → caller flips the open flag to
-   *  false. The dropdown then plays its leave animation before onExited. */
+  /** ESC / outside click / Auto row click → caller closes the dropdown. The
+   *  parent's <Popover> wrapper then plays the leave animation and unmounts —
+   *  this component no longer owns any open/leave animation state. */
   onClose: () => void;
-  /** Animation target. true = open/entering, false = leaving. Default true so
-   *  tests can mount the dropdown directly without driving the parent's
-   *  visibility state machine. */
-  open?: boolean;
   /** The anchor button that toggles this dropdown. Outside-click ignores
    *  clicks landing on it, so the anchor's own onClick owns the toggle —
    *  otherwise a mousedown-close races a click-open and the panel flickers. */
   anchorRef?: RefObject<HTMLButtonElement | null>;
-  /** Leave animation finished → parent may unmount the dropdown. */
-  onExited?: () => void;
 }
 
 const RESTRICTED_PIN_PREFIXES = [
@@ -84,9 +80,7 @@ export default function PinnedTabDropdown({
   onToggle,
   onClearPin,
   onClose,
-  open = true,
   anchorRef,
-  onExited,
 }: PinnedTabDropdownProps) {
   const [tabs, setTabs] = useState<TabRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -170,16 +164,6 @@ export default function PinnedTabDropdown({
     };
   }, [onClose, anchorRef]);
 
-  // Leave animation: when `open` flips to false the parent keeps us mounted
-  // until onExited fires. onAnimationEnd is the primary signal; this timeout
-  // is a fallback for environments where CSS animations don't run (e.g. a
-  // reduced-motion preference that zeroes the duration).
-  useEffect(() => {
-    if (open) return;
-    const id = setTimeout(() => onExited?.(), 220);
-    return () => clearTimeout(id);
-  }, [open, onExited]);
-
   const isUserMode = pinMode === "user";
   const isTaskMode = pinMode === "task";
 
@@ -188,10 +172,7 @@ export default function PinnedTabDropdown({
       ref={containerRef}
       role="dialog"
       aria-label={t("pinnedTab.selector")}
-      onAnimationEnd={() => {
-        if (!open) onExited?.();
-      }}
-      className={`${open ? "scale-in" : "scale-out"} origin-top absolute left-0 right-0 top-full z-20 mt-1 max-h-[60vh] overflow-hidden rounded-[10px] border border-line bg-surface shadow-[0_8px_24px_rgba(0,0,0,0.12)]`}
+      className="max-h-[60vh] overflow-hidden rounded-[10px] border border-line bg-surface shadow-[0_8px_24px_rgba(0,0,0,0.12)]"
     >
       <div className="border-b border-line bg-canvas px-3.5 py-2">
         <div className="text-[11px] uppercase tracking-[0.08em] text-fg-3">
