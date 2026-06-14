@@ -2,83 +2,24 @@ import {
   setCdpInputEnabled,
   type CdpInputState,
 } from "./cdp-input-enabled";
-
-interface PendingRequest {
-  resolve: (granted: boolean) => void;
-  reject: (err: Error) => void;
-}
-
-const portsBySession = new Map<string, chrome.runtime.Port>();
-const pendingBySession = new Map<string, PendingRequest>();
-
-export function registerOnboardingPort(
-  sessionId: string,
-  port: chrome.runtime.Port,
-): void {
-  portsBySession.set(sessionId, port);
-}
-
-export function unregisterOnboardingPort(sessionId: string): void {
-  portsBySession.delete(sessionId);
-  const pending = pendingBySession.get(sessionId);
-  if (pending) {
-    pending.reject(new Error("Onboarding cancelled (panel closed)"));
-    pendingBySession.delete(sessionId);
-  }
-}
+import { requestFromPanel, resolvePendingByKind } from "./panel-request";
 
 /**
- * Send a consent request to the sidepanel and resolve when user answers.
- * Also resolves true if another session flips the storage flag to true.
- * Rejects if the port unregisters (panel close) before response.
+ * 请求 CDP 输入授权。挂起当前 turn 直至用户在卡片应答（true/false），或另一个
+ * session 翻开关触发带外放行（见 onCdpInputEnabledChanged）。resolve 后持久化
+ * 授权 flag（幂等；放行路径下 flag 已为 true，重设无副作用）。
  */
-export async function requestCdpInputConsent(
-  sessionId: string,
-): Promise<boolean> {
-  const port = portsBySession.get(sessionId);
-  if (!port) {
-    throw new Error(
-      `Cannot request CDP input consent: no sidepanel port for session ${sessionId}`,
-    );
-  }
-  return new Promise<boolean>((resolve, reject) => {
-    pendingBySession.set(sessionId, { resolve, reject });
-    port.postMessage({
-      type: "cdp-onboarding-request",
-      sessionId,
-    });
-  });
-}
-
-export async function handleOnboardingResponse(
-  sessionId: string,
-  enabled: boolean,
-): Promise<void> {
-  await setCdpInputEnabled(enabled);
-  const pending = pendingBySession.get(sessionId);
-  if (pending) {
-    pending.resolve(enabled);
-    pendingBySession.delete(sessionId);
-  }
+export async function requestCdpInputConsent(sessionId: string): Promise<boolean> {
+  const granted = await requestFromPanel(sessionId, "cdp-consent", {});
+  await setCdpInputEnabled(granted);
+  return granted;
 }
 
 /**
- * Called by background/index.ts when the cdp-input-enabled config flag
- * changes (via the store-bus). If the flag is now true while any session
- * is awaiting consent, auto-resolve those pending requests as accepted.
+ * background/index.ts 在 cdp-input-enabled flag 经 store-bus 变化时调用。flag 现在
+ * 为 true 时，自动放行所有等待中的 consent（带外 resolve，卡片随之消失）。
  */
 export function onCdpInputEnabledChanged(enabled: CdpInputState): void {
   if (enabled !== true) return;
-  for (const [sessionId, pending] of pendingBySession.entries()) {
-    pending.resolve(true);
-    pendingBySession.delete(sessionId);
-    const port = portsBySession.get(sessionId);
-    if (port) {
-      port.postMessage({
-        type: "cdp-onboarding-resolved",
-        sessionId,
-        enabled: true,
-      });
-    }
-  }
+  resolvePendingByKind("cdp-consent", true);
 }

@@ -70,16 +70,11 @@ import {
   detachAllSessions,
 } from "./cdp-session";
 import {
-  registerOnboardingPort,
-  unregisterOnboardingPort,
-  handleOnboardingResponse,
-  onCdpInputEnabledChanged,
-} from "@/lib/cdp-input-onboarding";
-import {
-  registerLocalFilePort,
-  unregisterLocalFilePort,
-  handleLocalFileResponse,
-} from "@/lib/local-file-request";
+  registerPanelPort,
+  unregisterPanelPort,
+  handlePanelResponse,
+} from "@/lib/panel-request";
+import { onCdpInputEnabledChanged } from "@/lib/cdp-input-onboarding";
 import {
   CDP_INPUT_ENABLED_STORAGE_KEY,
   isCdpInputEnabled,
@@ -1450,8 +1445,7 @@ chrome.runtime.onConnect.addListener((port) => {
   // panel connects, not when a recording starts. Without this, quote-added never
   // reaches the panel because the dispatch loop iterates an empty map.
   portsBySession.set(portSessionId, port);
-  registerOnboardingPort(portSessionId, port);
-  registerLocalFilePort(portSessionId, port);
+  registerPanelPort(portSessionId, port);
 
   // v1.1 — drain any quote-added stashed while panel was booting (bubble click
   // triggers sidePanel.open + dispatchQuoteAdded back-to-back; the dispatch
@@ -1654,24 +1648,12 @@ chrome.runtime.onConnect.addListener((port) => {
     } else if (rawMsg.type === "picker:stop") {
       void broadcastPickerExit(rawMsg.tabId as number);
     }
-    // CDP input onboarding — panel replies with user's consent choice.
-    if (
-      rawMsg.type === "cdp-onboarding-response" &&
-      typeof rawMsg.enabled === "boolean"
-    ) {
-      void handleOnboardingResponse(portSessionId, rawMsg.enabled);
-    }
-    // request_local_file — panel replies with the user's picked file (or a
-    // cancel / unsupported reason). Keyed by the trusted port-derived session.
-    if (rawMsg.type === "local-file-response") {
-      handleLocalFileResponse(
-        portSessionId,
-        // message is narrowed to never at this point (exhausted PortMessageToWorker union);
-        // cast through unknown to reach the out-of-band local-file-response shape.
-        rawMsg as unknown as
-          | { ok: true; name: string; mime: string; text: string; truncated: boolean }
-          | { ok: false; reason: string },
-      );
+    // HITL panel-request — panel 回话（CDP 授权 / 选文件 / 选模型等），按 requestId 路由。
+    if (rawMsg.type === "panel-response" && typeof (rawMsg as { requestId?: unknown }).requestId === "string") {
+      const r = rawMsg as unknown as {
+        requestId: string;
+      } & ({ ok: true; data: unknown } | { ok: false; reason: string });
+      handlePanelResponse(r.requestId, r.ok ? { ok: true, data: r.data } : { ok: false, reason: r.reason });
     }
     // output_file — panel asks SW to download a cached artifact. SW shows a
     // Save As dialog (saveAs:true) so the user picks the location; replies with
@@ -1708,8 +1690,7 @@ chrome.runtime.onConnect.addListener((port) => {
     // Recording v1 — panel disconnect aborts any active recording for this session.
     abortRecordingForSession(port, portSessionId, "panel-disconnect");
     portsBySession.delete(portSessionId);
-    unregisterOnboardingPort(portSessionId);
-    unregisterLocalFilePort(portSessionId);
+    unregisterPanelPort(portSessionId);
 
     abortRotation.current.abort();
     keepAlive.stop();
