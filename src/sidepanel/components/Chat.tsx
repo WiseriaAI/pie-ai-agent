@@ -1653,13 +1653,13 @@ function MessageBubble({
     const hasText = message.content.length > 0;
     return (
       <div className="flex justify-end">
-        <div className="flex min-w-0 max-w-[66%] flex-col gap-2 rounded-[10px_10px_2px_10px] border border-line bg-field px-3.5 py-2.5 text-[13px] leading-5 text-fg-1">
+        <div className="flex min-w-0 max-w-[66%] flex-col gap-2 rounded-[16px_16px_5px_16px] bg-bubble px-3.5 py-2.5 text-[13px] leading-5 text-fg-1">
           {hasQuotes && (
             <div className="flex flex-col gap-1.5">
               {message.quotes!.map((q) => (
                 <div
                   key={q.id}
-                  className="flex items-center gap-2 rounded-lg bg-accent-tint py-1 pl-1 pr-2.5"
+                  className="flex items-center gap-2 rounded-lg bg-surface py-1 pl-1 pr-2.5"
                 >
                   {q.kind === "text" ? (
                     <span
@@ -1845,7 +1845,11 @@ function Composer({
 }) {
   const t = useT();
   return (
-    <div className="flex flex-shrink-0 flex-col gap-2 border-t border-line bg-canvas px-4 pb-4 pt-4">
+    <div className="relative flex flex-shrink-0 flex-col gap-2 bg-transparent px-3 pb-3 pt-3">
+      {/* Top fade — a soft gradient replaces the hard divider line, so messages
+          dissolve into the composer area as they scroll beneath it. The input
+          box's own border is the only framing left. */}
+      <div className="pointer-events-none absolute inset-x-0 -top-5 h-5 bg-gradient-to-t from-canvas to-transparent" />
       {/* Issue #34 — pending instruction list above the input box */}
       {pendingItems.length > 0 && (
         <div className="px-1 pb-2">
@@ -1866,7 +1870,7 @@ function Composer({
           />
         )}
         {/* Composer box: top-bottom layout */}
-        <div className="flex flex-col gap-2 rounded-[10px] border border-line bg-field px-3.5 py-3 focus-within:border-accent-line">
+        <div className="flex flex-col gap-2 rounded-card border border-line bg-field px-3.5 py-3 transition-colors focus-within:border-accent">
           {/* Top row: textarea full width */}
           <textarea
             value={input}
@@ -1875,7 +1879,7 @@ function Composer({
             placeholder={t("chat.composerPlaceholder")}
             rows={3}
             disabled={!sessionAllowsInput}
-            className="min-h-[60px] resize-none bg-transparent text-[13px] leading-5 text-fg-1 placeholder:text-fg-3 disabled:opacity-50"
+            className="min-h-[84px] resize-none bg-transparent text-[13px] leading-5 text-fg-1 placeholder:text-fg-3 disabled:opacity-50"
             onPaste={(e) => {
               const dt = e.clipboardData;
               if (!dt) return;
@@ -1968,7 +1972,7 @@ function Composer({
                   onClick={onStop}
                   aria-label={t("chat.cancelRunningTask")}
                   title={t("chat.cancelRunningTask")}
-                  className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded text-fg-1 transition-opacity hover:opacity-70"
+                  className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-chip text-fg-1 transition-colors hover:bg-field"
                 >
                   <svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor" aria-hidden="true">
                     <path d="M256 256v512h512V256H256z m597.333333-85.333333v682.666666H170.666667V170.666667h682.666666z" />
@@ -2058,8 +2062,8 @@ function ToolsMenu({
         onClick={() => setOpen((v) => !v)}
         className={
           pickerActive
-            ? "flex h-7 w-7 items-center justify-center rounded text-accent"
-            : "flex h-7 w-7 items-center justify-center rounded text-fg-3 hover:text-fg-1"
+            ? "flex h-7 w-7 items-center justify-center rounded-chip bg-accent-tint text-accent transition-colors"
+            : "flex h-7 w-7 items-center justify-center rounded-chip text-fg-3 transition-colors hover:bg-field hover:text-fg-1"
         }
       >
         <svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor" aria-hidden="true">
@@ -2172,7 +2176,7 @@ function PieSendButton({
   const t = useT();
   const label = ariaLabel ?? t("chat.sendMessage");
   const titleStr = titleProp ?? t("chat.sendMessage");
-  const base = "flex h-8 w-8 flex-shrink-0 items-center justify-center rounded text-fg-1 transition-opacity hover:opacity-70 disabled:cursor-not-allowed disabled:opacity-40";
+  const base = "flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-chip text-fg-1 transition-colors enabled:hover:bg-field disabled:cursor-not-allowed disabled:opacity-40";
   return (
     <button
       type="button"
