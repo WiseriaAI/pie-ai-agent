@@ -25,6 +25,7 @@
     --c-danger-line: #E8C0C0;
     --c-overlay-strong: rgba(20, 24, 29, 0.5);
     --c-surface-deep: #F0F2F4;
+    --c-bubble: #E4EAF0;
     --c-fg-4: #B8BFC8;
     --c-success: #3E8E63;
     --c-success-tint: rgba(62, 142, 99, 0.10);
@@ -53,6 +54,7 @@
       --c-danger-line: #3A2222;
       --c-overlay-strong: rgba(8, 13, 16, 0.72);
       --c-surface-deep: #0E1216;
+      --c-bubble: #2A333D;
       --c-fg-4: #3A4049;
       --c-success: #5FA37D;
       --c-success-tint: rgba(95, 163, 125, 0.14);
@@ -85,6 +87,7 @@
     --c-danger-line: #E8C0C0;
     --c-overlay-strong: rgba(20, 24, 29, 0.5);
     --c-surface-deep: #F0F2F4;
+    --c-bubble: #E4EAF0;
     --c-fg-4: #B8BFC8;
     --c-success: #3E8E63;
     --c-success-tint: rgba(62, 142, 99, 0.10);
@@ -112,6 +115,7 @@
     --c-danger-line: #3A2222;
     --c-overlay-strong: rgba(8, 13, 16, 0.72);
     --c-surface-deep: #0E1216;
+    --c-bubble: #2A333D;
     --c-fg-4: #3A4049;
     --c-success: #5FA37D;
     --c-success-tint: rgba(95, 163, 125, 0.14);
@@ -136,10 +140,48 @@
   --color-pending: var(--c-pending);
   --color-overlay: var(--c-overlay);
   --color-success: var(--c-success);
+  --color-bubble: var(--c-bubble);
   --color-success-tint: var(--c-success-tint);
 
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Consolas, monospace;
+
+  /* ── Radius — semantic, additive. Named to AVOID overriding Tailwind's
+       default rounded-sm/md/lg so existing rounded-md/lg usages don't shift.
+       12 ad-hoc values collapse into 3 tiers + rounded-full (Tailwind default). */
+  --radius-chip: 6px;      /* icon button · chip · 小指示 */
+  --radius-control: 10px;  /* 按钮 · 输入框 · 小卡（代码事实标准） */
+  --radius-card: 14px;     /* 大卡片 · section 面板 */
+
+  /* ── Type scale — mirrors the Foundations board (用途命名). px size + line-height.
+       Tailwind v4 maps --text-{name} → text-{name}, --text-{name}--line-height
+       → that utility's line-height. None collide with default text-xs/sm/base/lg. */
+  --text-caps: 11px;
+  --text-caps--line-height: 16px;
+  --text-caption: 12px;
+  --text-caption--line-height: 16px;
+  --text-body: 13px;
+  --text-body--line-height: 19px;
+  --text-body-lg: 14px;
+  --text-body-lg--line-height: 21px;
+  --text-h3: 16px;
+  --text-h3--line-height: 22px;
+  --text-h2: 18px;
+  --text-h2--line-height: 24px;
+  --text-display: 22px;
+  --text-display--line-height: 26px;
+
+  /* ── Motion — promote the existing geometric easing + a 3-step duration scale
+       to tokens. Shared by existing CSS transitions and the motion lib (next plan).
+       Tailwind v4: --ease-{n} → ease-{n}, --duration-{n} → duration-{n}. */
+  --ease-standard: cubic-bezier(0.32, 0.72, 0, 1);
+  --duration-fast: 140ms;   /* 退出 · 微交互 */
+  --duration-base: 200ms;   /* 标准进出场 */
+  --duration-slow: 260ms;   /* 抽屉 · 大面板 */
+
+  /* ── Elevation — intended to replace hardcoded shadow-[0_8px_24px_…] (done in later Batch tasks). */
+  --shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.18);
+  --shadow-overlay: 0 16px 48px rgba(0, 0, 0, 0.32);
 }
 
 body {
