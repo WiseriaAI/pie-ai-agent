@@ -6,7 +6,8 @@ import type { BuiltinProvider, ModelMeta } from "@/lib/model-router";
 import { getProviderMeta, resolveEndpointVariant } from "@/lib/model-router";
 import { CUSTOM_PREFIX } from "@/lib/custom-providers";
 import ProviderIcon from "./ProviderIcon";
-import { getCachedEntitlement } from "@/lib/managed-account";
+import { getCachedEntitlement, cachedManagedModel } from "@/lib/managed-account";
+import { consumptionDots } from "@/lib/managed-format";
 import type { ModelInfo } from "@/lib/managed-auth";
 
 interface Props {
@@ -31,6 +32,12 @@ function shortModel(modelId: string): string {
 function providerName(inst: DecryptedInstance): string {
   if (inst.provider.startsWith(CUSTOM_PREFIX)) return inst.nickname || inst.provider;
   return getProviderMeta(inst.provider as BuiltinProvider)?.name ?? inst.nickname ?? inst.provider;
+}
+
+function displayModel(inst: DecryptedInstance | null, modelId: string | null): string {
+  if (!inst || !modelId) return shortModel(modelId ?? "");
+  if (inst.provider === "managed") return cachedManagedModel(inst.apiKey, modelId)?.name ?? modelId;
+  return shortModel(modelId);
 }
 
 interface ModelRow {
@@ -177,7 +184,7 @@ export default function ModelPicker(props: Props) {
       >
         {current && <ProviderIcon provider={current.provider} size={16} className="text-accent" />}
         <span className="font-mono">
-          {current ? `${providerName(current)} · ${shortModel(props.currentModel ?? "")}` : t("modelPicker.none")}
+          {current ? `${providerName(current)} · ${displayModel(current, props.currentModel)}` : t("modelPicker.none")}
         </span>
         {props.locked ? (
           <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden className="text-fg-3">
@@ -222,7 +229,7 @@ export default function ModelPicker(props: Props) {
                     <ProviderIcon provider={inst.provider} size={22} className={isCurrentProvider ? "text-accent" : "text-fg-2"} />
                     <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-fg-1">{providerName(inst)}</span>
                     {!isExpanded && isCurrentProvider && props.currentModel && (
-                      <span className="font-mono text-[10px] text-accent">{shortModel(props.currentModel)}</span>
+                      <span className="font-mono text-[10px] text-accent">{displayModel(inst, props.currentModel)}</span>
                     )}
                     <svg width="8" height="8" viewBox="0 0 8 8" aria-hidden style={{ transform: isExpanded ? "rotate(90deg)" : "none", flexShrink: 0, transition: "transform 0.2s ease" }}>
                       <path d="M3 2L5 4L3 6" fill="none" stroke="#8A929E" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
@@ -285,43 +292,81 @@ function ExpandedModels(props: {
   useEffect(() => {
     if (props.isExpanded) inputRef.current?.focus();
   }, [props.isExpanded]);
+  const isManaged = props.inst.provider === "managed";
   const rows = modelsFor(props.inst);
   const q = props.query.trim().toLowerCase();
-  const list = q
-    ? rows.filter((r) => `${r.id} ${r.meta?.displayName ?? ""}`.toLowerCase().includes(q))
-    : rows;
+  const list = isManaged
+    ? rows
+    : q
+      ? rows.filter((r) => `${r.id} ${r.meta?.displayName ?? ""}`.toLowerCase().includes(q))
+      : rows;
   return (
     <div className="flex flex-col pb-1">
-      <input
-        ref={inputRef}
-        aria-label={props.placeholder}
-        value={props.query}
-        onChange={(e) => props.setQuery(e.target.value)}
-        placeholder={props.placeholder}
-        className="mx-3.5 mb-1 rounded border border-line bg-field px-2 py-1 text-[11px] text-fg-1 placeholder:text-fg-3"
-      />
+      {!isManaged && (
+        <input
+          ref={inputRef}
+          aria-label={props.placeholder}
+          value={props.query}
+          onChange={(e) => props.setQuery(e.target.value)}
+          placeholder={props.placeholder}
+          className="mx-3.5 mb-1 rounded border border-line bg-field px-2 py-1 text-[11px] text-fg-1 placeholder:text-fg-3"
+        />
+      )}
       <div className="flex max-h-[240px] flex-col overflow-y-auto">
         {list.length === 0 ? (
           <div className="px-3.5 py-1.5 pl-11 text-[11px] text-fg-3">{props.emptyText}</div>
         ) : (
-          list.map((r) => (
-            <button
-              key={r.id}
-              onClick={() => props.onPick(r.id)}
-              className={`flex items-center gap-2 px-3.5 py-1.5 pl-7 text-left hover:bg-surface ${r.id === props.currentModel ? "bg-surface" : ""}`}
-            >
-              <span className="flex shrink-0 items-center justify-center" style={{ width: 13 }} aria-hidden>
-                {r.id === props.currentModel && (
-                  <svg width="11" height="11" viewBox="0 0 11 11">
-                    <path d="M2 5.5L4.5 8L9 3" fill="none" stroke="#B8C8D6" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                )}
-              </span>
-              <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-fg-1">{r.id}</span>
-              {r.meta?.vision && <span className="rounded bg-line px-1 text-[9px] text-fg-3">{t("modelDropdown.vision")}</span>}
-              {r.meta?.tools && <span className="rounded bg-line px-1 text-[9px] text-fg-3">{t("modelDropdown.tools")}</span>}
-            </button>
-          ))
+          list.map((r) =>
+            r.managed ? (
+              <button
+                key={r.id}
+                onClick={() => props.onPick(r.id)}
+                className={`flex items-center gap-2.5 px-3.5 py-2 text-left hover:bg-surface ${r.id === props.currentModel ? "bg-surface" : ""}`}
+              >
+                <span className="flex shrink-0 items-center justify-center" style={{ width: 22 }} aria-hidden>
+                  {r.id === props.currentModel && (
+                    <svg width="11" height="11" viewBox="0 0 11 11">
+                      <path d="M2 5.5L4.5 8L9 3" fill="none" stroke="#B8C8D6" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  )}
+                </span>
+                <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
+                  <span className="truncate text-[13px] font-medium text-fg-1">{r.managed.name}</span>
+                  {r.managed.description && <span className="truncate text-[11px] text-fg-3">{r.managed.description}</span>}
+                </span>
+                <span className="flex shrink-0 flex-col items-end gap-[3px]">
+                  <span className="flex h-4 items-center">
+                    {r.managed.vision && <span className="rounded bg-line px-1 text-[9px] text-fg-3">{t("modelDropdown.vision")}</span>}
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="text-[9px] text-fg-3">{t("managed.models.consumption")}</span>
+                    <span className="flex items-center gap-[3px]">
+                      {consumptionDots(r.managed.costLevel).map((on, i) => (
+                        <span key={i} className={`h-1 w-1 rounded-full ${on ? "bg-fg-3" : "bg-line"}`} />
+                      ))}
+                    </span>
+                  </span>
+                </span>
+              </button>
+            ) : (
+              <button
+                key={r.id}
+                onClick={() => props.onPick(r.id)}
+                className={`flex items-center gap-2 px-3.5 py-1.5 pl-7 text-left hover:bg-surface ${r.id === props.currentModel ? "bg-surface" : ""}`}
+              >
+                <span className="flex shrink-0 items-center justify-center" style={{ width: 13 }} aria-hidden>
+                  {r.id === props.currentModel && (
+                    <svg width="11" height="11" viewBox="0 0 11 11">
+                      <path d="M2 5.5L4.5 8L9 3" fill="none" stroke="#B8C8D6" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  )}
+                </span>
+                <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-fg-1">{r.id}</span>
+                {r.meta?.vision && <span className="rounded bg-line px-1 text-[9px] text-fg-3">{t("modelDropdown.vision")}</span>}
+                {r.meta?.tools && <span className="rounded bg-line px-1 text-[9px] text-fg-3">{t("modelDropdown.tools")}</span>}
+              </button>
+            ),
+          )
         )}
       </div>
     </div>
