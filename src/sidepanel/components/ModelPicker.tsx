@@ -142,7 +142,7 @@ export default function ModelPicker(props: Props) {
             transform: shown ? "translateY(0)" : "translateY(8px)",
             transition: "opacity 0.18s ease, transform 0.18s ease",
           }}
-          className="absolute bottom-full right-0 mb-2 w-[300px] max-w-[calc(100vw-1.5rem)] rounded-lg border border-line bg-surface shadow-[0_8px_24px_rgba(0,0,0,0.24)]"
+          className="absolute bottom-full right-0 mb-2 w-[300px] max-w-[calc(100vw-1.5rem)] rounded-card border border-line bg-surface shadow-pop"
         >
           <div className="flex items-baseline justify-between px-3.5 pt-2.5 pb-1.5">
             <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-fg-3">{t("modelPicker.title")}</span>
@@ -156,7 +156,7 @@ export default function ModelPicker(props: Props) {
                 <div key={inst.id} className={isExpanded ? "bg-field" : ""}>
                   <button
                     onClick={() => toggleProvider(inst)}
-                    className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left hover:bg-field"
+                    className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left transition-colors hover:bg-field"
                   >
                     <ProviderIcon provider={inst.provider} size={22} className={isCurrentProvider ? "text-accent" : "text-fg-2"} />
                     <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-fg-1">{providerName(inst)}</span>
@@ -193,7 +193,7 @@ export default function ModelPicker(props: Props) {
           </div>
           <button
             onClick={() => { setOpen(false); props.onManage(); }}
-            className="flex w-full items-center gap-2 border-t border-line px-3.5 py-2 text-left text-[11px] text-fg-2 hover:bg-field"
+            className="flex w-full items-center gap-2 border-t border-line px-3.5 py-2 text-left text-[11px] text-fg-2 transition-colors hover:bg-field"
           >
             <span>{t("modelPicker.manage")}</span>
           </button>
@@ -234,7 +234,7 @@ function ExpandedModels(props: {
         value={props.query}
         onChange={(e) => props.setQuery(e.target.value)}
         placeholder={props.placeholder}
-        className="mx-3.5 mb-1 rounded border border-line bg-field px-2 py-1 text-[11px] text-fg-1 placeholder:text-fg-3"
+        className="mx-3.5 mb-1 rounded-chip border border-line bg-field px-2 py-1 text-[11px] text-fg-1 placeholder:text-fg-3 transition-colors focus:border-accent"
       />
       <div className="flex max-h-[240px] flex-col overflow-y-auto">
         {list.length === 0 ? (
@@ -244,7 +244,7 @@ function ExpandedModels(props: {
             <button
               key={r.id}
               onClick={() => props.onPick(r.id)}
-              className={`flex items-center gap-2 px-3.5 py-1.5 pl-7 text-left hover:bg-surface ${r.id === props.currentModel ? "bg-surface" : ""}`}
+              className={`flex items-center gap-2 px-3.5 py-1.5 pl-7 text-left transition-colors hover:bg-surface ${r.id === props.currentModel ? "bg-surface" : ""}`}
             >
               <span className="flex shrink-0 items-center justify-center" style={{ width: 13 }} aria-hidden>
                 {r.id === props.currentModel && (
@@ -254,8 +254,8 @@ function ExpandedModels(props: {
                 )}
               </span>
               <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-fg-1">{r.id}</span>
-              {r.meta?.vision && <span className="rounded bg-line px-1 text-[9px] text-fg-3">{t("modelDropdown.vision")}</span>}
-              {r.meta?.tools && <span className="rounded bg-line px-1 text-[9px] text-fg-3">{t("modelDropdown.tools")}</span>}
+              {r.meta?.vision && <span className="rounded-full bg-line px-1.5 text-[9px] text-fg-3">{t("modelDropdown.vision")}</span>}
+              {r.meta?.tools && <span className="rounded-full bg-line px-1.5 text-[9px] text-fg-3">{t("modelDropdown.tools")}</span>}
             </button>
           ))
         )}
