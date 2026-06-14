@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { quotaTier, formatDate, formatResetDate, TIER_FILL_CLASS, TIER_TEXT_CLASS } from "./managed-format";
+import { quotaTier, formatDate, formatResetDate, consumptionDots, TIER_FILL_CLASS, TIER_TEXT_CLASS } from "./managed-format";
 
 describe("managed-format", () => {
   it("quotaTier 边界：<0.80 neutral / [0.80,0.95) caution / >=0.95 critical", () => {
@@ -30,5 +30,17 @@ describe("managed-format", () => {
   it("formatResetDate：unix 秒 → 'Ddd, Mon DD'，null → null", () => {
     expect(formatResetDate(1750400000)).toMatch(/^[A-Z][a-z]{2}, [A-Z][a-z]{2} \d{1,2}$/);
     expect(formatResetDate(null)).toBeNull();
+  });
+});
+
+describe("consumptionDots", () => {
+  it("costLevel → 3 个布尔（实心数 = level）", () => {
+    expect(consumptionDots(1)).toEqual([true, false, false]);
+    expect(consumptionDots(2)).toEqual([true, true, false]);
+    expect(consumptionDots(3)).toEqual([true, true, true]);
+  });
+  it("越界值收敛到 1..3", () => {
+    expect(consumptionDots(0)).toEqual([true, false, false]);
+    expect(consumptionDots(9)).toEqual([true, true, true]);
   });
 });
