@@ -188,7 +188,7 @@ export default function ManagedSubscribePanel({
             Signed in as <span className="font-mono">{session.entitlement.email}</span>
           </div>
           <div className="text-fg-3">Plan: {session.entitlement.plan}</div>
-          {session.entitlement.introOffer && (
+          {session.entitlement.plan === "none" && session.entitlement.introOffer && (
             <span className="self-start rounded-full bg-accent/15 px-2 py-0.5 text-[11px] font-medium text-accent">
               {t("managed.subscribe.introBadge", { percentOff: session.entitlement.introOffer.percentOff })}
             </span>

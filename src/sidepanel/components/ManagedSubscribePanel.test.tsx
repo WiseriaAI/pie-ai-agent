@@ -143,6 +143,19 @@ describe("ManagedSubscribePanel", () => {
     expect(screen.queryByText(/first month/i)).toBeNull();
   });
 
+  it("blocked 用户即便误带 introOffer 也不显示徽标（客户端自我设防：徽标只属 plan:none）", async () => {
+    render(<ManagedSubscribePanel
+      onCreated={vi.fn()}
+      deps={{
+        login: vi.fn(async (): Promise<LoginResult> => ({ apiKey: "sk-v", entitlement: { plan: "blocked", email: "u@x.com", subscription: { planName: "Pie Pro", currentPeriodEnd: 1750000000, cancelAtPeriodEnd: false }, quota: null, models: [], introOffer: { percentOff: 50 } } })),
+        checkout: vi.fn(async () => {}),
+      }}
+    />);
+    fireEvent.click(screen.getByRole("button", { name: /sign in with google/i }));
+    await screen.findByRole("button", { name: /subscribe/i });
+    expect(screen.queryByText(/first month/i)).toBeNull();
+  });
+
   it("does not call onCreated after unmount (cleanup works)", async () => {
     const onCreated = vi.fn();
 

@@ -1,4 +1,5 @@
 import { ACCOUNT_BASE } from "./managed-config";
+import { normalizeEntitlement } from "./managed-account";
 
 export interface QuotaWindow {
   usedFraction: number;
@@ -69,5 +70,8 @@ export async function startManagedLogin(deps: ManagedAuthDeps = {}): Promise<Log
     body: JSON.stringify({ code, redirectUri }),
   });
   if (!resp.ok) throw new Error(`Login exchange failed (${resp.status})`);
-  return (await resp.json()) as LoginResult;
+  // 归一化 entitlement：与 getEntitlement 同一道防线，护住喂 UI（含首月半价徽标）的主路径，
+  // 不让 /auth/exchange 的畸形字段（如 introOffer.percentOff）裸穿到渲染层。
+  const json = (await resp.json()) as { apiKey?: unknown; entitlement?: unknown };
+  return { apiKey: String(json.apiKey ?? ""), entitlement: normalizeEntitlement(json.entitlement) };
 }

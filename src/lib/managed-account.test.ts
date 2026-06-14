@@ -83,10 +83,24 @@ describe("managed-account", () => {
     expect(res.introOffer).toBeUndefined();
   });
 
-  it("normalizeEntitlement 丢弃畸形 introOffer（percentOff 非正数）", async () => {
+  it("normalizeEntitlement 丢弃畸形 introOffer（percentOff 非数字）", async () => {
     const raw = { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [], introOffer: { percentOff: "x" } };
     const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => raw })) as unknown as typeof fetch;
     const res = await getEntitlement("sk-io3", { fetchFn, locale: "en" });
     expect(res.introOffer).toBeUndefined();
+  });
+
+  it.each([0, -10, NaN])("normalizeEntitlement 丢弃 percentOff 非正数/NaN: %s", async (percentOff) => {
+    const raw = { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [], introOffer: { percentOff } };
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => raw })) as unknown as typeof fetch;
+    const res = await getEntitlement(`sk-io-${percentOff}`, { fetchFn, locale: "en" });
+    expect(res.introOffer).toBeUndefined();
+  });
+
+  it("normalizeEntitlement 信任后端：>100/小数 原样透传（客户端只显示不算价、不 clamp）", async () => {
+    const raw = { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [], introOffer: { percentOff: 50.5 } };
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => raw })) as unknown as typeof fetch;
+    const res = await getEntitlement("sk-io-frac", { fetchFn, locale: "en" });
+    expect(res.introOffer).toEqual({ percentOff: 50.5 });
   });
 });
