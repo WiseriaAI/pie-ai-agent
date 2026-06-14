@@ -35,6 +35,7 @@ import {
 } from "@/lib/sessions/lifecycle";
 import { useStoreChange } from "@/sidepanel/hooks/useStoreChange";
 import SessionRow from "./SessionRow";
+import { useAnimatedList } from "./ui/AnimatedList";
 
 interface SessionDrawerProps {
   isOpen: boolean;
@@ -276,6 +277,7 @@ export default function SessionDrawer({
 }: SessionDrawerProps) {
   const t = useT();
   const drawerRef = useRef<HTMLDivElement>(null);
+  const sessionListRef = useAnimatedList<HTMLUListElement>();
   // Track the element that had focus before the drawer opened so we can
   // restore it when the drawer closes.
   const preFocusRef = useRef<Element | null>(null);
@@ -488,6 +490,7 @@ export default function SessionDrawer({
         {/* Session list (scrollable) */}
         <div style={{ flex: 1, overflowY: "auto" }}>
           <ul
+            ref={sessionListRef}
             role="list"
             style={{ margin: 0, padding: 0, listStyle: "none" }}
           >
