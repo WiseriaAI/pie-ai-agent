@@ -1858,7 +1858,7 @@ function Composer({
           />
         )}
         {/* Composer box: top-bottom layout */}
-        <div className="flex flex-col gap-2 rounded-[10px] border border-line bg-field px-3.5 py-3 focus-within:border-accent-line">
+        <div className="flex flex-col gap-2 rounded-card border border-line bg-field px-3.5 py-3 transition-colors focus-within:border-accent">
           {/* Top row: textarea full width */}
           <textarea
             value={input}
@@ -1960,7 +1960,7 @@ function Composer({
                   onClick={onStop}
                   aria-label={t("chat.cancelRunningTask")}
                   title={t("chat.cancelRunningTask")}
-                  className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded text-fg-1 transition-opacity hover:opacity-70"
+                  className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-chip text-fg-1 transition-colors hover:bg-field"
                 >
                   <svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor" aria-hidden="true">
                     <path d="M256 256v512h512V256H256z m597.333333-85.333333v682.666666H170.666667V170.666667h682.666666z" />
@@ -2050,8 +2050,8 @@ function ToolsMenu({
         onClick={() => setOpen((v) => !v)}
         className={
           pickerActive
-            ? "flex h-7 w-7 items-center justify-center rounded text-accent"
-            : "flex h-7 w-7 items-center justify-center rounded text-fg-3 hover:text-fg-1"
+            ? "flex h-7 w-7 items-center justify-center rounded-chip bg-accent-tint text-accent transition-colors"
+            : "flex h-7 w-7 items-center justify-center rounded-chip text-fg-3 transition-colors hover:bg-field hover:text-fg-1"
         }
       >
         <svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor" aria-hidden="true">
@@ -2164,7 +2164,7 @@ function PieSendButton({
   const t = useT();
   const label = ariaLabel ?? t("chat.sendMessage");
   const titleStr = titleProp ?? t("chat.sendMessage");
-  const base = "flex h-8 w-8 flex-shrink-0 items-center justify-center rounded text-fg-1 transition-opacity hover:opacity-70 disabled:cursor-not-allowed disabled:opacity-40";
+  const base = "flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-chip text-fg-1 transition-colors enabled:hover:bg-field disabled:cursor-not-allowed disabled:opacity-40";
   return (
     <button
       type="button"
