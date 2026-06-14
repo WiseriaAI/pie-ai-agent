@@ -297,6 +297,43 @@ Element.prototype.getBoundingClientRect = function () {
   return rect;
 };
 
+// happy-dom lacks the Web Animations API (no Element.prototype.animate).
+//  - @formkit/auto-animate calls it directly inside a MutationObserver callback;
+//    without the method it throws "el.animate is not a function" as an UNHANDLED
+//    error that fails the whole run.
+//  - motion (framer-motion) PREFERS WAAPI when Element.prototype.animate exists,
+//    falling back to rAF otherwise. So once we add a stub, motion uses it — and a
+//    "never finishes" stub would hang AnimatePresence exits forever (the node
+//    never unmounts). The stub must therefore report the animation as INSTANTLY
+//    finished: `finished` resolves immediately and `onfinish` fires on the next
+//    microtask as soon as a handler is attached (covers both completion paths).
+if (typeof Element !== "undefined" && typeof Element.prototype.animate !== "function") {
+  Element.prototype.animate = function () {
+    const anim = {
+      finished: Promise.resolve(),
+      oncancel: null,
+      _onfinish: null as null | (() => void),
+      get onfinish(): null | (() => void) {
+        return this._onfinish;
+      },
+      set onfinish(fn: null | (() => void)) {
+        this._onfinish = fn;
+        if (fn) queueMicrotask(() => fn.call(this));
+      },
+      cancel() {},
+      finish() {
+        this._onfinish?.();
+      },
+      play() {},
+      pause() {},
+      reverse() {},
+      addEventListener() {},
+      removeEventListener() {},
+    };
+    return anim as unknown as Animation;
+  };
+}
+
 beforeEach(() => {
   local.__store = {};
   local.__changedListeners = [];
