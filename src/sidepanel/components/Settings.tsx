@@ -30,6 +30,7 @@ import InstanceForm, { type InstanceFormPayload } from "./InstanceForm";
 import InstancesList from "./InstancesList";
 import NewConfigWizard from "./NewConfigWizard";
 import type { ProviderTestOptions } from "./NewConfigWizard";
+import { Collapse } from "./ui/Collapse";
 import AssistantLanguageSelect from "./AssistantLanguageSelect";
 import LanguageSelect from "./LanguageSelect";
 import { useT, getLocale } from "@/lib/i18n";
@@ -204,6 +205,18 @@ export default function Settings({ onBack, onRunSkill }: Props) {
                 )}
               </div>
 
+              {/* 新增配置表单：置于列表上方，展开时 height+淡入 把已配置列表推下去 */}
+              <Collapse open={showWizard}>
+                <NewConfigWizard
+                  onCreate={handleCreate}
+                  onTest={(p, payload, options) => handleTest(null, p, payload, options)}
+                  existingProviderRefs={instances.map((i) => i.provider)}
+                  testing={!!testingIds["_new"]}
+                  testResult={testResult["_new"] ?? null}
+                  onCancel={() => setShowWizard(false)}
+                />
+              </Collapse>
+
               {instances.length === 0 && !showWizard && (
                 <div className="rounded-control border border-accent-line bg-accent-tint px-3 py-2 text-[12px] leading-5 text-fg-1">
                   {t("settings.myConfigs.emptyBanner")}
@@ -320,17 +333,6 @@ export default function Settings({ onBack, onRunSkill }: Props) {
                   );
                 }}
               />
-
-              {showWizard && (
-                <NewConfigWizard
-                  onCreate={handleCreate}
-                  onTest={(p, payload, options) => handleTest(null, p, payload, options)}
-                  existingProviderRefs={instances.map((i) => i.provider)}
-                  testing={!!testingIds["_new"]}
-                  testResult={testResult["_new"] ?? null}
-                  onCancel={() => setShowWizard(false)}
-                />
-              )}
             </section>
 
           </div>
