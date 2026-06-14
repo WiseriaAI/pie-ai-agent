@@ -1,6 +1,6 @@
 # 内联下拉动画原语 `<DropdownPanel>` + 3 个 Settings 下拉落地 Implementation Plan
 
-> 执行：inline（本 session），塌缩档（原语 TDD + 3 个同构机械迁移）。worktree `/Users/wenkang/repos/pie/pie-ai-agent/.claude/worktrees/design-system-foundation`，分支 `feat/design-system-dropdown-panel`（基于 main 9656fef3，含 #189/#190/#191）。
+> 执行：inline（本 session），塌缩档（原语 TDD + 3 个同构机械迁移）。worktree `/Users/wenkang/repos/pie/pie-ai-agent/.claude/worktrees/design-system-foundation`，分支 `feat/design-system-dropdown-popover`（基于 main 9656fef3，含 #189/#190/#191）。两批合一个 PR。
 
 **Goal:** 新增"不 portal 版 Popover" 原语 `<DropdownPanel>`（定位交调用方 className，内部 `AnimatePresence`+`m.div` slide+fade），落地 3 个贴合触发器的 Settings 下拉（LanguageSelect / AssistantLanguageSelect / ProviderDropdown），把散落的 `scale-in origin-top` CSS 替成统一动画并补上优雅退场（修"开有动画、关瞬断"）。
 
@@ -45,8 +45,15 @@
 ## 验证
 `pnpm typecheck`（0）+ 全量 `pnpm test`（绿）+ `pnpm build`；真机：三处下拉打开 slide+fade、关闭有退场不瞬断、外部点击/ESC/选择仍正常、Settings 页无错。
 
+## 续作（同 PR 第二批）：PinnedTabDropdown 迁 portal Popover ✅
+- 新增 `useAnchorRect`（ui/useAnchorRect.ts）：封装 anchor 测量 + resize/scroll-capture 跟踪，返回 `DOMRect`，placement/clamp 留调用方。3 测试。
+- PinnedTabDropdown 退化为纯内容+交互组件：删 `open`/`onExited` props、`onAnimationEnd`、220ms timeout fallback、`scale-in/out`+绝对定位。单测**零改动**仍 12 绿。
+- Chat.tsx：portaled `<Popover>` 包 PinnedTabDropdown（`useAnchorRect(pinBarRef)` 算 `{left, top: bottom+4, width}`，`AnimatePresence` 接管 mount/leave）→ 删 `pinDropdownVisible` 双状态机 + onExited effect。
+- 关键决策：①外部点击/ESC 仍留 PinnedTabDropdown 内（`containerRef`），换来单测零改动；②Popover 在 Chat 层包，故组件内不含 `m.div`、单测不需 MotionProvider；③ModelPicker dogfood `useAnchorRect` 留 follow-up（hook 已就位，不动现稳定核心避免回归）。
+- 全量 2491 绿+typecheck0+build，已 sync dist 待真机。
+
 ## 范围外（后续批）
-- PinnedTabDropdown 迁 **portal 版 Popover** + 抽 `useAnchorRect` coords hook（ModelPicker dogfood 收编），删手写 `scale-in/scale-out`+`onAnimationEnd`+220ms timeout+`onExited` 状态机 + Chat.tsx mounted 管理。
-- SkillSlashPopover（`placement="above"`）/ ContextRing（inline-style 定位）按需评估。
+- SkillSlashPopover（`placement="above"`）/ ContextRing（inline-style 定位）按需评估迁 Popover + useAnchorRect。
 - `<Drawer>` + SessionDrawer 容器（最高风险，单列）。
 - QuoteChip 是 tooltip 语义（hover），不在 dropdown 迁移范围。
+- Follow-up：ModelPicker dogfood `useAnchorRect`（删其手写 updateCoords/coords/两 effect，flip/clamp 抽纯函数）。
