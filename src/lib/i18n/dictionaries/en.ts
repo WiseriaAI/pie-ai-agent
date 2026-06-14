@@ -519,6 +519,9 @@ export const enDict = {
     errSelectModel: "Pick a model",
   },
   managed: {
+    models: {
+      consumption: "Usage",
+    },
     account: {
       section: "SUBSCRIPTION",
       active: "Active",
