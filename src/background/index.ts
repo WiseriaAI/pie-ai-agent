@@ -1650,10 +1650,9 @@ chrome.runtime.onConnect.addListener((port) => {
     }
     // HITL panel-request — panel 回话（CDP 授权 / 选文件 / 选模型等），按 requestId 路由。
     if (rawMsg.type === "panel-response" && typeof (rawMsg as { requestId?: unknown }).requestId === "string") {
-      const r = rawMsg as unknown as {
-        requestId: string;
-      } & ({ ok: true; data: unknown } | { ok: false; reason: string });
-      handlePanelResponse(r.requestId, r.ok ? { ok: true, data: r.data } : { ok: false, reason: r.reason });
+      const r = rawMsg as unknown as { requestId: string; ok?: unknown; data?: unknown; reason?: unknown };
+      if (r.ok === true) handlePanelResponse(r.requestId, { ok: true, data: r.data });
+      else if (r.ok === false) handlePanelResponse(r.requestId, { ok: false, reason: typeof r.reason === "string" ? r.reason : "panel-response error" });
     }
     // output_file — panel asks SW to download a cached artifact. SW shows a
     // Save As dialog (saveAs:true) so the user picks the location; replies with
