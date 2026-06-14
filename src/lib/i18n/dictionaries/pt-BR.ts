@@ -493,7 +493,7 @@ export const ptBRDict = {
     fieldTitlePlaceholder: "Resumo diário de notícias",
     fieldPrompt: "Prompt",
     fieldPromptPlaceholder: "A tarefa que o agente executa a cada vez…",
-    fieldConfig: "Configuração",
+    fieldModel: "Modelo",
     fieldStartAt: "Iniciar em",
     fieldInterval: "Intervalo (min)",
     fieldRuns: "Execuções",

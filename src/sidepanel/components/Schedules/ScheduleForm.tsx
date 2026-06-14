@@ -203,7 +203,7 @@ export default function ScheduleForm({ instances, activeInstanceId, activeModel,
         />
       </Field>
 
-      <Field label={t("schedules.fieldConfig")}>
+      <Field label={t("schedules.fieldModel")}>
         <ModelPicker
           instances={instances}
           currentInstanceId={form.instanceId || null}

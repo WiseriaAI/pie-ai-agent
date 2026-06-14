@@ -493,7 +493,7 @@ export const jaDict = {
     fieldTitlePlaceholder: "毎日のニュース要約",
     fieldPrompt: "プロンプト",
     fieldPromptPlaceholder: "毎回エージェントが実行するタスク…",
-    fieldConfig: "設定",
+    fieldModel: "モデル",
     fieldStartAt: "開始日時",
     fieldInterval: "間隔 (分)",
     fieldRuns: "実行履歴",

@@ -492,7 +492,7 @@ export const enDict = {
     fieldTitlePlaceholder: "Daily news digest",
     fieldPrompt: "Prompt",
     fieldPromptPlaceholder: "The task the agent runs each time…",
-    fieldConfig: "Config",
+    fieldModel: "Model",
     fieldStartAt: "Start at",
     fieldInterval: "Interval (min)",
     fieldRuns: "Runs",

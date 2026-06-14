@@ -493,7 +493,7 @@ export const es419Dict = {
     fieldTitlePlaceholder: "Resumen diario de noticias",
     fieldPrompt: "Prompt",
     fieldPromptPlaceholder: "La tarea que ejecuta el agente cada vez…",
-    fieldConfig: "Configuración",
+    fieldModel: "Modelo",
     fieldStartAt: "Inicia en",
     fieldInterval: "Intervalo (min)",
     fieldRuns: "Ejecuciones",

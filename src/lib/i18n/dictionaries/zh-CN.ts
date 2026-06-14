@@ -499,7 +499,7 @@ export const zhCNDict = {
     fieldTitlePlaceholder: "每日新闻摘要",
     fieldPrompt: "提示词",
     fieldPromptPlaceholder: "每次要让 agent 执行的任务…",
-    fieldConfig: "配置",
+    fieldModel: "模型",
     fieldStartAt: "开始时间",
     fieldInterval: "间隔（分钟）",
     fieldRuns: "次数",
