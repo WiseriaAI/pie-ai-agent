@@ -992,6 +992,7 @@ async function handleResumeRequest(
     emit: (m) => port.postMessage(m),
     task: taskForPrompt,
     modelConfig,
+    instanceId: resumeSel.instanceId,
     signal,
     sessionId,
     // M2-U1: shared handler that also throttles lastAccessedAt bumps.
@@ -1368,6 +1369,7 @@ async function handleChatStream(
       emit: (m) => port.postMessage(m),
       task,
       modelConfig,
+      instanceId: chatSel.instanceId,
       signal,
       sessionId,
       // M1-U3 — persist agent state at every step boundary. M2-U1

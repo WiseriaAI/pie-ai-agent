@@ -400,6 +400,7 @@ export async function runSchedule(
         },
         task: sched.prompt,
         modelConfig: cfg,
+        instanceId: sched.instanceId,
         signal: abort.signal,
         sessionId,
         // Task 5.3 — optional step cap: maxStepsPerRun. Absent = no ceiling.
