@@ -1837,7 +1837,11 @@ function Composer({
 }) {
   const t = useT();
   return (
-    <div className="flex flex-shrink-0 flex-col gap-2 border-t border-line bg-canvas px-4 pb-4 pt-4">
+    <div className="relative flex flex-shrink-0 flex-col gap-2 bg-transparent px-3 pb-3 pt-3">
+      {/* Top fade — a soft gradient replaces the hard divider line, so messages
+          dissolve into the composer area as they scroll beneath it. The input
+          box's own border is the only framing left. */}
+      <div className="pointer-events-none absolute inset-x-0 -top-5 h-5 bg-gradient-to-t from-canvas to-transparent" />
       {/* Issue #34 — pending instruction list above the input box */}
       {pendingItems.length > 0 && (
         <div className="px-1 pb-2">
@@ -1867,7 +1871,7 @@ function Composer({
             placeholder={t("chat.composerPlaceholder")}
             rows={3}
             disabled={!sessionAllowsInput}
-            className="min-h-[60px] resize-none bg-transparent text-[13px] leading-5 text-fg-1 placeholder:text-fg-3 disabled:opacity-50"
+            className="min-h-[84px] resize-none bg-transparent text-[13px] leading-5 text-fg-1 placeholder:text-fg-3 disabled:opacity-50"
             onPaste={(e) => {
               const dt = e.clipboardData;
               if (!dt) return;
