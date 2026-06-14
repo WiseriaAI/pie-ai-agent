@@ -1,4 +1,5 @@
 import { ACCOUNT_BASE } from "./managed-config";
+import { normalizeEntitlement } from "./managed-account";
 
 export interface QuotaWindow {
   usedFraction: number;
@@ -29,6 +30,8 @@ export interface Entitlement {
   quota: { weekly?: QuotaWindow } | null;
   /** 仅 plan==active 非空。 */
   models: ModelInfo[];
+  /** 仅"从未订过"且后端 feature 开时下发；客户端据此打"首月半价"徽标。缺省=无促销。 */
+  introOffer?: { percentOff: number };
 }
 export interface LoginResult {
   apiKey: string;
@@ -67,5 +70,8 @@ export async function startManagedLogin(deps: ManagedAuthDeps = {}): Promise<Log
     body: JSON.stringify({ code, redirectUri }),
   });
   if (!resp.ok) throw new Error(`Login exchange failed (${resp.status})`);
-  return (await resp.json()) as LoginResult;
+  // 归一化 entitlement：与 getEntitlement 同一道防线，护住喂 UI（含首月半价徽标）的主路径，
+  // 不让 /auth/exchange 的畸形字段（如 introOffer.percentOff）裸穿到渲染层。
+  const json = (await resp.json()) as { apiKey?: unknown; entitlement?: unknown };
+  return { apiKey: String(json.apiKey ?? ""), entitlement: normalizeEntitlement(json.entitlement) };
 }

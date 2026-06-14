@@ -522,6 +522,9 @@ export const enDict = {
     models: {
       consumption: "Usage",
     },
+    subscribe: {
+      introBadge: "First month {percentOff}% off",
+    },
     account: {
       section: "SUBSCRIPTION",
       active: "Active",
