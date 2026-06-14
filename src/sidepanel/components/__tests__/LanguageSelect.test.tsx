@@ -51,6 +51,7 @@ describe("LanguageSelect", () => {
 
     expect(await screen.findByText("English")).toBeTruthy();
     expect(screen.getByText("中文（简体）")).toBeTruthy();
+    expect(screen.getByText("中文（繁體）")).toBeTruthy();
     expect(screen.getByText("Español (Latinoamérica)")).toBeTruthy();
     expect(screen.getByText("日本語")).toBeTruthy();
     expect(screen.getByText("Português (Brasil)")).toBeTruthy();

@@ -1,13 +1,14 @@
 <div align="center">
-  <img src="public/icons/icon-128.svg" alt="Pie" width="96" height="96" />
+  <img src="../../public/icons/icon-128.svg" alt="Pie" width="96" height="96" />
   <h1>Pie</h1>
   <p><strong>Agente de automação do navegador para Chrome, com tarefas em linguagem natural, ferramentas nativas e um modelo local-first.</strong></p>
   <p>
     <a href="https://chromewebstore.google.com/detail/pie-%C2%B7-open-source-ai-agen/gpccjhdgjkmalnepmeclooflliiocfed"><img src="https://img.shields.io/chrome-web-store/v/gpccjhdgjkmalnepmeclooflliiocfed?label=Chrome%20Web%20Store&logo=googlechrome&logoColor=white" alt="Disponível na Chrome Web Store" /></a>
   </p>
   <p>
-    <a href="README.md">English</a> ·
+    <a href="../../README.md">English</a> ·
     <a href="README.zh-CN.md">简体中文</a> ·
+    <a href="README.zh-TW.md">繁體中文</a> ·
     <a href="README.es-419.md">Español (Latinoamérica)</a> ·
     <a href="README.ja.md">日本語</a> ·
     <strong>Português (Brasil)</strong>
@@ -15,10 +16,10 @@
   <p>
     <a href="#instalacao">Instalação</a> ·
     <a href="#primeira-configuracao">Configuração</a> ·
-    <a href="PRIVACY.md">Privacidade</a> ·
-    <a href="CHANGELOG.md">Changelog</a> ·
-    <a href="docs/ROADMAP.md">Roadmap</a> ·
-    <a href="docs/ARCHITECTURE.md">Arquitetura</a> ·
+    <a href="../../PRIVACY.md">Privacidade</a> ·
+    <a href="../../CHANGELOG.md">Changelog</a> ·
+    <a href="../ROADMAP.md">Roadmap</a> ·
+    <a href="../ARCHITECTURE.md">Arquitetura</a> ·
     <a href="https://wiseriaai.github.io/pie-ai-agent/">Arquivo</a>
   </p>
 </div>
@@ -74,7 +75,7 @@ Abra uma página, escreva algo como "resuma esta página em três pontos" e deix
 
 Você usa sua própria chave de modelo. Pie não opera um backend, não faz proxy das suas solicitações e não coleta telemetria do produto.
 
-Sua API key é criptografada localmente e enviada apenas ao provedor escolhido. Leia a política completa em [PRIVACY.md](PRIVACY.md).
+Sua API key é criptografada localmente e enviada apenas ao provedor escolhido. Leia a política completa em [PRIVACY.md](../../PRIVACY.md).
 
 ## Feedback
 

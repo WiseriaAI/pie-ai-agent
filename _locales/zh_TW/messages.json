@@ -1,0 +1,10 @@
+{
+  "extension_name": {
+    "message": "Pie · 開源瀏覽器 AI Agent · 多分頁自動化",
+    "description": "Extension name shown in Chrome and the Web Store."
+  },
+  "extension_description": {
+    "message": "開源 AI 瀏覽器 Agent。自帶 Claude / ChatGPT / Gemini API Key —— 無後端、無遙測、無代理。已支援 8 家廠商。",
+    "description": "Short description shown in the Web Store and chrome://extensions."
+  }
+}

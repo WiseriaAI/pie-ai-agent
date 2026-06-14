@@ -9,7 +9,19 @@ import { getConfig } from "@/lib/idb/config-store";
 export function normalizeBrowserLocale(raw: string): Locale {
   const v = raw.toLowerCase();
   if (!v) return "en";
-  if (v.startsWith("zh")) return "zh-CN";
+  if (v.startsWith("zh")) {
+    // Traditional-script regions (Taiwan, Hong Kong, Macau) and any explicit
+    // Hant tag default to Traditional Chinese; everything else zh → Simplified.
+    if (
+      v.startsWith("zh-tw") ||
+      v.startsWith("zh-hk") ||
+      v.startsWith("zh-mo") ||
+      v.includes("hant")
+    ) {
+      return "zh-TW";
+    }
+    return "zh-CN";
+  }
   if (v.startsWith("es")) return "es-419";
   if (v === "ja" || v.startsWith("ja-")) return "ja";
   if (v === "pt-br") return "pt-BR";

@@ -278,6 +278,7 @@ export function buildSkillCatalogBlock(entries: SkillCatalogEntry[]): string {
 const RESPONSE_LANGUAGE_LABELS: Record<Locale, string> = {
   en: "English (en)",
   "zh-CN": "Simplified Chinese (zh-CN)",
+  "zh-TW": "Traditional Chinese (zh-TW)",
   "es-419": "Latin American Spanish (es-419)",
   ja: "Japanese (ja)",
   "pt-BR": "Brazilian Portuguese (pt-BR)",
