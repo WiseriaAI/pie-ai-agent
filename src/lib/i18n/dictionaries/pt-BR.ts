@@ -523,6 +523,9 @@ export const ptBRDict = {
     models: {
       consumption: "Uso",
     },
+    subscribe: {
+      introBadge: "{percentOff}% de desconto no primeiro mês",
+    },
     account: {
       section: "ASSINATURA",
       active: "Ativa",
