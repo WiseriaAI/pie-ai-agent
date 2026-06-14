@@ -23,6 +23,7 @@ import {
   addCustomProviderModel, updateCustomProviderModel, removeCustomProviderModel,
   CUSTOM_PREFIX, providerRefToId, listCustomProviders,
 } from "@/lib/custom-providers";
+import { IconButton } from "./ui/IconButton";
 import SkillsList from "./SkillsList";
 import SearchProviderSection from "./SearchProviderSection";
 import InstanceForm, { type InstanceFormPayload } from "./InstanceForm";
@@ -169,15 +170,17 @@ export default function Settings({ onBack, onRunSkill }: Props) {
   return (
     <div className="flex h-full flex-col">
       <header className="flex flex-shrink-0 items-center gap-2.5 border-b border-line bg-canvas px-3.5 py-3">
-        <button
+        <IconButton
           onClick={onBack}
-          className="flex h-7 w-7 items-center justify-center rounded text-fg-2 hover:bg-field hover:text-fg-1"
+          size="sm"
+          variant="ghost"
           aria-label={t("settings.backToAgent")}
-        >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <path d="M9 11L5 7L9 3" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
+          icon={
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d="M9 11L5 7L9 3" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          }
+        />
         <span className="text-[17px] font-semibold tracking-[-0.01em] text-fg-1">{t("settings.title")}</span>
       </header>
       <div className="flex-shrink-0 border-b border-line bg-canvas px-3.5 pb-3.5 pt-3">
@@ -194,7 +197,7 @@ export default function Settings({ onBack, onRunSkill }: Props) {
                 {!showWizard && (
                   <button
                     onClick={() => setShowWizard(true)}
-                    className="flex h-8 items-center gap-2 rounded-[10px] border border-line bg-transparent px-3 text-[12px] text-accent hover:bg-field"
+                    className="flex h-8 items-center gap-2 rounded-control border border-line bg-transparent px-3 text-[12px] text-accent transition-colors hover:bg-field"
                   >
                     {t("settings.myConfigs.newConfigButton")}
                   </button>
@@ -202,7 +205,7 @@ export default function Settings({ onBack, onRunSkill }: Props) {
               </div>
 
               {instances.length === 0 && !showWizard && (
-                <div className="rounded-[10px] border border-accent-line bg-accent-tint px-3 py-2 text-[12px] leading-5 text-fg-1">
+                <div className="rounded-control border border-accent-line bg-accent-tint px-3 py-2 text-[12px] leading-5 text-fg-1">
                   {t("settings.myConfigs.emptyBanner")}
                 </div>
               )}
@@ -308,7 +311,7 @@ export default function Settings({ onBack, onRunSkill }: Props) {
                       />
                       {result?.ok === false && (
                         <div
-                          className="mx-3.5 mb-3 rounded border border-warning-line bg-warning-tint px-2.5 py-1.5 text-[11px] text-warning"
+                          className="mx-3.5 mb-3 rounded-chip border border-warning-line bg-warning-tint px-2.5 py-1.5 text-[11px] text-warning"
                         >
                           {t("customProvider.testFailed", { error: result.message })}
                         </div>
@@ -386,14 +389,14 @@ function SegmentedTabs({ value, onChange }: { value: Tab; onChange: (t: Tab) => 
     { id: "general", label: t("settings.tabs.general") },
   ];
   return (
-    <div data-testid="settings-tabs" className="flex w-full overflow-hidden rounded-lg border border-line">
+    <div data-testid="settings-tabs" className="flex w-full overflow-hidden rounded-control border border-line">
       {tabs.map((tb, i) => {
         const active = value === tb.id;
         return (
           <button
             key={tb.id}
             onClick={() => onChange(tb.id)}
-            className={`flex-1 py-1.5 text-[12px] ${i > 0 ? "border-l border-line" : ""} ${
+            className={`flex-1 py-1.5 text-[12px] transition-colors ${i > 0 ? "border-l border-line" : ""} ${
               active ? "bg-field font-medium text-fg-1" : "bg-transparent text-fg-2 hover:text-fg-1"
             }`}
           >
@@ -439,7 +442,7 @@ function CdpInputSection({
       <div className="flex items-baseline justify-between">
         <span className="text-[15px] font-semibold tracking-[-0.005em] text-fg-1">{t("settings.experimental")}</span>
       </div>
-      <div className="flex flex-col gap-3 rounded-[14px] border border-line bg-surface p-3.5">
+      <div className="flex flex-col gap-3 rounded-card border border-line bg-surface p-3.5">
         <div className="flex items-start gap-3">
           <div className="flex flex-1 flex-col gap-1">
             <div className="text-[13px] font-medium text-fg-1">{t("settings.cdpInput.title")}</div>
@@ -457,7 +460,7 @@ function CdpInputSection({
           <Switch checked={enabled} onChange={onSet} />
         </div>
         {enabled && (
-          <div className="flex flex-col gap-1.5 rounded border border-warning-line bg-warning-tint px-3 py-2 text-[11px] leading-[16px] text-warning">
+          <div className="flex flex-col gap-1.5 rounded-chip border border-warning-line bg-warning-tint px-3 py-2 text-[11px] leading-[16px] text-warning">
             <span className="font-medium">{t("settings.cdpInput.warningTitle")}</span>
             <ul className="flex flex-col gap-1 pl-3 text-warning/90">
               <li className="list-['—__'] pl-0">{t("settings.cdpInput.warning1")}</li>
@@ -507,7 +510,7 @@ function AboutSection() {
         <img
           src={chrome.runtime.getURL("icons/icon-128.png")}
           alt="Pie"
-          className="h-[26px] w-[26px] flex-shrink-0 rounded-[7px]"
+          className="h-[26px] w-[26px] flex-shrink-0 rounded-chip"
         />
         <div className="flex flex-col gap-0.5">
           <div className="flex items-baseline gap-1.5">
