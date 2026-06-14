@@ -72,9 +72,11 @@ export default function ModelPicker(props: Props) {
   const popoverRef = useRef<HTMLDivElement>(null);
   // Fixed-position coords measured from the trigger button's rect. The popover
   // is portaled to document.body (so no ancestor overflow/stacking clips it) and
-  // positioned with position:fixed. Right-aligned to the trigger; vertically it
-  // opens upward when there's room above, else downward.
-  const [coords, setCoords] = useState<{ right: number; top?: number; bottom?: number } | null>(null);
+  // positioned with position:fixed. Left-aligned to the trigger, then clamped
+  // inside the viewport so a narrow side panel never pushes it off either edge
+  // (the trigger can sit anywhere — left-aligned in a form field, etc.).
+  // Vertically it opens upward when there's room above, else downward.
+  const [coords, setCoords] = useState<{ left: number; top?: number; bottom?: number } | null>(null);
 
   const updateCoords = useCallback(() => {
     const el = triggerRef.current;
@@ -82,12 +84,15 @@ export default function ModelPicker(props: Props) {
     const rect = el.getBoundingClientRect();
     const POPOVER_MAX_H = 380; // panel content max-h-[360px] + paddings/header budget
     const GAP = 8; // ≈ the old mb-2 gap
-    const right = window.innerWidth - rect.right;
+    const MARGIN = 8; // min gap from the viewport edges
+    const POPOVER_W = Math.min(300, window.innerWidth - 24); // matches w-[300px] / max-w-[calc(100vw-1.5rem)]
+    // Left-align to the trigger, then clamp so the popover stays fully on-screen.
+    const left = Math.max(MARGIN, Math.min(rect.left, window.innerWidth - POPOVER_W - MARGIN));
     // Flip up when there's enough room above the trigger, else open downward.
     if (rect.top >= POPOVER_MAX_H + GAP) {
-      setCoords({ right, bottom: window.innerHeight - rect.top + GAP });
+      setCoords({ left, bottom: window.innerHeight - rect.top + GAP });
     } else {
-      setCoords({ right, top: rect.bottom + GAP });
+      setCoords({ left, top: rect.bottom + GAP });
     }
   }, []);
 
@@ -182,7 +187,7 @@ export default function ModelPicker(props: Props) {
           role="dialog"
           onTransitionEnd={() => { if (!shown) setMounted(false); }}
           style={{
-            right: coords.right,
+            left: coords.left,
             top: coords.top,
             bottom: coords.bottom,
             opacity: shown ? 1 : 0,
