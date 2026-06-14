@@ -1,8 +1,16 @@
-import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
+import {
+  render,
+  screen,
+  fireEvent,
+  cleanup,
+  waitFor,
+  waitForElementToBeRemoved,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { I18nProvider, STORAGE_KEY_UI_LOCALE } from "@/lib/i18n";
 import { setConfig } from "@/lib/idb/config-store";
 import { _resetForTests } from "@/lib/idb/db";
+import { MotionProvider } from "../ui/motion";
 import ContextRing from "../ContextRing";
 
 afterEach(cleanup);
@@ -115,13 +123,15 @@ describe("ContextRing — color thresholds", () => {
 describe("ContextRing — popover interaction", () => {
   function renderRing() {
     return render(
-      <ContextRing
-        lastInputTokens={124_000}
-        lastOutputTokens={1400}
-        totalInputTokens={8_243}
-        totalOutputTokens={1_402}
-        maxContextTokens={200_000}
-      />,
+      <MotionProvider>
+        <ContextRing
+          lastInputTokens={124_000}
+          lastOutputTokens={1400}
+          totalInputTokens={8_243}
+          totalOutputTokens={1_402}
+          maxContextTokens={200_000}
+        />
+      </MotionProvider>,
     );
   }
 
@@ -139,40 +149,49 @@ describe("ContextRing — popover interaction", () => {
     expect(popover.textContent).toContain("9,645");
   });
 
-  it("ESC closes the popover", () => {
+  it("ESC closes the popover", async () => {
     renderRing();
     fireEvent.click(screen.getByTestId("context-ring"));
     expect(screen.queryByTestId("context-ring-popover")).not.toBeNull();
     fireEvent.keyDown(window, { key: "Escape" });
-    expect(screen.queryByTestId("context-ring-popover")).toBeNull();
+    // DropdownPanel animates out then unmounts (AnimatePresence) — await removal.
+    await waitForElementToBeRemoved(() =>
+      screen.queryByTestId("context-ring-popover"),
+    );
   });
 
-  it("second click on ring closes the popover (toggle)", () => {
+  it("second click on ring closes the popover (toggle)", async () => {
     renderRing();
     fireEvent.click(screen.getByTestId("context-ring"));
     fireEvent.click(screen.getByTestId("context-ring"));
-    expect(screen.queryByTestId("context-ring-popover")).toBeNull();
+    await waitForElementToBeRemoved(() =>
+      screen.queryByTestId("context-ring-popover"),
+    );
   });
 
   it("click outside closes the popover", async () => {
-    const { container } = render(
-      <div>
-        <button data-testid="outside-button">outside</button>
-        <ContextRing
-          lastInputTokens={124_000}
-          lastOutputTokens={1400}
-          totalInputTokens={8_243}
-          totalOutputTokens={1_402}
-          maxContextTokens={200_000}
-        />
-      </div>,
+    render(
+      <MotionProvider>
+        <div>
+          <button data-testid="outside-button">outside</button>
+          <ContextRing
+            lastInputTokens={124_000}
+            lastOutputTokens={1400}
+            totalInputTokens={8_243}
+            totalOutputTokens={1_402}
+            maxContextTokens={200_000}
+          />
+        </div>
+      </MotionProvider>,
     );
     fireEvent.click(screen.getByTestId("context-ring"));
     expect(screen.queryByTestId("context-ring-popover")).not.toBeNull();
     // Wait a tick so the deferred listener registration happens.
     await new Promise((resolve) => setTimeout(resolve, 10));
     fireEvent.mouseDown(screen.getByTestId("outside-button"));
-    expect(screen.queryByTestId("context-ring-popover")).toBeNull();
+    await waitForElementToBeRemoved(() =>
+      screen.queryByTestId("context-ring-popover"),
+    );
   });
 });
 
@@ -180,15 +199,17 @@ describe("ContextRing — locale formatting", () => {
   it("formats tooltip and popover numbers with the effective locale", async () => {
     await setConfig(STORAGE_KEY_UI_LOCALE, "pt-BR");
     render(
-      <I18nProvider>
-        <ContextRing
-          lastInputTokens={124_000}
-          lastOutputTokens={1400}
-          totalInputTokens={8_243}
-          totalOutputTokens={1_402}
-          maxContextTokens={200_000}
-        />
-      </I18nProvider>,
+      <MotionProvider>
+        <I18nProvider>
+          <ContextRing
+            lastInputTokens={124_000}
+            lastOutputTokens={1400}
+            totalInputTokens={8_243}
+            totalOutputTokens={1_402}
+            maxContextTokens={200_000}
+          />
+        </I18nProvider>
+      </MotionProvider>,
     );
 
     const ring = await screen.findByTestId("context-ring");

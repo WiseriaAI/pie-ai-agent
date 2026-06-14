@@ -1,6 +1,6 @@
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { describe, it, expect, vi, afterEach } from "vitest";
-import ModelPicker, { modelsFor } from "./ModelPicker";
+import ModelPicker, { modelsFor, computePopoverCoords } from "./ModelPicker";
 import type { DecryptedInstance } from "@/lib/instances";
 import { getEntitlement } from "@/lib/managed-account";
 
@@ -165,5 +165,44 @@ describe("ModelPicker managed rendering", () => {
     fireEvent.click(screen.getByText("Pie 官方订阅"));
     fireEvent.click(screen.getByText("进阶"));
     expect(onSelect).toHaveBeenCalledWith("m", "pro");
+  });
+});
+
+describe("computePopoverCoords — flip + clamp", () => {
+  const rect = (over: Partial<DOMRect>): DOMRect =>
+    ({
+      left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0, x: 0, y: 0,
+      toJSON: () => ({}),
+      ...over,
+    }) as DOMRect;
+
+  it("flips up (bottom set, top unset) when there is room above the trigger", () => {
+    const c = computePopoverCoords(rect({ top: 500, bottom: 520, left: 50 }), 400, 800);
+    expect(c.top).toBeUndefined();
+    expect(c.bottom).toBe(800 - 500 + 8); // viewportH - rect.top + GAP
+    expect(c.left).toBe(50);
+  });
+
+  it("opens downward (top set, bottom unset) when the trigger sits near the top", () => {
+    const c = computePopoverCoords(rect({ top: 100, bottom: 120, left: 50 }), 400, 800);
+    expect(c.bottom).toBeUndefined();
+    expect(c.top).toBe(120 + 8); // rect.bottom + GAP
+    expect(c.left).toBe(50);
+  });
+
+  it("clamps left to the MARGIN when the trigger is off the left edge", () => {
+    const c = computePopoverCoords(rect({ top: 100, bottom: 120, left: -20 }), 400, 800);
+    expect(c.left).toBe(8); // MARGIN
+  });
+
+  it("clamps left to the right edge so the panel never overflows", () => {
+    // viewportW 320 → POPOVER_W = min(300, 320-24=296) = 296; maxLeft = 320-296-8 = 16
+    const c = computePopoverCoords(rect({ top: 100, bottom: 120, left: 300 }), 320, 800);
+    expect(c.left).toBe(16);
+  });
+
+  it("passes the trigger left through unchanged when it fits", () => {
+    const c = computePopoverCoords(rect({ top: 100, bottom: 120, left: 50 }), 400, 800);
+    expect(c.left).toBe(50);
   });
 });
