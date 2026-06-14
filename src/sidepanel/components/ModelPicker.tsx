@@ -169,6 +169,7 @@ export default function ModelPicker(props: Props) {
         open={open && !!coords}
         popoverRef={popoverRef}
         role="dialog"
+        placement={coords?.bottom != null ? "above" : "below"}
         style={{ left: coords?.left, top: coords?.top, bottom: coords?.bottom }}
         className="fixed z-[100] w-[300px] max-w-[calc(100vw-1.5rem)] rounded-card border border-line bg-surface shadow-pop"
       >
