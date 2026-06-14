@@ -12,6 +12,13 @@ export interface SubscriptionInfo {
 export interface ModelInfo {
   id: string;
   name: string;
+  /** 一行能力描述（已按 locale 由后端解析）。 */
+  description?: string;
+  /** 是否支持图片输入。tools 对 managed 一律视 true。 */
+  vision: boolean;
+  maxContextTokens: number;
+  /** 相对周额度消耗档（1=最省），渲染为 N/3 实心点。 */
+  costLevel: 1 | 2 | 3;
 }
 export interface Entitlement {
   plan: "none" | "active" | "blocked";

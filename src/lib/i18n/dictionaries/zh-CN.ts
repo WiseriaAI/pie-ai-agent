@@ -526,6 +526,9 @@ export const zhCNDict = {
     errSelectModel: "请选择一个模型",
   },
   managed: {
+    models: {
+      consumption: "消耗",
+    },
     account: {
       section: "订阅",
       active: "生效中",

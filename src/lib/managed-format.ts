@@ -40,3 +40,9 @@ export function formatResetDate(unixSec: number | null | undefined, locale: stri
     day: "numeric",
   });
 }
+
+/** 相对消耗档 → 3 个点的实心/空布尔数组（实心数 = clamp(level,1,3)）。渲染「消耗 ●●○」。 */
+export function consumptionDots(costLevel: number): [boolean, boolean, boolean] {
+  const filled = Math.max(1, Math.min(3, Math.round(costLevel)));
+  return [filled >= 1, filled >= 2, filled >= 3];
+}

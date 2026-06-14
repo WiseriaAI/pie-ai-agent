@@ -526,6 +526,9 @@ export const zhTWDict = {
     errSelectModel: "請選擇一個模型",
   },
   managed: {
+    models: {
+      consumption: "消耗",
+    },
     account: {
       section: "訂閱",
       active: "生效中",

@@ -520,6 +520,9 @@ export const jaDict = {
     errSelectModel: "モデルを選択してください",
   },
   managed: {
+    models: {
+      consumption: "消費",
+    },
     account: {
       section: "サブスクリプション",
       active: "有効",

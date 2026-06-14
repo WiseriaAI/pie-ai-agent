@@ -1,4 +1,5 @@
 import type { ProviderRef, BuiltinProvider, ModelConfig } from "@/lib/model-router";
+import { getCachedEntitlement, cachedManagedModel } from "@/lib/managed-account";
 import { resolveProviderMeta, getProviderMeta, resolveModelVision, resolveModelMeta, resolveEndpointVariant } from "@/lib/model-router/providers/registry";
 import { getOrCreateEncryptionKey, encrypt, decrypt } from "@/lib/crypto";
 import { getCustomProvider, providerRefToId } from "@/lib/custom-providers";
@@ -193,28 +194,38 @@ export async function resolveModelConfig(instanceId: string, model: string): Pro
   const meta = await resolveProviderMeta(inst.provider);
   if (!meta) return null;
   const variant = resolveEndpointVariant(meta, inst.endpointVariant);
+
+  // managed：失效 alias（缓存里没有且缓存非空）回退到 models[0]，保证送出的 model 合法。
+  let effectiveModel = model;
+  if (inst.provider === "managed") {
+    const ms = getCachedEntitlement(inst.apiKey)?.models ?? [];
+    if (ms.length > 0 && !ms.some((m) => m.id === model)) effectiveModel = ms[0]!.id;
+  }
+
   // Custom providers: read the stored CustomModelMeta.vision (#62).
   // Builtin providers: registry/fetched catalog first; on a miss, consult the
   // pcmm sidecar (resolveModelMeta) so user-added custom models with vision:true
   // get screenshot tools. Stays `undefined` when pcmm also misses (truly unknown
   // → fail-closed downstream, unchanged).
   let vision: boolean | undefined;
-  if (inst.provider.startsWith("custom:")) {
-    vision = await resolveCustomModelVision(inst.provider, model);
+  if (inst.provider === "managed") {
+    vision = cachedManagedModel(inst.apiKey, effectiveModel)?.vision;
+  } else if (inst.provider.startsWith("custom:")) {
+    vision = await resolveCustomModelVision(inst.provider, effectiveModel);
   } else {
-    vision = resolveModelVision(inst.provider as BuiltinProvider, model, inst.fetchedModels);
+    vision = resolveModelVision(inst.provider as BuiltinProvider, effectiveModel, inst.fetchedModels);
     if (vision === undefined) {
-      vision = (await resolveModelMeta(inst.provider, model))?.vision;
+      vision = (await resolveModelMeta(inst.provider, effectiveModel))?.vision;
     }
   }
   // maxOutputTokens：anthropic-wire 后端用它当 max_tokens 必填默认。registry/
   // 自定义 provider 经 resolveModelMeta 统一解析；OpenRouter(fetched) 命中不到则
   // 留 undefined（OpenAI-compat 不读此字段，无影响）。
-  const maxOutputTokens = (await resolveModelMeta(inst.provider, model))?.maxOutputTokens;
+  const maxOutputTokens = (await resolveModelMeta(inst.provider, effectiveModel))?.maxOutputTokens;
   return {
     provider: inst.provider,
     providerName: meta.name,
-    model,
+    model: effectiveModel,
     apiKey: inst.apiKey,
     baseUrl: variant?.baseUrl ?? meta.defaultBaseUrl,
     ...(inst.maxTokens != null && { maxTokens: inst.maxTokens }),
@@ -237,6 +248,11 @@ export async function firstModelForProvider(provider: ProviderRef, instanceId?: 
     ? await getInstance(instanceId)
     : (await listInstances()).find((i) => i.provider === provider);
   if (inst?.customModels && inst.customModels.length > 0) return inst.customModels[0]!;
+  if (provider === "managed" && inst) {
+    const first = getCachedEntitlement(inst.apiKey)?.models[0]?.id;
+    if (first) return first;
+    // 缓存空 → 落到下方 registry 单条兜底
+  }
   const meta = getProviderMeta(provider as BuiltinProvider);
   // variant 带 models override → 该 instance 的默认模型来自 variant 池
   const variantId = variantOverride === undefined ? inst?.endpointVariant : variantOverride ?? undefined;

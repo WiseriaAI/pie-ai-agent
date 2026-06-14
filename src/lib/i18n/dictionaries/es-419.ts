@@ -520,6 +520,9 @@ export const es419Dict = {
     errSelectModel: "Elige un modelo",
   },
   managed: {
+    models: {
+      consumption: "Uso",
+    },
     account: {
       section: "SUSCRIPCIÓN",
       active: "Activa",

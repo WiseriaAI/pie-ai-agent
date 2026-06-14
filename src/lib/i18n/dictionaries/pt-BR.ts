@@ -520,6 +520,9 @@ export const ptBRDict = {
     errSelectModel: "Escolha um modelo",
   },
   managed: {
+    models: {
+      consumption: "Uso",
+    },
     account: {
       section: "ASSINATURA",
       active: "Ativa",
