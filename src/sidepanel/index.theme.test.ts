@@ -43,4 +43,10 @@ describe("design tokens (@theme)", () => {
     expect(css).toContain("--shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.18)");
     expect(css).toContain("--shadow-overlay: 0 16px 48px rgba(0, 0, 0, 0.32)");
   });
+
+  it("defines the user-bubble color token for both themes", () => {
+    expect(css).toContain("--c-bubble: #E4EAF0"); // light
+    expect(css).toContain("--c-bubble: #2A333D"); // dark
+    expect(css).toContain("--color-bubble: var(--c-bubble)");
+  });
 });

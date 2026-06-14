@@ -1645,13 +1645,13 @@ function MessageBubble({
     const hasText = message.content.length > 0;
     return (
       <div className="flex justify-end">
-        <div className="flex min-w-0 max-w-[66%] flex-col gap-2 rounded-[10px_10px_2px_10px] border border-line bg-field px-3.5 py-2.5 text-[13px] leading-5 text-fg-1">
+        <div className="flex min-w-0 max-w-[66%] flex-col gap-2 rounded-[16px_16px_5px_16px] bg-bubble px-3.5 py-2.5 text-[13px] leading-5 text-fg-1">
           {hasQuotes && (
             <div className="flex flex-col gap-1.5">
               {message.quotes!.map((q) => (
                 <div
                   key={q.id}
-                  className="flex items-center gap-2 rounded-lg bg-accent-tint py-1 pl-1 pr-2.5"
+                  className="flex items-center gap-2 rounded-lg bg-surface py-1 pl-1 pr-2.5"
                 >
                   {q.kind === "text" ? (
                     <span
