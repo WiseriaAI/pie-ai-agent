@@ -102,7 +102,7 @@ describe("click CDP failure modes — error message templates", () => {
 
   it("onboarding-cancelled wording when consent throws", async () => {
     const tool = buildClickTool(deps({
-      requestConsent: async () => { throw new Error("Onboarding cancelled (panel closed)"); },
+      requestConsent: async () => { throw new Error("panel-request cancelled (panel closed) for session S1"); },
     }));
     const r = await tool.handler({ frameId: 0, elementIndex: 9 }, { tabId: 7 });
     expect(r).toMatchObject({

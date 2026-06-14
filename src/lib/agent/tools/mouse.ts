@@ -267,7 +267,7 @@ export async function requireCdpInput(
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    if (/Onboarding cancelled/i.test(msg)) {
+    if (/\(panel closed\)/i.test(msg)) {
       return { ok: false, error: "Onboarding cancelled (panel closed)." };
     }
     return { ok: false, error: `CDP consent error: ${msg}` };

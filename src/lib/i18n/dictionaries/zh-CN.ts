@@ -524,6 +524,10 @@ export const zhCNDict = {
       "起始网址是受限页面（chrome://、about:、扩展页、应用商店），无法使用",
     errSelectConfig: "请选择运行所用的配置",
     errSelectModel: "请选择一个模型",
+    draftCardLabel: "新定时任务",
+    draftCardRunWith: "运行模型",
+    draftCardCreate: "创建定时任务",
+    draftCardCreated: "定时任务已创建",
   },
   managed: {
     models: {

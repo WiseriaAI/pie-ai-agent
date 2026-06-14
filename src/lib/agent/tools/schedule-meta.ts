@@ -32,7 +32,22 @@ import {
   type ScheduleSpec,
 } from "../../schedules/types";
 import { resolveSelection } from "../../model-selection-resolver";
+import { getInstance } from "../../instances";
 import type { ToolHandlerContext } from "../types";
+
+// ── #184 挂起式模型卡 — 公共类型 ─────────────────────────────────────────────
+
+/** #184 挂起式模型卡：待建任务摘要（payload）与用户选择（返回）。 */
+export interface ScheduleDraftPayload {
+  title: string;
+  prompt: string;
+  /** 人类可读的触发摘要，如 "every 60 min from 2026-06-15 09:00"。 */
+  specSummary: string;
+}
+export interface ScheduleModelSelection {
+  instanceId: string;
+  model: string;
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -78,6 +93,32 @@ function coerceStartAt(
 // injection call; it forwards to setScheduleOpsRunDep.
 export function setScheduleRunDep(fn: (scheduleId: string) => Promise<void>): void {
   setScheduleOpsRunDep(fn);
+}
+
+// ── #184 helpers ─────────────────────────────────────────────────────────────
+
+/** 把 spec 转成人类可读摘要，供 ScheduleDraftCard 展示。 */
+function summarizeSpec(spec: ScheduleSpec): string {
+  const parts: string[] = [];
+  if (spec.startAt) parts.push(`start ${new Date(spec.startAt).toLocaleString()}`);
+  if (spec.intervalMinutes) parts.push(`every ${spec.intervalMinutes} min`);
+  else parts.push("one-shot");
+  if (spec.maxRuns) parts.push(`max ${spec.maxRuns} runs`);
+  return parts.join(", ");
+}
+
+/**
+ * 显式选择合法性：instanceId 与 model 都非空，且 instance 存在于 IDB。
+ * 任一缺失或实例不存在 → valid:false（交由挂起卡 / 兜底处理）。
+ */
+async function resolveExplicitSelection(
+  rawInstanceId: unknown,
+  rawModel: unknown,
+): Promise<{ valid: true; instanceId: string; model: string } | { valid: false }> {
+  if (!isNonEmptyString(rawInstanceId) || !isNonEmptyString(rawModel)) return { valid: false };
+  const inst = await getInstance(rawInstanceId);
+  if (!inst) return { valid: false };
+  return { valid: true, instanceId: rawInstanceId, model: rawModel };
 }
 
 // ── Tool: create_schedule ────────────────────────────────────────────────────
@@ -129,6 +170,10 @@ const createScheduleTool: Tool = {
         description:
           "Instance to use for this schedule. Defaults to the model you're currently chatting with, else your configured default.",
       },
+      model: {
+        type: "string",
+        description: "Specific model id for this instance. Omit to be prompted (chat) or fall back to the instance default.",
+      },
       maxStepsPerRun: {
         type: "number",
         description: "Optional hard step cap per run. Absent = no ceiling (LLM-controlled).",
@@ -157,13 +202,23 @@ const createScheduleTool: Tool = {
       if (s.maxRuns !== undefined) spec.maxRuns = s.maxRuns as number;
     }
 
-    // 解析 (instanceId, model)：显式 arg → 当前会话 ctx → resolveSelection 兜底 → 错误。
-    // model 仅在来源是会话/兜底（已解析出具体 (instance, model)）时绑定；显式
-    // instanceId 无配对 model 时留空，运行时回退 firstModelForProvider。
+    // 解析 (instanceId, model)：显式且合法 → 直接用；否则 chat 路径弹卡挂起，
+    // 无 panel 时回退 ctx 会话 / resolveSelection 兜底。
     let instanceId: string;
     let model: string | undefined;
-    if (isNonEmptyString(a.instanceId)) {
-      instanceId = a.instanceId;
+
+    const explicit = await resolveExplicitSelection(a.instanceId, a.model);
+    if (explicit.valid) {
+      instanceId = explicit.instanceId;
+      model = explicit.model;
+    } else if (ctx.requestModelSelection) {
+      const sel = await ctx.requestModelSelection({
+        title: a.title,
+        prompt: a.prompt,
+        specSummary: summarizeSpec(spec),
+      });
+      instanceId = sel.instanceId;
+      model = sel.model;
     } else if (isNonEmptyString(ctx.currentInstanceId)) {
       instanceId = ctx.currentInstanceId;
       model = isNonEmptyString(ctx.currentModel) ? ctx.currentModel : undefined;

@@ -1,84 +1,55 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import {
-  requestCdpInputConsent,
-  handleOnboardingResponse,
-  registerOnboardingPort,
-  unregisterOnboardingPort,
-} from "./cdp-input-onboarding";
-import { CDP_INPUT_ENABLED_STORAGE_KEY, setCdpInputEnabled } from "./cdp-input-enabled";
-import { getConfig } from "./idb/config-store";
-import { _resetForTests } from "./idb/db";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { registerPanelPort, __resetPanelRequestState } from "./panel-request";
+import { requestCdpInputConsent, onCdpInputEnabledChanged } from "./cdp-input-onboarding";
 
-interface FakePort {
-  name: string;
-  postMessage: ReturnType<typeof vi.fn>;
+const setEnabled = vi.fn();
+vi.mock("./cdp-input-enabled", () => ({
+  setCdpInputEnabled: (...a: unknown[]) => setEnabled(...a),
+}));
+
+function fakePort() {
+  const sent: any[] = [];
+  return { sent, postMessage: (m: any) => sent.push(m) } as unknown as chrome.runtime.Port & { sent: any[] };
 }
 
-function fakePort(sessionId: string): FakePort {
-  return {
-    name: `chat-stream-${sessionId}`,
-    postMessage: vi.fn(),
-  };
-}
-
-beforeEach(async () => {
-  await _resetForTests();
+beforeEach(() => {
+  __resetPanelRequestState();
+  setEnabled.mockReset();
+  setEnabled.mockResolvedValue(undefined);
 });
 
-describe("requestCdpInputConsent", () => {
-  it("posts onboarding-request to registered port and resolves on response=true", async () => {
-    const port = fakePort("S1");
-    registerOnboardingPort("S1", port as unknown as chrome.runtime.Port);
-    const promise = requestCdpInputConsent("S1");
-    expect(port.postMessage).toHaveBeenCalledWith({
-      type: "cdp-onboarding-request",
-      sessionId: "S1",
-    });
-    handleOnboardingResponse("S1", true);
-    await expect(promise).resolves.toBe(true);
+describe("cdp-input-onboarding adapter", () => {
+  it("persists the flag after the user grants via panel", async () => {
+    const port = fakePort();
+    registerPanelPort("S1", port);
+    const p = requestCdpInputConsent("S1");
+    // 模拟 panel 通过 handlePanelResponse 放行
+    const { handlePanelResponse } = await import("./panel-request");
+    handlePanelResponse(port.sent[0].requestId, { ok: true, data: true });
+    await expect(p).resolves.toBe(true);
+    expect(setEnabled).toHaveBeenCalledWith(true);
   });
 
-  it("writes flag=true to config store when user accepts", async () => {
-    const port = fakePort("S1");
-    registerOnboardingPort("S1", port as unknown as chrome.runtime.Port);
-    const promise = requestCdpInputConsent("S1");
-    handleOnboardingResponse("S1", true);
-    await promise;
-    expect(await getConfig<boolean>(CDP_INPUT_ENABLED_STORAGE_KEY)).toBe(true);
-  });
-
-  it("writes flag=false and resolves false when user declines", async () => {
-    const port = fakePort("S1");
-    registerOnboardingPort("S1", port as unknown as chrome.runtime.Port);
-    const promise = requestCdpInputConsent("S1");
-    handleOnboardingResponse("S1", false);
-    const result = await promise;
-    expect(result).toBe(false);
-    expect(await getConfig<boolean>(CDP_INPUT_ENABLED_STORAGE_KEY)).toBe(false);
-  });
-
-  it("rejects with onboarding-cancelled when port unregisters before response", async () => {
-    const port = fakePort("S1");
-    registerOnboardingPort("S1", port as unknown as chrome.runtime.Port);
-    const promise = requestCdpInputConsent("S1");
-    unregisterOnboardingPort("S1");
-    await expect(promise).rejects.toThrow("Onboarding cancelled");
-  });
-
-  it("auto-resolves true when another session flips the flag to true mid-flight", async () => {
-    const port = fakePort("S1");
-    registerOnboardingPort("S1", port as unknown as chrome.runtime.Port);
-    const promise = requestCdpInputConsent("S1");
-    // Simulate another session flipping the flag
-    await setCdpInputEnabled(true);
-    // The coordinator listens for store-bus changes and resolves
-    // (test invokes the handler with the resolved enabled state).
-    const { onCdpInputEnabledChanged } = await import("./cdp-input-onboarding");
+  it("out-of-band: another session flipping the flag auto-resolves pending consent as true", async () => {
+    const port = fakePort();
+    registerPanelPort("S1", port);
+    const p = requestCdpInputConsent("S1");
     onCdpInputEnabledChanged(true);
-    await expect(promise).resolves.toBe(true);
+    await expect(p).resolves.toBe(true);
+    // 卡片消失消息已发
+    expect(port.sent.some((m) => m.type === "panel-request-resolved")).toBe(true);
+    // resolve 续作仍持久化 flag（幂等）
+    expect(setEnabled).toHaveBeenCalledWith(true);
   });
 
-  it("rejects with port-missing if no port registered for sessionId", async () => {
-    await expect(requestCdpInputConsent("never-registered")).rejects.toThrow("no sidepanel port");
+  it("onCdpInputEnabledChanged ignores non-true states", async () => {
+    const port = fakePort();
+    registerPanelPort("S1", port);
+    const p = requestCdpInputConsent("S1");
+    onCdpInputEnabledChanged(false);
+    // 仍 pending；用一个真实响应收尾避免悬挂
+    const { handlePanelResponse } = await import("./panel-request");
+    handlePanelResponse(port.sent[0].requestId, { ok: true, data: false });
+    await expect(p).resolves.toBe(false);
   });
 });

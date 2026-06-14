@@ -402,7 +402,7 @@ describe("requireCdpInput", () => {
   it("returns onboarding-cancelled when requestConsent throws", async () => {
     const result = await requireCdpInput({
       sessionId: "S1",
-      requestConsent: async () => { throw new Error("Onboarding cancelled (panel closed)"); },
+      requestConsent: async () => { throw new Error("panel-request cancelled (panel closed) for session S1"); },
     });
     expect(result).toEqual({
       ok: false,

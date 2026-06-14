@@ -90,10 +90,11 @@ import SessionConfirmCard from "./SessionConfirmCard";
 import MarkdownContent from "./Markdown";
 import SkillSlashPopover from "./SkillSlashPopover";
 import { PendingInstructionList, type PendingItem } from "./PendingInstructionList";
-import { useCdpOnboarding } from "../hooks/useCdpOnboarding";
 import { CdpOnboardingCard } from "./CdpOnboardingCard";
-import { useLocalFileRequest } from "../hooks/useLocalFileRequest";
 import { LocalFileRequestCard } from "./LocalFileRequestCard";
+import { ScheduleDraftCard } from "./ScheduleDraftCard";
+import { AnimatePresence } from "./ui/motion";
+import { usePanelRequest } from "../hooks/usePanelRequest";
 import { useFileAccessPrompt } from "../hooks/useFileAccessPrompt";
 import { FileAccessCard } from "./FileAccessCard";
 import { FileOutputCard } from "./FileOutputCard";
@@ -270,11 +271,7 @@ export default function Chat({
 
   // Load instances list + current session's instanceId on mount / sessionId change
   const sessionId = session.sessionId;
-  const { pending: cdpPending, answer: answerCdp } = useCdpOnboarding(session.port, sessionId);
-  const { pending: localFilePending, respond: respondLocalFile } = useLocalFileRequest(
-    session.port,
-    sessionId,
-  );
+  const { active: panelRequest, respond: respondPanel } = usePanelRequest(session.port, sessionId);
   const { showCard: showFileAccess, dismiss: dismissFileAccess } = useFileAccessPrompt(
     session.port,
   );
@@ -716,22 +713,21 @@ export default function Chat({
     const f = files[0];
     // Defensive only: a native-dialog Cancel produces NO onChange event, so
     // this branch effectively never fires from the picker. The real Cancel
-    // path is the card's Cancel button (onCancel → respondLocalFile).
+    // path is the card's Cancel button (onCancel → respondPanel).
     if (!f) {
-      respondLocalFile({ ok: false, reason: "cancelled by user" });
+      if (panelRequest) respondPanel(panelRequest.requestId, { ok: false, reason: "cancelled by user" });
       return;
     }
     try {
       const result = await processPickedFile(f, { supportsVision });
       if (result.ok && result.kind === "file") {
         const att = result.attachment;
-        respondLocalFile({
-          ok: true,
-          name: att.name,
-          mime: att.mime,
-          text: att.text,
-          truncated: att.truncated,
-        });
+        if (panelRequest) {
+          respondPanel(panelRequest.requestId, {
+            ok: true,
+            data: { name: att.name, mime: att.mime, text: att.text, truncated: att.truncated },
+          });
+        }
         return;
       }
       // Non-file outcome: either a processing failure (!ok) with a specific
@@ -749,13 +745,15 @@ export default function Chat({
         // ok:true but kind:"image" — images can't be returned through this tool result
         showLocalToast(t("chat.attachment.attachImageNoVision"));
       }
-      respondLocalFile({
-        ok: false,
-        reason: "image_or_unsupported: that file type can't be returned here; for images use the + menu",
-      });
+      if (panelRequest) {
+        respondPanel(panelRequest.requestId, {
+          ok: false,
+          reason: "image_or_unsupported: that file type can't be returned here; for images use the + menu",
+        });
+      }
     } catch {
       showLocalToast(t("chat.files.processingFailed"));
-      respondLocalFile({ ok: false, reason: "processing failed" });
+      if (panelRequest) respondPanel(panelRequest.requestId, { ok: false, reason: "processing failed" });
     }
   };
 
@@ -1291,7 +1289,22 @@ After the skill completes, briefly summarize what was created (the user will see
                 window, so a static preamble bubble alone would look frozen.
                 Sits at the tail so there's a single place to confirm "still
                 working" — also covers the gaps between tool calls. */}
-            {streaming && <WorkingIndicator />}
+            {streaming && panelRequest?.kind !== "schedule-model" && <WorkingIndicator />}
+            <AnimatePresence>
+              {panelRequest?.kind === "schedule-model" && (
+                <ScheduleDraftCard
+                  key={panelRequest.requestId}
+                  payload={panelRequest.payload as import("@/lib/agent/tools/schedule-meta").ScheduleDraftPayload}
+                  instances={instances}
+                  onSubmit={(instanceId, model) =>
+                    respondPanel(panelRequest.requestId, { ok: true, data: { instanceId, model } })
+                  }
+                  onCancel={() =>
+                    respondPanel(panelRequest.requestId, { ok: false, reason: "cancelled by user" })
+                  }
+                />
+              )}
+            </AnimatePresence>
 
             {error && (
               <div className="rounded-lg border border-warning-line bg-warning-tint px-3 py-2 text-[12px] text-warning">
@@ -1527,11 +1540,15 @@ After the skill completes, briefly summarize what was created (the user will see
         </div>
       )}
 
-      {cdpPending && <CdpOnboardingCard onAnswer={answerCdp} />}
-      {localFilePending && (
+      {panelRequest?.kind === "cdp-consent" && (
+        <CdpOnboardingCard
+          onAnswer={(enabled) => respondPanel(panelRequest.requestId, { ok: true, data: enabled })}
+        />
+      )}
+      {panelRequest?.kind === "local-file" && (
         <LocalFileRequestCard
           onChoose={() => localFileRequestInputRef.current?.click()}
-          onCancel={() => respondLocalFile({ ok: false, reason: "cancelled by user" })}
+          onCancel={() => respondPanel(panelRequest.requestId, { ok: false, reason: "cancelled by user" })}
         />
       )}
       {showFileAccess && (

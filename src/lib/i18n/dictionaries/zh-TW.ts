@@ -524,6 +524,10 @@ export const zhTWDict = {
       "起始網址是受限頁面（chrome://、about:、擴充功能頁、應用程式商店），無法使用",
     errSelectConfig: "請選擇執行所用的設定檔",
     errSelectModel: "請選擇一個模型",
+    draftCardLabel: "新排程任務",
+    draftCardRunWith: "執行模型",
+    draftCardCreate: "建立排程任務",
+    draftCardCreated: "排程任務已建立",
   },
   managed: {
     models: {

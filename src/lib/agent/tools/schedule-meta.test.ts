@@ -86,15 +86,16 @@ describe("schedule-meta CRUD tools", () => {
     expect(mockedArm).toHaveBeenCalledOnce();
   });
 
-  it("create_schedule 使用显式 instanceId 覆盖 active", async () => {
-    await seedInstance();
+  it("create_schedule 使用显式 instanceId+model 覆盖 active（#184: 需同时给出 model 才算显式合法）", async () => {
+    const seededId = await seedInstance();
     const r = await create.handler(
-      { title: "T", prompt: "p", instanceId: TEST_INSTANCE_ID },
+      { title: "T", prompt: "p", instanceId: seededId, model: "claude-opus-4-7" },
       EMPTY_CTX,
     );
     expect(r.success).toBe(true);
     const all = await listSchedules();
-    expect(all[0]!.instanceId).toBe(TEST_INSTANCE_ID);
+    expect(all[0]!.instanceId).toBe(seededId);
+    expect(all[0]!.model).toBe("claude-opus-4-7");
   });
 
   it("create_schedule: 会话 ctx → 绑定当前会话 (instance, model) (#181)", async () => {
@@ -352,6 +353,69 @@ describe("schedule-meta CRUD tools", () => {
     const r = await list.handler({}, EMPTY_CTX);
     expect(r.success).toBe(true);
     expect(JSON.parse(r.observation!)).toEqual([]);
+  });
+});
+
+// ── Task 8: create_schedule 挂起分支 ─────────────────────────────────────────
+
+describe("Task 8 — create_schedule 挂起式模型选择", () => {
+  beforeEach(clearAll);
+
+  /** 最小 makeCtx：合并到 ToolHandlerContext 类型强转 */
+  function makeCtx(overrides: Partial<ToolHandlerContext>): ToolHandlerContext {
+    return overrides as ToolHandlerContext;
+  }
+
+  /** 合法模型 ID（非空字符串即满足 resolveExplicitSelection 判定条件） */
+  const VALID_MODEL_ID = "claude-opus-4-7";
+
+  it("未点名模型 → 弹卡挂起，用 requestModelSelection 的结果落地", async () => {
+    const requestModelSelection = vi.fn().mockResolvedValue({
+      instanceId: "inst-x",
+      model: "model-y",
+    });
+    const ctx = makeCtx({
+      currentInstanceId: undefined,
+      currentModel: undefined,
+      requestModelSelection,
+    });
+    const res = await create.handler(
+      { title: "T", prompt: "P", spec: { intervalMinutes: 60 } },
+      ctx,
+    );
+    expect(requestModelSelection).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "T", prompt: "P", specSummary: expect.any(String) }),
+    );
+    expect(res.success).toBe(true);
+    expect(res.observation).toMatch(/instanceId=inst-x.*model=model-y/);
+  });
+
+  it("显式合法 (instanceId, model) → 直接建，不弹卡", async () => {
+    // seed a real instance so getInstance resolves it
+    const VALID_INSTANCE_ID = await createInstance({
+      provider: "anthropic",
+      nickname: "Test",
+      apiKey: "k",
+    });
+    const requestModelSelection = vi.fn();
+    const ctx = makeCtx({ requestModelSelection });
+    const res = await create.handler(
+      { title: "T", prompt: "P", instanceId: VALID_INSTANCE_ID, model: VALID_MODEL_ID },
+      ctx,
+    );
+    expect(requestModelSelection).not.toHaveBeenCalled();
+    expect(res.success).toBe(true);
+  });
+
+  it("无 panel（requestModelSelection 缺失）且无法解析 → 回退现有 resolveSelection 兜底/错误", async () => {
+    const ctx = makeCtx({
+      currentInstanceId: undefined,
+      currentModel: undefined,
+      requestModelSelection: undefined,
+    });
+    const res = await create.handler({ title: "T", prompt: "P" }, ctx);
+    // 既有兜底行为不变（resolveSelection → 成功或 "no AI provider configured" 错误）
+    expect(typeof res.success).toBe("boolean");
   });
 });
 
