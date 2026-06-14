@@ -3,9 +3,10 @@ import { es419Dict } from "./dictionaries/es-419";
 import { jaDict } from "./dictionaries/ja";
 import { ptBRDict } from "./dictionaries/pt-BR";
 import { zhCNDict } from "./dictionaries/zh-CN";
+import { zhTWDict } from "./dictionaries/zh-TW";
 import type { DictNode } from "./types";
 
-export const SUPPORTED_LOCALES = ["en", "zh-CN", "es-419", "ja", "pt-BR"] as const;
+export const SUPPORTED_LOCALES = ["en", "zh-CN", "zh-TW", "es-419", "ja", "pt-BR"] as const;
 export type Locale = (typeof SUPPORTED_LOCALES)[number];
 
 export interface LocaleMeta<L extends Locale = Locale> {
@@ -40,6 +41,15 @@ export const LOCALE_REGISTRY = {
     dir: "ltr",
     assistantLanguage: true,
     dictionary: zhCNDict,
+  },
+  "zh-TW": {
+    locale: "zh-TW",
+    chromeLocale: "zh_TW",
+    nativeLabel: "中文（繁體）",
+    englishLabel: "Chinese (Traditional)",
+    dir: "ltr",
+    assistantLanguage: true,
+    dictionary: zhTWDict,
   },
   "es-419": {
     locale: "es-419",

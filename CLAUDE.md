@@ -43,8 +43,16 @@ BYOK (Bring Your Own Key) Chrome Extension — 用户插入自己的 API key 获
 
 1. `pnpm dev` 启 Vite dev server
 2. `chrome://extensions` 开启 Developer mode
-3. Load unpacked 加载 `dist/` 目录
+3. Load unpacked 加载 `dist/` 目录（指向**主仓库**的 `dist/`，一次指定后只认这个路径）
 4. 点击扩展图标打开 side panel
+
+## 本地开发约定（worktree 默认 + dist 同步）
+
+两条默认规则，无需每次提醒：
+
+1. **开发新功能默认起一个 worktree（不是在主检出上开新分支）。** 用 `superpowers:using-git-worktrees` / 原生 `EnterWorktree`，CC 原生 worktree 落在 `.claude/worktrees/<name>/`。主仓库检出始终留在 `main`，供 Chrome 加载 dist。文档/小 chore 可直接在 main 上做，不强制 worktree。
+2. **用户说「需要测试 / 测一下」时，自动把 worktree 的构建产物同步到主仓库 dist——不必等用户再提醒。** 流程：在 worktree 里 `pnpm build`，再 `pnpm sync:dist`（= `scripts/sync-dist.sh`），然后让用户去 `chrome://extensions` 点刷新即可测到新代码。`dist/` 已 gitignore，灌进主仓库不污染 git。脚本用 git 自发现「当前 worktree → 主仓库」两端路径，从任意 worktree 子目录运行都对；已在主仓库时自动跳过。
+   - 为何不是 hook：`UserPromptSubmit` hook 会在「用户发话、尚未 build」时触发，复制到的是旧/空 dist（时序错）；`PostToolUse` on build 又会被提交前的例行 `pnpm build` 过度触发。正确做法是 build 之后按口令执行同步，因此落在约定+脚本，而非 hook。
 
 ## Release
 
@@ -95,6 +103,7 @@ Workflow 内置 invariant（任一失败则 CI fail，不会上传）：
 - `docs/specs/` — superpowers `brainstorming` skill 产出（design / requirements / spec），含 Phase 1–3 历史 brainstorm 合并归档
 - `docs/plans/` — superpowers `planning` skill 产出（实施 plan），含 Phase 1–3 历史 plan 合并归档
 - `docs/release-notes/` — 用户可见 changelog
+- `docs/localization/` — 本地化资产：README 多语言翻译（`README.<locale>.md`，如 `README.zh-CN.md` / `README.zh-TW.md` / `README.es-419.md` / `README.ja.md` / `README.pt-BR.md`）+ glossary / launch-pack / qa-checklist。**根目录只留英文 `README.md`**（GitHub 仓库首页只认根 README）；翻译版全部住这里。各翻译版顶部语言切换器互链：英文指 `../../README.md`，同目录兄弟用裸 `README.<locale>.md`，根目录文件（PRIVACY/CHANGELOG/LICENSE）用 `../../`，`docs/` 下文件用 `../`。新增一门语言 = 在此加一份 `README.<locale>.md` + 同步所有切换器（含根 README）
 - `docs/design.md` — 早期 Phase 0–3 设计构想（历史档案）
 - `docs/archive/index.html` — 项目档案知识库（单文件，vanilla JS / 零依赖）；编辑 `archiveData` 数组 → push 到 main → `.github/workflows/deploy-archive-pages.yml` 自动部署到 https://wiseriaai.github.io/pie-ai-agent/ ；Pages source = GitHub Actions，仅上传 `docs/archive/`，其他 docs/ 不进 Pages
 

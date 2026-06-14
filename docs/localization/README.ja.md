@@ -1,13 +1,14 @@
 <div align="center">
-  <img src="public/icons/icon-128.svg" alt="Pie" width="96" height="96" />
+  <img src="../../public/icons/icon-128.svg" alt="Pie" width="96" height="96" />
   <h1>Pie</h1>
   <p><strong>Chrome 用のブラウザ自動化エージェント。自然言語のタスクを、ネイティブなツール呼び出しと local-first な設計で実行します。</strong></p>
   <p>
     <a href="https://chromewebstore.google.com/detail/pie-%C2%B7-open-source-ai-agen/gpccjhdgjkmalnepmeclooflliiocfed"><img src="https://img.shields.io/chrome-web-store/v/gpccjhdgjkmalnepmeclooflliiocfed?label=Chrome%20Web%20Store&logo=googlechrome&logoColor=white" alt="Chrome Web Store で入手" /></a>
   </p>
   <p>
-    <a href="README.md">English</a> ·
+    <a href="../../README.md">English</a> ·
     <a href="README.zh-CN.md">简体中文</a> ·
+    <a href="README.zh-TW.md">繁體中文</a> ·
     <a href="README.es-419.md">Español (Latinoamérica)</a> ·
     <strong>日本語</strong> ·
     <a href="README.pt-BR.md">Português (Brasil)</a>
@@ -15,10 +16,10 @@
   <p>
     <a href="#インストール">インストール</a> ·
     <a href="#初期設定">設定</a> ·
-    <a href="PRIVACY.md">プライバシー</a> ·
-    <a href="CHANGELOG.md">Changelog</a> ·
-    <a href="docs/ROADMAP.md">Roadmap</a> ·
-    <a href="docs/ARCHITECTURE.md">Architecture</a> ·
+    <a href="../../PRIVACY.md">プライバシー</a> ·
+    <a href="../../CHANGELOG.md">Changelog</a> ·
+    <a href="../ROADMAP.md">Roadmap</a> ·
+    <a href="../ARCHITECTURE.md">Architecture</a> ·
     <a href="https://wiseriaai.github.io/pie-ai-agent/">Archive</a>
   </p>
 </div>
@@ -74,7 +75,7 @@ APIキーはローカルに保存される前に暗号化されます。
 
 モデルプロバイダーのAPIキーはユーザー自身が設定します。Pie はバックエンドを運用せず、リクエストをプロキシせず、プロダクト分析用のテレメトリーを収集しません。
 
-APIキーはローカルで暗号化され、選択したプロバイダーにのみ送信されます。詳細は [PRIVACY.md](PRIVACY.md) を確認してください。
+APIキーはローカルで暗号化され、選択したプロバイダーにのみ送信されます。詳細は [PRIVACY.md](../../PRIVACY.md) を確認してください。
 
 ## フィードバック
 
