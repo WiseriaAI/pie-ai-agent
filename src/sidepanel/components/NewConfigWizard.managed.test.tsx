@@ -21,7 +21,7 @@ describe("NewConfigWizard managed toggle", () => {
         __managedDeps={{
           login: vi.fn(async (): Promise<import("@/lib/managed-auth").LoginResult> => ({
             apiKey: "sk-v",
-            entitlement: { plan: "active", email: "u@x.com", subscription: { planName: "Pie Pro", currentPeriodEnd: 1750000000, cancelAtPeriodEnd: false }, quota: { weekly: { usedFraction: 0, resetAt: 1750400000 } }, models: [{ id: "default", name: "标准" }] },
+            entitlement: { plan: "active", email: "u@x.com", subscription: { planName: "Pie Pro", currentPeriodEnd: 1750000000, cancelAtPeriodEnd: false }, quota: { weekly: { usedFraction: 0, resetAt: 1750400000 } }, models: [{ id: "default", name: "标准", vision: false, maxContextTokens: 200000, costLevel: 1 }] },
           })),
         }}
       />,
