@@ -33,6 +33,7 @@ import InstanceForm, { type InstanceFormPayload } from "./InstanceForm";
 import ProviderDropdown from "./ProviderDropdown";
 import CustomProviderFields from "./CustomProviderFields";
 import ManagedSubscribePanel from "./ManagedSubscribePanel";
+import { Button } from "./ui/Button";
 
 interface Props {
   onCreate: (provider: ProviderRef, payload: InstanceFormPayload) => void;
@@ -474,34 +475,28 @@ export default function NewConfigWizard(props: Props) {
                   </div>
                 )}
                 <div className="flex-1" />
-                <button
-                  type="button"
-                  onClick={props.onCancel}
-                  className="h-8 rounded-[10px] border border-line bg-transparent px-3 text-[12px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
-                >
+                <Button variant="secondary" onClick={props.onCancel}>
                   {t("common.cancel")}
-                </button>
-                <button
-                  type="button"
+                </Button>
+                <Button
+                  variant="secondary"
+                  loading={testing}
+                  disabled={!effectiveCanSave}
                   onClick={triggerTest}
-                  disabled={!effectiveCanSave || testing}
-                  className="flex h-8 items-center gap-1.5 rounded-[10px] border border-line bg-transparent px-3 text-[12px] text-fg-2 hover:border-fg-3 disabled:opacity-30"
                 >
-                  {testing && <Spinner />}
                   {testing
                     ? t("customProvider.testing")
                     : testStatus === "success"
                       ? t("instanceForm.testOk")
                       : t("common.test")}
-                </button>
-                <button
-                  type="button"
-                  onClick={triggerSave}
+                </Button>
+                <Button
+                  variant="primary"
                   disabled={!effectiveCanSave}
-                  className="h-8 rounded-[10px] bg-fg-1 px-4 text-[12px] font-medium text-canvas disabled:opacity-30"
+                  onClick={triggerSave}
                 >
                   {saveLabel}
-                </button>
+                </Button>
               </div>
             );
           }}
@@ -512,27 +507,14 @@ export default function NewConfigWizard(props: Props) {
         <div className="flex flex-col gap-3">
           <div className="px-1 text-[12px] text-fg-3">{t("newConfigWizard.pickProviderHint")}</div>
           <div className="flex">
-            <button
-              type="button"
-              onClick={props.onCancel}
-              className="rounded-[10px] border border-line bg-transparent px-3 py-2 text-[12px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
-            >
+            <Button variant="secondary" onClick={props.onCancel}>
               {t("common.cancel")}
-            </button>
+            </Button>
           </div>
         </div>
       )}
         </>
       )}
     </div>
-  );
-}
-
-function Spinner() {
-  return (
-    <svg className="h-3 w-3 animate-spin" viewBox="0 0 16 16" fill="none" aria-hidden>
-      <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="2" opacity="0.3" />
-      <path d="M14 8A6 6 0 1 1 2 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    </svg>
   );
 }
