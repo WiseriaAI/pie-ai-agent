@@ -10,6 +10,7 @@ import { resolveModelMeta, getProviderMeta } from "@/lib/model-router/providers/
 import { resolveSupportsVision } from "./chat-vision";
 import ContextRing from "./ContextRing";
 import { listInstances, getInstance, updateInstance, type DecryptedInstance } from "@/lib/instances";
+import { cachedManagedModel } from "@/lib/managed-account";
 import { resolveSelection } from "@/lib/model-selection-resolver";
 import { setLastModelSelection } from "@/lib/last-model-selection";
 import { fetchOpenRouterModels } from "@/lib/openrouter-models-fetch";
@@ -587,6 +588,13 @@ export default function Chat({
       if (sel) {
         const inst = await getInstance(sel.instanceId);
         if (inst) {
+          // managed：vision/上下文按所选模型取自缓存 entitlement（registry 只有兜底单条）。
+          if (inst.provider === "managed") {
+            const mm = cachedManagedModel(inst.apiKey, sel.model);
+            setSupportsVision(mm?.vision ?? false);
+            setMaxContextTokens(mm?.maxContextTokens);
+            return;
+          }
           // Vision lookup consults registry first, then instance.fetchedModels
           // (OpenRouter lazy catalog). Fail-closed for unknown ids — the disabled
           // attach button is a visible UX cue (a different policy from the loop's
