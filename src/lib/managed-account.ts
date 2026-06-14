@@ -1,10 +1,13 @@
 import { ACCOUNT_BASE } from "./managed-config";
-import type { Entitlement } from "./managed-auth";
+import type { Entitlement, ModelInfo } from "./managed-auth";
+import { getLocale } from "./i18n";
 
 export interface ManagedAccountDeps {
   fetchFn?: typeof fetch;
   /** 缺省走 chrome.tabs.create。 */
   openTab?: (url: string) => void;
+  /** 缺省取当前 UI locale（getLocale()）。 */
+  locale?: string;
 }
 
 /** 进程内 entitlement 缓存（按 apiKey）。供面板展开时立即回显上次状态、避免每次
@@ -18,7 +21,8 @@ export function getCachedEntitlement(apiKey: string): Entitlement | null {
 
 export async function getEntitlement(apiKey: string, deps: ManagedAccountDeps = {}): Promise<Entitlement> {
   const fetchFn = deps.fetchFn ?? fetch;
-  const resp = await fetchFn(`${ACCOUNT_BASE}/me/entitlement`, {
+  const locale = deps.locale ?? getLocale();
+  const resp = await fetchFn(`${ACCOUNT_BASE}/me/entitlement?locale=${encodeURIComponent(locale)}`, {
     headers: { authorization: `Bearer ${apiKey}` },
   });
   if (!resp.ok) throw new Error(`Failed to load entitlement (${resp.status})`);
@@ -27,7 +31,20 @@ export async function getEntitlement(apiKey: string, deps: ManagedAccountDeps = 
   return ent;
 }
 
-/** 容忍后端缺字段/新激活边缘：补齐 v2 安全默认，绝不抛。 */
+function normalizeModel(raw: unknown): ModelInfo {
+  const m = (raw ?? {}) as Record<string, unknown>;
+  const costLevel = m.costLevel === 2 || m.costLevel === 3 ? m.costLevel : 1;
+  return {
+    id: String(m.id ?? ""),
+    name: typeof m.name === "string" && m.name ? m.name : String(m.id ?? ""),
+    ...(typeof m.description === "string" ? { description: m.description } : {}),
+    vision: m.vision === true,
+    maxContextTokens: typeof m.maxContextTokens === "number" && m.maxContextTokens > 0 ? m.maxContextTokens : 128000,
+    costLevel,
+  };
+}
+
+/** 容忍后端缺字段/新激活边缘：补齐 v2.1 安全默认，绝不抛。 */
 export function normalizeEntitlement(raw: unknown): Entitlement {
   const r = (raw ?? {}) as Record<string, unknown>;
   const plan = r.plan === "active" || r.plan === "blocked" ? r.plan : "none";
@@ -36,8 +53,13 @@ export function normalizeEntitlement(raw: unknown): Entitlement {
     email: typeof r.email === "string" ? r.email : "",
     subscription: (r.subscription as Entitlement["subscription"]) ?? null,
     quota: (r.quota as Entitlement["quota"]) ?? null,
-    models: Array.isArray(r.models) ? (r.models as Entitlement["models"]) : [],
+    models: Array.isArray(r.models) ? (r.models as unknown[]).map(normalizeModel) : [],
   };
+}
+
+/** managed 选中模型的元数据（从进程内缓存按 id 查），供 vision/上下文解析复用。无缓存/未命中 → undefined。 */
+export function cachedManagedModel(apiKey: string, modelId: string): ModelInfo | undefined {
+  return getCachedEntitlement(apiKey)?.models.find((m) => m.id === modelId);
 }
 
 async function openBilling(path: "/billing/checkout" | "/billing/portal", apiKey: string, deps: ManagedAccountDeps): Promise<void> {
