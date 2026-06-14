@@ -35,6 +35,7 @@ import {
 import { isCdpInputEnabled } from "../cdp-input-enabled";
 import { requestCdpInputConsent } from "../cdp-input-onboarding";
 import { requestLocalFileFromPanel } from "../local-file-request";
+import { requestFromPanel } from "../panel-request";
 import { buildReadLocalFileTool, buildRequestLocalFileTool, buildOutputFileTool } from "./tools/files";
 import { buildScratchpadTools } from "./tools/scratchpad";
 import {
@@ -2251,6 +2252,12 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             // close_tabs sees it gone). The storage write is also observed on
             // the next iteration's readFocusFromStorage refresh.
             removePinnedTab: stepPinView.removePinnedTab,
+            // #184 — chat path suspends create_schedule until user picks a model.
+            // Headless/scheduled runs never invoke this: create_schedule is
+            // excluded from their tool set via excludeToolNames (run.ts
+            // HEADLESS_EXCLUDE_TOOL_NAMES), so requestFromPanel is never called.
+            requestModelSelection: (payload) =>
+              requestFromPanel(sessionId, "schedule-model", payload),
           });
         } catch (e) {
           result = {
