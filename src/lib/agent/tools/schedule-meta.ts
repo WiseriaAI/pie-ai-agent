@@ -11,7 +11,7 @@
 //   - intervalMinutes (if set) must be >= MIN_INTERVAL_MINUTES
 //   - startUrl (if set) must not be a restricted URL (chrome://, Web Store, etc.)
 //   - total schedules < MAX_SCHEDULES (20)
-//   - instanceId defaults to the active instance when not provided
+//   - instanceId/model default to the current chat session, else resolveSelection
 //
 // Recursive creation prevention (7.4):
 //   - headless runs (run.ts) pass excludeToolNames that removes
@@ -31,7 +31,8 @@ import {
   MIN_INTERVAL_MINUTES,
   type ScheduleSpec,
 } from "../../schedules/types";
-import { getConfig } from "../../idb/config-store";
+import { resolveSelection } from "../../model-selection-resolver";
+import type { ToolHandlerContext } from "../types";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -64,12 +65,6 @@ function coerceStartAt(
     };
   }
   return { ok: true, ms };
-}
-
-const ACTIVE_KEY = "active_instance_id";
-
-async function getActiveInstanceId(): Promise<string | null> {
-  return (await getConfig<string>(ACTIVE_KEY)) ?? null;
 }
 
 // ── Injected runSchedule dispatcher (C1 fix) ─────────────────────────────────
@@ -132,7 +127,7 @@ const createScheduleTool: Tool = {
       instanceId: {
         type: "string",
         description:
-          "Instance to use for this schedule. Defaults to the current active instance.",
+          "Instance to use for this schedule. Defaults to the model you're currently chatting with, else your configured default.",
       },
       maxStepsPerRun: {
         type: "number",
@@ -144,7 +139,7 @@ const createScheduleTool: Tool = {
       },
     },
   },
-  handler: async (args: unknown): Promise<ActionResult> => {
+  handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
     const a = (args && typeof args === "object" ? args : {}) as Record<string, unknown>;
 
     if (!isNonEmptyString(a.title)) return err("title is required and must be a non-empty string");
@@ -162,21 +157,28 @@ const createScheduleTool: Tool = {
       if (s.maxRuns !== undefined) spec.maxRuns = s.maxRuns as number;
     }
 
-    // Resolve instanceId: explicit arg or fall back to active instance
+    // 解析 (instanceId, model)：显式 arg → 当前会话 ctx → resolveSelection 兜底 → 错误。
+    // model 仅在来源是会话/兜底（已解析出具体 (instance, model)）时绑定；显式
+    // instanceId 无配对 model 时留空，运行时回退 firstModelForProvider。
     let instanceId: string;
+    let model: string | undefined;
     if (isNonEmptyString(a.instanceId)) {
       instanceId = a.instanceId;
+    } else if (isNonEmptyString(ctx.currentInstanceId)) {
+      instanceId = ctx.currentInstanceId;
+      model = isNonEmptyString(ctx.currentModel) ? ctx.currentModel : undefined;
     } else {
-      const active = await getActiveInstanceId();
-      if (!active) return err("no active instance configured — provide instanceId explicitly");
-      instanceId = active;
+      const sel = await resolveSelection({});
+      if (!sel) return err("no AI provider configured — add one in Settings, or pass an explicit instanceId");
+      instanceId = sel.instanceId;
+      model = sel.model;
     }
 
-    // Delegate to the shared ops core (validation, quota gate, store put + arm).
     const res = await createScheduleOp({
       title: a.title,
       prompt: a.prompt,
       instanceId,
+      ...(model ? { model } : {}),
       spec,
       ...(isNonEmptyString(a.startUrl) ? { startUrl: a.startUrl } : {}),
       ...(a.maxStepsPerRun !== undefined ? { maxStepsPerRun: a.maxStepsPerRun as number } : {}),
@@ -186,7 +188,7 @@ const createScheduleTool: Tool = {
 
     return {
       success: true,
-      observation: `schedule created: id=${res.id} title="${a.title.trim()}" instanceId=${instanceId}. It will run automatically as scheduled.`,
+      observation: `schedule created: id=${res.id} title="${a.title.trim()}" instanceId=${instanceId}${model ? ` model=${model}` : ""}. It will run automatically as scheduled.`,
     };
   },
 };
