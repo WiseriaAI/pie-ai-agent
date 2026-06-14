@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useT } from "@/lib/i18n";
 import type { DecryptedInstance } from "@/lib/instances";
 import type { BuiltinProvider, ModelMeta } from "@/lib/model-router";
@@ -13,7 +14,7 @@ interface Props {
   /** task in flight — picker is locked */
   locked: boolean;
   onSelect: (instanceId: string, model: string) => void;
-  onManage: () => void;
+  onManage?: () => void;
   /** lazy provider (openrouter) first-expand fetch of /v1/models */
   onRefreshModels?: (instanceId: string) => void;
 }
@@ -67,15 +68,61 @@ export default function ModelPicker(props: Props) {
   const [mounted, setMounted] = useState(false);
   const [shown, setShown] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  // Fixed-position coords measured from the trigger button's rect. The popover
+  // is portaled to document.body (so no ancestor overflow/stacking clips it) and
+  // positioned with position:fixed. Left-aligned to the trigger, then clamped
+  // inside the viewport so a narrow side panel never pushes it off either edge
+  // (the trigger can sit anywhere — left-aligned in a form field, etc.).
+  // Vertically it opens upward when there's room above, else downward.
+  const [coords, setCoords] = useState<{ left: number; top?: number; bottom?: number } | null>(null);
+
+  const updateCoords = useCallback(() => {
+    const el = triggerRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const POPOVER_MAX_H = 380; // panel content max-h-[360px] + paddings/header budget
+    const GAP = 8; // ≈ the old mb-2 gap
+    const MARGIN = 8; // min gap from the viewport edges
+    const POPOVER_W = Math.min(300, window.innerWidth - 24); // matches w-[300px] / max-w-[calc(100vw-1.5rem)]
+    // Left-align to the trigger, then clamp so the popover stays fully on-screen.
+    const left = Math.max(MARGIN, Math.min(rect.left, window.innerWidth - POPOVER_W - MARGIN));
+    // Flip up when there's enough room above the trigger, else open downward.
+    if (rect.top >= POPOVER_MAX_H + GAP) {
+      setCoords({ left, bottom: window.innerHeight - rect.top + GAP });
+    } else {
+      setCoords({ left, top: rect.bottom + GAP });
+    }
+  }, []);
 
   useEffect(() => {
     if (!open) return;
     const onDoc = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      const inTrigger = wrapRef.current?.contains(target);
+      const inPopover = popoverRef.current?.contains(target);
+      // Popover is portaled out of wrapRef, so check both before closing.
+      if (!inTrigger && !inPopover) setOpen(false);
     };
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
+
+  // Measure on open and follow the trigger while open: viewport resize + any
+  // scroll (capture phase catches the inner scroll container too).
+  useEffect(() => {
+    if (!open) return;
+    updateCoords();
+    const onResize = () => updateCoords();
+    const onScroll = () => updateCoords();
+    window.addEventListener("resize", onResize);
+    window.addEventListener("scroll", onScroll, true);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("scroll", onScroll, true);
+    };
+  }, [open, updateCoords]);
 
   useEffect(() => {
     if (open) {
@@ -113,6 +160,7 @@ export default function ModelPicker(props: Props) {
   return (
     <div ref={wrapRef} className="relative">
       <button
+        ref={triggerRef}
         onClick={() => !props.locked && setOpen(!open)}
         disabled={props.locked}
         className="flex items-center gap-1.5 px-1.5 py-1 text-[12px] text-fg-2 disabled:opacity-50"
@@ -133,16 +181,20 @@ export default function ModelPicker(props: Props) {
         )}
       </button>
 
-      {mounted && (
+      {mounted && coords && createPortal(
         <div
+          ref={popoverRef}
           role="dialog"
           onTransitionEnd={() => { if (!shown) setMounted(false); }}
           style={{
+            left: coords.left,
+            top: coords.top,
+            bottom: coords.bottom,
             opacity: shown ? 1 : 0,
             transform: shown ? "translateY(0)" : "translateY(8px)",
             transition: "opacity 0.18s ease, transform 0.18s ease",
           }}
-          className="absolute bottom-full right-0 mb-2 w-[300px] max-w-[calc(100vw-1.5rem)] rounded-card border border-line bg-surface shadow-pop"
+          className="fixed z-[100] w-[300px] max-w-[calc(100vw-1.5rem)] rounded-card border border-line bg-surface shadow-pop"
         >
           <div className="flex items-baseline justify-between px-3.5 pt-2.5 pb-1.5">
             <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-fg-3">{t("modelPicker.title")}</span>
@@ -191,13 +243,16 @@ export default function ModelPicker(props: Props) {
               );
             })}
           </div>
-          <button
-            onClick={() => { setOpen(false); props.onManage(); }}
-            className="flex w-full items-center gap-2 border-t border-line px-3.5 py-2 text-left text-[11px] text-fg-2 transition-colors hover:bg-field"
-          >
-            <span>{t("modelPicker.manage")}</span>
-          </button>
-        </div>
+          {props.onManage && (
+            <button
+              onClick={() => { setOpen(false); props.onManage?.(); }}
+              className="flex w-full items-center gap-2 border-t border-line px-3.5 py-2 text-left text-[11px] text-fg-2 transition-colors hover:bg-field"
+            >
+              <span>{t("modelPicker.manage")}</span>
+            </button>
+          )}
+        </div>,
+        document.body,
       )}
     </div>
   );

@@ -89,6 +89,7 @@ export interface CreateScheduleInput {
   title: string;
   prompt: string;
   instanceId: string;
+  model?: string;
   spec?: ScheduleSpec;
   startUrl?: string;
   maxStepsPerRun?: number;
@@ -129,6 +130,7 @@ export async function createScheduleOp(input: CreateScheduleInput): Promise<OpRe
     spec,
     ...(isNonEmptyString(input.startUrl) ? { startUrl: input.startUrl } : {}),
     instanceId: input.instanceId,
+    ...(isNonEmptyString(input.model) ? { model: input.model } : {}),
     enabled: true,
     status: "active",
     ...(input.maxStepsPerRun !== undefined ? { maxStepsPerRun: input.maxStepsPerRun } : {}),
@@ -148,6 +150,8 @@ export async function createScheduleOp(input: CreateScheduleInput): Promise<OpRe
 
 export interface UpdateScheduleInput {
   id: string;
+  instanceId?: string;
+  model?: string;
   title?: string;
   prompt?: string;
   spec?: Partial<ScheduleSpec>;
@@ -193,6 +197,14 @@ export async function updateScheduleOp(input: UpdateScheduleInput): Promise<OpRe
   }
   if (input.maxStepsPerRun !== undefined) patch.maxStepsPerRun = input.maxStepsPerRun;
   if (input.maxRunMs !== undefined) patch.maxRunMs = input.maxRunMs;
+  if (input.instanceId !== undefined) {
+    if (!isNonEmptyString(input.instanceId)) return fail("instanceId must be a non-empty string");
+    patch.instanceId = input.instanceId;
+  }
+  // empty string clears the binding → runtime falls back to firstModelForProvider
+  if (input.model !== undefined) {
+    patch.model = isNonEmptyString(input.model) ? input.model : undefined;
+  }
 
   await patchSchedule(id, patch);
 

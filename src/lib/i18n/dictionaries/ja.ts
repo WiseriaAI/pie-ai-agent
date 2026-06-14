@@ -494,8 +494,7 @@ export const jaDict = {
     fieldTitlePlaceholder: "毎日のニュース要約",
     fieldPrompt: "プロンプト",
     fieldPromptPlaceholder: "毎回エージェントが実行するタスク…",
-    fieldConfig: "設定",
-    configNone: "利用できる設定がありません",
+    fieldModel: "モデル",
     fieldStartAt: "開始日時",
     fieldInterval: "間隔 (分)",
     fieldRuns: "実行履歴",
@@ -518,6 +517,7 @@ export const jaDict = {
     errStartUrlRestricted:
       "開始 URL は制限されたページ (chrome://、about:、拡張機能ページ、Web Store) のため使用できません",
     errSelectConfig: "実行に使う設定を選択してください",
+    errSelectModel: "モデルを選択してください",
   },
   managed: {
     account: {

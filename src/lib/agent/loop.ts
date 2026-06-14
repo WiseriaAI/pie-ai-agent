@@ -107,6 +107,10 @@ export interface AgentLoopContext {
   emit: AgentEmit;
   task: string;
   modelConfig: ModelConfig;
+  /** issue #181 — 本 task 绑定的 instanceId（task start 已解析）。loop 转发它
+   *  + modelConfig.model 进 ToolHandlerContext.currentInstanceId/currentModel，
+   *  使 create_schedule 默认绑"正在对话的模型"。 */
+  instanceId?: string;
   signal: AbortSignal;
   /**
    * M1-U3 — session this task is bound to. Required so step-boundary
@@ -2218,6 +2222,8 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           result = await tool.handler(tc.args, {
             tabId: pinnedTabId,
             confirmedTabTargets: undefined,
+            currentInstanceId: ctx.instanceId,
+            currentModel: ctx.modelConfig.model,
             // M5 — frozen at chat-start (passed via AgentLoopContext.pinMode);
             // close_tabs K-9 reads this to refuse closing user-locked pins.
             pinMode: ctx.pinMode,

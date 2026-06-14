@@ -500,8 +500,7 @@ export const zhTWDict = {
     fieldTitlePlaceholder: "每日新聞摘要",
     fieldPrompt: "提示詞",
     fieldPromptPlaceholder: "每次要讓 agent 執行的任務…",
-    fieldConfig: "設定檔",
-    configNone: "暫無可用設定檔",
+    fieldModel: "模型",
     fieldStartAt: "開始時間",
     fieldInterval: "間隔（分鐘）",
     fieldRuns: "次數",
@@ -524,6 +523,7 @@ export const zhTWDict = {
     errStartUrlRestricted:
       "起始網址是受限頁面（chrome://、about:、擴充功能頁、應用程式商店），無法使用",
     errSelectConfig: "請選擇執行所用的設定檔",
+    errSelectModel: "請選擇一個模型",
   },
   managed: {
     account: {

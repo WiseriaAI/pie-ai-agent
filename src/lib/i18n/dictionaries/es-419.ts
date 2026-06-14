@@ -494,8 +494,7 @@ export const es419Dict = {
     fieldTitlePlaceholder: "Resumen diario de noticias",
     fieldPrompt: "Prompt",
     fieldPromptPlaceholder: "La tarea que ejecuta el agente cada vez…",
-    fieldConfig: "Configuración",
-    configNone: "No hay configuración disponible",
+    fieldModel: "Modelo",
     fieldStartAt: "Inicia en",
     fieldInterval: "Intervalo (min)",
     fieldRuns: "Ejecuciones",
@@ -518,6 +517,7 @@ export const es419Dict = {
     errStartUrlRestricted:
       "La URL inicial es una página restringida (chrome://, about:, páginas de extensión, Web Store) y no se puede usar",
     errSelectConfig: "Selecciona una configuración para ejecutar",
+    errSelectModel: "Elige un modelo",
   },
   managed: {
     account: {

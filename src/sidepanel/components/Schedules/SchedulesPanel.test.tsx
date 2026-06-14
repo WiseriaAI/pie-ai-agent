@@ -26,9 +26,13 @@ vi.mock("@/lib/schedules/panel-actions", () => actionMocks);
 
 vi.mock("@/lib/instances", () => ({
   listInstances: vi.fn(async (): Promise<DecryptedInstance[]> => [
-    { id: "inst_1", provider: "anthropic", nickname: "Claude", apiKey: "k", createdAt: 1 },
+    { id: "inst_1", provider: "anthropic", nickname: "Claude", apiKey: "k", createdAt: 1, customModels: ["m-a"] },
+    { id: "inst_2", provider: "openai", nickname: "GPT", apiKey: "k", createdAt: 2, customModels: ["m-b"] },
   ]),
-  getActiveInstance: vi.fn(async () => "inst_1"),
+}));
+
+vi.mock("@/lib/model-selection-resolver", () => ({
+  resolveSelection: vi.fn(async () => ({ instanceId: "inst_2", model: "m-b" })),
 }));
 
 // store-bus subscription — return an unsubscribe noop.
@@ -133,6 +137,15 @@ describe("SchedulesPanel", () => {
     // The choice menu appears; the form does NOT open yet.
     expect(await screen.findByTestId("new-schedule-choice")).toBeTruthy();
     expect(screen.queryByLabelText(/title/i)).toBeNull();
+  });
+
+  it("手动表单默认预选 resolveSelection 解析的实例（非 instances[0]）", async () => {
+    render(<SchedulesPanel onOpenSession={vi.fn()} />);
+    await screen.findByText(/no schedules/i);
+    fireEvent.click(screen.getByRole("button", { name: /new schedule/i }));
+    fireEvent.click(await screen.findByTestId("new-choice-manual"));
+    // ModelPicker trigger aria-label contains inst_2's model id (m-b) → default = resolveSelection's inst_2
+    expect(await screen.findByRole("button", { name: /m-b/ })).toBeTruthy();
   });
 
   it("choosing 'fill in the form' opens the create form and submits through createSchedule", async () => {

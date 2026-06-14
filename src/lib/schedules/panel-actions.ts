@@ -24,6 +24,7 @@ export interface ScheduleCreatePayload {
   title: string;
   prompt: string;
   instanceId: string;
+  model?: string;
   spec?: ScheduleSpec;
   startUrl?: string;
   maxStepsPerRun?: number;
@@ -32,6 +33,8 @@ export interface ScheduleCreatePayload {
 
 export interface ScheduleUpdatePayload {
   id: string;
+  instanceId?: string;
+  model?: string;
   title?: string;
   prompt?: string;
   spec?: Partial<ScheduleSpec>;
