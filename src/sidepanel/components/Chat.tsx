@@ -93,6 +93,7 @@ import { PendingInstructionList, type PendingItem } from "./PendingInstructionLi
 import { CdpOnboardingCard } from "./CdpOnboardingCard";
 import { LocalFileRequestCard } from "./LocalFileRequestCard";
 import { ScheduleDraftCard } from "./ScheduleDraftCard";
+import { AnimatePresence } from "./ui/motion";
 import { usePanelRequest } from "../hooks/usePanelRequest";
 import { useFileAccessPrompt } from "../hooks/useFileAccessPrompt";
 import { FileAccessCard } from "./FileAccessCard";
@@ -1288,7 +1289,22 @@ After the skill completes, briefly summarize what was created (the user will see
                 window, so a static preamble bubble alone would look frozen.
                 Sits at the tail so there's a single place to confirm "still
                 working" — also covers the gaps between tool calls. */}
-            {streaming && <WorkingIndicator />}
+            {streaming && panelRequest?.kind !== "schedule-model" && <WorkingIndicator />}
+            <AnimatePresence>
+              {panelRequest?.kind === "schedule-model" && (
+                <ScheduleDraftCard
+                  key={panelRequest.requestId}
+                  payload={panelRequest.payload as import("@/lib/agent/tools/schedule-meta").ScheduleDraftPayload}
+                  instances={instances}
+                  onSubmit={(instanceId, model) =>
+                    respondPanel(panelRequest.requestId, { ok: true, data: { instanceId, model } })
+                  }
+                  onCancel={() =>
+                    respondPanel(panelRequest.requestId, { ok: false, reason: "cancelled by user" })
+                  }
+                />
+              )}
+            </AnimatePresence>
 
             {error && (
               <div className="rounded-lg border border-warning-line bg-warning-tint px-3 py-2 text-[12px] text-warning">
@@ -1532,16 +1548,6 @@ After the skill completes, briefly summarize what was created (the user will see
       {panelRequest?.kind === "local-file" && (
         <LocalFileRequestCard
           onChoose={() => localFileRequestInputRef.current?.click()}
-          onCancel={() => respondPanel(panelRequest.requestId, { ok: false, reason: "cancelled by user" })}
-        />
-      )}
-      {panelRequest?.kind === "schedule-model" && (
-        <ScheduleDraftCard
-          payload={panelRequest.payload as import("@/lib/agent/tools/schedule-meta").ScheduleDraftPayload}
-          instances={instances}
-          onSubmit={(instanceId, model) =>
-            respondPanel(panelRequest.requestId, { ok: true, data: { instanceId, model } })
-          }
           onCancel={() => respondPanel(panelRequest.requestId, { ok: false, reason: "cancelled by user" })}
         />
       )}

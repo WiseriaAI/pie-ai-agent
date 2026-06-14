@@ -518,8 +518,10 @@ export const jaDict = {
       "開始 URL は制限されたページ (chrome://、about:、拡張機能ページ、Web Store) のため使用できません",
     errSelectConfig: "実行に使う設定を選択してください",
     errSelectModel: "モデルを選択してください",
-    draftCardTitle: "このスケジュールタスクのモデルを選択",
-    draftCardCreate: "作成",
+    draftCardLabel: "新しいスケジュール",
+    draftCardRunWith: "モデルを選択",
+    draftCardCreate: "スケジュールを作成",
+    draftCardCreated: "スケジュールを作成しました",
   },
   managed: {
     models: {
