@@ -7,6 +7,7 @@ import {
   type DictKey,
 } from "@/lib/i18n";
 import { LOCALE_REGISTRY, SUPPORTED_LOCALES } from "@/lib/i18n/locales";
+import { DropdownPanel } from "./ui/DropdownPanel";
 
 const OPTIONS: { value: AssistantLanguageSetting; label?: string; labelKey?: DictKey }[] = [
   { value: "auto-follow-ui", labelKey: "settings.language.assistantFollowUi" },
@@ -64,41 +65,40 @@ export default function AssistantLanguageSelect() {
           />
         </svg>
       </button>
-      {open && (
-        <div
-          role="listbox"
-          className="scale-in origin-top absolute z-10 mt-1 flex w-full flex-col gap-0.5 rounded-[9px] border border-line bg-surface p-1"
-        >
-          {OPTIONS.map((option) => {
-            const active = option.value === value;
-            return (
-              <button
-                key={option.value}
-                type="button"
-                role="option"
-                aria-selected={active}
-                onClick={() => choose(option.value)}
-                className={`flex items-center justify-between rounded-md px-2.5 py-2 text-left text-[13px] ${
-                  active ? "bg-accent-tint font-medium text-fg-1" : "text-fg-2 hover:text-fg-1"
-                }`}
-              >
-                <span>{labelFor(option)}</span>
-                {active && (
-                  <svg width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden="true" className="text-accent">
-                    <path
-                      d="M2.5 7.5L5.5 10.5L11.5 4"
-                      stroke="currentColor"
-                      strokeWidth="1.4"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                )}
-              </button>
-            );
-          })}
-        </div>
-      )}
+      <DropdownPanel
+        open={open}
+        role="listbox"
+        className="absolute z-10 mt-1 flex w-full flex-col gap-0.5 rounded-[9px] border border-line bg-surface p-1"
+      >
+        {OPTIONS.map((option) => {
+          const active = option.value === value;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              role="option"
+              aria-selected={active}
+              onClick={() => choose(option.value)}
+              className={`flex items-center justify-between rounded-md px-2.5 py-2 text-left text-[13px] ${
+                active ? "bg-accent-tint font-medium text-fg-1" : "text-fg-2 hover:text-fg-1"
+              }`}
+            >
+              <span>{labelFor(option)}</span>
+              {active && (
+                <svg width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden="true" className="text-accent">
+                  <path
+                    d="M2.5 7.5L5.5 10.5L11.5 4"
+                    stroke="currentColor"
+                    strokeWidth="1.4"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              )}
+            </button>
+          );
+        })}
+      </DropdownPanel>
     </div>
   );
 }
