@@ -9,6 +9,7 @@ import {
   setSearchProviderKey,
 } from "@/lib/search-provider";
 import { useT } from "@/lib/i18n";
+import { Button } from "./ui/Button";
 
 type Mode = "empty" | "configured" | "editing";
 
@@ -135,14 +136,15 @@ export default function SearchProviderSection() {
               </span>
             </div>
             <div className="flex items-center gap-2">
-              <button
-                onClick={() => setMode("editing")}
+              <Button
+                variant="secondary"
+                size="md"
                 disabled={busy}
-                className="inline-flex items-center gap-1.5 rounded-[10px] border border-line bg-transparent px-3.5 py-2 text-[13px] text-fg-1 disabled:opacity-50"
+                iconLeft={<span>+</span>}
+                onClick={() => setMode("editing")}
               >
-                <span>+</span>
                 {t("settings.searchProvider.addKey")}
-              </button>
+              </Button>
             </div>
           </>
         )}
@@ -169,32 +171,25 @@ export default function SearchProviderSection() {
                 {status.lastVerifiedAt ? formatRelative(status.lastVerifiedAt) : t("settings.searchProvider.statusNotSet")}
               </span>
               <div className="flex-1" />
-              <button
-                onClick={handleReTest}
-                disabled={busy}
-                className="rounded-[10px] border border-line bg-transparent px-3.5 py-2 text-[13px] text-fg-2 disabled:opacity-50"
-              >
+              <Button variant="secondary" size="md" disabled={busy} onClick={handleReTest}>
                 {t("settings.searchProvider.reTest")}
-              </button>
+              </Button>
             </div>
             <div className="flex items-center gap-2 pt-1">
-              <button
+              <Button
+                variant="secondary"
+                size="md"
+                disabled={busy}
                 onClick={() => {
                   setMode("editing");
                   setDraft("");
                 }}
-                disabled={busy}
-                className="inline-flex items-center rounded-[10px] border border-line bg-transparent px-3.5 py-2 text-[13px] text-fg-1 disabled:opacity-50"
               >
                 {t("settings.searchProvider.replaceKey")}
-              </button>
-              <button
-                onClick={handleForget}
-                disabled={busy}
-                className="inline-flex items-center rounded-[10px] bg-transparent px-3.5 py-2 text-[13px] text-warning hover:bg-warning-tint disabled:opacity-50"
-              >
+              </Button>
+              <Button variant="danger" size="md" disabled={busy} onClick={handleForget}>
                 {t("settings.searchProvider.forget")}
-              </button>
+              </Button>
             </div>
           </>
         )}
@@ -237,22 +232,24 @@ export default function SearchProviderSection() {
               <span>{t("settings.searchProvider.encryptedHint")}</span>
             </div>
             <div className="flex items-center gap-2 pt-1">
-              <button
-                onClick={handleSaveAndTest}
+              <Button
+                variant="primary"
+                size="md"
                 disabled={!draft.trim() || busy}
-                className="inline-flex items-center rounded-[10px] bg-fg-1 px-4 py-2 text-[13px] font-medium text-canvas disabled:opacity-50"
+                onClick={handleSaveAndTest}
               >
                 {t("settings.searchProvider.saveAndTest")}
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="secondary"
+                size="md"
                 onClick={() => {
                   setMode(status.configured ? "configured" : "empty");
                   setDraft("");
                 }}
-                className="inline-flex items-center rounded-[10px] border border-line bg-transparent px-3.5 py-2 text-[13px] text-fg-2"
               >
                 {t("settings.searchProvider.cancel")}
-              </button>
+              </Button>
             </div>
           </>
         )}

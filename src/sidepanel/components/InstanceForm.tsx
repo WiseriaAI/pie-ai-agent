@@ -7,6 +7,7 @@ import { useT, providerDisplayName } from "@/lib/i18n";
 import { type StoredCustomModelMeta } from "@/lib/provider-custom-model-meta";
 import ProviderModelList from "./ProviderModelList";
 import ManagedAccountPanel from "./ManagedAccountPanel";
+import { Button } from "./ui/Button";
 
 export interface InstanceFormPayload {
   nickname: string;
@@ -134,13 +135,9 @@ export default function InstanceForm(props: Props) {
             remove a managed config is this delete button — visually/text aligned with
             the BYOK "Forget config" button below. */}
         {props.onDelete && (
-          <button
-            type="button"
-            onClick={() => props.onDelete!()}
-            className="self-start h-8 rounded-[10px] bg-transparent px-3 text-[12px] text-warning hover:bg-warning-tint"
-          >
+          <Button variant="danger" className="self-start" onClick={() => props.onDelete!()}>
             {t("instanceForm.forgetConfig")}
-          </button>
+          </Button>
         )}
         {props.renderActions?.({
           canSave: false,
@@ -235,13 +232,13 @@ export default function InstanceForm(props: Props) {
               </button>
             </div>
             {props.mode === "edit" && props.existingApiKey && (
-              <button
-                type="button"
+              <Button
+                variant="secondary"
+                className="self-start"
                 onClick={() => { setApiKey(""); setReplacing(false); }}
-                className="self-start rounded-[10px] border border-line bg-transparent px-3 py-2 text-[12px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
               >
                 {t("instanceForm.cancelKeepKey")}
-              </button>
+              </Button>
             )}
           </div>
         )}
@@ -280,31 +277,28 @@ export default function InstanceForm(props: Props) {
       {!props.renderActions && (
         <div className="flex flex-wrap items-center gap-1.5 pt-1">
           {props.mode === "edit" && props.onDelete && (
-            <button
-              onClick={() => props.onDelete!()}
-              className="h-8 rounded-[10px] bg-transparent px-3 text-[12px] text-warning hover:bg-warning-tint"
-            >
+            <Button variant="danger" onClick={() => props.onDelete!()}>
               {t("instanceForm.forgetConfig")}
-            </button>
+            </Button>
           )}
           <div className="flex-1" />
-          <button
+          <Button
+            variant="secondary"
+            loading={testing}
+            disabled={!canSave}
             onClick={() => {
               if (!testing) props.onTest(payload);
             }}
-            disabled={!canSave || testing}
-            className="flex h-8 items-center gap-1.5 rounded-[10px] border border-line bg-transparent px-3 text-[12px] text-fg-2 hover:border-fg-3 hover:text-fg-1 disabled:opacity-30"
           >
-            {testing && <Spinner />}
             {testButtonLabel(t, testing, testStatus)}
-          </button>
-          <button
-            onClick={() => props.onSave(payload)}
+          </Button>
+          <Button
+            variant="primary"
             disabled={!canSave}
-            className="h-8 rounded-[10px] bg-fg-1 px-4 text-[12px] font-medium text-canvas disabled:opacity-30"
+            onClick={() => props.onSave(payload)}
           >
             {props.saveLabel ?? t("instanceForm.save")}
-          </button>
+          </Button>
         </div>
       )}
       </div>
@@ -332,15 +326,6 @@ function testButtonLabel(
   if (testing) return t("customProvider.testing");
   if (status === "success") return t("instanceForm.testOk");
   return t("instanceForm.test");
-}
-
-function Spinner() {
-  return (
-    <svg className="h-3 w-3 animate-spin" viewBox="0 0 16 16" fill="none" aria-hidden>
-      <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="2" opacity="0.3" />
-      <path d="M14 8A6 6 0 1 1 2 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  );
 }
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
