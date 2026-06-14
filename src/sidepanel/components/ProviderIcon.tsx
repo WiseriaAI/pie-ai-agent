@@ -29,6 +29,23 @@ export default function ProviderIcon({ provider, size, className }: Props) {
     flexShrink: 0,
   };
 
+  if (meta?.iconColorAsset) {
+    // 全彩品牌徽标（自带底色/多色）：按原色 <img> 渲染，不走 mask（mask 会压成实心块）。
+    const url = chrome.runtime.getURL(meta.iconColorAsset);
+    return (
+      <span style={wrap} className={className}>
+        <img
+          src={url}
+          alt=""
+          aria-hidden
+          width={box}
+          height={box}
+          style={{ width: box, height: box, borderRadius: Math.round(box * 0.22), display: "block" }}
+        />
+      </span>
+    );
+  }
+
   if (meta?.iconAsset) {
     const url = chrome.runtime.getURL(meta.iconAsset);
     return (

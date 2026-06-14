@@ -13,7 +13,7 @@ describe("ManagedSubscribePanel", () => {
     render(<ManagedSubscribePanel
       onCreated={onCreated}
       deps={{
-        login: vi.fn(async (): Promise<LoginResult> => ({ apiKey: "sk-v", entitlement: { plan: "active", email: "u@x.com", budgetRemainingUsd: 6 } })),
+        login: vi.fn(async (): Promise<LoginResult> => ({ apiKey: "sk-v", entitlement: { plan: "active", email: "u@x.com", subscription: { planName: "Pie Pro", currentPeriodEnd: 1750000000, cancelAtPeriodEnd: false }, quota: { weekly: { usedFraction: 0, resetAt: 1750400000 } }, models: [{ id: "default", name: "标准" }] } })),
       }}
     />);
     fireEvent.click(screen.getByRole("button", { name: /sign in with google/i }));
@@ -25,7 +25,7 @@ describe("ManagedSubscribePanel", () => {
     render(<ManagedSubscribePanel
       onCreated={onCreated}
       deps={{
-        login: vi.fn(async (): Promise<LoginResult> => ({ apiKey: "sk-v", entitlement: { plan: "none", email: "u@x.com", budgetRemainingUsd: 0 } })),
+        login: vi.fn(async (): Promise<LoginResult> => ({ apiKey: "sk-v", entitlement: { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [] } })),
         checkout: vi.fn(async () => {}),
       }}
     />);
@@ -42,9 +42,9 @@ describe("ManagedSubscribePanel", () => {
     const refresh = vi.fn(async (): Promise<LoginResult["entitlement"]> => {
       refreshCallCount++;
       if (refreshCallCount >= 2) {
-        return { plan: "active", email: "u@x.com", budgetRemainingUsd: 5 };
+        return { plan: "active", email: "u@x.com", subscription: { planName: "Pie Pro", currentPeriodEnd: 1750000000, cancelAtPeriodEnd: false }, quota: { weekly: { usedFraction: 0, resetAt: 1750400000 } }, models: [{ id: "default", name: "标准" }] };
       }
-      return { plan: "none", email: "u@x.com", budgetRemainingUsd: 0 };
+      return { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [] };
     });
 
     render(
@@ -54,7 +54,7 @@ describe("ManagedSubscribePanel", () => {
         deps={{
           login: vi.fn(async (): Promise<LoginResult> => ({
             apiKey: "sk-v",
-            entitlement: { plan: "none", email: "u@x.com", budgetRemainingUsd: 0 },
+            entitlement: { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [] },
           })),
           checkout: vi.fn(async () => {}),
           refresh,
@@ -86,7 +86,9 @@ describe("ManagedSubscribePanel", () => {
     const refresh = vi.fn(async (): Promise<LoginResult["entitlement"]> => ({
       plan: "none",
       email: "u@x.com",
-      budgetRemainingUsd: 0,
+      subscription: null,
+      quota: null,
+      models: [],
     }));
 
     render(
@@ -96,7 +98,7 @@ describe("ManagedSubscribePanel", () => {
         deps={{
           login: vi.fn(async (): Promise<LoginResult> => ({
             apiKey: "sk-v",
-            entitlement: { plan: "none", email: "u@x.com", budgetRemainingUsd: 0 },
+            entitlement: { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [] },
           })),
           checkout: vi.fn(async () => {}),
           refresh,
@@ -123,7 +125,7 @@ describe("ManagedSubscribePanel", () => {
       (): Promise<LoginResult["entitlement"]> =>
         new Promise((resolve) =>
           setTimeout(
-            () => resolve({ plan: "active", email: "u@x.com", budgetRemainingUsd: 5 }),
+            () => resolve({ plan: "active", email: "u@x.com", subscription: { planName: "Pie Pro", currentPeriodEnd: 1750000000, cancelAtPeriodEnd: false }, quota: { weekly: { usedFraction: 0, resetAt: 1750400000 } }, models: [{ id: "default", name: "标准" }] }),
             200,
           ),
         ),
@@ -136,7 +138,7 @@ describe("ManagedSubscribePanel", () => {
         deps={{
           login: vi.fn(async (): Promise<LoginResult> => ({
             apiKey: "sk-v",
-            entitlement: { plan: "none", email: "u@x.com", budgetRemainingUsd: 0 },
+            entitlement: { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [] },
           })),
           checkout: vi.fn(async () => {}),
           refresh,

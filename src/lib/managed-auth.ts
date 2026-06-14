@@ -1,9 +1,27 @@
 import { ACCOUNT_BASE } from "./managed-config";
 
+export interface QuotaWindow {
+  usedFraction: number;
+  resetAt: number;
+}
+export interface SubscriptionInfo {
+  planName: string;
+  currentPeriodEnd: number | null;
+  cancelAtPeriodEnd: boolean;
+}
+export interface ModelInfo {
+  id: string;
+  name: string;
+}
 export interface Entitlement {
   plan: "none" | "active" | "blocked";
   email: string;
-  budgetRemainingUsd: number;
+  /** plan==none 时为 null；blocked 时非 null（供更新支付）。 */
+  subscription: SubscriptionInfo | null;
+  /** plan!=active 时为 null；具名窗口 map（P3 可加 fiveHour）。 */
+  quota: { weekly?: QuotaWindow } | null;
+  /** 仅 plan==active 非空。 */
+  models: ModelInfo[];
 }
 export interface LoginResult {
   apiKey: string;
