@@ -86,6 +86,14 @@ describe("panel-request", () => {
     expect(p2.sent.some((m) => m.type === "panel-request-resolved")).toBe(true);
   });
 
+  it("rejects when panel responds with ok: false", async () => {
+    const port = fakePort();
+    registerPanelPort("S1", port);
+    const p = requestFromPanel<"cdp-consent">("S1", "cdp-consent", {});
+    handlePanelResponse(port.sent[0].requestId, { ok: false, reason: "user cancelled" });
+    await expect(p).rejects.toThrow("user cancelled");
+  });
+
   it("ignores a response for an unknown requestId", () => {
     expect(() => handlePanelResponse("nope", { ok: true, data: true })).not.toThrow();
   });

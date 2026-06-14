@@ -67,7 +67,7 @@ export async function requestFromPanel<K extends PanelRequestKind>(
   const requestId = crypto.randomUUID();
   return new Promise<PanelRequestMap[K]["res"]>((resolve, reject) => {
     let timer: ReturnType<typeof setTimeout> | undefined;
-    if (opts?.timeoutMs) {
+    if (opts?.timeoutMs != null) {
       timer = setTimeout(() => {
         pendingByRequestId.delete(requestId);
         const p = portsBySession.get(sessionId);
