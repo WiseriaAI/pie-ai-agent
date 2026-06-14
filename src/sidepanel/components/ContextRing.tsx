@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "@/lib/i18n";
+import { DropdownPanel } from "./ui/DropdownPanel";
 
 export interface ContextRingProps {
   lastInputTokens: number | undefined;
@@ -147,21 +148,29 @@ export default function ContextRing(props: ContextRingProps) {
           transform={`rotate(-90 ${RING_CENTER} ${RING_CENTER})`}
         />
       </svg>
-      {open && (
+      {/* Slide+fade enter/exit via DropdownPanel (trigger-hugging, non-portal).
+          Positioning lives on the animated panel; the inner box keeps the
+          visual chrome + testid + stopPropagation (DropdownPanel forwards only
+          role/className/style, not onClick/data-testid). */}
+      <DropdownPanel
+        open={open}
+        placement="above"
+        style={{
+          position: "absolute",
+          bottom: RING_SIZE + 8,
+          right: -8,
+          zIndex: 50,
+        }}
+      >
         <div
           data-testid="context-ring-popover"
           onClick={(e) => e.stopPropagation()}
           style={{
-            position: "absolute",
-            bottom: RING_SIZE + 8,
-            right: -8,
             minWidth: 200,
             background: "var(--c-canvas)",
             border: "1px solid var(--c-line)",
             borderRadius: 8,
             boxShadow: "0 8px 24px rgba(0, 0, 0, 0.18)",
-            padding: 0,
-            zIndex: 50,
             cursor: "default",
           }}
         >
@@ -222,7 +231,7 @@ export default function ContextRing(props: ContextRingProps) {
             </span>
           </div>
         </div>
-      )}
+      </DropdownPanel>
     </div>
   );
 }
