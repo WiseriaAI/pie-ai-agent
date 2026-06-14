@@ -18,6 +18,7 @@
 
 import { useState } from "react";
 import { useT } from "@/lib/i18n";
+import { Collapse } from "./ui/Collapse";
 import type { ResolvedElement } from "@/types";
 import type { AgentStepImageExtras } from "@/types/messages";
 
@@ -81,8 +82,7 @@ export default function AgentStepLine({
         )}
       </button>
 
-      {expanded && (
-        <div className="view-enter ml-4 flex flex-col gap-1.5 border-l border-line pl-2.5 text-[11px]">
+      <Collapse open={expanded} className="ml-4 flex flex-col gap-1.5 border-l border-line pl-2.5 text-[11px]">
           {resolvedElement && (
             <div className="font-mono leading-4 text-fg-2">
               <span className="text-fg-3">{t("agentStep.element")}</span>
@@ -129,8 +129,7 @@ export default function AgentStepLine({
               </div>
             </div>
           )}
-        </div>
-      )}
+      </Collapse>
     </div>
   );
 }
