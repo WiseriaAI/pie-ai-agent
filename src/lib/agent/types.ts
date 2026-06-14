@@ -70,6 +70,13 @@ export interface ToolHandlerContext {
    * Loop installs this; tests pass undefined and the tool handles it gracefully.
    */
   removePinnedTab?: (tabId: number) => Promise<void>;
+  /**
+   * issue #181 — 运行中 task 的当前选择，使 create_schedule 默认绑定
+   * "你正在对话的那个模型"。loop 从 AgentLoopContext.instanceId +
+   * modelConfig.model 填入；非 chat 发起方（eval 等）可缺省。
+   */
+  currentInstanceId?: string;
+  currentModel?: string;
 }
 
 export interface Tool {

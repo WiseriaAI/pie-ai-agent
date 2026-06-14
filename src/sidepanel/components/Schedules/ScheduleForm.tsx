@@ -8,6 +8,7 @@
 // surfaced inline.
 
 import { useState } from "react";
+import ModelPicker from "../ModelPicker";
 import type { DecryptedInstance } from "@/lib/instances";
 import type { ScheduleRecord } from "@/lib/schedules/types";
 import { MIN_INTERVAL_MINUTES } from "@/lib/schedules/types";
@@ -22,6 +23,7 @@ import type {
 interface Props {
   instances: DecryptedInstance[];
   activeInstanceId: string | null;
+  activeModel?: string | null;
   /** When set, the form edits this schedule; otherwise it creates. */
   editing?: ScheduleRecord;
   onSubmit: (
@@ -40,6 +42,7 @@ interface FormState {
   maxStepsPerRun: string;
   maxRunMs: string;
   instanceId: string;
+  model: string;
 }
 
 /** Format an epoch-ms into a value suitable for <input type="datetime-local">. */
@@ -49,7 +52,12 @@ function toLocalInput(ms: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-function initialState(editing: ScheduleRecord | undefined, activeInstanceId: string | null, instances: DecryptedInstance[]): FormState {
+function initialState(
+  editing: ScheduleRecord | undefined,
+  activeInstanceId: string | null,
+  activeModel: string | null | undefined,
+  instances: DecryptedInstance[],
+): FormState {
   const fallbackInstance = activeInstanceId ?? instances[0]?.id ?? "";
   if (!editing) {
     return {
@@ -62,6 +70,7 @@ function initialState(editing: ScheduleRecord | undefined, activeInstanceId: str
       maxStepsPerRun: "",
       maxRunMs: "",
       instanceId: fallbackInstance,
+      model: activeModel ?? "",
     };
   }
   return {
@@ -74,13 +83,14 @@ function initialState(editing: ScheduleRecord | undefined, activeInstanceId: str
     maxStepsPerRun: editing.maxStepsPerRun != null ? String(editing.maxStepsPerRun) : "",
     maxRunMs: editing.maxRunMs != null ? String(editing.maxRunMs) : "",
     instanceId: editing.instanceId,
+    model: editing.model ?? "",
   };
 }
 
-export default function ScheduleForm({ instances, activeInstanceId, editing, onSubmit, onCancel }: Props) {
+export default function ScheduleForm({ instances, activeInstanceId, activeModel, editing, onSubmit, onCancel }: Props) {
   const t = useT();
   const isEdit = !!editing;
-  const [form, setForm] = useState<FormState>(() => initialState(editing, activeInstanceId, instances));
+  const [form, setForm] = useState<FormState>(() => initialState(editing, activeInstanceId, activeModel, instances));
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -105,6 +115,7 @@ export default function ScheduleForm({ instances, activeInstanceId, editing, onS
       return t("schedules.errStartUrlRestricted");
     }
     if (!form.instanceId) return t("schedules.errSelectConfig");
+    if (!form.model) return t("schedules.errSelectModel");
     return null;
   }
 
@@ -138,8 +149,8 @@ export default function ScheduleForm({ instances, activeInstanceId, editing, onS
         maxRunMs: form.maxRunMs.trim() ? Number(form.maxRunMs) : undefined,
       };
       const payload: ScheduleCreatePayload | ScheduleUpdatePayload = isEdit
-        ? { id: editing!.id, ...common, startUrl: form.startUrl.trim() }
-        : { instanceId: form.instanceId, ...common };
+        ? { id: editing!.id, instanceId: form.instanceId, model: form.model, ...common, startUrl: form.startUrl.trim() }
+        : { instanceId: form.instanceId, model: form.model, ...common };
       const res = await onSubmit(payload);
       if (!res.ok) {
         setError(res.error);
@@ -192,23 +203,15 @@ export default function ScheduleForm({ instances, activeInstanceId, editing, onS
         />
       </Field>
 
-      {!isEdit && (
-        <Field label={t("schedules.fieldConfig")} htmlFor="sched-instance">
-          <select
-            id="sched-instance"
-            value={form.instanceId}
-            onChange={(e) => set("instanceId", e.target.value)}
-            className="w-full rounded-[10px] border border-line bg-field px-3 py-2 text-[12px] text-fg-1 focus:border-accent-line"
-          >
-            {instances.length === 0 && <option value="">{t("schedules.configNone")}</option>}
-            {instances.map((inst) => (
-              <option key={inst.id} value={inst.id}>
-                {inst.nickname} · {inst.provider}
-              </option>
-            ))}
-          </select>
-        </Field>
-      )}
+      <Field label={t("schedules.fieldModel")}>
+        <ModelPicker
+          instances={instances}
+          currentInstanceId={form.instanceId || null}
+          currentModel={form.model || null}
+          locked={false}
+          onSelect={(instanceId, model) => setForm((p) => ({ ...p, instanceId, model }))}
+        />
+      </Field>
 
       <div className="grid grid-cols-3 gap-2">
         <Field label={t("schedules.fieldStartAt")} htmlFor="sched-startat" hint={t("schedules.hintOptional")}>
@@ -310,7 +313,7 @@ function Field({
   children,
 }: {
   label: string;
-  htmlFor: string;
+  htmlFor?: string;
   hint?: string;
   children: React.ReactNode;
 }) {

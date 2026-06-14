@@ -15,6 +15,7 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { _resetForTests } from "@/lib/idb/db";
 import { SCHEDULE_META_TOOLS, setScheduleRunDep } from "./schedule-meta";
+import type { ToolHandlerContext } from "../types";
 
 // ── chrome.alarms stub (mirrors scheduler.test.ts) ───────────────────────────
 
@@ -41,11 +42,12 @@ function installChromeStub() {
   return { alarms, create, clear, get, onAlarm };
 }
 
-const ctx = {} as never; // handler does not use ctx
-const create = SCHEDULE_META_TOOLS.find((t) => t.name === "create_schedule")!;
-
-const ACTIVE_KEY = "active_instance_id";
+// create_schedule binds the current chat session's instance from ctx (#181);
+// supply it directly so the C1 dispatch path is exercised without depending on
+// resolveSelection / a seeded instance record.
 const TEST_INSTANCE_ID = "test-instance-001";
+const ctx = { currentInstanceId: TEST_INSTANCE_ID } as ToolHandlerContext;
+const create = SCHEDULE_META_TOOLS.find((t) => t.name === "create_schedule")!;
 
 let stub: ReturnType<typeof installChromeStub>;
 let runSpy: ReturnType<typeof vi.fn<(scheduleId: string) => Promise<void>>>;
@@ -55,9 +57,6 @@ beforeEach(async () => {
   stub = installChromeStub();
   runSpy = vi.fn<(scheduleId: string) => Promise<void>>(async () => {});
   setScheduleRunDep(runSpy);
-  // Seed the active instance id used as the create_schedule default.
-  const { setConfig } = await import("@/lib/idb/config-store");
-  await setConfig(ACTIVE_KEY, TEST_INSTANCE_ID);
 });
 
 afterEach(() => {
