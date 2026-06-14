@@ -24,7 +24,7 @@
  * - Focus trap within drawer
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useT } from "@/lib/i18n";
 import type { SessionIndexEntry } from "@/lib/sessions/types";
 import { getTotalBytes } from "@/lib/sessions/storage";
@@ -36,6 +36,7 @@ import {
 import { useStoreChange } from "@/sidepanel/hooks/useStoreChange";
 import SessionRow from "./SessionRow";
 import { useAnimatedList } from "./ui/AnimatedList";
+import { Drawer } from "./ui/Drawer";
 
 interface SessionDrawerProps {
   isOpen: boolean;
@@ -44,60 +45,6 @@ interface SessionDrawerProps {
   activeSessionId: string | null;
   onSelectSession: (id: string) => void;
   onResumeSession: (id: string) => void;
-}
-
-// ── Delayed-unmount helper ────────────────────────────────────────────────────
-// Keeps the drawer DOM present long enough for the closing transition to run,
-// then removes it. Mirrors what AnimatePresence does in motion libraries, but
-// without pulling in 20kB. Delay must match the longest transition below
-// (240ms panel slide).
-// Drives both the mount lifecycle and the open/close transition.
-//   - `mounted`: keep the DOM around through the close animation, then remove.
-//   - `open`: the *visual* state (transform/opacity). On open it flips to true
-//     only AFTER the off-screen initial frame has painted, so the browser has
-//     a from-state to transition out of — mounting straight into the final
-//     transform would skip the slide-in entirely.
-function useDrawerTransition(isOpen: boolean, delay: number) {
-  const [mounted, setMounted] = useState(isOpen);
-  const [open, setOpen] = useState(isOpen);
-  useEffect(() => {
-    if (isOpen) {
-      setMounted(true);
-      // Two rAFs: frame 1 paints the off-screen initial state, frame 2 flips
-      // to open so the transition actually runs.
-      let raf2 = 0;
-      const raf1 = requestAnimationFrame(() => {
-        raf2 = requestAnimationFrame(() => setOpen(true));
-      });
-      return () => {
-        cancelAnimationFrame(raf1);
-        cancelAnimationFrame(raf2);
-      };
-    }
-    setOpen(false);
-    const t = setTimeout(() => setMounted(false), delay);
-    return () => clearTimeout(t);
-  }, [isOpen, delay]);
-  return { mounted, open };
-}
-
-const DRAWER_TRANSITION_MS = 240;
-const DRAWER_EASING = "cubic-bezier(0.32, 0.72, 0, 1)";
-
-// ── Focus trap helper ─────────────────────────────────────────────────────────
-
-const FOCUSABLE_SELECTORS = [
-  "a[href]",
-  "button:not([disabled])",
-  "textarea:not([disabled])",
-  "input:not([disabled])",
-  "select:not([disabled])",
-  "[tabindex]:not([tabindex='-1'])",
-  "[role='listitem']",
-].join(", ");
-
-function getFocusableElements(container: HTMLElement): HTMLElement[] {
-  return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTORS));
 }
 
 // ── StorageIndicator ──────────────────────────────────────────────────────────
@@ -276,81 +223,8 @@ export default function SessionDrawer({
   onResumeSession,
 }: SessionDrawerProps) {
   const t = useT();
-  const drawerRef = useRef<HTMLDivElement>(null);
   const sessionListRef = useAnimatedList<HTMLUListElement>();
-  // Track the element that had focus before the drawer opened so we can
-  // restore it when the drawer closes.
-  const preFocusRef = useRef<Element | null>(null);
   const [showArchived, setShowArchived] = useState(false);
-
-  // ESC to close + focus trap
-  useEffect(() => {
-    if (!isOpen) return;
-
-    // Save the currently focused element so we can restore on close
-    preFocusRef.current = document.activeElement;
-
-    // Initial focus: first focusable element in the drawer
-    const drawer = drawerRef.current;
-    if (drawer) {
-      const focusable = getFocusableElements(drawer);
-      if (focusable.length > 0) {
-        focusable[0]!.focus();
-      }
-    }
-
-    function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-        return;
-      }
-
-      // Focus trap
-      if (e.key !== "Tab") return;
-      const current = drawerRef.current;
-      if (!current) return;
-      const focusable = getFocusableElements(current);
-      if (focusable.length === 0) return;
-
-      const first = focusable[0]!;
-      const last = focusable[focusable.length - 1]!;
-
-      if (e.shiftKey) {
-        // Shift+Tab: if we're on first, wrap to last
-        if (document.activeElement === first) {
-          e.preventDefault();
-          last.focus();
-        }
-      } else {
-        // Tab: if we're on last, wrap to first
-        if (document.activeElement === last) {
-          e.preventDefault();
-          first.focus();
-        }
-      }
-    }
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("keydown", handleKeyDown);
-      // Restore focus to the element that was focused before the drawer opened
-      if (preFocusRef.current instanceof HTMLElement) {
-        preFocusRef.current.focus();
-      }
-    };
-  }, [isOpen, onClose]);
-
-  // M5: stay mounted long enough for the close transition to finish before
-  // removing the DOM. focus-trap effect above already guards on isOpen so
-  // listeners aren't attached while the drawer is animating out. `animateOpen`
-  // is the visual open state (see useDrawerTransition) — it lags isOpen by one
-  // painted frame on open so the slide-in transition runs.
-  const { mounted, open: animateOpen } = useDrawerTransition(
-    isOpen,
-    DRAWER_TRANSITION_MS,
-  );
-  if (!mounted) return null;
 
   // Sessions split by status — archived goes to the "show archived" section
   const activeSessions = sessions.filter((s) => s.status !== "archived");
@@ -376,47 +250,16 @@ export default function SessionDrawer({
   }
 
   return (
-    <>
-      {/* Backdrop — fades in/out; pointer-events disabled while closing so
-           clicks fall through immediately even if the panel hasn't unmounted. */}
-      <div
-        data-testid="drawer-backdrop"
-        data-state={animateOpen ? "open" : "closed"}
-        onClick={onClose}
-        style={{
-          position: "fixed",
-          inset: 0,
-          background: "var(--c-overlay-strong)",
-          zIndex: 40,
-          opacity: animateOpen ? 1 : 0,
-          pointerEvents: animateOpen ? "auto" : "none",
-          transition: `opacity 200ms ${DRAWER_EASING}`,
-        }}
-      />
-
-      {/* Drawer panel — slides in from the left edge */}
-      <div
-        ref={drawerRef}
-        role="dialog"
-        aria-modal="true"
-        aria-label={t("sessions.header")}
-        data-state={animateOpen ? "open" : "closed"}
-        style={{
-          position: "fixed",
-          top: 0,
-          left: 0,
-          width: 296,
-          height: "100%",
-          background: "var(--c-surface-deep)",
-          borderRight: "1px solid var(--c-line)",
-          zIndex: 50,
-          display: "flex",
-          flexDirection: "column",
-          overflow: "hidden",
-          transform: animateOpen ? "translateX(0)" : "translateX(-100%)",
-          transition: `transform ${DRAWER_TRANSITION_MS}ms ${DRAWER_EASING}`,
-        }}
-      >
+    <Drawer
+      open={isOpen}
+      onClose={onClose}
+      ariaLabel={t("sessions.header")}
+      backdropTestId="drawer-backdrop"
+      panelStyle={{
+        background: "var(--c-surface-deep)",
+        borderRight: "1px solid var(--c-line)",
+      }}
+    >
         {/* Header */}
         <div
           style={{
@@ -599,8 +442,7 @@ export default function SessionDrawer({
 
         {/* Storage indicator */}
         <StorageIndicator />
-      </div>
-    </>
+    </Drawer>
   );
 }
 
