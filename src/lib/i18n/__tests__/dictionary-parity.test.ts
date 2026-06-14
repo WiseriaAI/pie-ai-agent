@@ -57,5 +57,7 @@ describe("dictionary parity", () => {
     expect(LOCALE_REGISTRY.ja.dictionary.common.save).toBe("保存");
     expect(LOCALE_REGISTRY["pt-BR"].dictionary.common.cancel).toBe("Cancelar");
     expect(LOCALE_REGISTRY["pt-BR"].dictionary.common.save).toBe("Salvar");
+    expect(LOCALE_REGISTRY["zh-TW"].dictionary.common.cancel).toBe("取消");
+    expect(LOCALE_REGISTRY["zh-TW"].dictionary.common.save).toBe("儲存");
   });
 });

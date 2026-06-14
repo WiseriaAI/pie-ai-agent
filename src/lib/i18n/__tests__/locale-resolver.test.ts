@@ -14,10 +14,12 @@ import { _resetForTests } from "@/lib/idb/db";
 
 describe("locale registry", () => {
   it("registers all launch locales in stable order", () => {
-    expect(SUPPORTED_LOCALES).toEqual(["en", "zh-CN", "es-419", "ja", "pt-BR"]);
+    expect(SUPPORTED_LOCALES).toEqual(["en", "zh-CN", "zh-TW", "es-419", "ja", "pt-BR"]);
   });
 
   it("maps app locales to Chrome locale folder ids", () => {
+    expect(LOCALE_REGISTRY["zh-CN"].chromeLocale).toBe("zh_CN");
+    expect(LOCALE_REGISTRY["zh-TW"].chromeLocale).toBe("zh_TW");
     expect(LOCALE_REGISTRY["es-419"].chromeLocale).toBe("es_419");
     expect(LOCALE_REGISTRY.ja.chromeLocale).toBe("ja");
     expect(LOCALE_REGISTRY["pt-BR"].chromeLocale).toBe("pt_BR");
@@ -45,7 +47,14 @@ describe("locale registry", () => {
 describe("normalizeBrowserLocale", () => {
   it.each([
     ["zh-CN", "zh-CN"],
-    ["zh-TW", "zh-CN"],
+    ["zh", "zh-CN"],
+    ["zh-SG", "zh-CN"],
+    ["zh-Hans", "zh-CN"],
+    ["zh-TW", "zh-TW"],
+    ["zh-HK", "zh-TW"],
+    ["zh-MO", "zh-TW"],
+    ["zh-Hant", "zh-TW"],
+    ["zh-Hant-TW", "zh-TW"],
     ["en-US", "en"],
     ["es-MX", "es-419"],
     ["es-AR", "es-419"],
@@ -75,6 +84,11 @@ describe("resolveLocale", () => {
     expect(await resolveLocale()).toBe("zh-CN");
   });
 
+  it("returns 'zh-TW' when storage override is 'zh-TW'", async () => {
+    await setConfig(STORAGE_KEY_UI_LOCALE, "zh-TW");
+    expect(await resolveLocale()).toBe("zh-TW");
+  });
+
   it("returns 'es-419' when storage override is 'es-419'", async () => {
     await setConfig(STORAGE_KEY_UI_LOCALE, "es-419");
     expect(await resolveLocale()).toBe("es-419");
@@ -98,7 +112,7 @@ describe("resolveLocale", () => {
 
   it("falls back to chrome.i18n when storage is empty", async () => {
     chromeMock.i18n.__uiLanguage = "zh-TW";
-    expect(await resolveLocale()).toBe("zh-CN");
+    expect(await resolveLocale()).toBe("zh-TW");
   });
 
   it("falls back to 'en' when chrome.i18n returns unsupported locale", async () => {

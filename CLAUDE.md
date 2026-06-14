@@ -103,6 +103,7 @@ Workflow 内置 invariant（任一失败则 CI fail，不会上传）：
 - `docs/specs/` — superpowers `brainstorming` skill 产出（design / requirements / spec），含 Phase 1–3 历史 brainstorm 合并归档
 - `docs/plans/` — superpowers `planning` skill 产出（实施 plan），含 Phase 1–3 历史 plan 合并归档
 - `docs/release-notes/` — 用户可见 changelog
+- `docs/localization/` — 本地化资产：README 多语言翻译（`README.<locale>.md`，如 `README.zh-CN.md` / `README.zh-TW.md` / `README.es-419.md` / `README.ja.md` / `README.pt-BR.md`）+ glossary / launch-pack / qa-checklist。**根目录只留英文 `README.md`**（GitHub 仓库首页只认根 README）；翻译版全部住这里。各翻译版顶部语言切换器互链：英文指 `../../README.md`，同目录兄弟用裸 `README.<locale>.md`，根目录文件（PRIVACY/CHANGELOG/LICENSE）用 `../../`，`docs/` 下文件用 `../`。新增一门语言 = 在此加一份 `README.<locale>.md` + 同步所有切换器（含根 README）
 - `docs/design.md` — 早期 Phase 0–3 设计构想（历史档案）
 - `docs/archive/index.html` — 项目档案知识库（单文件，vanilla JS / 零依赖）；编辑 `archiveData` 数组 → push 到 main → `.github/workflows/deploy-archive-pages.yml` 自动部署到 https://wiseriaai.github.io/pie-ai-agent/ ；Pages source = GitHub Actions，仅上传 `docs/archive/`，其他 docs/ 不进 Pages
 
