@@ -68,6 +68,16 @@ describe("ModelPicker", () => {
     fireEvent.click(screen.getAllByRole("button")[0]!);
     expect(screen.queryByText("OpenAI")).toBeNull();
   });
+
+  it("renders the popover via a portal under document.body, escaping the trigger wrapper", () => {
+    const { container } = renderPicker();
+    openPicker();
+    const popover = screen.getByRole("dialog");
+    // Portaled to body so no ancestor overflow/stacking can clip it.
+    expect(document.body.contains(popover)).toBe(true);
+    // It must NOT be nested inside the trigger wrapper (the rendered container).
+    expect(container.contains(popover)).toBe(false);
+  });
 });
 
 function inst(over: Partial<DecryptedInstance>): DecryptedInstance {

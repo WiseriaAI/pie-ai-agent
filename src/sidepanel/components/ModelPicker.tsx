@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useT } from "@/lib/i18n";
 import type { DecryptedInstance } from "@/lib/instances";
 import type { BuiltinProvider, ModelMeta } from "@/lib/model-router";
@@ -67,15 +68,56 @@ export default function ModelPicker(props: Props) {
   const [mounted, setMounted] = useState(false);
   const [shown, setShown] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  // Fixed-position coords measured from the trigger button's rect. The popover
+  // is portaled to document.body (so no ancestor overflow/stacking clips it) and
+  // positioned with position:fixed. Right-aligned to the trigger; vertically it
+  // opens upward when there's room above, else downward.
+  const [coords, setCoords] = useState<{ right: number; top?: number; bottom?: number } | null>(null);
+
+  const updateCoords = useCallback(() => {
+    const el = triggerRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const POPOVER_MAX_H = 380; // panel content max-h-[360px] + paddings/header budget
+    const GAP = 8; // ≈ the old mb-2 gap
+    const right = window.innerWidth - rect.right;
+    // Flip up when there's enough room above the trigger, else open downward.
+    if (rect.top >= POPOVER_MAX_H + GAP) {
+      setCoords({ right, bottom: window.innerHeight - rect.top + GAP });
+    } else {
+      setCoords({ right, top: rect.bottom + GAP });
+    }
+  }, []);
 
   useEffect(() => {
     if (!open) return;
     const onDoc = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      const inTrigger = wrapRef.current?.contains(target);
+      const inPopover = popoverRef.current?.contains(target);
+      // Popover is portaled out of wrapRef, so check both before closing.
+      if (!inTrigger && !inPopover) setOpen(false);
     };
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
+
+  // Measure on open and follow the trigger while open: viewport resize + any
+  // scroll (capture phase catches the inner scroll container too).
+  useEffect(() => {
+    if (!open) return;
+    updateCoords();
+    const onResize = () => updateCoords();
+    const onScroll = () => updateCoords();
+    window.addEventListener("resize", onResize);
+    window.addEventListener("scroll", onScroll, true);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("scroll", onScroll, true);
+    };
+  }, [open, updateCoords]);
 
   useEffect(() => {
     if (open) {
@@ -113,6 +155,7 @@ export default function ModelPicker(props: Props) {
   return (
     <div ref={wrapRef} className="relative">
       <button
+        ref={triggerRef}
         onClick={() => !props.locked && setOpen(!open)}
         disabled={props.locked}
         className="flex items-center gap-1.5 px-1.5 py-1 text-[12px] text-fg-2 disabled:opacity-50"
@@ -133,16 +176,20 @@ export default function ModelPicker(props: Props) {
         )}
       </button>
 
-      {mounted && (
+      {mounted && coords && createPortal(
         <div
+          ref={popoverRef}
           role="dialog"
           onTransitionEnd={() => { if (!shown) setMounted(false); }}
           style={{
+            right: coords.right,
+            top: coords.top,
+            bottom: coords.bottom,
             opacity: shown ? 1 : 0,
             transform: shown ? "translateY(0)" : "translateY(8px)",
             transition: "opacity 0.18s ease, transform 0.18s ease",
           }}
-          className="absolute bottom-full right-0 mb-2 w-[300px] max-w-[calc(100vw-1.5rem)] rounded-lg border border-line bg-surface shadow-[0_8px_24px_rgba(0,0,0,0.24)]"
+          className="fixed z-[100] w-[300px] max-w-[calc(100vw-1.5rem)] rounded-lg border border-line bg-surface shadow-[0_8px_24px_rgba(0,0,0,0.24)]"
         >
           <div className="flex items-baseline justify-between px-3.5 pt-2.5 pb-1.5">
             <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-fg-3">{t("modelPicker.title")}</span>
@@ -199,7 +246,8 @@ export default function ModelPicker(props: Props) {
               <span>{t("modelPicker.manage")}</span>
             </button>
           )}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
