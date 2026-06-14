@@ -44,16 +44,24 @@ function normalizeModel(raw: unknown): ModelInfo {
   };
 }
 
+function normalizeIntroOffer(raw: unknown): { percentOff: number } | undefined {
+  const o = (raw ?? undefined) as Record<string, unknown> | undefined;
+  if (o && typeof o.percentOff === "number" && o.percentOff > 0) return { percentOff: o.percentOff };
+  return undefined;
+}
+
 /** 容忍后端缺字段/新激活边缘：补齐 v2.1 安全默认，绝不抛。 */
 export function normalizeEntitlement(raw: unknown): Entitlement {
   const r = (raw ?? {}) as Record<string, unknown>;
   const plan = r.plan === "active" || r.plan === "blocked" ? r.plan : "none";
+  const introOffer = normalizeIntroOffer(r.introOffer);
   return {
     plan,
     email: typeof r.email === "string" ? r.email : "",
     subscription: (r.subscription as Entitlement["subscription"]) ?? null,
     quota: (r.quota as Entitlement["quota"]) ?? null,
     models: Array.isArray(r.models) ? (r.models as unknown[]).map(normalizeModel) : [],
+    ...(introOffer ? { introOffer } : {}),
   };
 }
 

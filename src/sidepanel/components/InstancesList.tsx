@@ -4,6 +4,7 @@ import { getProviderMeta, resolveEndpointVariant } from "@/lib/model-router";
 import { CUSTOM_PREFIX } from "@/lib/custom-providers";
 import { providerDisplayName, useT } from "@/lib/i18n";
 import ProviderIcon from "./ProviderIcon";
+import { Collapse } from "./ui/Collapse";
 
 interface Props {
   instances: DecryptedInstance[];
@@ -65,7 +66,7 @@ export default function InstancesList(props: Props) {
                 <path d="M2.5 3.5L4.5 5.5L6.5 3.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </div>
-            {isOpen && <div className="drawer-down border-t border-line bg-surface">{props.renderForm(inst.id)}</div>}
+            <Collapse open={isOpen} className="border-t border-line bg-surface">{props.renderForm(inst.id)}</Collapse>
           </div>
         );
       })}

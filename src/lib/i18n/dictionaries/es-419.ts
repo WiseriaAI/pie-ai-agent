@@ -525,6 +525,9 @@ export const es419Dict = {
     models: {
       consumption: "Uso",
     },
+    subscribe: {
+      introBadge: "{percentOff}% de descuento el primer mes",
+    },
     account: {
       section: "SUSCRIPCIÓN",
       active: "Activa",

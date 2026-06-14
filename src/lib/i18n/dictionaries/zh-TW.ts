@@ -531,6 +531,9 @@ export const zhTWDict = {
     models: {
       consumption: "消耗",
     },
+    subscribe: {
+      introBadge: "首月立減 {percentOff}%",
+    },
     account: {
       section: "訂閱",
       active: "生效中",

@@ -531,6 +531,9 @@ export const zhCNDict = {
     models: {
       consumption: "消耗",
     },
+    subscribe: {
+      introBadge: "首月立减 {percentOff}%",
+    },
     account: {
       section: "订阅",
       active: "生效中",

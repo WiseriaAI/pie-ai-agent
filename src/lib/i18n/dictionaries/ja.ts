@@ -525,6 +525,9 @@ export const jaDict = {
     models: {
       consumption: "消費",
     },
+    subscribe: {
+      introBadge: "初月 {percentOff}% オフ",
+    },
     account: {
       section: "サブスクリプション",
       active: "有効",

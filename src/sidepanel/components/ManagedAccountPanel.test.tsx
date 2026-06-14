@@ -9,7 +9,7 @@ const active: Entitlement = {
   plan: "active", email: "u@x.com",
   subscription: { planName: "Pie Pro", currentPeriodEnd: 1750000000, cancelAtPeriodEnd: false },
   quota: { weekly: { usedFraction: 0.71, resetAt: 1750400000 } },
-  models: [{ id: "default", name: "标准" }],
+  models: [{ id: "default", name: "标准", vision: false, maxContextTokens: 200000, costLevel: 1 }],
 };
 
 describe("ManagedAccountPanel", () => {
