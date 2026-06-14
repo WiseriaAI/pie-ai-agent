@@ -6,6 +6,8 @@ import type { BuiltinProvider, ModelMeta } from "@/lib/model-router";
 import { getProviderMeta, resolveEndpointVariant } from "@/lib/model-router";
 import { CUSTOM_PREFIX } from "@/lib/custom-providers";
 import ProviderIcon from "./ProviderIcon";
+import { getCachedEntitlement } from "@/lib/managed-account";
+import type { ModelInfo } from "@/lib/managed-auth";
 
 interface Props {
   instances: DecryptedInstance[];
@@ -35,6 +37,8 @@ interface ModelRow {
   id: string;
   meta?: ModelMeta;
   isCustom: boolean;
+  /** 仅 managed provider：承载 entitlement 模型元数据（名/描述/vision/costLevel）。 */
+  managed?: ModelInfo;
 }
 
 /** Build the dedup'd model list for an instance: registry → fetched → custom.
@@ -42,6 +46,11 @@ interface ModelRow {
  *  openrouter 使用、与 variant 不相交，但同样跳过以保持「替换」语义）。
  *  Exported for unit tests. */
 export function modelsFor(inst: DecryptedInstance): ModelRow[] {
+  if (inst.provider === "managed") {
+    const cached = getCachedEntitlement(inst.apiKey)?.models ?? [];
+    if (cached.length > 0) return cached.map((m) => ({ id: m.id, isCustom: false, managed: m }));
+    // 缓存未就绪：回退 registry 单条兜底（保证不空）——落到下方原有逻辑。
+  }
   const isCustom = inst.provider.startsWith(CUSTOM_PREFIX);
   const meta = isCustom ? undefined : getProviderMeta(inst.provider as BuiltinProvider);
   const variant = meta ? resolveEndpointVariant(meta, inst.endpointVariant) : undefined;

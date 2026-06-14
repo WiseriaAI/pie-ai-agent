@@ -2,6 +2,7 @@ import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { describe, it, expect, vi, afterEach } from "vitest";
 import ModelPicker, { modelsFor } from "./ModelPicker";
 import type { DecryptedInstance } from "@/lib/instances";
+import { getEntitlement } from "@/lib/managed-account";
 
 const insts: DecryptedInstance[] = [
   { id: "a", provider: "anthropic", nickname: "Anthropic", apiKey: "k", createdAt: 1 },
@@ -112,5 +113,25 @@ describe("modelsFor with endpoint variants", () => {
   it("dangling variant id falls back to the default (Plan) list", () => {
     const rows = modelsFor(inst({ endpointVariant: "gone" }));
     expect(rows[0]!.id).toBe("kimi-for-coding");
+  });
+});
+
+describe("modelsFor managed", () => {
+  it("从缓存 entitlement 出多模型行（携 managed 元数据）", async () => {
+    const ent = { plan: "active", email: "e", subscription: null, quota: null, models: [
+      { id: "default", name: "标准", vision: false, maxContextTokens: 128000, costLevel: 1 },
+      { id: "pro", name: "进阶", description: "更强", vision: true, maxContextTokens: 200000, costLevel: 3 },
+    ] };
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => ent })) as unknown as typeof fetch;
+    await getEntitlement("sk-managed", { fetchFn, locale: "en" }); // 播种进程内缓存
+    const rows = modelsFor(inst({ provider: "managed", apiKey: "sk-managed" }));
+    expect(rows.map((r) => r.id)).toEqual(["default", "pro"]);
+    expect(rows[1]!.managed).toMatchObject({ id: "pro", name: "进阶", vision: true, costLevel: 3 });
+  });
+
+  it("无缓存时回退 registry 单条 default", () => {
+    const rows = modelsFor(inst({ provider: "managed", apiKey: "sk-cold" }));
+    expect(rows.map((r) => r.id)).toEqual(["default"]);
+    expect(rows[0]!.managed).toBeUndefined();
   });
 });
