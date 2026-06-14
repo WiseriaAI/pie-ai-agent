@@ -231,6 +231,7 @@ export const jaDict = {
     zhipu: "GLM(Zhipu)",
     mimo: "Mimo(Xiaomi)",
     moonshotCn: "Moonshot(Kimi) China",
+    managed: "Pie 公式",
   },
   newConfigWizard: {
     newCustomProvider: "+ 新しいカスタムプロバイダー",

@@ -230,6 +230,7 @@ export const enDict = {
     zhipu: "GLM(Zhipu)",
     mimo: "Mimo(Xiaomi)",
     moonshotCn: "Moonshot(Kimi) China",
+    managed: "Pie Official",
   },
   newConfigWizard: {
     newCustomProvider: "+ New custom provider",

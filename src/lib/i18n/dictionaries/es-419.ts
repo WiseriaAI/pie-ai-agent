@@ -231,6 +231,7 @@ export const es419Dict = {
     zhipu: "GLM(Zhipu)",
     mimo: "Mimo(Xiaomi)",
     moonshotCn: "Moonshot(Kimi) China",
+    managed: "Pie Oficial",
   },
   newConfigWizard: {
     newCustomProvider: "+ Nuevo proveedor personalizado",

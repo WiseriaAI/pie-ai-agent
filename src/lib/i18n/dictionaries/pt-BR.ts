@@ -231,6 +231,7 @@ export const ptBRDict = {
     zhipu: "GLM(Zhipu)",
     mimo: "Mimo(Xiaomi)",
     moonshotCn: "Moonshot(Kimi) China",
+    managed: "Pie Oficial",
   },
   newConfigWizard: {
     newCustomProvider: "+ Novo provedor personalizado",

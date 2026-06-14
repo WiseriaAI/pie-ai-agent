@@ -230,6 +230,7 @@ export const zhCNDict = {
     zhipu: "GLM(智谱)",
     mimo: "Mimo(小米)",
     moonshotCn: "Moonshot(Kimi) 中国区",
+    managed: "Pie 官方订阅",
   },
   newConfigWizard: {
     newCustomProvider: "+ 新建自定义 Provider",

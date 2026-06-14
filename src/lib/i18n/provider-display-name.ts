@@ -14,6 +14,7 @@ const LOCALIZED_PROVIDER_NAME_KEYS: Record<string, DictKey> = {
   // international `moonshot` entry's registry name ("Moonshot(Kimi)") is
   // identical across locales, so it falls back to the registry name.
   "moonshot-cn": "providers.moonshotCn",
+  managed: "providers.managed",
 };
 
 /**
