@@ -20,8 +20,9 @@ import {
   type ScheduleUpdatePayload,
   type ScheduleActionResponse,
 } from "@/lib/schedules/panel-actions";
-import { listInstances, getActiveInstance } from "@/lib/instances";
+import { listInstances } from "@/lib/instances";
 import type { DecryptedInstance } from "@/lib/instances";
+import { resolveSelection } from "@/lib/model-selection-resolver";
 import type { ScheduleRecord } from "@/lib/schedules/types";
 import { useI18n } from "@/lib/i18n";
 import ScheduleForm from "./ScheduleForm";
@@ -111,6 +112,7 @@ export default function SchedulesPanel({ onOpenSession, onCreateViaChat }: Props
   const [schedules, setSchedules] = useState<ScheduleRecord[]>([]);
   const [instances, setInstances] = useState<DecryptedInstance[]>([]);
   const [activeInstanceId, setActiveInstanceId] = useState<string | null>(null);
+  const [activeModel, setActiveModel] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   // "New schedule" first offers a choice: fill the form manually, or describe
   // it in chat. showChoice gates that menu; showCreate gates the actual form.
@@ -130,7 +132,10 @@ export default function SchedulesPanel({ onOpenSession, onCreateViaChat }: Props
   useEffect(() => {
     void reload();
     void listInstances().then(setInstances);
-    void getActiveInstance().then(setActiveInstanceId);
+    void resolveSelection({}).then((sel) => {
+      setActiveInstanceId(sel?.instanceId ?? null);
+      setActiveModel(sel?.model ?? null);
+    });
   }, [reload]);
 
   // Live refresh: SW arming/running schedules + run appends publish "schedules".
@@ -237,6 +242,7 @@ export default function SchedulesPanel({ onOpenSession, onCreateViaChat }: Props
             <ScheduleForm
               instances={instances}
               activeInstanceId={activeInstanceId}
+              activeModel={activeModel}
               onSubmit={handleCreate}
               onCancel={() => setShowCreate(false)}
             />
@@ -246,6 +252,7 @@ export default function SchedulesPanel({ onOpenSession, onCreateViaChat }: Props
             <ScheduleForm
               instances={instances}
               activeInstanceId={activeInstanceId}
+              activeModel={activeModel}
               editing={editing}
               onSubmit={handleEditSave}
               onCancel={() => setEditingId(null)}
