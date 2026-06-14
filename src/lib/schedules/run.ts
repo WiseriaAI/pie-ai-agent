@@ -230,11 +230,12 @@ export async function runSchedule(
   const runIndex = sched.runCount + 1;
 
   // ── 2. Resolve ModelConfig BEFORE minting a session ──────────────────────
-  // ADR 0001 — the schedule binds to an instance, and the run uses that
-  // instance's *current* model. The schedule only carries instanceId, so we
-  // resolve the model here (same pattern as resolveActiveInstanceModelConfig
-  // in instances.ts): getInstance → firstModelForProvider(provider,
-  // instanceId) → resolveModelConfig.
+  // ADR 0001/0002 — the schedule binds to an instance, and the run prefers the
+  // schedule's *bound* model (sched.model, ADR 0002) when present, otherwise
+  // falls back to the instance's *current* model. We resolve the model here
+  // (same pattern as resolveActiveInstanceModelConfig in instances.ts):
+  // getInstance → (sched.model ?? firstModelForProvider(provider, instanceId))
+  // → resolveModelConfig.
   //
   // resolveModelConfig does NOT reject an empty model — it would happily
   // produce a structurally-valid `{ model: "" }` config that slips past the
@@ -245,8 +246,9 @@ export async function runSchedule(
   // append a single `failed` run (no sessionId — the field is optional and a
   // failed record is what Task 5's failure counter needs) and return.
   const inst = await deps.getInstance(sched.instanceId);
+  // ADR 0002 — 优先用 schedule 绑定的 model；缺省回退该 instance 当前第一个 model。
   const model = inst
-    ? await deps.firstModelForProvider(inst.provider, sched.instanceId)
+    ? (sched.model ?? (await deps.firstModelForProvider(inst.provider, sched.instanceId)))
     : null;
   const cfg = model
     ? await deps.resolveModelConfig(sched.instanceId, model)

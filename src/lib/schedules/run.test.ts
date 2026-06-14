@@ -3,8 +3,9 @@
 // TDD tests for the headless runSchedule executor (Task 3).
 // getInstance / firstModelForProvider / resolveModelConfig / runAgentLoop are
 // injected deps so the loop stays testable without a real Chrome extension or
-// LLM. Model resolution follows ADR 0001: the schedule binds to an instance and
-// the run uses that instance's current model (firstModelForProvider).
+// LLM. Model resolution follows ADR 0001/0002: the schedule binds to an instance
+// and the run prefers the schedule's bound model (sched.model) when present, else
+// falls back to that instance's current model (firstModelForProvider).
 //
 // Success/failed is decided by the loop's TERMINAL SIGNAL (agent-done-task /
 // chat-error), NOT by "the promise resolved" — runAgentLoop returns normally on
@@ -135,6 +136,22 @@ describe("runSchedule — success path", () => {
     // (firstModelForProvider's non-empty result), NOT an empty string sentinel.
     expect(resolveModelConfig).toHaveBeenCalledWith("inst_1", FAKE_MODEL);
     expect(resolveModelConfig).not.toHaveBeenCalledWith("inst_1", "");
+  });
+
+  it("sched.model 存在 → 用绑定 model,不调 firstModelForProvider", async () => {
+    const { putSchedule } = await import("./store");
+    const { runSchedule } = await import("./run");
+
+    const fakeLoop = vi.fn(async () => {});
+    const firstModelForProvider = vi.fn(async () => FAKE_MODEL);
+    const resolveModelConfig = vi.fn(async () => FAKE_CFG);
+    await putSchedule(makeSched({ id: "sched_bound", instanceId: "inst_1", model: "claude-opus-4-7" }));
+    await runSchedule(
+      "sched_bound",
+      okDeps({ runAgentLoop: fakeLoop, firstModelForProvider, resolveModelConfig }),
+    );
+    expect(firstModelForProvider).not.toHaveBeenCalled();
+    expect(resolveModelConfig).toHaveBeenCalledWith("inst_1", "claude-opus-4-7");
   });
 
   it("agent-done-task.summary が 200 文字以内にトリミングされる", async () => {
