@@ -58,4 +58,18 @@ describe("IconButton", () => {
     render(<IconButton aria-label="Close" icon={<Dot />} />);
     expect(screen.getByTestId("dot").closest("[aria-hidden='true']")).toBeTruthy();
   });
+
+  it("applies the xs size (h-6 w-6)", () => {
+    render(<IconButton aria-label="Close" icon={<Dot />} size="xs" />);
+    const cls = screen.getByRole("button").className;
+    expect(cls).toContain("h-6");
+    expect(cls).toContain("w-6");
+  });
+
+  it("uses accent border (not line) when active in the default variant", () => {
+    render(<IconButton aria-label="Close" icon={<Dot />} variant="default" active />);
+    const cls = screen.getByRole("button").className;
+    expect(cls).toContain("border-accent");
+    expect(cls).not.toContain("border-line");
+  });
 });
