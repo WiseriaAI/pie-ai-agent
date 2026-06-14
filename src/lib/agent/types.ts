@@ -1,4 +1,5 @@
 import type { ActionResult } from "../dom-actions/types";
+import type { ScheduleDraftPayload, ScheduleModelSelection } from "./tools/schedule-meta";
 
 /**
  * Phase 3 — confirm-time TabTarget snapshot injected into the handler context
@@ -77,6 +78,12 @@ export interface ToolHandlerContext {
    */
   currentInstanceId?: string;
   currentModel?: string;
+  /**
+   * #184 — 挂起式模型选择。chat 路径由 loop 注入：弹 ScheduleDraftCard 并阻塞
+   * 至用户提交 (instanceId, model)。headless 调度跑（run.ts）不注入——彼路径
+   * create_schedule 已被 disabledScheduleTools 摘除，不会走到这里。
+   */
+  requestModelSelection?: (payload: ScheduleDraftPayload) => Promise<ScheduleModelSelection>;
 }
 
 export interface Tool {
