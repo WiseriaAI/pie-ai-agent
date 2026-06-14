@@ -20,6 +20,8 @@ export interface ScheduleRecord {
   spec: ScheduleSpec;
   startUrl?: string;                    // optional: headless tab open URL
   instanceId: string;                   // bound at creation (ADR 0001)
+  /** 绑定的 model id（ADR 0002）。缺省 = 运行时回退 firstModelForProvider。 */
+  model?: string;
   enabled: boolean;
   status: "active" | "paused" | "completed";
   maxStepsPerRun?: number;

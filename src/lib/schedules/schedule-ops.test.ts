@@ -170,3 +170,40 @@ describe("runScheduleNowOp", () => {
     expect(res.ok).toBe(false);
   });
 });
+
+describe("model 绑定（issue #181 增强）", () => {
+  it("createScheduleOp 写入绑定的 model", async () => {
+    const res = await createScheduleOp({
+      title: "T", prompt: "p", instanceId: "inst_1", model: "claude-opus-4-7",
+    });
+    expect(res.ok).toBe(true);
+    const all = await listSchedules();
+    expect(all[0]!.model).toBe("claude-opus-4-7");
+  });
+
+  it("createScheduleOp 不传 model → 记录无 model（运行时回退）", async () => {
+    const res = await createScheduleOp({ title: "T", prompt: "p", instanceId: "inst_1" });
+    expect(res.ok).toBe(true);
+    const all = await listSchedules();
+    expect(all[0]!.model).toBeUndefined();
+  });
+
+  it("updateScheduleOp patch instanceId 与 model", async () => {
+    await createScheduleOp({ title: "T", prompt: "p", instanceId: "inst_1", model: "m1" });
+    const id = (await listSchedules())[0]!.id;
+    const res = await updateScheduleOp({ id, instanceId: "inst_2", model: "m2" });
+    expect(res.ok).toBe(true);
+    const rec = await getSchedule(id);
+    expect(rec!.instanceId).toBe("inst_2");
+    expect(rec!.model).toBe("m2");
+  });
+
+  it("updateScheduleOp model: '' → 清除绑定（回退 undefined）", async () => {
+    await createScheduleOp({ title: "T", prompt: "p", instanceId: "inst_1", model: "m1" });
+    const id = (await listSchedules())[0]!.id;
+    const res = await updateScheduleOp({ id, model: "" });
+    expect(res.ok).toBe(true);
+    const rec = await getSchedule(id);
+    expect(rec!.model).toBeUndefined();
+  });
+});
