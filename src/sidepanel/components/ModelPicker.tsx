@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { createPortal } from "react-dom";
+import { Popover } from "./ui/Popover";
 import { useT } from "@/lib/i18n";
 import type { DecryptedInstance } from "@/lib/instances";
 import type { BuiltinProvider, ModelMeta } from "@/lib/model-router";
@@ -78,11 +78,6 @@ export default function ModelPicker(props: Props) {
   const [open, setOpen] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(props.currentInstanceId);
   const [query, setQuery] = useState("");
-  // Popover slide-in/out: `mounted` controls render, `shown` drives the
-  // transition target. On close we keep it mounted until the exit transition
-  // finishes (onTransitionEnd), so the close is animated too.
-  const [mounted, setMounted] = useState(false);
-  const [shown, setShown] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -140,17 +135,6 @@ export default function ModelPicker(props: Props) {
     };
   }, [open, updateCoords]);
 
-  useEffect(() => {
-    if (open) {
-      setMounted(true);
-      // Two RAFs so the element paints in its initial (hidden) state before we
-      // flip `shown`, guaranteeing the enter transition actually runs.
-      const r = requestAnimationFrame(() => requestAnimationFrame(() => setShown(true)));
-      return () => cancelAnimationFrame(r);
-    }
-    setShown(false); // trigger exit transition; unmount on its end
-  }, [open]);
-
   // Reset the in-provider search when switching the expanded provider or closing.
   useEffect(() => {
     setQuery("");
@@ -197,21 +181,14 @@ export default function ModelPicker(props: Props) {
         )}
       </button>
 
-      {mounted && coords && createPortal(
-        <div
-          ref={popoverRef}
-          role="dialog"
-          onTransitionEnd={() => { if (!shown) setMounted(false); }}
-          style={{
-            left: coords.left,
-            top: coords.top,
-            bottom: coords.bottom,
-            opacity: shown ? 1 : 0,
-            transform: shown ? "translateY(0)" : "translateY(8px)",
-            transition: "opacity 0.18s ease, transform 0.18s ease",
-          }}
-          className="fixed z-[100] w-[300px] max-w-[calc(100vw-1.5rem)] rounded-card border border-line bg-surface shadow-pop"
-        >
+      <Popover
+        open={open && !!coords}
+        popoverRef={popoverRef}
+        role="dialog"
+        placement={coords?.bottom != null ? "above" : "below"}
+        style={{ left: coords?.left, top: coords?.top, bottom: coords?.bottom }}
+        className="fixed z-[100] w-[300px] max-w-[calc(100vw-1.5rem)] rounded-card border border-line bg-surface shadow-pop"
+      >
           <div className="flex items-baseline justify-between px-3.5 pt-2.5 pb-1.5">
             <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-fg-3">{t("modelPicker.title")}</span>
             <span className="font-mono text-[10px] text-fg-3">{props.instances.length} {t("modelPicker.providersSuffix")}</span>
@@ -267,9 +244,7 @@ export default function ModelPicker(props: Props) {
               <span>{t("modelPicker.manage")}</span>
             </button>
           )}
-        </div>,
-        document.body,
-      )}
+      </Popover>
     </div>
   );
 }

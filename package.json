@@ -22,7 +22,9 @@
   "packageManager": "pnpm@10.33.0",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.100.1",
+    "@formkit/auto-animate": "^0.9.0",
     "@llamaindex/liteparse-wasm": "^2.0.0",
+    "motion": "^12.40.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
     "react-markdown": "^10.1.0",

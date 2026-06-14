@@ -20,6 +20,7 @@ import App from "./App";
 import "./index.css";
 import { I18nProvider } from "@/lib/i18n";
 import { runStartupMigrations } from "@/lib/startup-migrations";
+import { MotionProvider } from "./components/ui/motion";
 
 async function boot() {
   // Run the full startup-migration pipeline (shared with the service worker)
@@ -35,7 +36,9 @@ async function boot() {
   createRoot(document.getElementById("root")!).render(
     <StrictMode>
       <I18nProvider>
-        <App />
+        <MotionProvider>
+          <App />
+        </MotionProvider>
       </I18nProvider>
     </StrictMode>,
   );

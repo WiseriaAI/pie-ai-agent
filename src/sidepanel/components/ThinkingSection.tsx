@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useT } from "@/lib/i18n";
 import MarkdownContent from "./Markdown";
+import { Collapse } from "./ui/Collapse";
 
 interface ThinkingSectionProps {
   thinking: string;
@@ -29,11 +30,9 @@ export default function ThinkingSection({ thinking, streaming }: ThinkingSection
         </span>
         <span>{streaming ? t("thinking.inProgress") : t("thinking.label")}</span>
       </button>
-      {open && thinking && (
-        <div className="view-enter ml-3 border-l border-line pl-2.5 text-[12px] leading-5 text-fg-2">
-          <MarkdownContent content={thinking} />
-        </div>
-      )}
+      <Collapse open={open && !!thinking} className="ml-3 border-l border-line pl-2.5 text-[12px] leading-5 text-fg-2">
+        <MarkdownContent content={thinking} />
+      </Collapse>
     </div>
   );
 }
