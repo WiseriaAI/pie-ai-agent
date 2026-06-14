@@ -517,6 +517,9 @@ export const enDict = {
       "Start URL is a restricted page (chrome://, about:, extension pages, Web Store) and cannot be used",
     errSelectConfig: "Select a config to run with",
     errSelectModel: "Pick a model",
+    // #184 — draft card shown when a chat-initiated create_schedule lacks a model
+    draftCardTitle: "Pick a model for this scheduled task",
+    draftCardCreate: "Create",
   },
   managed: {
     models: {

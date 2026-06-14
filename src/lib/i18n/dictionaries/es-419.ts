@@ -518,6 +518,8 @@ export const es419Dict = {
       "La URL inicial es una página restringida (chrome://, about:, páginas de extensión, Web Store) y no se puede usar",
     errSelectConfig: "Selecciona una configuración para ejecutar",
     errSelectModel: "Elige un modelo",
+    draftCardTitle: "Elige un modelo para esta tarea programada",
+    draftCardCreate: "Crear",
   },
   managed: {
     models: {

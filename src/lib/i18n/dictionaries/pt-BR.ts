@@ -518,6 +518,8 @@ export const ptBRDict = {
       "A URL inicial é uma página restrita (chrome://, about:, páginas de extensão, Web Store) e não pode ser usada",
     errSelectConfig: "Selecione uma configuração para executar",
     errSelectModel: "Escolha um modelo",
+    draftCardTitle: "Escolha um modelo para esta tarefa agendada",
+    draftCardCreate: "Criar",
   },
   managed: {
     models: {
