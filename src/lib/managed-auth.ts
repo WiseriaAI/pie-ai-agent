@@ -29,6 +29,8 @@ export interface Entitlement {
   quota: { weekly?: QuotaWindow } | null;
   /** 仅 plan==active 非空。 */
   models: ModelInfo[];
+  /** 仅"从未订过"且后端 feature 开时下发；客户端据此打"首月半价"徽标。缺省=无促销。 */
+  introOffer?: { percentOff: number };
 }
 export interface LoginResult {
   apiKey: string;

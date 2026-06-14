@@ -68,4 +68,25 @@ describe("managed-account", () => {
     expect(cachedManagedModel("sk-cm", "nope")).toBeUndefined();
     expect(cachedManagedModel("sk-absent", "pro")).toBeUndefined();
   });
+
+  it("normalizeEntitlement 透传合法 introOffer", async () => {
+    const raw = { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [], introOffer: { percentOff: 50 } };
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => raw })) as unknown as typeof fetch;
+    const res = await getEntitlement("sk-io1", { fetchFn, locale: "en" });
+    expect(res.introOffer).toEqual({ percentOff: 50 });
+  });
+
+  it("normalizeEntitlement 无 introOffer 时字段缺省（不强填）", async () => {
+    const raw = { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [] };
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => raw })) as unknown as typeof fetch;
+    const res = await getEntitlement("sk-io2", { fetchFn, locale: "en" });
+    expect(res.introOffer).toBeUndefined();
+  });
+
+  it("normalizeEntitlement 丢弃畸形 introOffer（percentOff 非正数）", async () => {
+    const raw = { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [], introOffer: { percentOff: "x" } };
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => raw })) as unknown as typeof fetch;
+    const res = await getEntitlement("sk-io3", { fetchFn, locale: "en" });
+    expect(res.introOffer).toBeUndefined();
+  });
 });
