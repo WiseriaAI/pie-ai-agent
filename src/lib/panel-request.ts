@@ -8,10 +8,7 @@
 // 它只服务"工具语义即问人"（授权 / 选文件 / 选模型）的场景。
 
 import type { LocalFileResult } from "./local-file-request";
-
-// TEMP（Task 7 替换为 import）：
-type ScheduleDraftPayload = { title: string; prompt: string; specSummary: string };
-type ScheduleModelSelection = { instanceId: string; model: string };
+import type { ScheduleDraftPayload, ScheduleModelSelection } from "./agent/tools/schedule-meta";
 
 /** kind 注册表：加一种人机交互 = 加一行，编译期校验 payload/返回。 */
 export interface PanelRequestMap {

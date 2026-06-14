@@ -34,6 +34,20 @@ import {
 import { resolveSelection } from "../../model-selection-resolver";
 import type { ToolHandlerContext } from "../types";
 
+// ── #184 挂起式模型卡 — 公共类型 ─────────────────────────────────────────────
+
+/** #184 挂起式模型卡：待建任务摘要（payload）与用户选择（返回）。 */
+export interface ScheduleDraftPayload {
+  title: string;
+  prompt: string;
+  /** 人类可读的触发摘要，如 "every 60 min from 2026-06-15 09:00"。 */
+  specSummary: string;
+}
+export interface ScheduleModelSelection {
+  instanceId: string;
+  model: string;
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function err(reason: string): ActionResult {
