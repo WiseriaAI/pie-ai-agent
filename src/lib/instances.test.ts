@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { _resetForTests } from "@/lib/idb/db";
 import { getConfig } from "@/lib/idb/config-store";
 import { _resetKeyForTests } from "@/lib/crypto";
@@ -9,6 +9,7 @@ import {
   INDEX_KEY,
 } from "./instances";
 import { saveCustomProvider } from "./custom-providers";
+import { getEntitlement } from "./managed-account";
 import { setProviderCustomModelMeta } from "./provider-custom-model-meta";
 
 beforeEach(async () => {
@@ -340,5 +341,38 @@ describe("endpoint variants", () => {
     const id = await createInstance({ provider: `custom:${cpId}`, nickname: "Custom", apiKey: "k", endpointVariant: "ghost-variant" });
     const cfg = await resolveModelConfig(id, "text-1");
     expect(cfg!.baseUrl).toBe("https://api.myllm.test/v1");
+  });
+});
+
+describe("instances managed multi-model", () => {
+  async function seed(apiKey: string, models: unknown[]) {
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({
+      plan: "active", email: "e", subscription: null, quota: null, models,
+    }) })) as unknown as typeof fetch;
+    await getEntitlement(apiKey, { fetchFn, locale: "en" });
+  }
+
+  it("firstModelForProvider(managed) = 缓存 models[0]", async () => {
+    const id = await createInstance({ provider: "managed", nickname: "Pie", apiKey: "sk-im1" });
+    await seed("sk-im1", [
+      { id: "default", name: "标准", vision: false, maxContextTokens: 128000, costLevel: 1 },
+      { id: "pro", name: "进阶", vision: true, maxContextTokens: 200000, costLevel: 3 },
+    ]);
+    expect(await firstModelForProvider("managed", id)).toBe("default");
+  });
+
+  it("resolveModelConfig(managed) vision 取自缓存所选模型", async () => {
+    const id = await createInstance({ provider: "managed", nickname: "Pie", apiKey: "sk-im2" });
+    await seed("sk-im2", [{ id: "pro", name: "进阶", vision: true, maxContextTokens: 200000, costLevel: 3 }]);
+    const cfg = await resolveModelConfig(id, "pro");
+    expect(cfg?.vision).toBe(true);
+    expect(cfg?.model).toBe("pro");
+  });
+
+  it("resolveModelConfig(managed) 失效 alias 回退 models[0]", async () => {
+    const id = await createInstance({ provider: "managed", nickname: "Pie", apiKey: "sk-im3" });
+    await seed("sk-im3", [{ id: "default", name: "标准", vision: false, maxContextTokens: 128000, costLevel: 1 }]);
+    const cfg = await resolveModelConfig(id, "gone-alias");
+    expect(cfg?.model).toBe("default");
   });
 });
