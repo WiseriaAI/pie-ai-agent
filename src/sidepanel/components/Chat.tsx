@@ -90,6 +90,7 @@ import SkillSlashPopover from "./SkillSlashPopover";
 import { PendingInstructionList, type PendingItem } from "./PendingInstructionList";
 import { CdpOnboardingCard } from "./CdpOnboardingCard";
 import { LocalFileRequestCard } from "./LocalFileRequestCard";
+import { ScheduleDraftCard } from "./ScheduleDraftCard";
 import { usePanelRequest } from "../hooks/usePanelRequest";
 import { useFileAccessPrompt } from "../hooks/useFileAccessPrompt";
 import { FileAccessCard } from "./FileAccessCard";
@@ -1525,6 +1526,16 @@ After the skill completes, briefly summarize what was created (the user will see
       {panelRequest?.kind === "local-file" && (
         <LocalFileRequestCard
           onChoose={() => localFileRequestInputRef.current?.click()}
+          onCancel={() => respondPanel(panelRequest.requestId, { ok: false, reason: "cancelled by user" })}
+        />
+      )}
+      {panelRequest?.kind === "schedule-model" && (
+        <ScheduleDraftCard
+          payload={panelRequest.payload as import("@/lib/agent/tools/schedule-meta").ScheduleDraftPayload}
+          instances={instances}
+          onSubmit={(instanceId, model) =>
+            respondPanel(panelRequest.requestId, { ok: true, data: { instanceId, model } })
+          }
           onCancel={() => respondPanel(panelRequest.requestId, { ok: false, reason: "cancelled by user" })}
         />
       )}
