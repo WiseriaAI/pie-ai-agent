@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Popover } from "./ui/Popover";
+import { useAnchorRect } from "./ui/useAnchorRect";
 import { useT } from "@/lib/i18n";
 import type { DecryptedInstance } from "@/lib/instances";
 import type { BuiltinProvider, ModelMeta } from "@/lib/model-router";
@@ -73,6 +74,28 @@ export function modelsFor(inst: DecryptedInstance): ModelRow[] {
   return rows.filter((r) => (seen.has(r.id) ? false : (seen.add(r.id), true)));
 }
 
+/** Pure positioning math for the portaled (position:fixed) popover, derived
+ *  from the trigger's rect. Left-aligns to the trigger then clamps inside the
+ *  viewport so a narrow side panel never pushes it off either edge; flips up
+ *  when there's room above the trigger, else opens downward. Viewport dims are
+ *  passed in (not read from window) so it stays a unit-testable pure function.
+ *  Exported for unit tests. */
+export function computePopoverCoords(
+  rect: DOMRect,
+  viewportW: number,
+  viewportH: number,
+): { left: number; top?: number; bottom?: number } {
+  const POPOVER_MAX_H = 380; // panel content max-h-[360px] + paddings/header budget
+  const GAP = 8; // ≈ the old mb-2 gap
+  const MARGIN = 8; // min gap from the viewport edges
+  const POPOVER_W = Math.min(300, viewportW - 24); // matches w-[300px] / max-w-[calc(100vw-1.5rem)]
+  const left = Math.max(MARGIN, Math.min(rect.left, viewportW - POPOVER_W - MARGIN));
+  if (rect.top >= POPOVER_MAX_H + GAP) {
+    return { left, bottom: viewportH - rect.top + GAP };
+  }
+  return { left, top: rect.bottom + GAP };
+}
+
 export default function ModelPicker(props: Props) {
   const t = useT();
   const [open, setOpen] = useState(false);
@@ -81,31 +104,16 @@ export default function ModelPicker(props: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
-  // Fixed-position coords measured from the trigger button's rect. The popover
-  // is portaled to document.body (so no ancestor overflow/stacking clips it) and
-  // positioned with position:fixed. Left-aligned to the trigger, then clamped
-  // inside the viewport so a narrow side panel never pushes it off either edge
-  // (the trigger can sit anywhere — left-aligned in a form field, etc.).
-  // Vertically it opens upward when there's room above, else downward.
-  const [coords, setCoords] = useState<{ left: number; top?: number; bottom?: number } | null>(null);
-
-  const updateCoords = useCallback(() => {
-    const el = triggerRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const POPOVER_MAX_H = 380; // panel content max-h-[360px] + paddings/header budget
-    const GAP = 8; // ≈ the old mb-2 gap
-    const MARGIN = 8; // min gap from the viewport edges
-    const POPOVER_W = Math.min(300, window.innerWidth - 24); // matches w-[300px] / max-w-[calc(100vw-1.5rem)]
-    // Left-align to the trigger, then clamp so the popover stays fully on-screen.
-    const left = Math.max(MARGIN, Math.min(rect.left, window.innerWidth - POPOVER_W - MARGIN));
-    // Flip up when there's enough room above the trigger, else open downward.
-    if (rect.top >= POPOVER_MAX_H + GAP) {
-      setCoords({ left, bottom: window.innerHeight - rect.top + GAP });
-    } else {
-      setCoords({ left, top: rect.bottom + GAP });
-    }
-  }, []);
+  // Fixed-position coords for the portaled popover. useAnchorRect owns the
+  // measurement + resize/scroll-capture lifecycle (re-measures while open);
+  // computePopoverCoords is the pure flip/clamp math. The popover is portaled to
+  // document.body (so no ancestor overflow/stacking clips it) and positioned
+  // with position:fixed: left-aligned to the trigger then clamped on-screen,
+  // opening upward when there's room above, else downward.
+  const triggerRect = useAnchorRect(triggerRef, open);
+  const coords = triggerRect
+    ? computePopoverCoords(triggerRect, window.innerWidth, window.innerHeight)
+    : null;
 
   useEffect(() => {
     if (!open) return;
@@ -119,21 +127,6 @@ export default function ModelPicker(props: Props) {
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
-
-  // Measure on open and follow the trigger while open: viewport resize + any
-  // scroll (capture phase catches the inner scroll container too).
-  useEffect(() => {
-    if (!open) return;
-    updateCoords();
-    const onResize = () => updateCoords();
-    const onScroll = () => updateCoords();
-    window.addEventListener("resize", onResize);
-    window.addEventListener("scroll", onScroll, true);
-    return () => {
-      window.removeEventListener("resize", onResize);
-      window.removeEventListener("scroll", onScroll, true);
-    };
-  }, [open, updateCoords]);
 
   // Reset the in-provider search when switching the expanded provider or closing.
   useEffect(() => {
