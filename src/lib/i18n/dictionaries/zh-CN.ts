@@ -500,7 +500,6 @@ export const zhCNDict = {
     fieldPrompt: "提示词",
     fieldPromptPlaceholder: "每次要让 agent 执行的任务…",
     fieldConfig: "配置",
-    configNone: "暂无可用配置",
     fieldStartAt: "开始时间",
     fieldInterval: "间隔（分钟）",
     fieldRuns: "次数",
@@ -523,5 +522,6 @@ export const zhCNDict = {
     errStartUrlRestricted:
       "起始网址是受限页面（chrome://、about:、扩展页、应用商店），无法使用",
     errSelectConfig: "请选择运行所用的配置",
+    errSelectModel: "请选择一个模型",
   },
 } as const satisfies Translations<EnDict>;

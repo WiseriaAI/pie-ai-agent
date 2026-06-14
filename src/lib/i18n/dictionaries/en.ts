@@ -493,7 +493,6 @@ export const enDict = {
     fieldPrompt: "Prompt",
     fieldPromptPlaceholder: "The task the agent runs each time…",
     fieldConfig: "Config",
-    configNone: "No config available",
     fieldStartAt: "Start at",
     fieldInterval: "Interval (min)",
     fieldRuns: "Runs",
@@ -516,6 +515,7 @@ export const enDict = {
     errStartUrlRestricted:
       "Start URL is a restricted page (chrome://, about:, extension pages, Web Store) and cannot be used",
     errSelectConfig: "Select a config to run with",
+    errSelectModel: "Pick a model",
   },
 } as const satisfies DictNode;
 

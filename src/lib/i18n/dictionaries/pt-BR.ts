@@ -494,7 +494,6 @@ export const ptBRDict = {
     fieldPrompt: "Prompt",
     fieldPromptPlaceholder: "A tarefa que o agente executa a cada vez…",
     fieldConfig: "Configuração",
-    configNone: "Nenhuma configuração disponível",
     fieldStartAt: "Iniciar em",
     fieldInterval: "Intervalo (min)",
     fieldRuns: "Execuções",
@@ -517,5 +516,6 @@ export const ptBRDict = {
     errStartUrlRestricted:
       "A URL inicial é uma página restrita (chrome://, about:, páginas de extensão, Web Store) e não pode ser usada",
     errSelectConfig: "Selecione uma configuração para executar",
+    errSelectModel: "Escolha um modelo",
   },
 } satisfies Translations<EnDict>;

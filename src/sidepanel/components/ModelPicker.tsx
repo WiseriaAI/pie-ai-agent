@@ -13,7 +13,7 @@ interface Props {
   /** task in flight — picker is locked */
   locked: boolean;
   onSelect: (instanceId: string, model: string) => void;
-  onManage: () => void;
+  onManage?: () => void;
   /** lazy provider (openrouter) first-expand fetch of /v1/models */
   onRefreshModels?: (instanceId: string) => void;
 }
@@ -191,12 +191,14 @@ export default function ModelPicker(props: Props) {
               );
             })}
           </div>
-          <button
-            onClick={() => { setOpen(false); props.onManage(); }}
-            className="flex w-full items-center gap-2 border-t border-line px-3.5 py-2 text-left text-[11px] text-fg-2 hover:bg-field"
-          >
-            <span>{t("modelPicker.manage")}</span>
-          </button>
+          {props.onManage && (
+            <button
+              onClick={() => { setOpen(false); props.onManage?.(); }}
+              className="flex w-full items-center gap-2 border-t border-line px-3.5 py-2 text-left text-[11px] text-fg-2 hover:bg-field"
+            >
+              <span>{t("modelPicker.manage")}</span>
+            </button>
+          )}
         </div>
       )}
     </div>
