@@ -89,7 +89,7 @@ export default function RedeemCodeForm({ apiKey, onRedeemed, deps, collapsible =
           <span className="text-[12px] text-fg-2">{t("managed.redeem.label")}</span>
           <span className="flex items-center gap-1 text-[12px] font-medium text-accent">
             {!open && t("managed.redeem.button")}
-            <span className={`transition-transform ${open ? "-rotate-90" : "rotate-90"}`}>
+            <span className={`transition-transform ${open ? "rotate-90" : ""}`}>
               <ChevronGlyph />
             </span>
           </span>
