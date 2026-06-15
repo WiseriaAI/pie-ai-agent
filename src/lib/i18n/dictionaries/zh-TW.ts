@@ -535,6 +535,18 @@ export const zhTWDict = {
     },
     subscribe: {
       introBadge: "首月立減 {percentOff}%",
+      signInTitle: "Pie 官方",
+      signInCaption: "託管模型 · 開箱即用",
+      signInBody: "使用 Pie 官方服務，無需 API key。登入即可開始。",
+      benefitModels: "最新模型",
+      benefitQuota: "每週額度",
+      benefitNoSetup: "免設定",
+      signInButton: "使用 Google 登入",
+      refreshStatus: "我已付款 — 重新整理狀態",
+      waiting: "等待付款確認…",
+      notActiveYet: "訂閱尚未生效 — 完成付款後重新整理。",
+      loginFailed: "登入失敗",
+      refreshFailed: "重新整理失敗",
     },
     redeem: {
       label: "有兌換碼？",

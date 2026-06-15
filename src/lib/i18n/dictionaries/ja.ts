@@ -529,6 +529,18 @@ export const jaDict = {
     },
     subscribe: {
       introBadge: "初月 {percentOff}% オフ",
+      signInTitle: "Pie 公式",
+      signInCaption: "マネージドモデル · すぐに利用可能",
+      signInBody: "Pie 公式サービスを利用 — API キー不要。ログインして始めましょう。",
+      benefitModels: "最新モデル",
+      benefitQuota: "週間クォータ",
+      benefitNoSetup: "設定不要",
+      signInButton: "Google でログイン",
+      refreshStatus: "支払い済み — 状態を更新",
+      waiting: "支払いの確認を待っています…",
+      notActiveYet: "サブスクリプションはまだ有効ではありません — 支払い完了後に更新してください。",
+      loginFailed: "ログインに失敗しました",
+      refreshFailed: "更新に失敗しました",
     },
     redeem: {
       label: "引き換えコードをお持ちですか？",

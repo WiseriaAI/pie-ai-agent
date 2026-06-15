@@ -529,6 +529,18 @@ export const enDict = {
     },
     subscribe: {
       introBadge: "First month {percentOff}% off",
+      signInTitle: "Pie Official",
+      signInCaption: "Hosted models · managed",
+      signInBody: "Use the official Pie service — no API key needed. Sign in to get started.",
+      benefitModels: "Latest models",
+      benefitQuota: "Weekly quota",
+      benefitNoSetup: "No setup",
+      signInButton: "Sign in with Google",
+      refreshStatus: "I've paid — refresh status",
+      waiting: "Waiting for payment confirmation…",
+      notActiveYet: "Subscription not active yet — finish payment, then refresh.",
+      loginFailed: "Login failed",
+      refreshFailed: "Refresh failed",
     },
     redeem: {
       label: "Have a redemption code?",

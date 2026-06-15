@@ -529,6 +529,18 @@ export const ptBRDict = {
     },
     subscribe: {
       introBadge: "{percentOff}% de desconto no primeiro mês",
+      signInTitle: "Pie Oficial",
+      signInCaption: "Modelos gerenciados · pronto para usar",
+      signInBody: "Use o serviço oficial da Pie, sem chave de API. Entre para começar.",
+      benefitModels: "Modelos mais recentes",
+      benefitQuota: "Cota semanal",
+      benefitNoSetup: "Sem configuração",
+      signInButton: "Entrar com o Google",
+      refreshStatus: "Já paguei — atualizar status",
+      waiting: "Aguardando confirmação do pagamento…",
+      notActiveYet: "A assinatura ainda não está ativa — conclua o pagamento e atualize.",
+      loginFailed: "Falha ao entrar",
+      refreshFailed: "Falha ao atualizar",
     },
     redeem: {
       label: "Tem um código de resgate?",

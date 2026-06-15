@@ -529,6 +529,18 @@ export const es419Dict = {
     },
     subscribe: {
       introBadge: "{percentOff}% de descuento el primer mes",
+      signInTitle: "Pie Oficial",
+      signInCaption: "Modelos gestionados · listo para usar",
+      signInBody: "Usa el servicio oficial de Pie, sin clave de API. Inicia sesión para empezar.",
+      benefitModels: "Modelos más recientes",
+      benefitQuota: "Cuota semanal",
+      benefitNoSetup: "Sin configuración",
+      signInButton: "Iniciar sesión con Google",
+      refreshStatus: "Ya pagué — actualizar estado",
+      waiting: "Esperando confirmación del pago…",
+      notActiveYet: "La suscripción aún no está activa — completa el pago y actualiza.",
+      loginFailed: "Error al iniciar sesión",
+      refreshFailed: "Error al actualizar",
     },
     redeem: {
       label: "¿Tienes un código de canje?",
