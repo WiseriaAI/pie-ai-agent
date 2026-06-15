@@ -156,6 +156,22 @@ describe("ManagedSubscribePanel", () => {
     expect(screen.queryByText(/first month/i)).toBeNull();
   });
 
+  it("登录后（plan:none）显示兑换输入框；兑换成功转 active → onCreated", async () => {
+    const login = vi.fn(async (): Promise<LoginResult> => ({
+      apiKey: "sk-v",
+      entitlement: { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [] },
+    }));
+    const activeEnt = { plan: "active", email: "u@x.com", subscription: { planName: "Pie Pro", currentPeriodEnd: 9, cancelAtPeriodEnd: true, source: "redemption" as const }, quota: null, models: [] };
+    const redeem = vi.fn(async () => activeEnt);
+    const onCreated = vi.fn();
+    render(<ManagedSubscribePanel onCreated={onCreated} deps={{ login, checkout: vi.fn(async () => {}), redeem }} />);
+    fireEvent.click(screen.getByRole("button", { name: /sign in with google/i }));
+    await screen.findByRole("button", { name: /^subscribe$/i });
+    fireEvent.change(screen.getByPlaceholderText(/PIE-/), { target: { value: "PIE-AAAAA-BBBBB-CCCCC" } });
+    fireEvent.click(screen.getByRole("button", { name: /^redeem$/i }));
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith("sk-v", "u@x.com"));
+  });
+
   it("does not call onCreated after unmount (cleanup works)", async () => {
     const onCreated = vi.fn();
 
