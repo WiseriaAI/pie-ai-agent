@@ -55,4 +55,19 @@ describe("RedeemCodeForm", () => {
     fireEvent.click(screen.getByRole("button", { name: /redeem/i }));
     expect(await screen.findByText(/couldn't redeem/i)).toBeTruthy();
   });
+
+  it("collapsible: input hidden until toggled open", () => {
+    render(<RedeemCodeForm apiKey="sk-v" onRedeemed={vi.fn()} deps={{ redeem: vi.fn() }} collapsible />);
+    expect(screen.queryByPlaceholderText(/PIE-/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /have a redemption code/i }));
+    expect(screen.getByPlaceholderText(/PIE-/)).toBeTruthy();
+  });
+
+  it("collapsible: toggle exposes aria-expanded", () => {
+    render(<RedeemCodeForm apiKey="sk-v" onRedeemed={vi.fn()} deps={{ redeem: vi.fn() }} collapsible />);
+    const toggle = screen.getByRole("button", { name: /have a redemption code/i });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  });
 });
