@@ -7,7 +7,7 @@ afterEach(() => cleanup());
 
 const active: Entitlement = {
   plan: "active", email: "u@x.com",
-  subscription: { planName: "Pie Pro", currentPeriodEnd: 1750000000, cancelAtPeriodEnd: false },
+  subscription: { planName: "Pie Pro", currentPeriodEnd: 1750000000, cancelAtPeriodEnd: false, source: "stripe" },
   quota: { weekly: { usedFraction: 0.71, resetAt: 1750400000 } },
   models: [{ id: "default", name: "标准", vision: false, maxContextTokens: 200000, costLevel: 1 }],
 };
@@ -44,7 +44,7 @@ describe("ManagedAccountPanel", () => {
     const portal = vi.fn(async () => {});
     const ent: Entitlement = {
       plan: "blocked", email: "u@x.com",
-      subscription: { planName: "Pie Pro", currentPeriodEnd: 1750000000, cancelAtPeriodEnd: false },
+      subscription: { planName: "Pie Pro", currentPeriodEnd: 1750000000, cancelAtPeriodEnd: false, source: "stripe" },
       quota: null, models: [],
     };
     render(<ManagedAccountPanel apiKey="sk-v" deps={{ refresh: vi.fn(async () => ent), portal }} />);
@@ -61,5 +61,34 @@ describe("ManagedAccountPanel", () => {
     expect(await screen.findByText(/No active subscription/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /^subscribe$/i }));
     await waitFor(() => expect(checkout).toHaveBeenCalledWith("sk-v"));
+  });
+
+  it("redemption 来源：隐藏'管理订阅'、显示兑换有效期、显示兑换输入框", async () => {
+    const portal = vi.fn(async () => {});
+    const ent: Entitlement = {
+      plan: "active", email: "u@x.com",
+      subscription: { planName: "Pie Pro", currentPeriodEnd: 1750000000, cancelAtPeriodEnd: true, source: "redemption" },
+      quota: { weekly: { usedFraction: 0.2, resetAt: 1750400000 } }, models: [],
+    };
+    render(<ManagedAccountPanel apiKey="sk-v" deps={{ refresh: vi.fn(async () => ent), portal }} />);
+    expect(await screen.findByText(/Active via code/i)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /manage subscription/i })).toBeNull();
+    expect(screen.queryByText(/^Cancels /)).toBeNull(); // 不复用 cancels 文案
+    expect(screen.getByPlaceholderText(/PIE-/)).toBeTruthy(); // 可再兑换延期
+  });
+
+  it("redemption 再兑换成功 → 刷新展示（不再调 portal）", async () => {
+    const ext: Entitlement = {
+      plan: "active", email: "u@x.com",
+      subscription: { planName: "Pie Pro", currentPeriodEnd: 1760000000, cancelAtPeriodEnd: true, source: "redemption" },
+      quota: null, models: [],
+    };
+    const start: Entitlement = { ...ext, subscription: { ...ext.subscription!, currentPeriodEnd: 1750000000 } };
+    const redeem = vi.fn(async () => ext);
+    render(<ManagedAccountPanel apiKey="sk-v" deps={{ refresh: vi.fn(async () => start), redeem }} />);
+    await screen.findByText(/Active via code/i);
+    fireEvent.change(screen.getByPlaceholderText(/PIE-/), { target: { value: "PIE-AAAAA-BBBBB-CCCCC" } });
+    fireEvent.click(screen.getByRole("button", { name: /^redeem$/i }));
+    await waitFor(() => expect(redeem).toHaveBeenCalledWith("sk-v", "PIE-AAAAA-BBBBB-CCCCC"));
   });
 });
