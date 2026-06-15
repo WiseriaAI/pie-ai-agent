@@ -167,6 +167,7 @@ describe("ManagedSubscribePanel", () => {
     render(<ManagedSubscribePanel onCreated={onCreated} deps={{ login, checkout: vi.fn(async () => {}), redeem }} />);
     fireEvent.click(screen.getByRole("button", { name: /sign in with google/i }));
     await screen.findByRole("button", { name: /^subscribe$/i });
+    fireEvent.click(screen.getByRole("button", { name: /have a redemption code/i }));
     fireEvent.change(screen.getByPlaceholderText(/PIE-/), { target: { value: "PIE-AAAAA-BBBBB-CCCCC" } });
     fireEvent.click(screen.getByRole("button", { name: /^redeem$/i }));
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith("sk-v", "u@x.com"));

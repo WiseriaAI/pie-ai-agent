@@ -3,6 +3,9 @@ import { startManagedLogin, type LoginResult } from "@/lib/managed-auth";
 import { getEntitlement, openCheckout } from "@/lib/managed-account";
 import { useI18n } from "@/lib/i18n";
 import RedeemCodeForm from "./RedeemCodeForm";
+import { Button } from "./ui/Button";
+import { ManagedStatusPill } from "./ManagedStatusPill";
+import { GoogleGlyph, SparkGlyph } from "./icons";
 import type { Entitlement } from "@/lib/managed-auth";
 
 export interface ManagedSubscribeDeps {
@@ -37,7 +40,6 @@ export default function ManagedSubscribePanel({
   const [err, setErr] = useState<string | null>(null);
   const [session, setSession] = useState<LoginResult | null>(null);
   const [polling, setPolling] = useState(false);
-  const [pollTimedOut, setPollTimedOut] = useState(false);
 
   // Refs for cleanup without stale closures
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -79,7 +81,6 @@ export default function ManagedSubscribePanel({
       pollCountRef.current += 1;
       if (pollCountRef.current >= MAX_POLLS) {
         stopPolling();
-        setPollTimedOut(true);
       }
     } catch {
       // Silently swallow poll errors; don't surface noise to user during background polling
@@ -89,7 +90,6 @@ export default function ManagedSubscribePanel({
   const startPolling = useCallback(() => {
     if (intervalRef.current !== null) return; // already polling
     pollCountRef.current = 0;
-    setPollTimedOut(false);
     setPolling(true);
     intervalRef.current = setInterval(() => {
       void checkEntitlement();
@@ -133,7 +133,7 @@ export default function ManagedSubscribePanel({
       }
       setSession(res);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Login failed");
+      setErr(e instanceof Error ? e.message : t("managed.subscribe.loginFailed"));
     } finally {
       setBusy(false);
     }
@@ -147,7 +147,7 @@ export default function ManagedSubscribePanel({
       // Start auto-polling after checkout opens the Stripe tab
       startPolling();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Failed to open checkout");
+      setErr(e instanceof Error ? e.message : t("managed.account.checkoutFailed"));
     }
   }
 
@@ -163,66 +163,92 @@ export default function ManagedSubscribePanel({
         return;
       }
       setSession({ ...session, entitlement: ent });
-      setErr("Subscription not active yet — finish payment, then refresh.");
+      setErr(t("managed.subscribe.notActiveYet"));
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Refresh failed");
+      setErr(e instanceof Error ? e.message : t("managed.subscribe.refreshFailed"));
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <div className="flex flex-col gap-3 rounded-[14px] border border-line bg-surface p-3.5 text-[13px]">
+    <div className="flex flex-col gap-4 rounded-[14px] border border-line bg-surface p-3.5 text-[13px]">
       {!session ? (
         <>
-          <p className="text-fg-2">Use the official Pie service — no API key needed.</p>
-          <button
-            type="button"
-            disabled={busy}
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] bg-field text-[15px] font-semibold text-fg-1">
+              P
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <div className="text-[14px] font-medium text-fg-1">{t("managed.subscribe.signInTitle")}</div>
+              <div className="font-mono text-[11px] text-fg-3">{t("managed.subscribe.signInCaption")}</div>
+            </div>
+          </div>
+          <p className="leading-[19px] text-fg-2">{t("managed.subscribe.signInBody")}</p>
+          <div className="flex items-center gap-2 text-[11px] font-medium text-fg-2">
+            <span>{t("managed.subscribe.benefitModels")}</span>
+            <span className="h-[3px] w-[3px] rounded-full bg-line" />
+            <span>{t("managed.subscribe.benefitQuota")}</span>
+            <span className="h-[3px] w-[3px] rounded-full bg-line" />
+            <span>{t("managed.subscribe.benefitNoSetup")}</span>
+          </div>
+          <Button
+            variant="primary"
+            size="md"
+            fullWidth
+            loading={busy}
             onClick={handleLogin}
-            className="h-9 rounded-[10px] bg-fg-1 px-4 text-[12px] font-medium text-canvas disabled:opacity-40"
+            iconLeft={<GoogleGlyph />}
           >
-            {busy ? "…" : "Sign in with Google"}
-          </button>
+            {t("managed.subscribe.signInButton")}
+          </Button>
         </>
       ) : (
         <>
-          <div className="text-fg-1">
-            Signed in as <span className="font-mono">{session.entitlement.email}</span>
+          <div className="flex items-center justify-between">
+            <div className="caps text-fg-3">{t("managed.account.section")}</div>
+            <ManagedStatusPill tone="neutral" label={t("managed.account.inactive")} />
           </div>
-          <div className="text-fg-3">Plan: {session.entitlement.plan}</div>
+          <div className="flex flex-col gap-1">
+            <div className="text-[16px] font-semibold tracking-[-0.01em] text-fg-1">
+              {t("managed.account.noSubscription")}
+            </div>
+            <div className="font-mono text-[12px] text-fg-2">{session.entitlement.email}</div>
+          </div>
+          <p className="text-[12px] leading-[17px] text-fg-2">{t("managed.account.noneBody")}</p>
           {session.entitlement.plan === "none" && session.entitlement.introOffer && (
-            <span className="self-start rounded-full bg-accent/15 px-2 py-0.5 text-[11px] font-medium text-accent">
+            <span className="inline-flex items-center gap-1.5 self-start rounded-full bg-accent/15 px-2.5 py-1 text-[12px] font-medium text-accent">
+              <SparkGlyph />
               {t("managed.subscribe.introBadge", { percentOff: session.entitlement.introOffer.percentOff })}
             </span>
           )}
-          <button
-            type="button"
-            disabled={busy}
-            onClick={handleCheckout}
-            className="h-9 rounded-[10px] bg-accent px-4 text-[12px] font-medium text-canvas disabled:opacity-40"
-          >
-            Subscribe
-          </button>
-          {polling && (
-            <p className="text-[12px] text-fg-3">
-              Waiting for payment confirmation…
-            </p>
-          )}
-          {(!polling || pollTimedOut) && (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={handleRefresh}
-              className="h-8 rounded-[10px] border border-line px-4 text-[12px] text-fg-2 disabled:opacity-40"
-            >
-              I&apos;ve paid — refresh status
-            </button>
-          )}
+          <div className="flex flex-col gap-1">
+            {polling ? (
+              <div
+                role="status"
+                aria-live="polite"
+                className="flex items-center justify-center gap-2 rounded-control bg-field py-2.5 text-[12px] text-fg-2"
+              >
+                <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 16 16" fill="none" aria-hidden>
+                  <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="2" opacity="0.3" />
+                  <path d="M14 8A6 6 0 1 1 2 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                </svg>
+                {t("managed.subscribe.waiting")}
+              </div>
+            ) : (
+              <Button variant="primary" size="md" fullWidth disabled={busy} onClick={handleCheckout}>
+                {t("managed.account.subscribe")}
+              </Button>
+            )}
+            <Button variant="ghost" size="sm" fullWidth disabled={busy} onClick={handleRefresh}>
+              {t("managed.subscribe.refreshStatus")}
+            </Button>
+          </div>
           {session.entitlement.plan === "none" && (
-            <div className="border-t border-line pt-2.5">
+            <div className="border-t border-line pt-3.5">
               <RedeemCodeForm
                 apiKey={session.apiKey}
+                collapsible
                 onRedeemed={(ent) => {
                   if (ent.plan === "active") {
                     stopPolling();
