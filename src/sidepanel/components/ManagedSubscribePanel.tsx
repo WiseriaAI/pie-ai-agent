@@ -5,6 +5,7 @@ import { useI18n } from "@/lib/i18n";
 import RedeemCodeForm from "./RedeemCodeForm";
 import { Button } from "./ui/Button";
 import { ManagedStatusPill } from "./ManagedStatusPill";
+import { ManagedPlanIcon } from "./ManagedPlanIcon";
 import { GoogleGlyph, SparkGlyph } from "./icons";
 import type { Entitlement } from "@/lib/managed-auth";
 
@@ -179,9 +180,7 @@ export default function ManagedSubscribePanel({
       {!session ? (
         <>
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] bg-field text-[15px] font-semibold text-fg-1">
-              P
-            </div>
+            <ManagedPlanIcon size={36} className="shrink-0" />
             <div className="flex flex-col gap-0.5">
               <div className="text-[14px] font-medium text-fg-1">{t("managed.subscribe.signInTitle")}</div>
               <div className="font-mono text-[11px] text-fg-3">{t("managed.subscribe.signInCaption")}</div>

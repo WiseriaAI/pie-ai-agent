@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <radialGradient id="mp-t" gradientUnits="userSpaceOnUse" cx="98" cy="15" r="11"><stop offset="0" stop-color="#A234EA"/><stop offset="1" stop-color="#A234EA" stop-opacity="0"/></radialGradient>
+    <radialGradient id="mp-r" gradientUnits="userSpaceOnUse" cx="111" cy="28" r="11"><stop offset="0" stop-color="#C9886A"/><stop offset="1" stop-color="#C9886A" stop-opacity="0"/></radialGradient>
+    <radialGradient id="mp-b" gradientUnits="userSpaceOnUse" cx="98" cy="41" r="12"><stop offset="0" stop-color="#18B85C"/><stop offset="1" stop-color="#18B85C" stop-opacity="0"/></radialGradient>
+    <radialGradient id="mp-l" gradientUnits="userSpaceOnUse" cx="85" cy="28" r="12"><stop offset="0" stop-color="#2D6BF0"/><stop offset="1" stop-color="#2D6BF0" stop-opacity="0"/></radialGradient>
+  </defs>
+  <rect width="128" height="128" rx="26" fill="#14181D"/>
+  <circle cx="64" cy="64" r="44" fill="#FAFBFC"/>
+  <circle cx="98" cy="28" r="26" fill="#14181D"/>
+  <path d="M98 11 L103.1 22.9 L115 28 L103.1 33.1 L98 45 L92.9 33.1 L81 28 L92.9 22.9 Z" fill="#6E7090"/>
+  <path d="M98 11 L103.1 22.9 L115 28 L103.1 33.1 L98 45 L92.9 33.1 L81 28 L92.9 22.9 Z" fill="url(#mp-t)"/>
+  <path d="M98 11 L103.1 22.9 L115 28 L103.1 33.1 L98 45 L92.9 33.1 L81 28 L92.9 22.9 Z" fill="url(#mp-r)"/>
+  <path d="M98 11 L103.1 22.9 L115 28 L103.1 33.1 L98 45 L92.9 33.1 L81 28 L92.9 22.9 Z" fill="url(#mp-b)"/>
+  <path d="M98 11 L103.1 22.9 L115 28 L103.1 33.1 L98 45 L92.9 33.1 L81 28 L92.9 22.9 Z" fill="url(#mp-l)"/>
+</svg>
