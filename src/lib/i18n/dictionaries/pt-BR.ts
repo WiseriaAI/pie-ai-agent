@@ -237,6 +237,8 @@ export const ptBRDict = {
     newCustomProvider: "+ Novo provedor personalizado",
     create: "Criar",
     pickProviderHint: "Selecione um provedor para começar",
+    tabByok: "Sua própria chave de API",
+    tabManaged: "Assinatura oficial",
   },
   instanceForm: {
     provider: "PROVEDOR",

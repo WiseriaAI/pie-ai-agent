@@ -236,6 +236,8 @@ export const enDict = {
     newCustomProvider: "+ New custom provider",
     create: "Create",
     pickProviderHint: "Select a provider to begin",
+    tabByok: "Bring your own key",
+    tabManaged: "Official subscription",
   },
   instanceForm: {
     provider: "PROVIDER",

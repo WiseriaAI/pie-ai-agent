@@ -236,6 +236,8 @@ export const zhCNDict = {
     newCustomProvider: "+ 新建自定义 Provider",
     create: "创建",
     pickProviderHint: "先选择一个 Provider",
+    tabByok: "自备 API key",
+    tabManaged: "官方订阅",
   },
   instanceForm: {
     provider: "Provider",

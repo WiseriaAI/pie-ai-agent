@@ -237,6 +237,8 @@ export const jaDict = {
     newCustomProvider: "+ 新しいカスタムプロバイダー",
     create: "作成",
     pickProviderHint: "開始するプロバイダーを選択",
+    tabByok: "自分の API キー",
+    tabManaged: "公式サブスク",
   },
   instanceForm: {
     provider: "プロバイダー",

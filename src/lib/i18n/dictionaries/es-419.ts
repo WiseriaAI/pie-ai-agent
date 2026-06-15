@@ -237,6 +237,8 @@ export const es419Dict = {
     newCustomProvider: "+ Nuevo proveedor personalizado",
     create: "Crear",
     pickProviderHint: "Selecciona un proveedor para comenzar",
+    tabByok: "Tu propia clave API",
+    tabManaged: "Suscripción oficial",
   },
   instanceForm: {
     provider: "PROVEEDOR",
