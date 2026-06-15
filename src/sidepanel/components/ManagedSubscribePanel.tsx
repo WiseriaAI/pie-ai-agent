@@ -171,8 +171,11 @@ export default function ManagedSubscribePanel({
     }
   }
 
+  // No card chrome: this panel renders inside NewConfigWizard's body, which
+  // already provides the bordered bg-surface container + padding (mirrors the
+  // BYOK form and ManagedAccountPanel). A self-border here would double up.
   return (
-    <div className="flex flex-col gap-4 rounded-[14px] border border-line bg-surface p-3.5 text-[13px]">
+    <div className="flex flex-col gap-4 text-[13px]">
       {!session ? (
         <>
           <div className="flex items-center gap-3">

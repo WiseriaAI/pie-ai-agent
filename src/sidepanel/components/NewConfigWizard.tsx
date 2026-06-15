@@ -264,7 +264,7 @@ export default function NewConfigWizard(props: Props) {
           // A managed config already exists — re-running the subscribe flow would
           // call createInstance again and throw "already has a config". Show a
           // pointer to Settings instead of the login panel.
-          <div className="rounded-[14px] border border-line bg-surface p-3.5 text-[13px] text-fg-2">
+          <div className="text-[13px] text-fg-2">
             Official subscription already configured — manage it in Settings.
           </div>
         ) : (
