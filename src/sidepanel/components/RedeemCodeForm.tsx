@@ -2,7 +2,6 @@ import { useState } from "react";
 import { redeem as redeemApi, RedeemError } from "@/lib/managed-account";
 import type { Entitlement } from "@/lib/managed-auth";
 import { useI18n, type DictKey } from "@/lib/i18n";
-import { Collapse } from "./ui/Collapse";
 import { ChevronGlyph } from "./icons";
 
 export interface RedeemCodeFormDeps {
@@ -78,6 +77,9 @@ export default function RedeemCodeForm({ apiKey, onRedeemed, deps, collapsible =
   );
 
   if (collapsible) {
+    // Height of the reveal is animated by an ancestor <SmoothHeight> (the wizard
+    // body), so this just renders/omits the input — no own height animation to
+    // avoid double-animating the same box.
     return (
       <div className="flex flex-col gap-2">
         <button
@@ -94,9 +96,7 @@ export default function RedeemCodeForm({ apiKey, onRedeemed, deps, collapsible =
             </span>
           </span>
         </button>
-        <Collapse open={open}>
-          <div className="pt-1">{inputRow}</div>
-        </Collapse>
+        {open && <div className="pt-1">{inputRow}</div>}
       </div>
     );
   }
