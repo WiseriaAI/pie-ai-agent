@@ -530,6 +530,17 @@ export const es419Dict = {
     subscribe: {
       introBadge: "{percentOff}% de descuento el primer mes",
     },
+    redeem: {
+      label: "¿Tienes un código de canje?",
+      placeholder: "PIE-XXXXX-XXXXX-XXXXX",
+      button: "Canjear",
+      redeeming: "Canjeando…",
+      errNotFound: "Código de canje no válido.",
+      errUsed: "Este código ya se usó.",
+      errExpired: "Este código ha caducado.",
+      errRateLimited: "Demasiados intentos. Inténtalo más tarde.",
+      errFailed: "No se pudo canjear el código. Inténtalo de nuevo.",
+    },
     account: {
       section: "SUSCRIPCIÓN",
       active: "Activa",
@@ -550,6 +561,7 @@ export const es419Dict = {
       portalFailed: "No se pudo abrir el portal",
       checkoutFailed: "No se pudo abrir el pago",
       setupHint: "Inicia sesión en la pestaña «Suscripción oficial» para configurarlo.",
+      redeemedUntil: "Activo por código · hasta {date}",
     },
     quota: {
       thisWeek: "ESTA SEMANA",

@@ -530,6 +530,17 @@ export const ptBRDict = {
     subscribe: {
       introBadge: "{percentOff}% de desconto no primeiro mês",
     },
+    redeem: {
+      label: "Tem um código de resgate?",
+      placeholder: "PIE-XXXXX-XXXXX-XXXXX",
+      button: "Resgatar",
+      redeeming: "Resgatando…",
+      errNotFound: "Código de resgate inválido.",
+      errUsed: "Este código já foi usado.",
+      errExpired: "Este código expirou.",
+      errRateLimited: "Muitas tentativas. Tente novamente mais tarde.",
+      errFailed: "Não foi possível resgatar o código. Tente novamente.",
+    },
     account: {
       section: "ASSINATURA",
       active: "Ativa",
@@ -550,6 +561,7 @@ export const ptBRDict = {
       portalFailed: "Não foi possível abrir o portal",
       checkoutFailed: "Não foi possível abrir o pagamento",
       setupHint: 'Entre na aba “Assinatura oficial” para configurar.',
+      redeemedUntil: "Ativo por código · até {date}",
     },
     quota: {
       thisWeek: "ESTA SEMANA",

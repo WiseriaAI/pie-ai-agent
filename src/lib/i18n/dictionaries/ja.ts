@@ -530,6 +530,17 @@ export const jaDict = {
     subscribe: {
       introBadge: "初月 {percentOff}% オフ",
     },
+    redeem: {
+      label: "引き換えコードをお持ちですか？",
+      placeholder: "PIE-XXXXX-XXXXX-XXXXX",
+      button: "引き換える",
+      redeeming: "引き換え中…",
+      errNotFound: "引き換えコードが無効です。",
+      errUsed: "このコードはすでに使用されています。",
+      errExpired: "このコードは有効期限が切れています。",
+      errRateLimited: "試行回数が多すぎます。しばらくしてからお試しください。",
+      errFailed: "コードを引き換えできませんでした。もう一度お試しください。",
+    },
     account: {
       section: "サブスクリプション",
       active: "有効",
@@ -550,6 +561,7 @@ export const jaDict = {
       portalFailed: "ポータルを開けませんでした",
       checkoutFailed: "支払いページを開けませんでした",
       setupHint: "「公式サブスクリプション」タブからログインして設定してください。",
+      redeemedUntil: "コードで有効 · {date} まで",
     },
     quota: {
       thisWeek: "今週",
