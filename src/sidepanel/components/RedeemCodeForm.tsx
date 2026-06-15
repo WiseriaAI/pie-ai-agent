@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { redeem as redeemApi, RedeemError } from "@/lib/managed-account";
 import type { Entitlement } from "@/lib/managed-auth";
-import { useI18n } from "@/lib/i18n";
+import { useI18n, type DictKey } from "@/lib/i18n";
 
 export interface RedeemCodeFormDeps {
   redeem?: (apiKey: string, code: string) => Promise<Entitlement>;
@@ -14,7 +14,7 @@ interface Props {
 }
 
 /** RedeemError code → i18n key。 */
-function errKey(e: unknown): string {
+function errKey(e: unknown): DictKey {
   if (e instanceof RedeemError) {
     switch (e.code) {
       case "code_not_found": return "managed.redeem.errNotFound";

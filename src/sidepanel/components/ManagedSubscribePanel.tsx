@@ -219,20 +219,22 @@ export default function ManagedSubscribePanel({
               I&apos;ve paid — refresh status
             </button>
           )}
-          <div className="border-t border-line pt-2.5">
-            <RedeemCodeForm
-              apiKey={session.apiKey}
-              onRedeemed={(ent) => {
-                if (ent.plan === "active") {
-                  stopPolling();
-                  onCreated(session.apiKey, ent.email);
-                } else {
-                  setSession({ ...session, entitlement: ent });
-                }
-              }}
-              deps={deps?.redeem ? { redeem: deps.redeem } : undefined}
-            />
-          </div>
+          {session.entitlement.plan === "none" && (
+            <div className="border-t border-line pt-2.5">
+              <RedeemCodeForm
+                apiKey={session.apiKey}
+                onRedeemed={(ent) => {
+                  if (ent.plan === "active") {
+                    stopPolling();
+                    onCreated(session.apiKey, ent.email);
+                  } else {
+                    setSession({ ...session, entitlement: ent });
+                  }
+                }}
+                deps={deps?.redeem ? { redeem: deps.redeem } : undefined}
+              />
+            </div>
+          )}
         </>
       )}
       {err && (
