@@ -9,6 +9,8 @@ export interface SubscriptionInfo {
   planName: string;
   currentPeriodEnd: number | null;
   cancelAtPeriodEnd: boolean;
+  /** 当前驱动 active 的来源：stripe（付费订阅，可开 portal）/ redemption（兑换码，无账单可管）。 */
+  source: "stripe" | "redemption";
 }
 export interface ModelInfo {
   id: string;

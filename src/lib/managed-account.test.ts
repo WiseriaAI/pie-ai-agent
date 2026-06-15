@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { getCachedEntitlement, getEntitlement, openCheckout, openPortal, cachedManagedModel } from "./managed-account";
+import { getCachedEntitlement, getEntitlement, openCheckout, openPortal, cachedManagedModel, redeem, RedeemError } from "./managed-account";
 
 describe("managed-account", () => {
   it("getEntitlement GETs /me/entitlement?locale= with Bearer and parses v2.1", async () => {
     const v2 = {
       plan: "active", email: "u@x.com",
-      subscription: { planName: "Pie Pro", currentPeriodEnd: 1750000000, cancelAtPeriodEnd: false },
+      subscription: { planName: "Pie Pro", currentPeriodEnd: 1750000000, cancelAtPeriodEnd: false, source: "stripe" },
       quota: { weekly: { usedFraction: 0.5, resetAt: 1750400000 } },
       models: [{ id: "default", name: "标准", description: "快", vision: false, maxContextTokens: 128000, costLevel: 1 }],
     };
@@ -102,5 +102,42 @@ describe("managed-account", () => {
     const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => raw })) as unknown as typeof fetch;
     const res = await getEntitlement("sk-io-frac", { fetchFn, locale: "en" });
     expect(res.introOffer).toEqual({ percentOff: 50.5 });
+  });
+
+  it("normalizeEntitlement 给 subscription 补 source 默认 stripe（后端漏发时）", async () => {
+    const raw = { plan: "active", email: "u@x.com", subscription: { planName: "Pie Pro", currentPeriodEnd: 1, cancelAtPeriodEnd: false }, quota: null, models: [] };
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => raw })) as unknown as typeof fetch;
+    const res = await getEntitlement("sk-src1", { fetchFn, locale: "en" });
+    expect(res.subscription).toEqual({ planName: "Pie Pro", currentPeriodEnd: 1, cancelAtPeriodEnd: false, source: "stripe" });
+  });
+
+  it("normalizeEntitlement 透传 source=redemption + cancelAtPeriodEnd", async () => {
+    const raw = { plan: "active", email: "u@x.com", subscription: { planName: "Pie Pro", currentPeriodEnd: 9, cancelAtPeriodEnd: true, source: "redemption" }, quota: null, models: [] };
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => raw })) as unknown as typeof fetch;
+    const res = await getEntitlement("sk-src2", { fetchFn, locale: "en" });
+    expect(res.subscription).toMatchObject({ source: "redemption", cancelAtPeriodEnd: true });
+  });
+
+  it("redeem POSTs /redeem?locale= with Bearer + {code}, 解析并缓存 entitlement", async () => {
+    const ent = { plan: "active", email: "u@x.com", subscription: { planName: "Pie Pro", currentPeriodEnd: 9, cancelAtPeriodEnd: true, source: "redemption" }, quota: null, models: [] };
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => ent })) as unknown as typeof fetch;
+    const res = await redeem("sk-r", "PIE-AAAAA-BBBBB-CCCCC", { fetchFn, locale: "en" });
+    expect(fetchFn).toHaveBeenCalledWith("https://account.pie.chat/redeem?locale=en", {
+      method: "POST",
+      headers: { authorization: "Bearer sk-r", "content-type": "application/json" },
+      body: JSON.stringify({ code: "PIE-AAAAA-BBBBB-CCCCC" }),
+    });
+    expect(res.subscription?.source).toBe("redemption");
+    expect(getCachedEntitlement("sk-r")).toEqual(res);
+  });
+
+  it("redeem 非 2xx → 抛 RedeemError 带后端 error code 与 status", async () => {
+    const fetchFn = vi.fn(async () => ({ ok: false, status: 409, json: async () => ({ error: "code_already_redeemed" }) })) as unknown as typeof fetch;
+    await expect(redeem("sk-r2", "X", { fetchFn })).rejects.toMatchObject({ code: "code_already_redeemed", status: 409 });
+  });
+
+  it("redeem 错误体不可解析 → RedeemError code=redeem_failed", async () => {
+    const fetchFn = vi.fn(async () => ({ ok: false, status: 500, json: async () => { throw new Error("no json"); } })) as unknown as typeof fetch;
+    await expect(redeem("sk-r3", "X", { fetchFn })).rejects.toMatchObject({ code: "redeem_failed", status: 500 });
   });
 });
