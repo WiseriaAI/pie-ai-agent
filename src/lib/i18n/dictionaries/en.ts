@@ -530,6 +530,17 @@ export const enDict = {
     subscribe: {
       introBadge: "First month {percentOff}% off",
     },
+    redeem: {
+      label: "Have a redemption code?",
+      placeholder: "PIE-XXXXX-XXXXX-XXXXX",
+      button: "Redeem",
+      redeeming: "Redeeming…",
+      errNotFound: "Invalid redemption code.",
+      errUsed: "This code has already been used.",
+      errExpired: "This code has expired.",
+      errRateLimited: "Too many attempts. Please try again later.",
+      errFailed: "Couldn't redeem the code. Please try again.",
+    },
     account: {
       section: "SUBSCRIPTION",
       active: "Active",
@@ -550,6 +561,7 @@ export const enDict = {
       portalFailed: "Failed to open portal",
       checkoutFailed: "Failed to open checkout",
       setupHint: "Sign in from the “Official subscription” tab to set this up.",
+      redeemedUntil: "Active via code · until {date}",
     },
     quota: {
       thisWeek: "THIS WEEK",

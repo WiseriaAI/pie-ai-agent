@@ -536,6 +536,17 @@ export const zhTWDict = {
     subscribe: {
       introBadge: "首月立減 {percentOff}%",
     },
+    redeem: {
+      label: "有兌換碼？",
+      placeholder: "PIE-XXXXX-XXXXX-XXXXX",
+      button: "兌換",
+      redeeming: "兌換中…",
+      errNotFound: "兌換碼無效。",
+      errUsed: "此兌換碼已被使用。",
+      errExpired: "此兌換碼已過期。",
+      errRateLimited: "嘗試過於頻繁，請稍後再試。",
+      errFailed: "兌換失敗，請重試。",
+    },
     account: {
       section: "訂閱",
       active: "生效中",
@@ -556,6 +567,7 @@ export const zhTWDict = {
       portalFailed: "開啟管理頁失敗",
       checkoutFailed: "開啟付款頁失敗",
       setupHint: "請在「官方訂閱」分頁登入以完成設定。",
+      redeemedUntil: "兌換啟用 · 有效期至 {date}",
     },
     quota: {
       thisWeek: "本週",

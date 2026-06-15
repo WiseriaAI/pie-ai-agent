@@ -536,6 +536,17 @@ export const zhCNDict = {
     subscribe: {
       introBadge: "首月立减 {percentOff}%",
     },
+    redeem: {
+      label: "有兑换码？",
+      placeholder: "PIE-XXXXX-XXXXX-XXXXX",
+      button: "兑换",
+      redeeming: "兑换中…",
+      errNotFound: "兑换码无效。",
+      errUsed: "该兑换码已被使用。",
+      errExpired: "该兑换码已过期。",
+      errRateLimited: "尝试过于频繁，请稍后再试。",
+      errFailed: "兑换失败，请重试。",
+    },
     account: {
       section: "订阅",
       active: "生效中",
@@ -556,6 +567,7 @@ export const zhCNDict = {
       portalFailed: "打开管理页失败",
       checkoutFailed: "打开支付页失败",
       setupHint: "请在「官方订阅」标签页登录以完成设置。",
+      redeemedUntil: "兑换激活 · 有效期至 {date}",
     },
     quota: {
       thisWeek: "本周",

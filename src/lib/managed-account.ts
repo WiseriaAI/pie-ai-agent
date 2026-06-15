@@ -44,6 +44,17 @@ function normalizeModel(raw: unknown): ModelInfo {
   };
 }
 
+function normalizeSubscription(raw: unknown): Entitlement["subscription"] {
+  if (raw == null || typeof raw !== "object") return null;
+  const s = raw as Record<string, unknown>;
+  return {
+    planName: typeof s.planName === "string" && s.planName ? s.planName : "Pie",
+    currentPeriodEnd: typeof s.currentPeriodEnd === "number" ? s.currentPeriodEnd : null,
+    cancelAtPeriodEnd: s.cancelAtPeriodEnd === true,
+    source: s.source === "redemption" ? "redemption" : "stripe",
+  };
+}
+
 function normalizeIntroOffer(raw: unknown): { percentOff: number } | undefined {
   const o = (raw ?? undefined) as Record<string, unknown> | undefined;
   if (o && typeof o.percentOff === "number" && o.percentOff > 0) return { percentOff: o.percentOff };
@@ -58,7 +69,7 @@ export function normalizeEntitlement(raw: unknown): Entitlement {
   return {
     plan,
     email: typeof r.email === "string" ? r.email : "",
-    subscription: (r.subscription as Entitlement["subscription"]) ?? null,
+    subscription: normalizeSubscription(r.subscription),
     quota: (r.quota as Entitlement["quota"]) ?? null,
     models: Array.isArray(r.models) ? (r.models as unknown[]).map(normalizeModel) : [],
     ...(introOffer ? { introOffer } : {}),
@@ -84,3 +95,35 @@ async function openBilling(path: "/billing/checkout" | "/billing/portal", apiKey
 
 export const openCheckout = (apiKey: string, deps: ManagedAccountDeps = {}) => openBilling("/billing/checkout", apiKey, deps);
 export const openPortal = (apiKey: string, deps: ManagedAccountDeps = {}) => openBilling("/billing/portal", apiKey, deps);
+
+/** /redeem 失败：携带后端 error code（code_not_found / code_already_redeemed / code_expired / too_many_attempts / …）。 */
+export class RedeemError extends Error {
+  constructor(public code: string, public status: number) {
+    super(code);
+    this.name = "RedeemError";
+  }
+}
+
+/** 兑换码兑换订阅。成功回新鲜 entitlement（已归一化并写入缓存）；失败抛 RedeemError。 */
+export async function redeem(apiKey: string, code: string, deps: ManagedAccountDeps = {}): Promise<Entitlement> {
+  const fetchFn = deps.fetchFn ?? fetch;
+  const locale = deps.locale ?? getLocale();
+  const resp = await fetchFn(`${ACCOUNT_BASE}/redeem?locale=${encodeURIComponent(locale)}`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+    body: JSON.stringify({ code }),
+  });
+  if (!resp.ok) {
+    let errCode = "redeem_failed";
+    try {
+      const b = (await resp.json()) as { error?: string };
+      if (b && typeof b.error === "string") errCode = b.error;
+    } catch {
+      /* 非 JSON 错误体：保留 redeem_failed */
+    }
+    throw new RedeemError(errCode, resp.status);
+  }
+  const ent = normalizeEntitlement(await resp.json());
+  entitlementCache.set(apiKey, ent);
+  return ent;
+}

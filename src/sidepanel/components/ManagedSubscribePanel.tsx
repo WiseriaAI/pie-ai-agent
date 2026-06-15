@@ -2,11 +2,14 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { startManagedLogin, type LoginResult } from "@/lib/managed-auth";
 import { getEntitlement, openCheckout } from "@/lib/managed-account";
 import { useI18n } from "@/lib/i18n";
+import RedeemCodeForm from "./RedeemCodeForm";
+import type { Entitlement } from "@/lib/managed-auth";
 
 export interface ManagedSubscribeDeps {
   login?: () => Promise<LoginResult>;
   refresh?: (apiKey: string) => Promise<LoginResult["entitlement"]>;
   checkout?: (apiKey: string) => Promise<void>;
+  redeem?: (apiKey: string, code: string) => Promise<Entitlement>;
 }
 
 interface Props {
@@ -215,6 +218,22 @@ export default function ManagedSubscribePanel({
             >
               I&apos;ve paid — refresh status
             </button>
+          )}
+          {session.entitlement.plan === "none" && (
+            <div className="border-t border-line pt-2.5">
+              <RedeemCodeForm
+                apiKey={session.apiKey}
+                onRedeemed={(ent) => {
+                  if (ent.plan === "active") {
+                    stopPolling();
+                    onCreated(session.apiKey, ent.email);
+                  } else {
+                    setSession({ ...session, entitlement: ent });
+                  }
+                }}
+                deps={deps?.redeem ? { redeem: deps.redeem } : undefined}
+              />
+            </div>
           )}
         </>
       )}

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, cleanup, act } from "@testing-library/react";
-import type { LoginResult } from "@/lib/managed-auth";
+import type { LoginResult, Entitlement } from "@/lib/managed-auth";
 import ManagedSubscribePanel from "./ManagedSubscribePanel";
 
 afterEach(() => {
@@ -13,7 +13,7 @@ describe("ManagedSubscribePanel", () => {
     render(<ManagedSubscribePanel
       onCreated={onCreated}
       deps={{
-        login: vi.fn(async (): Promise<LoginResult> => ({ apiKey: "sk-v", entitlement: { plan: "active", email: "u@x.com", subscription: { planName: "Pie Pro", currentPeriodEnd: 1750000000, cancelAtPeriodEnd: false }, quota: { weekly: { usedFraction: 0, resetAt: 1750400000 } }, models: [{ id: "default", name: "标准", vision: false, maxContextTokens: 200000, costLevel: 1 }] } })),
+        login: vi.fn(async (): Promise<LoginResult> => ({ apiKey: "sk-v", entitlement: { plan: "active", email: "u@x.com", subscription: { planName: "Pie Pro", currentPeriodEnd: 1750000000, cancelAtPeriodEnd: false, source: "stripe" }, quota: { weekly: { usedFraction: 0, resetAt: 1750400000 } }, models: [{ id: "default", name: "标准", vision: false, maxContextTokens: 200000, costLevel: 1 }] } })),
       }}
     />);
     fireEvent.click(screen.getByRole("button", { name: /sign in with google/i }));
@@ -42,7 +42,7 @@ describe("ManagedSubscribePanel", () => {
     const refresh = vi.fn(async (): Promise<LoginResult["entitlement"]> => {
       refreshCallCount++;
       if (refreshCallCount >= 2) {
-        return { plan: "active", email: "u@x.com", subscription: { planName: "Pie Pro", currentPeriodEnd: 1750000000, cancelAtPeriodEnd: false }, quota: { weekly: { usedFraction: 0, resetAt: 1750400000 } }, models: [{ id: "default", name: "标准", vision: false, maxContextTokens: 200000, costLevel: 1 }] };
+        return { plan: "active", email: "u@x.com", subscription: { planName: "Pie Pro", currentPeriodEnd: 1750000000, cancelAtPeriodEnd: false, source: "stripe" }, quota: { weekly: { usedFraction: 0, resetAt: 1750400000 } }, models: [{ id: "default", name: "标准", vision: false, maxContextTokens: 200000, costLevel: 1 }] };
       }
       return { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [] };
     });
@@ -147,13 +147,29 @@ describe("ManagedSubscribePanel", () => {
     render(<ManagedSubscribePanel
       onCreated={vi.fn()}
       deps={{
-        login: vi.fn(async (): Promise<LoginResult> => ({ apiKey: "sk-v", entitlement: { plan: "blocked", email: "u@x.com", subscription: { planName: "Pie Pro", currentPeriodEnd: 1750000000, cancelAtPeriodEnd: false }, quota: null, models: [], introOffer: { percentOff: 50 } } })),
+        login: vi.fn(async (): Promise<LoginResult> => ({ apiKey: "sk-v", entitlement: { plan: "blocked", email: "u@x.com", subscription: { planName: "Pie Pro", currentPeriodEnd: 1750000000, cancelAtPeriodEnd: false, source: "stripe" }, quota: null, models: [], introOffer: { percentOff: 50 } } })),
         checkout: vi.fn(async () => {}),
       }}
     />);
     fireEvent.click(screen.getByRole("button", { name: /sign in with google/i }));
     await screen.findByRole("button", { name: /subscribe/i });
     expect(screen.queryByText(/first month/i)).toBeNull();
+  });
+
+  it("登录后（plan:none）显示兑换输入框；兑换成功转 active → onCreated", async () => {
+    const login = vi.fn(async (): Promise<LoginResult> => ({
+      apiKey: "sk-v",
+      entitlement: { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [] },
+    }));
+    const activeEnt: Entitlement = { plan: "active", email: "u@x.com", subscription: { planName: "Pie Pro", currentPeriodEnd: 9, cancelAtPeriodEnd: true, source: "redemption" }, quota: null, models: [] };
+    const redeem = vi.fn(async () => activeEnt);
+    const onCreated = vi.fn();
+    render(<ManagedSubscribePanel onCreated={onCreated} deps={{ login, checkout: vi.fn(async () => {}), redeem }} />);
+    fireEvent.click(screen.getByRole("button", { name: /sign in with google/i }));
+    await screen.findByRole("button", { name: /^subscribe$/i });
+    fireEvent.change(screen.getByPlaceholderText(/PIE-/), { target: { value: "PIE-AAAAA-BBBBB-CCCCC" } });
+    fireEvent.click(screen.getByRole("button", { name: /^redeem$/i }));
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith("sk-v", "u@x.com"));
   });
 
   it("does not call onCreated after unmount (cleanup works)", async () => {
@@ -164,7 +180,7 @@ describe("ManagedSubscribePanel", () => {
       (): Promise<LoginResult["entitlement"]> =>
         new Promise((resolve) =>
           setTimeout(
-            () => resolve({ plan: "active", email: "u@x.com", subscription: { planName: "Pie Pro", currentPeriodEnd: 1750000000, cancelAtPeriodEnd: false }, quota: { weekly: { usedFraction: 0, resetAt: 1750400000 } }, models: [{ id: "default", name: "标准", vision: false, maxContextTokens: 200000, costLevel: 1 }] }),
+            () => resolve({ plan: "active", email: "u@x.com", subscription: { planName: "Pie Pro", currentPeriodEnd: 1750000000, cancelAtPeriodEnd: false, source: "stripe" }, quota: { weekly: { usedFraction: 0, resetAt: 1750400000 } }, models: [{ id: "default", name: "标准", vision: false, maxContextTokens: 200000, costLevel: 1 }] }),
             200,
           ),
         ),
