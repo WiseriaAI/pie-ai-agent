@@ -236,6 +236,8 @@ export const zhCNDict = {
     newCustomProvider: "+ 新建自定义 Provider",
     create: "创建",
     pickProviderHint: "先选择一个 Provider",
+    tabByok: "自备 API key",
+    tabManaged: "官方订阅",
   },
   instanceForm: {
     provider: "Provider",
@@ -535,6 +537,18 @@ export const zhCNDict = {
     },
     subscribe: {
       introBadge: "首月立减 {percentOff}%",
+      signInTitle: "Pie 官方",
+      signInCaption: "托管模型 · 开箱即用",
+      signInBody: "使用 Pie 官方服务，无需 API key。登录即可开始。",
+      benefitModels: "最新模型",
+      benefitQuota: "每周额度",
+      benefitNoSetup: "免配置",
+      signInButton: "使用 Google 登录",
+      refreshStatus: "我已付款 — 刷新状态",
+      waiting: "等待支付确认…",
+      notActiveYet: "订阅尚未生效 — 完成付款后刷新。",
+      loginFailed: "登录失败",
+      refreshFailed: "刷新失败",
     },
     redeem: {
       label: "有兑换码？",
