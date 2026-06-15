@@ -5,27 +5,13 @@ import { formatDate } from "@/lib/managed-format";
 import { useI18n } from "@/lib/i18n";
 import QuotaBar from "./QuotaBar";
 import RedeemCodeForm from "./RedeemCodeForm";
+import { ManagedStatusPill } from "./ManagedStatusPill";
 
 export interface ManagedAccountDeps {
   refresh?: (apiKey: string) => Promise<Entitlement>;
   checkout?: (apiKey: string) => Promise<void>;
   portal?: (apiKey: string) => Promise<void>;
   redeem?: (apiKey: string, code: string) => Promise<Entitlement>;
-}
-
-function StatusPill({ tone, label }: { tone: "success" | "warning" | "neutral"; label: string }) {
-  const box = {
-    success: "bg-success-tint text-success",
-    warning: "bg-warning-tint text-warning",
-    neutral: "bg-field text-fg-2",
-  }[tone];
-  const dot = { success: "bg-success", warning: "bg-warning", neutral: "bg-fg-3" }[tone];
-  return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium ${box}`}>
-      <span className={`h-[5px] w-[5px] rounded-full ${dot}`} />
-      {label}
-    </span>
-  );
 }
 
 export default function ManagedAccountPanel({ apiKey, deps }: { apiKey: string; deps?: ManagedAccountDeps }) {
@@ -75,10 +61,10 @@ export default function ManagedAccountPanel({ apiKey, deps }: { apiKey: string; 
   const periodDate = formatDate(sub?.currentPeriodEnd, locale);
 
   const pill = isActive
-    ? <StatusPill tone="success" label={t("managed.account.active")} />
+    ? <ManagedStatusPill tone="success" label={t("managed.account.active")} />
     : isBlocked
-      ? <StatusPill tone="warning" label={t("managed.account.paymentFailed")} />
-      : <StatusPill tone="neutral" label={t("managed.account.inactive")} />;
+      ? <ManagedStatusPill tone="warning" label={t("managed.account.paymentFailed")} />
+      : <ManagedStatusPill tone="neutral" label={t("managed.account.inactive")} />;
 
   const headline = isActive || isBlocked ? (sub?.planName ?? "Pie") : t("managed.account.noSubscription");
 
