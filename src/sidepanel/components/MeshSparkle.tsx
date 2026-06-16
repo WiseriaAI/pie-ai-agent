@@ -17,7 +17,7 @@ import { useId } from "react";
 
 /** Fat 4-point sparkle seated at (98,28) — the brand mark's top-right bite. */
 const STAR =
-  "M98 11 L103.1 22.9 L115 28 L103.1 33.1 L98 45 L92.9 33.1 L81 28 L92.9 22.9 Z";
+  "M98 11 Q100.55 25.45 115 28 Q100.55 30.55 98 45 Q95.45 30.55 81 28 Q95.45 25.45 98 11 Z";
 
 export function SparkleGlyph({ idPrefix }: { idPrefix: string }) {
   const t = `${idPrefix}-t`;

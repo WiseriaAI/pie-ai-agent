@@ -5,9 +5,9 @@
     <radialGradient id="ms-b" gradientUnits="userSpaceOnUse" cx="98" cy="41" r="12"><stop offset="0" stop-color="#18B85C"/><stop offset="1" stop-color="#18B85C" stop-opacity="0"/></radialGradient>
     <radialGradient id="ms-l" gradientUnits="userSpaceOnUse" cx="85" cy="28" r="12"><stop offset="0" stop-color="#2D6BF0"/><stop offset="1" stop-color="#2D6BF0" stop-opacity="0"/></radialGradient>
   </defs>
-  <path d="M98 11 L103.1 22.9 L115 28 L103.1 33.1 L98 45 L92.9 33.1 L81 28 L92.9 22.9 Z" fill="#6E7090"/>
-  <path d="M98 11 L103.1 22.9 L115 28 L103.1 33.1 L98 45 L92.9 33.1 L81 28 L92.9 22.9 Z" fill="url(#ms-t)"/>
-  <path d="M98 11 L103.1 22.9 L115 28 L103.1 33.1 L98 45 L92.9 33.1 L81 28 L92.9 22.9 Z" fill="url(#ms-r)"/>
-  <path d="M98 11 L103.1 22.9 L115 28 L103.1 33.1 L98 45 L92.9 33.1 L81 28 L92.9 22.9 Z" fill="url(#ms-b)"/>
-  <path d="M98 11 L103.1 22.9 L115 28 L103.1 33.1 L98 45 L92.9 33.1 L81 28 L92.9 22.9 Z" fill="url(#ms-l)"/>
+  <path d="M98 11 Q100.55 25.45 115 28 Q100.55 30.55 98 45 Q95.45 30.55 81 28 Q95.45 25.45 98 11 Z" fill="#6E7090"/>
+  <path d="M98 11 Q100.55 25.45 115 28 Q100.55 30.55 98 45 Q95.45 30.55 81 28 Q95.45 25.45 98 11 Z" fill="url(#ms-t)"/>
+  <path d="M98 11 Q100.55 25.45 115 28 Q100.55 30.55 98 45 Q95.45 30.55 81 28 Q95.45 25.45 98 11 Z" fill="url(#ms-r)"/>
+  <path d="M98 11 Q100.55 25.45 115 28 Q100.55 30.55 98 45 Q95.45 30.55 81 28 Q95.45 25.45 98 11 Z" fill="url(#ms-b)"/>
+  <path d="M98 11 Q100.55 25.45 115 28 Q100.55 30.55 98 45 Q95.45 30.55 81 28 Q95.45 25.45 98 11 Z" fill="url(#ms-l)"/>
 </svg>
