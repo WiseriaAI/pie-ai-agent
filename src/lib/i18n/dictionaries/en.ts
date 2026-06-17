@@ -531,6 +531,9 @@ export const enDict = {
     },
     subscribe: {
       introBadge: "First month {percentOff}% off",
+      monthly: "Monthly",
+      annual: "Yearly",
+      annualBadge: "Save {savePercent}%",
       signInTitle: "Pie Official",
       signInCaption: "Hosted models · managed",
       signInBody: "Use the official Pie service — no API key needed. Sign in to get started.",
@@ -576,6 +579,8 @@ export const enDict = {
       checkoutFailed: "Failed to open checkout",
       setupHint: "Sign in from the “Official subscription” tab to set this up.",
       redeemedUntil: "Active via code · until {date}",
+      billedMonthly: "Billed monthly",
+      billedYearly: "Billed yearly",
     },
     quota: {
       thisWeek: "THIS WEEK",

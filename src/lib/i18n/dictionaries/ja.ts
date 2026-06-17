@@ -531,6 +531,9 @@ export const jaDict = {
     },
     subscribe: {
       introBadge: "初月 {percentOff}% オフ",
+      monthly: "月額",
+      annual: "年額",
+      annualBadge: "{savePercent}% お得",
       signInTitle: "Pie 公式",
       signInCaption: "マネージドモデル · すぐに利用可能",
       signInBody: "Pie 公式サービスを利用 — API キー不要。ログインして始めましょう。",
@@ -576,6 +579,8 @@ export const jaDict = {
       checkoutFailed: "支払いページを開けませんでした",
       setupHint: "「公式サブスクリプション」タブからログインして設定してください。",
       redeemedUntil: "コードで有効 · {date} まで",
+      billedMonthly: "月額請求",
+      billedYearly: "年額請求",
     },
     quota: {
       thisWeek: "今週",

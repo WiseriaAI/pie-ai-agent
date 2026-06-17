@@ -531,6 +531,9 @@ export const es419Dict = {
     },
     subscribe: {
       introBadge: "{percentOff}% de descuento el primer mes",
+      monthly: "Mensual",
+      annual: "Anual",
+      annualBadge: "Ahorra {savePercent}%",
       signInTitle: "Pie Oficial",
       signInCaption: "Modelos gestionados · listo para usar",
       signInBody: "Usa el servicio oficial de Pie, sin clave de API. Inicia sesión para empezar.",
@@ -576,6 +579,8 @@ export const es419Dict = {
       checkoutFailed: "No se pudo abrir el pago",
       setupHint: "Inicia sesión en la pestaña «Suscripción oficial» para configurarlo.",
       redeemedUntil: "Activo por código · hasta {date}",
+      billedMonthly: "Facturación mensual",
+      billedYearly: "Facturación anual",
     },
     quota: {
       thisWeek: "ESTA SEMANA",

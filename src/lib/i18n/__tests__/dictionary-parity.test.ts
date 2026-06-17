@@ -50,6 +50,16 @@ describe("dictionary parity", () => {
     }
   });
 
+  it("annual billing keys present (en/zh-CN sample)", () => {
+    expect(enDict.managed.subscribe.monthly).toBe("Monthly");
+    expect(enDict.managed.subscribe.annual).toBe("Yearly");
+    expect(enDict.managed.subscribe.annualBadge).toBe("Save {savePercent}%");
+    expect(enDict.managed.account.billedMonthly).toBe("Billed monthly");
+    expect(enDict.managed.account.billedYearly).toBe("Billed yearly");
+    expect(zhCNDict.managed.subscribe.annualBadge).toBe("省 {savePercent}%");
+    expect(zhCNDict.managed.account.billedYearly).toBe("按年计费");
+  });
+
   it("launch locales translate critical activation labels", () => {
     expect(LOCALE_REGISTRY["es-419"].dictionary.common.cancel).toBe("Cancelar");
     expect(LOCALE_REGISTRY["es-419"].dictionary.common.save).toBe("Guardar");

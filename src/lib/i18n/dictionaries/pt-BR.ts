@@ -531,6 +531,9 @@ export const ptBRDict = {
     },
     subscribe: {
       introBadge: "{percentOff}% de desconto no primeiro mês",
+      monthly: "Mensal",
+      annual: "Anual",
+      annualBadge: "Economize {savePercent}%",
       signInTitle: "Pie Oficial",
       signInCaption: "Modelos gerenciados · pronto para usar",
       signInBody: "Use o serviço oficial da Pie, sem chave de API. Entre para começar.",
@@ -576,6 +579,8 @@ export const ptBRDict = {
       checkoutFailed: "Não foi possível abrir o pagamento",
       setupHint: 'Entre na aba “Assinatura oficial” para configurar.',
       redeemedUntil: "Ativo por código · até {date}",
+      billedMonthly: "Cobrança mensal",
+      billedYearly: "Cobrança anual",
     },
     quota: {
       thisWeek: "ESTA SEMANA",

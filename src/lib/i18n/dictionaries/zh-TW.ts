@@ -537,6 +537,9 @@ export const zhTWDict = {
     },
     subscribe: {
       introBadge: "首月立減 {percentOff}%",
+      monthly: "按月",
+      annual: "按年",
+      annualBadge: "省 {savePercent}%",
       signInTitle: "Pie 官方",
       signInCaption: "託管模型 · 開箱即用",
       signInBody: "使用 Pie 官方服務，無需 API key。登入即可開始。",
@@ -582,6 +585,8 @@ export const zhTWDict = {
       checkoutFailed: "開啟付款頁失敗",
       setupHint: "請在「官方訂閱」分頁登入以完成設定。",
       redeemedUntil: "兌換啟用 · 有效期至 {date}",
+      billedMonthly: "按月計費",
+      billedYearly: "按年計費",
     },
     quota: {
       thisWeek: "本週",
