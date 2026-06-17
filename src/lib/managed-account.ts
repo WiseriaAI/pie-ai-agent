@@ -1,6 +1,7 @@
 import { ACCOUNT_BASE } from "./managed-config";
 import type { Entitlement, ModelInfo } from "./managed-auth";
 import { getLocale } from "./i18n";
+import { setConfig, getAllConfig } from "./idb/config-store";
 
 export interface ManagedAccountDeps {
   fetchFn?: typeof fetch;
@@ -13,6 +14,40 @@ export interface ManagedAccountDeps {
 /** 进程内 entitlement 缓存（按 apiKey）。供面板展开时立即回显上次状态、避免每次
  *  闪一个空 loading；用量等数值由后台刷新后更新上去。仅当前会话有效（扩展重载即清）。 */
 const entitlementCache = new Map<string, Entitlement>();
+
+const ENTITLEMENT_KEY_PREFIX = "managed_entitlement_";
+
+/** 双写 entitlement：同步写内存 Map（同步读取层用）+ best-effort 持久化到 IDB
+ *  config store（key 按 apiKey）。IDB 写失败不影响内存缓存与调用方。供
+ *  getEntitlement / redeem / startManagedLogin 三处写入点共用。 */
+export async function cacheEntitlement(apiKey: string, ent: Entitlement): Promise<void> {
+  entitlementCache.set(apiKey, ent);
+  try {
+    await setConfig(ENTITLEMENT_KEY_PREFIX + apiKey, ent);
+  } catch {
+    /* 持久化是 best-effort：IDB 不可用 / 写失败时内存缓存仍生效 */
+  }
+}
+
+/** 启动时从 IDB config store 把已持久化的 entitlement 灌回内存 Map，使
+ *  side panel 重开 / SW 重启后 ModelPicker 首次渲染即拿到真实模型列表。
+ *  读失败整体吞掉，绝不阻塞启动。 */
+export async function hydrateEntitlementCache(): Promise<void> {
+  try {
+    const all = await getAllConfig();
+    for (const [key, value] of Object.entries(all)) {
+      if (!key.startsWith(ENTITLEMENT_KEY_PREFIX)) continue;
+      entitlementCache.set(key.slice(ENTITLEMENT_KEY_PREFIX.length), normalizeEntitlement(value));
+    }
+  } catch {
+    /* 水合失败 → 退回内存空（兜底），不抛 */
+  }
+}
+
+/** Test-only：清空内存 entitlement 缓存，使水合测试能验证「内存空 → 水合 → 命中」。 */
+export function _clearEntitlementCacheForTests(): void {
+  entitlementCache.clear();
+}
 
 /** 读上次成功拉取的 entitlement（无则 null）。 */
 export function getCachedEntitlement(apiKey: string): Entitlement | null {
@@ -27,7 +62,7 @@ export async function getEntitlement(apiKey: string, deps: ManagedAccountDeps = 
   });
   if (!resp.ok) throw new Error(`Failed to load entitlement (${resp.status})`);
   const ent = normalizeEntitlement(await resp.json());
-  entitlementCache.set(apiKey, ent);
+  await cacheEntitlement(apiKey, ent);
   return ent;
 }
 
@@ -124,6 +159,6 @@ export async function redeem(apiKey: string, code: string, deps: ManagedAccountD
     throw new RedeemError(errCode, resp.status);
   }
   const ent = normalizeEntitlement(await resp.json());
-  entitlementCache.set(apiKey, ent);
+  await cacheEntitlement(apiKey, ent);
   return ent;
 }

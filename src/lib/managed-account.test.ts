@@ -1,5 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
-import { getCachedEntitlement, getEntitlement, openCheckout, openPortal, cachedManagedModel, redeem, RedeemError } from "./managed-account";
+import { describe, expect, it, vi, beforeEach } from "vitest";
+import {
+  getCachedEntitlement, getEntitlement, openCheckout, openPortal,
+  cachedManagedModel, redeem, RedeemError,
+  hydrateEntitlementCache, _clearEntitlementCacheForTests,
+} from "./managed-account";
+import { getConfig, setConfig } from "./idb/config-store";
+import { _resetForTests } from "./idb/db";
 
 describe("managed-account", () => {
   it("getEntitlement GETs /me/entitlement?locale= with Bearer and parses v2.1", async () => {
@@ -139,5 +145,39 @@ describe("managed-account", () => {
   it("redeem 错误体不可解析 → RedeemError code=redeem_failed", async () => {
     const fetchFn = vi.fn(async () => ({ ok: false, status: 500, json: async () => { throw new Error("no json"); } })) as unknown as typeof fetch;
     await expect(redeem("sk-r3", "X", { fetchFn })).rejects.toMatchObject({ code: "redeem_failed", status: 500 });
+  });
+});
+
+describe("managed-account persistence", () => {
+  beforeEach(async () => {
+    await _resetForTests();
+    _clearEntitlementCacheForTests();
+  });
+
+  it("getEntitlement 双写：内存 + IDB(config managed_entitlement_<apiKey>)", async () => {
+    const ent = { plan: "active", email: "p@x.com", subscription: null, quota: null,
+      models: [{ id: "default", name: "标准", vision: false, maxContextTokens: 128000, costLevel: 1 }] };
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => ent })) as unknown as typeof fetch;
+    const res = await getEntitlement("sk-persist", { fetchFn, locale: "en" });
+    expect(await getConfig("managed_entitlement_sk-persist")).toEqual(res);
+  });
+
+  it("hydrateEntitlementCache：IDB → 内存（normalizeEntitlement 归一化残缺结构）", async () => {
+    await setConfig("managed_entitlement_sk-hyd", { email: "h@x.com" }); // 残缺/旧结构
+    _clearEntitlementCacheForTests();
+    expect(getCachedEntitlement("sk-hyd")).toBeNull();
+    await hydrateEntitlementCache();
+    expect(getCachedEntitlement("sk-hyd")).toEqual({
+      plan: "none", email: "h@x.com", subscription: null, quota: null, models: [],
+    });
+  });
+
+  it("redeem 双写 IDB", async () => {
+    const ent = { plan: "active", email: "r@x.com",
+      subscription: { planName: "Pie", currentPeriodEnd: 9, cancelAtPeriodEnd: true, source: "redemption" },
+      quota: null, models: [] };
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => ent })) as unknown as typeof fetch;
+    const res = await redeem("sk-rp", "CODE", { fetchFn, locale: "en" });
+    expect(await getConfig("managed_entitlement_sk-rp")).toEqual(res);
   });
 });
