@@ -10,6 +10,7 @@ import ProviderIcon from "./ProviderIcon";
 import { getCachedEntitlement, cachedManagedModel } from "@/lib/managed-account";
 import { consumptionDots } from "@/lib/managed-format";
 import type { ModelInfo } from "@/lib/managed-auth";
+import { onStoreChange } from "@/lib/store-bus";
 
 interface Props {
   instances: DecryptedInstance[];
@@ -101,6 +102,24 @@ export default function ModelPicker(props: Props) {
   const [open, setOpen] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(props.currentInstanceId);
   const [query, setQuery] = useState("");
+  // managed entitlement 缓存（进程内 Map）更新不会自动触发重渲染；订阅 store-bus
+  // 的 config 变更（key 前缀 managed_entitlement_）→ bump 版本号触发重读内存。
+  const [, bumpEntVersion] = useState(0);
+  useEffect(
+    () => onStoreChange("config", (c) => {
+      if (c.id?.startsWith("managed_entitlement_")) bumpEntVersion((v) => v + 1);
+    }),
+    [],
+  );
+  // managed：picker 打开且该 instance 展开时后台 SWR 刷新（先显缓存、不闪烁），
+  // 覆盖初始展开（当前 instance 即 managed）与 toggle 展开两种入口；后端阵容变更
+  // 下次打开/展开自动同步。
+  useEffect(() => {
+    if (!open || !expandedId) return;
+    const inst = props.instances.find((i) => i.id === expandedId);
+    if (inst?.provider === "managed") props.onRefreshModels?.(expandedId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, expandedId]);
   const wrapRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -145,6 +164,7 @@ export default function ModelPicker(props: Props) {
       // 前提：唯一 lazy provider（openrouter）没有 endpointVariants，而所有带
       // variant 的 provider 默认 models 非空，所以这里暂不感知 variant。若未来
       // 某个 lazy provider 挂上带 models override 的 variant，需改为按 modelsFor 判断。
+      // managed 的 SWR 刷新由上方 useEffect 统一管（覆盖初始展开），不走这里。
       const lazyEmpty = (meta?.models.length ?? 0) === 0 && (inst.fetchedModels?.length ?? 0) === 0;
       if (lazyEmpty) props.onRefreshModels?.(inst.id);
     }

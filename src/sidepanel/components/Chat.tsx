@@ -10,7 +10,7 @@ import { resolveModelMeta, getProviderMeta } from "@/lib/model-router/providers/
 import { resolveSupportsVision } from "./chat-vision";
 import ContextRing from "./ContextRing";
 import { listInstances, getInstance, updateInstance, type DecryptedInstance } from "@/lib/instances";
-import { cachedManagedModel } from "@/lib/managed-account";
+import { cachedManagedModel, getEntitlement } from "@/lib/managed-account";
 import { resolveSelection } from "@/lib/model-selection-resolver";
 import { setLastModelSelection } from "@/lib/last-model-selection";
 import { fetchOpenRouterModels } from "@/lib/openrouter-models-fetch";
@@ -1594,6 +1594,12 @@ After the skill completes, briefly summarize what was created (the user will see
         onManageInstances={onOpenSettings}
         onRefreshModels={async (id) => {
           const inst = instances.find((i) => i.id === id);
+          if (inst?.provider === "managed") {
+            // managed SWR：拉最新 entitlement，cacheEntitlement 双写 + store-bus
+            // 通知 ModelPicker 重渲染。失败静默（保留已显缓存）。
+            await getEntitlement(inst.apiKey).catch(() => {});
+            return;
+          }
           if (inst?.provider !== "openrouter") return;
           const orMeta = getProviderMeta("openrouter")!;
           try {
