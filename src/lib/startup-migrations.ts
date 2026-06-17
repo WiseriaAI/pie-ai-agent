@@ -32,6 +32,7 @@ import { migrateV2toV3 } from "@/lib/migration-v3";
 import { migrateEndpointDefaultToPayg } from "@/lib/migrate-endpoint-default-payg";
 import { migrateOneConfigPerProvider } from "@/lib/migrate-one-config-per-provider";
 import { migrateScheduleSessionOrigin } from "@/lib/sessions/migrate-schedule-session-origin";
+import { hydrateEntitlementCache } from "@/lib/managed-account";
 
 let pipelinePromise: Promise<void> | null = null;
 
@@ -57,6 +58,11 @@ async function runPipeline(): Promise<void> {
   await migrateEndpointDefaultToPayg();
   await migrateOneConfigPerProvider();
   await migrateScheduleSessionOrigin();
+
+  // ── Phase 4: 运行时缓存预热（非 migration）。从 config-store 把已持久化的
+  // managed entitlement 灌回内存缓存，使重启后 ModelPicker 首屏即有真实列表。
+  // 必须在 Phase 2 sweep 之后（config-store 已 populated）；内部吞错，不阻塞。
+  await hydrateEntitlementCache();
 }
 
 /**
