@@ -173,71 +173,92 @@ describe("ManagedSubscribePanel", () => {
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith("sk-v", "u@x.com"));
   });
 
-  it("annualOffer 在场 → 显示月付/年付两按钮 + 省钱徽标", async () => {
-    render(<ManagedSubscribePanel
-      onCreated={vi.fn()}
-      deps={{
-        login: vi.fn(async (): Promise<LoginResult> => ({ apiKey: "sk-v", entitlement: { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [], annualOffer: { savePercent: 20 } } })),
-        checkout: vi.fn(async () => {}),
-      }}
-    />);
-    fireEvent.click(screen.getByRole("button", { name: /sign in with google/i }));
-    await screen.findByRole("button", { name: /monthly/i });
-    expect(screen.getByRole("button", { name: /yearly/i })).toBeTruthy();
-    expect(screen.getByText(/save 20%/i)).toBeTruthy();
+  const pricingEnt = (over: Record<string, unknown> = {}) => ({
+    plan: "none" as const, email: "u@x.com", subscription: null, quota: null, models: [],
+    pricing: { currency: "usd", monthly: { amount: 599 }, annual: { amount: 6200, perMonthAmount: 517, savePercent: 14 } },
+    ...over,
   });
 
-  it("annualOffer 空 {}（无 savePercent）→ 年付按钮在、无徽标", async () => {
-    render(<ManagedSubscribePanel
-      onCreated={vi.fn()}
-      deps={{
-        login: vi.fn(async (): Promise<LoginResult> => ({ apiKey: "sk-v", entitlement: { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [], annualOffer: {} } })),
-        checkout: vi.fn(async () => {}),
-      }}
-    />);
+  it("pricing 在场 → 两张价格卡 + 默认年付 CTA", async () => {
+    render(<ManagedSubscribePanel onCreated={vi.fn()} deps={{
+      login: vi.fn(async (): Promise<LoginResult> => ({ apiKey: "sk-v", entitlement: pricingEnt() })),
+      checkout: vi.fn(async () => {}),
+    }} />);
     fireEvent.click(screen.getByRole("button", { name: /sign in with google/i }));
-    await screen.findByRole("button", { name: /yearly/i });
-    expect(screen.queryByText(/save/i)).toBeNull();
+    expect(await screen.findByRole("radio", { name: /monthly/i })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: /yearly/i })).toBeTruthy();
+    expect(screen.getByText("$5.99")).toBeTruthy();
+    expect(screen.getByText("$62.00")).toBeTruthy();
+    // 默认年付选中 → CTA 文案为「订阅年付」
+    expect(screen.getByRole("button", { name: /subscribe yearly/i })).toBeTruthy();
   });
 
-  it("annualOffer 缺省 → 单 Subscribe 按钮（向后兼容）", async () => {
-    render(<ManagedSubscribePanel
-      onCreated={vi.fn()}
-      deps={{
-        login: vi.fn(async (): Promise<LoginResult> => ({ apiKey: "sk-v", entitlement: { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [] } })),
-        checkout: vi.fn(async () => {}),
-      }}
-    />);
-    fireEvent.click(screen.getByRole("button", { name: /sign in with google/i }));
-    await screen.findByRole("button", { name: /subscribe/i });
-    expect(screen.queryByRole("button", { name: /yearly/i })).toBeNull();
-  });
-
-  it("点年付按钮 → checkout('year')", async () => {
+  it("默认 CTA → checkout('year')", async () => {
     const checkout = vi.fn(async () => {});
-    render(<ManagedSubscribePanel
-      onCreated={vi.fn()}
-      deps={{
-        login: vi.fn(async (): Promise<LoginResult> => ({ apiKey: "sk-v", entitlement: { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [], annualOffer: { savePercent: 20 } } })),
-        checkout,
-      }}
-    />);
+    render(<ManagedSubscribePanel onCreated={vi.fn()} deps={{
+      login: vi.fn(async (): Promise<LoginResult> => ({ apiKey: "sk-v", entitlement: pricingEnt() })), checkout,
+    }} />);
     fireEvent.click(screen.getByRole("button", { name: /sign in with google/i }));
-    fireEvent.click(await screen.findByRole("button", { name: /yearly/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /subscribe yearly/i }));
     await waitFor(() => expect(checkout).toHaveBeenCalledWith("sk-v", "year"));
   });
 
-  it("blocked 用户即便误带 annualOffer 也不显示年付按钮（客户端自我设防：年付块只属 plan:none）", async () => {
-    render(<ManagedSubscribePanel
-      onCreated={vi.fn()}
-      deps={{
-        login: vi.fn(async (): Promise<LoginResult> => ({ apiKey: "sk-v", entitlement: { plan: "blocked", email: "u@x.com", subscription: { planName: "Pie Pro", currentPeriodEnd: 1750000000, cancelAtPeriodEnd: false, source: "stripe" }, quota: null, models: [], annualOffer: { savePercent: 20 } } })),
-        checkout: vi.fn(async () => {}),
-      }}
-    />);
+  it("选月付卡 → CTA 变月付 → checkout('month')", async () => {
+    const checkout = vi.fn(async () => {});
+    render(<ManagedSubscribePanel onCreated={vi.fn()} deps={{
+      login: vi.fn(async (): Promise<LoginResult> => ({ apiKey: "sk-v", entitlement: pricingEnt() })), checkout,
+    }} />);
+    fireEvent.click(screen.getByRole("button", { name: /sign in with google/i }));
+    fireEvent.click(await screen.findByRole("radio", { name: /monthly/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /subscribe monthly/i }));
+    await waitFor(() => expect(checkout).toHaveBeenCalledWith("sk-v", "month"));
+  });
+
+  it("intro 在场 → 月付卡显示首月促销价 + 说明", async () => {
+    render(<ManagedSubscribePanel onCreated={vi.fn()} deps={{
+      login: vi.fn(async (): Promise<LoginResult> => ({ apiKey: "sk-v", entitlement: pricingEnt({
+        pricing: { currency: "usd", monthly: { amount: 599, introAmount: 299, introPercentOff: 50 }, annual: { amount: 6200, perMonthAmount: 517, savePercent: 14 } },
+      }) })),
+      checkout: vi.fn(async () => {}),
+    }} />);
+    fireEvent.click(screen.getByRole("button", { name: /sign in with google/i }));
+    expect(await screen.findByText(/\$2\.99/)).toBeTruthy();
+    expect(screen.getByText(/50%/)).toBeTruthy();
+  });
+
+  it("年付卡显示省钱徽标 + 月均说明", async () => {
+    render(<ManagedSubscribePanel onCreated={vi.fn()} deps={{
+      login: vi.fn(async (): Promise<LoginResult> => ({ apiKey: "sk-v", entitlement: pricingEnt() })),
+      checkout: vi.fn(async () => {}),
+    }} />);
+    fireEvent.click(screen.getByRole("button", { name: /sign in with google/i }));
+    expect(await screen.findByText(/~14%/)).toBeTruthy();
+    expect(screen.getByText(/\$5\.17/)).toBeTruthy();
+  });
+
+  it("无 pricing → 单 Subscribe 按钮（向后兼容）", async () => {
+    render(<ManagedSubscribePanel onCreated={vi.fn()} deps={{
+      login: vi.fn(async (): Promise<LoginResult> => ({ apiKey: "sk-v", entitlement: { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [] } })),
+      checkout: vi.fn(async () => {}),
+    }} />);
+    fireEvent.click(screen.getByRole("button", { name: /sign in with google/i }));
+    await screen.findByRole("button", { name: /^subscribe$/i });
+    expect(screen.queryByRole("radio")).toBeNull();
+  });
+
+  it("blocked 即便误带 pricing 也不渲染卡片（卡片只属 plan:none）", async () => {
+    render(<ManagedSubscribePanel onCreated={vi.fn()} deps={{
+      login: vi.fn(async (): Promise<LoginResult> => ({ apiKey: "sk-v", entitlement: {
+        plan: "blocked", email: "u@x.com",
+        subscription: { planName: "Pie Pro", currentPeriodEnd: 1750000000, cancelAtPeriodEnd: false, source: "stripe" },
+        quota: null, models: [],
+        pricing: { currency: "usd", monthly: { amount: 599 }, annual: { amount: 6200, perMonthAmount: 517, savePercent: 14 } },
+      } })),
+      checkout: vi.fn(async () => {}),
+    }} />);
     fireEvent.click(screen.getByRole("button", { name: /sign in with google/i }));
     await screen.findByRole("button", { name: /subscribe/i });
-    expect(screen.queryByRole("button", { name: /yearly/i })).toBeNull();
+    expect(screen.queryByRole("radio")).toBeNull();
   });
 
   it("does not call onCreated after unmount (cleanup works)", async () => {
