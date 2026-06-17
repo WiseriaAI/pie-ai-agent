@@ -11,6 +11,8 @@ export interface SubscriptionInfo {
   cancelAtPeriodEnd: boolean;
   /** 当前驱动 active 的来源：stripe（付费订阅，可开 portal）/ redemption（兑换码，无账单可管）。 */
   source: "stripe" | "redemption";
+  /** 计费周期；仅 stripe source 有，redemption 省略。缺省按月付兜底显示。 */
+  interval?: "month" | "year";
 }
 export interface ModelInfo {
   id: string;
@@ -34,6 +36,8 @@ export interface Entitlement {
   models: ModelInfo[];
   /** 仅"从未订过"且后端 feature 开时下发；客户端据此打"首月半价"徽标。缺省=无促销。 */
   introOffer?: { percentOff: number };
+  /** 仅年付 feature 开时下发（plan:none）；存在=年付可买（出年付按钮），savePercent 在则打"年付省 X%"徽标。 */
+  annualOffer?: { savePercent?: number };
 }
 export interface LoginResult {
   apiKey: string;

@@ -52,6 +52,7 @@ function normalizeSubscription(raw: unknown): Entitlement["subscription"] {
     currentPeriodEnd: typeof s.currentPeriodEnd === "number" ? s.currentPeriodEnd : null,
     cancelAtPeriodEnd: s.cancelAtPeriodEnd === true,
     source: s.source === "redemption" ? "redemption" : "stripe",
+    ...(s.interval === "month" || s.interval === "year" ? { interval: s.interval } : {}),
   };
 }
 
@@ -61,11 +62,19 @@ function normalizeIntroOffer(raw: unknown): { percentOff: number } | undefined {
   return undefined;
 }
 
+/** annualOffer 存在性=年付可买，独立于 savePercent 保留（区别于 introOffer 的缺值即丢）。 */
+function normalizeAnnualOffer(raw: unknown): { savePercent?: number } | undefined {
+  if (raw == null || typeof raw !== "object") return undefined;
+  const o = raw as Record<string, unknown>;
+  return typeof o.savePercent === "number" && o.savePercent > 0 ? { savePercent: o.savePercent } : {};
+}
+
 /** 容忍后端缺字段/新激活边缘：补齐 v2.1 安全默认，绝不抛。 */
 export function normalizeEntitlement(raw: unknown): Entitlement {
   const r = (raw ?? {}) as Record<string, unknown>;
   const plan = r.plan === "active" || r.plan === "blocked" ? r.plan : "none";
   const introOffer = normalizeIntroOffer(r.introOffer);
+  const annualOffer = normalizeAnnualOffer(r.annualOffer);
   return {
     plan,
     email: typeof r.email === "string" ? r.email : "",
@@ -73,6 +82,7 @@ export function normalizeEntitlement(raw: unknown): Entitlement {
     quota: (r.quota as Entitlement["quota"]) ?? null,
     models: Array.isArray(r.models) ? (r.models as unknown[]).map(normalizeModel) : [],
     ...(introOffer ? { introOffer } : {}),
+    ...(annualOffer !== undefined ? { annualOffer } : {}),
   };
 }
 
@@ -81,19 +91,20 @@ export function cachedManagedModel(apiKey: string, modelId: string): ModelInfo |
   return getCachedEntitlement(apiKey)?.models.find((m) => m.id === modelId);
 }
 
-async function openBilling(path: "/billing/checkout" | "/billing/portal", apiKey: string, deps: ManagedAccountDeps): Promise<void> {
+async function openBilling(path: "/billing/checkout" | "/billing/portal", apiKey: string, deps: ManagedAccountDeps, body?: Record<string, unknown>): Promise<void> {
   const fetchFn = deps.fetchFn ?? fetch;
   const openTab = deps.openTab ?? ((url: string) => { chrome.tabs.create({ url }); });
-  const resp = await fetchFn(`${ACCOUNT_BASE}${path}`, {
-    method: "POST",
-    headers: { authorization: `Bearer ${apiKey}` },
-  });
+  const init: RequestInit = body
+    ? { method: "POST", headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" }, body: JSON.stringify(body) }
+    : { method: "POST", headers: { authorization: `Bearer ${apiKey}` } };
+  const resp = await fetchFn(`${ACCOUNT_BASE}${path}`, init);
   if (!resp.ok) throw new Error(`${path} failed (${resp.status})`);
   const { url } = (await resp.json()) as { url: string };
   openTab(url);
 }
 
-export const openCheckout = (apiKey: string, deps: ManagedAccountDeps = {}) => openBilling("/billing/checkout", apiKey, deps);
+export const openCheckout = (apiKey: string, deps: ManagedAccountDeps = {}, interval?: "month" | "year") =>
+  openBilling("/billing/checkout", apiKey, deps, interval ? { interval } : undefined);
 export const openPortal = (apiKey: string, deps: ManagedAccountDeps = {}) => openBilling("/billing/portal", apiKey, deps);
 
 /** /redeem 失败：携带后端 error code（code_not_found / code_already_redeemed / code_expired / too_many_attempts / …）。 */

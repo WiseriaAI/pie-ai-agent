@@ -140,4 +140,58 @@ describe("managed-account", () => {
     const fetchFn = vi.fn(async () => ({ ok: false, status: 500, json: async () => { throw new Error("no json"); } })) as unknown as typeof fetch;
     await expect(redeem("sk-r3", "X", { fetchFn })).rejects.toMatchObject({ code: "redeem_failed", status: 500 });
   });
+
+  it("normalizeEntitlement 透传 annualOffer:{savePercent}", async () => {
+    const raw = { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [], annualOffer: { savePercent: 20 } };
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => raw })) as unknown as typeof fetch;
+    const res = await getEntitlement("sk-an1", { fetchFn, locale: "en" });
+    expect(res.annualOffer).toEqual({ savePercent: 20 });
+  });
+
+  it("normalizeEntitlement 保留空 annualOffer:{}（年付可买、无徽标，不被误丢）", async () => {
+    const raw = { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [], annualOffer: {} };
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => raw })) as unknown as typeof fetch;
+    const res = await getEntitlement("sk-an2", { fetchFn, locale: "en" });
+    expect(res.annualOffer).toEqual({});
+  });
+
+  it("normalizeEntitlement 无 annualOffer → absent", async () => {
+    const raw = { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [] };
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => raw })) as unknown as typeof fetch;
+    const res = await getEntitlement("sk-an3", { fetchFn, locale: "en" });
+    expect(res.annualOffer).toBeUndefined();
+  });
+
+  it("normalizeEntitlement 丢弃畸形 annualOffer.savePercent（非正数→剔除 savePercent，仍在场）", async () => {
+    const raw = { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [], annualOffer: { savePercent: "x" } };
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => raw })) as unknown as typeof fetch;
+    const res = await getEntitlement("sk-an4", { fetchFn, locale: "en" });
+    expect(res.annualOffer).toEqual({});
+  });
+
+  it("normalizeSubscription 透传 interval=year（仅 month/year 合法）", async () => {
+    const raw = { plan: "active", email: "u@x.com", subscription: { planName: "Pie Pro", currentPeriodEnd: 9, cancelAtPeriodEnd: false, source: "stripe", interval: "year" }, quota: null, models: [] };
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => raw })) as unknown as typeof fetch;
+    const res = await getEntitlement("sk-iv1", { fetchFn, locale: "en" });
+    expect(res.subscription).toMatchObject({ interval: "year" });
+  });
+
+  it("normalizeSubscription 非法/缺 interval → 省略", async () => {
+    const raw = { plan: "active", email: "u@x.com", subscription: { planName: "Pie Pro", currentPeriodEnd: 9, cancelAtPeriodEnd: false, source: "redemption" }, quota: null, models: [] };
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => raw })) as unknown as typeof fetch;
+    const res = await getEntitlement("sk-iv2", { fetchFn, locale: "en" });
+    expect((res.subscription as Record<string, unknown>).interval).toBeUndefined();
+  });
+
+  it("openCheckout 带 interval → POST body 含 {interval}", async () => {
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ url: "https://checkout.test/y" }) })) as unknown as typeof fetch;
+    const openTab = vi.fn();
+    await openCheckout("sk-virtual", { fetchFn, openTab }, "year");
+    expect(fetchFn).toHaveBeenCalledWith("https://account.pie.chat/billing/checkout", {
+      method: "POST",
+      headers: { authorization: "Bearer sk-virtual", "content-type": "application/json" },
+      body: JSON.stringify({ interval: "year" }),
+    });
+    expect(openTab).toHaveBeenCalledWith("https://checkout.test/y");
+  });
 });
