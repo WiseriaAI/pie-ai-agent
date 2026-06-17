@@ -187,8 +187,8 @@ describe("ManagedSubscribePanel", () => {
     fireEvent.click(screen.getByRole("button", { name: /sign in with google/i }));
     expect(await screen.findByRole("radio", { name: /monthly/i })).toBeTruthy();
     expect(screen.getByRole("radio", { name: /yearly/i })).toBeTruthy();
-    expect(screen.getByText("$5.99")).toBeTruthy();
-    expect(screen.getByText("$62.00")).toBeTruthy();
+    expect(screen.getByText(/USD\s*5\.99/)).toBeTruthy();
+    expect(screen.getByText(/USD\s*62\.00/)).toBeTruthy();
     // 默认年付选中 → CTA 文案为「订阅年付」
     expect(screen.getByRole("button", { name: /subscribe yearly/i })).toBeTruthy();
   });
@@ -222,7 +222,7 @@ describe("ManagedSubscribePanel", () => {
       checkout: vi.fn(async () => {}),
     }} />);
     fireEvent.click(screen.getByRole("button", { name: /sign in with google/i }));
-    expect(await screen.findByText(/\$2\.99/)).toBeTruthy();
+    expect(await screen.findByText(/USD\s*2\.99/)).toBeTruthy();
     expect(screen.getByText(/50%/)).toBeTruthy();
   });
 
@@ -233,7 +233,7 @@ describe("ManagedSubscribePanel", () => {
     }} />);
     fireEvent.click(screen.getByRole("button", { name: /sign in with google/i }));
     expect(await screen.findByText(/~14%/)).toBeTruthy();
-    expect(screen.getByText(/\$5\.17/)).toBeTruthy();
+    expect(screen.getByText(/USD\s*5\.17/)).toBeTruthy();
   });
 
   it("无 pricing → 单 Subscribe 按钮（向后兼容）", async () => {
