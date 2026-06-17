@@ -32,15 +32,16 @@ describe("managed-format", () => {
     expect(formatResetDate(null)).toBeNull();
   });
 
-  it("formatMoney：USD 599 → $5.99（两位小数）", () => {
-    expect(formatMoney(599, "usd", "en")).toBe("$5.99");
+  it("formatMoney：USD 599 → 带货币码 USD 5.99（两位小数）", () => {
+    expect(formatMoney(599, "usd", "en")).toMatch(/USD\s*5\.99/);
+    expect(formatMoney(599, "usd", "en")).not.toMatch(/\$/); // 不显示裸符号
   });
-  it("formatMoney：USD 6200 → $62.00", () => {
-    expect(formatMoney(6200, "usd", "en")).toBe("$62.00");
+  it("formatMoney：USD 6200 → USD 62.00", () => {
+    expect(formatMoney(6200, "usd", "en")).toMatch(/USD\s*62\.00/);
   });
   it("formatMoney：JPY 500 → 零小数货币按小数位换算（不写死 /100）", () => {
     // JPY maximumFractionDigits=0 → 500/1=500，不是 5
-    expect(formatMoney(500, "jpy", "en")).toMatch(/500/);
+    expect(formatMoney(500, "jpy", "en")).toMatch(/JPY\s*500/);
     expect(formatMoney(500, "jpy", "en")).not.toMatch(/5\.00/);
   });
   it("formatMoney：locale 影响小数分隔符（de → 逗号）", () => {
