@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { quotaTier, formatDate, formatResetDate, consumptionDots, TIER_FILL_CLASS, TIER_TEXT_CLASS } from "./managed-format";
+import { quotaTier, formatDate, formatResetDate, consumptionDots, formatMoney, TIER_FILL_CLASS, TIER_TEXT_CLASS } from "./managed-format";
 
 describe("managed-format", () => {
   it("quotaTier 边界：<0.80 neutral / [0.80,0.95) caution / >=0.95 critical", () => {
@@ -30,6 +30,21 @@ describe("managed-format", () => {
   it("formatResetDate：unix 秒 → 'Ddd, Mon DD'，null → null", () => {
     expect(formatResetDate(1750400000)).toMatch(/^[A-Z][a-z]{2}, [A-Z][a-z]{2} \d{1,2}$/);
     expect(formatResetDate(null)).toBeNull();
+  });
+
+  it("formatMoney：USD 599 → $5.99（两位小数）", () => {
+    expect(formatMoney(599, "usd", "en")).toBe("$5.99");
+  });
+  it("formatMoney：USD 6200 → $62.00", () => {
+    expect(formatMoney(6200, "usd", "en")).toBe("$62.00");
+  });
+  it("formatMoney：JPY 500 → 零小数货币按小数位换算（不写死 /100）", () => {
+    // JPY maximumFractionDigits=0 → 500/1=500，不是 5
+    expect(formatMoney(500, "jpy", "en")).toMatch(/500/);
+    expect(formatMoney(500, "jpy", "en")).not.toMatch(/5\.00/);
+  });
+  it("formatMoney：locale 影响小数分隔符（de → 逗号）", () => {
+    expect(formatMoney(599, "usd", "de")).toMatch(/5,99/);
   });
 });
 
