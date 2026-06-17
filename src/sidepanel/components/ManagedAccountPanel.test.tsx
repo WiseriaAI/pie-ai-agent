@@ -91,4 +91,35 @@ describe("ManagedAccountPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: /^redeem$/i }));
     await waitFor(() => expect(redeem).toHaveBeenCalledWith("sk-v", "PIE-AAAAA-BBBBB-CCCCC"));
   });
+
+  it("active stripe + interval=year → 显示「按年计费」", async () => {
+    const refresh = vi.fn(async (): Promise<Entitlement> => ({
+      plan: "active", email: "u@x.com",
+      subscription: { planName: "Pie Pro", currentPeriodEnd: 1750000000, cancelAtPeriodEnd: false, source: "stripe", interval: "year" },
+      quota: { weekly: { usedFraction: 0, resetAt: 1750400000 } }, models: [],
+    }));
+    render(<ManagedAccountPanel apiKey="sk-acc-y" deps={{ refresh }} />);
+    expect(await screen.findByText(/billed yearly/i)).toBeTruthy();
+  });
+
+  it("active stripe + interval=month → 显示「按月计费」", async () => {
+    const refresh = vi.fn(async (): Promise<Entitlement> => ({
+      plan: "active", email: "u@x.com",
+      subscription: { planName: "Pie Pro", currentPeriodEnd: 1750000000, cancelAtPeriodEnd: false, source: "stripe", interval: "month" },
+      quota: { weekly: { usedFraction: 0, resetAt: 1750400000 } }, models: [],
+    }));
+    render(<ManagedAccountPanel apiKey="sk-acc-m" deps={{ refresh }} />);
+    expect(await screen.findByText(/billed monthly/i)).toBeTruthy();
+  });
+
+  it("redemption（无 interval）→ 不显示计费周期标签", async () => {
+    const refresh = vi.fn(async (): Promise<Entitlement> => ({
+      plan: "active", email: "u@x.com",
+      subscription: { planName: "Pie Pro", currentPeriodEnd: 1750000000, cancelAtPeriodEnd: true, source: "redemption" },
+      quota: { weekly: { usedFraction: 0, resetAt: 1750400000 } }, models: [],
+    }));
+    render(<ManagedAccountPanel apiKey="sk-acc-r" deps={{ refresh }} />);
+    await screen.findByText(/active via code/i); // 等渲染完成（redeemedUntil 文案）
+    expect(screen.queryByText(/billed/i)).toBeNull();
+  });
 });

@@ -59,6 +59,9 @@ export default function ManagedAccountPanel({ apiKey, deps }: { apiKey: string; 
   const isBlocked = ent.plan === "blocked";
   const isRedemption = isActive && sub?.source === "redemption";
   const periodDate = formatDate(sub?.currentPeriodEnd, locale);
+  const intervalLabel = isActive && !isRedemption && sub?.interval
+    ? sub.interval === "year" ? t("managed.account.billedYearly") : t("managed.account.billedMonthly")
+    : null;
 
   const pill = isActive
     ? <ManagedStatusPill tone="success" label={t("managed.account.active")} />
@@ -84,6 +87,11 @@ export default function ManagedAccountPanel({ apiKey, deps }: { apiKey: string; 
         <div className="flex flex-col gap-1">
           <div className="text-[16px] font-semibold tracking-[-0.01em] text-fg-1">{headline}</div>
           <div className="font-mono text-[12px] text-fg-2">{ent.email}</div>
+          {intervalLabel && (
+            <div className="pt-0.5">
+              <span className="rounded-full bg-field px-1.5 py-px font-mono text-[10px] text-fg-2">{intervalLabel}</span>
+            </div>
+          )}
           {isActive && periodDate && (
             isRedemption ? (
               <div className="pt-0.5 text-[12px] text-fg-2">{t("managed.account.redeemedUntil", { date: periodDate })}</div>
