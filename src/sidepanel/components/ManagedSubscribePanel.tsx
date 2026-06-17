@@ -256,7 +256,7 @@ export default function ManagedSubscribePanel({
                 const fmt = (a: number) => formatMoney(a, pricing.currency, locale);
                 return (
                   <div className="flex flex-col gap-3">
-                    <div role="radiogroup" className="flex gap-2">
+                    <div role="radiogroup" aria-label={t("managed.account.subscribe")} className="flex gap-2">
                       <button
                         type="button"
                         role="radio"

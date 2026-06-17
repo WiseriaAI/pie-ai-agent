@@ -71,7 +71,9 @@ function normalizePricing(raw: unknown): PricingInfo | undefined {
     typeof v === "number" && Number.isFinite(v) && v > 0 ? v : undefined;
   const m = (p.monthly ?? {}) as Record<string, unknown>;
   const a = (p.annual ?? {}) as Record<string, unknown>;
-  const currency = typeof p.currency === "string" && p.currency ? p.currency : undefined;
+  // currency 须是合法 3 字母 ISO 码——否则 formatMoney 的 Intl.NumberFormat 会抛 RangeError，
+  // 整块丢弃改走单按钮回退，守「绝不渲染半截卡」不变量。
+  const currency = typeof p.currency === "string" && /^[a-z]{3}$/i.test(p.currency) ? p.currency : undefined;
   const monthlyAmount = num(m.amount);
   const annualAmount = num(a.amount);
   const perMonthAmount = num(a.perMonthAmount);

@@ -170,6 +170,13 @@ describe("managed-account", () => {
     expect((await getEntitlement("sk-pr4", { fetchFn, locale: "en" })).pricing).toBeUndefined();
   });
 
+  it("normalizePricing：currency 非 ISO 三字母码 → 整块丢（防 Intl RangeError 崩面板）", async () => {
+    const raw = { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [],
+      pricing: { currency: "us", monthly: { amount: 599 }, annual: { amount: 6200, perMonthAmount: 517, savePercent: 14 } } };
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => raw })) as unknown as typeof fetch;
+    expect((await getEntitlement("sk-pr-iso", { fetchFn, locale: "en" })).pricing).toBeUndefined();
+  });
+
   it("normalizePricing：缺 annual.savePercent → 整块丢（不渲染半截年付卡）", async () => {
     const raw = { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [],
       pricing: { currency: "usd", monthly: { amount: 599 }, annual: { amount: 6200, perMonthAmount: 517 } } };
