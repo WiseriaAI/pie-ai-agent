@@ -302,9 +302,11 @@ export default function ManagedSubscribePanel({
                           {fmt(pricing.annual.amount)}
                           <span className="text-[12px] font-normal text-fg-3">{t("managed.subscribe.pricePerYearSuffix")}</span>
                         </div>
-                        <span className="self-start rounded-full bg-accent/15 px-2 py-0.5 text-[11px] font-medium text-accent">
-                          {t("managed.subscribe.annualSaveBadge", { percent: pricing.annual.savePercent })}
-                        </span>
+                        {pricing.annual.savePercent > 0 && (
+                          <span className="self-start rounded-full bg-accent/15 px-2 py-0.5 text-[11px] font-medium text-accent">
+                            {t("managed.subscribe.annualSaveBadge", { percent: pricing.annual.savePercent })}
+                          </span>
+                        )}
                         <span className="text-[11px] text-fg-3">
                           {t("managed.subscribe.annualPerMonthNote", { price: fmt(pricing.annual.perMonthAmount) })}
                         </span>
