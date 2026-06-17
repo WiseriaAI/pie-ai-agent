@@ -63,27 +63,31 @@ function normalizeIntroOffer(raw: unknown): { percentOff: number } | undefined {
 }
 
 /** v2.5 订阅价格归一化。严格门禁：核心字段缺任一 → undefined（回退单按钮，绝不半截卡）。
- *  intro 两子字段同有同无（一个缺→都丢）。所有金额/比例须为正有限数。 */
+ *  intro 两子字段同有同无（一个缺→都丢）。
+ *  价格字段（amount/perMonthAmount/introPercentOff）须为正数；
+ *  savePercent/introAmount 可为 0（年付=月×12 无折扣时 savePercent=0；极端折扣下 introAmount 可为 0）。 */
 function normalizePricing(raw: unknown): PricingInfo | undefined {
   if (raw == null || typeof raw !== "object") return undefined;
   const p = raw as Record<string, unknown>;
-  const num = (v: unknown): number | undefined =>
+  const pos = (v: unknown): number | undefined =>
     typeof v === "number" && Number.isFinite(v) && v > 0 ? v : undefined;
+  const nonneg = (v: unknown): number | undefined =>
+    typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : undefined;
   const m = (p.monthly ?? {}) as Record<string, unknown>;
   const a = (p.annual ?? {}) as Record<string, unknown>;
   // currency 须是合法 3 字母 ISO 码——否则 formatMoney 的 Intl.NumberFormat 会抛 RangeError，
   // 整块丢弃改走单按钮回退，守「绝不渲染半截卡」不变量。
   const currency = typeof p.currency === "string" && /^[a-z]{3}$/i.test(p.currency) ? p.currency : undefined;
-  const monthlyAmount = num(m.amount);
-  const annualAmount = num(a.amount);
-  const perMonthAmount = num(a.perMonthAmount);
-  const savePercent = num(a.savePercent);
+  const monthlyAmount = pos(m.amount);
+  const annualAmount = pos(a.amount);
+  const perMonthAmount = pos(a.perMonthAmount);
+  const savePercent = nonneg(a.savePercent); // 可为 0（年付无折扣）
   if (currency == null || monthlyAmount == null || annualAmount == null || perMonthAmount == null || savePercent == null) {
     return undefined;
   }
   const monthly: PricingInfo["monthly"] = { amount: monthlyAmount };
-  const introAmount = num(m.introAmount);
-  const introPercentOff = num(m.introPercentOff);
+  const introAmount = nonneg(m.introAmount); // 极端折扣下可为 0
+  const introPercentOff = pos(m.introPercentOff);
   if (introAmount != null && introPercentOff != null) {
     monthly.introAmount = introAmount;
     monthly.introPercentOff = introPercentOff;

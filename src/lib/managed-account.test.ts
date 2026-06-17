@@ -149,6 +149,14 @@ describe("managed-account", () => {
     expect(res.pricing).toEqual({ currency: "usd", monthly: { amount: 599 }, annual: { amount: 6200, perMonthAmount: 517, savePercent: 14 } });
   });
 
+  it("normalizePricing：savePercent=0（年付无折扣）→ 保留整块（不被 >0 误丢）", async () => {
+    const raw = { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [],
+      pricing: { currency: "usd", monthly: { amount: 100 }, annual: { amount: 1200, perMonthAmount: 100, savePercent: 0 } } };
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => raw })) as unknown as typeof fetch;
+    const res = await getEntitlement("sk-pr-save0", { fetchFn, locale: "en" });
+    expect(res.pricing).toEqual({ currency: "usd", monthly: { amount: 100 }, annual: { amount: 1200, perMonthAmount: 100, savePercent: 0 } });
+  });
+
   it("normalizePricing：带 intro 两子字段 → 保留", async () => {
     const raw = { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [],
       pricing: { currency: "usd", monthly: { amount: 599, introAmount: 299, introPercentOff: 50 }, annual: { amount: 6200, perMonthAmount: 517, savePercent: 14 } } };
