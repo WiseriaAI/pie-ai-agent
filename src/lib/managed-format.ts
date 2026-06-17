@@ -46,3 +46,11 @@ export function consumptionDots(costLevel: number): [boolean, boolean, boolean] 
   const filled = Math.max(1, Math.min(3, Math.round(costLevel)));
   return [filled >= 1, filled >= 2, filled >= 3];
 }
+
+/** 最小货币单位金额 → 本地化货币串。按货币小数位换算（USD=2→/100，JPY=0→/1），不写死 /100。
+ *  仅格式化，不做任何定价计算（定价唯一事实源是后端/Stripe）。 */
+export function formatMoney(minorAmount: number, currency: string, locale: string = "en"): string {
+  const nf = new Intl.NumberFormat(locale, { style: "currency", currency });
+  const digits = nf.resolvedOptions().maximumFractionDigits ?? 2;
+  return nf.format(minorAmount / 10 ** digits);
+}

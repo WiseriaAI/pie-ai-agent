@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { startManagedLogin, type LoginResult } from "@/lib/managed-auth";
 import { getEntitlement, openCheckout } from "@/lib/managed-account";
 import { useI18n } from "@/lib/i18n";
+import { formatMoney } from "@/lib/managed-format";
 import RedeemCodeForm from "./RedeemCodeForm";
 import { Button } from "./ui/Button";
 import { ManagedStatusPill } from "./ManagedStatusPill";
@@ -9,10 +10,21 @@ import { ManagedPlanIcon } from "./ManagedPlanIcon";
 import { GoogleGlyph, SparkGlyph } from "./icons";
 import type { Entitlement } from "@/lib/managed-auth";
 
+function SelectRing({ checked }: { checked: boolean }) {
+  if (!checked) return <span className="h-4 w-4 shrink-0 rounded-full border border-line" aria-hidden />;
+  return (
+    <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-fg-1" aria-hidden>
+      <svg className="h-2.5 w-2.5 text-white" viewBox="0 0 10 10" fill="none">
+        <path d="M2 5l2 2 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </span>
+  );
+}
+
 export interface ManagedSubscribeDeps {
   login?: () => Promise<LoginResult>;
   refresh?: (apiKey: string) => Promise<LoginResult["entitlement"]>;
-  checkout?: (apiKey: string) => Promise<void>;
+  checkout?: (apiKey: string, interval?: "month" | "year") => Promise<void>;
   redeem?: (apiKey: string, code: string) => Promise<Entitlement>;
 }
 
@@ -32,12 +44,13 @@ export default function ManagedSubscribePanel({
   deps,
   pollIntervalMs = 4000,
 }: Props) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const login = deps?.login ?? (() => startManagedLogin());
   const refresh = deps?.refresh ?? ((k: string) => getEntitlement(k));
-  const checkout = deps?.checkout ?? ((k: string) => openCheckout(k));
+  const checkout = deps?.checkout ?? ((k: string, interval?: "month" | "year") => openCheckout(k, {}, interval));
 
   const [busy, setBusy] = useState(false);
+  const [selected, setSelected] = useState<"month" | "year">("year");
   const [err, setErr] = useState<string | null>(null);
   const [session, setSession] = useState<LoginResult | null>(null);
   const [polling, setPolling] = useState(false);
@@ -140,11 +153,11 @@ export default function ManagedSubscribePanel({
     }
   }
 
-  async function handleCheckout() {
+  async function handleCheckout(interval: "month" | "year") {
     if (!session) return;
     setErr(null);
     try {
-      await checkout(session.apiKey);
+      await checkout(session.apiKey, interval);
       // Start auto-polling after checkout opens the Stripe tab
       startPolling();
     } catch (e) {
@@ -218,7 +231,7 @@ export default function ManagedSubscribePanel({
             <div className="font-mono text-[12px] text-fg-2">{session.entitlement.email}</div>
           </div>
           <p className="text-[12px] leading-[17px] text-fg-2">{t("managed.account.noneBody")}</p>
-          {session.entitlement.plan === "none" && session.entitlement.introOffer && (
+          {session.entitlement.plan === "none" && session.entitlement.introOffer && !session.entitlement.pricing && (
             <span className="inline-flex items-center gap-1.5 self-start rounded-full bg-accent/15 px-2.5 py-1 text-[12px] font-medium text-accent">
               <SparkGlyph />
               {t("managed.subscribe.introBadge", { percentOff: session.entitlement.introOffer.percentOff })}
@@ -237,8 +250,74 @@ export default function ManagedSubscribePanel({
                 </svg>
                 {t("managed.subscribe.waiting")}
               </div>
+            ) : session.entitlement.plan === "none" && session.entitlement.pricing ? (
+              (() => {
+                const pricing = session.entitlement.pricing;
+                const fmt = (a: number) => formatMoney(a, pricing.currency, locale);
+                return (
+                  <div className="flex flex-col gap-3">
+                    <div role="radiogroup" aria-label={t("managed.account.subscribe")} className="flex gap-2">
+                      <button
+                        type="button"
+                        role="radio"
+                        aria-checked={selected === "month"}
+                        disabled={busy}
+                        onClick={() => setSelected("month")}
+                        className={`flex flex-1 basis-0 flex-col gap-1 rounded-control border p-3 text-left transition-colors ${selected === "month" ? "border-fg-1" : "border-line"}`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-[12px] font-medium text-fg-2">{t("managed.subscribe.monthly")}</span>
+                          <SelectRing checked={selected === "month"} />
+                        </div>
+                        <div className="text-[16px] font-semibold text-fg-1">
+                          {fmt(pricing.monthly.amount)}
+                          <span className="text-[12px] font-normal text-fg-3">{t("managed.subscribe.pricePerMonthSuffix")}</span>
+                        </div>
+                        {pricing.monthly.introAmount != null ? (
+                          <>
+                            <span className="self-start rounded-full bg-fg-1 px-2 py-0.5 text-[11px] font-medium text-white">
+                              {t("managed.subscribe.introFirstMonth", { price: fmt(pricing.monthly.introAmount) })}
+                            </span>
+                            <span className="text-[11px] text-fg-3">
+                              {t("managed.subscribe.introNote", { percentOff: pricing.monthly.introPercentOff! })}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-[11px] text-fg-3">{t("managed.subscribe.billedMonthlyNote")}</span>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        role="radio"
+                        aria-checked={selected === "year"}
+                        disabled={busy}
+                        onClick={() => setSelected("year")}
+                        className={`flex flex-1 basis-0 flex-col gap-1 rounded-control border p-3 text-left transition-colors ${selected === "year" ? "border-fg-1" : "border-line"}`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-[12px] font-medium text-fg-2">{t("managed.subscribe.annual")}</span>
+                          <SelectRing checked={selected === "year"} />
+                        </div>
+                        <div className="text-[16px] font-semibold text-fg-1">
+                          {fmt(pricing.annual.amount)}
+                          <span className="text-[12px] font-normal text-fg-3">{t("managed.subscribe.pricePerYearSuffix")}</span>
+                        </div>
+                        <span className="self-start rounded-full bg-accent/15 px-2 py-0.5 text-[11px] font-medium text-accent">
+                          {t("managed.subscribe.annualSaveBadge", { percent: pricing.annual.savePercent })}
+                        </span>
+                        <span className="text-[11px] text-fg-3">
+                          {t("managed.subscribe.annualPerMonthNote", { price: fmt(pricing.annual.perMonthAmount) })}
+                        </span>
+                      </button>
+                    </div>
+                    <Button variant="primary" size="md" fullWidth disabled={busy} onClick={() => handleCheckout(selected)}>
+                      {selected === "year" ? t("managed.subscribe.subscribeAnnual") : t("managed.subscribe.subscribeMonthly")}
+                    </Button>
+                  </div>
+                );
+              })()
             ) : (
-              <Button variant="primary" size="md" fullWidth disabled={busy} onClick={handleCheckout}>
+              <Button variant="primary" size="md" fullWidth disabled={busy} onClick={() => handleCheckout("month")}>
                 {t("managed.account.subscribe")}
               </Button>
             )}

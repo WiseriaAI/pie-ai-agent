@@ -50,6 +50,16 @@ describe("dictionary parity", () => {
     }
   });
 
+  it("price-card subscribe keys present (en/zh-CN sample)", () => {
+    expect(enDict.managed.subscribe.monthly).toBe("Monthly");
+    expect(enDict.managed.subscribe.annual).toBe("Yearly");
+    expect(enDict.managed.subscribe.pricePerMonthSuffix).toBe("/mo");
+    expect(enDict.managed.subscribe.subscribeAnnual).toBe("Subscribe yearly");
+    expect(enDict.managed.account.billedYearly).toBe("Billed yearly");
+    expect(zhCNDict.managed.subscribe.annualSaveBadge).toBe("省 ~{percent}%");
+    expect(zhCNDict.managed.subscribe.subscribeAnnual).toBe("订阅年付");
+  });
+
   it("launch locales translate critical activation labels", () => {
     expect(LOCALE_REGISTRY["es-419"].dictionary.common.cancel).toBe("Cancelar");
     expect(LOCALE_REGISTRY["es-419"].dictionary.common.save).toBe("Guardar");

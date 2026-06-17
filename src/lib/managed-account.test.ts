@@ -146,6 +146,88 @@ describe("managed-account", () => {
     const fetchFn = vi.fn(async () => ({ ok: false, status: 500, json: async () => { throw new Error("no json"); } })) as unknown as typeof fetch;
     await expect(redeem("sk-r3", "X", { fetchFn })).rejects.toMatchObject({ code: "redeem_failed", status: 500 });
   });
+
+  it("normalizePricing：完整 → 透传归一化", async () => {
+    const raw = { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [],
+      pricing: { currency: "usd", monthly: { amount: 599 }, annual: { amount: 6200, perMonthAmount: 517, savePercent: 14 } } };
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => raw })) as unknown as typeof fetch;
+    const res = await getEntitlement("sk-pr1", { fetchFn, locale: "en" });
+    expect(res.pricing).toEqual({ currency: "usd", monthly: { amount: 599 }, annual: { amount: 6200, perMonthAmount: 517, savePercent: 14 } });
+  });
+
+  it("normalizePricing：带 intro 两子字段 → 保留", async () => {
+    const raw = { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [],
+      pricing: { currency: "usd", monthly: { amount: 599, introAmount: 299, introPercentOff: 50 }, annual: { amount: 6200, perMonthAmount: 517, savePercent: 14 } } };
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => raw })) as unknown as typeof fetch;
+    expect((await getEntitlement("sk-pr2", { fetchFn, locale: "en" })).pricing!.monthly).toEqual({ amount: 599, introAmount: 299, introPercentOff: 50 });
+  });
+
+  it("normalizePricing：intro 只给一半 → 两子字段都丢（月付退回常规）", async () => {
+    const raw = { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [],
+      pricing: { currency: "usd", monthly: { amount: 599, introAmount: 299 }, annual: { amount: 6200, perMonthAmount: 517, savePercent: 14 } } };
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => raw })) as unknown as typeof fetch;
+    expect((await getEntitlement("sk-pr3", { fetchFn, locale: "en" })).pricing!.monthly).toEqual({ amount: 599 });
+  });
+
+  it("normalizePricing：缺 currency → 整块丢（回退）", async () => {
+    const raw = { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [],
+      pricing: { monthly: { amount: 599 }, annual: { amount: 6200, perMonthAmount: 517, savePercent: 14 } } };
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => raw })) as unknown as typeof fetch;
+    expect((await getEntitlement("sk-pr4", { fetchFn, locale: "en" })).pricing).toBeUndefined();
+  });
+
+  it("normalizePricing：currency 非 ISO 三字母码 → 整块丢（防 Intl RangeError 崩面板）", async () => {
+    const raw = { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [],
+      pricing: { currency: "us", monthly: { amount: 599 }, annual: { amount: 6200, perMonthAmount: 517, savePercent: 14 } } };
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => raw })) as unknown as typeof fetch;
+    expect((await getEntitlement("sk-pr-iso", { fetchFn, locale: "en" })).pricing).toBeUndefined();
+  });
+
+  it("normalizePricing：缺 annual.savePercent → 整块丢（不渲染半截年付卡）", async () => {
+    const raw = { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [],
+      pricing: { currency: "usd", monthly: { amount: 599 }, annual: { amount: 6200, perMonthAmount: 517 } } };
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => raw })) as unknown as typeof fetch;
+    expect((await getEntitlement("sk-pr5", { fetchFn, locale: "en" })).pricing).toBeUndefined();
+  });
+
+  it("normalizePricing：amount 非正/非数 → 整块丢", async () => {
+    const raw = { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [],
+      pricing: { currency: "usd", monthly: { amount: 0 }, annual: { amount: 6200, perMonthAmount: 517, savePercent: 14 } } };
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => raw })) as unknown as typeof fetch;
+    expect((await getEntitlement("sk-pr6", { fetchFn, locale: "en" })).pricing).toBeUndefined();
+  });
+
+  it("normalizeEntitlement：无 pricing → absent", async () => {
+    const raw = { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [] };
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => raw })) as unknown as typeof fetch;
+    expect((await getEntitlement("sk-pr7", { fetchFn, locale: "en" })).pricing).toBeUndefined();
+  });
+
+  it("normalizeSubscription 透传 interval=year（仅 month/year 合法）", async () => {
+    const raw = { plan: "active", email: "u@x.com", subscription: { planName: "Pie Pro", currentPeriodEnd: 9, cancelAtPeriodEnd: false, source: "stripe", interval: "year" }, quota: null, models: [] };
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => raw })) as unknown as typeof fetch;
+    const res = await getEntitlement("sk-iv1", { fetchFn, locale: "en" });
+    expect(res.subscription).toMatchObject({ interval: "year" });
+  });
+
+  it("normalizeSubscription 非法/缺 interval → 省略", async () => {
+    const raw = { plan: "active", email: "u@x.com", subscription: { planName: "Pie Pro", currentPeriodEnd: 9, cancelAtPeriodEnd: false, source: "redemption" }, quota: null, models: [] };
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => raw })) as unknown as typeof fetch;
+    const res = await getEntitlement("sk-iv2", { fetchFn, locale: "en" });
+    expect((res.subscription as Record<string, unknown>).interval).toBeUndefined();
+  });
+
+  it("openCheckout 带 interval → POST body 含 {interval}", async () => {
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ url: "https://checkout.test/y" }) })) as unknown as typeof fetch;
+    const openTab = vi.fn();
+    await openCheckout("sk-virtual", { fetchFn, openTab }, "year");
+    expect(fetchFn).toHaveBeenCalledWith("https://account.pie.chat/billing/checkout", {
+      method: "POST",
+      headers: { authorization: "Bearer sk-virtual", "content-type": "application/json" },
+      body: JSON.stringify({ interval: "year" }),
+    });
+    expect(openTab).toHaveBeenCalledWith("https://checkout.test/y");
+  });
 });
 
 describe("managed-account persistence", () => {

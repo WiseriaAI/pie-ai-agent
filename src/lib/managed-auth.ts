@@ -12,6 +12,8 @@ export interface SubscriptionInfo {
   cancelAtPeriodEnd: boolean;
   /** 当前驱动 active 的来源：stripe（付费订阅，可开 portal）/ redemption（兑换码，无账单可管）。 */
   source: "stripe" | "redemption";
+  /** 计费周期；仅 stripe source 有，redemption 省略。缺省按月付兜底显示。 */
+  interval?: "month" | "year";
 }
 export interface ModelInfo {
   id: string;
@@ -24,6 +26,12 @@ export interface ModelInfo {
   /** 相对周额度消耗档（1=最省），渲染为 N/3 实心点。 */
   costLevel: 1 | 2 | 3;
 }
+export interface PricingInfo {
+  /** ISO 货币码小写（Stripe 约定），交给 Intl 格式化。 */
+  currency: string;
+  monthly: { amount: number; introAmount?: number; introPercentOff?: number };
+  annual: { amount: number; perMonthAmount: number; savePercent: number };
+}
 export interface Entitlement {
   plan: "none" | "active" | "blocked";
   email: string;
@@ -35,6 +43,8 @@ export interface Entitlement {
   models: ModelInfo[];
   /** 仅"从未订过"且后端 feature 开时下发；客户端据此打"首月半价"徽标。缺省=无促销。 */
   introOffer?: { percentOff: number };
+  /** 仅 plan:none、后端年付开+价格拉取成功时下发；存在=渲染价格卡，缺=回退单订阅按钮。仅展示价、客户端不计算。 */
+  pricing?: PricingInfo;
 }
 export interface LoginResult {
   apiKey: string;
