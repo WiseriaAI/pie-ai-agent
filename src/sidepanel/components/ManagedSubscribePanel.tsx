@@ -12,7 +12,7 @@ import type { Entitlement } from "@/lib/managed-auth";
 export interface ManagedSubscribeDeps {
   login?: () => Promise<LoginResult>;
   refresh?: (apiKey: string) => Promise<LoginResult["entitlement"]>;
-  checkout?: (apiKey: string) => Promise<void>;
+  checkout?: (apiKey: string, interval?: "month" | "year") => Promise<void>;
   redeem?: (apiKey: string, code: string) => Promise<Entitlement>;
 }
 
@@ -35,7 +35,7 @@ export default function ManagedSubscribePanel({
   const { t } = useI18n();
   const login = deps?.login ?? (() => startManagedLogin());
   const refresh = deps?.refresh ?? ((k: string) => getEntitlement(k));
-  const checkout = deps?.checkout ?? ((k: string) => openCheckout(k));
+  const checkout = deps?.checkout ?? ((k: string, interval?: "month" | "year") => openCheckout(k, {}, interval));
 
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -140,11 +140,11 @@ export default function ManagedSubscribePanel({
     }
   }
 
-  async function handleCheckout() {
+  async function handleCheckout(interval: "month" | "year") {
     if (!session) return;
     setErr(null);
     try {
-      await checkout(session.apiKey);
+      await checkout(session.apiKey, interval);
       // Start auto-polling after checkout opens the Stripe tab
       startPolling();
     } catch (e) {
@@ -237,8 +237,24 @@ export default function ManagedSubscribePanel({
                 </svg>
                 {t("managed.subscribe.waiting")}
               </div>
+            ) : session.entitlement.plan === "none" && session.entitlement.annualOffer ? (
+              <div className="flex flex-col gap-2">
+                <Button variant="primary" size="md" fullWidth disabled={busy} onClick={() => handleCheckout("month")}>
+                  {t("managed.subscribe.monthly")}
+                </Button>
+                <Button variant="primary" size="md" fullWidth disabled={busy} onClick={() => handleCheckout("year")}>
+                  <span className="inline-flex items-center gap-1.5">
+                    {t("managed.subscribe.annual")}
+                    {session.entitlement.annualOffer.savePercent != null && (
+                      <span className="rounded-full bg-accent/20 px-1.5 py-px text-[11px] font-medium">
+                        {t("managed.subscribe.annualBadge", { savePercent: session.entitlement.annualOffer.savePercent })}
+                      </span>
+                    )}
+                  </span>
+                </Button>
+              </div>
             ) : (
-              <Button variant="primary" size="md" fullWidth disabled={busy} onClick={handleCheckout}>
+              <Button variant="primary" size="md" fullWidth disabled={busy} onClick={() => handleCheckout("month")}>
                 {t("managed.account.subscribe")}
               </Button>
             )}

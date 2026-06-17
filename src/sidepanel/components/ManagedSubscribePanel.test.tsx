@@ -173,6 +173,73 @@ describe("ManagedSubscribePanel", () => {
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith("sk-v", "u@x.com"));
   });
 
+  it("annualOffer 在场 → 显示月付/年付两按钮 + 省钱徽标", async () => {
+    render(<ManagedSubscribePanel
+      onCreated={vi.fn()}
+      deps={{
+        login: vi.fn(async (): Promise<LoginResult> => ({ apiKey: "sk-v", entitlement: { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [], annualOffer: { savePercent: 20 } } })),
+        checkout: vi.fn(async () => {}),
+      }}
+    />);
+    fireEvent.click(screen.getByRole("button", { name: /sign in with google/i }));
+    await screen.findByRole("button", { name: /monthly/i });
+    expect(screen.getByRole("button", { name: /yearly/i })).toBeTruthy();
+    expect(screen.getByText(/save 20%/i)).toBeTruthy();
+  });
+
+  it("annualOffer 空 {}（无 savePercent）→ 年付按钮在、无徽标", async () => {
+    render(<ManagedSubscribePanel
+      onCreated={vi.fn()}
+      deps={{
+        login: vi.fn(async (): Promise<LoginResult> => ({ apiKey: "sk-v", entitlement: { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [], annualOffer: {} } })),
+        checkout: vi.fn(async () => {}),
+      }}
+    />);
+    fireEvent.click(screen.getByRole("button", { name: /sign in with google/i }));
+    await screen.findByRole("button", { name: /yearly/i });
+    expect(screen.queryByText(/save/i)).toBeNull();
+  });
+
+  it("annualOffer 缺省 → 单 Subscribe 按钮（向后兼容）", async () => {
+    render(<ManagedSubscribePanel
+      onCreated={vi.fn()}
+      deps={{
+        login: vi.fn(async (): Promise<LoginResult> => ({ apiKey: "sk-v", entitlement: { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [] } })),
+        checkout: vi.fn(async () => {}),
+      }}
+    />);
+    fireEvent.click(screen.getByRole("button", { name: /sign in with google/i }));
+    await screen.findByRole("button", { name: /subscribe/i });
+    expect(screen.queryByRole("button", { name: /yearly/i })).toBeNull();
+  });
+
+  it("点年付按钮 → checkout('year')", async () => {
+    const checkout = vi.fn(async () => {});
+    render(<ManagedSubscribePanel
+      onCreated={vi.fn()}
+      deps={{
+        login: vi.fn(async (): Promise<LoginResult> => ({ apiKey: "sk-v", entitlement: { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [], annualOffer: { savePercent: 20 } } })),
+        checkout,
+      }}
+    />);
+    fireEvent.click(screen.getByRole("button", { name: /sign in with google/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /yearly/i }));
+    await waitFor(() => expect(checkout).toHaveBeenCalledWith("sk-v", "year"));
+  });
+
+  it("blocked 用户即便误带 annualOffer 也不显示年付按钮（客户端自我设防：年付块只属 plan:none）", async () => {
+    render(<ManagedSubscribePanel
+      onCreated={vi.fn()}
+      deps={{
+        login: vi.fn(async (): Promise<LoginResult> => ({ apiKey: "sk-v", entitlement: { plan: "blocked", email: "u@x.com", subscription: { planName: "Pie Pro", currentPeriodEnd: 1750000000, cancelAtPeriodEnd: false, source: "stripe" }, quota: null, models: [], annualOffer: { savePercent: 20 } } })),
+        checkout: vi.fn(async () => {}),
+      }}
+    />);
+    fireEvent.click(screen.getByRole("button", { name: /sign in with google/i }));
+    await screen.findByRole("button", { name: /subscribe/i });
+    expect(screen.queryByRole("button", { name: /yearly/i })).toBeNull();
+  });
+
   it("does not call onCreated after unmount (cleanup works)", async () => {
     const onCreated = vi.fn();
 
