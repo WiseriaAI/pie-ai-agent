@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, afterEach } from "vitest";
 import ModelPicker, { modelsFor, computePopoverCoords } from "./ModelPicker";
 import type { DecryptedInstance } from "@/lib/instances";
@@ -165,6 +165,29 @@ describe("ModelPicker managed rendering", () => {
     fireEvent.click(screen.getByText("Pie 官方订阅"));
     fireEvent.click(screen.getByText("进阶"));
     expect(onSelect).toHaveBeenCalledWith("m", "pro");
+  });
+
+  it("展开 managed 触发 onRefreshModels（SWR）", () => {
+    const onRefreshModels = vi.fn();
+    render(<ModelPicker instances={managedInsts} currentInstanceId="m" currentModel="default" locked={false} onSelect={() => {}} onManage={() => {}} onRefreshModels={onRefreshModels} />);
+    fireEvent.click(screen.getAllByRole("button")[0]!);
+    fireEvent.click(screen.getByText("Pie 官方订阅"));
+    expect(onRefreshModels).toHaveBeenCalledWith("m");
+  });
+
+  it("entitlement 缓存更新后经 store-bus 触发重渲染，列表刷新", async () => {
+    const cold: DecryptedInstance[] = [{ id: "m2", provider: "managed", nickname: "Pie", apiKey: "sk-rerender", createdAt: 1 }];
+    render(<ModelPicker instances={cold} currentInstanceId="m2" currentModel="default" locked={false} onSelect={() => {}} onManage={() => {}} />);
+    fireEvent.click(screen.getAllByRole("button")[0]!);
+    fireEvent.click(screen.getByText("Pie 官方订阅"));
+    expect(screen.queryByText("进阶")).toBeNull(); // 冷启动只有兜底 default
+    const ent = { plan: "active", email: "e", subscription: null, quota: null, models: [
+      { id: "default", name: "标准", vision: false, maxContextTokens: 128000, costLevel: 1 },
+      { id: "pro", name: "进阶", description: "更强", vision: true, maxContextTokens: 200000, costLevel: 3 },
+    ] };
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => ent })) as unknown as typeof fetch;
+    await getEntitlement("sk-rerender", { fetchFn, locale: "en" }); // 双写 + store-bus publish
+    await waitFor(() => expect(screen.getByText("进阶")).toBeTruthy());
   });
 });
 

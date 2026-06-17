@@ -1,5 +1,6 @@
 import { ACCOUNT_BASE } from "./managed-config";
-import { normalizeEntitlement } from "./managed-account";
+import { normalizeEntitlement, cacheEntitlement } from "./managed-account";
+import { getLocale } from "./i18n";
 
 export interface QuotaWindow {
   usedFraction: number;
@@ -46,6 +47,8 @@ export interface ManagedAuthDeps {
   /** 缺省走 chrome.identity.getRedirectURL()（https://<EXTENSION_ID>.chromiumapp.org/）。 */
   getRedirectURL?: () => string;
   fetchFn?: typeof fetch;
+  /** exchange 的本地化语言，缺省取当前 UI locale（getLocale()）。 */
+  locale?: string;
 }
 
 /**
@@ -59,6 +62,7 @@ export async function startManagedLogin(deps: ManagedAuthDeps = {}): Promise<Log
     ((opts) => chrome.identity.launchWebAuthFlow(opts) as unknown as Promise<string>);
   const getRedirectURL = deps.getRedirectURL ?? (() => chrome.identity.getRedirectURL());
   const fetchFn = deps.fetchFn ?? fetch;
+  const locale = deps.locale ?? getLocale();
 
   const redirectUri = getRedirectURL();
   const authUrl = `${ACCOUNT_BASE}/auth/start?redirect_uri=${encodeURIComponent(redirectUri)}`;
@@ -66,7 +70,7 @@ export async function startManagedLogin(deps: ManagedAuthDeps = {}): Promise<Log
   const code = new URL(resultUrl).searchParams.get("code");
   if (!code) throw new Error("Login cancelled or not authorized");
 
-  const resp = await fetchFn(`${ACCOUNT_BASE}/auth/exchange`, {
+  const resp = await fetchFn(`${ACCOUNT_BASE}/auth/exchange?locale=${encodeURIComponent(locale)}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ code, redirectUri }),
@@ -75,5 +79,7 @@ export async function startManagedLogin(deps: ManagedAuthDeps = {}): Promise<Log
   // 归一化 entitlement：与 getEntitlement 同一道防线，护住喂 UI（含首月半价徽标）的主路径，
   // 不让 /auth/exchange 的畸形字段（如 introOffer.percentOff）裸穿到渲染层。
   const json = (await resp.json()) as { apiKey?: unknown; entitlement?: unknown };
-  return { apiKey: String(json.apiKey ?? ""), entitlement: normalizeEntitlement(json.entitlement) };
+  const result = { apiKey: String(json.apiKey ?? ""), entitlement: normalizeEntitlement(json.entitlement) };
+  if (result.apiKey) await cacheEntitlement(result.apiKey, result.entitlement);
+  return result;
 }

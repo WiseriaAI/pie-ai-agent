@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { startManagedLogin } from "./managed-auth";
+import { getCachedEntitlement, _clearEntitlementCacheForTests } from "./managed-account";
+import { getConfig } from "./idb/config-store";
+import { _resetForTests } from "./idb/db";
 
 const redirectUri = "https://abc.chromiumapp.org/";
 const deps = (over: Partial<Parameters<typeof startManagedLogin>[0]> = {}) => ({
@@ -14,13 +17,13 @@ const deps = (over: Partial<Parameters<typeof startManagedLogin>[0]> = {}) => ({
 
 describe("startManagedLogin", () => {
   it("exchanges the code and returns apiKey + entitlement", async () => {
-    const d = deps();
+    const d = deps({ locale: "en" });
     const res = await startManagedLogin(d);
     expect(d.launchWebAuthFlow).toHaveBeenCalledWith({
       url: `https://account.pie.chat/auth/start?redirect_uri=${encodeURIComponent(redirectUri)}`,
       interactive: true,
     });
-    expect(d.fetchFn).toHaveBeenCalledWith("https://account.pie.chat/auth/exchange", expect.objectContaining({
+    expect(d.fetchFn).toHaveBeenCalledWith("https://account.pie.chat/auth/exchange?locale=en", expect.objectContaining({
       method: "POST",
       body: JSON.stringify({ code: "AUTHCODE", redirectUri }),
     }));
@@ -37,5 +40,13 @@ describe("startManagedLogin", () => {
     await expect(startManagedLogin(deps({
       fetchFn: vi.fn(async () => ({ ok: false, status: 401, json: async () => ({}) })) as unknown as typeof fetch,
     }))).rejects.toThrow();
+  });
+
+  it("登录成功后回填 entitlement 缓存（内存 + IDB）", async () => {
+    await _resetForTests();
+    _clearEntitlementCacheForTests();
+    const res = await startManagedLogin(deps({ locale: "en" }));
+    expect(getCachedEntitlement("sk-virtual")).toEqual(res.entitlement);
+    expect(await getConfig("managed_entitlement_sk-virtual")).toEqual(res.entitlement);
   });
 });
