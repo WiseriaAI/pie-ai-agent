@@ -25,6 +25,12 @@ export interface ModelInfo {
   /** 相对周额度消耗档（1=最省），渲染为 N/3 实心点。 */
   costLevel: 1 | 2 | 3;
 }
+export interface PricingInfo {
+  /** ISO 货币码小写（Stripe 约定），交给 Intl 格式化。 */
+  currency: string;
+  monthly: { amount: number; introAmount?: number; introPercentOff?: number };
+  annual: { amount: number; perMonthAmount: number; savePercent: number };
+}
 export interface Entitlement {
   plan: "none" | "active" | "blocked";
   email: string;
@@ -36,8 +42,8 @@ export interface Entitlement {
   models: ModelInfo[];
   /** 仅"从未订过"且后端 feature 开时下发；客户端据此打"首月半价"徽标。缺省=无促销。 */
   introOffer?: { percentOff: number };
-  /** 仅年付 feature 开时下发（plan:none）；存在=年付可买（出年付按钮），savePercent 在则打"年付省 X%"徽标。 */
-  annualOffer?: { savePercent?: number };
+  /** 仅 plan:none、后端年付开+价格拉取成功时下发；存在=渲染价格卡，缺=回退单订阅按钮。仅展示价、客户端不计算。 */
+  pricing?: PricingInfo;
 }
 export interface LoginResult {
   apiKey: string;

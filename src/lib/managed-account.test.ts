@@ -141,32 +141,53 @@ describe("managed-account", () => {
     await expect(redeem("sk-r3", "X", { fetchFn })).rejects.toMatchObject({ code: "redeem_failed", status: 500 });
   });
 
-  it("normalizeEntitlement 透传 annualOffer:{savePercent}", async () => {
-    const raw = { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [], annualOffer: { savePercent: 20 } };
+  it("normalizePricing：完整 → 透传归一化", async () => {
+    const raw = { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [],
+      pricing: { currency: "usd", monthly: { amount: 599 }, annual: { amount: 6200, perMonthAmount: 517, savePercent: 14 } } };
     const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => raw })) as unknown as typeof fetch;
-    const res = await getEntitlement("sk-an1", { fetchFn, locale: "en" });
-    expect(res.annualOffer).toEqual({ savePercent: 20 });
+    const res = await getEntitlement("sk-pr1", { fetchFn, locale: "en" });
+    expect(res.pricing).toEqual({ currency: "usd", monthly: { amount: 599 }, annual: { amount: 6200, perMonthAmount: 517, savePercent: 14 } });
   });
 
-  it("normalizeEntitlement 保留空 annualOffer:{}（年付可买、无徽标，不被误丢）", async () => {
-    const raw = { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [], annualOffer: {} };
+  it("normalizePricing：带 intro 两子字段 → 保留", async () => {
+    const raw = { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [],
+      pricing: { currency: "usd", monthly: { amount: 599, introAmount: 299, introPercentOff: 50 }, annual: { amount: 6200, perMonthAmount: 517, savePercent: 14 } } };
     const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => raw })) as unknown as typeof fetch;
-    const res = await getEntitlement("sk-an2", { fetchFn, locale: "en" });
-    expect(res.annualOffer).toEqual({});
+    expect((await getEntitlement("sk-pr2", { fetchFn, locale: "en" })).pricing!.monthly).toEqual({ amount: 599, introAmount: 299, introPercentOff: 50 });
   });
 
-  it("normalizeEntitlement 无 annualOffer → absent", async () => {
+  it("normalizePricing：intro 只给一半 → 两子字段都丢（月付退回常规）", async () => {
+    const raw = { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [],
+      pricing: { currency: "usd", monthly: { amount: 599, introAmount: 299 }, annual: { amount: 6200, perMonthAmount: 517, savePercent: 14 } } };
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => raw })) as unknown as typeof fetch;
+    expect((await getEntitlement("sk-pr3", { fetchFn, locale: "en" })).pricing!.monthly).toEqual({ amount: 599 });
+  });
+
+  it("normalizePricing：缺 currency → 整块丢（回退）", async () => {
+    const raw = { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [],
+      pricing: { monthly: { amount: 599 }, annual: { amount: 6200, perMonthAmount: 517, savePercent: 14 } } };
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => raw })) as unknown as typeof fetch;
+    expect((await getEntitlement("sk-pr4", { fetchFn, locale: "en" })).pricing).toBeUndefined();
+  });
+
+  it("normalizePricing：缺 annual.savePercent → 整块丢（不渲染半截年付卡）", async () => {
+    const raw = { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [],
+      pricing: { currency: "usd", monthly: { amount: 599 }, annual: { amount: 6200, perMonthAmount: 517 } } };
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => raw })) as unknown as typeof fetch;
+    expect((await getEntitlement("sk-pr5", { fetchFn, locale: "en" })).pricing).toBeUndefined();
+  });
+
+  it("normalizePricing：amount 非正/非数 → 整块丢", async () => {
+    const raw = { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [],
+      pricing: { currency: "usd", monthly: { amount: 0 }, annual: { amount: 6200, perMonthAmount: 517, savePercent: 14 } } };
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => raw })) as unknown as typeof fetch;
+    expect((await getEntitlement("sk-pr6", { fetchFn, locale: "en" })).pricing).toBeUndefined();
+  });
+
+  it("normalizeEntitlement：无 pricing → absent", async () => {
     const raw = { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [] };
     const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => raw })) as unknown as typeof fetch;
-    const res = await getEntitlement("sk-an3", { fetchFn, locale: "en" });
-    expect(res.annualOffer).toBeUndefined();
-  });
-
-  it("normalizeEntitlement 丢弃畸形 annualOffer.savePercent（非正数→剔除 savePercent，仍在场）", async () => {
-    const raw = { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [], annualOffer: { savePercent: "x" } };
-    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => raw })) as unknown as typeof fetch;
-    const res = await getEntitlement("sk-an4", { fetchFn, locale: "en" });
-    expect(res.annualOffer).toEqual({});
+    expect((await getEntitlement("sk-pr7", { fetchFn, locale: "en" })).pricing).toBeUndefined();
   });
 
   it("normalizeSubscription 透传 interval=year（仅 month/year 合法）", async () => {

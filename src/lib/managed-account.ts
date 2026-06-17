@@ -1,5 +1,5 @@
 import { ACCOUNT_BASE } from "./managed-config";
-import type { Entitlement, ModelInfo } from "./managed-auth";
+import type { Entitlement, ModelInfo, PricingInfo } from "./managed-auth";
 import { getLocale } from "./i18n";
 
 export interface ManagedAccountDeps {
@@ -62,11 +62,31 @@ function normalizeIntroOffer(raw: unknown): { percentOff: number } | undefined {
   return undefined;
 }
 
-/** annualOffer 存在性=年付可买，独立于 savePercent 保留（区别于 introOffer 的缺值即丢）。 */
-function normalizeAnnualOffer(raw: unknown): { savePercent?: number } | undefined {
+/** v2.5 订阅价格归一化。严格门禁：核心字段缺任一 → undefined（回退单按钮，绝不半截卡）。
+ *  intro 两子字段同有同无（一个缺→都丢）。所有金额/比例须为正有限数。 */
+function normalizePricing(raw: unknown): PricingInfo | undefined {
   if (raw == null || typeof raw !== "object") return undefined;
-  const o = raw as Record<string, unknown>;
-  return typeof o.savePercent === "number" && o.savePercent > 0 ? { savePercent: o.savePercent } : {};
+  const p = raw as Record<string, unknown>;
+  const num = (v: unknown): number | undefined =>
+    typeof v === "number" && Number.isFinite(v) && v > 0 ? v : undefined;
+  const m = (p.monthly ?? {}) as Record<string, unknown>;
+  const a = (p.annual ?? {}) as Record<string, unknown>;
+  const currency = typeof p.currency === "string" && p.currency ? p.currency : undefined;
+  const monthlyAmount = num(m.amount);
+  const annualAmount = num(a.amount);
+  const perMonthAmount = num(a.perMonthAmount);
+  const savePercent = num(a.savePercent);
+  if (currency == null || monthlyAmount == null || annualAmount == null || perMonthAmount == null || savePercent == null) {
+    return undefined;
+  }
+  const monthly: PricingInfo["monthly"] = { amount: monthlyAmount };
+  const introAmount = num(m.introAmount);
+  const introPercentOff = num(m.introPercentOff);
+  if (introAmount != null && introPercentOff != null) {
+    monthly.introAmount = introAmount;
+    monthly.introPercentOff = introPercentOff;
+  }
+  return { currency, monthly, annual: { amount: annualAmount, perMonthAmount, savePercent } };
 }
 
 /** 容忍后端缺字段/新激活边缘：补齐 v2.1 安全默认，绝不抛。 */
@@ -74,7 +94,7 @@ export function normalizeEntitlement(raw: unknown): Entitlement {
   const r = (raw ?? {}) as Record<string, unknown>;
   const plan = r.plan === "active" || r.plan === "blocked" ? r.plan : "none";
   const introOffer = normalizeIntroOffer(r.introOffer);
-  const annualOffer = normalizeAnnualOffer(r.annualOffer);
+  const pricing = normalizePricing(r.pricing);
   return {
     plan,
     email: typeof r.email === "string" ? r.email : "",
@@ -82,7 +102,7 @@ export function normalizeEntitlement(raw: unknown): Entitlement {
     quota: (r.quota as Entitlement["quota"]) ?? null,
     models: Array.isArray(r.models) ? (r.models as unknown[]).map(normalizeModel) : [],
     ...(introOffer ? { introOffer } : {}),
-    ...(annualOffer !== undefined ? { annualOffer } : {}),
+    ...(pricing ? { pricing } : {}),
   };
 }
 
