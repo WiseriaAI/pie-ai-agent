@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "default_locale": "en",
   "name": "__MSG_extension_name__",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "__MSG_extension_description__",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAj91/+vFO2eXy8JdSlzcag00O+Nmcjqb6i+S4saClf6ZfW38xTgkU4kGIGm8KZOvrz7UcY/f0KofqYohDnyrSjmsORYWMIzGtbp7Q3wgOfs3cmzHUJxtB3NDZgJSLGFgOZKCoK9LOV2eKGC0r24yVDoqWKphRZFeq1iandGJxSUcvrbyx3QZ6vIXql4eyD5m018eXel2rmQYBRrM1UlonUec69ulrxC2Om0SXDEjbxe3vHWhTd8egKD27uHoR1s5YfQ/zVO2dIJLlarSGjlJWNLZ6n5tD6KEu0r8M2iwN2XQ5lDiPPOrIzBtLHx7tNMV5eNGdTG2vPRbmh6L9M1J7TQIDAQAB",
   "permissions": ["activeTab", "sidePanel", "storage", "tabs", "tabGroups", "scripting", "debugger", "webNavigation", "offscreen", "downloads", "identity", "alarms", "notifications"],
