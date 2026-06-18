@@ -15,6 +15,7 @@
     "typecheck": "tsc --noEmit",
     "check:i18n": "node scripts/check-i18n-hardcoded.mjs",
     "build:eval": "pnpm icons && vite build --mode eval",
+    "build:staging": "pnpm icons && vite build --mode staging",
     "verify:no-eval-bridge": "node scripts/assert-no-eval-bridge.mjs",
     "eval:task": "tsx eval/runner/cli.ts"
   },
