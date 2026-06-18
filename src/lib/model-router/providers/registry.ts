@@ -1,6 +1,7 @@
 import type { BuiltinProvider, ProviderRef } from "@/lib/model-router";
 import { getCustomProvider } from "@/lib/custom-providers";
 import { getProviderCustomModelMeta } from "@/lib/provider-custom-model-meta";
+import { GATEWAY_BASE } from "@/lib/managed-config";
 
 export interface ModelMeta {
   /** Provider-native model id (sent to API as-is). */
@@ -332,8 +333,8 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     id: "managed",
     name: "Pie 官方订阅",
     iconColorAsset: "icons/managed-plan.svg",
-    // 网关基址 = GATEWAY_BASE（见 managed-config.ts）。聊天打 /v1/chat/completions。
-    defaultBaseUrl: "https://api.pie.chat",
+    // 网关基址 = GATEWAY_BASE（见 managed-config.ts，随构建 mode 切 prod/staging）。聊天打 /v1/chat/completions。
+    defaultBaseUrl: GATEWAY_BASE,
     placeholder: "",
     // 单一 tier 别名：真实模型由后端 config.yaml 决定，客户端无感。
     models: [
