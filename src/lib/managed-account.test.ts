@@ -222,7 +222,7 @@ describe("managed-account", () => {
     const raw = { plan: "active", email: "u@x.com", subscription: { planName: "Pie Pro", currentPeriodEnd: 9, cancelAtPeriodEnd: false, source: "redemption" }, quota: null, models: [] };
     const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => raw })) as unknown as typeof fetch;
     const res = await getEntitlement("sk-iv2", { fetchFn, locale: "en" });
-    expect((res.subscription as Record<string, unknown>).interval).toBeUndefined();
+    expect((res.subscription as unknown as Record<string, unknown>).interval).toBeUndefined();
   });
 
   it("openCheckout 带 interval → POST body 含 {interval}", async () => {
