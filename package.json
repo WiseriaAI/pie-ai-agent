@@ -1,6 +1,6 @@
 {
   "name": "pie-extension",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "private": true,
   "description": "BYOK Chrome Extension Agent — bring your own API key for page understanding, multi-step task automation, and smart tab management.",
   "type": "module",
