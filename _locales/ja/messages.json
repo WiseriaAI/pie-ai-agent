@@ -4,7 +4,7 @@
     "description": "Extension name shown in Chrome and the Web Store."
   },
   "extension_description": {
-    "message": "自分のAPIキーでページ理解とブラウザ操作を行うオープンなAIエージェント。バックエンド、テレメトリ、プロキシなし。",
+    "message": "Chrome 用オープンソース AI エージェント。ページや PDF を読み、タブを自動化。自分の API キー（11 社）かサブスクで利用、テレメトリなし。",
     "description": "Short description shown in the Web Store and chrome://extensions."
   }
 }

@@ -4,7 +4,7 @@
     "description": "Extension name shown in Chrome and the Web Store."
   },
   "extension_description": {
-    "message": "开源 AI 浏览器 Agent。自带 Claude / ChatGPT / Gemini API Key —— 无后端、无遥测、无代理。已支持 8 家厂商。",
+    "message": "开源 Chrome AI Agent：读网页与 PDF、跨标签页自动化。自带 API Key（支持 11 家）或订阅 Pie，无遥测。",
     "description": "Short description shown in the Web Store and chrome://extensions."
   }
 }
