@@ -4,7 +4,7 @@
     "description": "Extension name shown in Chrome and the Web Store."
   },
   "extension_description": {
-    "message": "Agente de IA aberto para ler páginas e automatizar tarefas com sua própria chave. Sem backend, telemetria ou proxy.",
+    "message": "Agente de IA aberto para Chrome: lê páginas e PDFs, automatiza abas. Sua chave (11 provedores) ou assinatura. Sem telemetria.",
     "description": "Short description shown in the Web Store and chrome://extensions."
   }
 }

@@ -4,7 +4,7 @@
     "description": "Extension name shown in Chrome and the Web Store."
   },
   "extension_description": {
-    "message": "Open-source AI browser agent. Bring your own Claude / ChatGPT / Gemini key — no backend, no telemetry, no proxy. 8 providers.",
+    "message": "Open-source AI agent for Chrome. Reads pages & PDFs, automates tabs. Bring your own key (11 providers) or subscribe. No telemetry.",
     "description": "Short description shown in the Web Store and chrome://extensions."
   }
 }
