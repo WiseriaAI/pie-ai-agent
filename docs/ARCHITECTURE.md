@@ -22,7 +22,7 @@ and communicate only through structured channels.
 ```
                         ┌─────────────────────────────────────────────┐
                         │                  USER                       │
-                        │   (clicks, types, approves confirm cards)   │
+                        │   (clicks, types, resolves HITL cards)      │
                         └────────────────┬────────────────────────────┘
                                          │
                                          ▼
@@ -32,11 +32,11 @@ and communicate only through structured channels.
    │                                                                   │
    │   - Renders DisplayMessage[] from session_${id}_meta              │
    │   - Composes user messages, dispatches chat-start                 │
-   │   - Renders confirm cards from SessionConfirmRequestMessage       │
+   │   - Renders resume + HITL cards (panel-request / session-confirm) │
    └────────────────┬──────────────────────────────────┬───────────────┘
                     │                                  │
        chat-start  │                                  │  chat-stream-${sessionId}
-       confirm-*   │                                  │  (per-session port —
+       panel-reply │                                  │  (per-session port —
        (messages)  │                                  │   long-lived for streaming)
                     ▼                                  ▼
    ┌───────────────────────────────────────────────────────────────────┐
@@ -86,7 +86,7 @@ in the page world and returns a serializable result.
 Pop-up windows close on every focus change; an agent task that runs for 30
 seconds across several tabs would lose its UI state midway. Side panel
 persists across navigation, focus changes, and tab switches, so the streaming
-chat / confirm-card UX stays attached to the running task. This is the
+chat / HITL-card UX stays attached to the running task. This is the
 single biggest reason `manifest.json` declares `"side_panel"` and `"activeTab"`
 is **not** sufficient for host access (we need `<all_urls>` because the
 panel is always attached but the active tab keeps changing).
@@ -104,11 +104,11 @@ Inside the SW + Side Panel + lib code, the logical layers are:
 │                 │  Reads session_${id}_meta.messages on mount;       │
 │                 │  re-renders on storage onChanged.                  │
 ├──────────────────────────────────────────────────────────────────────┤
-│  Agent Runtime  │  src/lib/agent/  (loop, prompt, risk, window,     │
+│  Agent Runtime  │  src/lib/agent/  (loop, prompt, window,           │
 │                 │  history-validation, untrusted-wrappers, tools/)  │
 │                 │  + src/background/  (dispatcher, CDP, recovery)   │
 │                 │  Owns the ReAct iteration: snapshot → LLM →       │
-│                 │  classify → confirm gate → execute → record.      │
+│                 │  execute tool calls → record (no risk gate).      │
 ├──────────────────────────────────────────────────────────────────────┤
 │  Model Router   │  src/lib/model-router/                             │
 │                 │  Provider-neutral streamChat() with native tool    │
@@ -188,8 +188,7 @@ either executes a returned tool call or terminates.
 | `loop.ts` | Main `runAgentLoop` async generator; orchestrates one task end-to-end |
 | `prompt.ts` | System prompt builder (capability inventory + safety rails) |
 | `tools.ts` + `tools/` | Tool registry assembly: keyboard, skill-meta, tabs |
-| `tool-names.ts` | Compile-time tool-name constants + build-time exhaustiveness gate |
-| `risk.ts` | Pure tool-call risk classifier (see §3.3) |
+| `tool-names.ts` | Tool-name constants + read/write class (cross-session write lock) + build-time exhaustiveness gate |
 | `untrusted-wrappers.ts` | Wrapper-tag escape helper (see §3.3) |
 | `window.ts` + `window-token-budget.ts` | Sliding-window history truncation under per-model token budget |
 | `history-validation.ts` | Tool_use ↔ tool_result ID consistency check before each LLM call |
@@ -202,19 +201,16 @@ either executes a returned tool call or terminates.
 ```
 runAgentLoop(taskInput):
   agentMessages = [system, user(taskInput)]
-  loop step in 0..MAX_STEPS:
+  loop step in 0..∞:                          # no hard cap; soft step budget only
     snapshot = injectAndRun(extractPageContentHardened, focusTabId)
     truncated = applyWindow(agentMessages, modelTokenBudget)
     for event in streamChat(modelConfig, truncated, signal, tools):
       yield event                             # → port → side panel
       if event is toolUse: collect
     if no toolUse:
-      append assistant text; break
+      append assistant text; break            # LLM ends the task (done / fail / text)
     for each toolUse:
-      assessment = classifyRisk(toolUse, snapshot, ctx)
-      if assessment.level === 'high':
-        await userConfirm(toolUse, snapshot, tabTargets)
-      result = await dispatch(toolUse, ctx)
+      result = await dispatch(toolUse, ctx)   # runs directly — no risk gate
       append tool_use + tool_result to agentMessages
       persistSnapshot(sessionId, agentMessages, stepIndex)
     step++
@@ -230,8 +226,9 @@ runAgentLoop(taskInput):
 - **Pin at task start, re-check every iteration**. The first iteration
   captures `(tabId, origin)` into `SessionMeta.pinnedTabs[0]` (in `task`
   pin mode). Every subsequent iteration calls `chrome.tabs.get(tabId)` and
-  compares origin; if drift occurs, the loop pauses and emits an
-  origin-change confirm. See [`docs/solutions/2026-05-02-cross-tab-trust-model.md`](./solutions/2026-05-02-cross-tab-trust-model.md).
+  compares origin; on drift the loop does **not** stop — it injects a trusted
+  `<system_notice>` observation (`interpretPinnedTabUrl`) and lets the LLM
+  decide (§3.3). See [`docs/solutions/2026-05-02-cross-tab-trust-model.md`](./solutions/2026-05-02-cross-tab-trust-model.md).
 - **Sliding window with per-model budget**. `window.ts` truncates the
   middle of `agentMessages` (keeping system + recent N) while honoring the
   active model's `maxContextTokens` minus a safety reserve. Token estimation
@@ -239,40 +236,42 @@ runAgentLoop(taskInput):
 - **Snapshot-then-act is mandatory**. Every tool call sees a fresh snapshot
   taken on the same tick the LLM plans against. Agent-side caching of stale
   element indices was deliberately not added.
-- **Tombstone on task end**. After success / fail / abort / max-steps, the
-  loop writes `SessionAgentState { agentMessages: [], stepIndex: 0 }` so a
-  future SW restart cannot mistake leftover IR for an in-flight task.
+- **Tombstone on task end**. After success / fail / abort, the loop writes
+  `SessionAgentState { agentMessages: [], stepIndex: 0 }` so a future SW
+  restart cannot mistake leftover IR for an in-flight task.
 
-### 3.3 Risk Classifier & Untrusted Wrappers — `src/lib/agent/risk.ts`, `untrusted-wrappers.ts`
+### 3.3 Safety Model: Direct Execution + Untrusted Wrappers — `src/lib/agent/tool-names.ts`, `untrusted-wrappers.ts`, `src/lib/panel-request.ts`
 
-These two modules implement the security perimeter: what the LLM is allowed
-to do without asking, and what page-supplied text is allowed to do once it
-crosses into LLM context.
+Pie's safety model is **defense in depth, not per-action approval**. Tools
+execute directly — there is no risk classifier and no risk-gated confirm card
+in the hot path (the old `risk.ts` / `classifyRisk` / `userConfirm` framework
+was removed; the `no-confirm-*` cross-layer tests lock its absence). Containment
+comes from layering instead:
 
-**Risk classifier** (`risk.ts`):
+- **Untrusted wrappers** (below) — page and third-party text can never be read
+  as a trusted instruction.
+- **Read vs. write tool classes** (`tool-names.ts`). Every tool is declared
+  read or write at build time (a `for…throw` exhaustiveness gate fails
+  `pnpm build` if any tool is left unclassified). The classification's only job
+  is the **cross-session write lock**: a write-class tool is rejected when it
+  targets a tab another session has pinned (R7, §4.5).
+- **Per-session sandbox** (§4.5) — isolated port, pinned tabs, and CDP owner
+  token per session.
+- **Advisory pinned-tab drift, not a hard gate.** When a task's pinned tab is
+  closed or navigates to a different origin, the loop does not stop — it injects
+  a trusted `<system_notice>` observation (`interpretPinnedTabUrl`, warn-once
+  per `noticeKey`) and lets the LLM decide whether to continue, recover, or
+  `fail`.
 
-- **Pure function**, no side effects. Inputs: tool name, args, current
-  snapshot, `RiskClassifyContext` (pinned tabs + tab-origin cache). Output:
-  `{ level: 'low' | 'high', reason?: string }`.
-- **Default-low + structural escalation**. The base case for any unmatched
-  tool is `low`. High-risk triggers are explicit:
-  - Form submit (`<button type=submit>`, `<input type=submit>`, dangerous
-    keyword regex on click target text/aria-label)
-  - Sensitive field detection (`type=password`, regex over text /
-    placeholder / aria-label for `password|cvv|otp|card-number|…` and
-    Chinese variants)
-  - CDP keyboard tools (`dispatch_keyboard_input`, `press_key`) — always
-    high; bypass DOM safety entirely
-  - Cross-tab write tools (`close_tabs`, `group_tabs`, `ungroup_tabs`,
-    `move_tabs`, `open_url`) — always high
-  - Cross-origin args on read tools (`activate_tab`, `get_tab_content`)
-  - Skill-meta CRUD (`create_skill`, `update_skill`) — high; the agent is
-    requesting a new persistent capability
-  - Screenshot tools — high; pixel data cannot be sanitized
-- **Build-time exhaustiveness gates**. Two `for…throw` loops at module load
-  time (`TAB_TOOL_NAMES` and `SCREENSHOT_TOOL_NAMES`) ensure every tool in
-  the registry is consciously classified. A new cross-tab tool that ships
-  without a risk decision throws on extension load — caught in `pnpm build`.
+The only times Pie pauses for a human are narrow, tool-semantics-driven moments,
+handled by one HITL primitive (`panel-request.ts`): the SW suspends the turn,
+the side panel renders a card, and the user resolves a per-session promise keyed
+by `requestId`. The registered kinds are `cdp-consent` (authorize CDP keyboard
+attach), `local-file` (pick a local file), and `schedule-model` (choose a model
+for a scheduled task). A separate `session-confirm` card (`pinned-tab-drift` /
+`paused-resume`) appears only when resuming a paused task. This is explicitly
+*not* a resurrected risk-interception layer — it serves only "the tool's own
+semantics need a human."
 
 **Untrusted wrappers** (`untrusted-wrappers.ts`):
 
@@ -319,14 +318,12 @@ meta-tools.
   Hard size caps (≤8 KB prompt template, ≤2 KB parameter schema), forbidden
   meta-tool nesting, 1 MB per-installation storage budget, and tool-name
   validation against the live registry are the headline guards.
-- **Author taint**. `SkillDefinition.author` propagates from creator —
-  agent-authored skills are tagged `'agent'` and trigger `create_skill` /
-  `update_skill` to be classified as high-risk in `risk.ts`. A skill the
-  model invented does not silently execute on a future turn without a
-  confirm card the first time the user invokes it. (Pre-2026-05-06 there
-  was an additional first-run-confirm gate; that gate was removed in
-  issue #26 in favor of the simpler write-time confirm — see the
-  `@deprecated` comments on `firstRunConfirmedAt` and `allowedTools`.)
+- **Author taint**. `SkillDefinition.author` propagates from its creator —
+  agent-authored skills are tagged `'agent'` for provenance. What stops an
+  agent-authored skill from widening its own privileges is not a confirm card
+  but the write-time capability-grant invariants above, enforced on every
+  `create_skill` / `update_skill`: it can only call tools it was explicitly
+  granted, cannot nest meta-tools, and cannot exceed the size / storage caps.
 - **`promptTemplate` is rendered into an untrusted wrapper**. When a skill
   is invoked, its rendered template (Handlebars-style `{{key}}` substitution
   + `JSON.stringify(args[key])`) is wrapped in `<untrusted_skill_params>`
@@ -397,13 +394,13 @@ implemented very differently because their threat models differ.
   the function in the page world.
 - Snapshot is the central read primitive: `extractPageContentHardened`
   walks visible interactive elements, strips credential fields inline
-  (parallel to but not sharing code with `risk.ts` — different runtime
-  context, no module loading), and returns `PageSnapshot { elements,
+  (self-contained scrubbing — it runs in the page world via `executeScript`
+  and shares no module code with the SW), and returns `PageSnapshot { elements,
   metadata, … }`. The snapshot returned is what the LLM sees wrapped in
   `<untrusted_page_content>`.
-- DOM actions can never escalate risk — they execute in the page world,
-  not the SW; their effect is bounded by Chrome's same-origin policy and
-  any user gesture requirements native to the page.
+- DOM actions stay bounded to the page world — they execute via
+  `executeScript`, not the SW; their effect is limited by Chrome's same-origin
+  policy and any user-gesture requirements native to the page.
 
 **CDP Keyboard** (`src/background/cdp-session.ts` + `src/lib/keyboard-simulation.ts`):
 
@@ -414,11 +411,11 @@ implemented very differently because their threat models differ.
   cleanly). Detach happens on task end, on session end, and on
   `chrome.debugger.onDetach` fires (user-initiated detach via the Chrome
   DevTools yellow bar).
-- Always-high risk. CDP keyboard events bypass DOM event listeners,
-  visibility checks, and disabled-state checks. The risk classifier
-  hard-codes both keyboard tool names to `high`, and the build-time gate
-  in `tool-names.ts` ensures both names are listed in the screenshot /
-  keyboard exhaustiveness sets.
+- Explicit user consent before attach. CDP keyboard events bypass DOM event
+  listeners, visibility checks, and disabled-state checks, so attaching is
+  gated by the `cdp-consent` HITL card (§3.3) on top of the Settings opt-in.
+  The keyboard tools are write-class, and the build-time gate in
+  `tool-names.ts` ensures they are classified.
 - See [`docs/solutions/2026-04-28-cdp-keyboard-simulation-on-canvas-editors.md`](./solutions/2026-04-28-cdp-keyboard-simulation-on-canvas-editors.md)
   for the canvas-editor (Lark Docs / Google Docs) motivation and the
   CDP attach/detach lifecycle invariants.
@@ -497,15 +494,16 @@ LLM is instructed once in system prompt that wrappers are data, not
 instructions; the wrapper-escape regex (§3.3) keeps the data from
 breaking out.
 
-### 4.4 Risk-gated mutations with informed consent
+### 4.4 Direct execution, no risk gate
 
-Every tool call that is irreversible (form submit, close pinned tab,
-cross-origin tab op, raw CDP input, skill creation) gates behind a
-confirm card. The card shows the **raw** tool args (panel display
-otherwise redacts sensitive arg patterns) so the user can spot a
-prompt-injection-driven argument change before it runs. Three rejected
-confirms in a single task auto-terminate the task to stop burning tokens
-on a plan the user has already disagreed with.
+Tools run without a per-action approval click; there is no risk classifier in
+the hot path (§3.3). Containment is layered instead — untrusted wrappers,
+read/write classes with the cross-session write lock, the per-session sandbox,
+and CDP keyboard kept behind an explicit Settings opt-in plus the `cdp-consent`
+card. The `no-confirm-*` cross-layer tests assert that no risk-gated confirm
+has crept back in. The only human prompts that remain are the tool-semantics
+HITL cards (`cdp-consent` / `local-file` / `schedule-model`) and the
+resume/drift card — never a blanket "are you sure?" on a mutation.
 
 ### 4.5 Per-session sandbox + cross-session lock
 
@@ -566,11 +564,10 @@ A representative trace of a single agent task:
         │    finalize assistant text; emit done; tombstone agentMessages
         │  if tool_use(s):
         │    for each:
-        │      assessment = classifyRisk(name, args, snapshot, ctx)
-        │      if assessment.level === 'high':
-        │        port.postMessage(SessionConfirmRequestMessage { confirmationId, raw args, tabTargets })
-        │        await user-resolution                  ← Side Panel renders confirm card
-        │      result = await dispatch(toolUse, ctx)    ← may executeScript / chrome.tabs / chrome.debugger
+        │      result = await dispatch(toolUse, ctx)    ← runs directly, no risk gate;
+        │                                                  may executeScript / chrome.tabs / chrome.debugger.
+        │                                                  A cdp-consent / local-file / schedule-model HITL
+        │                                                  card pauses only if that tool needs one.
         │      append tool_use + tool_result to agentMessages
         │    persist SessionAgentState, SessionMeta.messages
         │    step++; goto iteration step
