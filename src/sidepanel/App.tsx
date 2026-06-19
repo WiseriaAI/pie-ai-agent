@@ -17,6 +17,7 @@ import RecordingMode from "@/sidepanel/components/RecordingMode";
 import { listSessionIndex, getPendingConfirmCount } from "@/lib/sessions/storage";
 import { hardDeleteExpired } from "@/lib/sessions/lifecycle";
 import { getConfig, setConfig, removeConfig } from "@/lib/idb/config-store";
+import { DEEPLINK_KEY, DEEPLINK_MANAGED_SUBSCRIBE } from "@/lib/deeplink";
 import { useStoreChange } from "@/sidepanel/hooks/useStoreChange";
 import type { SessionIndexEntry } from "@/lib/sessions/types";
 
@@ -42,6 +43,9 @@ export default function App() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [sessions, setSessions] = useState<SessionIndexEntry[]>([]);
   const [pendingCount, setPendingCount] = useState(0);
+  // Bumped each time a website "Subscribe" deep-link is consumed; threaded into
+  // Settings → NewConfigWizard to open the managed-subscribe screen.
+  const [subscribeNonce, setSubscribeNonce] = useState(0);
   // M1: theme mode owned at App level so the button reflects state and we
   // can persist to localStorage. M2 will wire data-theme to actually switch.
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
@@ -138,6 +142,38 @@ export default function App() {
 
     loadProviderLabel();
   }, [refreshSessionIndex, refreshPendingCount]);
+
+  // ── Deep-link: website "Subscribe" → managed-subscribe screen ──────────────
+  // The SW stashes a one-shot intent in chrome.storage.session when it opens the
+  // panel from a pie.chat "Subscribe" click (subscribe-bridge.ts → background
+  // open-managed-subscribe). Consume it on mount (panel opened fresh) and live
+  // via onChanged (panel already open), clear it, then route to Settings.
+  useEffect(() => {
+    let alive = true;
+    const consume = (val: unknown) => {
+      if (val !== DEEPLINK_MANAGED_SUBSCRIBE) return;
+      void chrome.storage.session.remove(DEEPLINK_KEY);
+      setView("settings");
+      setSubscribeNonce((n) => n + 1);
+    };
+    void chrome.storage.session
+      .get(DEEPLINK_KEY)
+      .then((r) => { if (alive) consume(r?.[DEEPLINK_KEY]); })
+      .catch(() => {});
+    const onChanged = (
+      changes: { [k: string]: chrome.storage.StorageChange },
+      area: string,
+    ) => {
+      if (area === "session" && changes[DEEPLINK_KEY]?.newValue !== undefined) {
+        consume(changes[DEEPLINK_KEY].newValue);
+      }
+    };
+    chrome.storage.onChanged.addListener(onChanged);
+    return () => {
+      alive = false;
+      chrome.storage.onChanged.removeListener(onChanged);
+    };
+  }, []);
 
   // ── Cross-context reactivity via store-bus ─────────────────────────────────
   // Replaces the former chrome.storage.local.onChanged listener. Each former
@@ -380,6 +416,7 @@ export default function App() {
           <Settings
             onBack={() => setView("agent")}
             onRunSkill={(id, name) => void handleRunSkill(id, name)}
+            openSubscribeNonce={subscribeNonce}
           />
         )}
       </div>

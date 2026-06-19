@@ -40,11 +40,14 @@ import { testProviderConnection } from "@/lib/provider-test";
 interface Props {
   onBack: () => void;
   onRunSkill?: (skillId: string, skillName: string) => void;
+  /** Bumped by a website "Subscribe" deep-link — opens the New Config wizard in
+   *  managed mode (the official-subscription screen). */
+  openSubscribeNonce?: number;
 }
 
 type Tab = "configs" | "skills" | "search" | "general";
 
-export default function Settings({ onBack, onRunSkill }: Props) {
+export default function Settings({ onBack, onRunSkill, openSubscribeNonce }: Props) {
   const t = useT();
   const [tab, setTab] = useState<Tab>("configs");
   const [instances, setInstances] = useState<DecryptedInstance[]>([]);
@@ -83,6 +86,14 @@ export default function Settings({ onBack, onRunSkill }: Props) {
     reload();
     isCdpInputEnabled().then(setCdpInput);
   }, [reload]);
+
+  // Website "Subscribe" deep-link → land on the Configs tab with the New Config
+  // wizard open; NewConfigWizard reads the same nonce to switch to managed mode.
+  useEffect(() => {
+    if (!openSubscribeNonce) return;
+    setTab("configs");
+    setShowWizard(true);
+  }, [openSubscribeNonce]);
 
   async function handleCreate(provider: ProviderRef, payload: InstanceFormPayload) {
     await createInstance({ provider, ...payload });
@@ -214,6 +225,7 @@ export default function Settings({ onBack, onRunSkill }: Props) {
                   testing={!!testingIds["_new"]}
                   testResult={testResult["_new"] ?? null}
                   onCancel={() => setShowWizard(false)}
+                  managedEntryNonce={openSubscribeNonce}
                 />
               </Collapse>
 

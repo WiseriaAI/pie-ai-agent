@@ -43,6 +43,9 @@ interface Props {
   existingProviderRefs?: ProviderRef[];
   testing?: boolean;
   testResult?: { ok: boolean; message: string } | null;
+  /** Bumped by a website "Subscribe" deep-link — selects the managed tab so the
+   *  wizard opens straight on the official-subscription screen. */
+  managedEntryNonce?: number;
   /** Test-only injection for the managed subscribe flow. */
   __managedDeps?: import("./ManagedSubscribePanel").ManagedSubscribeDeps;
 }
@@ -58,7 +61,15 @@ const DRAFT_CUSTOM_REF = "custom:__draft__";
 
 export default function NewConfigWizard(props: Props) {
   const t = useT();
-  const [entryMode, setEntryMode] = useState<"byok" | "managed">("byok");
+  // Initial mode honors a pending deep-link so a fresh-mounted wizard opens on
+  // the managed screen with no byok→managed flash (Collapse remounts on open).
+  const [entryMode, setEntryMode] = useState<"byok" | "managed">(
+    props.managedEntryNonce ? "managed" : "byok",
+  );
+  // Re-arm when a new deep-link arrives while the wizard is already open.
+  useEffect(() => {
+    if (props.managedEntryNonce) setEntryMode("managed");
+  }, [props.managedEntryNonce]);
   const [provider, setProvider] = useState<ProviderRef | null>(null);
   const [customProviders, setCustomProviders] = useState<StoredCustomProvider[]>([]);
   // Provider-level custom models pool — pre-populates the form's dropdown

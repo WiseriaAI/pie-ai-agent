@@ -80,6 +80,7 @@ import {
   isCdpInputEnabled,
 } from "@/lib/cdp-input-enabled";
 import { onStoreChange } from "@/lib/store-bus";
+import { DEEPLINK_KEY, DEEPLINK_MANAGED_SUBSCRIBE } from "@/lib/deeplink";
 
 import { runStartupMigrations } from "@/lib/startup-migrations";
 import { getCrossSessionPinnedTabIds } from "@/lib/sessions/pinned-tab-registry";
@@ -671,6 +672,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .then(sendResponse)
       .catch((e) => sendResponse({ ok: false, error: String(e) }));
     return true; // async response
+  }
+
+  if (message?.type === "open-managed-subscribe") {
+    // Website "Subscribe" CTA (pie.chat) → content script (subscribe-bridge.ts)
+    // forwards the click here. Open the side panel synchronously to keep the
+    // trusted user-gesture chain alive (same constraint as the quote bubble
+    // below), then stash a one-shot deep-link the panel reads to jump straight
+    // to the managed-subscribe screen.
+    const senderTabId = sender.tab?.id;
+    if (typeof senderTabId === "number") {
+      chrome.sidePanel.open({ tabId: senderTabId }).catch((e) => {
+        console.warn("[sw] sidePanel.open for subscribe failed:", e);
+      });
+    }
+    void chrome.storage.session.set({ [DEEPLINK_KEY]: DEEPLINK_MANAGED_SUBSCRIBE });
+    return; // no async response
   }
 
   if (message.type === "quote-text-captured" || message.type === "quote-element-captured") {
