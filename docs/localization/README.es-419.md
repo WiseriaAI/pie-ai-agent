@@ -17,7 +17,7 @@
     <a href="#instalación">Instalación</a> ·
     <a href="#conectar-un-modelo">Conectar un modelo</a> ·
     <a href="../../PRIVACY.md">Privacidad</a> ·
-    <a href="../../CHANGELOG.md">Changelog</a> ·
+    <a href="https://github.com/WiseriaAI/pie-ai-agent/releases">Changelog</a> ·
     <a href="../ROADMAP.md">Roadmap</a> ·
     <a href="../ARCHITECTURE.md">Arquitectura</a> ·
     <a href="https://wiseriaai.github.io/pie-ai-agent/">Archivo</a>

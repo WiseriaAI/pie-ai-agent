@@ -50,20 +50,20 @@ and communicate only through structured channels.
    │   - Cold-start session-recovery sweep                             │
    └───┬──────────────────┬─────────────────────┬────────────────────┬─┘
        │                  │                     │                    │
-       │ HTTPS direct     │ executeScript       │ chrome.debugger    │ chrome.storage.local
+       │ HTTPS direct     │ executeScript       │ chrome.debugger    │ IndexedDB ("pie" DB)
        │ (Authorization   │ (self-contained     │ (Input.dispatch    │ (encrypted
        │  header)         │  injected fn)       │  KeyEvent etc.)    │  instance keys,
        ▼                  ▼                     ▼                    │  session state,
    ┌─────────┐       ┌──────────┐         ┌──────────┐               │  skills, …)
    │ LLM     │       │ DOM      │         │ CDP      │               │
    │ Provider│       │ Action   │         │ Target   │               │
-   │ (8 of)  │       │ (page    │         │ (canvas  │               │
+   │ (11)    │       │ (page    │         │ (canvas  │               │
    │         │       │  world)  │         │  editor) │               │
    └─────────┘       └──────────┘         └──────────┘               │
                                                                      │
                                                                      │
    ┌───────────────────────────────────────────────────────────────┐ │
-   │            chrome.storage.local (AES-GCM at rest)             │◀┘
+   │          IndexedDB "pie" DB (apiKeys AES-GCM at rest)         │◀┘
    └───────────────────────────────────────────────────────────────┘
 ```
 
@@ -112,7 +112,7 @@ Inside the SW + Side Panel + lib code, the logical layers are:
 ├──────────────────────────────────────────────────────────────────────┤
 │  Model Router   │  src/lib/model-router/                             │
 │                 │  Provider-neutral streamChat() with native tool    │
-│                 │  calling. 8 providers, 5 of them via the shared    │
+│                 │  calling. 11 providers, 5 of them via the shared   │
 │                 │  OpenAI-compat core.                               │
 ├──────────────────────────────────────────────────────────────────────┤
 │  Storage &      │  src/lib/sessions/, src/lib/skills/,               │
@@ -348,7 +348,7 @@ the SessionDrawer UI.
 |---|---|
 | `types.ts` | `SessionMeta`, `SessionAgentState`, `SessionIndexEntry`, `SessionStatus` enum |
 | `state-machine.ts` | Allowed status transitions: `active → paused / failed / archived`, etc. |
-| `lifecycle.ts` | `createSession`, `archive`, `restore`, LRU eviction, 30-day hard-delete sweep |
+| `lifecycle.ts` | `createSession`, `archive`, `restore`, 30-day hard-delete sweep (no LRU auto-archive — IndexedDB has no fixed quota) |
 | `storage.ts` | Atomic read-modify-write helpers; split-key persistence |
 | `pinned-tab-registry.ts` | Cross-session R7 lock — one task may not yank another's pinned tab |
 | `pin-state.ts` | `getEffectivePinMode` resolver (`auto` / `task` / `user`) |
@@ -440,10 +440,11 @@ without forcing the user to copy-paste keys when switching.
 
 **Design points**:
 
-- **Per-instance encryption**. `apiKey` field on each `instance_${uuid}` is
-  AES-GCM-encrypted; the AES key itself lives in `chrome.storage.local`
-  too (not exfiltrating from the device is the threat model, not "key in
-  RAM" — see PRIVACY.md).
+- **Per-instance encryption**. The `apiKey` field on each instance record is
+  AES-GCM-encrypted; the AES key itself lives in the `config` store of the
+  same IndexedDB database (not exfiltrating from the device is the threat
+  model, not "key in RAM" — see PRIVACY.md). `crypto.ts` keeps a legacy
+  fallback that reads the old `chrome.storage` key during an upgrade.
 - **Snapshot at task start, not at iteration**. When a chat-start arrives,
   the SW resolves the active `ModelConfig` (active instance + active
   model + decrypted key) once and threads it through every iteration of
@@ -468,12 +469,14 @@ of repeated per-module.
 
 ### 4.1 Encrypted at rest, not encrypted in transit
 
-API keys are AES-GCM encrypted in `chrome.storage.local`. They are sent in
-plaintext as the `Authorization` header on direct HTTPS calls to the
-provider — Pie has no provider-side proxy, so there is no in-transit
-exposure beyond what the provider itself sees. The encryption-at-rest
-threat model is "another extension or a user with disk access cannot
-trivially recover the key from a backup of `chrome.storage.local`."
+API keys are AES-GCM encrypted in IndexedDB (the `pie` database). For BYOK
+instances they are sent in plaintext as the `Authorization` header on direct
+HTTPS calls to the provider — no Pie-side proxy, so there is no in-transit
+exposure beyond what the provider itself sees. (The optional managed
+subscription is the exception: those requests are forwarded through Pie's
+gateway — see PRIVACY.md.) The encryption-at-rest threat model is "another
+extension or a user with disk access cannot trivially recover the key from a
+backup of the IndexedDB store."
 
 ### 4.2 Native tool calling, no JSON-mode workarounds
 
@@ -598,26 +601,30 @@ holds the bytes only for the duration of the task. See
 
 ## §6 Storage Model
 
-All persistence lives in `chrome.storage.local`. There is no IndexedDB,
-no remote storage, no cookies. Keys are flat (no nesting); the
-`${variable}` slots are `crypto.randomUUID()`-derived.
+All persistence lives in **IndexedDB** — a single database named `pie`
+(`src/lib/idb/db.ts`, schema version 3) plus two sibling databases. There is
+no remote storage and no cookies. The one-time migration off
+`chrome.storage.local` (`startup-migrations.ts`) runs on startup and then
+clears the old data; `crypto.ts` keeps a fallback read of the legacy
+encryption key during that window.
 
-### 6.1 Key inventory
+### 6.1 Object stores
 
-| Key | Owner | Encrypted | Purpose |
-|---|---|---|---|
-| `instance_${uuid}` | `instances.ts` | apiKey field only (AES-GCM) | Per-instance provider config: nickname, provider, model, encrypted apiKey |
-| `instances_index` | `instances.ts` | no | Array of instance UUIDs in display order |
-| `active_instance_id` | `instances.ts` | no | The instance used when a session has no per-session override |
-| `pcm_${provider}` | `provider-custom-models.ts` | no | User-added custom model IDs for that provider, shared across instances |
-| `session_${id}_meta` | `sessions/storage.ts` | no | Display-side state: `DisplayMessage[]`, `pinnedTabs[]`, `pinMode`, title, status |
-| `session_${id}_agent` | `sessions/storage.ts` | no | LLM IR: `agentMessages`, `stepIndex`, `pendingConfirm`, `currentFocusTabId`, `lastTaskSynth`, `hasImageContent` |
-| `session_${id}_archived` | `sessions/lifecycle.ts` | no | Archived session payload (frozen meta + agent at archive time) |
-| `session_index` | `sessions/storage.ts` | no | Lightweight summary list for the SessionDrawer (avoids full-scan) |
-| `skill_${id}` | `skills/storage.ts` | no | User- or agent-authored skill definition |
-| `enabled_skills` | `skills/storage.ts` | no | Array of skill IDs the user has enabled |
-| `migration_v2_mapping` | `migration-v2.ts` | no | One-time migration trace; dropped V1 baseUrls and renamed keys |
-| `<encryption-key>` | `crypto.ts` | n/a (this is the key) | AES key used to encrypt instance apiKeys; generated locally on first run |
+The `pie` database has six object stores:
+
+| Store | Key | Holds |
+|---|---|---|
+| `sessions` | `id` | One record each for `${sid}:meta` (display state), `${sid}:agent` (LLM IR), and `${sid}:archived` (frozen archive payload) |
+| `session_index` | `id` | Lightweight summary list for the SessionDrawer (avoids a full scan) |
+| `instances` | `id` | Per-instance provider config; the `apiKey` field is AES-GCM encrypted |
+| `config` | `key` | Misc single-value keys: encryption key, `active_instance_id`, `last_model_selection`, `pcm_*` / `pcmm_*` custom-model pools, `enabled_skills`, theme, custom-provider defs, migration traces |
+| `scratchpads` | `id` | Per-session long-horizon scratchpad records |
+| `schedules` | `id` | Scheduled-task definitions |
+
+Two sibling databases keep heavier blobs out of the main one:
+
+- **`pie-skills`** (store `packages`) — user- and agent-authored SkillPackage definitions.
+- **`pie-output-files`** (store `artifacts`) — files the agent produces, indexed by session for the download cards.
 
 ### 6.2 What is intentionally **not** stored
 
@@ -628,22 +635,24 @@ no remote storage, no cookies. Keys are flat (no nesting); the
 - **CDP attach state**. `chrome.debugger.attach` is a runtime fact, not a
   persisted one. SW restart triggers detach (Chrome auto-detaches when
   the listener disappears), and re-attach is explicit on the next call.
-- **Pending confirm resolvers**. The `Promise` resolver lives in SW memory;
-  the persisted `pendingConfirm` field is metadata for UI re-render, not
-  a resolver reference. SW restart clears `pendingConfirm` from every
-  session before any other recovery work.
-- **OAuth tokens, refresh tokens, server-side session cookies**. Pie has
-  no developer-operated server.
+- **Pending panel-request resolvers**. The `Promise` resolver for a HITL
+  panel-request lives in SW memory; the persisted field is metadata for UI
+  re-render, not a resolver reference. SW restart clears it from every session
+  before any other recovery work.
+- **Long-lived OAuth / refresh tokens**. The optional managed subscription
+  signs in via a one-shot OAuth flow and keeps only the resulting long-lived
+  virtual key — stored as an encrypted instance key (above), with no
+  refresh-token loop.
 
-### 6.3 Atomicity
+### 6.3 Atomicity and change notification
 
-Read-modify-write of session keys uses a `writeAtomic` helper
-(`sessions/storage.ts`) — single `chrome.storage.local.set` call per
-state change, never a get-mutate-set sequence across awaits. Archive
-and restore are also single-call writes (the source key delete + the
-target key set are batched into one `set({...})` plus one `remove(...)`,
-in that order so a crash mid-operation leaves the session findable
-under the source key, not lost).
+Cross-store writes go through a `txMulti` helper (`src/lib/idb/db.ts`) that
+commits every affected store in a single IndexedDB transaction — e.g. a
+session record plus its `session_index` row, or an archive (delete the live
+record + write the archived one) committed together so a crash mid-operation
+can't leave a half-written session. Cross-context change notifications use a
+`store-bus` (`BroadcastChannel('pie-store')`), which replaced the old
+`chrome.storage.local.onChanged` listener.
 
 ---
 

@@ -1,8 +1,11 @@
 # Changelog
 
-All notable changes to **Pie** are documented in this file. The format
-follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
-project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+> **Per-release notes have moved.** Up-to-date notes for every release are
+> published on the [GitHub Releases page](https://github.com/WiseriaAI/pie-ai-agent/releases)
+> and mirrored in [`docs/release-notes/`](docs/release-notes/). The entries
+> below are kept for early pre-1.0 history only.
+
+Pie adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.5.0] — 2026-05-04
 

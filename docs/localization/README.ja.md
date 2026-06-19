@@ -17,7 +17,7 @@
     <a href="#インストール">インストール</a> ·
     <a href="#モデルを接続する">モデルを接続</a> ·
     <a href="../../PRIVACY.md">プライバシー</a> ·
-    <a href="../../CHANGELOG.md">変更履歴</a> ·
+    <a href="https://github.com/WiseriaAI/pie-ai-agent/releases">変更履歴</a> ·
     <a href="../ROADMAP.md">ロードマップ</a> ·
     <a href="../ARCHITECTURE.md">アーキテクチャ</a> ·
     <a href="https://wiseriaai.github.io/pie-ai-agent/">アーカイブ</a>

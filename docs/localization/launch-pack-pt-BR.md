@@ -2,7 +2,7 @@
 
 ## Positioning
 
-Pie is an open-source browser agent for Brazilian users who want AI automation in Chrome with a clear BYOK setup and no Pie-operated backend. The copy should use Brazilian Portuguese, keep the setup path simple, and explain privacy claims without legal-heavy phrasing.
+Pie é um agente de navegador de código aberto para usuários brasileiros. Por padrão é BYOK — você usa sua própria chave de modelo e nada passa por um backend do Pie — com uma assinatura oficial opcional para quem prefere não gerenciar chaves. A copy deve usar português do Brasil, manter o caminho de configuração simples e explicar as garantias de privacidade sem linguagem jurídica pesada.
 
 ## Chrome Web Store
 
@@ -12,26 +12,26 @@ Pie · Agente de IA aberto para seu navegador
 
 ### Short Description
 
-Agente de IA aberto para ler páginas e automatizar tarefas com sua própria chave. Sem backend, telemetria ou proxy.
+Agente de IA aberto para Chrome: lê páginas e PDFs, automatiza abas. Sua chave (11 provedores) ou assinatura. Sem telemetria.
 
 ### Long Description
 
-Pie funciona no painel lateral do Chrome. Ele pode ler a página atual, operar sites, organizar abas e transformar conteúdo desorganizado em dados úteis.
+Pie funciona no painel lateral do Chrome. Ele pode ler a página atual (incluindo PDFs), operar sites, organizar abas, pesquisar na web, escrever dentro de editores ricos e executar tarefas agendadas.
 
-Você usa sua própria chave de modelo. Pie não opera um backend, não faz proxy das suas solicitações e não coleta telemetria do produto. Sua API key é criptografada localmente e enviada apenas ao provedor escolhido.
+Há duas formas de conectar um modelo: traga sua própria chave de qualquer um dos 11 provedores — ela é criptografada localmente e enviada apenas àquele provedor, sem nenhum backend ou proxy do Pie no caminho — ou use a assinatura oficial opcional (entre com o Google), em que suas solicitações são encaminhadas pelo gateway do Pie, mas nunca armazenadas. Em ambos os casos, o Pie não coleta telemetria do produto.
 
 Primeiros passos:
 1. Instale o Pie.
 2. Abra o painel lateral.
-3. Configure um provedor ou entre com uma conta gerenciada.
+3. Adicione sua própria chave ou entre para a assinatura oficial.
 4. Escreva uma tarefa e deixe o Pie trabalhar com a página atual.
 
 ## Screenshot Captions
 
-1. Pergunte sobre a página atual sem copiar e colar.
-2. Configure seu provedor ou conta gerenciada.
+1. Pergunte sobre a página atual (incluindo PDFs) sem copiar e colar.
+2. Use sua própria chave ou entre para a assinatura oficial.
 3. Pie executa tarefas em várias etapas com ferramentas do navegador.
-4. BYOK, sem telemetria e sem backend operado pelo Pie.
+4. Sem telemetria do produto; com BYOK, nada passa por um backend do Pie.
 
 ## README Source
 

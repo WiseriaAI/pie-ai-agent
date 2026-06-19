@@ -17,7 +17,7 @@
     <a href="#安裝">安裝</a> ·
     <a href="#接入模型">接入模型</a> ·
     <a href="../../PRIVACY.md">隱私</a> ·
-    <a href="../../CHANGELOG.md">更新日誌</a> ·
+    <a href="https://github.com/WiseriaAI/pie-ai-agent/releases">更新日誌</a> ·
     <a href="../ROADMAP.md">路線圖</a> ·
     <a href="../ARCHITECTURE.md">架構</a> ·
     <a href="https://wiseriaai.github.io/pie-ai-agent/">專案檔案</a>
