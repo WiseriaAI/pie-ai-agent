@@ -283,8 +283,8 @@ export const es419Dict = {
     inProgress: "Pensando…",
   },
   agentSummary: {
-    doneSteps: "LISTO · {count} PASOS",
-    failedAtStep: "FALLÓ EN EL PASO {step}",
+    doneSteps: "LISTO",
+    failedAtStep: "FALLÓ",
   },
   quoteChip: {
     removeQuote: "Quitar cita",

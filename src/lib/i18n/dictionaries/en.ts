@@ -282,8 +282,8 @@ export const enDict = {
     inProgress: "Thinking…",
   },
   agentSummary: {
-    doneSteps: "DONE · {count} STEPS",
-    failedAtStep: "FAILED AT STEP {step}",
+    doneSteps: "DONE",
+    failedAtStep: "FAILED",
   },
   quoteChip: {
     removeQuote: "Remove quote",
