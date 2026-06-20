@@ -283,8 +283,8 @@ export const ptBRDict = {
     inProgress: "Pensando…",
   },
   agentSummary: {
-    doneSteps: "CONCLUÍDO · {count} ETAPAS",
-    failedAtStep: "FALHOU NA ETAPA {step}",
+    doneSteps: "CONCLUÍDO",
+    failedAtStep: "FALHOU",
   },
   quoteChip: {
     removeQuote: "Remover citação",

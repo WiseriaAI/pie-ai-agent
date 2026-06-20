@@ -282,8 +282,8 @@ export const zhTWDict = {
     inProgress: "思考中…",
   },
   agentSummary: {
-    doneSteps: "完成 · {count} 步",
-    failedAtStep: "第 {step} 步失敗",
+    doneSteps: "完成",
+    failedAtStep: "失敗",
   },
   quoteChip: {
     removeQuote: "移除引用",

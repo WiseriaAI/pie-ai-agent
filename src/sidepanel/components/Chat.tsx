@@ -1146,15 +1146,13 @@ After the skill completes, briefly summarize what was created (the user will see
     );
   }
 
-  const stepCount = messages.filter((m) => m.role === "agent-step").length;
-
   return (
     <div className="flex h-full flex-col">
-      {/* Pinned origin + step counter info bar.
+      {/* Pinned origin info bar.
        *  M5 follow-up: provider/model label removed — was getting squeezed by
        *  the new PinnedTabDropdown button. Provider info still visible in
        *  Settings; users typically switch there, not from the chat header. */}
-      {(displayPinnedOrigin || (streaming && stepCount > 0)) && (
+      {displayPinnedOrigin && (
         <div ref={pinBarRef} className="relative flex flex-shrink-0 items-center gap-2 border-b border-line bg-canvas px-4 py-1.5">
           {displayPinnedOrigin && (
             <>
@@ -1200,12 +1198,6 @@ After the skill completes, briefly summarize what was created (the user will see
                 />
               </Popover>
             </>
-          )}
-          {!displayPinnedOrigin && <div className="flex-1" />}
-          {streaming && stepCount > 0 && (
-            <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-accent tabular">
-              {t("chat.stepCount.one")} {String(stepCount).padStart(2, "0")}
-            </span>
           )}
         </div>
       )}

@@ -283,8 +283,8 @@ export const jaDict = {
     inProgress: "思考中…",
   },
   agentSummary: {
-    doneSteps: "完了 · {count} ステップ",
-    failedAtStep: "ステップ {step} で失敗",
+    doneSteps: "完了",
+    failedAtStep: "失敗",
   },
   quoteChip: {
     removeQuote: "引用を削除",
