@@ -183,6 +183,7 @@ export const zhTWDict = {
     copied: "已複製",
     composerPlaceholder: "告訴 Agent 做什麼，或輸入 / 選擇技能…",
     cancelRunningTask: "取消執行中的任務",
+    cancelConfirm: "再按一次 Esc 終止",
     recordTitle: "錄製此分頁的 DOM 操作",
     startRecording: "開始錄製",
     rec: "錄製",

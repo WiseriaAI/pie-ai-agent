@@ -1249,3 +1249,50 @@ describe("Chat — composer keyboard guards", () => {
     expect(sendMock).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("Chat — Esc-to-terminate keyboard shortcut", () => {
+  it("first Esc arms (no abort), second Esc aborts once", async () => {
+    seedProvider("anthropic");
+    const abort = vi.fn();
+    render(
+      <Chat
+        providerLabel="Anthropic"
+        onOpenSettings={vi.fn()}
+        session={makeSession({ streaming: true, abort })}
+      />,
+    );
+    // Stop button is shown while streaming.
+    await screen.findByTitle(/Cancel running task/i);
+
+    // First Esc: arms termination, does NOT abort. Button flips to the confirm prompt.
+    act(() => {
+      fireEvent.keyDown(document, { key: "Escape" });
+    });
+    expect(abort).not.toHaveBeenCalled();
+    screen.getByTitle(/Press Esc again to stop/i);
+
+    // Second Esc within the window: aborts exactly once.
+    act(() => {
+      fireEvent.keyDown(document, { key: "Escape" });
+    });
+    expect(abort).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not arm when no task is streaming", async () => {
+    seedProvider("anthropic");
+    const abort = vi.fn();
+    render(
+      <Chat
+        providerLabel="Anthropic"
+        onOpenSettings={vi.fn()}
+        session={makeSession({ streaming: false, abort })}
+      />,
+    );
+    await screen.findByRole("button", { name: /more tools/i });
+    act(() => {
+      fireEvent.keyDown(document, { key: "Escape" });
+    });
+    expect(abort).not.toHaveBeenCalled();
+    expect(screen.queryByTitle(/Press Esc again to stop/i)).toBeNull();
+  });
+});

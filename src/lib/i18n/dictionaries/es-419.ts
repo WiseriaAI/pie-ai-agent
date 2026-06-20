@@ -184,6 +184,7 @@ export const es419Dict = {
     copied: "Copiado",
     composerPlaceholder: "Dile al agente qué hacer, o escribe / para habilidades…",
     cancelRunningTask: "Cancelar tarea en ejecución",
+    cancelConfirm: "Presiona Esc otra vez para detener",
     recordTitle: "Grabar acciones DOM en esta pestaña",
     startRecording: "Iniciar grabación",
     rec: "REC",

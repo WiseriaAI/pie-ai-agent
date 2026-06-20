@@ -184,6 +184,7 @@ export const ptBRDict = {
     copied: "Copiado",
     composerPlaceholder: "Diga ao agente o que fazer, ou digite / para habilidades…",
     cancelRunningTask: "Cancelar tarefa em execução",
+    cancelConfirm: "Pressione Esc de novo para parar",
     recordTitle: "Gravar ações DOM nesta aba",
     startRecording: "Iniciar gravação",
     rec: "REC",
