@@ -183,6 +183,7 @@ export const enDict = {
     copied: "Copied",
     composerPlaceholder: "Tell the agent what to do, or type / for skills…",
     cancelRunningTask: "Cancel running task",
+    cancelConfirm: "Press Esc again to stop",
     recordTitle: "Record DOM actions on this tab",
     startRecording: "Start recording",
     rec: "REC",

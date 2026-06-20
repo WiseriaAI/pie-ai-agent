@@ -183,6 +183,7 @@ export const zhCNDict = {
     copied: "已复制",
     composerPlaceholder: "告诉 Agent 做什么，或输入 / 选择技能…",
     cancelRunningTask: "取消运行中的任务",
+    cancelConfirm: "再按一次 Esc 终止",
     recordTitle: "录制此标签页的 DOM 操作",
     startRecording: "开始录制",
     rec: "录制",

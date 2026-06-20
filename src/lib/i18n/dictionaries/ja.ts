@@ -184,6 +184,7 @@ export const jaDict = {
     copied: "コピー済み",
     composerPlaceholder: "エージェントにしてほしいことを書くか、/ でスキルを入力…",
     cancelRunningTask: "実行中のタスクをキャンセル",
+    cancelConfirm: "もう一度 Esc で停止",
     recordTitle: "このタブで DOM 操作を記録",
     startRecording: "記録を開始",
     rec: "REC",

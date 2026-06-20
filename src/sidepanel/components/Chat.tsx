@@ -210,6 +210,44 @@ export default function Chat({
   const [enabledSkills, setEnabledSkills] = useState<SkillPackage[]>([]);
   const [popoverSelected, setPopoverSelected] = useState(0);
   const [dismissedInput, setDismissedInput] = useState<string | null>(null);
+  // Esc-to-terminate (keyboard shortcut): while a task is streaming, the first
+  // Esc arms termination (highlights the stop button for 2s) and a second Esc
+  // within that window aborts. The two-step guard keeps a stray Esc from
+  // dropping an in-flight task. Defers to any focused popover/drawer that
+  // already consumed the Escape (defaultPrevented), e.g. the open SessionDrawer.
+  const [escArmed, setEscArmed] = useState(false);
+  const escTimerRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!streaming) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      e.preventDefault();
+      setEscArmed((armed) => {
+        if (escTimerRef.current !== null) {
+          clearTimeout(escTimerRef.current);
+          escTimerRef.current = null;
+        }
+        if (armed) {
+          abort();
+          return false;
+        }
+        escTimerRef.current = window.setTimeout(() => {
+          escTimerRef.current = null;
+          setEscArmed(false);
+        }, 2000);
+        return true;
+      });
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      if (escTimerRef.current !== null) {
+        clearTimeout(escTimerRef.current);
+        escTimerRef.current = null;
+      }
+      setEscArmed(false);
+    };
+  }, [streaming, abort]);
   // Live preview of the user's currently-active tab origin + title. Only
   // used when the session is in 'auto' mode — then the user can still
   // freely tab-switch and the panel reflects "the tab your next first-
@@ -1575,6 +1613,7 @@ After the skill completes, briefly summarize what was created (the user will see
         onKeyDown={handleKeyDown}
         onSubmit={handleSubmit}
         onStop={handleStop}
+        stopArmed={escArmed}
         onAttachClick={() => fileInputRef.current?.click()}
         onPickElement={onPickElement}
         pickerActive={pickerActive}
@@ -1811,6 +1850,7 @@ function Composer({
   onKeyDown,
   onSubmit,
   onStop,
+  stopArmed,
   onAttachClick,
   onPasteFiles,
   onDropFiles,
@@ -1846,6 +1886,8 @@ function Composer({
   /** Issue #34 — unified submit: queues during streaming, sends otherwise. */
   onSubmit: () => void;
   onStop: () => void;
+  /** True while Esc-to-terminate is armed — highlights the stop button. */
+  stopArmed: boolean;
   onAttachClick: () => void;
   onPasteFiles: (files: File[]) => void;
   onDropFiles: (files: File[]) => void;
@@ -1999,9 +2041,20 @@ function Composer({
                 <button
                   type="button"
                   onClick={onStop}
-                  aria-label={t("chat.cancelRunningTask")}
-                  title={t("chat.cancelRunningTask")}
-                  className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-chip text-fg-1 transition-colors hover:bg-field"
+                  aria-label={stopArmed ? t("chat.cancelConfirm") : t("chat.cancelRunningTask")}
+                  title={stopArmed ? t("chat.cancelConfirm") : t("chat.cancelRunningTask")}
+                  className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-chip transition-colors ${
+                    stopArmed ? "" : "text-fg-1 hover:bg-field"
+                  }`}
+                  style={
+                    stopArmed
+                      ? {
+                          color: "var(--c-warning)",
+                          background: "var(--c-warning-tint)",
+                          boxShadow: "0 0 0 1.5px var(--c-warning)",
+                        }
+                      : undefined
+                  }
                 >
                   <svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor" aria-hidden="true">
                     <path d="M256 256v512h512V256H256z m597.333333-85.333333v682.666666H170.666667V170.666667h682.666666z" />

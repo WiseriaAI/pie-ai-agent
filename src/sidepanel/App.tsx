@@ -305,6 +305,32 @@ export default function App() {
     setDrawerOpen(false);
   }, [session]);
 
+  // ── Keyboard shortcuts (panel-focused) ─────────────────────────────────────
+  // Cmd/Ctrl+K → new session, Cmd/Ctrl+D → toggle the session drawer, and Esc →
+  // return to chat from Settings/Schedules when idle (the drawer + Composer
+  // handle their own Esc). Cmd/Ctrl+N is intentionally avoided: Chrome reserves
+  // it for "new window" and a web page cannot suppress it.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && !e.shiftKey && !e.altKey && (e.key === "k" || e.key === "K")) {
+        e.preventDefault();
+        void handleNewSession();
+        return;
+      }
+      if (mod && !e.shiftKey && !e.altKey && (e.key === "d" || e.key === "D")) {
+        e.preventDefault();
+        setDrawerOpen((v) => !v);
+        return;
+      }
+      if (e.key === "Escape" && !e.defaultPrevented && !drawerOpen && view !== "agent") {
+        setView("agent");
+      }
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [handleNewSession, drawerOpen, view]);
+
   // ── Session title for top bar ─────────────────────────────────────────────
   const activeSessionEntry = sessions.find((s) => s.id === session.sessionId);
   const sessionTitle = activeSessionEntry?.title ?? (session.sessionId ? "New Session" : "…");
