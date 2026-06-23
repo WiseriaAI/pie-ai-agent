@@ -113,6 +113,9 @@ export const swPort = {
   ): Promise<TRes | { ok: false; error: string }> {
     try {
       const res = (await chrome.runtime.sendMessage(message)) as TRes | undefined;
+      // 契约：本通道服务请求/响应型 RPC（如 schedules CRUD，SW handler 必返
+      // {ok,...}）。无响应（SW 未应答）视为失败。fire-and-forget 型消息请直接
+      // 用 runtime.sendMessage，别走 request。
       if (res === undefined || res === null) {
         return { ok: false, error: "no response from background worker" };
       }
