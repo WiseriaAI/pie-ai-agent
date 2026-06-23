@@ -255,12 +255,12 @@ describe("search_page registry", () => {
       expect.arrayContaining([
         "read_page",
         "find_target",
-        "read_records",
+        "read_target_records",
         "read_target",
       ]),
     );
     expect(getToolClass("find_target")).toBe("read");
-    expect(getToolClass("read_records")).toBe("read");
+    expect(getToolClass("read_target_records")).toBe("read");
     expect(getToolClass("read_target")).toBe("read");
   });
 

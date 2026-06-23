@@ -94,7 +94,7 @@ export const PAGE_SNAPSHOT_TOOL_NAMES = [
 // no tab/page state mutation.
 export const PAGE_ATLAS_TOOL_NAMES = [
   "find_target",
-  "read_records",
+  "read_target_records",
   "read_target",
 ] as const;
 
@@ -248,6 +248,7 @@ export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
   read_page: "read",
   // Page Atlas target tools — reads structured atlas targets, no tab/page state mutation
   find_target: "read",
+  read_target_records: "read",
   read_target: "read",
   // PDF tools — pure text producers, parse-only, no tab mutation
   read_pdf: "read",
@@ -330,7 +331,7 @@ export const TOOL_GROUPS: Readonly<Record<string, DisclosureGroup>> = {
   click: "core", hover: "core", type: "core", scroll: "core", select: "core",
   wait: "core", done: "core", fail: "core",
   read_page: "core",
-  find_target: "core", read_target: "core",
+  find_target: "core", read_target_records: "core", read_target: "core",
   list_tabs: "core", close_tabs: "core", activate_tab: "core", group_tabs: "core",
   ungroup_tabs: "core", move_tabs: "core", focus_tab: "core", open_url: "core",
   unpin_tab: "core",
