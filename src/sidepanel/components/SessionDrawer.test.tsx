@@ -20,6 +20,12 @@ import SessionDrawer from "./SessionDrawer";
 import SessionConfirmCard from "./SessionConfirmCard";
 import type { SessionIndexEntry } from "@/lib/sessions/types";
 import type { PinnedTabDriftPayload } from "@/types";
+import * as lifecycle from "@/lib/sessions/lifecycle";
+
+vi.mock("@/lib/sessions/lifecycle", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/sessions/lifecycle")>();
+  return { ...actual, hardDeleteAllArchived: vi.fn(async () => ({ deleted: 2 })) };
+});
 
 // Helper to build a minimal SessionIndexEntry
 function makeEntry(
@@ -292,5 +298,39 @@ describe("SessionConfirmCard — R14 drift card (image-bearing failed session)",
     const btn = screen.getByRole("button", { name: /discard/i });
     expect((btn as HTMLButtonElement).disabled).toBe(true);
     expect(btn.textContent).toMatch(/DISCARDED/i);
+  });
+});
+
+describe("SessionDrawer — clear all archived", () => {
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  it("clears all archived after confirm", () => {
+    (lifecycle.hardDeleteAllArchived as ReturnType<typeof vi.fn>).mockClear();
+    vi.stubGlobal("confirm", vi.fn(() => true));
+    const sessions = [
+      makeEntry("a1", "archived", "Old A"),
+      makeEntry("a2", "archived", "Old B"),
+    ];
+    render(<SessionDrawer {...BASE_PROPS} sessions={sessions} />);
+    fireEvent.click(screen.getByText(/Show Archived/));
+    fireEvent.click(screen.getByText("Delete all"));
+    expect(lifecycle.hardDeleteAllArchived).toHaveBeenCalledTimes(1);
+  });
+
+  it("does NOT clear when confirm is cancelled", () => {
+    (lifecycle.hardDeleteAllArchived as ReturnType<typeof vi.fn>).mockClear();
+    vi.stubGlobal("confirm", vi.fn(() => false));
+    const sessions = [makeEntry("a1", "archived", "Old A")];
+    render(<SessionDrawer {...BASE_PROPS} sessions={sessions} />);
+    fireEvent.click(screen.getByText(/Show Archived/));
+    fireEvent.click(screen.getByText("Delete all"));
+    expect(lifecycle.hardDeleteAllArchived).not.toHaveBeenCalled();
+  });
+
+  it("hides the Delete all button when there are no archived sessions", () => {
+    const sessions = [makeEntry("s1", "active", "Active")];
+    render(<SessionDrawer {...BASE_PROPS} sessions={sessions} />);
+    fireEvent.click(screen.getByText(/Show Archived/));
+    expect(screen.queryByText("Delete all")).toBeNull();
   });
 });

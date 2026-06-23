@@ -32,6 +32,7 @@ import {
   unarchiveSession,
   hardDeleteSession,
   softDeleteSession,
+  hardDeleteAllArchived,
 } from "@/lib/sessions/lifecycle";
 import { useStoreChange } from "@/sidepanel/hooks/useStoreChange";
 import SessionRow from "./SessionRow";
@@ -249,6 +250,14 @@ export default function SessionDrawer({
     await hardDeleteSession(id);
   }
 
+  async function handleClearAllArchived() {
+    if (!window.confirm(t("sessions.deleteAllArchivedConfirm", { count: archivedCount }))) {
+      return;
+    }
+    await hardDeleteAllArchived();
+    // store-bus → App useStoreChange("sessions") refreshes the list.
+  }
+
   return (
     <Drawer
       open={isOpen}
@@ -410,6 +419,27 @@ export default function SessionDrawer({
             id="archived-session-list"
             style={{ maxHeight: 200, overflowY: "auto", borderBottom: "1px solid var(--c-line)" }}
           >
+            {archivedSessions.length > 0 && (
+              <div style={{ display: "flex", justifyContent: "flex-end", padding: "8px 16px 4px" }}>
+                <button
+                  type="button"
+                  onClick={handleClearAllArchived}
+                  style={{
+                    fontFamily: "'JetBrains Mono', monospace",
+                    fontSize: 10,
+                    fontWeight: 500,
+                    color: "var(--c-danger-fg)",
+                    background: "none",
+                    border: "1px solid var(--c-danger-line)",
+                    borderRadius: 6,
+                    padding: "3px 8px",
+                    cursor: "pointer",
+                  }}
+                >
+                  {t("sessions.deleteAllArchived")}
+                </button>
+              </div>
+            )}
             <ul
               role="list"
               aria-label={t("sessions.archivedAria")}
