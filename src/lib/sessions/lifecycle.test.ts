@@ -14,6 +14,7 @@ import {
 } from "@/lib/idb/sessions-store";
 import {
   archiveSession,
+  hardDeleteAllArchived,
   hardDeleteExpired,
   hardDeleteSession,
   softDeleteSession,
@@ -251,5 +252,32 @@ describe("Scenario 7 (integration): session_index tracks archived / active statu
 
     // The archived key should exist.
     expect(await getSessionRecord(archivedKey(session.id))).toBeDefined();
+  });
+});
+
+describe("hardDeleteAllArchived", () => {
+  it("hard-deletes every archived session and leaves active ones", async () => {
+    const a = await createSession();
+    const b = await createSession();
+    const c = await createSession();
+    await archiveSession(a.id);
+    await archiveSession(b.id);
+    // c stays active
+
+    const result = await hardDeleteAllArchived();
+    expect(result.deleted).toBe(2);
+
+    expect(await getSessionRecord(archivedKey(a.id))).toBeUndefined();
+    expect(await getSessionRecord(archivedKey(b.id))).toBeUndefined();
+    const index = await listSessionIndex();
+    expect(index.find((e) => e.id === a.id)).toBeUndefined();
+    expect(index.find((e) => e.id === b.id)).toBeUndefined();
+    expect(index.find((e) => e.id === c.id)).toBeDefined(); // active survives
+  });
+
+  it("returns {deleted:0} when there are no archived sessions", async () => {
+    await createSession(); // active only
+    const result = await hardDeleteAllArchived();
+    expect(result.deleted).toBe(0);
   });
 });

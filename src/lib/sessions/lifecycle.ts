@@ -185,28 +185,57 @@ export async function softDeleteSession(
   await archiveSession(id, opts);
 }
 
+// ── hardDeleteSessions (shared core) ─────────────────────────────────────────
+
+/**
+ * Hard-delete a set of sessions in ONE atomic batch (their :meta/:agent/:archived
+ * keys + index update), then best-effort reclaim each session's output artifacts
+ * and scratchpad out-of-band. Shared core for hardDeleteSession (single),
+ * hardDeleteExpired (30-day sweep) and hardDeleteAllArchived (manual clear).
+ */
+export async function hardDeleteSessions(
+  ids: string[],
+): Promise<{ deleted: number }> {
+  if (ids.length === 0) return { deleted: 0 };
+  const idSet = new Set(ids);
+  const indexRaw = await readIndexRaw();
+  const updatedIndex = indexRaw.filter((e) => !idSet.has(e.id));
+
+  const batch: Record<string, unknown> = { [INDEX_KEY]: updatedIndex };
+  for (const id of ids) {
+    batch[archivedKey(id)] = undefined;
+    batch[metaKey(id)] = undefined;
+    batch[agentKey(id)] = undefined;
+  }
+  await writeAtomic(batch);
+
+  for (const id of ids) {
+    await deleteSessionArtifacts(id).catch(() => {});
+    await deleteScratchpad(id).catch(() => {});
+  }
+  return { deleted: ids.length };
+}
+
 // ── hardDeleteSession ─────────────────────────────────────────────────────────
 
 /**
- * Immediately and permanently delete a session.
- * Removes the archived key (if present) and the index entry.
- * Also removes meta + agent keys in case the session was somehow not archived.
+ * Immediately and permanently delete a single session (thin wrapper over
+ * hardDeleteSessions).
  */
 export async function hardDeleteSession(id: string): Promise<void> {
+  await hardDeleteSessions([id]);
+}
+
+// ── hardDeleteAllArchived ─────────────────────────────────────────────────────
+
+/**
+ * Permanently delete EVERY archived session (the "clear all archived" action).
+ * Returns the count deleted.
+ */
+export async function hardDeleteAllArchived(): Promise<{ deleted: number }> {
   const indexRaw = await readIndexRaw();
-  const updatedIndex = indexRaw.filter((e) => e.id !== id);
-
-  await writeAtomic({
-    [archivedKey(id)]: undefined,
-    [metaKey(id)]: undefined,
-    [agentKey(id)]: undefined,
-    [INDEX_KEY]: updatedIndex,
-  });
-
-  // Clear any output_file artifacts for this session (covers a hard-delete that
-  // skipped the archive step). Best-effort.
-  await deleteSessionArtifacts(id).catch(() => {});
-  await deleteScratchpad(id).catch(() => {});
+  const ids = indexRaw.filter((e) => e.status === "archived").map((e) => e.id);
+  return hardDeleteSessions(ids);
 }
 
 // ── hardDeleteExpired ─────────────────────────────────────────────────────────
@@ -251,26 +280,5 @@ export async function hardDeleteExpired(
   }
 
   if (toDelete.length === 0) return { deleted: 0 };
-
-  // Build atomic batch: remove archived keys + meta + agent (belt-and-suspenders)
-  // + update index.
-  const updatedIndex = indexRaw.filter((e) => !toDelete.includes(e.id));
-  const batch: Record<string, unknown> = { [INDEX_KEY]: updatedIndex };
-  for (const id of toDelete) {
-    batch[archivedKey(id)] = undefined;
-    batch[metaKey(id)] = undefined;
-    batch[agentKey(id)] = undefined;
-  }
-
-  await writeAtomic(batch);
-
-  // Reclaim each expired session's scratchpad. Since the scratchpad survives
-  // archive (see archiveSession), this 30-day sweep is its only final cleanup
-  // path — skipping it would permanently leak orphan scratchpads. Best-effort,
-  // out-of-band of the atomic batch (scratchpads live in a separate store).
-  for (const id of toDelete) {
-    await deleteScratchpad(id).catch(() => {});
-  }
-
-  return { deleted: toDelete.length };
+  return hardDeleteSessions(toDelete);
 }
