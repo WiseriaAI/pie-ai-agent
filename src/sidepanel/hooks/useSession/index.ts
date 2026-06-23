@@ -29,6 +29,7 @@ import {
   type SessionRuntimeSlot,
 } from "./runtime-map";
 import { createPortHandlers } from "./port-handlers";
+import { swPort } from "@/lib/sw-connection/manager";
 import { isFilePdfUrl } from "@/lib/pdf/detect";
 import { isRestrictedUrl } from "@/lib/url/restricted";
 import {
@@ -235,9 +236,6 @@ export interface UseSession {
   addQuote: (sessionId: string, q: Quote) => void;
   removeQuote: (sessionId: string, quoteId: string) => void;
   clearQuotes: (sessionId: string) => void;
-  /** Recording v1 — exposes the active per-session port so useRecording can
-   *  attach its own onMessage listener. Null until ready=true. */
-  port: chrome.runtime.Port | null;
   /** output_file — request the SW to download an artifact to disk. Sends an
    *  out-of-band download-output port message and resolves when the SW replies
    *  with file-output-result (or after a 30s safety timeout). */
@@ -259,21 +257,22 @@ export function useSession(): UseSession {
   const [ready, setReady] = useState(false);
   const t = useT();
 
-  // Multi-session (#30) — one Port per sessionId. Switching sessions does
-  // NOT disconnect the previous port; SW continues delivering messages for
-  // background tasks via createPortHandlers' single onMessage listener.
-  // Cleanup: panel unmount disconnects every entry.
-  const portsRef = useRef<Map<string, chrome.runtime.Port>>(new Map());
+  // Multi-session (#30) — per-session ports are now owned by the swPort
+  // singleton (src/lib/sw-connection/manager.ts), not a private portsRef.
+  // swPort.connect is idempotent per sessionId (shares one port, no double
+  // panel-mounted) and swPort.send reconnects transparently on SW idle-out.
   const sessionIdRef = useRef<string | null>(null);
 
   const [slots, setSlots] = useState<Map<string, SessionRuntimeSlot>>(new Map());
   const slotsRef = useRef<Map<string, SessionRuntimeSlot>>(new Map());
 
-  // Issue #34 — ref populated after postWithReconnect is created; passed into
-  // createPortHandlers to break the portHandlers → connectPortFor → portHandlers
-  // circular dependency while still letting chat-instruction-rejected fall back
-  // to chat-start via the live postWithReconnect function.
-  const postWithReconnectRef = useRef<((id: string, payload: PortMessageToWorker) => boolean) | null>(null);
+  // Issue #34 — port-handlers' chat-instruction-rejected fallback posts a
+  // chat-start via this ref. It now points at swPort.send (transparent
+  // reconnect). The ref indirection is retained so createPortHandlers'
+  // postMessageRef dependency contract is unchanged.
+  const postWithReconnectRef = useRef<((id: string, payload: PortMessageToWorker) => boolean) | null>(
+    (id, payload) => swPort.send(id, payload),
+  );
 
   // patchSlot — sync write to slotsRef (Bug-fix-A truth source) + setSlots
   // for React commit.
@@ -335,85 +334,13 @@ export function useSession(): UseSession {
   );
 
   // ── Mount: bootstrap active session + open per-session port ─────────
-  // M3-U1 — port name is `chat-stream-${sessionId}`. The SW parses the
-  // sessionId out of the name to anchor per-port state (abortController,
-  // inFlightSessionIds). Switching active sessions
-  // disconnects the old port and connects a fresh one for the new id;
-  // single-panel concurrent task switch remains gated by the streaming
-  // guard (deferred to a future M3 unit). Cross-panel concurrency (two
-  // sidepanels in two windows) IS supported by the SW because each panel
-  // gets its own port pinned to its own sessionId.
-  const connectPortFor = useCallback(
-    (id: string) => {
-      const port = chrome.runtime.connect({ name: `chat-stream-${id}` });
-      port.onMessage.addListener(portHandlers.handleMessage);
-      const flushOnDisconnect = portHandlers.makeDisconnectHandler(id);
-      port.onDisconnect.addListener(() => {
-        // SW idle-out / crash 会让 port 在 panel 这侧静默断开。先丢掉 ref
-        // 再 flush，下一次 send 才会通过 getOrReconnectPort 拿到新 port，
-        // 而不是把消息塞进已经死掉的 handle 触发 "disconnected port" 抛错。
-        // 身份比对保护手动 reconnect 场景：sibling 重连可能已写入新 port。
-        if (portsRef.current.get(id) === port) {
-          portsRef.current.delete(id);
-        }
-        flushOnDisconnect();
-      });
-      // panel-mounted 的 postMessage 也包 try：极端竞态下新建的 port 可能
-      // 立刻死（SW 又在重启），不能让握手抛错冒出 connectPortFor —
-      // postWithReconnect 后续的 tryOnce 会再次失败并走 revert 路径。
-      try {
-        port.postMessage({ type: "panel-mounted", sessionId: id });
-      } catch (e) {
-        console.warn(`[useSession] panel-mounted failed on fresh port for session=${id}:`, e);
-      }
-      return port;
-    },
-    [portHandlers],
-  );
-
-  // Lazy 重连：sendMessage / abort / resume / discard 共用。portsRef
-  // 里没 entry（mount 时未连接 / SW idle-out 后被 onDisconnect 清理）
-  // 时新建一条 port，否则复用现有的。
-  const getOrReconnectPort = useCallback(
-    (id: string): chrome.runtime.Port => {
-      const existing = portsRef.current.get(id);
-      if (existing) return existing;
-      const fresh = connectPortFor(id);
-      portsRef.current.set(id, fresh);
-      return fresh;
-    },
-    [connectPortFor],
-  );
-
-  // postMessage 容错：disconnected port 上 postMessage 抛同步错误。
-  // 一次失败静默重连重发；两次都失败返回 false 由 caller 决定如何 revert
-  // UI 状态。SW 重启对用户完全透明 —— 新 port 上 panel-mounted 会触发
-  // SW handlePanelMounted 从 storage 重建 session 状态。
-  const postWithReconnect = useCallback(
-    (id: string, payload: PortMessageToWorker): boolean => {
-      const tryOnce = (p: chrome.runtime.Port): boolean => {
-        try {
-          p.postMessage(payload);
-          return true;
-        } catch {
-          return false;
-        }
-      };
-      let port = getOrReconnectPort(id);
-      if (tryOnce(port)) return true;
-      if (portsRef.current.get(id) === port) {
-        portsRef.current.delete(id);
-        try { port.disconnect(); } catch {}
-      }
-      port = getOrReconnectPort(id);
-      return tryOnce(port);
-    },
-    [getOrReconnectPort],
-  );
-
-  // Issue #34 — populate the ref so port-handlers.ts chat-instruction-rejected
-  // can call postWithReconnect without a circular useMemo dep.
-  postWithReconnectRef.current = postWithReconnect;
+  // M3-U1 — port name is `chat-stream-${sessionId}` (owned by swPort). The SW
+  // parses the sessionId out of the name to anchor per-port state
+  // (abortController, inFlightSessionIds). swPort.connect subscribes the port
+  // handlers; swPort.send reconnects transparently on SW idle-out; and
+  // swPort.connect is idempotent per session (one port, one panel-mounted).
+  // Cross-panel concurrency (two sidepanels in two windows) IS supported by
+  // the SW because each panel gets its own port pinned to its own sessionId.
 
   useEffect(() => {
     let cancelled = false;
@@ -461,7 +388,10 @@ export function useSession(): UseSession {
         setPinnedTabsState(null);
         setPinModeState(meta.pinMode ?? "auto");
         patchSlot(meta.id, EMPTY_SLOT);
-        portsRef.current.set(meta.id, connectPortFor(meta.id));
+        swPort.connect(meta.id, {
+          onMessage: portHandlers.handleMessage,
+          onDisconnect: portHandlers.makeDisconnectHandler(meta.id),
+        });
       } finally {
         if (!cancelled) setReady(true);
       }
@@ -472,12 +402,11 @@ export function useSession(): UseSession {
       // #30 — disconnect every port. Each disconnect triggers the SW's
       // port.onDisconnect: transitionPortInFlightSessionsToPaused marks any
       // in-flight session for that port as paused (R10/R14 invariant).
-      for (const port of portsRef.current.values()) {
-        try { port.disconnect(); } catch {}
-      }
-      portsRef.current.clear();
+      swPort.disconnectAll();
     };
-  }, [connectPortFor]);
+    // Bootstrap runs once on mount; swPort owns the port lifecycle thereafter.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Bug-fix — quote reconnect nudge. When the user captures a page quote while
   // this panel is still mounted on its current session but the SW idled/restarted
@@ -500,16 +429,13 @@ export function useSession(): UseSession {
       }
       const id = sessionIdRef.current;
       if (!id) return;
-      const stale = portsRef.current.get(id);
-      if (stale) {
-        try { stale.disconnect(); } catch {}
-        portsRef.current.delete(id);
-      }
-      portsRef.current.set(id, connectPortFor(id));
+      swPort.reconnect(id);
     };
     chrome.runtime.onMessage.addListener(onRuntimeMessage);
     return () => chrome.runtime.onMessage.removeListener(onRuntimeMessage);
-  }, [connectPortFor]);
+    // swPort.reconnect is a stable module singleton; no reactive deps needed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // M1-U5 — track status changes from SW writes (cold-start
   // detectAndMarkPaused, post-resume markActive). Without this, the
@@ -687,7 +613,7 @@ export function useSession(): UseSession {
       // Fire-and-forget; failures are non-fatal.
       void persistMessagesById(id, updated);
 
-      const sent = postWithReconnect(id, {
+      const sent = swPort.send(id, {
         type: "chat-start",
         messages: chatMessages,
         sessionId: id,
@@ -752,7 +678,7 @@ export function useSession(): UseSession {
         })();
       }
     },
-    [persistMessagesById, patchSlot, postWithReconnect],
+    [persistMessagesById, patchSlot],
   );
 
   // ── addPendingInstruction ─────────────────────────────────────────────
@@ -782,7 +708,7 @@ export function useSession(): UseSession {
       patchSlot(id, { messages: updated });
       void persistMessagesById(id, updated);
 
-      postWithReconnect(id, {
+      swPort.send(id, {
         type: "chat-instruction-add",
         sessionId: id,
         chatMessageId,
@@ -794,7 +720,7 @@ export function useSession(): UseSession {
         ...(input.quotes?.length ? { quotes: input.quotes } : {}),
       });
     },
-    [patchSlot, persistMessagesById, postWithReconnect],
+    [patchSlot, persistMessagesById],
   );
 
   // ── cancelPendingInstruction ──────────────────────────────────────────
@@ -812,13 +738,13 @@ export function useSession(): UseSession {
       patchSlot(id, { messages: updated });
       void persistMessagesById(id, updated);
 
-      postWithReconnect(id, {
+      swPort.send(id, {
         type: "chat-instruction-cancel",
         sessionId: id,
         chatMessageId,
       });
     },
-    [patchSlot, persistMessagesById, postWithReconnect],
+    [patchSlot, persistMessagesById],
   );
 
   const abort = useCallback(() => {
@@ -827,8 +753,8 @@ export function useSession(): UseSession {
     // chat-abort 走 lazy 重连：若 SW 已 idle-out，新建 port 让 SW 重启后
     // 收到 abort（无运行 task 时 SW 静默忽略）。两次失败也无副作用 ——
     // panel disconnect handler 已经把 streaming 翻成 false。
-    postWithReconnect(id, { type: "chat-abort" });
-  }, [postWithReconnect]);
+    swPort.send(id, { type: "chat-abort" });
+  }, []);
 
   const resumeTask = useCallback(() => {
     const id = sessionIdRef.current;
@@ -840,12 +766,12 @@ export function useSession(): UseSession {
       error: null,
       errorKind: null,
     });
-    const sent = postWithReconnect(id, { type: "resume-task", sessionId: id });
+    const sent = swPort.send(id, { type: "resume-task", sessionId: id });
     if (!sent) {
       // 两次重连均失败 — 撤回 streaming 标记，否则 UI 卡在 spinner。
       patchSlot(id, { streaming: false, streamFinished: true });
     }
-  }, [patchSlot, postWithReconnect]);
+  }, [patchSlot]);
 
   const discardTask = useCallback((confirmationId: string) => {
     const id = sessionIdRef.current;
@@ -853,7 +779,7 @@ export function useSession(): UseSession {
     // discard 是确认型操作，wire 失败不阻塞 panel 侧 resolved 标记：
     // 即便 SW 没收到，下次 panel mount 时 confirmation 已被 panel
     // 标 discarded，不会再追踪。
-    postWithReconnect(id, {
+    swPort.send(id, {
       type: "discard-task",
       sessionId: id,
       confirmationId,
@@ -865,7 +791,7 @@ export function useSession(): UseSession {
           : m,
       ),
     }));
-  }, [patchSlot, postWithReconnect]);
+  }, [patchSlot]);
 
   const clearMessages = useCallback(async () => {
     const id = sessionIdRef.current;
@@ -954,16 +880,18 @@ export function useSession(): UseSession {
 
     // §3.4 invariant — paused / archived sessions do NOT auto-create a port.
     // Resume / archived-readonly flows decide explicitly when to connect.
-    if (
-      !portsRef.current.has(id) &&
-      metaForActivate.status !== "archived" &&
-      metaForActivate.status !== "paused"
-    ) {
-      portsRef.current.set(id, connectPortFor(id));
+    // swPort.connect is idempotent per session (re-subscribe shares the live
+    // port, never opens a second one nor re-sends panel-mounted), so we call it
+    // unconditionally for runnable sessions — no "already has a port" guard.
+    if (metaForActivate.status !== "archived" && metaForActivate.status !== "paused") {
+      swPort.connect(id, {
+        onMessage: portHandlers.handleMessage,
+        onDisconnect: portHandlers.makeDisconnectHandler(id),
+      });
     }
 
     return id;
-  }, [connectPortFor, patchSlot]);
+  }, [patchSlot, portHandlers]);
 
   /**
    * M2-U2 — create a new session and make it active. Returns the new
@@ -985,9 +913,12 @@ export function useSession(): UseSession {
     setPinnedTabsState(null);
     setPinModeState("auto");
     patchSlot(meta.id, EMPTY_SLOT);
-    portsRef.current.set(meta.id, connectPortFor(meta.id));
+    swPort.connect(meta.id, {
+      onMessage: portHandlers.handleMessage,
+      onDisconnect: portHandlers.makeDisconnectHandler(meta.id),
+    });
     return meta.id;
-  }, [connectPortFor, patchSlot]);
+  }, [patchSlot, portHandlers]);
 
   // v1.5 — PinnedTabDropdown actions. Direct IDB writes (panel can write
   // session_${id}_meta) — no need to round-trip through SW. The store-bus
@@ -1054,20 +985,17 @@ export function useSession(): UseSession {
     if (!sid) return Promise.resolve({ status: "error" as const });
     return new Promise<DownloadResult>((resolve) => {
       registerDownload(artifactId, resolve);
-      const port = getOrReconnectPort(sid);
-      try {
-        port.postMessage({ type: "download-output", artifactId });
-      } catch {
+      const ok = swPort.send(sid, { type: "download-output", artifactId });
+      if (!ok) {
         resolveDownload(artifactId, { status: "error" });
         return;
       }
       window.setTimeout(() => resolveDownload(artifactId, { status: "error" }), 30_000);
     });
-  }, [getOrReconnectPort]);
+  }, []);
 
   return {
     sessionId,
-    port: sessionIdRef.current ? (portsRef.current.get(sessionIdRef.current) ?? null) : null,
     ready,
     status,
     pinnedTabs: pinnedTabsState,

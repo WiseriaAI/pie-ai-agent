@@ -1,86 +1,65 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
-import { useRecording } from "./useRecording";
 import type { RecordedAction } from "@/lib/recording/types";
 
-interface FakePort {
-  postMessage: ReturnType<typeof vi.fn>;
-  onMessage: { addListener: (fn: (m: unknown) => void) => void; removeListener: (fn: (m: unknown) => void) => void };
-  onDisconnect: { addListener: (fn: () => void) => void };
-  fire: (m: unknown) => void;
-}
-
-function fakePort(): FakePort {
-  let listener: ((m: unknown) => void) | null = null;
-  return {
-    postMessage: vi.fn(),
-    onMessage: {
-      addListener: (fn) => { listener = fn; },
-      removeListener: (fn) => { if (listener === fn) listener = null; },
+// 捕获 connect 注册的 onMessage，供测试 fire 广播。`vi.mock` 工厂在文件顶部
+// 被提升，所以工厂内引用的绑定必须经 `vi.hoisted` 一起提升，否则触发 TDZ。
+const { send, capturedRef } = vi.hoisted(() => ({
+  send: vi.fn(() => true),
+  capturedRef: { current: null as ((m: unknown) => void) | null },
+}));
+vi.mock("@/lib/sw-connection/manager", () => ({
+  swPort: {
+    connect: (_sid: string, h: { onMessage?: (m: unknown) => void }) => {
+      capturedRef.current = h.onMessage ?? null;
+      return () => { capturedRef.current = null; };
     },
-    onDisconnect: { addListener: () => {} },
-    fire: (m) => listener?.(m),
-  };
-}
+    send,
+  },
+}));
+// 测试体里仍用 `captured` 这个名字读最新订阅者。
+const captured = (m: unknown) => capturedRef.current?.(m);
+
+import { useRecording } from "./useRecording";
+
+beforeEach(() => {
+  send.mockClear();
+  capturedRef.current = null;
+});
 
 describe("useRecording", () => {
-  it("starts inactive", () => {
-    const port = fakePort();
-    const { result } = renderHook(() => useRecording({ port: port as unknown as chrome.runtime.Port, sessionId: "S1" }));
-    expect(result.current.active).toBe(false);
-    expect(result.current.actions).toEqual([]);
-  });
-
-  it("startRecording posts recording-start", () => {
-    const port = fakePort();
-    const { result } = renderHook(() => useRecording({ port: port as unknown as chrome.runtime.Port, sessionId: "S1" }));
+  it("startRecording routes through swPort.send (survives a dead port)", () => {
+    const { result } = renderHook(() => useRecording({ sessionId: "S1" }));
     act(() => result.current.startRecording());
-    expect(port.postMessage).toHaveBeenCalledWith({ type: "recording-start", sessionId: "S1" });
+    expect(send).toHaveBeenCalledWith("S1", { type: "recording-start", sessionId: "S1" });
   });
 
   it("recording-started broadcast flips active=true", () => {
-    const port = fakePort();
-    const { result } = renderHook(() => useRecording({ port: port as unknown as chrome.runtime.Port, sessionId: "S1" }));
-    act(() => {
-      port.fire({ type: "recording-started", sessionId: "S1", tabId: 1, origin: "https://x.com", startedAt: 0 });
-    });
+    const { result } = renderHook(() => useRecording({ sessionId: "S1" }));
+    act(() => captured({ type: "recording-started", sessionId: "S1", tabId: 1, origin: "x", startedAt: 0 }));
     expect(result.current.active).toBe(true);
   });
 
   it("recording-action-broadcast appends action", () => {
-    const port = fakePort();
-    const { result } = renderHook(() => useRecording({ port: port as unknown as chrome.runtime.Port, sessionId: "S1" }));
-    act(() => {
-      port.fire({ type: "recording-started", sessionId: "S1", tabId: 1, origin: "https://x.com", startedAt: 0 });
-    });
+    const { result } = renderHook(() => useRecording({ sessionId: "S1" }));
+    act(() => captured({ type: "recording-started", sessionId: "S1", tabId: 1, origin: "x", startedAt: 0 }));
     const action: RecordedAction = { type: "click", label: "X", url: "u", region: "main", timestamp: 1 };
-    act(() => {
-      port.fire({ type: "recording-action-broadcast", sessionId: "S1", action });
-    });
+    act(() => captured({ type: "recording-action-broadcast", sessionId: "S1", action }));
     expect(result.current.actions).toEqual([action]);
   });
 
   it("rejects messages from other sessionId", () => {
-    const port = fakePort();
-    const { result } = renderHook(() => useRecording({ port: port as unknown as chrome.runtime.Port, sessionId: "S1" }));
-    act(() => {
-      port.fire({ type: "recording-started", sessionId: "S2", tabId: 1, origin: "https://x.com", startedAt: 0 });
-    });
+    const { result } = renderHook(() => useRecording({ sessionId: "S1" }));
+    act(() => captured({ type: "recording-started", sessionId: "S2", tabId: 1, origin: "x", startedAt: 0 }));
     expect(result.current.active).toBe(false);
   });
 
-  it("recording-finished resets state and surfaces serializedTrace + stepCount (Reframe)", () => {
-    const port = fakePort();
+  it("recording-finished surfaces serializedTrace + stepCount and resets", () => {
     const onFinished = vi.fn();
-    const { result } = renderHook(() => useRecording({ port: port as unknown as chrome.runtime.Port, sessionId: "S1", onFinished }));
+    const { result } = renderHook(() => useRecording({ sessionId: "S1", onFinished }));
     act(() => {
-      port.fire({ type: "recording-started", sessionId: "S1", tabId: 1, origin: "https://x.com", startedAt: 0 });
-      port.fire({
-        type: "recording-finished",
-        sessionId: "S1",
-        serializedTrace: "第 1 步：点击按钮 'X'",
-        stepCount: 1,
-      });
+      captured({ type: "recording-started", sessionId: "S1", tabId: 1, origin: "x", startedAt: 0 });
+      captured({ type: "recording-finished", sessionId: "S1", serializedTrace: "第 1 步：点击按钮 'X'", stepCount: 1 });
     });
     expect(result.current.active).toBe(false);
     expect(result.current.actions).toEqual([]);
@@ -88,44 +67,30 @@ describe("useRecording", () => {
   });
 
   it("recording-aborted resets state and exposes reason", () => {
-    const port = fakePort();
-    const { result } = renderHook(() => useRecording({ port: port as unknown as chrome.runtime.Port, sessionId: "S1" }));
+    const { result } = renderHook(() => useRecording({ sessionId: "S1" }));
     act(() => {
-      port.fire({ type: "recording-started", sessionId: "S1", tabId: 1, origin: "https://x.com", startedAt: 0 });
-      port.fire({ type: "recording-aborted", sessionId: "S1", reason: "tab-closed" });
+      captured({ type: "recording-started", sessionId: "S1", tabId: 1, origin: "x", startedAt: 0 });
+      captured({ type: "recording-aborted", sessionId: "S1", reason: "tab-closed" });
     });
     expect(result.current.active).toBe(false);
     expect(result.current.lastAbortReason).toBe("tab-closed");
   });
 
-  it("session change while recording fires discard automatically", () => {
-    const port = fakePort();
+  it("session change while recording fires discard via swPort.send to the PREVIOUS session", () => {
     const { result, rerender } = renderHook(
-      ({ sessionId }: { sessionId: string }) =>
-        useRecording({ port: port as unknown as chrome.runtime.Port, sessionId }),
+      ({ sessionId }: { sessionId: string }) => useRecording({ sessionId }),
       { initialProps: { sessionId: "S1" } },
     );
-    act(() => {
-      port.fire({ type: "recording-started", sessionId: "S1", tabId: 1, origin: "https://x.com", startedAt: 0 });
-    });
-    port.postMessage.mockClear();
+    act(() => captured({ type: "recording-started", sessionId: "S1", tabId: 1, origin: "x", startedAt: 0 }));
+    send.mockClear();
     rerender({ sessionId: "S2" });
-    expect(port.postMessage).toHaveBeenCalledWith({ type: "recording-discard", sessionId: "S1" });
+    expect(send).toHaveBeenCalledWith("S1", { type: "recording-discard", sessionId: "S1" });
     expect(result.current.active).toBe(false);
   });
 
-  it("finishRecording posts simple recording-finish (Reframe — no payload)", () => {
-    const port = fakePort();
-    const { result } = renderHook(() => useRecording({ port: port as unknown as chrome.runtime.Port, sessionId: "S1" }));
-    act(() => {
-      port.fire({ type: "recording-started", sessionId: "S1", tabId: 1, origin: "https://x.com", startedAt: 0 });
-    });
-    const action: RecordedAction = { type: "click", label: "X", url: "u", region: "main", timestamp: 1 };
-    act(() => {
-      port.fire({ type: "recording-action-broadcast", sessionId: "S1", action });
-    });
+  it("finishRecording posts simple recording-finish", () => {
+    const { result } = renderHook(() => useRecording({ sessionId: "S1" }));
     act(() => result.current.finishRecording());
-    // Reframe: SW is now the source of truth for actions; finish carries only sessionId.
-    expect(port.postMessage).toHaveBeenCalledWith({ type: "recording-finish", sessionId: "S1" });
+    expect(send).toHaveBeenCalledWith("S1", { type: "recording-finish", sessionId: "S1" });
   });
 });

@@ -89,7 +89,6 @@ export default function App() {
     setPendingRecording(null);
   }, []);
   const recording = useRecording({
-    port: session.port,
     sessionId: session.sessionId,
     onFinished: handleRecordingFinished,
   });
