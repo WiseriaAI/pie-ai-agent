@@ -502,7 +502,11 @@ export async function actByIdxInjected(params: ActParams): Promise<ActResult> {
     el.dispatchEvent(new PointerCtor("pointerup", init));
     el.dispatchEvent(new MouseEvent("mouseup", init));
     (el as HTMLElement).click();
-    return { ok: true, op: "click", observation: `Clicked element [${params.idx}]` };
+    const canvasNote =
+      el.tagName === "CANVAS"
+        ? ` (Note: this is a <canvas> — its content isn't standard DOM; if nothing happened, read it via screenshot + vision and interact via the keyboard tools.)`
+        : "";
+    return { ok: true, op: "click", observation: `Clicked element [${params.idx}]${canvasNote}` };
   }
 
   // Unreachable: all five ActParams ops are handled above. `satisfies never`

@@ -305,4 +305,23 @@ describe("actByIdxInjected op=click", () => {
     if (!result.ok) expect(result.error).toContain("disabled");
     expect(clicked).toBe(false);
   });
+
+  it("appends a canvas advisory when clicking a <canvas> element", async () => {
+    document.body.innerHTML = `<canvas data-pie-idx="30"></canvas>`;
+    const r = await actByIdxInjected({ op: "click", idx: 30 });
+    expect(r.ok).toBe(true);
+    if (!r.ok) throw new Error("narrow");
+    if (r.op !== "click") throw new Error("narrow op");
+    expect(r.observation).toContain("Clicked element [30]");
+    expect(r.observation).toMatch(/canvas/i);
+  });
+
+  it("does not append the canvas advisory for a normal element", async () => {
+    document.body.innerHTML = `<button data-pie-idx="31">Go</button>`;
+    const r = await actByIdxInjected({ op: "click", idx: 31 });
+    expect(r.ok).toBe(true);
+    if (!r.ok) throw new Error("narrow");
+    if (r.op !== "click") throw new Error("narrow op");
+    expect(r.observation).not.toMatch(/canvas/i);
+  });
 });
