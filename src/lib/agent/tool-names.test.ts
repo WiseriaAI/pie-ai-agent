@@ -79,10 +79,8 @@ describe("M3-U4 — TOOL_CLASSES registry", () => {
     expect(PAGE_SNAPSHOT_TOOL_NAMES).toEqual(["read_page"]);
     expect(PAGE_ATLAS_TOOL_NAMES).toEqual([
       "find_target",
-      "read_collection",
-      "read_table",
+      "read_records",
       "read_target",
-      "extract_records",
     ]);
 
     for (const name of PAGE_ATLAS_TOOL_NAMES) {

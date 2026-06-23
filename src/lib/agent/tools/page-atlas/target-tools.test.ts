@@ -202,108 +202,104 @@ describe("page atlas target tools", () => {
     expect(result.error).toBe('The page atlas is stale. Call read_page({mode:"atlas"}) again.');
   });
 
-  it("read_collection returns the selected range only", async () => {
+  it("read_records returns full records for a collection (no fields)", async () => {
     const tools = toolsFor(store);
+    const result = await tools.read_records.handler(
+      { atlas_id: "atlas_1", target_id: "collection_c1" },
+      ctx,
+    );
+    expect(result.success).toBe(true);
+    expect(result.observation).toContain('tool="read_records"');
+    expect(result.observation).toContain("<records");
+    expect(result.observation).toContain("record_r1");
+    expect(result.observation).toContain("record_r2");
+    expect(result.observation).toContain("&quot;Pie&quot;");
+  });
 
-    const result = await tools.read_collection.handler(
+  it("read_records reads a table without pre-classifying the type", async () => {
+    const tools = toolsFor(store);
+    const result = await tools.read_records.handler(
+      { atlas_id: "atlas_1", target_id: "table_t1" },
+      ctx,
+    );
+    expect(result.success).toBe(true);
+    expect(result.observation).toContain('tool="read_records"');
+    expect(result.observation).toContain("record_t1");
+    expect(result.observation).toContain("PIE-1");
+  });
+
+  it("read_records returns the selected range only", async () => {
+    const tools = toolsFor(store);
+    const result = await tools.read_records.handler(
       { atlas_id: "atlas_1", target_id: "collection_c1", range: "1..2" },
       ctx,
     );
-
     expect(result.success).toBe(true);
-    expect(result.observation).toContain('<untrusted_page_content');
-    expect(result.observation).toContain('tool="read_collection"');
     expect(result.observation).not.toContain("record_r1");
     expect(result.observation).toContain("record_r2");
     expect(result.observation).toContain("&quot;Cake&quot;");
-    expect(result.observation).toContain("second product card");
   });
 
-  it("read_collection rejects malformed ranges", async () => {
+  it("read_records projects to named fields when fields given", async () => {
     const tools = toolsFor(store);
-
-    const result = await tools.read_collection.handler(
-      { atlas_id: "atlas_1", target_id: "collection_c1", range: "abc" },
+    const result = await tools.read_records.handler(
+      { atlas_id: "atlas_1", target_id: "collection_c1", fields: ["name"], range: "0..1" },
       ctx,
     );
-
-    expect(result.success).toBe(false);
-    expect(result.error).toBe("invalid_range: expected range like 0..10");
-  });
-
-  it("read_collection rejects reversed ranges", async () => {
-    const tools = toolsFor(store);
-
-    const result = await tools.read_collection.handler(
-      { atlas_id: "atlas_1", target_id: "collection_c1", range: "3..1" },
-      ctx,
-    );
-
-    expect(result.success).toBe(false);
-    expect(result.error).toBe("invalid_range: expected range like 0..10");
-  });
-
-  it("read_table rejects malformed ranges", async () => {
-    const tools = toolsFor(store);
-
-    const result = await tools.read_table.handler(
-      { atlas_id: "atlas_1", target_id: "table_t1", range: "abc" },
-      ctx,
-    );
-
-    expect(result.success).toBe(false);
-    expect(result.error).toBe("invalid_range: expected range like 0..10");
-  });
-
-  it("extract_records requires atlas and target", async () => {
-    const tools = toolsFor(store);
-
-    const result = await tools.extract_records.handler(
-      { schema: { name: "string" } },
-      ctx,
-    );
-
-    expect(result.success).toBe(false);
-    expect(result.error).toContain("read_page");
-  });
-
-  it("extract_records returns a JSON array with only schema keys and evidence", async () => {
-    const tools = toolsFor(store);
-
-    const result = await tools.extract_records.handler(
-      {
-        atlas_id: "atlas_1",
-        target_id: "collection_c1",
-        schema: { name: "string" },
-        range: "0..1",
-      },
-      ctx,
-    );
-
     expect(result.success).toBe(true);
-    expect(result.observation).toContain('<untrusted_page_content');
-    expect(result.observation).toContain('tool="extract_records"');
+    expect(result.observation).toContain('tool="read_records"');
     expect(untrustedPageContentBody(result.observation ?? "")).toBe(
       '[{&quot;name&quot;:&quot;Pie&quot;,&quot;_evidence&quot;:&quot;first product card&quot;}]',
     );
     expect(result.observation).not.toContain("price");
   });
 
-  it("extract_records rejects reversed ranges", async () => {
+  it("read_records treats an empty fields array as full records", async () => {
     const tools = toolsFor(store);
-
-    const result = await tools.extract_records.handler(
-      {
-        atlas_id: "atlas_1",
-        target_id: "collection_c1",
-        schema: { name: "string" },
-        range: "3..1",
-      },
+    const result = await tools.read_records.handler(
+      { atlas_id: "atlas_1", target_id: "collection_c1", fields: [] },
       ctx,
     );
+    expect(result.success).toBe(true);
+    expect(result.observation).toContain("<records");
+    expect(result.observation).toContain("price");
+  });
 
+  it("read_records rejects malformed ranges", async () => {
+    const tools = toolsFor(store);
+    const result = await tools.read_records.handler(
+      { atlas_id: "atlas_1", target_id: "collection_c1", range: "abc" },
+      ctx,
+    );
     expect(result.success).toBe(false);
     expect(result.error).toBe("invalid_range: expected range like 0..10");
+  });
+
+  it("read_records rejects reversed ranges", async () => {
+    const tools = toolsFor(store);
+    const result = await tools.read_records.handler(
+      { atlas_id: "atlas_1", target_id: "collection_c1", range: "3..1" },
+      ctx,
+    );
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("invalid_range: expected range like 0..10");
+  });
+
+  it("read_records requires atlas and target", async () => {
+    const tools = toolsFor(store);
+    const result = await tools.read_records.handler({ fields: ["name"] }, ctx);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("read_page");
+  });
+
+  it("read_records fails closed for an unsupported target type (region)", async () => {
+    const tools = toolsFor(store);
+    const result = await tools.read_records.handler(
+      { atlas_id: "atlas_1", target_id: "region_r1" },
+      ctx,
+    );
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("expected collection or table or detail_region");
   });
 
   it("read_target returns text for detail targets", async () => {
@@ -325,7 +321,7 @@ describe("page atlas target tools", () => {
   it("fails closed when the current tab origin drifts", async () => {
     const tools = toolsFor(store, "https://evil.example/products");
 
-    const result = await tools.read_collection.handler(
+    const result = await tools.read_records.handler(
       { atlas_id: "atlas_1", target_id: "collection_c1" },
       ctx,
     );
@@ -346,7 +342,7 @@ describe("page atlas target tools", () => {
       },
     })));
 
-    const result = await tools.read_collection.handler(
+    const result = await tools.read_records.handler(
       { atlas_id: "atlas_1", target_id: "collection_c1" },
       ctx,
     );
@@ -374,7 +370,7 @@ describe("page atlas target tools", () => {
         throw new Error("tab gone");
       }),
     });
-    const readCollection = tools.find((tool) => tool.name === "read_collection")!;
+    const readCollection = tools.find((tool) => tool.name === "read_records")!;
 
     const result = await readCollection.handler(
       { atlas_id: "atlas_1", target_id: "collection_c1" },
@@ -394,25 +390,13 @@ describe("page atlas target tools", () => {
     });
     const tools = Object.fromEntries(createPageAtlasTargetTools({ store }).map((tool) => [tool.name, tool]));
 
-    const result = await tools.read_collection.handler(
+    const result = await tools.read_records.handler(
       { atlas_id: "atlas_1", target_id: "collection_c1" },
       ctx,
     );
 
     expect(result.success).toBe(false);
     expect(result.error).toContain("read_page");
-  });
-
-  it("fails closed for unsupported target type", async () => {
-    const tools = toolsFor(store);
-
-    const result = await tools.read_collection.handler(
-      { atlas_id: "atlas_1", target_id: "table_t1" },
-      ctx,
-    );
-
-    expect(result.success).toBe(false);
-    expect(result.error).toContain("expected collection");
   });
 
   it("escapes hostile wrapper-like record fields and evidence", async () => {
@@ -441,7 +425,7 @@ describe("page atlas target tools", () => {
     }));
     const tools = toolsFor(store);
 
-    const result = await tools.read_collection.handler(
+    const result = await tools.read_records.handler(
       { atlas_id: "atlas_1", target_id: "collection_c1" },
       ctx,
     );

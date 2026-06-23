@@ -26,8 +26,7 @@ function xmlText(value: string): string {
 }
 
 function nextActionsFor(target: AtlasTarget): string[] {
-  if (target.type === "collection") return ["read_collection", "extract_records"];
-  if (target.type === "table") return ["read_table", "extract_records"];
+  if (target.type === "collection" || target.type === "table") return ["read_records"];
   return ["read_target"];
 }
 

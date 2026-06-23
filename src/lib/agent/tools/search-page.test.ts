@@ -255,17 +255,13 @@ describe("search_page registry", () => {
       expect.arrayContaining([
         "read_page",
         "find_target",
-        "read_collection",
-        "read_table",
+        "read_records",
         "read_target",
-        "extract_records",
       ]),
     );
     expect(getToolClass("find_target")).toBe("read");
-    expect(getToolClass("read_collection")).toBe("read");
-    expect(getToolClass("read_table")).toBe("read");
+    expect(getToolClass("read_records")).toBe("read");
     expect(getToolClass("read_target")).toBe("read");
-    expect(getToolClass("extract_records")).toBe("read");
   });
 
   it("direct schema still exposes search_by enum and remains strict", () => {
