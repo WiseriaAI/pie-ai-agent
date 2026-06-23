@@ -11,7 +11,8 @@
  * 已知限制：
  *   - 不监听 'input' 事件（只 'change' / blur）—— 按键级流水会爆量
  *   - 不监听 mouse/key down/up（只 click / change / submit 这种语义事件）
- *   - 不处理 shadow DOM 内部元素（v1 不在范围）
+ *   - shadow DOM：经 composedPath() 穿透取真实目标 + 跨边界找交互祖先
+ *   - editor 宿主（Monaco/CodeMirror/TinyMCE）经 EDITOR_SELECTOR 识别（inline + parity）
  *
  * **buildLabelFor parity invariant** — wording must match selector.ts's
  * describeElement output character-for-character so the parity test passes
