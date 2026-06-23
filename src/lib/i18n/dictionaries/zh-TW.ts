@@ -341,6 +341,8 @@ export const zhTWDict = {
     showArchived: "顯示已封存",
     archivedAria: "已封存的工作階段",
     noArchived: "沒有已封存的工作階段",
+    deleteAllArchived: "全部刪除",
+    deleteAllArchivedConfirm: "永久刪除全部 {count} 個已封存的工作階段？此操作無法復原。",
     storage: "儲存空間",
     storageUsed: "已使用 {percent}% 儲存空間",
     archive: "封存",

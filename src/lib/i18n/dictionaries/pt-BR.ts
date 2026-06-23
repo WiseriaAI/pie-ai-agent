@@ -342,6 +342,8 @@ export const ptBRDict = {
     showArchived: "Mostrar arquivadas",
     archivedAria: "Sessões arquivadas",
     noArchived: "Nenhuma sessão arquivada",
+    deleteAllArchived: "Excluir todas",
+    deleteAllArchivedConfirm: "Excluir permanentemente todas as {count} sessões arquivadas? Isso não pode ser desfeito.",
     storage: "Armazenamento",
     storageUsed: "{percent}% do armazenamento usado",
     archive: "Arquivar",

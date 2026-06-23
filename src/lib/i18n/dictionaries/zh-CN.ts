@@ -341,6 +341,8 @@ export const zhCNDict = {
     showArchived: "显示已归档",
     archivedAria: "已归档会话",
     noArchived: "没有已归档会话",
+    deleteAllArchived: "全部删除",
+    deleteAllArchivedConfirm: "永久删除全部 {count} 个已归档会话？此操作无法撤销。",
     storage: "存储",
     storageUsed: "已使用 {percent}% 存储",
     archive: "归档",

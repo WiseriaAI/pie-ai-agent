@@ -342,6 +342,8 @@ export const jaDict = {
     showArchived: "アーカイブを表示",
     archivedAria: "アーカイブ済みセッション",
     noArchived: "アーカイブ済みセッションはありません",
+    deleteAllArchived: "すべて削除",
+    deleteAllArchivedConfirm: "アーカイブ済みセッション {count} 件をすべて完全に削除しますか？この操作は元に戻せません。",
     storage: "ストレージ",
     storageUsed: "ストレージ {percent}% 使用済み",
     archive: "アーカイブ",

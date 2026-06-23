@@ -341,6 +341,8 @@ export const enDict = {
     showArchived: "Show Archived",
     archivedAria: "Archived sessions",
     noArchived: "No archived sessions",
+    deleteAllArchived: "Delete all",
+    deleteAllArchivedConfirm: "Permanently delete all {count} archived sessions? This cannot be undone.",
     storage: "Storage",
     storageUsed: "{percent}% storage used",
     archive: "Archive",

@@ -342,6 +342,8 @@ export const es419Dict = {
     showArchived: "Mostrar archivadas",
     archivedAria: "Sesiones archivadas",
     noArchived: "No hay sesiones archivadas",
+    deleteAllArchived: "Eliminar todas",
+    deleteAllArchivedConfirm: "¿Eliminar permanentemente las {count} sesiones archivadas? Esto no se puede deshacer.",
     storage: "Almacenamiento",
     storageUsed: "{percent}% de almacenamiento usado",
     archive: "Archivar",
