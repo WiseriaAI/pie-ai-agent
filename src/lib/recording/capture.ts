@@ -164,11 +164,37 @@ export function installCaptureListener(): () => void {
     return tagMap[tag] ?? "元素";
   }
 
+  // VERBATIM copy of EDITOR_SELECTOR / EDITOR_ENGINE_MAP from
+  // src/lib/dom-actions/_shared/interactive.ts. Cannot import at runtime
+  // (executeScript serializes function bodies). interactive-parity.test.ts
+  // guards these literals against drift.
+  const EDITOR_SELECTOR =
+    ".monaco-editor, .cm-editor, .CodeMirror, .tox-tinymce, .mce-tinymce";
+  const EDITOR_ENGINE_MAP: Array<[string, string]> = [
+    [".monaco-editor", "Monaco"],
+    [".cm-editor", "CodeMirror"],
+    [".CodeMirror", "CodeMirror"],
+    [".tox-tinymce", "TinyMCE"],
+    [".mce-tinymce", "TinyMCE"],
+  ];
+  function editorEngineOf(el: Element): string | null {
+    const host = el.closest(EDITOR_SELECTOR);
+    if (!host) return null;
+    for (const [cls, engine] of EDITOR_ENGINE_MAP) {
+      if (host.matches(cls)) return engine;
+    }
+    return "editor";
+  }
+
   function buildLabelFor(el: HTMLElement): {
     label: string;
     selectorHint?: string;
     unstable: boolean;
   } {
+    const editorEngine = editorEngineOf(el);
+    if (editorEngine) {
+      return { label: `${editorEngine} 编辑器`, unstable: false };
+    }
     const aria = sanitizeText((el.getAttribute("aria-label") || "").trim(), 80);
     const text = sanitizeText((el as HTMLElement).innerText?.trim() ?? "", 80);
     const inputEl = el as HTMLInputElement;

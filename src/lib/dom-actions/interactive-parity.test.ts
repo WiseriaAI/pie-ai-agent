@@ -105,6 +105,23 @@ describe("EDITOR_ENGINE_MAP parity in probePageInjected", () => {
   }
 });
 
+// ── capture: EDITOR_SELECTOR + EDITOR_ENGINE_MAP parity ──────────────────────
+describe("EDITOR_SELECTOR / EDITOR_ENGINE_MAP parity in installCaptureListener", () => {
+  const escapedEditorSelector = JSON.stringify(EDITOR_SELECTOR).slice(1, -1);
+  it("installCaptureListener inlines the canonical EDITOR_SELECTOR literal", () => {
+    expect(installCaptureListener.toString()).toContain(escapedEditorSelector);
+  });
+  for (const [selector, engine] of EDITOR_ENGINE_MAP) {
+    const escapedSelector = JSON.stringify(selector).slice(1, -1);
+    it(`installCaptureListener inlines editor host class ${JSON.stringify(selector)}`, () => {
+      expect(installCaptureListener.toString()).toContain(escapedSelector);
+    });
+    it(`installCaptureListener inlines engine name "${engine}"`, () => {
+      expect(installCaptureListener.toString()).toContain(engine);
+    });
+  }
+});
+
 // ── Part A: Shadow-recursion structural parity ────────────────────────────────
 // LOCATE_BY_IDX_FRAGMENT (CDP string) and actByIdxInjected (findByIdxDeep) must
 // both contain open-shadow recursion markers so they stay structurally mirrored.

@@ -426,6 +426,18 @@ describe("capture.installCaptureListener", () => {
     uninstall();
   });
 
+  it("labels a click inside a Monaco editor as the editor engine (stable, not nth)", () => {
+    document.body.innerHTML = `<main><div class="monaco-editor"><div class="view-line">const x = 1;</div></div></main>`;
+    uninstall = installCaptureListener();
+    const line = document.querySelector(".view-line") as HTMLElement;
+    line.click();
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0]!.payload.label).toBe("Monaco 编辑器");
+    expect(captured[0]!.payload.unstable).toBeFalsy();
+    uninstall();
+  });
+
   it("pierces shadow DOM to capture the interactive ancestor across the boundary", () => {
     document.body.innerHTML = `<main><button id="b">Save</button></main>`;
     const btn = document.getElementById("b")!;
