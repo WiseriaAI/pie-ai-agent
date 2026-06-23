@@ -324,8 +324,8 @@ USE WHEN:
 - You need the block's full body text — use mode="text".
 
 **DO NOT USE WHEN:**
-- The target is a repeated item list (use read_collection) or a table (use read_table).
-- You need specific fields across many records — use extract_records.`,
+- The target is a repeated item list or a table — use read_records.
+- You need specific fields across many records — use read_records with the fields parameter.`,
     parameters: {
       type: "object",
       properties: {
