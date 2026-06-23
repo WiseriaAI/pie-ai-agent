@@ -24,17 +24,16 @@
  * - Focus trap within drawer
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { useT } from "@/lib/i18n";
 import type { SessionIndexEntry } from "@/lib/sessions/types";
-import { getTotalBytes } from "@/lib/sessions/storage";
 import {
   unarchiveSession,
   hardDeleteSession,
   softDeleteSession,
 } from "@/lib/sessions/lifecycle";
-import { useStoreChange } from "@/sidepanel/hooks/useStoreChange";
 import SessionRow from "./SessionRow";
+import { StorageIndicator } from "./StorageIndicator";
 import { useAnimatedList } from "./ui/AnimatedList";
 import { Drawer } from "./ui/Drawer";
 
@@ -45,49 +44,6 @@ interface SessionDrawerProps {
   activeSessionId: string | null;
   onSelectSession: (id: string) => void;
   onResumeSession: (id: string) => void;
-}
-
-// ── StorageIndicator ──────────────────────────────────────────────────────────
-
-function StorageIndicator() {
-  const t = useT();
-  const [usedBytes, setUsedBytes] = useState(0);
-  const load = useCallback(async () => { setUsedBytes(await getTotalBytes()); }, []);
-  useEffect(() => { void load(); }, [load]);
-  useStoreChange("sessions", () => { void load(); });
-  useStoreChange("config", () => { void load(); });
-  useStoreChange("instances", () => { void load(); });
-  const usedMB = usedBytes / (1024 * 1024);
-  return (
-    <div style={{ marginTop: "auto", padding: "14px 16px", borderTop: "1px solid var(--c-line)" }}>
-      <div style={{ display: "flex", alignItems: "center" }}>
-        <span
-          aria-label={t("sessions.storage")}
-          style={{
-            flex: 1,
-            fontFamily: "'JetBrains Mono', monospace",
-            fontSize: 10,
-            fontWeight: 500,
-            color: "var(--c-fg-3)",
-            letterSpacing: "0.12em",
-            textTransform: "uppercase",
-          }}
-        >
-          {t("sessions.storage")}
-        </span>
-        <span
-          style={{
-            fontFamily: "'JetBrains Mono', monospace",
-            fontSize: 10,
-            fontWeight: 500,
-            color: "var(--c-fg-2)",
-          }}
-        >
-          {usedMB.toFixed(1)} MB
-        </span>
-      </div>
-    </div>
-  );
 }
 
 // ── ArchivedRow ───────────────────────────────────────────────────────────────
