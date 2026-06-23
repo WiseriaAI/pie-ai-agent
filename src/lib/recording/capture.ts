@@ -366,6 +366,11 @@ export function installCaptureListener(): () => void {
   };
 
   const onChange = (e: Event) => {
+    // change is NON-composed — it does not cross shadow boundaries, so a
+    // shadow-inner <input>/<select>/<textarea> change never reaches this
+    // document-level listener. composedPath piercing would be a no-op here;
+    // capturing shadow-encapsulated form changes is a separate limitation
+    // (out of scope for #151 ①, which targets the composed click/input paths).
     const target = e.target as HTMLElement | null;
     if (!target) return;
     const tag = target.tagName.toLowerCase();
@@ -486,8 +491,13 @@ export function installCaptureListener(): () => void {
     });
   };
   const onInput = (e: Event) => {
-    const t = e.target as HTMLElement | null;
-    const host = t?.closest?.('[contenteditable="true"]') as HTMLElement | null;
+    // input IS a composed event (crosses shadow boundaries), so resolve the real
+    // target via composedPath and find the contenteditable host across any shadow
+    // boundary — mirrors onClick. (change/submit are non-composed and never reach
+    // this document-level listener from inside a shadow root, so they stay on
+    // e.target; see the note on onChange.)
+    const t = realTargetOf(e);
+    const host = t ? closestInPath(e, t, '[contenteditable="true"]') : null;
     if (!host) return; // 非 contenteditable（如 input/textarea）忽略，交给 onChange
     editTarget = host;
     if (editTimer !== null) clearTimeout(editTimer);

@@ -41,7 +41,13 @@ function closestInPath(e: Event, el: HTMLElement, selector: string): HTMLElement
   return el.closest(selector) as HTMLElement | null;          // composedPath 不可用时兜底
 }
 ```
-`onClick`/`onChange` 把 `const target = e.target` 改为 `const target = realTargetOf(e)`，把 `target.closest(INTERACTIVE_SELECTOR)` 改为 `closestInPath(e, target, INTERACTIVE_SELECTOR)`。其余逻辑（label/region/checkbox/fromPopup）不变。
+**只 patch composed 事件的 handler**（这是关键修正）：`composedPath()` 只对**逃逸 shadow 边界的 composed 事件**有意义。
+- `click`（composed）→ `onClick`：把 `const target = e.target` 改为 `realTargetOf(e)`，`target.closest(INTERACTIVE_SELECTOR)` 改为 `closestInPath(e, target, INTERACTIVE_SELECTOR)`。
+- `input`（composed）→ `onInput`：把 `e.target` 改为 `realTargetOf(e)`、`t.closest('[contenteditable="true"]')` 改为 `closestInPath(...)`。
+- **`change` / `submit`（non-composed）→ 不 patch**：实测确认（happy-dom + DOM 规范）non-composed 事件**根本不逃逸 shadow 边界**——shadow 内 input 的 change 事件压根不会触达 document 上的 capture listener，给它加 `realTargetOf` 是死功（handler 不会被调）。捕获 shadow 封装内的 form change 是另一个独立限制，不在本切片。`onChange` 头加注释说明。
+- `onKeydown` 不解析元素（只记按键组合），无可穿透目标，不动。
+
+其余逻辑（label/region/checkbox/fromPopup）不变。
 
 ### (b) editor 识别 —— inline `EDITOR_SELECTOR` + `EDITOR_ENGINE_MAP`
 
