@@ -240,14 +240,32 @@ export function installCaptureListener(): () => void {
 
   // ── Listeners ──
 
+  // Shadow-piercing event target resolution. composedPath() crosses shadow
+  // boundaries (the page-context Event API; no import needed). Falls back to
+  // e.target on engines without composedPath.
+  function realTargetOf(e: Event): HTMLElement | null {
+    const path = (e.composedPath?.() ?? []) as EventTarget[];
+    const first = path[0];
+    if (first instanceof HTMLElement) return first;
+    const t = e.target;
+    return t instanceof HTMLElement ? t : null;
+  }
+  function closestInPath(e: Event, el: HTMLElement, selector: string): HTMLElement | null {
+    const path = (e.composedPath?.() ?? []) as EventTarget[];
+    for (const n of path) {
+      if (n instanceof HTMLElement && n.matches?.(selector)) return n;
+    }
+    return el.closest(selector) as HTMLElement | null;
+  }
+
   const onClick = (e: Event) => {
-    const target = e.target as HTMLElement | null;
+    const target = realTargetOf(e);
     if (!target?.tagName) return;
     // VERBATIM copy of _shared/interactive.ts INTERACTIVE_SELECTOR.
     // interactive-parity.test.ts guards this literal against drift.
     const INTERACTIVE_SELECTOR =
       'a, button, input, select, textarea, [role="button"], [role="link"], [role="tab"], [role="checkbox"], [role="radio"], [role="switch"], [role="menuitem"], [contenteditable="true"], summary, [onclick], [tabindex]:not([tabindex=\'-1\'])';
-    const interactive = target.closest(INTERACTIVE_SELECTOR) as HTMLElement | null;
+    const interactive = closestInPath(e, target, INTERACTIVE_SELECTOR);
     // 仅丢弃真正空的纯布局点击。带文本的容器/div 自定义按钮一律保留 ——
     // recorder 宁可多录也不漏录真实动作（漏录比噪声更糟）。
     if (!interactive && !(target.innerText?.trim())) return;
