@@ -99,12 +99,14 @@ export const swPort = {
     ports.delete(sessionId);
   },
 
-  // panel unmount：断开所有 port。订阅者由各自 React effect cleanup 调 unsubscribe 清理。
+  // panel unmount：断开所有 port，并清订阅表（兜底 + 与 __resetSwPort 对称）。
+  // 各订阅方的 React effect cleanup 也会各自 unsubscribe，这里是 panel 整体卸载的终态清理。
   disconnectAll(): void {
     for (const port of ports.values()) {
       try { port.disconnect(); } catch { /* noop */ }
     }
     ports.clear();
+    subs.clear();
   },
 
   // RPC 通道：薄包 runtime.sendMessage（MV3 自动唤醒 SW，无需重连）。

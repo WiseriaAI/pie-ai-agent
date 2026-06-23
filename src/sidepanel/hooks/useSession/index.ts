@@ -321,8 +321,8 @@ export function useSession(): UseSession {
   // Multi-session (#30) — single onMessage listener routes by message.sessionId;
   // per-port disconnect closure flushes partial text scoped to that port's session.
   // Issue #34 — postMessageRef is passed so chat-instruction-rejected can fall
-  // back to chat-start; the ref is populated after postWithReconnect is defined
-  // to break the circular portHandlers → connectPortFor → portHandlers dep.
+  // back to chat-start via swPort.send. The ref indirection is retained so
+  // createPortHandlers' postMessageRef dependency contract is unchanged.
   const portHandlers = useMemo(
     () => createPortHandlers({
       slotsRef,
@@ -526,8 +526,7 @@ export function useSession(): UseSession {
   // ── sendMessage ────────────────────────────────────────────────────
   // M1-U4 mount-immediate connection + transparent reconnect: panel mount
   // 时建立 port，SW idle-out / 崩溃后 panel 这侧的 port 会自动断开 +
-  // 被 onDisconnect 从 portsRef 清掉。sendMessage 通过 postWithReconnect
-  // 自动 lazy 重连一次。两次都失败才 revert streaming 标记并暴露 error。
+  // swPort.send 透明重连（ensurePort）失败后 revert streaming 并暴露 error。
   const sendMessage = useCallback(
     (input: SendMessageInput) => {
       if (slotsRef.current.get(sessionIdRef.current ?? "")?.streaming) return;
