@@ -752,6 +752,40 @@ async function getStoresByteLength(): Promise<number> {
   return total;
 }
 
+export interface SessionByteEntry {
+  id: string;
+  title?: string;
+  status: SessionStatus;
+  bytes: number;
+}
+
+/**
+ * Per-session storage attribution. ONE getAll over the sessions store, bucketed
+ * by session id (the :meta / :agent / :archived records of one session), joined
+ * with the session index for title/status, sorted by bytes descending. `bytes`
+ * is a JSON.stringify estimate — the :agent record (raw message history)
+ * dominates — not a precise on-disk figure. Archived sessions are included
+ * (listSessionIndex does not filter by status).
+ */
+export async function listSessionsWithBytes(): Promise<SessionByteEntry[]> {
+  const [index, all] = await Promise.all([
+    listSessionIndex(),
+    tx<Array<{ id: string; value: unknown }>>(
+      STORES.sessions,
+      "readonly",
+      (s) => s.getAll(),
+    ),
+  ]);
+  const byteMap = new Map<string, number>();
+  for (const rec of all) {
+    const sid = rec.id.replace(/:(meta|agent|archived)$/, "");
+    byteMap.set(sid, (byteMap.get(sid) ?? 0) + JSON.stringify(rec).length);
+  }
+  return index
+    .map((e) => ({ id: e.id, title: e.title, status: e.status, bytes: byteMap.get(e.id) ?? 0 }))
+    .sort((a, b) => b.bytes - a.bytes);
+}
+
 // ── SEC-PLAN-009 — pending confirm flood protection ───────────────────────────
 //
 // When ≥ PENDING_CONFIRM_FLOOD_LIMIT sessions simultaneously have a live

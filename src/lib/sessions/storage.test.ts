@@ -28,6 +28,7 @@ import {
   readIndexRaw,
   agentKey,
   metaKey,
+  listSessionsWithBytes,
 } from "./storage";
 import {
   getIndex,
@@ -1334,6 +1335,27 @@ describe("v1.5 multi-pin storage", () => {
     });
     expect(meta.pinnedTabs).toEqual([{ tabId: 7, origin: "https://a.com" }]);
     expect(meta.pinMode).toBe("user");
+  });
+});
+
+describe("listSessionsWithBytes", () => {
+  it("attributes bytes per session, sorted descending, with title/status", async () => {
+    const a = await createSession();
+    const b = await createSession();
+    // Make session A much bigger by writing a large agent record.
+    await putSessionRecord(agentKey(a.id), { messages: "x".repeat(5000) });
+
+    const list = await listSessionsWithBytes();
+    const ids = list.map((e) => e.id);
+    expect(ids).toContain(a.id);
+    expect(ids).toContain(b.id);
+
+    const ai = ids.indexOf(a.id);
+    const bi = ids.indexOf(b.id);
+    expect(ai).toBeLessThan(bi); // bigger session sorts first
+    expect(list[ai]!.bytes).toBeGreaterThan(list[bi]!.bytes);
+    expect(list[ai]!.bytes).toBeGreaterThan(5000);
+    expect(typeof list[ai]!.status).toBe("string");
   });
 });
 
