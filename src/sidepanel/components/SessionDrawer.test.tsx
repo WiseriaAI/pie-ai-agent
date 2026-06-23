@@ -200,9 +200,10 @@ describe("SessionDrawer — storage indicator", () => {
     render(<SessionDrawer {...BASE_PROPS} />);
     // Progress bar is removed; a plain "X MB" usage span is shown instead.
     expect(screen.queryByRole("progressbar")).toBeNull();
-    // The storage label is rendered via aria-label="Storage" span.
-    const storageLabel = document.querySelector("[aria-label='Storage']");
-    expect(storageLabel).toBeTruthy();
+    // The storage indicator is now a collapsible button with aria-expanded.
+    const storageButton = screen.getByRole("button", { name: /storage/i });
+    expect(storageButton).toBeTruthy();
+    expect(storageButton.getAttribute("aria-expanded")).toBe("false");
     // Usage value contains "MB"
     const dialog = screen.getByRole("dialog");
     expect(dialog.textContent).toMatch(/MB/);
