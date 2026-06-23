@@ -190,6 +190,19 @@ export async function actByIdxInjected(params: ActParams): Promise<ActResult> {
     const isInputOrTextarea = tag === "input" || tag === "textarea";
 
     if (!isInputOrTextarea && !isContentEditable) {
+      if (tag === "canvas") {
+        return {
+          ok: false,
+          error: `Element [${index}] is a <canvas> — canvas surfaces have no DOM text, so 'type' can't work. Read it via screenshot + vision, and write via dispatch_keyboard_input after clicking to focus.`,
+        };
+      }
+      const surfaceEditor = detectEditor(el);
+      if (surfaceEditor) {
+        return {
+          ok: false,
+          error: `Element [${index}] is a <${tag}> inside a ${surfaceEditor} editor surface, which is not directly typeable. For code editors (Monaco / CodeMirror) use read_editor / set_editor_value; otherwise use dispatch_keyboard_input — do not use 'type' here.`,
+        };
+      }
       return {
         ok: false,
         error: `Element [${index}] is a <${tag}> which is not typeable (expected input, textarea, or contenteditable).`,
@@ -489,7 +502,11 @@ export async function actByIdxInjected(params: ActParams): Promise<ActResult> {
     el.dispatchEvent(new PointerCtor("pointerup", init));
     el.dispatchEvent(new MouseEvent("mouseup", init));
     (el as HTMLElement).click();
-    return { ok: true, op: "click", observation: `Clicked element [${params.idx}]` };
+    const canvasNote =
+      el.tagName === "CANVAS"
+        ? ` (Note: this is a <canvas> — its content isn't standard DOM; if nothing happened, read it via screenshot + vision and interact via the keyboard tools.)`
+        : "";
+    return { ok: true, op: "click", observation: `Clicked element [${params.idx}]${canvasNote}` };
   }
 
   // Unreachable: all five ActParams ops are handled above. `satisfies never`

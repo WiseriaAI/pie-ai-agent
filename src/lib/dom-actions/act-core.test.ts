@@ -114,6 +114,36 @@ describe("actByIdxInjected op=type", () => {
     expect(r.error).toMatch(/not typeable/i);
   });
 
+  it("routes a type aimed at a Monaco editor surface (non-typeable div) to the editor tools", async () => {
+    document.body.innerHTML = `
+      <div class="monaco-editor">
+        <div class="view-line" data-pie-idx="20">const x = 1;</div>
+      </div>`;
+    const r = await actByIdxInjected({ op: "type", idx: 20, text: "y", clear: false });
+    expect(r.ok).toBe(false);
+    if (r.ok) throw new Error("narrow");
+    expect(r.error).toContain("Monaco");
+    expect(r.error).toMatch(/read_editor|dispatch_keyboard_input/);
+  });
+
+  it("routes a type aimed at a bare <canvas> to screenshot + keyboard tools", async () => {
+    document.body.innerHTML = `<canvas data-pie-idx="21"></canvas>`;
+    const r = await actByIdxInjected({ op: "type", idx: 21, text: "y", clear: false });
+    expect(r.ok).toBe(false);
+    if (r.ok) throw new Error("narrow");
+    expect(r.error).toMatch(/canvas/i);
+    expect(r.error).toMatch(/dispatch_keyboard_input|screenshot|vision/);
+  });
+
+  it("keeps the generic not-typeable message for a plain non-editor element", async () => {
+    document.body.innerHTML = `<p data-pie-idx="22">just text</p>`;
+    const r = await actByIdxInjected({ op: "type", idx: 22, text: "y", clear: false });
+    expect(r.ok).toBe(false);
+    if (r.ok) throw new Error("narrow");
+    expect(r.error).toMatch(/not typeable/i);
+    expect(r.error).not.toMatch(/dispatch_keyboard_input/);
+  });
+
   it("redacts sensitive (password) field values in the observation", async () => {
     document.body.innerHTML = `<input type="password" name="password" data-pie-idx="6" />`;
     const inp = document.querySelector("input") as HTMLInputElement;
@@ -274,5 +304,24 @@ describe("actByIdxInjected op=click", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toContain("disabled");
     expect(clicked).toBe(false);
+  });
+
+  it("appends a canvas advisory when clicking a <canvas> element", async () => {
+    document.body.innerHTML = `<canvas data-pie-idx="30"></canvas>`;
+    const r = await actByIdxInjected({ op: "click", idx: 30 });
+    expect(r.ok).toBe(true);
+    if (!r.ok) throw new Error("narrow");
+    if (r.op !== "click") throw new Error("narrow op");
+    expect(r.observation).toContain("Clicked element [30]");
+    expect(r.observation).toMatch(/canvas/i);
+  });
+
+  it("does not append the canvas advisory for a normal element", async () => {
+    document.body.innerHTML = `<button data-pie-idx="31">Go</button>`;
+    const r = await actByIdxInjected({ op: "click", idx: 31 });
+    expect(r.ok).toBe(true);
+    if (!r.ok) throw new Error("narrow");
+    if (r.op !== "click") throw new Error("narrow op");
+    expect(r.observation).not.toMatch(/canvas/i);
   });
 });
