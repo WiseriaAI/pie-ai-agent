@@ -228,6 +228,18 @@ describe("page atlas target tools", () => {
     expect(result.observation).toContain("PIE-1");
   });
 
+  it("read_target_records reads a detail_region target", async () => {
+    const tools = toolsFor(store);
+    const result = await tools.read_target_records.handler(
+      { atlas_id: "atlas_1", target_id: "detail_d1" },
+      ctx,
+    );
+    expect(result.success).toBe(true);
+    expect(result.observation).toContain('tool="read_target_records"');
+    expect(result.observation).toContain("record_d1");
+    expect(result.observation).toContain("Pie detail text");
+  });
+
   it("read_target_records returns the selected range only", async () => {
     const tools = toolsFor(store);
     const result = await tools.read_target_records.handler(
