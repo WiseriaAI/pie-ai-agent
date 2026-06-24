@@ -22,7 +22,7 @@ describe("load_tools tool", () => {
     expect(r.success).toBe(true);
     expect(active.has("scratchpad")).toBe(true);
     expect(r.observation).toContain("scratchpad");
-    expect(r.observation).toContain("save_records");
+    expect(r.observation).toContain("save_scratchpad");
   });
 
   it("unknown group → observation mentions unknown", async () => {

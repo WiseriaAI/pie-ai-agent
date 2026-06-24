@@ -1533,7 +1533,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             `The runtime will not stop you, but long tasks burn the user's ` +
             `tokens — wrap up now: finish with \`done\`, or call \`fail\` if ` +
             `you're blocked. If you're accumulating data, make sure it's in the ` +
-            `scratchpad via \`save_records\` — don't hold it in your reply.`,
+            `scratchpad via \`save_scratchpad\` — don't hold it in your reply.`,
         );
       }
 

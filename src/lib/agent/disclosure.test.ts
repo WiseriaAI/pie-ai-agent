@@ -24,7 +24,7 @@ describe("groupsForEnv — pure env → groups", () => {
 
 describe("selectTools — filter by active groups", () => {
   const tools = [
-    { name: "click" }, { name: "read_pdf" }, { name: "save_records" }, { name: "load_tools" },
+    { name: "click" }, { name: "read_pdf" }, { name: "save_scratchpad" }, { name: "load_tools" },
   ];
   it("core-only keeps core tools, drops pdf/scratchpad", () => {
     const names = selectTools(tools, new Set(["core"])).map((t) => t.name);
@@ -33,7 +33,7 @@ describe("selectTools — filter by active groups", () => {
   it("active pdf adds read_pdf", () => {
     const names = selectTools(tools, new Set(["core", "pdf"])).map((t) => t.name);
     expect(names).toContain("read_pdf");
-    expect(names).not.toContain("save_records");
+    expect(names).not.toContain("save_scratchpad");
   });
 });
 
@@ -161,7 +161,7 @@ describe("buildActiveGuidanceBlock — inline guidance for seed-active groups", 
     const all = new Set(["core", "screenshot", "skill-mediation", "pdf", "local-file", "scratchpad", "schedule", "skill-authoring"]);
     const block = buildActiveGuidanceBlock(all);
     expect(block).toContain("read_pdf");
-    expect(block).toContain("save_records");
+    expect(block).toContain("save_scratchpad");
     expect(block).toContain("create_schedule");
     expect(block).toContain("create_skill");
     expect(block).toContain("read_local_file");

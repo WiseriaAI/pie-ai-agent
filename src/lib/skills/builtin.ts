@@ -41,8 +41,8 @@ Never accumulate rows in your reply.
 1. Choose a collection name and a dedupeKey that uniquely identifies a row
    (e.g. "url"), so re-visiting a page never double-counts.
 2. read_page to understand the list structure on the current page.
-3. save_records(collection, rows, dedupeKey) to append this page's rows.
-4. update_notes to record progress and the next step
+3. save_scratchpad(collection, rows, dedupeKey) to append this page's rows.
+4. update_scratchpad_notes to record progress and the next step
    (e.g. "page 2/N done, next: click Next").
 5. If more pages remain, paginate (click next / open_url) and repeat.
    Check <scratchpad_overview> each turn for the count and your position.
