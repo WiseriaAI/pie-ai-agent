@@ -52,9 +52,11 @@ describe("capture.installCaptureListener", () => {
   it("redacts password input value", () => {
     document.body.innerHTML = `<main><input type="password" name="pwd" /></main>`;
     uninstall = installCaptureListener();
+    vi.useFakeTimers();
     const input = document.querySelector("input")!;
     input.value = "supersecret";
-    input.dispatchEvent(new Event("change", { bubbles: true }));
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    vi.advanceTimersByTime(500);
 
     expect(captured).toHaveLength(1);
     expect(captured[0]!.payload.type).toBe("type");
@@ -67,9 +69,11 @@ describe("capture.installCaptureListener", () => {
   it("captures non-redacted text input value as literal", () => {
     document.body.innerHTML = `<main><input type="text" name="email" /></main>`;
     uninstall = installCaptureListener();
+    vi.useFakeTimers();
     const input = document.querySelector("input") as HTMLInputElement;
     input.value = "user@example.com";
-    input.dispatchEvent(new Event("change", { bubbles: true }));
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    vi.advanceTimersByTime(500);
 
     expect(captured).toHaveLength(1);
     expect(captured[0]!.payload.value).toBe("user@example.com");
@@ -103,13 +107,15 @@ describe("capture.installCaptureListener", () => {
   it("debounces consecutive input events on same element to single change-style emission", () => {
     document.body.innerHTML = `<main><input type="text" name="search" /></main>`;
     uninstall = installCaptureListener();
+    vi.useFakeTimers();
     const input = document.querySelector("input") as HTMLInputElement;
     input.value = "h";
     input.dispatchEvent(new Event("input", { bubbles: true }));
     input.value = "he";
     input.dispatchEvent(new Event("input", { bubbles: true }));
     input.value = "hello";
-    input.dispatchEvent(new Event("change", { bubbles: true }));
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    vi.advanceTimersByTime(500);
 
     const typeActions = captured.filter((c) => c.payload.type === "type");
     expect(typeActions).toHaveLength(1);
@@ -127,6 +133,7 @@ describe("capture.installCaptureListener", () => {
 
   it("PARITY: capture.ts inline label matches selector.describeElement on same element", async () => {
     const { describeElement } = await import("./selector");
+    vi.useFakeTimers();
 
     document.body.innerHTML = `
       <main>
@@ -142,10 +149,12 @@ describe("capture.installCaptureListener", () => {
     btn.click();
     const emailInput = document.querySelector("input[name='email']") as HTMLInputElement;
     emailInput.value = "u@x.com";
-    emailInput.dispatchEvent(new Event("change", { bubbles: true }));
+    emailInput.dispatchEvent(new Event("input", { bubbles: true }));
+    vi.advanceTimersByTime(500);
     const pwd = document.querySelector("input[type='password']") as HTMLInputElement;
     pwd.value = "secret";
-    pwd.dispatchEvent(new Event("change", { bubbles: true }));
+    pwd.dispatchEvent(new Event("input", { bubbles: true }));
+    vi.advanceTimersByTime(500);
     const onclickDiv = document.querySelector("[aria-label='Open card']") as HTMLElement;
     onclickDiv.click();
 
@@ -455,6 +464,75 @@ describe("capture.installCaptureListener", () => {
     // boundary → interactive=null → captures the glyph itself (label "元素 'x'"),
     // NOT the button. New code finds the <button> via composedPath.
     expect(captured[0]!.payload.label).toContain("Save");
+    uninstall();
+  });
+
+  it("captures a shadow-DOM <input> via composed input event", () => {
+    document.body.innerHTML = `<main><div id="hostwrap"></div></main>`;
+    const wrap = document.getElementById("hostwrap")!;
+    const sr = wrap.attachShadow({ mode: "open" });
+    sr.innerHTML = `<input type="text" name="city" placeholder="City" />`;
+    uninstall = installCaptureListener();
+    vi.useFakeTimers();
+    const input = sr.querySelector("input") as HTMLInputElement;
+    input.value = "Berlin";
+    input.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    vi.advanceTimersByTime(500);
+
+    const types = captured.filter((c) => c.payload.type === "type");
+    expect(types).toHaveLength(1);
+    expect(types[0]!.payload.value).toBe("Berlin");
+    expect(types[0]!.payload.label).toMatch(/City|city/);
+    uninstall();
+  });
+
+  it("captures a shadow-DOM <textarea> via composed input event", () => {
+    document.body.innerHTML = `<main><div id="taw"></div></main>`;
+    const wrap = document.getElementById("taw")!;
+    const sr = wrap.attachShadow({ mode: "open" });
+    sr.innerHTML = `<textarea name="note"></textarea>`;
+    uninstall = installCaptureListener();
+    vi.useFakeTimers();
+    const ta = sr.querySelector("textarea") as HTMLTextAreaElement;
+    ta.value = "hello world";
+    ta.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    vi.advanceTimersByTime(500);
+
+    const types = captured.filter((c) => c.payload.type === "type");
+    expect(types).toHaveLength(1);
+    expect(types[0]!.payload.value).toBe("hello world");
+    uninstall();
+  });
+
+  it("light-DOM input via debounced input emits exactly one type (no double-record)", () => {
+    document.body.innerHTML = `<main><input type="text" name="q" /></main>`;
+    uninstall = installCaptureListener();
+    vi.useFakeTimers();
+    const input = document.querySelector("input") as HTMLInputElement;
+    input.value = "abc";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    vi.advanceTimersByTime(500);
+    // a real browser also fires change on blur — must NOT add a second type
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+
+    const types = captured.filter((c) => c.payload.type === "type");
+    expect(types).toHaveLength(1);
+    expect(types[0]!.payload.value).toBe("abc");
+    uninstall();
+  });
+
+  it("native checkbox input event does not emit a type action", () => {
+    document.body.innerHTML = `<main><input type="checkbox" name="agree" /></main>`;
+    uninstall = installCaptureListener();
+    const cb = document.querySelector("input") as HTMLInputElement;
+    cb.checked = true;
+    cb.dispatchEvent(new Event("input", { bubbles: true }));
+    cb.dispatchEvent(new Event("change", { bubbles: true }));
+
+    expect(captured.some((c) => c.payload.type === "type")).toBe(false);
+    const clicks = captured.filter((c) => c.payload.type === "click");
+    expect(clicks).toHaveLength(1);
+    expect(clicks[0]!.payload.checked).toBe(true);
     uninstall();
   });
 

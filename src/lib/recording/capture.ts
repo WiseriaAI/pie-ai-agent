@@ -9,9 +9,11 @@
  * 单次发回 SW（**不**用 port，因为 capture 上下文里访问不到 useSession 的 port）。
  *
  * 已知限制：
- *   - 不监听 'input' 事件（只 'change' / blur）—— 按键级流水会爆量
- *   - 不监听 mouse/key down/up（只 click / change / submit 这种语义事件）
- *   - shadow DOM：经 composedPath() 穿透取真实目标 + 跨边界找交互祖先
+ *   - input/textarea/contenteditable 的逐键 'input' 事件经 500ms 防抖合并为一条
+ *     type（按键级流水会爆量）；其余只监听 click / change / submit 这种语义事件
+ *   - 不监听 mouse/key down/up
+ *   - shadow DOM：经 composedPath() 穿透取真实目标 + 跨边界找交互祖先（input 事件
+ *     是 composed，故 shadow 内表单输入也能录到；change 非 composed 则不行）
  *   - editor 宿主（Monaco/CodeMirror/TinyMCE）经 EDITOR_SELECTOR 识别（inline + parity）
  *
  * **buildLabelFor parity invariant** — wording must match selector.ts's
@@ -366,11 +368,11 @@ export function installCaptureListener(): () => void {
   };
 
   const onChange = (e: Event) => {
-    // change is NON-composed — it does not cross shadow boundaries, so a
-    // shadow-inner <input>/<select>/<textarea> change never reaches this
-    // document-level listener. composedPath piercing would be a no-op here;
-    // capturing shadow-encapsulated form changes is a separate limitation
-    // (out of scope for #151 ①, which targets the composed click/input paths).
+    // change is NON-composed — it does not cross shadow boundaries. So this
+    // listener only handles the toggle/select semantics that the composed input
+    // path can't: native checkbox/radio (final checked state) and <select>
+    // (chosen value). Free-text <input>/<textarea> values ride onInput→flushEdit
+    // (composed, shadow-piercing); recording them here too would double-record.
     const target = e.target as HTMLElement | null;
     if (!target) return;
     const tag = target.tagName.toLowerCase();
@@ -403,20 +405,6 @@ export function installCaptureListener(): () => void {
         ...(unstable ? { unstable } : {}),
       });
       return;
-    }
-    if (tag === "input" || tag === "textarea") {
-      const sens = detectSensitiveInline(target);
-      const value = sens.redacted ? sens.placeholderName! : inputEl.value;
-      send({
-        type: "type",
-        label,
-        ...(selectorHint ? { selectorHint } : {}),
-        value,
-        ...(sens.redacted ? { redacted: true, placeholderName: sens.placeholderName } : {}),
-        url: location.href,
-        region: getRegion(target),
-        ...(unstable ? { unstable } : {}),
-      });
     }
   };
 
@@ -466,8 +454,8 @@ export function installCaptureListener(): () => void {
     }, 500);
   };
 
-  // contenteditable 富文本输入 —— 防抖合并一段编辑为一条 type。input/textarea
-  // 的 input 事件不在此处理（逐键爆量），它们仍由 onChange（blur 时）覆盖。
+  // 文本输入（input/textarea 读 .value、contenteditable 读 innerText）—— 逐键
+  // input 事件经 500ms 防抖合并为一条 type；500ms 内无新输入或失焦即落一条。
   let editTimer: ReturnType<typeof setTimeout> | null = null;
   let editTarget: HTMLElement | null = null;
   const flushEdit = () => {
@@ -476,7 +464,11 @@ export function installCaptureListener(): () => void {
     editTarget = null;
     editTimer = null;
     const sens = detectSensitiveInline(host);
-    const raw = host.innerText ?? host.textContent ?? "";
+    const tag = host.tagName;
+    const raw =
+      tag === "INPUT" || tag === "TEXTAREA"
+        ? (host as HTMLInputElement).value
+        : host.innerText ?? host.textContent ?? "";
     const value = sens.redacted ? sens.placeholderName! : sanitizeText(raw, 200);
     const { label, selectorHint, unstable } = buildLabelFor(host);
     send({
@@ -492,13 +484,25 @@ export function installCaptureListener(): () => void {
   };
   const onInput = (e: Event) => {
     // input IS a composed event (crosses shadow boundaries), so resolve the real
-    // target via composedPath and find the contenteditable host across any shadow
-    // boundary — mirrors onClick. (change/submit are non-composed and never reach
-    // this document-level listener from inside a shadow root, so they stay on
-    // e.target; see the note on onChange.)
+    // target via composedPath — mirrors onClick. Two value-bearing host kinds ride
+    // this debounced path: form controls (<input>/<textarea>, value read from
+    // `.value`) and contenteditable (innerText). change/submit are non-composed and
+    // never reach this document-level listener from inside a shadow root, so input
+    // is the only path that captures shadow-encapsulated form edits.
     const t = realTargetOf(e);
-    const host = t ? closestInPath(e, t, '[contenteditable="true"]') : null;
-    if (!host) return; // 非 contenteditable（如 input/textarea）忽略，交给 onChange
+    if (!t) return;
+    const tag = t.tagName?.toLowerCase();
+    let host: HTMLElement | null;
+    if (tag === "input" || tag === "textarea") {
+      // checkbox/radio toggles also fire input — they're recorded as click+checked
+      // via onChange; skip here so we don't emit a bogus type action for them.
+      const ty = (t as HTMLInputElement).type?.toLowerCase?.();
+      if (ty === "checkbox" || ty === "radio") return;
+      host = t;
+    } else {
+      host = closestInPath(e, t, '[contenteditable="true"]');
+    }
+    if (!host) return;
     editTarget = host;
     if (editTimer !== null) clearTimeout(editTimer);
     editTimer = setTimeout(flushEdit, 500);
