@@ -282,6 +282,53 @@ describe("LOCATE_BY_IDX_FRAGMENT shadow-aware locator", () => {
     expect(out.found).toBe(false);
     expect(out.reason).toBe("not_found");
   });
+
+  it("reports in_subframe when the element lives in a same-origin child frame", () => {
+    document.body.innerHTML = `<div>no target in the top frame</div>`;
+    // Build a fake same-origin child frame whose document DOES contain the target.
+    const frameDoc = document.implementation.createHTMLDocument("");
+    frameDoc.body.innerHTML = `<button data-pie-idx="7">in frame</button>`;
+    const fakeFrame = { document: frameDoc, frames: { length: 0 } };
+    const orig = Object.getOwnPropertyDescriptor(window, "frames");
+    Object.defineProperty(window, "frames", {
+      configurable: true,
+      value: { length: 1, 0: fakeFrame },
+    });
+    try {
+      const fn = new Function(
+        `${LOCATE_BY_IDX_FRAGMENT.replace(/\$\{idx\}/g, "7")} return { found: !!el, reason: _locatorReason };`,
+      );
+      const out = fn();
+      expect(out.found).toBe(false);
+      expect(out.reason).toBe("in_subframe");
+    } finally {
+      if (orig) Object.defineProperty(window, "frames", orig);
+      else delete (window as unknown as { frames?: unknown }).frames;
+    }
+  });
+
+  it("reports not_found when child frames exist but none holds the target", () => {
+    document.body.innerHTML = `<div>no target in the top frame</div>`;
+    const frameDoc = document.implementation.createHTMLDocument("");
+    frameDoc.body.innerHTML = `<button data-pie-idx="999">unrelated</button>`;
+    const fakeFrame = { document: frameDoc, frames: { length: 0 } };
+    const orig = Object.getOwnPropertyDescriptor(window, "frames");
+    Object.defineProperty(window, "frames", {
+      configurable: true,
+      value: { length: 1, 0: fakeFrame },
+    });
+    try {
+      const fn = new Function(
+        `${LOCATE_BY_IDX_FRAGMENT.replace(/\$\{idx\}/g, "7")} return { found: !!el, reason: _locatorReason };`,
+      );
+      const out = fn();
+      expect(out.found).toBe(false);
+      expect(out.reason).toBe("not_found");
+    } finally {
+      if (orig) Object.defineProperty(window, "frames", orig);
+      else delete (window as unknown as { frames?: unknown }).frames;
+    }
+  });
 });
 
 describe("editor tool descriptions mention TinyMCE", () => {
