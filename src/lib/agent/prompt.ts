@@ -251,7 +251,7 @@ const READ_PAGE_GUIDANCE = `
 
 \`read_page({tabId, mode?, max_bytes?})\` defaults to \`mode:"atlas"\`, returning a compact \`<page_atlas>\` inside \`<untrusted_page_content mode="atlas">\`. Only explicit \`mode:"interactive"\`, \`mode:"content"\`, or \`mode:"full"\` returns the heavier frame map / interactive index / per-frame page content view.
 
-First inspect with \`read_page({tabId, mode:"atlas"})\`. For tables, lists, emails, status panels, and structured extraction, choose a \`target_id\` from the atlas output, or call \`find_target\` to search target metadata; then read the target with \`read_collection\`, \`read_table\`, or \`read_target\`, or extract structured rows with \`extract_records\`. \`extract_records\` is target-level only: always pass an \`atlas_id\`, a \`target_id\`, and a schema object.
+First inspect with \`read_page({tabId, mode:"atlas"})\`. For tables, lists, emails, status panels, and structured extraction, choose a \`target_id\` from the atlas output, or call \`find_target\` to search target metadata; then read the target's records with \`read_struct\` (pass \`fields\` to keep only specific fields), or read a detail block / free-text region with \`read_target\`. \`read_struct\` and \`read_target\` are target-level: always pass an \`atlas_id\` and a \`target_id\`.
 
 Use \`mode:"interactive"\` only after you need concrete click/type/select indices. Use \`mode:"content"\` only as an expensive fallback after atlas/target tools are insufficient, or when the user explicitly asks to read/summarize full article/body text. Use \`mode:"full"\` with \`max_bytes\` only when \`content\` still did not return enough context.
 

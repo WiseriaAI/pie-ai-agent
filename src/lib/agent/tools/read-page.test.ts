@@ -169,7 +169,7 @@ describe("read_page tool", () => {
     expect(result.observation).toContain('mode="atlas"');
     expect(result.observation).toContain("<page_atlas");
     expect(result.observation).toContain("collection_c1");
-    expect(result.observation).toContain("extract_records");
+    expect(result.observation).toContain("read_struct");
     const atlasId = result.observation!.match(/atlas_id="([^"]+)"/)?.[1];
     expect(atlasId).toBeTruthy();
     const stored = pageAtlasStore.get(atlasId!);

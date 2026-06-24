@@ -29,11 +29,11 @@ interface TargetReadArgs {
   mode?: unknown;
 }
 
-interface ExtractRecordsArgs {
+interface ReadStructArgs {
   atlas_id?: unknown;
   target_id?: unknown;
-  schema?: unknown;
   range?: unknown;
+  fields?: unknown;
 }
 
 const READ_PAGE_FIRST = 'Call read_page({mode:"atlas"}) first, then use atlas_id and target_id from that atlas.';
@@ -242,11 +242,6 @@ function renderRecords(tagName: string, atlasId: string, target: AtlasTarget, re
   return lines.join("\n");
 }
 
-function schemaKeys(schema: unknown): string[] | null {
-  if (!schema || typeof schema !== "object" || Array.isArray(schema)) return null;
-  return Object.keys(schema as Record<string, unknown>);
-}
-
 function renderExtractedRecords(records: AtlasRecord[], keys: string[]): string {
   const extracted = records.map((record) => {
     const row: Record<string, string> = {};
@@ -274,7 +269,7 @@ USE WHEN:
 
 **DO NOT USE WHEN:**
 - The atlas already makes the target obvious — read it directly instead.
-- You want the records themselves, not a target_id — use read_collection / read_table / read_target / extract_records.`,
+- You want the records themselves, not a target_id — use read_struct or read_target.`,
     parameters: {
       type: "object",
       properties: {
@@ -318,85 +313,6 @@ USE WHEN:
     },
   };
 
-  const readCollectionTool: Tool = {
-    name: "read_collection",
-    description:
-      `Read full records (every field + text per item) from a collection target — a list of repeated, same-shaped items such as search results, product cards, or feed entries. Requires atlas_id + target_id from read_page({mode:"atlas"}).
-
-USE WHEN:
-- The target's type is "collection" and you need the raw content of its items.
-- You want all fields per item, not a projected subset.
-
-**DO NOT USE WHEN:**
-- You only need a few fields per item — use extract_records (cheaper).
-- The target is a table (use read_table) or a detail_region/region (use read_target).`,
-    parameters: {
-      type: "object",
-      properties: {
-        atlas_id: { type: "string" },
-        target_id: { type: "string" },
-        range: { type: "string", description: "Optional 0-based half-open range like 0..10." },
-      },
-      required: ["atlas_id", "target_id"],
-      additionalProperties: false,
-    },
-    handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
-      const a = (args ?? {}) as TargetReadArgs;
-      if (!isNonEmptyString(a.atlas_id) || !isNonEmptyString(a.target_id)) {
-        return fail(`read_collection requires atlas_id and target_id. ${READ_PAGE_FIRST}`);
-      }
-      const resolved = await resolveTarget(store, getPageState, ctx, a.atlas_id, a.target_id, ["collection"]);
-      if (!resolved.ok) return fail(resolved.error);
-      const selected = selectedRecords(resolved.target.records, a.range);
-      if (!selected.ok) return fail(selected.error);
-      return ok(wrapUntrustedPageContent(
-        "read_collection",
-        resolved.atlas.atlasId,
-        resolved.target.id,
-        renderRecords("collection_records", resolved.atlas.atlasId, resolved.target, selected.records),
-      ));
-    },
-  };
-
-  const readTableTool: Tool = {
-    name: "read_table",
-    description:
-      `Read full records from a table target — row/column tabular data with a header (the atlas lists its columns). Requires atlas_id + target_id from read_page({mode:"atlas"}).
-
-USE WHEN:
-- The target's type is "table" and you need its rows.
-
-**DO NOT USE WHEN:**
-- You only need specific columns — use extract_records.
-- The target is a repeated item list (use read_collection) or a detail_region/region (use read_target).`,
-    parameters: {
-      type: "object",
-      properties: {
-        atlas_id: { type: "string" },
-        target_id: { type: "string" },
-        range: { type: "string", description: "Optional 0-based half-open range like 0..10." },
-      },
-      required: ["atlas_id", "target_id"],
-      additionalProperties: false,
-    },
-    handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
-      const a = (args ?? {}) as TargetReadArgs;
-      if (!isNonEmptyString(a.atlas_id) || !isNonEmptyString(a.target_id)) {
-        return fail(`read_table requires atlas_id and target_id. ${READ_PAGE_FIRST}`);
-      }
-      const resolved = await resolveTarget(store, getPageState, ctx, a.atlas_id, a.target_id, ["table"]);
-      if (!resolved.ok) return fail(resolved.error);
-      const selected = selectedRecords(resolved.target.records, a.range);
-      if (!selected.ok) return fail(selected.error);
-      return ok(wrapUntrustedPageContent(
-        "read_table",
-        resolved.atlas.atlasId,
-        resolved.target.id,
-        renderRecords("table_records", resolved.atlas.atlasId, resolved.target, selected.records),
-      ));
-    },
-  };
-
   const readTargetTool: Tool = {
     name: "read_target",
     description:
@@ -408,8 +324,8 @@ USE WHEN:
 - You need the block's full body text — use mode="text".
 
 **DO NOT USE WHEN:**
-- The target is a repeated item list (use read_collection) or a table (use read_table).
-- You need specific fields across many records — use extract_records.`,
+- The target is a repeated item list or a table — use read_struct.
+- You need specific fields across many records — use read_struct with the fields parameter.`,
     parameters: {
       type: "object",
       properties: {
@@ -447,34 +363,36 @@ USE WHEN:
     },
   };
 
-  const extractRecordsTool: Tool = {
-    name: "extract_records",
+  const readStructTool: Tool = {
+    name: "read_struct",
     description:
-      `Project records down to just the fields you name: pass a schema object whose keys are the field names to keep. Cheaper than read_collection / read_table for large lists because it drops everything else. Requires atlas_id + target_id from read_page({mode:"atlas"}).
+      `Read records from a collection, table, or detail_region target, rendered by the target's actual type — so you don't pre-classify collection vs table. By default returns full records (every field + text per item); pass "fields" to project down to just the named fields (cheaper for large lists). Requires atlas_id + target_id from read_page({mode:"atlas"}).
 
 USE WHEN:
-- You need only specific fields from a collection, table, or detail_region target.
-- The list is large and you want to minimize tokens.
+- The target's type is "collection", "table", or "detail_region" and you need its records.
+- You want all fields per item (omit "fields"), or only specific fields (pass "fields").
 
 **DO NOT USE WHEN:**
-- You need the full raw content of each item — use read_collection / read_table.
-- The target is a plain region (no structured records) — use read_target.`,
+- You want a block overview or a plain free-text region — use read_target.`,
     parameters: {
       type: "object",
       properties: {
         atlas_id: { type: "string" },
         target_id: { type: "string" },
-        schema: { type: "object", additionalProperties: true },
         range: { type: "string", description: "Optional 0-based half-open range like 0..10." },
+        fields: {
+          type: "array",
+          items: { type: "string" },
+          description: "Optional field names to keep; omit to return full records.",
+        },
       },
-      required: ["atlas_id", "target_id", "schema"],
+      required: ["atlas_id", "target_id"],
       additionalProperties: false,
     },
     handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
-      const a = (args ?? {}) as ExtractRecordsArgs;
-      const keys = schemaKeys(a.schema);
-      if (!isNonEmptyString(a.atlas_id) || !isNonEmptyString(a.target_id) || !keys) {
-        return fail(`extract_records requires atlas_id, target_id, and a schema object. ${READ_PAGE_FIRST}`);
+      const a = (args ?? {}) as ReadStructArgs;
+      if (!isNonEmptyString(a.atlas_id) || !isNonEmptyString(a.target_id)) {
+        return fail(`read_struct requires atlas_id and target_id. ${READ_PAGE_FIRST}`);
       }
       const resolved = await resolveTarget(store, getPageState, ctx, a.atlas_id, a.target_id, [
         "collection",
@@ -484,14 +402,14 @@ USE WHEN:
       if (!resolved.ok) return fail(resolved.error);
       const selected = selectedRecords(resolved.target.records, a.range);
       if (!selected.ok) return fail(selected.error);
-      return ok(wrapUntrustedPageContent(
-        "extract_records",
-        resolved.atlas.atlasId,
-        resolved.target.id,
-        renderExtractedRecords(selected.records, keys),
-      ));
+      const fields = Array.isArray(a.fields) ? a.fields.filter(isNonEmptyString) : [];
+      const body =
+        fields.length > 0
+          ? renderExtractedRecords(selected.records, fields)
+          : renderRecords("records", resolved.atlas.atlasId, resolved.target, selected.records);
+      return ok(wrapUntrustedPageContent("read_struct", resolved.atlas.atlasId, resolved.target.id, body));
     },
   };
 
-  return [findTargetTool, readCollectionTool, readTableTool, readTargetTool, extractRecordsTool];
+  return [findTargetTool, readStructTool, readTargetTool];
 }
