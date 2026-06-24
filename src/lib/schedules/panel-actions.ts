@@ -9,6 +9,7 @@
 // — the trap Task 7 hit. This module is the thin panel-side client; the SW
 // handler (background/index.ts) calls the shared schedule-ops core.
 
+import { swPort } from "@/lib/sw-connection/manager";
 import type { ScheduleSpec } from "./types";
 
 export const SCHEDULE_ACTION_MESSAGE = "schedule-action" as const;
@@ -62,17 +63,11 @@ async function send(
   action: ScheduleAction["action"],
   payload: ScheduleAction["payload"],
 ): Promise<ScheduleActionResponse> {
-  try {
-    const res = (await chrome.runtime.sendMessage({
-      type: SCHEDULE_ACTION_MESSAGE,
-      action,
-      payload,
-    })) as ScheduleActionResponse | undefined;
-    if (!res) return { ok: false, error: "no response from background worker" };
-    return res;
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
-  }
+  return swPort.request<ScheduleActionResponse>({
+    type: SCHEDULE_ACTION_MESSAGE,
+    action,
+    payload,
+  });
 }
 
 export function createSchedule(payload: ScheduleCreatePayload): Promise<ScheduleActionResponse> {

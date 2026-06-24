@@ -3,7 +3,7 @@ import type { ErrorKind } from "@/lib/model-router/types";
 import type { Attachment } from "@/lib/images";
 import type { FileAttachment } from "@/lib/files/types";
 import type { CapturedActionPayload, RecordedAction } from "@/lib/recording/types";
-import type { Quote, QuoteAddedMessage } from "./quotes";
+import type { Quote, QuoteAddedMessage, PickerStartMessage, PickerStopMessage } from "./quotes";
 
 // --- Page Content ---
 
@@ -74,6 +74,30 @@ export interface ChatInstructionCancelMessage {
   type: "chat-instruction-cancel";
   sessionId: string;
   chatMessageId: string;
+}
+
+/**
+ * output_file — panel → SW: request the SW to download a cached artifact to
+ * disk. SW replies with FileOutputResultMessage. Routed over the per-session
+ * swPort channel (transparent reconnect on SW idle-out).
+ */
+export interface DownloadOutputMessage {
+  type: "download-output";
+  artifactId: string;
+}
+
+/**
+ * HITL — panel → SW: answer a `panel-request`. The body is the union from
+ * usePanelRequest's PanelResponseBody (ok+data | reason). Routed over the
+ * per-session swPort channel.
+ */
+export interface PanelResponseMessage {
+  type: "panel-response";
+  sessionId: string;
+  requestId: string;
+  ok: boolean;
+  data?: unknown;
+  reason?: string;
 }
 
 /**
@@ -548,7 +572,11 @@ export type PortMessageToWorker =
   | RecordingFinishMessage         // NEW
   | RecordingDiscardMessage        // NEW
   | ChatInstructionAddMessage      // Issue #34
-  | ChatInstructionCancelMessage;  // Issue #34
+  | ChatInstructionCancelMessage   // Issue #34
+  | DownloadOutputMessage          // output_file
+  | PanelResponseMessage           // HITL panel-request
+  | PickerStartMessage             // issue #38 element picker
+  | PickerStopMessage;             // issue #38 element picker
 
 export type PortMessageToPanel =
   | ChatChunkMessage

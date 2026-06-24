@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { swPort } from "@/lib/sw-connection/manager";
 import type { RecordedAction } from "@/lib/recording/types";
 import type { PortMessageToPanel } from "@/types";
 
 interface UseRecordingArgs {
-  port: chrome.runtime.Port | null;
   sessionId: string | null;
   /** Reframe (2026-05-05)：onFinished receives the serialized trace + step
    *  count. Caller (App.tsx) sets pendingRecording state → Chat input shows
@@ -30,7 +30,7 @@ interface UseRecording {
   discardRecording: () => void;
 }
 
-export function useRecording({ port, sessionId, onFinished }: UseRecordingArgs): UseRecording {
+export function useRecording({ sessionId, onFinished }: UseRecordingArgs): UseRecording {
   const [active, setActive] = useState(false);
   const [actions, setActions] = useState<RecordedAction[]>([]);
   const [lastAbortReason, setLastAbortReason] = useState<UseRecording["lastAbortReason"]>(null);
@@ -38,27 +38,25 @@ export function useRecording({ port, sessionId, onFinished }: UseRecordingArgs):
   const sessionRef = useRef(sessionId);
   const activeRef = useRef(false);
 
-  // Auto-discard when session switches mid-recording.
+  // Auto-discard when session switches mid-recording. Sent via swPort.send to
+  // the PREVIOUS session so a SW idle-out doesn't silently swallow the discard.
   useEffect(() => {
     const prev = sessionRef.current;
-    if (prev && sessionId !== prev && activeRef.current && port) {
-      try {
-        port.postMessage({ type: "recording-discard", sessionId: prev });
-      } catch {
-        // port may be already disconnected — non-fatal
-      }
+    if (prev && sessionId !== prev && activeRef.current) {
+      swPort.send(prev, { type: "recording-discard", sessionId: prev });
       setActive(false);
       activeRef.current = false;
       setActions([]);
       setLastAbortReason("session-switched");
     }
     sessionRef.current = sessionId;
-  }, [sessionId, port]);
+  }, [sessionId]);
 
-  // Listen for SW broadcasts. We share the per-session port owned by useSession;
-  // the parent App passes the port reference once it's connected.
+  // Listen for SW broadcasts via the shared per-session swPort subscription.
+  // swPort owns the port lifecycle (open / reconnect on SW death); we just
+  // subscribe an onMessage listener that survives reconnects.
   useEffect(() => {
-    if (!port) return;
+    if (!sessionId) return;
     const listener = (msg: PortMessageToPanel) => {
       if (!msg || typeof msg !== "object" || !("type" in msg)) return;
       if (
@@ -90,42 +88,24 @@ export function useRecording({ port, sessionId, onFinished }: UseRecordingArgs):
         setLastAbortReason(msg.reason);
       }
     };
-    port.onMessage.addListener(listener);
-    return () => {
-      try {
-        port.onMessage.removeListener(listener);
-      } catch {
-        // port may already be closing — non-fatal
-      }
-    };
-  }, [port, onFinished]);
+    const unsubscribe = swPort.connect(sessionId, { onMessage: listener });
+    return unsubscribe;
+  }, [sessionId, onFinished]);
 
   const startRecording = useCallback(() => {
-    if (!port || !sessionId) return;
-    try {
-      port.postMessage({ type: "recording-start", sessionId });
-    } catch {
-      // non-fatal
-    }
-  }, [port, sessionId]);
+    if (!sessionId) return;
+    swPort.send(sessionId, { type: "recording-start", sessionId });
+  }, [sessionId]);
 
   const finishRecording = useCallback(() => {
-    if (!port || !sessionId) return;
-    try {
-      port.postMessage({ type: "recording-finish", sessionId });
-    } catch {
-      // non-fatal
-    }
-  }, [port, sessionId]);
+    if (!sessionId) return;
+    swPort.send(sessionId, { type: "recording-finish", sessionId });
+  }, [sessionId]);
 
   const discardRecording = useCallback(() => {
-    if (!port || !sessionId) return;
-    try {
-      port.postMessage({ type: "recording-discard", sessionId });
-    } catch {
-      // non-fatal
-    }
-  }, [port, sessionId]);
+    if (!sessionId) return;
+    swPort.send(sessionId, { type: "recording-discard", sessionId });
+  }, [sessionId]);
 
   return {
     active,

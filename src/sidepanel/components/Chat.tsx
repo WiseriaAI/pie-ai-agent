@@ -22,6 +22,7 @@ import { CollapsibleText } from "./CollapsibleText";
 import { FileChip } from "./FileChip";
 import { QuoteGlyph } from "./icons";
 import type { UseSession } from "@/sidepanel/hooks/useSession";
+import { swPort } from "@/lib/sw-connection/manager";
 import AgentStepGroup, { type AgentStepData } from "./AgentStepGroup";
 import ManagedErrorCta from "./ManagedErrorCta";
 import PinnedTabDropdown from "./PinnedTabDropdown";
@@ -184,7 +185,6 @@ export default function Chat({
     addQuote,
     removeQuote,
     clearQuotes,
-    port,
     usage,
     status,
     addPendingInstruction,
@@ -309,9 +309,9 @@ export default function Chat({
 
   // Load instances list + current session's instanceId on mount / sessionId change
   const sessionId = session.sessionId;
-  const { active: panelRequest, respond: respondPanel } = usePanelRequest(session.port, sessionId);
+  const { active: panelRequest, respond: respondPanel } = usePanelRequest(sessionId);
   const { showCard: showFileAccess, dismiss: dismissFileAccess } = useFileAccessPrompt(
-    session.port,
+    sessionId,
   );
   useEffect(() => {
     listInstances().then(setInstances).catch(() => setInstances([]));
@@ -1049,12 +1049,12 @@ After the skill completes, briefly summarize what was created (the user will see
   async function onPickElement() {
     const tab = await chrome.tabs.query({ active: true, currentWindow: true });
     const tabId = tab[0]?.id;
-    if (typeof tabId !== "number" || !port) return;
+    if (typeof tabId !== "number" || !sessionId) return;
     if (!pickerActive) {
-      port.postMessage({ type: "picker:start", tabId });
+      swPort.send(sessionId, { type: "picker:start", tabId });
       setPickerActive(true);
     } else {
-      port.postMessage({ type: "picker:stop", tabId });
+      swPort.send(sessionId, { type: "picker:stop", tabId });
       setPickerActive(false);
     }
   }

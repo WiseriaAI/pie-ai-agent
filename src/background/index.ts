@@ -1656,9 +1656,10 @@ chrome.runtime.onConnect.addListener((port) => {
         console.warn(`[sw] recording-discard failed for session=${message.sessionId}:`, e);
       });
     }
-    // The messages below are NOT part of PortMessageToWorker union (they are
-    // out-of-band port messages sent by the panel for picker and CDP onboarding).
-    // Cast to a loose type so TypeScript doesn't narrow to never.
+    // The messages below are part of PortMessageToWorker union
+    // (PickerStartMessage / PickerStopMessage / PanelResponseMessage /
+    // DownloadOutputMessage). Cast to a loose type to share one rawMsg handle
+    // across branches without duplicating narrowing predicates.
     const rawMsg = message as { type?: string; tabId?: number; enabled?: unknown; ok?: unknown };
     if (rawMsg.type === "picker:start") {
       void broadcastPickerEnter(rawMsg.tabId as number);

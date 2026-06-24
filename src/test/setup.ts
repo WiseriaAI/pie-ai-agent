@@ -1,5 +1,6 @@
 import "fake-indexeddb/auto";
 import { beforeEach, vi } from "vitest";
+import { __resetSwPort } from "@/lib/sw-connection/manager";
 
 // chrome.storage.local mock — backed by a single in-memory record reset
 // between tests. Mirrors the subset of chrome.storage.local API actually
@@ -135,13 +136,17 @@ export interface FakePort {
   __onMessageListeners: Array<Listener<unknown>>;
   /** Test-only: the raw disconnect listener array. */
   __onDisconnectListeners: Array<Listener<unknown>>;
+  /** Alias for __emit — used by sw-connection manager tests. */
+  fire: (msg: unknown) => void;
+  /** Alias for __triggerDisconnect — used by sw-connection manager tests. */
+  triggerDisconnect: () => void;
 }
 
 function createFakePort(name: string): FakePort {
   const messageListeners: Array<Listener<unknown>> = [];
   const disconnectListeners: Array<Listener<unknown>> = [];
 
-  return {
+  const port: FakePort = {
     name,
     postMessage: vi.fn(),
     disconnect: vi.fn(),
@@ -159,16 +164,28 @@ function createFakePort(name: string): FakePort {
     },
     __onMessageListeners: messageListeners,
     __onDisconnectListeners: disconnectListeners,
+    // Aliases used by sw-connection manager tests (no __ prefix):
+    fire: (msg) => {
+      for (const l of messageListeners) l(msg);
+    },
+    triggerDisconnect: () => {
+      for (const l of disconnectListeners) l(undefined);
+    },
   };
+  return port;
+}
+
+// Default connect implementation — extracted so beforeEach can restore it after
+// tests that call mockImplementation() (which survives mockClear).
+function defaultConnect(info: { name: string }) {
+  const port = createFakePort(info.name);
+  runtime.__ports.push(port);
+  return port;
 }
 
 const runtime = {
   __ports: [] as FakePort[],
-  connect: vi.fn((info: { name: string }) => {
-    const port = createFakePort(info.name);
-    runtime.__ports.push(port);
-    return port;
-  }),
+  connect: vi.fn(defaultConnect),
   getPlatformInfo: vi.fn().mockResolvedValue({ os: "mac" }),
   getURL: vi.fn((p: string) => `chrome-extension://test/${p}`),
   sendMessage: vi.fn().mockResolvedValue(undefined),
@@ -339,8 +356,15 @@ beforeEach(() => {
   local.__changedListeners = [];
   runtime.__ports = [];
   runtime.__messageListeners = [];
-  runtime.connect.mockClear();
+  // mockReset clears both call history AND any mockImplementation overrides
+  // (mockClear only clears call history). Tests that call
+  // `runtime.connect.mockImplementation(...)` would otherwise leak into the
+  // next test. After reset we restore the default behaviour.
+  runtime.connect.mockReset();
+  runtime.connect.mockImplementation(defaultConnect);
   runtime.sendMessage.mockClear();
+  // SW 连接服务单例：每个测试隔离。
+  __resetSwPort();
   tabs.__activeTab = null;
   tabs.__tabsById.clear();
   tabs.query.mockClear();

@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { swPort } from "@/lib/sw-connection/manager";
 
 export interface ActivePanelRequest {
   requestId: string;
@@ -18,15 +19,15 @@ interface State {
  * Panel 侧 HITL 分发：监听统一 `panel-request`，暴露当前待应答请求；`respond`
  * 回 `panel-response`。超时/带外放行（panel-request-timeout / -resolved）清卡。
  * 取代旧的 useCdpOnboarding / useLocalFileRequest。
+ *
+ * SW 连接服务 cutover：不再收 `port` prop。订阅经 `swPort.connect`（重连安全），
+ * 回复经 `swPort.send`（SW idle-out 后透明重连重发）。
  */
-export function usePanelRequest(
-  port: chrome.runtime.Port | null,
-  sessionId: string | null,
-): State {
+export function usePanelRequest(sessionId: string | null): State {
   const [active, setActive] = useState<ActivePanelRequest | null>(null);
 
   useEffect(() => {
-    if (!port || !sessionId) return;
+    if (!sessionId) return;
     const listener = (msg: unknown) => {
       if (typeof msg !== "object" || msg === null) return;
       const m = msg as {
@@ -46,20 +47,20 @@ export function usePanelRequest(
         setActive((cur) => (cur && cur.requestId === m.requestId ? null : cur));
       }
     };
-    port.onMessage.addListener(listener);
-    return () => port.onMessage.removeListener(listener);
-  }, [port, sessionId]);
+    const unsubscribe = swPort.connect(sessionId, { onMessage: listener });
+    return unsubscribe;
+  }, [sessionId]);
 
   // 切 session 时清卡，避免残留。
   useEffect(() => setActive(null), [sessionId]);
 
   const respond = useCallback(
     (requestId: string, body: PanelResponseBody) => {
-      if (!port || !sessionId) return;
-      port.postMessage({ type: "panel-response", sessionId, requestId, ...body });
+      if (!sessionId) return;
+      swPort.send(sessionId, { type: "panel-response", sessionId, requestId, ...body });
       setActive((cur) => (cur && cur.requestId === requestId ? null : cur));
     },
-    [port, sessionId],
+    [sessionId],
   );
 
   return { active, respond };
