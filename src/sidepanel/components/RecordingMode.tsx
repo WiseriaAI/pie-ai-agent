@@ -352,7 +352,7 @@ function SequenceRow({ index, action }: { index: number; action: RecordedAction 
     <div
       style={{
         display: "flex",
-        alignItems: "center",
+        alignItems: "flex-start",
         gap: 12,
         padding: "9px 16px",
       }}
@@ -401,13 +401,16 @@ function SequenceLabel({ action }: { action: RecordedAction }) {
     flex: 1,
     minWidth: 0,
     display: "flex",
-    alignItems: "center",
+    flexWrap: "wrap",
+    alignItems: "flex-start",
     gap: 6,
     fontFamily: "Inter, sans-serif",
     fontSize: 13,
     lineHeight: "18px",
     color: "var(--c-fg-1)",
   };
+  // ponytail: full text, no row truncation — wrap long labels/urls/values instead of ellipsis
+  const wrapText: CSSProperties = { whiteSpace: "normal", overflowWrap: "anywhere", minWidth: 0 };
   if (action.type === "navigate") {
     return (
       <span style={baseStyle}>
@@ -417,9 +420,7 @@ function SequenceLabel({ action }: { action: RecordedAction }) {
             fontFamily: "'JetBrains Mono', monospace",
             fontSize: 12,
             color: "var(--c-fg-2)",
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
+            ...wrapText,
           }}
         >
           {action.url}
@@ -430,14 +431,7 @@ function SequenceLabel({ action }: { action: RecordedAction }) {
   if ((action.type === "type" || action.type === "select") && action.value !== undefined) {
     return (
       <span style={baseStyle}>
-        <span
-          style={{
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-            maxWidth: 140,
-          }}
-        >
+        <span style={{ ...wrapText }}>
           {action.label}
         </span>
         <span style={{ color: "var(--c-fg-3)", flexShrink: 0 }}>→</span>
@@ -446,10 +440,8 @@ function SequenceLabel({ action }: { action: RecordedAction }) {
             fontFamily: "'JetBrains Mono', monospace",
             fontSize: 12,
             color: action.redacted ? "var(--c-warning)" : "var(--c-fg-2)",
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
             flex: 1,
+            ...wrapText,
           }}
         >
           {action.redacted ? `{{${action.placeholderName}}}` : action.value}
@@ -461,9 +453,7 @@ function SequenceLabel({ action }: { action: RecordedAction }) {
     <span
       style={{
         ...baseStyle,
-        whiteSpace: "nowrap",
-        overflow: "hidden",
-        textOverflow: "ellipsis",
+        ...wrapText,
         display: "block",
       }}
     >
