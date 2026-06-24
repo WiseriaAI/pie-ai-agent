@@ -11,7 +11,8 @@
  * 已知限制：
  *   - 不监听 'input' 事件（只 'change' / blur）—— 按键级流水会爆量
  *   - 不监听 mouse/key down/up（只 click / change / submit 这种语义事件）
- *   - 不处理 shadow DOM 内部元素（v1 不在范围）
+ *   - shadow DOM：经 composedPath() 穿透取真实目标 + 跨边界找交互祖先
+ *   - editor 宿主（Monaco/CodeMirror/TinyMCE）经 EDITOR_SELECTOR 识别（inline + parity）
  *
  * **buildLabelFor parity invariant** — wording must match selector.ts's
  * describeElement output character-for-character so the parity test passes
@@ -164,11 +165,37 @@ export function installCaptureListener(): () => void {
     return tagMap[tag] ?? "元素";
   }
 
+  // VERBATIM copy of EDITOR_SELECTOR / EDITOR_ENGINE_MAP from
+  // src/lib/dom-actions/_shared/interactive.ts. Cannot import at runtime
+  // (executeScript serializes function bodies). interactive-parity.test.ts
+  // guards these literals against drift.
+  const EDITOR_SELECTOR =
+    ".monaco-editor, .cm-editor, .CodeMirror, .tox-tinymce, .mce-tinymce";
+  const EDITOR_ENGINE_MAP: Array<[string, string]> = [
+    [".monaco-editor", "Monaco"],
+    [".cm-editor", "CodeMirror"],
+    [".CodeMirror", "CodeMirror"],
+    [".tox-tinymce", "TinyMCE"],
+    [".mce-tinymce", "TinyMCE"],
+  ];
+  function editorEngineOf(el: Element): string | null {
+    const host = el.closest(EDITOR_SELECTOR);
+    if (!host) return null;
+    for (const [cls, engine] of EDITOR_ENGINE_MAP) {
+      if (host.matches(cls)) return engine;
+    }
+    return "editor";
+  }
+
   function buildLabelFor(el: HTMLElement): {
     label: string;
     selectorHint?: string;
     unstable: boolean;
   } {
+    const editorEngine = editorEngineOf(el);
+    if (editorEngine) {
+      return { label: `${editorEngine} 编辑器`, unstable: false };
+    }
     const aria = sanitizeText((el.getAttribute("aria-label") || "").trim(), 80);
     const text = sanitizeText((el as HTMLElement).innerText?.trim() ?? "", 80);
     const inputEl = el as HTMLInputElement;
@@ -240,14 +267,32 @@ export function installCaptureListener(): () => void {
 
   // ── Listeners ──
 
+  // Shadow-piercing event target resolution. composedPath() crosses shadow
+  // boundaries (the page-context Event API; no import needed). Falls back to
+  // e.target on engines without composedPath.
+  function realTargetOf(e: Event): HTMLElement | null {
+    const path = (e.composedPath?.() ?? []) as EventTarget[];
+    const first = path[0];
+    if (first instanceof HTMLElement) return first;
+    const t = e.target;
+    return t instanceof HTMLElement ? t : null;
+  }
+  function closestInPath(e: Event, el: HTMLElement, selector: string): HTMLElement | null {
+    const path = (e.composedPath?.() ?? []) as EventTarget[];
+    for (const n of path) {
+      if (n instanceof HTMLElement && n.matches?.(selector)) return n;
+    }
+    return el.closest(selector) as HTMLElement | null;
+  }
+
   const onClick = (e: Event) => {
-    const target = e.target as HTMLElement | null;
+    const target = realTargetOf(e);
     if (!target?.tagName) return;
     // VERBATIM copy of _shared/interactive.ts INTERACTIVE_SELECTOR.
     // interactive-parity.test.ts guards this literal against drift.
     const INTERACTIVE_SELECTOR =
       'a, button, input, select, textarea, [role="button"], [role="link"], [role="tab"], [role="checkbox"], [role="radio"], [role="switch"], [role="menuitem"], [contenteditable="true"], summary, [onclick], [tabindex]:not([tabindex=\'-1\'])';
-    const interactive = target.closest(INTERACTIVE_SELECTOR) as HTMLElement | null;
+    const interactive = closestInPath(e, target, INTERACTIVE_SELECTOR);
     // 仅丢弃真正空的纯布局点击。带文本的容器/div 自定义按钮一律保留 ——
     // recorder 宁可多录也不漏录真实动作（漏录比噪声更糟）。
     if (!interactive && !(target.innerText?.trim())) return;
@@ -321,6 +366,11 @@ export function installCaptureListener(): () => void {
   };
 
   const onChange = (e: Event) => {
+    // change is NON-composed — it does not cross shadow boundaries, so a
+    // shadow-inner <input>/<select>/<textarea> change never reaches this
+    // document-level listener. composedPath piercing would be a no-op here;
+    // capturing shadow-encapsulated form changes is a separate limitation
+    // (out of scope for #151 ①, which targets the composed click/input paths).
     const target = e.target as HTMLElement | null;
     if (!target) return;
     const tag = target.tagName.toLowerCase();
@@ -441,8 +491,13 @@ export function installCaptureListener(): () => void {
     });
   };
   const onInput = (e: Event) => {
-    const t = e.target as HTMLElement | null;
-    const host = t?.closest?.('[contenteditable="true"]') as HTMLElement | null;
+    // input IS a composed event (crosses shadow boundaries), so resolve the real
+    // target via composedPath and find the contenteditable host across any shadow
+    // boundary — mirrors onClick. (change/submit are non-composed and never reach
+    // this document-level listener from inside a shadow root, so they stay on
+    // e.target; see the note on onChange.)
+    const t = realTargetOf(e);
+    const host = t ? closestInPath(e, t, '[contenteditable="true"]') : null;
     if (!host) return; // 非 contenteditable（如 input/textarea）忽略，交给 onChange
     editTarget = host;
     if (editTimer !== null) clearTimeout(editTimer);

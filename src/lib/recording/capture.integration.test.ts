@@ -426,6 +426,38 @@ describe("capture.installCaptureListener", () => {
     uninstall();
   });
 
+  it("labels a click inside a Monaco editor as the editor engine (stable, not nth)", () => {
+    document.body.innerHTML = `<main><div class="monaco-editor"><div class="view-line">const x = 1;</div></div></main>`;
+    uninstall = installCaptureListener();
+    const line = document.querySelector(".view-line") as HTMLElement;
+    line.click();
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0]!.payload.label).toBe("Monaco 编辑器");
+    expect(captured[0]!.payload.unstable).toBeFalsy();
+    uninstall();
+  });
+
+  it("pierces shadow DOM to capture the interactive ancestor across the boundary", () => {
+    document.body.innerHTML = `<main><button id="b">Save</button></main>`;
+    const btn = document.getElementById("b")!;
+    const icon = document.createElement("span");
+    btn.appendChild(icon);
+    const sr = icon.attachShadow({ mode: "open" });
+    sr.innerHTML = `<i id="glyph">x</i>`;
+    uninstall = installCaptureListener();
+    const glyph = sr.getElementById("glyph") as HTMLElement;
+    glyph.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true }));
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0]!.payload.type).toBe("click");
+    // old code: glyph.closest(INTERACTIVE_SELECTOR) can't cross the shadow
+    // boundary → interactive=null → captures the glyph itself (label "元素 'x'"),
+    // NOT the button. New code finds the <button> via composedPath.
+    expect(captured[0]!.payload.label).toContain("Save");
+    uninstall();
+  });
+
   // ── Security: wrapper-tag neutralization in captured labels ──
   // Tags NOT in capture's old 6-tag list must also be filtered. A page-injected
   // wrapper tag in an element's aria-label/innerText is a prompt-injection escape
