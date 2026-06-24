@@ -364,9 +364,9 @@ describe("Page tools locator guidance (#113)", () => {
     expect(prompt).toContain('read_page({tabId, mode:"atlas"})');
     expect(prompt).toContain("choose a `target_id`");
     expect(prompt).toContain("`find_target`");
-    expect(prompt).toContain("`read_target_records`");
+    expect(prompt).toContain("`read_struct`");
     expect(prompt).toContain("`read_target`");
-    expect(prompt).toMatch(/read_target_records.*fields/is);
+    expect(prompt).toMatch(/read_struct.*fields/is);
     expect(prompt).toContain('read_page({tabId, mode:"interactive"})');
     expect(prompt).toMatch(/tables, lists, emails, status panels.*target_id/is);
     expect(prompt).not.toMatch(/Use `mode:"content"` when reading\/summarizing body text, tables, emails, or status messages/);

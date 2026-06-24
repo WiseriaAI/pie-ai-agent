@@ -29,7 +29,7 @@ interface TargetReadArgs {
   mode?: unknown;
 }
 
-interface ReadRecordsArgs {
+interface ReadStructArgs {
   atlas_id?: unknown;
   target_id?: unknown;
   range?: unknown;
@@ -269,7 +269,7 @@ USE WHEN:
 
 **DO NOT USE WHEN:**
 - The atlas already makes the target obvious — read it directly instead.
-- You want the records themselves, not a target_id — use read_target_records or read_target.`,
+- You want the records themselves, not a target_id — use read_struct or read_target.`,
     parameters: {
       type: "object",
       properties: {
@@ -324,8 +324,8 @@ USE WHEN:
 - You need the block's full body text — use mode="text".
 
 **DO NOT USE WHEN:**
-- The target is a repeated item list or a table — use read_target_records.
-- You need specific fields across many records — use read_target_records with the fields parameter.`,
+- The target is a repeated item list or a table — use read_struct.
+- You need specific fields across many records — use read_struct with the fields parameter.`,
     parameters: {
       type: "object",
       properties: {
@@ -363,8 +363,8 @@ USE WHEN:
     },
   };
 
-  const readRecordsTool: Tool = {
-    name: "read_target_records",
+  const readStructTool: Tool = {
+    name: "read_struct",
     description:
       `Read records from a collection, table, or detail_region target, rendered by the target's actual type — so you don't pre-classify collection vs table. By default returns full records (every field + text per item); pass "fields" to project down to just the named fields (cheaper for large lists). Requires atlas_id + target_id from read_page({mode:"atlas"}).
 
@@ -390,9 +390,9 @@ USE WHEN:
       additionalProperties: false,
     },
     handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
-      const a = (args ?? {}) as ReadRecordsArgs;
+      const a = (args ?? {}) as ReadStructArgs;
       if (!isNonEmptyString(a.atlas_id) || !isNonEmptyString(a.target_id)) {
-        return fail(`read_target_records requires atlas_id and target_id. ${READ_PAGE_FIRST}`);
+        return fail(`read_struct requires atlas_id and target_id. ${READ_PAGE_FIRST}`);
       }
       const resolved = await resolveTarget(store, getPageState, ctx, a.atlas_id, a.target_id, [
         "collection",
@@ -407,9 +407,9 @@ USE WHEN:
         fields.length > 0
           ? renderExtractedRecords(selected.records, fields)
           : renderRecords("records", resolved.atlas.atlasId, resolved.target, selected.records);
-      return ok(wrapUntrustedPageContent("read_target_records", resolved.atlas.atlasId, resolved.target.id, body));
+      return ok(wrapUntrustedPageContent("read_struct", resolved.atlas.atlasId, resolved.target.id, body));
     },
   };
 
-  return [findTargetTool, readRecordsTool, readTargetTool];
+  return [findTargetTool, readStructTool, readTargetTool];
 }
