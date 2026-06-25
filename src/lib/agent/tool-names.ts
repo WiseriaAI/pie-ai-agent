@@ -120,8 +120,8 @@ export const LOCAL_FILE_TOOL_NAMES = [
 ] as const;
 
 // Scratchpad tools — per-session durable memory for long-horizon extraction.
-//   save_records / update_notes / clear_scratchpad — write (mutate IDB state).
-//   read_records — read (observe stored data, no mutation).
+//   save_scratchpad / update_scratchpad_notes / clear_scratchpad — write (mutate IDB state).
+//   read_scratchpad — read (observe stored data, no mutation).
 //   query_scratchpad — read FOR TAB-LOCK PURPOSES. It can mutate IDB state (its
 //     optional `into` arg writes the result set back as a collection), but the
 //     read/write class is only consumed by collectCrossSessionConflicts, which
@@ -129,9 +129,9 @@ export const LOCAL_FILE_TOOL_NAMES = [
 //     and can never conflict on a tab, so classing it `read` is deliberate
 //     (same rationale as the skill-meta IDB-write tools below).
 export const SCRATCHPAD_TOOL_NAMES = [
-  "save_records",
-  "update_notes",
-  "read_records",
+  "save_scratchpad",
+  "update_scratchpad_notes",
+  "read_scratchpad",
   "clear_scratchpad",
   "query_scratchpad",
 ] as const;
@@ -262,9 +262,9 @@ export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
   read_editor: "read",
   set_editor_value: "write",
   // Scratchpad tools — per-session durable memory for long-horizon extraction
-  save_records: "write",
-  update_notes: "write",
-  read_records: "read",
+  save_scratchpad: "write",
+  update_scratchpad_notes: "write",
+  read_scratchpad: "read",
   clear_scratchpad: "write",
   // query_scratchpad can write IDB state via its optional `into` arg, but the
   // class only gates the cross-session *tab* lock (collectCrossSessionConflicts).
@@ -346,7 +346,7 @@ export const TOOL_GROUPS: Readonly<Record<string, DisclosureGroup>> = {
   read_pdf: "pdf", search_pdf: "pdf", get_pdf_outline: "pdf",
   read_local_file: "local-file", request_local_file: "local-file",
   // lazy
-  save_records: "scratchpad", update_notes: "scratchpad", read_records: "scratchpad",
+  save_scratchpad: "scratchpad", update_scratchpad_notes: "scratchpad", read_scratchpad: "scratchpad",
   clear_scratchpad: "scratchpad", query_scratchpad: "scratchpad",
   create_schedule: "schedule", update_schedule: "schedule",
   delete_schedule: "schedule", list_schedules: "schedule",

@@ -28,7 +28,7 @@ describe("TOOL_GROUPS — every known tool is grouped", () => {
 
   it("known long-tail tools land in the right groups", () => {
     expect(getToolGroup("read_pdf")).toBe("pdf");
-    expect(getToolGroup("save_records")).toBe("scratchpad");
+    expect(getToolGroup("save_scratchpad")).toBe("scratchpad");
     expect(getToolGroup("create_schedule")).toBe("schedule");
     expect(getToolGroup("create_skill")).toBe("skill-authoring");
     expect(getToolGroup("use_skill")).toBe("skill-mediation");

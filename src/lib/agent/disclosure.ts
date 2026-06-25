@@ -33,8 +33,8 @@ const PDF_GUIDANCE =
 
 const SCRATCHPAD_GUIDANCE =
   "Scratchpad (durable memory): for multi-step extraction/scraping, save rows " +
-  "incrementally with save_records(collection, records, dedupeKey?), keep a " +
-  "running update_notes(notes), page back with read_records, and clean/dedupe " +
+  "incrementally with save_scratchpad(collection, records, dedupeKey?), keep a " +
+  "running update_scratchpad_notes(notes), page back with read_scratchpad, and clean/dedupe " +
   "with query_scratchpad(from, sql, into?). A <scratchpad_overview> is injected " +
   "every turn — treat it as your source of truth. Export with output_file.";
 
@@ -69,7 +69,7 @@ export const GROUP_META: Record<DisclosureGroup, GroupMeta> = {
   },
   scratchpad: {
     kind: "lazy", loadable: true,
-    catalogLine: "scratchpad — 长程结构化抽取的持久记忆（save_records / query_scratchpad ...）",
+    catalogLine: "scratchpad — 长程结构化抽取的持久记忆（save_scratchpad / query_scratchpad ...）",
     guidance: SCRATCHPAD_GUIDANCE,
   },
   schedule: {

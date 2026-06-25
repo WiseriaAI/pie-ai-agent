@@ -38,7 +38,7 @@ interface ClearArgs { collection?: string }
 
 export function buildScratchpadTools(deps: ScratchpadToolDeps): Tool[] {
   const saveRecords: Tool = {
-    name: "save_records",
+    name: "save_scratchpad",
     description:
       `Append structured records to a named scratchpad collection. Persisted outside the chat context and survives compaction. ALWAYS use this to store intermediate results when scraping structured data from pages — never accumulate extracted rows in your reply. Pass dedupeKey on the first save to skip duplicate rows on retry/re-scrape.
 
@@ -47,8 +47,8 @@ USE WHEN:
 - A long task produces data incrementally and you must not lose it to context compaction.
 
 **DO NOT USE WHEN:**
-- The value is free-text task state (pages done, next step) — use update_notes.
-- You just want to read existing rows back — use read_records.`,
+- The value is free-text task state (pages done, next step) — use update_scratchpad_notes.
+- You just want to read existing rows back — use read_scratchpad.`,
     parameters: {
       type: "object",
       properties: {
@@ -79,7 +79,7 @@ USE WHEN:
   };
 
   const updateNotes: Tool = {
-    name: "update_notes",
+    name: "update_scratchpad_notes",
     description:
       `Overwrite the scratchpad progress notes (replaces the whole block). This is free-text task state, not data rows.
 
@@ -88,7 +88,7 @@ USE WHEN:
 - You want a place to keep your plan that survives context compaction.
 
 **DO NOT USE WHEN:**
-- You're storing structured rows of extracted data — use save_records.
+- You're storing structured rows of extracted data — use save_scratchpad.
 - You expect to edit just part of the notes — there's no partial edit; always pass the full updated block.`,
     parameters: {
       type: "object",
@@ -105,7 +105,7 @@ USE WHEN:
   };
 
   const readRecordsTool: Tool = {
-    name: "read_records",
+    name: "read_scratchpad",
     description:
       `Read stored records back from a collection (paginated; default 50). Use offset/limit to page and query for a case-insensitive substring filter.
 
@@ -182,8 +182,8 @@ USE WHEN:
 - You'll export the cleaned result: write it with \`into\`, then export with output_file.
 
 **DO NOT USE WHEN:**
-- You just want to read a few rows as-is — use read_records.
-- The data isn't in a scratchpad collection yet — save it with save_records first.`,
+- You just want to read a few rows as-is — use read_scratchpad.
+- The data isn't in a scratchpad collection yet — save it with save_scratchpad first.`,
     parameters: {
       type: "object",
       properties: {

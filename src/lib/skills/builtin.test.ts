@@ -27,8 +27,8 @@ describe("BUILT_IN_SKILL_PACKAGES", () => {
     expect(extract.frontmatter.description).toMatch(/scrape|collect/i);
     // body 编排 scratchpad 工具链 + 导出前与用户确认
     expect(md).toMatch(/scratchpad/i);
-    expect(md).toContain("save_records");
-    expect(md).toContain("update_notes");
+    expect(md).toContain("save_scratchpad");
+    expect(md).toContain("update_scratchpad_notes");
     expect(md).toContain("query_scratchpad");
     expect(md).toContain("output_file");
     expect(md).toMatch(/before export/i);
