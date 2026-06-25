@@ -149,4 +149,32 @@ describe("serialize", () => {
     expect(r.promptTemplate).toContain("第 1 步：点击菜单项 '设置'");
     expect(r.promptTemplate).toContain("先悬停或点击其触发器展开");
   });
+
+  it("renders a spawn transition before the first step in a newly-opened tab", () => {
+    const r = serialize([
+      action({ type: "click", label: "结账按钮", url: "https://shop.com/cart", tabRef: 0 }),
+      action({ type: "type", label: "卡号", value: "4242", url: "https://pay.stripe.com/x", tabRef: 1 }),
+    ]);
+    expect(r.promptTemplate).toContain("第 1 步：点击结账按钮");
+    expect(r.promptTemplate).toContain("切换到它继续（目标站点：https://pay.stripe.com）");
+    expect(r.promptTemplate).toContain("第 2 步：在卡号中输入");
+  });
+
+  it("renders a switch transition when returning to an earlier tab", () => {
+    const r = serialize([
+      action({ type: "click", label: "结账按钮", url: "https://shop.com/cart", tabRef: 0 }),
+      action({ type: "type", label: "卡号", value: "4242", url: "https://pay.stripe.com/x", tabRef: 1 }),
+      action({ type: "click", label: "查看订单", url: "https://shop.com/done", tabRef: 0 }),
+    ]);
+    expect(r.promptTemplate).toContain("切回 https://shop.com 的标签页");
+  });
+
+  it("emits no transition line for single-tab recordings (tabRef absent)", () => {
+    const r = serialize([
+      action({ type: "click", label: "A" }),
+      action({ type: "click", label: "B" }),
+    ]);
+    expect(r.promptTemplate).not.toContain("切换到它继续");
+    expect(r.promptTemplate).not.toContain("切回");
+  });
 });

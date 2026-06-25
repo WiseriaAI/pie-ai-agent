@@ -47,8 +47,19 @@ export interface RecordedAction {
    *  serialize 据此追加"回放前可能需先悬停/点击触发器展开"的提示——因为这类项
    *  在回放快照里常不可见或无 data-pie-idx，LLM 需先揭示才能操作。 */
   fromPopup?: boolean;
+  /** v1.1 cross-tab —— 该 action 发生在流程标签页集合里的哪个标签页（内部 key，
+   *  按标签页出现顺序分配，0=起始页）。单标签页录制时省略。运行期不靠它（会漂），
+   *  仅供 serialize 推断 spawn/switch 转换。 */
+  tabRef?: number;
   timestamp: number;
 }
+
+/**
+ * v1.1 cross-tab —— tabRef → 标签页身份。origin 作运行期匹配 hint，firstUrl 仅可读。
+ * 由 recording-orchestrator 在标签页首次 commit 时填充；serialize 作"本流程用到哪些
+ * 标签页"的清单参考（逐步精确 origin 取自每条 action 自带的 url，见 serialize.ts）。
+ */
+export type TabRegistry = Record<number, { origin: string; firstUrl: string }>;
 
 /**
  * 录制会话。**仅活在 SW 内存里**。SW restart / panel disconnect / session 切换

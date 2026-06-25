@@ -5,7 +5,7 @@
  */
 
 import { escapeUntrustedWrappers } from "@/lib/agent/untrusted-wrappers";
-import type { RecordedAction } from "./types";
+import type { RecordedAction, TabRegistry } from "./types";
 
 export class PromptTooLargeError extends Error {
   constructor(public actualBytes: number, public maxBytes: number) {
@@ -31,6 +31,9 @@ const STEP_TEMPLATES = {
   submit: (n: number, label: string) => `第 ${n} 步：提交${label}所属的表单。`,
   navigate: (n: number, url: string) => `第 ${n} 步：导航到 ${url}。`,
   keypress: (n: number, key: string) => `第 ${n} 步：按 ${key} 键。`,
+  spawnTab: (origin: string) =>
+    `— 上一步的点击会打开一个新标签页，切换到它继续（目标站点：${origin}）。`,
+  switchTab: (origin: string) => `— 切回 ${origin} 的标签页继续。`,
 } as const;
 
 const ACTION_TO_TOOL: Record<RecordedAction["type"], string | null> = {
@@ -53,7 +56,19 @@ interface SerializeResult {
   allowedTools: string[];
 }
 
-export function serialize(actions: RecordedAction[]): SerializeResult {
+function safeOriginOf(url: string): string {
+  try {
+    const o = new URL(url).origin;
+    return !o || o === "null" ? url : o;
+  } catch {
+    return url;
+  }
+}
+
+export function serialize(
+  actions: RecordedAction[],
+  _tabRegistry: TabRegistry = {},
+): SerializeResult {
   const params = new Map<string, { type: string; description: string }>();
   // `scroll` is always in baseline allowedTools — it's a read-class operation
   // (no DOM mutation, no risk), and replay LLM may need to scroll to find an
@@ -72,8 +87,24 @@ export function serialize(actions: RecordedAction[]): SerializeResult {
 
   const lines: string[] = [STEP_TEMPLATES.header];
 
+  const seenRefs = new Set<number>();
+  let prevRef: number | undefined;
+
   actions.forEach((action, idx) => {
     const stepN = idx + 1;
+    const ref = action.tabRef;
+    if (ref !== undefined && idx > 0 && ref !== prevRef) {
+      const origin = escapeUntrustedWrappers(safeOriginOf(action.url));
+      lines.push(
+        seenRefs.has(ref)
+          ? STEP_TEMPLATES.switchTab(origin)
+          : STEP_TEMPLATES.spawnTab(origin),
+      );
+    }
+    if (ref !== undefined) {
+      seenRefs.add(ref);
+      prevRef = ref;
+    }
     const safeLabel = escapeUntrustedWrappers(action.label);
     const tool = ACTION_TO_TOOL[action.type];
     if (tool) tools.add(tool);
