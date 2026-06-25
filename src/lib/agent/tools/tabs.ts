@@ -1159,6 +1159,125 @@ USE WHEN:
 
 export { openUrlTool };
 
+// ── v1.1 cross-tab replay — switch_to_new_tab ────────────────────────────────
+
+/** 有界轮询：等候选标签页 url 脱离 about:blank/空（origin 未知，故不用 waitForUrlSettle）。 */
+async function readSettledUrl(tabId: number, timeoutMs = 3000): Promise<string> {
+  const deadline = Date.now() + timeoutMs;
+  // ponytail: 50ms 轮询；spawn 子页通常下一迭代已 commit，循环极少超过 1-2 轮。
+  for (;;) {
+    let url = "";
+    try {
+      url = (await chrome.tabs.get(tabId)).url ?? "";
+    } catch {
+      return ""; // tab gone
+    }
+    if (url && url !== "about:blank") return url;
+    if (Date.now() >= deadline) return url;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+}
+
+function originOf(url: string): string {
+  try {
+    const o = new URL(url).origin;
+    return !o || o === "null" ? "" : o;
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * switch_to_new_tab — adopt a tab THIS session spawned (openerTabId ∈ pinned,
+ * not yet pinned; cross-window included) and focus it. For replay of a step
+ * whose original click opened a new tab. Read-class (no page mutation; only
+ * pins+focuses a tab the session already caused to exist).
+ */
+const switchToNewTabTool: Tool = {
+  name: "switch_to_new_tab",
+  description:
+    `Adopt and focus a tab that one of your pinned tabs just opened (e.g. the previous click opened a new tab/popup, including in another window). Pass the expected site origin as a hint when known. Takes effect on the NEXT iteration — call it, then read_page/click on the new tab afterwards.
+
+USE WHEN:
+- A step's click opened a new tab/popup and you need to continue inside it.
+
+**DO NOT USE WHEN:**
+- The tab is already pinned — use focus_tab.
+- You know the exact URL and no tab was opened — use open_url.`,
+  parameters: {
+    type: "object",
+    properties: {
+      origin: {
+        type: "string",
+        description:
+          "Optional expected origin of the newly-opened tab (e.g. https://pay.stripe.com), used to disambiguate when several tabs were opened.",
+      },
+    },
+    required: [],
+    additionalProperties: false,
+  },
+  handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
+    const a = (args ?? {}) as { origin?: unknown };
+    const wantOrigin = typeof a.origin === "string" ? a.origin : "";
+    const pinnedIds = new Set((ctx.pinnedTabs ?? []).map((p) => p.tabId));
+    if (pinnedIds.size === 0) {
+      return { success: false, error: "switch_to_new_tab: no pinned tabs in this session." };
+    }
+    let all: chrome.tabs.Tab[];
+    try {
+      all = await chrome.tabs.query({});
+    } catch (e) {
+      return {
+        success: false,
+        error: `switch_to_new_tab: chrome.tabs.query failed — ${e instanceof Error ? e.message : String(e)}`,
+      };
+    }
+    // Candidates: opened by a tab we own, not yet pinned.
+    const candidates = all.filter(
+      (t) =>
+        typeof t.id === "number" &&
+        t.openerTabId !== undefined &&
+        pinnedIds.has(t.openerTabId) &&
+        !pinnedIds.has(t.id),
+    );
+    if (candidates.length === 0) {
+      return {
+        success: true,
+        observation: "未检测到新标签页（上一步可能没有打开新标签页）。可在当前标签页继续，或调 fail。",
+      };
+    }
+    // Settle URLs, then prefer origin match → newest (highest id) fallback.
+    const settled = await Promise.all(
+      candidates.map(async (t) => ({ id: t.id!, origin: originOf(await readSettledUrl(t.id!)) })),
+    );
+    const byOrigin = wantOrigin ? settled.filter((c) => c.origin === wantOrigin) : [];
+    const pool = byOrigin.length > 0 ? byOrigin : settled;
+    pool.sort((x, y) => y.id - x.id);
+    const chosen = pool[0]!;
+
+    if (ctx.appendPinnedTab) {
+      try {
+        await ctx.appendPinnedTab({ tabId: chosen.id, origin: chosen.origin });
+      } catch {
+        // non-fatal; continue to focus
+      }
+    }
+    if (ctx.setCurrentFocusTabId) await ctx.setCurrentFocusTabId(chosen.id);
+
+    const others = settled
+      .filter((c) => c.id !== chosen.id)
+      .map((c) => `${c.id}@${c.origin || "?"}`);
+    return {
+      success: true,
+      observation:
+        `Adopted tab ${chosen.id} (origin ${chosen.origin || "?"}) and set focus; its snapshot is available next iteration.` +
+        (others.length ? ` Other new tabs: [${others.join(", ")}] — if wrong, use list_tabs + focus_tab.` : ""),
+    };
+  },
+};
+
+export { switchToNewTabTool };
+
 export const TAB_TOOLS: Tool[] = [
   listTabsTool,
   closeTabsTool,
@@ -1169,4 +1288,5 @@ export const TAB_TOOLS: Tool[] = [
   focusTabTool,
   unpinTabTool,
   openUrlTool,
+  switchToNewTabTool,
 ];

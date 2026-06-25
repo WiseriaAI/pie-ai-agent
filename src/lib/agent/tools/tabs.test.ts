@@ -733,3 +733,72 @@ describe("open_url tool", () => {
     );
   });
 });
+
+import { switchToNewTabTool } from "./tabs";
+
+describe("switch_to_new_tab (v1.1 cross-tab replay)", () => {
+  const baseCtx = () => {
+    const calls: { pin?: { tabId: number; origin: string }; focus?: number } = {};
+    return {
+      ctx: {
+        tabId: 10,
+        pinnedTabs: [{ tabId: 10, origin: "https://shop.com" }],
+        appendPinnedTab: async (p: { tabId: number; origin: string }) => {
+          calls.pin = p;
+        },
+        setCurrentFocusTabId: async (id: number) => {
+          calls.focus = id;
+        },
+      } as unknown as ToolHandlerContext,
+      calls,
+    };
+  };
+
+  type QueryResolved = Parameters<typeof chromeMock.tabs.query.mockResolvedValue>[0];
+  type GetImpl = Parameters<typeof chromeMock.tabs.get.mockImplementation>[0];
+
+  it("adopts the child tab matching the origin hint and focuses it", async () => {
+    chromeMock.tabs.query.mockResolvedValue([
+      { id: 10, openerTabId: undefined, url: "https://shop.com/cart" },
+      { id: 21, openerTabId: 10, url: "https://ads.example/x" },
+      { id: 22, openerTabId: 10, url: "https://pay.stripe.com/checkout" },
+    ] as unknown as QueryResolved);
+    chromeMock.tabs.get.mockImplementation(((async (id: number) =>
+      (({
+        21: { id: 21, url: "https://ads.example/x" },
+        22: { id: 22, url: "https://pay.stripe.com/checkout" },
+      } as Record<number, unknown>)[id])) as unknown as GetImpl));
+    const { ctx, calls } = baseCtx();
+    const r = await switchToNewTabTool.handler({ origin: "https://pay.stripe.com" }, ctx);
+    expect(r.success).toBe(true);
+    expect(calls.pin).toEqual({ tabId: 22, origin: "https://pay.stripe.com" });
+    expect(calls.focus).toBe(22);
+  });
+
+  it("falls back to the newest child when no origin matches", async () => {
+    chromeMock.tabs.query.mockResolvedValue([
+      { id: 10, openerTabId: undefined, url: "https://shop.com/cart" },
+      { id: 31, openerTabId: 10, url: "https://a.com/x" },
+      { id: 33, openerTabId: 10, url: "https://b.com/y" },
+    ] as unknown as QueryResolved);
+    chromeMock.tabs.get.mockImplementation(((async (id: number) =>
+      (({
+        31: { id: 31, url: "https://a.com/x" },
+        33: { id: 33, url: "https://b.com/y" },
+      } as Record<number, unknown>)[id])) as unknown as GetImpl));
+    const { ctx, calls } = baseCtx();
+    const r = await switchToNewTabTool.handler({}, ctx);
+    expect(r.success).toBe(true);
+    expect(calls.focus).toBe(33); // highest tabId
+  });
+
+  it("returns a non-fatal observation when no child tab exists", async () => {
+    chromeMock.tabs.query.mockResolvedValue([
+      { id: 10, openerTabId: undefined, url: "https://shop.com" },
+    ] as unknown as QueryResolved);
+    const { ctx } = baseCtx();
+    const r = await switchToNewTabTool.handler({}, ctx);
+    expect(r.success).toBe(true);
+    expect(r.observation).toContain("未检测到新标签页");
+  });
+});
