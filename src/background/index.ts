@@ -98,9 +98,11 @@ import {
   handleRecordingFinish,
   handleRecordingDiscard,
   handleRecordingTabClosed,
+  handleRecordingTabCreated,
   handleRecordingNavCommitted,
   handleRecordingHistoryStateUpdated,
   abortRecordingForSession,
+  removeFlowTab,
   recordingState,
 } from "./recording-orchestrator";
 import type { RecordingSession } from "@/lib/recording/types";
@@ -260,7 +262,9 @@ function wakePanelToReconnectForQuote(): void {
 function findRecordingSessionByTabId(tabId: number | undefined): RecordingSession | null {
   if (tabId === undefined) return null;
   for (const sess of recordingState.values()) {
-    if (sess.tabId === tabId) return sess;
+    // v1.1 cross-tab — flow-set aware: any tab adopted into the recording flow
+    // (start tab ∪ opener-chain spawned tabs), not just the start tab.
+    if (sess.tabRefByTabId.has(tabId)) return sess;
   }
   return null;
 }
@@ -1764,13 +1768,22 @@ if (chrome.webNavigation) {
   });
 }
 
-// Recording v1 — abort recording when the recorded tab closes.
+// Recording v1.1 — adopt tabs spawned by a tab already in a recording flow-set
+// (target=_blank / window.open / popups, cross-window included). Capture is
+// NOT injected here — it lands on the new tab's first webNavigation.onCommitted
+// (the existing handler), which fires after about:blank is replaced.
+chrome.tabs.onCreated.addListener((tab) => {
+  handleRecordingTabCreated(tab);
+});
+
+// Recording v1.1 — drop a closed tab from its flow-set; abort only when the
+// flow-set becomes empty (closing a spawned child no longer kills recording).
 chrome.tabs.onRemoved.addListener((closedTabId) => {
   for (const sess of Array.from(recordingState.values())) {
-    if (sess.tabId !== closedTabId) continue;
+    if (!sess.tabRefByTabId.has(closedTabId)) continue;
     const port = portsBySession.get(sess.sessionId);
     if (port) handleRecordingTabClosed(port, closedTabId);
-    else recordingState.delete(sess.sessionId);
+    else removeFlowTab(sess, closedTabId); // no panel port: drop from set silently
   }
 });
 
