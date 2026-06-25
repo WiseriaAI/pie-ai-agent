@@ -40,4 +40,6 @@ eval/.venv/
 __pycache__/
 
 # Claude Code worktrees + local artifacts
-.claude/
+.claude/*
+# ...except shared plugin config, which Claude Code on the web reads to auto-install plugins
+!.claude/settings.json
