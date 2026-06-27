@@ -126,6 +126,7 @@ Issues live as GitHub issues in `WiseriaAI/pie-ai-agent`, managed via the `gh` C
 - **阶段（分诊产出 + 流转）**：`need-design`（待人牵头产品化设计）/ `need-confirm`（方案已出，待人拍板选项）/ `ready-for-implement`（已充分指定，可交 Loop 实现）。
 - **人工信号**：`confirmed` —— 人对 `need-confirm` 拍板后打上，routine 据此补最终方案并推进到 `ready-for-implement`。这是唯一的「人→机」放行闸，不靠机器猜评论。
 - **下游状态（实现链产出，分诊只识别、跳过、绝不回退）**：`agent-handling`（Loop 处理中）/ `PR`（已提 PR 等合入）。
+- **PR 复审（Step4 Reviewer loop 产出 + 人工信号）**：`need-to-solve`（Reviewer 要求改）/ `solved`（implementer 改完待复审）/ `need-human-test`（过 review 待人真机）/ `human-approved`（人真机过、可合，**由人打**）。Reviewer 与 implementer 同一 gh 身份故 review 走 `gh pr comment`、状态靠标签；无需真机的 PR 由 Reviewer `--admin` 直合 main，`need-to-solve` 由 implementer loop 优先接走（不单设 PR Solver）。
 - **分类 / 分级**：`bug` | `feature` ＋ `P0` | `P1` | `P2`。
 
 ### Domain docs
@@ -153,12 +154,15 @@ Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agent
 **任务源 = GitHub issue + 标签状态机**（见上方 Triage labels）。多数轻量 / 无须人为决策的工作由云端 routine / Loop 经标签流转推进，Loop 之间靠 issue/PR 上的标签与评论交接：
 
 ```
-新需求 → issue（分诊 routine 自动归类/分级/定阶段）
-       → ready-for-implement → 云端 Loop 取走实现 → agent-handling → PR → 人 review / merge
-       └ need-confirm → 人打 confirmed 拍板 → routine 补方案 → ready-for-implement
+新需求 → issue（Step1 分诊 routine 自动归类/分级/定阶段）
+       → ready-for-implement → Step3 implementer 实现 → agent-handling → PR
+            → Step4 Reviewer 复审：需改→need-to-solve（implementer 接回修→solved→复审↺）
+                                  过·无需真机→admin 直合 main
+                                  过·需真机→need-human-test→人验收打 human-approved→Reviewer 合
+       └ need-confirm → 人打 confirmed 拍板 → Step2 routine 补方案 → ready-for-implement
 ```
 
-人在这条链上**只在 `need-confirm` 处拍板**（打 `confirmed`），其余交给云端。
+人在这条链上的人工闸有两处：`need-confirm` 处拍板（打 `confirmed`）、与 PR 的真机验收（`need-human-test` → 打 `human-approved`）；其余交给云端。
 
 **默认路径**：不开 brainstorm/grill/plan 仪式。把需求写成 issue（或让分诊 routine 接住），让云端 Loop 实现。本地 session 多做的是「把工作落成清晰的 issue」与「review/merge PR」，**不是亲自实现**。
 
