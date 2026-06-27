@@ -159,7 +159,7 @@ Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agent
             → Step4 Reviewer 复审：需改→need-to-solve（implementer 接回修→solved→复审↺）
                                   过·无需真机→admin 直合 main
                                   过·需真机→need-human-test→人验收打 human-approved→Reviewer 合
-       └ need-confirm → 人打 confirmed 拍板 → Step2 routine 补方案 → ready-for-implement
+       └ need-confirm → 人打 confirmed 拍板 → Step1 routine 补方案 → ready-for-implement
 ```
 
 人在这条链上的人工闸有两处：`need-confirm` 处拍板（打 `confirmed`）、与 PR 的真机验收（`need-human-test` → 打 `human-approved`）；其余交给云端。
