@@ -10,7 +10,7 @@
 | 分级 | `P0` / `P1` / `P2` | 优先级（routine 按需创建） |
 | 阶段 | `need-design` | 需要人牵头做产品化设计（设计阶段） |
 | 阶段 | `need-confirm` | 方案已提出，待人拍板选项 / 取舍后进入实现 |
-| 阶段 | `ready-for-agent` | 已充分指定，可交云端 Loop 实现 |
+| 阶段 | `ready-for-implement` | 已充分指定，可交云端 Loop 实现 |
 | 人工信号 | `confirmed` | 人对 `need-confirm` 拍板后打上；routine 据此补最终方案并推进 |
 | 下游状态 | `agent-handling` | 已有 Loop 处理中 |
 | 下游状态 | `PR` | 已提 PR，等待合入 |
@@ -21,7 +21,7 @@
 新 issue ─分诊─► 分类(bug/feature) + 分级(P0/P1/P2) + 阶段
                               │
         ┌─────────────────────┼─────────────────────┐
-   need-design           need-confirm          ready-for-agent
+   need-design           need-confirm          ready-for-implement
    (待人设计)        (人打 confirmed 拍板)            │
                           │ routine 读 confirmed     │
                           │ 补方案、去 need-confirm   │

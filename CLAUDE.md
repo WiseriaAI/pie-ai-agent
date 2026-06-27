@@ -123,8 +123,8 @@ Issues live as GitHub issues in `WiseriaAI/pie-ai-agent`, managed via the `gh` C
 ### Triage labels（issue 状态机 = 任务的事实源）
 
 云端分诊 routine 与实现链共用一套标签状态机；它就是「某个任务现在走到哪了」的唯一事实源，权威清单见 `docs/agents/triage-labels.md`。
-- **阶段（分诊产出 + 流转）**：`need-design`（待人牵头产品化设计）/ `need-confirm`（方案已出，待人拍板选项）/ `ready-for-agent`（已充分指定，可交 Loop 实现）。
-- **人工信号**：`confirmed` —— 人对 `need-confirm` 拍板后打上，routine 据此补最终方案并推进到 `ready-for-agent`。这是唯一的「人→机」放行闸，不靠机器猜评论。
+- **阶段（分诊产出 + 流转）**：`need-design`（待人牵头产品化设计）/ `need-confirm`（方案已出，待人拍板选项）/ `ready-for-implement`（已充分指定，可交 Loop 实现）。
+- **人工信号**：`confirmed` —— 人对 `need-confirm` 拍板后打上，routine 据此补最终方案并推进到 `ready-for-implement`。这是唯一的「人→机」放行闸，不靠机器猜评论。
 - **下游状态（实现链产出，分诊只识别、跳过、绝不回退）**：`agent-handling`（Loop 处理中）/ `PR`（已提 PR 等合入）。
 - **分类 / 分级**：`bug` | `feature` ＋ `P0` | `P1` | `P2`。
 
@@ -154,8 +154,8 @@ Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agent
 
 ```
 新需求 → issue（分诊 routine 自动归类/分级/定阶段）
-       → ready-for-agent → 云端 Loop 取走实现 → agent-handling → PR → 人 review / merge
-       └ need-confirm → 人打 confirmed 拍板 → routine 补方案 → ready-for-agent
+       → ready-for-implement → 云端 Loop 取走实现 → agent-handling → PR → 人 review / merge
+       └ need-confirm → 人打 confirmed 拍板 → routine 补方案 → ready-for-implement
 ```
 
 人在这条链上**只在 `need-confirm` 处拍板**（打 `confirmed`），其余交给云端。
@@ -167,8 +167,8 @@ Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agent
 1. `superpowers:brainstorming` — 产出 spec → `docs/specs/<date>-<slug>.md`
 2. `grill-with-docs` — 压测 spec，锐化出的术语/决策写进 `CONTEXT.md` 与 `docs/adr/`（可打回 1）
 3. `prototype`（**可选**）— 仅当含状态机/数据模型/UI 方向这类不确定性时才造抛弃式原型，发现回流改 spec
-4. **落 issue（按 Issue 规范，不走 `to-issues` skill）** — 把定稿 spec 拆成 tracer-bullet 垂直切片，用 `gh` 手工建 issue（只写 what + 验收标准），照 Triage labels 打分类/分级。**设计已定，issue 直接打 `ready-for-agent`**：跳过 `need-design` / `need-confirm`（那两阶段是给未经设计的新需求分诊用的，不再过云端 routine）。实现 plan（`superpowers:writing-plans` → `docs/plans/`）按需写，作为 issue 的实现参考。
-5. **交棒云端 Loop 实现** —— 链路到此为止，本地不接着一把梭：Loop 取 `ready-for-agent` → `agent-handling` → PR → 人 review/merge。
+4. **落 issue（按 Issue 规范，不走 `to-issues` skill）** — 把定稿 spec 拆成 tracer-bullet 垂直切片，用 `gh` 手工建 issue（只写 what + 验收标准），照 Triage labels 打分类/分级。**设计已定，issue 直接打 `ready-for-implement`**：跳过 `need-design` / `need-confirm`（那两阶段是给未经设计的新需求分诊用的，不再过云端 routine）。实现 plan（`superpowers:writing-plans` → `docs/plans/`）按需写，作为 issue 的实现参考。
+5. **交棒云端 Loop 实现** —— 链路到此为止，本地不接着一把梭：Loop 取 `ready-for-implement` → `agent-handling` → PR → 人 review/merge。
    - 确需本地亲自实现时才走 `superpowers:subagent-driven-development`（每 task TDD）→ `verification-before-completion`（`pnpm test`/`typecheck`/`build` 拿证据）→ `requesting-code-review` → `gh issue close`；收尾走 PR（main 受保护，`gh`，先 `gh auth switch --user WiseriaAI`，`superpowers:finishing-a-development-branch`）。⚠️ subagent cwd 不随 worktree 切换，派活 prompt 须强制 `cd <worktree 绝对路径>`。
 
 **判据**：拿不准是不是「重点项目」→ 默认当轻量任务，落 issue 交云端。仪式是例外，不是 happy path。
