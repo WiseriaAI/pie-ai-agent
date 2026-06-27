@@ -436,6 +436,63 @@ export function safeParseOrigin(url: string): string | null {
   }
 }
 
+/**
+ * Issue #231 — page-less start sentinel.
+ *
+ * When a fresh task starts with no operable active tab at all (every window
+ * minimized, no tab focused), the loop pins to this sentinel instead of
+ * hard-stopping. The per-iteration body recognizes it BEFORE chrome.tabs.get
+ * (which would throw on -1) and surfaces a "no page yet — use open_url"
+ * advisory notice. Once open_url appends a real pin, readFocusFromStorage
+ * replaces the sentinel with the live focused tab on the next iteration.
+ */
+export const NO_PAGE_SENTINEL = -1;
+
+/**
+ * Issue #231 — startup pin resolution for the legacy active-tab fallback
+ * (sessions without a panel-captured pinnedTabs[]).
+ *
+ * Previously the loop HARD-STOPPED here ("Cannot run agent on this page type"
+ * / "unresolvable origin" / "Failed to get active tab") whenever the active
+ * tab was restricted, had no usable origin, or was absent. That conflated
+ * "this page can't be operated on" with "the agent can't run at all" — so a
+ * chat opened on chrome://, the new-tab page, or settings was killed on the
+ * spot, even though the task ("open amazon, search headphones") never needed
+ * that page.
+ *
+ * The per-iteration advisory gate (interpretPinnedTabUrl) already tolerates a
+ * restricted / diverged focused tab by emitting a <system_notice> and letting
+ * the LLM recover via open_url. Startup now matches that semantics and NEVER
+ * terminates. For ALL schemes uniformly:
+ *
+ *   - Operable tab (real id, non-restricted, resolvable origin)
+ *       → pin to it with its origin (unchanged historical behavior).
+ *   - Restricted / unresolvable-origin tab that still has a real id
+ *       (chrome://, new-tab page, file://, settings, …)
+ *       → pin to the tab with an EMPTY origin. The first iteration's gate sees
+ *         a restricted/diverged page and fires an advisory notice → the LLM
+ *         opens a real page via open_url. (interpretPinnedTabUrl checks
+ *         isRestrictedUrl before comparing origin, so the empty pinnedOrigin
+ *         is never consulted on the restricted branch.)
+ *   - No active tab at all
+ *       → NO_PAGE_SENTINEL (see above).
+ *
+ * Pure (no IO) so it is unit-testable without the Chrome-coupled loop. Whether
+ * to operate on the resolved tab is still each tool's call (read_page on a
+ * chrome:// tab still returns a clear error); only the start-time hard stop is
+ * removed.
+ */
+export function resolveStartupPin(
+  tab: { id?: number; url?: string } | undefined,
+): { pinnedTabId: number; pinnedOrigin: string } {
+  if (typeof tab?.id === "number" && tab.id >= 0) {
+    const origin =
+      tab.url && !isRestrictedUrl(tab.url) ? safeParseOrigin(tab.url) : null;
+    return { pinnedTabId: tab.id, pinnedOrigin: origin ?? "" };
+  }
+  return { pinnedTabId: NO_PAGE_SENTINEL, pinnedOrigin: "" };
+}
+
 export type InterpretPinnedTabUrlResult =
   | { kind: "ok"; url: string }
   | {
@@ -1195,37 +1252,18 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
     pinnedTabId = focusedAtStart.tabId;
     pinnedOrigin = focusedAtStart.origin;
   } else {
+    // Issue #231 — start-time hard stops removed. resolveStartupPin never
+    // terminates: an operable tab pins normally; a restricted / origin-less
+    // tab pins with an empty origin (the per-iteration advisory gate then
+    // nudges the LLM to open_url); a missing tab (or a tabs.query failure)
+    // becomes the page-less NO_PAGE_SENTINEL. The agent starts regardless and
+    // recovers through the existing advisory channel.
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (!tab?.id || !tab.url || isRestrictedUrl(tab.url)) {
-        await emitDone({
-          type: "agent-done-task",
-          success: false,
-          summary: "Cannot run agent on this page type",
-          stepCount: 0,
-        }, "abort");
-        return;
-      }
-      const origin = safeParseOrigin(tab.url);
-      if (!origin) {
-        await emitDone({
-          type: "agent-done-task",
-          success: false,
-          summary: "Cannot run agent on this page (unresolvable origin)",
-          stepCount: 0,
-        }, "abort");
-        return;
-      }
-      pinnedTabId = tab.id;
-      pinnedOrigin = origin;
+      ({ pinnedTabId, pinnedOrigin } = resolveStartupPin(tab));
     } catch {
-      await emitDone({
-        type: "agent-done-task",
-        success: false,
-        summary: "Failed to get active tab",
-        stepCount: 0,
-      }, "abort");
-      return;
+      pinnedTabId = NO_PAGE_SENTINEL;
+      pinnedOrigin = "";
     }
   }
 
@@ -1490,7 +1528,22 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // Trusted runtime notices for this step (navigation divergence + soft
       // budget nudge). Joined into a single <system_notice> block below.
       const sysNotices: string[] = [];
-      try {
+      if (pinnedTabId === NO_PAGE_SENTINEL) {
+        // Issue #231 — the task started page-less (no operable active tab).
+        // There is no tab to inspect; chrome.tabs.get(-1) would throw. Nudge
+        // the LLM to open one. open_url appends a pin, so the next iteration's
+        // readFocusFromStorage replaces the sentinel with the real focused tab
+        // and this branch is never taken again.
+        currentUrl = "(no page open yet)";
+        pageTitle = "";
+        if (lastNoticeKey !== "no-page") {
+          sysNotices.push(
+            `This session has no page open yet. Use \`open_url\` to open the ` +
+              `page you need, then continue. ${NOTICE_TAIL}`,
+          );
+          lastNoticeKey = "no-page";
+        }
+      } else try {
         const currentTab = await chrome.tabs.get(pinnedTabId);
         const decision = await interpretPinnedTabUrl({
           tab: currentTab,
