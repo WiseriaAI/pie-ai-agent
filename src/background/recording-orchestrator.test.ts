@@ -8,8 +8,15 @@ import {
   handleRecordingTabClosed,
   handleRecordingNavCommitted,
   abortRecordingForSession,
+  registerFlowTab,
+  recordFlowTabUrl,
+  removeFlowTab,
 } from "./recording-orchestrator";
-import type { CapturedActionPayload, RecordedAction } from "@/lib/recording/types";
+import type {
+  CapturedActionPayload,
+  RecordedAction,
+  RecordingSession,
+} from "@/lib/recording/types";
 
 const mockExec = vi.fn().mockResolvedValue([{ result: undefined }]);
 const mockTabQuery = vi.fn().mockResolvedValue([{ id: 1, url: "https://example.com/x", active: true }]);
@@ -257,5 +264,74 @@ describe("recording-orchestrator", () => {
     expect(sess.actions).toHaveLength(1);
     expect(sess.actions[0]!.type).toBe("navigate");
     expect(mockExec).toHaveBeenCalled();
+  });
+
+  it("handleRecordingNavCommitted ignores about:blank transient (window.open) instead of aborting", async () => {
+    await handleRecordingStart(port as unknown as chrome.runtime.Port, {
+      type: "recording-start",
+      sessionId: "S11",
+    });
+    const sess = recordingState.get("S11")!;
+    registerFlowTab(sess, 2); // spawned child tab in the flow-set
+    mockExec.mockClear();
+    port.postMessage.mockClear();
+
+    // window.open('about:blank') makes the child commit to about:blank first.
+    await handleRecordingNavCommitted(port as unknown as chrome.runtime.Port, {
+      tabId: 2,
+      url: "about:blank",
+      frameId: 0,
+    });
+
+    expect(recordingState.has("S11")).toBe(true); // not aborted
+    expect(port.postMessage).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "recording-aborted" }),
+    );
+    expect(sess.actions).toHaveLength(0); // transient, not a real navigation
+    expect(mockExec).not.toHaveBeenCalled(); // capture waits for the real url
+  });
+});
+
+function flowSess(): RecordingSession {
+  return {
+    sessionId: "s1",
+    tabId: 10,
+    origin: "https://shop.com",
+    startedAt: 0,
+    tabRefByTabId: new Map([[10, 0]]),
+    nextTabRef: 1,
+    tabRegistry: { 0: { origin: "https://shop.com", firstUrl: "https://shop.com/cart" } },
+    actions: [],
+  };
+}
+
+describe("recording flow-set helpers", () => {
+  it("registerFlowTab assigns sequential tabRefs and is idempotent", () => {
+    const s = flowSess();
+    const ref = registerFlowTab(s, 11);
+    expect(ref).toBe(1);
+    expect(registerFlowTab(s, 11)).toBe(1); // idempotent
+    expect(registerFlowTab(s, 12)).toBe(2);
+    expect(s.nextTabRef).toBe(3);
+  });
+
+  it("recordFlowTabUrl fills registry origin once, then leaves it", () => {
+    const s = flowSess();
+    registerFlowTab(s, 11);
+    recordFlowTabUrl(s, 11, "https://pay.stripe.com/checkout?x=1");
+    expect(s.tabRegistry[1]).toEqual({
+      origin: "https://pay.stripe.com",
+      firstUrl: "https://pay.stripe.com/checkout?x=1",
+    });
+    recordFlowTabUrl(s, 11, "https://pay.stripe.com/success");
+    expect(s.tabRegistry[1].firstUrl).toBe("https://pay.stripe.com/checkout?x=1"); // unchanged
+  });
+
+  it("removeFlowTab reports empty only when the last tab leaves", () => {
+    const s = flowSess();
+    registerFlowTab(s, 11);
+    expect(removeFlowTab(s, 11)).toEqual({ removed: true, empty: false });
+    expect(removeFlowTab(s, 10)).toEqual({ removed: true, empty: true });
+    expect(removeFlowTab(s, 99)).toEqual({ removed: false, empty: true });
   });
 });

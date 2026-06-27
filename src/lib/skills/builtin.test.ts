@@ -42,4 +42,12 @@ describe("BUILT_IN_SKILL_PACKAGES", () => {
       expect(p.files["SKILL.md"]).not.toContain("capabilities:");
     }
   });
+
+  it("create_skill_from_recording instructs preserving cross-tab steps", () => {
+    const pkg = BUILT_IN_SKILL_PACKAGES.find((p) => p.id === "create_skill_from_recording");
+    expect(pkg).toBeTruthy();
+    const text = JSON.stringify(pkg);
+    expect(text).toContain("switch_to_new_tab");
+    expect(text).toMatch(/标签页|tab/);
+  });
 });

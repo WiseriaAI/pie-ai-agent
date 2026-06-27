@@ -47,8 +47,19 @@ export interface RecordedAction {
    *  serialize 据此追加"回放前可能需先悬停/点击触发器展开"的提示——因为这类项
    *  在回放快照里常不可见或无 data-pie-idx，LLM 需先揭示才能操作。 */
   fromPopup?: boolean;
+  /** v1.1 cross-tab —— 该 action 发生在流程标签页集合里的哪个标签页（内部 key，
+   *  按标签页出现顺序分配，0=起始页）。单标签页录制时省略。运行期不靠它（会漂），
+   *  仅供 serialize 推断 spawn/switch 转换。 */
+  tabRef?: number;
   timestamp: number;
 }
+
+/**
+ * v1.1 cross-tab —— tabRef → 标签页身份。origin 作运行期匹配 hint，firstUrl 仅可读。
+ * 由 recording-orchestrator 在标签页首次 commit 时填充；serialize 作"本流程用到哪些
+ * 标签页"的清单参考（逐步精确 origin 取自每条 action 自带的 url，见 serialize.ts）。
+ */
+export type TabRegistry = Record<number, { origin: string; firstUrl: string }>;
 
 /**
  * 录制会话。**仅活在 SW 内存里**。SW restart / panel disconnect / session 切换
@@ -60,12 +71,18 @@ export interface RecordedAction {
 export interface RecordingSession {
   /** 绑定到 active sessionId（M3 multi-session sandbox）。 */
   sessionId: string;
-  /** 录制目标 tab。v1 收窄到只录此单 tab + 同 tab 内 navigation。
-   *  Cross-tab 录制（open_url 创建的新 tab、用户手动新开 tab）deferred 到 v1.1。 */
+  /** 起始标签页。v1.1 起它只是流程集合的种子 + recording-started 广播展示用；
+   *  录制逻辑改用下面的流程集合判定归属。 */
   tabId: number;
-  /** 起始 origin。cross-origin nav 不抛错——record 一条 navigate action 续录。 */
+  /** 起始 origin。惰性：仅 recording-started 广播展示用，录制逻辑不读它。 */
   origin: string;
   startedAt: number;
+  /** v1.1 cross-tab —— 流程标签页集合：tabId → tabRef（出现顺序，0=起始页）。 */
+  tabRefByTabId: Map<number, number>;
+  /** 下一个待分配的 tabRef。 */
+  nextTabRef: number;
+  /** tabRef → 标签页身份。标签页首次 commit 时填充。 */
+  tabRegistry: TabRegistry;
   actions: RecordedAction[];
 }
 

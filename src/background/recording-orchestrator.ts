@@ -16,7 +16,7 @@ import type {
   RecordingDiscardMessage,
   PortMessageToPanel,
 } from "@/types";
-import type { RecordedAction, RecordingSession } from "@/lib/recording/types";
+import type { RecordedAction, RecordingSession, TabRegistry } from "@/lib/recording/types";
 import { installCaptureListener } from "@/lib/recording/capture";
 import { serialize, PromptTooLargeError } from "@/lib/recording/serialize";
 
@@ -33,6 +33,42 @@ const RESTRICTED_URL_PREFIXES = [
 
 /** Module-level state: sessionId → RecordingSession. **In-memory only.** */
 export const recordingState = new Map<string, RecordingSession>();
+
+/** 把标签页纳入流程集合，分配/返回 tabRef（幂等）。registry 条目先占位，
+ *  origin 待 recordFlowTabUrl 在 commit 时填。 */
+export function registerFlowTab(sess: RecordingSession, tabId: number): number {
+  const existing = sess.tabRefByTabId.get(tabId);
+  if (existing !== undefined) return existing;
+  const ref = sess.nextTabRef++;
+  sess.tabRefByTabId.set(tabId, ref);
+  if (!sess.tabRegistry[ref]) sess.tabRegistry[ref] = { origin: "", firstUrl: "" };
+  return ref;
+}
+
+/** 标签页首次 commit 时填 registry 的 origin/firstUrl（只填一次，避免页内导航覆盖）。 */
+export function recordFlowTabUrl(sess: RecordingSession, tabId: number, url: string): void {
+  const ref = sess.tabRefByTabId.get(tabId);
+  if (ref === undefined) return;
+  const entry = sess.tabRegistry[ref];
+  if (!entry || entry.origin) return; // already filled
+  let origin = "";
+  try {
+    const o = new URL(url).origin;
+    origin = !o || o === "null" ? "" : o;
+  } catch {
+    origin = "";
+  }
+  if (origin) sess.tabRegistry[ref] = { origin, firstUrl: url };
+}
+
+/** 从流程集合移除标签页，返回是否移除 + 集合是否已空。 */
+export function removeFlowTab(
+  sess: RecordingSession,
+  tabId: number,
+): { removed: boolean; empty: boolean } {
+  const removed = sess.tabRefByTabId.delete(tabId);
+  return { removed, empty: sess.tabRefByTabId.size === 0 };
+}
 
 function postToPanel(port: chrome.runtime.Port, msg: PortMessageToPanel) {
   try {
@@ -125,6 +161,9 @@ export async function handleRecordingStart(
     tabId: tab.id!,
     origin,
     startedAt: Date.now(),
+    tabRefByTabId: new Map([[tab.id!, 0]]),
+    nextTabRef: 1,
+    tabRegistry: { 0: { origin, firstUrl: url } },
     actions: [],
   };
   recordingState.set(msg.sessionId, session);
@@ -167,7 +206,7 @@ async function injectCapture(tabId: number): Promise<void> {
 function findSessionByTabId(tabId: number | undefined): RecordingSession | null {
   if (tabId === undefined) return null;
   for (const sess of recordingState.values()) {
-    if (sess.tabId === tabId) return sess;
+    if (sess.tabRefByTabId.has(tabId)) return sess;
   }
   return null;
 }
@@ -182,6 +221,7 @@ export function handleRecordingAction(
 
   const action: RecordedAction = {
     ...msg.payload,
+    tabRef: sess.tabRefByTabId.get(sender.tab?.id ?? -1),
     timestamp: nextActionId(),
   };
   sess.actions.push(action);
@@ -233,7 +273,7 @@ export async function handleRecordingFinish(
 
   let serialized;
   try {
-    serialized = serialize(sess.actions);
+    serialized = serialize(sess.actions, sess.tabRegistry);
   } catch (e) {
     if (e instanceof PromptTooLargeError) {
       postToPanel(port, {
@@ -273,11 +313,25 @@ export function abortRecordingForSession(
   postToPanel(port, { type: "recording-aborted", sessionId, reason });
 }
 
+/** opener ∈ 某 session 流程集合的新标签页（含跨窗口）→ 纳入该 session 流程集合。
+ *  capture 注入推迟到该标签页首次 onCommitted（避开 about:blank 被冲掉）。 */
+export function handleRecordingTabCreated(tab: chrome.tabs.Tab): RecordingSession | null {
+  const opener = tab.openerTabId;
+  if (opener === undefined || tab.id === undefined) return null;
+  for (const sess of recordingState.values()) {
+    if (sess.tabRefByTabId.has(opener)) {
+      registerFlowTab(sess, tab.id);
+      return sess;
+    }
+  }
+  return null;
+}
+
 export function handleRecordingTabClosed(port: chrome.runtime.Port, closedTabId: number): void {
   for (const sess of Array.from(recordingState.values())) {
-    if (sess.tabId === closedTabId) {
-      abortRecordingForSession(port, sess.sessionId, "tab-closed");
-    }
+    if (!sess.tabRefByTabId.has(closedTabId)) continue;
+    const { empty } = removeFlowTab(sess, closedTabId);
+    if (empty) abortRecordingForSession(port, sess.sessionId, "tab-closed");
   }
 }
 
@@ -288,6 +342,12 @@ export async function handleRecordingNavCommitted(
   if (details.frameId !== 0) return;
   const sess = findSessionByTabId(details.tabId);
   if (!sess) return;
+
+  // window.open('about:blank') / popup placeholders commit to about:blank first,
+  // then navigate to the real url. This transient blank is NOT a navigation to a
+  // restricted page — skip it and wait for the real url's onCommitted, else the
+  // whole flow aborts (OAuth/payment popups use exactly this pattern).
+  if (details.url === "about:blank") return;
 
   if (RESTRICTED_URL_PREFIXES.some((p) => details.url.startsWith(p))) {
     abortRecordingForSession(port, sess.sessionId, "csp-blocked");
@@ -308,6 +368,7 @@ export async function handleRecordingNavCommitted(
     action,
   });
 
+  recordFlowTabUrl(sess, details.tabId, details.url);
   try {
     await injectCapture(details.tabId);
   } catch {
