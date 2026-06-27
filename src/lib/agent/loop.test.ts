@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import "@/test/setup";
+import { chromeMock } from "@/test/setup";
 import type { AgentMessage, ContentBlock } from "@/lib/model-router";
 import type { ChatMessage } from "@/lib/model-router";
 import type { SessionAgentState, SessionMeta } from "@/lib/sessions/types";
@@ -1375,6 +1375,150 @@ describe("v1.5 Task 6+7 — readFocusFromStorage (integration regression)", () =
     expect(result.success).toBe(true);
     expect(setCurrentFocusTabId).toHaveBeenCalledWith(50);
     expect(result.observation).toContain("focus changed to tab 50");
+  });
+});
+
+// ── Issue #233 — focused-tab fail-over to a surviving pinned tab ──────────────
+//
+// The loop's lifeline is bound to the FOCUSED tab only. When the focused tab is
+// closed but other pinned tabs are still alive, readFocusFromStorage must
+// silently switch focus to the first surviving pinned tab and persist it — so
+// the loop keeps running on a real tab instead of stalling on a tab-closed
+// notice (which the LLM tends to answer with `fail`, surfacing as "exit"). Only
+// when EVERY pinned tab is closed does it fall through to the tab-closed path.
+//
+// resolveFocusedPin stays pure (no Chrome access); all liveness lives here, in
+// the async helper, which is exactly what the loop calls each iteration.
+describe("Issue #233 — readFocusFromStorage liveness fail-over", () => {
+  const baseMeta = (overrides: Partial<SessionMeta>): SessionMeta => ({
+    id: "sess-233",
+    createdAt: 1000,
+    lastAccessedAt: 1000,
+    status: "active",
+    messages: [],
+    ...overrides,
+  });
+
+  it("fails over to a surviving pinned tab when the focused tab is closed", async () => {
+    const sessionId = "sess-233-failover";
+    await setSessionMeta(
+      baseMeta({
+        id: sessionId,
+        pinMode: "task",
+        pinnedTabs: [
+          { tabId: 10, origin: "https://a.example.com" },
+          { tabId: 20, origin: "https://b.example.com" },
+        ],
+      }),
+    );
+    await setSessionAgent(sessionId, {
+      agentMessages: [{ role: "user", content: "x" }],
+      pendingInstructions: [],
+      stepIndex: 1,
+      hasImageContent: false,
+      currentFocusTabId: 10,
+    });
+    // Tab 10 (focused) is closed; tab 20 is still alive.
+    chromeMock.tabs.__tabsById.set(20, { id: 20, url: "https://b.example.com/" });
+
+    const refreshed = await readFocusFromStorage(sessionId, []);
+
+    expect(refreshed.focused?.tabId).toBe(20);
+    expect(refreshed.focused?.origin).toBe("https://b.example.com");
+    expect(refreshed.failover).toEqual({ fromTabId: 10, toTabId: 20 });
+    // The new focus is persisted so the next iteration resolves to it directly.
+    const agent = await getSessionAgent(sessionId);
+    expect(agent?.currentFocusTabId).toBe(20);
+  });
+
+  it("does NOT fail over when the focused tab is still alive", async () => {
+    const sessionId = "sess-233-alive";
+    await setSessionMeta(
+      baseMeta({
+        id: sessionId,
+        pinMode: "task",
+        pinnedTabs: [
+          { tabId: 10, origin: "https://a.example.com" },
+          { tabId: 20, origin: "https://b.example.com" },
+        ],
+      }),
+    );
+    await setSessionAgent(sessionId, {
+      agentMessages: [{ role: "user", content: "x" }],
+      pendingInstructions: [],
+      stepIndex: 1,
+      hasImageContent: false,
+      currentFocusTabId: 10,
+    });
+    chromeMock.tabs.__tabsById.set(10, { id: 10, url: "https://a.example.com/" });
+    chromeMock.tabs.__tabsById.set(20, { id: 20, url: "https://b.example.com/" });
+
+    const refreshed = await readFocusFromStorage(sessionId, []);
+
+    expect(refreshed.focused?.tabId).toBe(10);
+    expect(refreshed.failover).toBeUndefined();
+    const agent = await getSessionAgent(sessionId);
+    expect(agent?.currentFocusTabId).toBe(10);
+  });
+
+  it("returns the dead focused pin unchanged when ALL pinned tabs are closed", async () => {
+    // No tabs seeded → every pinned tab is dead. The loop's own tab-closed
+    // path then surfaces a notice to the LLM (we must NOT invent a new
+    // terminal path, and must NOT persist a bogus focus).
+    const sessionId = "sess-233-all-closed";
+    await setSessionMeta(
+      baseMeta({
+        id: sessionId,
+        pinMode: "task",
+        pinnedTabs: [
+          { tabId: 10, origin: "https://a.example.com" },
+          { tabId: 20, origin: "https://b.example.com" },
+        ],
+      }),
+    );
+    await setSessionAgent(sessionId, {
+      agentMessages: [{ role: "user", content: "x" }],
+      pendingInstructions: [],
+      stepIndex: 1,
+      hasImageContent: false,
+      currentFocusTabId: 10,
+    });
+
+    const refreshed = await readFocusFromStorage(sessionId, []);
+
+    expect(refreshed.focused?.tabId).toBe(10);
+    expect(refreshed.failover).toBeUndefined();
+    const agent = await getSessionAgent(sessionId);
+    expect(agent?.currentFocusTabId).toBe(10);
+  });
+
+  it("skips the closed focused tab and selects the first ALIVE sibling in order", async () => {
+    const sessionId = "sess-233-order";
+    await setSessionMeta(
+      baseMeta({
+        id: sessionId,
+        pinMode: "task",
+        pinnedTabs: [
+          { tabId: 10, origin: "https://a.example.com" },
+          { tabId: 20, origin: "https://b.example.com" },
+          { tabId: 30, origin: "https://c.example.com" },
+        ],
+      }),
+    );
+    await setSessionAgent(sessionId, {
+      agentMessages: [{ role: "user", content: "x" }],
+      pendingInstructions: [],
+      stepIndex: 1,
+      hasImageContent: false,
+      currentFocusTabId: 10,
+    });
+    // Focused (10) and the first sibling (20) are closed; only 30 survives.
+    chromeMock.tabs.__tabsById.set(30, { id: 30, url: "https://c.example.com/" });
+
+    const refreshed = await readFocusFromStorage(sessionId, []);
+
+    expect(refreshed.focused?.tabId).toBe(30);
+    expect(refreshed.failover).toEqual({ fromTabId: 10, toTabId: 30 });
   });
 });
 

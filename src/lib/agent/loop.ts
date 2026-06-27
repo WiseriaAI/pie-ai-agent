@@ -967,20 +967,74 @@ export function prependTimeToLastUserMessage(
  * Exported so the integration regression tests can exercise the exact
  * storage round-trip the loop uses.
  */
+/**
+ * Issue #233 — liveness probe for a pinned tab. `chrome.tabs.get` rejects iff
+ * the tab id no longer maps to a live tab (closed). Any rejection is treated as
+ * "dead" — same semantics the loop's per-iteration `chrome.tabs.get` guard uses
+ * for the tab-closed path. Pure best-effort; never throws.
+ */
+async function isTabAlive(tabId: number): Promise<boolean> {
+  try {
+    await chrome.tabs.get(tabId);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function readFocusFromStorage(
   sessionId: string,
   ctxPinnedTabs: ReadonlyArray<{ tabId: number; origin: string }> | undefined,
 ): Promise<{
   focused: { tabId: number; origin: string } | undefined;
   pinnedTabs: ReadonlyArray<{ tabId: number; origin: string }>;
+  /**
+   * Issue #233 — set when the resolved focused tab was found closed and focus
+   * was automatically switched to a surviving pinned tab (and persisted). The
+   * loop surfaces a one-shot trusted `<system_notice>` so the LLM realigns.
+   */
+  failover?: { fromTabId: number; toTabId: number };
 }> {
   const [agentSnap, metaSnap] = await Promise.all([
     getSessionAgent(sessionId),
     getSessionMeta(sessionId),
   ]);
   const refreshedPins = metaSnap?.pinnedTabs ?? ctxPinnedTabs ?? [];
+  const focused = resolveFocusedPin(refreshedPins, agentSnap?.currentFocusTabId);
+
+  // Issue #233 — the loop's lifeline binds to the FOCUSED tab only. When the
+  // focused tab is closed but other pinned tabs are still alive, fail over to
+  // the first surviving sibling instead of stalling on a tab-closed notice
+  // (which the LLM tends to answer with `fail`, surfacing as "exit"). Liveness
+  // lives here, in the async helper — resolveFocusedPin stays pure (no Chrome
+  // access) and only selects by id, so it cannot know a tab was closed. Only
+  // when EVERY pinned tab is closed do we return the (dead) focused pin
+  // unchanged, letting the loop's existing tab-closed path own the decision
+  // (no new terminal path is introduced; termination stays LLM/abort-driven).
+  if (focused && refreshedPins.length > 0 && !(await isTabAlive(focused.tabId))) {
+    for (const candidate of refreshedPins) {
+      if (candidate.tabId === focused.tabId) continue;
+      if (await isTabAlive(candidate.tabId)) {
+        // Persist the new focus (same write path as focus_tab) so the next
+        // iteration's resolveFocusedPin lands directly on the surviving tab.
+        const cur = await getSessionAgent(sessionId);
+        if (cur) {
+          await setSessionAgent(sessionId, {
+            ...cur,
+            currentFocusTabId: candidate.tabId,
+          });
+        }
+        return {
+          focused: candidate,
+          pinnedTabs: refreshedPins,
+          failover: { fromTabId: focused.tabId, toTabId: candidate.tabId },
+        };
+      }
+    }
+  }
+
   return {
-    focused: resolveFocusedPin(refreshedPins, agentSnap?.currentFocusTabId),
+    focused,
     pinnedTabs: refreshedPins,
   };
 }
@@ -1528,6 +1582,18 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // Trusted runtime notices for this step (navigation divergence + soft
       // budget nudge). Joined into a single <system_notice> block below.
       const sysNotices: string[] = [];
+      // Issue #233 — announce a liveness fail-over once. readFocusFromStorage
+      // switched focus to a surviving pinned tab because the prior focused tab
+      // was closed; tell the LLM so it realigns its context. Inherently
+      // one-shot: the new focus was persisted, so the next iteration resolves
+      // to the (alive) tab and won't re-failover.
+      if (refreshed.failover) {
+        sysNotices.push(
+          `The previously focused tab (id ${refreshed.failover.fromTabId}) was ` +
+            `closed. Focus automatically switched to pinned tab ` +
+            `${refreshed.failover.toTabId} to continue. The task was NOT stopped.`,
+        );
+      }
       if (pinnedTabId === NO_PAGE_SENTINEL) {
         // Issue #231 — the task started page-less (no operable active tab).
         // There is no tab to inspect; chrome.tabs.get(-1) would throw. Nudge
