@@ -126,7 +126,7 @@ Issues live as GitHub issues in `WiseriaAI/pie-ai-agent`, managed via the `gh` C
 - **阶段（分诊产出 + 流转）**：`need-design`（待人牵头产品化设计）/ `need-confirm`（方案已出，待人拍板选项）/ `ready-for-implement`（已充分指定，可交 Loop 实现）。
 - **人工信号**：`confirmed` —— 人对 `need-confirm` 拍板后打上，routine 据此补最终方案并推进到 `ready-for-implement`。这是唯一的「人→机」放行闸，不靠机器猜评论。
 - **下游状态（实现链产出，分诊只识别、跳过、绝不回退）**：`agent-handling`（Loop 处理中）/ `PR`（已提 PR 等合入）。
-- **PR 复审（Step4 Reviewer loop 产出 + 人工信号）**：`need-to-solve`（Reviewer 要求改）/ `solved`（implementer 改完待复审）/ `need-human-test`（过 review 待人真机）/ `human-approved`（人真机过、可合，**由人打**）。Reviewer 与 implementer 同一 gh 身份故 review 走 `gh pr comment`、状态靠标签；无需真机的 PR 由 Reviewer `--admin` 直合 main，`need-to-solve` 由 implementer loop 优先接走（不单设 PR Solver）。
+- **PR 复审（Step4 Reviewer loop 产出 + 人工信号）**：`need-to-solve`（Reviewer 要求改）/ `solved`（implementer 改完待复审）/ `need-human-test`（过 review 待人真机）/ `human-approved`（人真机过、可合，**由人打**）。Reviewer 与 implementer 同一身份故 review 走普通评论、状态靠标签；无需真机的 PR 由 Reviewer 直合 main（main 保护已放宽 0 approve），`need-to-solve` 由 implementer loop 优先接走（不单设 PR Solver）。**云端无 `gh`，4 条 routine 全走 github MCP（`mcp__github__*`）；git 本地操作走 Bash。详见 `docs/agents/triage-labels.md`「云端执行约束」。**
 - **分类 / 分级**：`bug` | `feature` ＋ `P0` | `P1` | `P2`。
 
 ### Domain docs
