@@ -265,6 +265,31 @@ describe("recording-orchestrator", () => {
     expect(sess.actions[0]!.type).toBe("navigate");
     expect(mockExec).toHaveBeenCalled();
   });
+
+  it("handleRecordingNavCommitted ignores about:blank transient (window.open) instead of aborting", async () => {
+    await handleRecordingStart(port as unknown as chrome.runtime.Port, {
+      type: "recording-start",
+      sessionId: "S11",
+    });
+    const sess = recordingState.get("S11")!;
+    registerFlowTab(sess, 2); // spawned child tab in the flow-set
+    mockExec.mockClear();
+    port.postMessage.mockClear();
+
+    // window.open('about:blank') makes the child commit to about:blank first.
+    await handleRecordingNavCommitted(port as unknown as chrome.runtime.Port, {
+      tabId: 2,
+      url: "about:blank",
+      frameId: 0,
+    });
+
+    expect(recordingState.has("S11")).toBe(true); // not aborted
+    expect(port.postMessage).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "recording-aborted" }),
+    );
+    expect(sess.actions).toHaveLength(0); // transient, not a real navigation
+    expect(mockExec).not.toHaveBeenCalled(); // capture waits for the real url
+  });
 });
 
 function flowSess(): RecordingSession {

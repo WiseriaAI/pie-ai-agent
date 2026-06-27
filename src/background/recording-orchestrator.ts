@@ -343,6 +343,12 @@ export async function handleRecordingNavCommitted(
   const sess = findSessionByTabId(details.tabId);
   if (!sess) return;
 
+  // window.open('about:blank') / popup placeholders commit to about:blank first,
+  // then navigate to the real url. This transient blank is NOT a navigation to a
+  // restricted page — skip it and wait for the real url's onCommitted, else the
+  // whole flow aborts (OAuth/payment popups use exactly this pattern).
+  if (details.url === "about:blank") return;
+
   if (RESTRICTED_URL_PREFIXES.some((p) => details.url.startsWith(p))) {
     abortRecordingForSession(port, sess.sessionId, "csp-blocked");
     return;
