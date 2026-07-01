@@ -610,6 +610,15 @@ export const enDict = {
       sessionExpired: "Your session expired — sign in again from Settings → Configs.",
     },
   },
+  engagement: {
+    reviewCard: {
+      title: "Enjoying Pie?",
+      body: "Take a minute to leave a review and share your thoughts, or drop a Star on GitHub — it helps us a lot.",
+      rate: "Leave a review",
+      star: "Star",
+      dismiss: "Maybe later",
+    },
+  },
 } as const satisfies DictNode;
 
 export type EnDict = typeof enDict;

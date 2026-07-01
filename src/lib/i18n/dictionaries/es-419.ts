@@ -610,4 +610,13 @@ export const es419Dict = {
       sessionExpired: "Tu sesión expiró: vuelve a iniciar sesión en Ajustes → Configuraciones.",
     },
   },
+  engagement: {
+    reviewCard: {
+      title: "¿Te gusta Pie?",
+      body: "Tómate un minuto para dejar una reseña y compartir tu opinión, o dale una Star en GitHub — nos ayuda muchísimo.",
+      rate: "Dejar una reseña",
+      star: "Star",
+      dismiss: "Quizás luego",
+    },
+  },
 } satisfies Translations<EnDict>;

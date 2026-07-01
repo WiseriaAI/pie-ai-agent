@@ -40,6 +40,8 @@ import {
   getSessionMeta,
   setSessionMeta,
 } from "@/lib/sessions/storage";
+import EngagementReviewPopup from "@/sidepanel/components/EngagementReviewPopup";
+import { useEngagementPrompt } from "@/sidepanel/hooks/useEngagementPrompt";
 
 const MAX_IMAGES_PER_TURN = 3;
 
@@ -314,6 +316,13 @@ export default function Chat({
   const { showCard: showFileAccess, dismiss: dismissFileAccess } = useFileAccessPrompt(
     sessionId,
   );
+
+  // #244 — review/star nudge. Lowest-priority surface: yields whenever an
+  // error card, the file-access card, or a panel request is showing.
+  const engagementPrompt = useEngagementPrompt({
+    streaming,
+    blocked: !!error || showFileAccess || !!panelRequest,
+  });
   useEffect(() => {
     listInstances().then(setInstances).catch(() => setInstances([]));
     if (!sessionId) return;
@@ -1148,7 +1157,7 @@ After the skill completes, briefly summarize what was created (the user will see
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="relative flex h-full flex-col">
       {/* Pinned origin info bar.
        *  M5 follow-up: provider/model label removed — was getting squeezed by
        *  the new PinnedTabDropdown button. Provider info still visible in
@@ -1585,6 +1594,15 @@ After the skill completes, briefly summarize what was created (the user will see
       )}
       {showFileAccess && (
         <FileAccessCard onDismiss={dismissFileAccess} />
+      )}
+
+      {/* #244 — review/star nudge, floating just above the composer. */}
+      {engagementPrompt.visible && (
+        <EngagementReviewPopup
+          onRate={engagementPrompt.onRate}
+          onStar={engagementPrompt.onStar}
+          onDismiss={engagementPrompt.onDismiss}
+        />
       )}
 
       <Composer

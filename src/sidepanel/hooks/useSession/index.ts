@@ -31,6 +31,7 @@ import {
 import { createPortHandlers } from "./port-handlers";
 import { swPort } from "@/lib/sw-connection/manager";
 import { isFilePdfUrl } from "@/lib/pdf/detect";
+import { bumpEngagement } from "@/lib/engagement";
 import { isRestrictedUrl } from "@/lib/url/restricted";
 import {
   type DownloadResult,
@@ -566,6 +567,10 @@ export function useSession(): UseSession {
         error: null,
         errorKind: null,
       });
+
+      // #244 — local engagement counter. Fire-and-forget: approximate counting
+      // is fine (no lock, doesn't block send). Feeds the review/star nudge.
+      void bumpEngagement();
 
       // Build the LLM-facing chat history (text-only, slash-expanded).
       // Phase 5: the very last user ChatMessage carries image attachments

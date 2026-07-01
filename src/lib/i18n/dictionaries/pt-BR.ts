@@ -610,4 +610,13 @@ export const ptBRDict = {
       sessionExpired: "Sua sessão expirou — entre novamente em Configurações → Configurações.",
     },
   },
+  engagement: {
+    reviewCard: {
+      title: "Está curtindo o Pie?",
+      body: "Reserve um minuto para deixar uma avaliação e compartilhar sua opinião, ou dê uma Star no GitHub — isso ajuda muito.",
+      rate: "Deixar avaliação",
+      star: "Star",
+      dismiss: "Talvez depois",
+    },
+  },
 } satisfies Translations<EnDict>;
