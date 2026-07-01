@@ -181,6 +181,7 @@ export const jaDict = {
     expandFull: "もっと表示",
     collapse: "折りたたむ",
     copyCode: "コピー",
+    copyMessage: "コピー",
     copied: "コピー済み",
     composerPlaceholder: "エージェントにしてほしいことを書くか、/ でスキルを入力…",
     cancelRunningTask: "実行中のタスクをキャンセル",

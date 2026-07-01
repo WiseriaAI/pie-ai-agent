@@ -180,6 +180,7 @@ export const zhCNDict = {
     expandFull: "展开全文",
     collapse: "收起",
     copyCode: "复制",
+    copyMessage: "复制",
     copied: "已复制",
     composerPlaceholder: "告诉 Agent 做什么，或输入 / 选择技能…",
     cancelRunningTask: "取消运行中的任务",

@@ -88,7 +88,8 @@ function buildSegments(messages: readonly DisplayMessage[]): RenderSegment[] {
 }
 import AgentSummary from "./AgentSummary";
 import SessionConfirmCard from "./SessionConfirmCard";
-import MarkdownContent from "./Markdown";
+import MarkdownContent, { CopyIcon } from "./Markdown";
+import { copyRichText } from "./copy-rich-text";
 import SkillSlashPopover from "./SkillSlashPopover";
 import { PendingInstructionList, type PendingItem } from "./PendingInstructionList";
 import { CdpOnboardingCard } from "./CdpOnboardingCard";
@@ -1310,6 +1311,7 @@ After the skill completes, briefly summarize what was created (the user will see
               <MessageBubble
                 message={{ role: "assistant", content: streamingText, thinking: streamingThinking }}
                 thinkingStreaming={!!streamingThinking}
+                streaming
               />
             )}
 
@@ -1696,11 +1698,18 @@ function PageChangedBanner({ onNewTask }: { onNewTask: () => void }) {
 function MessageBubble({
   message,
   thinkingStreaming = false,
+  streaming = false,
 }: {
   message: Extract<DisplayMessage, { role: "user" | "assistant" }>;
   thinkingStreaming?: boolean;
+  streaming?: boolean;
 }) {
   const t = useT();
+  // Ref to the rendered (styled) reply node so the copy button can lift its
+  // innerHTML/innerText onto the clipboard — declared before any early return
+  // so the hook order stays stable across user/assistant branches.
+  const replyRef = useRef<HTMLDivElement>(null);
+  const [copied, setCopied] = useState(false);
   if (message.role === "user") {
     // Issue #38 — quote element screenshots ride along in `attachments` so the
     // LLM sees them as image content blocks, but the bubble already renders a
@@ -1801,8 +1810,49 @@ function MessageBubble({
         <ThinkingSection thinking={message.thinking ?? ""} streaming={thinkingStreaming} />
       )}
       {message.content && (
-        <div className="text-[13px] leading-5 text-fg-1">
-          <MarkdownContent content={message.content} />
+        <div className="group relative text-[13px] leading-5 text-fg-1">
+          {/* Copy the whole reply as rich text (text/html) with a plain-text
+              fallback, so pasting into Word / Notion / Gmail / Feishu keeps
+              bold / lists / headings / tables. Only shown once the reply is
+              complete (`!streaming`) — mirrors the code-block button's
+              hover-to-reveal + "copied" affordance from Markdown.tsx. */}
+          {!streaming && (
+            <button
+              type="button"
+              onClick={async () => {
+                const el = replyRef.current;
+                if (!el) return;
+                const ok = await copyRichText(el.innerHTML, el.innerText);
+                if (!ok) return; // Clipboard unavailable — leave state untouched.
+                setCopied(true);
+                window.setTimeout(() => setCopied(false), 1500);
+              }}
+              aria-label={copied ? t("chat.copied") : t("chat.copyMessage")}
+              className="peer absolute right-0 top-0 z-10 flex items-center justify-center rounded p-1 text-fg-3 opacity-0 transition-opacity duration-200 hover:text-fg-1 focus-visible:opacity-100 group-hover:opacity-100"
+            >
+              {copied ? (
+                <span
+                  key="copied"
+                  className="scale-in whitespace-nowrap text-[10px] font-medium leading-none"
+                >
+                  {t("chat.copied")}
+                </span>
+              ) : (
+                <span key="icon" className="scale-in flex">
+                  <CopyIcon />
+                </span>
+              )}
+            </button>
+          )}
+          {/* Hovering the copy button (`peer`) tints this block so the user
+              sees exactly what will be copied. -mx/-my + equal padding widens
+              the highlight past the text without shifting layout. */}
+          <div
+            ref={replyRef}
+            className="-mx-1.5 -my-1 rounded-md px-1.5 py-1 transition-colors peer-hover:bg-accent-tint"
+          >
+            <MarkdownContent content={message.content} />
+          </div>
         </div>
       )}
     </div>
