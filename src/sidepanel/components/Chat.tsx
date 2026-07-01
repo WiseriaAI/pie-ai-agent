@@ -1828,7 +1828,7 @@ function MessageBubble({
                 window.setTimeout(() => setCopied(false), 1500);
               }}
               aria-label={copied ? t("chat.copied") : t("chat.copyMessage")}
-              className="absolute right-0 top-0 z-10 flex items-center justify-center rounded p-1 text-fg-3 opacity-0 transition-opacity duration-200 hover:text-fg-1 focus-visible:opacity-100 group-hover:opacity-100"
+              className="peer absolute right-0 top-0 z-10 flex items-center justify-center rounded p-1 text-fg-3 opacity-0 transition-opacity duration-200 hover:text-fg-1 focus-visible:opacity-100 group-hover:opacity-100"
             >
               {copied ? (
                 <span
@@ -1844,7 +1844,13 @@ function MessageBubble({
               )}
             </button>
           )}
-          <div ref={replyRef}>
+          {/* Hovering the copy button (`peer`) tints this block so the user
+              sees exactly what will be copied. -mx/-my + equal padding widens
+              the highlight past the text without shifting layout. */}
+          <div
+            ref={replyRef}
+            className="-mx-1.5 -my-1 rounded-md px-1.5 py-1 transition-colors peer-hover:bg-accent-tint"
+          >
             <MarkdownContent content={message.content} />
           </div>
         </div>
