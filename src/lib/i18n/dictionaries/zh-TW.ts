@@ -180,6 +180,7 @@ export const zhTWDict = {
     expandFull: "展開全文",
     collapse: "收合",
     copyCode: "複製",
+    copyMessage: "複製",
     copied: "已複製",
     composerPlaceholder: "告訴 Agent 做什麼，或輸入 / 選擇技能…",
     cancelRunningTask: "取消執行中的任務",

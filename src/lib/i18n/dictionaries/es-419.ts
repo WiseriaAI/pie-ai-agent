@@ -181,6 +181,7 @@ export const es419Dict = {
     expandFull: "Mostrar más",
     collapse: "Mostrar menos",
     copyCode: "Copiar",
+    copyMessage: "Copiar",
     copied: "Copiado",
     composerPlaceholder: "Dile al agente qué hacer, o escribe / para habilidades…",
     cancelRunningTask: "Cancelar tarea en ejecución",

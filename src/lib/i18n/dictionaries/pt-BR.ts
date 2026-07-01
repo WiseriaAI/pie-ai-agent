@@ -181,6 +181,7 @@ export const ptBRDict = {
     expandFull: "Mostrar mais",
     collapse: "Mostrar menos",
     copyCode: "Copiar",
+    copyMessage: "Copiar",
     copied: "Copiado",
     composerPlaceholder: "Diga ao agente o que fazer, ou digite / para habilidades…",
     cancelRunningTask: "Cancelar tarefa em execução",

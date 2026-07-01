@@ -180,6 +180,7 @@ export const enDict = {
     expandFull: "Show more",
     collapse: "Show less",
     copyCode: "Copy",
+    copyMessage: "Copy",
     copied: "Copied",
     composerPlaceholder: "Tell the agent what to do, or type / for skills…",
     cancelRunningTask: "Cancel running task",
