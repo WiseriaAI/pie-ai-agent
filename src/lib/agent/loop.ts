@@ -87,13 +87,19 @@ import { parseTextToolInvocations } from "./text-tool-invocation";
 // the tombstone write by buildSessionAgentTombstone(synth) to prevent the
 // two-write race on the agent key (AD1 fix). No import needed.
 
-// Soft step budget. The loop is NOT bounded by this — termination is the
+// Soft step checkpoint. The loop is NOT bounded by this — termination is the
 // LLM's call (done/fail or a plain-text reply) or a user abort. Once a task
-// runs past this many steps the loop starts injecting an escalating budget
-// nudge so the model self-paces; there is deliberately no absolute hard
-// ceiling (a stuck model burns tokens until the user aborts — accepted
-// tradeoff for full LLM-controlled termination).
+// runs past this many steps the loop starts injecting a neutral periodic
+// self-check (NOT escalating pressure) so a genuinely stuck/looping model can
+// notice and call `fail`; making progress → keep going. There is deliberately
+// no absolute hard ceiling (a stuck model burns tokens until the user aborts —
+// accepted tradeoff for full LLM-controlled termination).
 const SOFT_STEP_BUDGET = 30;
+
+// The checkpoint is re-emitted every this many steps past SOFT_STEP_BUDGET
+// (30 / 50 / 70 …) rather than every step — periodic self-check, not
+// per-step nagging.
+const BUDGET_NUDGE_INTERVAL = 20;
 
 /** #58 — react 段 sliding-window 放宽后的兜底上限。正常由 token 阈值先触发 compaction。 */
 const REACT_BIG_CAP = 60;
@@ -1513,8 +1519,9 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
     // what was persisted.
     const startStepIndex = (ctx.resumedFromStep ?? 0) + 1;
     // Unbounded — only an LLM termination (done/fail/plain-text) or a user
-    // abort exits this loop. The soft budget nudge (SOFT_STEP_BUDGET) steers
-    // the model to wrap up; there is no absolute step ceiling by design.
+    // abort exits this loop. The soft checkpoint (SOFT_STEP_BUDGET) is a
+    // neutral periodic self-check, not a wrap-up signal; there is no absolute
+    // step ceiling by design.
     for (let stepIndex = startStepIndex; !signal.aborted; stepIndex++) {
       lastStepIndex = stepIndex;
       if (signal.aborted) return; // → finally
@@ -1643,16 +1650,21 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         }
       }
 
-      // Soft budget nudge — no hard step ceiling, so once past the soft
-      // budget we escalate pressure to self-terminate. Re-emitted each step
-      // with the live count so the model sees the cost climbing.
-      if (stepIndex >= SOFT_STEP_BUDGET) {
+      // Periodic self-check — no hard step ceiling. Once past the soft
+      // checkpoint we surface a neutral reminder, throttled to every
+      // BUDGET_NUDGE_INTERVAL steps (30 / 50 / 70 …) so it reads as a periodic
+      // self-check rather than per-step pressure to stop.
+      if (
+        stepIndex >= SOFT_STEP_BUDGET &&
+        (stepIndex - SOFT_STEP_BUDGET) % BUDGET_NUDGE_INTERVAL === 0
+      ) {
         sysNotices.push(
-          `You've taken ${stepIndex} steps (soft budget ${SOFT_STEP_BUDGET}). ` +
-            `The runtime will not stop you, but long tasks burn the user's ` +
-            `tokens — wrap up now: finish with \`done\`, or call \`fail\` if ` +
-            `you're blocked. If you're accumulating data, make sure it's in the ` +
-            `scratchpad via \`save_scratchpad\` — don't hold it in your reply.`,
+          `Checkpoint: you've taken ${stepIndex} steps. There's no step limit — ` +
+            `if you're still making progress toward the goal, just keep going. ` +
+            `Only stop early if you're repeating the same action or are genuinely ` +
+            `stuck: then call \`fail\` and tell the user what's blocking. Keep any ` +
+            `data you've gathered in the scratchpad (\`save_scratchpad\`), not in ` +
+            `your reply.`,
         );
       }
 
@@ -1679,8 +1691,9 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // Build observation text
       let observationText = buildObservationMessage(pageTitle, currentUrl);
       // Advisory runtime notices (trusted block, NOT untrusted page data).
-      // Navigation divergence is surfaced once per distinct change; the budget
-      // nudge re-appears past the soft budget.
+      // Navigation divergence is surfaced once per distinct change; the periodic
+      // self-check checkpoint re-appears every BUDGET_NUDGE_INTERVAL steps past
+      // the soft checkpoint.
       if (sysNotices.length > 0) {
         observationText += `\n\n<system_notice>\n${sysNotices.join("\n\n")}\n</system_notice>`;
       }
