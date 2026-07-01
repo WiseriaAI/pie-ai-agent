@@ -610,4 +610,13 @@ export const jaDict = {
       sessionExpired: "セッションの有効期限が切れました。設定 → 構成 から再度ログインしてください。",
     },
   },
+  engagement: {
+    reviewCard: {
+      title: "Pie は気に入りましたか？",
+      body: "少しだけお時間をいただき、レビューでご感想をお寄せいただくか、GitHub で Star を付けていただけると大変助かります。",
+      rate: "レビューを書く",
+      star: "Star",
+      dismiss: "後で",
+    },
+  },
 } satisfies Translations<EnDict>;

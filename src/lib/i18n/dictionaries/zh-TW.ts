@@ -616,4 +616,13 @@ export const zhTWDict = {
       sessionExpired: "登入已過期——請至「設定 → 配置」重新登入。",
     },
   },
+  engagement: {
+    reviewCard: {
+      title: "覺得 Pie 好用嗎？",
+      body: "希望您花一分鐘給我們一個評價並留下建議，或在 GitHub 點一個 Star，這對我們有很大的幫助。",
+      rate: "在商店評價",
+      star: "Star",
+      dismiss: "稍後",
+    },
+  },
 } as const satisfies Translations<EnDict>;
