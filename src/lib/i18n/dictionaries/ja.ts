@@ -63,7 +63,6 @@ export const jaDict = {
       sending: "送信中…",
       sent: "ありがとうございます！フィードバックを送信しました。",
       sendError: "送信できませんでした。もう一度お試しください。",
-      orLabel: "または",
     },
     myConfigs: {
       title: "自分の設定",

@@ -36,8 +36,9 @@ import LanguageSelect from "./LanguageSelect";
 import { useT, getLocale } from "@/lib/i18n";
 import { buildGithubNewIssueUrl, buildFeedbackMailto, type FeedbackEnv } from "@/lib/feedback";
 import { testProviderConnection } from "@/lib/provider-test";
-import { submitFeedback, FeedbackError } from "@/lib/managed-account";
+import { submitFeedback } from "@/lib/managed-account";
 import { readRecentLogs } from "@/lib/log-buffer";
+import { capLogBytes } from "@/lib/log-cap";
 
 interface Props {
   onBack: () => void;
@@ -424,7 +425,9 @@ function SegmentedTabs({ value, onChange }: { value: Tab; onChange: (t: Tab) => 
   );
 }
 
-const MAX_LOG_BLOB = 100_000;
+const MAX_LOG_CHARS = 100_000;
+// 留足 message≤4000 + env + JSON 转义开销，安全落在 256KB 请求体 bodyLimit 内。
+const MAX_LOG_BYTES = 150_000;
 
 export function FeedbackSection({ instances }: { instances: DecryptedInstance[] }) {
   const t = useT();
@@ -446,14 +449,14 @@ export function FeedbackSection({ instances }: { instances: DecryptedInstance[] 
     if (!trimmed || status === "sending") return;
     setStatus("sending");
     try {
-      const logs = includeLogs ? (await readRecentLogs(Date.now())).slice(0, MAX_LOG_BLOB) : undefined;
+      const logs = includeLogs
+        ? capLogBytes((await readRecentLogs(Date.now())).slice(0, MAX_LOG_CHARS), MAX_LOG_BYTES)
+        : undefined;
       await submitFeedback({ message: trimmed, env, ...(logs ? { logs } : {}), ...(managedApiKey ? { apiKey: managedApiKey } : {}) });
       setMessage("");
       setIncludeLogs(false);
       setStatus("sent");
-    } catch (e) {
-      // FeedbackError 携带后端 code；此处只需给用户一个统一的「重试」提示
-      void (e instanceof FeedbackError);
+    } catch {
       setStatus("error");
     }
   }

@@ -63,7 +63,6 @@ export const zhCNDict = {
       sending: "发送中…",
       sent: "谢谢！反馈已发送。",
       sendError: "发送失败，请重试。",
-      orLabel: "或",
     },
     myConfigs: {
       title: "我的配置",

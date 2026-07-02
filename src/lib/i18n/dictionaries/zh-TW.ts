@@ -63,7 +63,6 @@ export const zhTWDict = {
       sending: "傳送中…",
       sent: "謝謝！意見回饋已送出。",
       sendError: "傳送失敗，請再試一次。",
-      orLabel: "或",
     },
     myConfigs: {
       title: "我的設定檔",

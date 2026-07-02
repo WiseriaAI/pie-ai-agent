@@ -63,7 +63,6 @@ export const ptBRDict = {
       sending: "Enviando…",
       sent: "Obrigado! Feedback enviado.",
       sendError: "Não foi possível enviar. Tente novamente.",
-      orLabel: "ou",
     },
     myConfigs: {
       title: "MINHAS CONFIGS",

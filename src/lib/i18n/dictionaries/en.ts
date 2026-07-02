@@ -62,7 +62,6 @@ export const enDict = {
       sending: "Sending…",
       sent: "Thanks! Feedback sent.",
       sendError: "Couldn't send. Please try again.",
-      orLabel: "or",
     },
     myConfigs: {
       title: "MY CONFIGS",

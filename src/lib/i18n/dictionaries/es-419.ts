@@ -63,7 +63,6 @@ export const es419Dict = {
       sending: "Enviando…",
       sent: "¡Gracias! Comentario enviado.",
       sendError: "No se pudo enviar. Inténtalo de nuevo.",
-      orLabel: "o",
     },
     myConfigs: {
       title: "MIS CONFIGURACIONES",
