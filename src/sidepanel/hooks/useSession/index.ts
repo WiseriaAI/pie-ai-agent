@@ -14,9 +14,11 @@ import {
   getSessionAgent,
   getSessionMeta,
   listSessionIndex,
+  setSessionAgent,
   setSessionMeta,
   updateLastAccessed,
 } from "@/lib/sessions/storage";
+import { buildRewindAgentTombstone } from "./rewind";
 import { hardDeleteSession } from "@/lib/sessions/lifecycle";
 import { useStoreChange } from "@/sidepanel/hooks/useStoreChange";
 import type { SessionAgentState, SessionMeta, SessionStatus } from "@/lib/sessions/types";
@@ -185,6 +187,11 @@ export interface UseSession {
    *  Empty Map when no instructions are pending. */
   pendingByChatMessageId: Map<string, { createdAt: number }>;
   sendMessage: (input: SendMessageInput) => void;
+  /** Issue #245 — rewind/edit-resend. Truncates history to just before
+   *  `messageIndex` (dropping that message and everything after it), clears any
+   *  SW-preserved task state, then resends `edited` as a fresh user turn via
+   *  the normal send pipeline. No-op while streaming. */
+  rewindAndResend: (messageIndex: number, edited: SendMessageInput) => void;
   /** Issue #34 — append a pending instruction during streaming. Generates a
    *  chatMessageId, writes the DisplayMessage into slot.messages (with id),
    *  and sends chat-instruction-add to the SW. No-op when not streaming. */
@@ -528,7 +535,7 @@ export function useSession(): UseSession {
   // 时建立 port，SW idle-out / 崩溃后 panel 这侧的 port 会自动断开 +
   // swPort.send 透明重连（ensurePort）失败后 revert streaming 并暴露 error。
   const sendMessage = useCallback(
-    (input: SendMessageInput) => {
+    (input: SendMessageInput, baseMessages?: DisplayMessage[]) => {
       if (slotsRef.current.get(sessionIdRef.current ?? "")?.streaming) return;
       const id = sessionIdRef.current;
       if (!id) return;
@@ -548,7 +555,11 @@ export function useSession(): UseSession {
         ...(input.quotes?.length ? { quotes: input.quotes } : {}),
         ...(input.fileAttachments?.length ? { fileAttachments: input.fileAttachments } : {}),
       };
-      const currentMessages = slotsRef.current.get(id)?.messages ?? [];
+      // Issue #245 — rewind passes an explicit truncated `baseMessages` array
+      // (history sliced to before the edited turn); normal sends omit it and
+      // append to the live slot. Using the passed array avoids relying on a
+      // just-patched slotsRef read landing synchronously.
+      const currentMessages = baseMessages ?? slotsRef.current.get(id)?.messages ?? [];
       const updated = [...currentMessages, userMessage];
       // M3-U2 (post-acceptance) — empty→non-empty is the moment we lock
       // the pin. Capture HERE rather than at session create / activation
@@ -678,6 +689,51 @@ export function useSession(): UseSession {
       }
     },
     [persistMessagesById, patchSlot],
+  );
+
+  // ── rewindAndResend ───────────────────────────────────────────────────
+  // Issue #245 — rewind/edit-resend. Truncate the session's message history to
+  // just before `messageIndex` (dropping that message and everything after),
+  // then resend `edited` as a fresh user turn through the normal send pipeline.
+  //
+  // Idle-only: refuses while streaming so a live task is never truncated
+  // mid-flight (matches the UI, which hides the edit affordance while
+  // streaming). Because it's idle-only, no SW writer is touching this session's
+  // agent record concurrently — the tombstone write below is race-free.
+  const rewindAndResend = useCallback(
+    async (messageIndex: number, edited: SendMessageInput) => {
+      const id = sessionIdRef.current;
+      if (!id) return;
+      const slot = slotsRef.current.get(id);
+      if (slot?.streaming) return; // never rewind a live task
+      const current = slot?.messages ?? [];
+      if (messageIndex < 0 || messageIndex >= current.length) return;
+      const kept = current.slice(0, messageIndex);
+
+      // Discard any SW-preserved task state before the new chat-start. Two
+      // SW-side injections would otherwise resurrect the branch the user just
+      // threw away:
+      //   1. abort-resume (planAbortResumeSeed) — replays the preserved raw
+      //      agentMessages of an aborted in-flight task.
+      //   2. synth-bridge (lastTaskSynth) — injects a compressed summary of
+      //      prior completed tasks before the last user message.
+      // Both reference history past the rewind point. Awaiting the tombstone
+      // write BEFORE sendMessage fires chat-start guarantees the SW reads the
+      // cleared state (single shared IDB), so chat-start rebuilds the LLM head
+      // purely from the truncated wire history.
+      await setSessionAgent(id, buildRewindAgentTombstone());
+
+      // Re-guard after the await: an abort/send couldn't have raced (idle-only
+      // + no streaming affordance), but bail defensively if the session
+      // switched or a task somehow started in the meantime.
+      const post = slotsRef.current.get(id);
+      if (sessionIdRef.current !== id || post?.streaming) return;
+
+      // Reuse the send pipeline: it appends `edited` to `kept`, patches +
+      // persists the slot, and fires chat-start with the truncated history.
+      sendMessage(edited, kept);
+    },
+    [sendMessage],
   );
 
   // ── addPendingInstruction ─────────────────────────────────────────────
@@ -1010,6 +1066,7 @@ export function useSession(): UseSession {
     usage: active.usage, // Issue #59
     pendingByChatMessageId: active.pendingByChatMessageId, // Issue #34
     sendMessage,
+    rewindAndResend, // Issue #245
     addPendingInstruction, // Issue #34
     cancelPendingInstruction, // Issue #34
     abort,
