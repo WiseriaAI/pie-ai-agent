@@ -125,6 +125,10 @@ import { broadcastInstructionState } from "./instruction-broadcast";
 import { mergeCarryoverIntoMessages } from "@/lib/agent/loop-drain";
 import type { ChatInstructionRejectedMessage } from "@/types/messages";
 import { isFilePdfUrl } from "@/lib/pdf/detect";
+import { installLogCapture } from "@/lib/log-buffer";
+
+// Install log capture at module top level
+installLogCapture("sw");
 
 // Full startup-migration pipeline (idempotent, singleton): all
 // [MIGRATION-UPSTREAM] chrome.storage migrations → V2→V3 sweep (chrome.storage
