@@ -175,6 +175,13 @@ export const es419Dict = {
     authorTag: { builtIn: "INTEGRADA", agent: "AGENTE", user: "USUARIO" },
     pageChangedBanner: "La página cambió. ¿Empezar de nuevo?",
     newTask: "Nueva tarea",
+    rewind: {
+      edit: "Editar",
+      send: "Enviar",
+      cancel: "Cancelar",
+      editingAria: "Editar mensaje y reenviar",
+      hint: "Al editar se reenvía este mensaje y se descarta todo lo posterior.",
+    },
     agent: "AGENTE",
     agentWorking: "El agente está trabajando",
     working: "TRABAJANDO",

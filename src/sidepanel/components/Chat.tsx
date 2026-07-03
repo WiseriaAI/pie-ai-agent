@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import type { SkillPackage } from "@/lib/skills";
 import {
   getEnabledSkillPackages,
@@ -22,6 +22,7 @@ import { CollapsibleText } from "./CollapsibleText";
 import { FileChip } from "./FileChip";
 import { QuoteGlyph } from "./icons";
 import type { UseSession } from "@/sidepanel/hooks/useSession";
+import { buildRewindInput } from "@/sidepanel/hooks/useSession/rewind";
 import { swPort } from "@/lib/sw-connection/manager";
 import AgentStepGroup, { type AgentStepData } from "./AgentStepGroup";
 import ManagedErrorCta from "./ManagedErrorCta";
@@ -824,6 +825,20 @@ export default function Chat({
   // (React error #310 happened when this was below `if (hasConfig === null)`).
   const segments = useMemo(() => buildSegments(visibleMessages), [visibleMessages]);
 
+  // Issue #245 — rewind/edit-resend. `msg` is a live object reference from the
+  // `messages` array (visibleMessages preserves those references), so indexOf
+  // recovers its true position even though the render maps `visibleMessages`.
+  // `editedContent` undefined ⇒ resend-as-is; a string ⇒ edit then resend.
+  const handleRewind = useCallback(
+    (msg: DisplayMessage, editedContent?: string) => {
+      if (msg.role !== "user") return;
+      const idx = messages.indexOf(msg);
+      if (idx < 0) return;
+      session.rewindAndResend(idx, buildRewindInput(msg, editedContent));
+    },
+    [messages, session],
+  );
+
   const popoverOpen = slashState !== null && input !== dismissedInput;
 
   useEffect(() => {
@@ -1257,9 +1272,21 @@ After the skill completes, briefly summarize what was created (the user will see
               }
               const { msg, firstIndex } = seg;
               if (msg.role === "user" || msg.role === "assistant") {
+                // Issue #245 — expose rewind only on idle (streaming hidden)
+                // user bubbles. Binding the handler to `msg` here keeps
+                // MessageBubble unaware of list indices.
+                const rewindMsg = msg;
                 return (
                   <div key={firstIndex} className="bubble-in">
-                    <MessageBubble message={msg} />
+                    <MessageBubble
+                      message={msg}
+                      {...(msg.role === "user" && !streaming
+                        ? {
+                            onRewind: (editedContent?: string) =>
+                              handleRewind(rewindMsg, editedContent),
+                          }
+                        : {})}
+                    />
                   </div>
                 );
               }
@@ -1699,10 +1726,14 @@ function MessageBubble({
   message,
   thinkingStreaming = false,
   streaming = false,
+  onRewind,
 }: {
   message: Extract<DisplayMessage, { role: "user" | "assistant" }>;
   thinkingStreaming?: boolean;
   streaming?: boolean;
+  /** Issue #245 — present only on idle user bubbles. Called with the edited
+   *  text (or undefined to resend as-is) to rewind history and resend. */
+  onRewind?: (editedContent?: string) => void;
 }) {
   const t = useT();
   // Ref to the rendered (styled) reply node so the copy button can lift its
@@ -1710,6 +1741,10 @@ function MessageBubble({
   // so the hook order stays stable across user/assistant branches.
   const replyRef = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState(false);
+  // Issue #245 — inline edit state for user bubbles. Declared before the
+  // early returns so hook order stays stable across branches.
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
   if (message.role === "user") {
     // Issue #38 — quote element screenshots ride along in `attachments` so the
     // LLM sees them as image content blocks, but the bubble already renders a
@@ -1720,8 +1755,63 @@ function MessageBubble({
     const hasQuotes = !!message.quotes && message.quotes.length > 0;
     const hasFileAttachments = !!message.fileAttachments && message.fileAttachments.length > 0;
     const hasText = message.content.length > 0;
+    // Issue #245 — inline edit mode replaces the bubble with a textarea. Cmd/
+    // Ctrl+Enter submits (rewind+resend), Esc cancels; empty text is a no-op.
+    if (editing) {
+      const submit = () => {
+        const text = draft.trim();
+        if (!text) return;
+        onRewind?.(text);
+        setEditing(false);
+      };
+      return (
+        <div className="flex flex-col items-end gap-1.5">
+          <div className="flex w-full max-w-[85%] flex-col gap-1.5">
+            <textarea
+              aria-label={t("chat.rewind.editingAria")}
+              autoFocus
+              value={draft}
+              rows={Math.min(8, Math.max(2, draft.split("\n").length))}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault();
+                  submit();
+                } else if (e.key === "Escape") {
+                  e.preventDefault();
+                  setEditing(false);
+                }
+              }}
+              className="w-full resize-y rounded-[12px] border border-line bg-field px-3 py-2 text-[13px] leading-5 text-fg-1 outline-none focus:border-accent"
+            />
+            <div className="flex items-center justify-between gap-2">
+              <span className="min-w-0 flex-1 truncate text-[11px] text-fg-3">
+                {t("chat.rewind.hint")}
+              </span>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setEditing(false)}
+                  className="rounded px-2 py-1 text-[12px] text-fg-2 hover:bg-line"
+                >
+                  {t("chat.rewind.cancel")}
+                </button>
+                <button
+                  type="button"
+                  disabled={draft.trim().length === 0}
+                  onClick={submit}
+                  className="rounded bg-accent px-2.5 py-1 text-[12px] text-canvas hover:opacity-90 disabled:opacity-40"
+                >
+                  {t("chat.rewind.send")}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
     return (
-      <div className="flex justify-end">
+      <div className="group flex flex-col items-end gap-1">
         <div className="flex min-w-0 max-w-[66%] flex-col gap-2 rounded-[16px_16px_5px_16px] bg-bubble px-3.5 py-2.5 text-[13px] leading-5 text-fg-1">
           {hasQuotes && (
             <div className="flex flex-col gap-1.5">
@@ -1797,6 +1887,26 @@ function MessageBubble({
             ),
           )}
         </div>
+        {/* Issue #245 — edit action; hover-revealed, idle-only (onRewind is
+            only passed while not streaming). Editing enters the textarea above. */}
+        {onRewind && (
+          <div className="flex items-center gap-1 pr-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+            <button
+              type="button"
+              title={t("chat.rewind.edit")}
+              aria-label={t("chat.rewind.edit")}
+              onClick={() => {
+                setDraft(message.content);
+                setEditing(true);
+              }}
+              className="rounded-full p-1 text-fg-3 hover:bg-line hover:text-fg-1"
+            >
+              <svg viewBox="0 0 1024 1024" width="11" height="11" fill="currentColor" aria-hidden>
+                <path d="M186.492744 819.193858c2.559181 0 5.128599-0.255918 7.677543-0.634677l215.298784-37.763276c2.559181-0.511836 4.985285-1.658349 6.776712-3.582853l542.587332-542.587332c4.985285-4.995521 4.985285-13.06206 0-18.047345L746.103748 3.715931c-2.426104-2.426104-5.630198-3.715931-9.090211-3.715931-3.460013 0-6.653871 1.279591-9.090211 3.715931L185.346231 546.303263c-1.914267 1.924504-3.071017 4.21753-3.582854 6.786948l-37.763275 215.288548c-2.43634 14.208573 1.914267 28.038388 12.028151 38.142034 8.455534 8.189379 19.081254 12.673065 30.464491 12.673065z m86.275112-223.222009l464.255918-464.122841 93.819578 93.819578L366.587434 689.791427l-113.791427 20.094689 19.971849-113.914267z m710.254638 330.738324H40.967472C18.313601 926.710173 0.000102 945.013436 0.000102 967.677543v46.085733c0 5.630198 4.606526 10.236724 10.236724 10.236724H1013.753141c5.630198 0 10.236724-4.606526 10.236724-10.236724v-46.085733c0-22.653871-18.303263-40.96737-40.967371-40.96737z m0 0" />
+              </svg>
+            </button>
+          </div>
+        )}
       </div>
     );
   }

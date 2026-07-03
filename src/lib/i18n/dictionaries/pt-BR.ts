@@ -175,6 +175,13 @@ export const ptBRDict = {
     authorTag: { builtIn: "INTEGRADO", agent: "AGENTE", user: "USUÁRIO" },
     pageChangedBanner: "A página mudou. Começar de novo?",
     newTask: "Nova tarefa",
+    rewind: {
+      edit: "Editar",
+      send: "Enviar",
+      cancel: "Cancelar",
+      editingAria: "Editar mensagem e reenviar",
+      hint: "Editar reenvia esta mensagem e descarta tudo o que vem depois.",
+    },
     agent: "AGENTE",
     agentWorking: "O agente está trabalhando",
     working: "TRABALHANDO",

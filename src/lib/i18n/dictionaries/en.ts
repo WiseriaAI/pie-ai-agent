@@ -174,6 +174,13 @@ export const enDict = {
     authorTag: { builtIn: "BUILT-IN", agent: "AGENT", user: "USER" },
     pageChangedBanner: "Page changed. Start fresh?",
     newTask: "New task",
+    rewind: {
+      edit: "Edit",
+      send: "Send",
+      cancel: "Cancel",
+      editingAria: "Edit message and resend",
+      hint: "Editing resends this message and discards everything after it.",
+    },
     agent: "AGENT",
     agentWorking: "Agent is working",
     working: "WORKING",
