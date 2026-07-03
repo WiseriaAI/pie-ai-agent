@@ -177,7 +177,6 @@ export const es419Dict = {
     newTask: "Nueva tarea",
     rewind: {
       edit: "Editar",
-      resend: "Reenviar desde aquí",
       send: "Enviar",
       cancel: "Cancelar",
       editingAria: "Editar mensaje y reenviar",

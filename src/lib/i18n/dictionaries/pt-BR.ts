@@ -177,7 +177,6 @@ export const ptBRDict = {
     newTask: "Nova tarefa",
     rewind: {
       edit: "Editar",
-      resend: "Reenviar a partir daqui",
       send: "Enviar",
       cancel: "Cancelar",
       editingAria: "Editar mensagem e reenviar",

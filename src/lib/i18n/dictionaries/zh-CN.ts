@@ -176,7 +176,6 @@ export const zhCNDict = {
     newTask: "新任务",
     rewind: {
       edit: "编辑",
-      resend: "从此重发",
       send: "发送",
       cancel: "取消",
       editingAria: "编辑消息并重新发送",

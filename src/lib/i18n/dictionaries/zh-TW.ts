@@ -176,7 +176,6 @@ export const zhTWDict = {
     newTask: "新任務",
     rewind: {
       edit: "編輯",
-      resend: "從此重發",
       send: "發送",
       cancel: "取消",
       editingAria: "編輯訊息並重新發送",

@@ -177,7 +177,6 @@ export const jaDict = {
     newTask: "新しいタスク",
     rewind: {
       edit: "編集",
-      resend: "ここから再送信",
       send: "送信",
       cancel: "キャンセル",
       editingAria: "メッセージを編集して再送信",

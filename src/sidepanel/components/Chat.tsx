@@ -1887,27 +1887,23 @@ function MessageBubble({
             ),
           )}
         </div>
-        {/* Issue #245 — rewind actions; hover-revealed, idle-only (onRewind is
-            only passed while not streaming). Editing enters the textarea above;
-            "resend from here" replays the message verbatim from this point. */}
+        {/* Issue #245 — edit action; hover-revealed, idle-only (onRewind is
+            only passed while not streaming). Editing enters the textarea above. */}
         {onRewind && (
           <div className="flex items-center gap-1 pr-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
             <button
               type="button"
+              title={t("chat.rewind.edit")}
+              aria-label={t("chat.rewind.edit")}
               onClick={() => {
                 setDraft(message.content);
                 setEditing(true);
               }}
-              className="rounded px-1.5 py-0.5 text-[11px] text-fg-3 hover:bg-line hover:text-fg-1"
+              className="rounded-full p-1 text-fg-3 hover:bg-line hover:text-fg-1"
             >
-              {t("chat.rewind.edit")}
-            </button>
-            <button
-              type="button"
-              onClick={() => onRewind()}
-              className="rounded px-1.5 py-0.5 text-[11px] text-fg-3 hover:bg-line hover:text-fg-1"
-            >
-              {t("chat.rewind.resend")}
+              <svg viewBox="0 0 1024 1024" width="11" height="11" fill="currentColor" aria-hidden>
+                <path d="M186.492744 819.193858c2.559181 0 5.128599-0.255918 7.677543-0.634677l215.298784-37.763276c2.559181-0.511836 4.985285-1.658349 6.776712-3.582853l542.587332-542.587332c4.985285-4.995521 4.985285-13.06206 0-18.047345L746.103748 3.715931c-2.426104-2.426104-5.630198-3.715931-9.090211-3.715931-3.460013 0-6.653871 1.279591-9.090211 3.715931L185.346231 546.303263c-1.914267 1.924504-3.071017 4.21753-3.582854 6.786948l-37.763275 215.288548c-2.43634 14.208573 1.914267 28.038388 12.028151 38.142034 8.455534 8.189379 19.081254 12.673065 30.464491 12.673065z m86.275112-223.222009l464.255918-464.122841 93.819578 93.819578L366.587434 689.791427l-113.791427 20.094689 19.971849-113.914267z m710.254638 330.738324H40.967472C18.313601 926.710173 0.000102 945.013436 0.000102 967.677543v46.085733c0 5.630198 4.606526 10.236724 10.236724 10.236724H1013.753141c5.630198 0 10.236724-4.606526 10.236724-10.236724v-46.085733c0-22.653871-18.303263-40.96737-40.967371-40.96737z m0 0" />
+              </svg>
             </button>
           </div>
         )}

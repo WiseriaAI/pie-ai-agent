@@ -176,7 +176,6 @@ export const enDict = {
     newTask: "New task",
     rewind: {
       edit: "Edit",
-      resend: "Resend from here",
       send: "Send",
       cancel: "Cancel",
       editingAria: "Edit message and resend",
