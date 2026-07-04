@@ -1,5 +1,6 @@
 import { ACCOUNT_BASE } from "./managed-config";
 import type { Entitlement, ModelInfo, PricingInfo } from "./managed-auth";
+import type { FeedbackEnv } from "./feedback";
 import { getLocale } from "./i18n";
 import { setConfig, getAllConfig } from "./idb/config-store";
 
@@ -198,4 +199,38 @@ export async function redeem(apiKey: string, code: string, deps: ManagedAccountD
   const ent = normalizeEntitlement(await resp.json());
   await cacheEntitlement(apiKey, ent);
   return ent;
+}
+
+/** /feedback 失败：携带后端 error code。 */
+export class FeedbackError extends Error {
+  constructor(public code: string, public status: number) {
+    super(code);
+    this.name = "FeedbackError";
+  }
+}
+
+/** 提交度内反馈。有 apiKey 则带 Bearer（关联用户），否则匿名。失败抛 FeedbackError。 */
+export async function submitFeedback(
+  input: { message: string; env: FeedbackEnv; logs?: string; apiKey?: string },
+  deps: ManagedAccountDeps = {},
+): Promise<void> {
+  const fetchFn = deps.fetchFn ?? fetch;
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  if (input.apiKey) headers.authorization = `Bearer ${input.apiKey}`;
+  const body = JSON.stringify({
+    message: input.message,
+    env: input.env,
+    ...(input.logs ? { logs: input.logs } : {}),
+  });
+  const resp = await fetchFn(`${ACCOUNT_BASE}/feedback`, { method: "POST", headers, body });
+  if (!resp.ok) {
+    let code = "feedback_failed";
+    try {
+      const b = (await resp.json()) as { error?: string };
+      if (b && typeof b.error === "string") code = b.error;
+    } catch {
+      /* 非 JSON 错误体：保留 feedback_failed */
+    }
+    throw new FeedbackError(code, resp.status);
+  }
 }

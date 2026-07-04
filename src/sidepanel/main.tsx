@@ -21,6 +21,7 @@ import "./index.css";
 import { I18nProvider } from "@/lib/i18n";
 import { runStartupMigrations } from "@/lib/startup-migrations";
 import { MotionProvider } from "./components/ui/motion";
+import { installLogCapture } from "@/lib/log-buffer";
 
 async function boot() {
   // Run the full startup-migration pipeline (shared with the service worker)
@@ -33,6 +34,7 @@ async function boot() {
   await runStartupMigrations().catch((e) => {
     console.warn("[panel] startup migrations failed (mounting anyway):", e);
   });
+  installLogCapture("panel");
   createRoot(document.getElementById("root")!).render(
     <StrictMode>
       <I18nProvider>

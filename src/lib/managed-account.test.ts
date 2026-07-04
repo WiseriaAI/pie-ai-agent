@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import {
   getCachedEntitlement, getEntitlement, openCheckout, openPortal,
-  cachedManagedModel, redeem, RedeemError,
+  cachedManagedModel, redeem, RedeemError, submitFeedback, FeedbackError,
   hydrateEntitlementCache, _clearEntitlementCacheForTests,
 } from "./managed-account";
 import { getConfig, setConfig } from "./idb/config-store";
@@ -235,6 +235,34 @@ describe("managed-account", () => {
       body: JSON.stringify({ interval: "year" }),
     });
     expect(openTab).toHaveBeenCalledWith("https://checkout.test/y");
+  });
+
+  describe("submitFeedback", () => {
+    const env = { version: "1", userAgent: "UA", providerModel: "managed", locale: "en" };
+
+    it("POSTs /feedback without Bearer when no apiKey", async () => {
+      const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ ok: true }) })) as unknown as typeof fetch;
+      await submitFeedback({ message: "hi", env }, { fetchFn });
+      expect(fetchFn).toHaveBeenCalledWith("https://account.pie.chat/feedback", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ message: "hi", env }),
+      });
+    });
+
+    it("includes Bearer + logs when provided", async () => {
+      const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ ok: true }) })) as unknown as typeof fetch;
+      await submitFeedback({ message: "hi", env, logs: "boom", apiKey: "sk-v" }, { fetchFn });
+      const init = (fetchFn as unknown as { mock: { calls: [string, RequestInit][] } }).mock.calls[0][1];
+      expect((init.headers as Record<string, string>).authorization).toBe("Bearer sk-v");
+      expect(JSON.parse(init.body as string).logs).toBe("boom");
+    });
+
+    it("throws FeedbackError with backend code on failure", async () => {
+      const fetchFn = vi.fn(async () => ({ ok: false, status: 429, json: async () => ({ error: "too_many_attempts" }) })) as unknown as typeof fetch;
+      await expect(submitFeedback({ message: "x", env }, { fetchFn })).rejects.toBeInstanceOf(FeedbackError);
+      await expect(submitFeedback({ message: "x", env }, { fetchFn })).rejects.toMatchObject({ code: "too_many_attempts", status: 429 });
+    });
   });
 });
 

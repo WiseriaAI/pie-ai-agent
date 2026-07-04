@@ -54,8 +54,14 @@ export const ptBRDict = {
     feedback: {
       sectionTitle: "Feedback",
       githubButton: "Reportar no GitHub",
-      githubHint: "Valorizamos muito seus feedbacks e sugestões, e você pode compartilhá-los conosco a qualquer momento.",
       emailButton: "Enviar feedback por e-mail",
+      formHint: "Valorizamos muito suas opiniões e sugestões — envie feedback a qualquer momento.",
+      placeholder: "O que você está pensando?",
+      includeLogs: "Anexar logs recentes para ajudar no diagnóstico (últimas 24h, sem dados do chat)",
+      send: "Enviar",
+      sending: "Enviando…",
+      sent: "Obrigado! Feedback enviado.",
+      sendError: "Não foi possível enviar. Tente novamente.",
     },
     myConfigs: {
       title: "MINHAS CONFIGS",

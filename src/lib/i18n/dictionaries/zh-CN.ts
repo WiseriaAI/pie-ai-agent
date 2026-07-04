@@ -54,8 +54,14 @@ export const zhCNDict = {
     feedback: {
       sectionTitle: "反馈",
       githubButton: "在 GitHub 上反馈",
-      githubHint: "我们非常重视您的意见和建议，欢迎随时向我们反馈",
       emailButton: "邮件反馈",
+      formHint: "我们非常重视您的意见和建议，欢迎随时向我们反馈",
+      placeholder: "有什么想说的？",
+      includeLogs: "附带近期日志以协助排查（近 24 小时，不含聊天内容）",
+      send: "发送",
+      sending: "发送中…",
+      sent: "谢谢！反馈已发送。",
+      sendError: "发送失败，请重试。",
     },
     myConfigs: {
       title: "我的配置",

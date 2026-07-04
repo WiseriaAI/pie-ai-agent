@@ -54,8 +54,14 @@ export const jaDict = {
     feedback: {
       sectionTitle: "フィードバック",
       githubButton: "GitHub で報告",
-      githubHint: "ご意見やご提案を大切にしています。いつでもお気軽にお寄せください。",
       emailButton: "メールでフィードバック",
+      formHint: "皆様のご意見・ご提案を大切にしています。いつでもお気軽にフィードバックをお寄せください。",
+      placeholder: "気になることは？",
+      includeLogs: "診断に役立つ最近のログを添付する（過去24時間、チャット内容は含みません）",
+      send: "送信",
+      sending: "送信中…",
+      sent: "ありがとうございます！フィードバックを送信しました。",
+      sendError: "送信できませんでした。もう一度お試しください。",
     },
     myConfigs: {
       title: "自分の設定",

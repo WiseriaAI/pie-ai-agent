@@ -54,8 +54,14 @@ export const zhTWDict = {
     feedback: {
       sectionTitle: "意見回饋",
       githubButton: "在 GitHub 上回饋",
-      githubHint: "我們非常重視您的意見與建議，歡迎隨時向我們回饋",
       emailButton: "電子郵件回饋",
+      formHint: "我們非常重視您的意見和建議，歡迎隨時向我們回饋。",
+      placeholder: "有什麼想說的？",
+      includeLogs: "附上近期日誌以協助診斷（近 24 小時，不含聊天內容）",
+      send: "傳送",
+      sending: "傳送中…",
+      sent: "謝謝！意見回饋已送出。",
+      sendError: "傳送失敗，請再試一次。",
     },
     myConfigs: {
       title: "我的設定檔",
