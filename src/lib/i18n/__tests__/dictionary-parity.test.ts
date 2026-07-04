@@ -22,14 +22,14 @@ function valueAt(dict: unknown, path: string): unknown {
 
 describe("dictionary parity", () => {
   it("localizes the general feedback invitation without task-report instructions", () => {
-    expect(zhCNDict.settings.feedback.githubHint).toBe(
+    expect(zhCNDict.settings.feedback.formHint).toBe(
       "我们非常重视您的意见和建议，欢迎随时向我们反馈"
     );
-    expect(enDict.settings.feedback.githubHint).toBe(
-      "We greatly value your feedback and suggestions, and welcome you to share them with us anytime."
+    expect(enDict.settings.feedback.formHint).toBe(
+      "We truly value your thoughts and suggestions — feel free to reach out anytime."
     );
-    expect(zhCNDict.settings.feedback.githubHint).not.toContain("/report-issue");
-    expect(enDict.settings.feedback.githubHint).not.toContain("/report-issue");
+    expect(zhCNDict.settings.feedback.formHint).not.toContain("/report-issue");
+    expect(enDict.settings.feedback.formHint).not.toContain("/report-issue");
   });
 
   it("every registered locale has the same key set as English", () => {

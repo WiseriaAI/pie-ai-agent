@@ -472,22 +472,23 @@ export function FeedbackSection({ instances }: { instances: DecryptedInstance[] 
         rows={3}
         className="w-full resize-y rounded-control border border-line bg-field px-2.5 py-2 text-[13px] text-fg-1 placeholder:text-fg-3 focus:outline-none"
       />
-      <label className="flex items-center gap-2 text-[12px] text-fg-2">
-        <input type="checkbox" checked={includeLogs} onChange={(e) => setIncludeLogs(e.target.checked)} />
-        {t("settings.feedback.includeLogs")}
-      </label>
-      <div className="flex items-center gap-3 pt-0.5">
-        <button
-          onClick={onSend}
-          disabled={!message.trim() || status === "sending"}
-          className="rounded-control bg-accent px-3 py-1.5 text-[13px] font-medium text-canvas disabled:opacity-50"
-        >
-          {status === "sending" ? t("settings.feedback.sending") : t("settings.feedback.send")}
-        </button>
-        {status === "sent" && <span className="text-[12px] text-success">{t("settings.feedback.sent")}</span>}
-        {status === "error" && <span className="text-[12px] text-warning">{t("settings.feedback.sendError")}</span>}
+      <div className="flex items-center justify-between gap-3 pt-0.5">
+        <label className="flex items-center gap-2 text-[12px] text-fg-2">
+          <input type="checkbox" checked={includeLogs} onChange={(e) => setIncludeLogs(e.target.checked)} />
+          {t("settings.feedback.includeLogs")}
+        </label>
+        <div className="flex items-center gap-3">
+          {status === "sent" && <span className="text-[12px] text-success">{t("settings.feedback.sent")}</span>}
+          {status === "error" && <span className="text-[12px] text-warning">{t("settings.feedback.sendError")}</span>}
+          <button
+            onClick={onSend}
+            disabled={!message.trim() || status === "sending"}
+            className="shrink-0 rounded-control bg-accent px-3 py-1.5 text-[13px] font-medium text-canvas disabled:opacity-50"
+          >
+            {status === "sending" ? t("settings.feedback.sending") : t("settings.feedback.send")}
+          </button>
+        </div>
       </div>
-      <p className="pt-1 text-[12px] leading-[18px] text-fg-2">{t("settings.feedback.githubHint")}</p>
       <div className="flex items-center gap-4 pt-0.5">
         <a href={buildGithubNewIssueUrl(env)} target="_blank" rel="noopener noreferrer" className="text-[13px] font-medium text-accent hover:underline">{t("settings.feedback.githubButton")} ↗</a>
         <a href={buildFeedbackMailto(env)} className="text-[13px] text-fg-2 hover:text-fg-1">{t("settings.feedback.emailButton")} ↗</a>

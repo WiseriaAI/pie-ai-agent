@@ -53,9 +53,8 @@ export const enDict = {
     feedback: {
       sectionTitle: "Feedback",
       githubButton: "Report on GitHub",
-      githubHint: "We greatly value your feedback and suggestions, and welcome you to share them with us anytime.",
       emailButton: "Email feedback",
-      formHint: "Send feedback straight from here — just type and send.",
+      formHint: "We truly value your thoughts and suggestions — feel free to reach out anytime.",
       placeholder: "What's on your mind?",
       includeLogs: "Attach recent logs to help diagnose (last 24h, no chat data)",
       send: "Send",

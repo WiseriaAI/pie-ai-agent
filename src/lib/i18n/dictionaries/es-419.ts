@@ -54,9 +54,8 @@ export const es419Dict = {
     feedback: {
       sectionTitle: "Comentarios",
       githubButton: "Informar en GitHub",
-      githubHint: "Valoramos mucho tus comentarios y sugerencias, y puedes compartirlos con nosotros en cualquier momento.",
       emailButton: "Enviar comentarios por correo",
-      formHint: "Envía comentarios directamente desde aquí: solo escribe y envía.",
+      formHint: "Valoramos mucho tus opiniones y sugerencias; escríbenos cuando quieras.",
       placeholder: "¿Qué tienes en mente?",
       includeLogs: "Adjuntar registros recientes para ayudar a diagnosticar (últimas 24 h, sin datos del chat)",
       send: "Enviar",
