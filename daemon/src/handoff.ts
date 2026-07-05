@@ -1,7 +1,8 @@
 import { mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import type { HandoffParams, HandoffResult } from "../../src/types/local-bridge";
-import type { SpawnFn } from "./run-local-agent";
+import type { SpawnFn } from "./spawn";
+import { realSpawn } from "./spawn";
 import { paths } from "./paths";
 import { log } from "./log";
 
@@ -21,21 +22,14 @@ function slugify(context: string): string {
  */
 export function safeFileName(name: string): string {
   const base = name.split(/[\\/]/).pop() ?? "";
-  if (!base || base === "." || base === ".." || RESERVED.has(base)) {
+  // 大小写不敏感比对：Slice 1 macOS-only，默认文件系统（APFS/HFS+）大小写不敏感——
+  // `START.COMMAND` / `Context.MD` 这类变体若只做大小写敏感比对会放过检查，却
+  // 在磁盘上解析成同一份保留文件，构成潜在的 start.command 覆盖。
+  if (!base || base === "." || base === ".." || RESERVED.has(base.toLowerCase())) {
     throw new Error(`unsafe file name: ${JSON.stringify(name)}`);
   }
   return base;
 }
-
-const realSpawn: SpawnFn = async (cmd, args, cwd) => {
-  const proc = Bun.spawn([cmd, ...args], { cwd, stdout: "pipe", stderr: "pipe" });
-  const [stdout, stderr] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-  ]);
-  const exitCode = await proc.exited;
-  return { stdout, exitCode, stderr };
-};
 
 export async function runHandoff(
   params: HandoffParams,

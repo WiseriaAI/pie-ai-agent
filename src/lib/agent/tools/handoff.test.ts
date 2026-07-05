@@ -22,8 +22,12 @@ describe("handoff_to_agent tool", () => {
   });
 
   it("rejects empty context", async () => {
-    const tool = buildHandoffTool({ run: vi.fn(), requestConsent: vi.fn() });
+    const run = vi.fn();
+    const requestConsent = vi.fn();
+    const tool = buildHandoffTool({ run, requestConsent });
     const r = await tool.handler({ context: "   " }, {} as never);
     expect(r.success).toBe(false);
+    expect(requestConsent).not.toHaveBeenCalled();
+    expect(run).not.toHaveBeenCalled();
   });
 });

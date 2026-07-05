@@ -62,6 +62,11 @@ test("safeFileName rejects reserved / empty / dot names", () => {
   expect(safeFileName("a/b/c.txt")).toBe("c.txt");
 });
 
+test("safeFileName rejects reserved names case-insensitively (APFS/HFS+ is case-insensitive)", () => {
+  expect(() => safeFileName("START.COMMAND")).toThrow();
+  expect(() => safeFileName("Context.MD")).toThrow();
+});
+
 test("runHandoff never awaits claude (fire-and-forget): spawns only `open`", async () => {
   const h = harness();
   await runHandoff({ target: "claude", context: "x" }, h.opts);
