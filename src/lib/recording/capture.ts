@@ -92,6 +92,7 @@ export function installCaptureListener(): () => void {
     "untrusted_local_file",
     "untrusted_editor_content",
     "untrusted_scratchpad_preview",
+    "untrusted_local_agent_output",
   ];
   const WRAPPER_TAGS_RE = new RegExp(
     `<\\/?(?:${WRAPPER_TAGS_LIST.join("|")})[^>]*>`,
