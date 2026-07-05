@@ -5,6 +5,7 @@ test("spawns target with prompt, returns stdout", async () => {
   const fakeSpawn = async (cmd: string, args: string[], cwd: string) => {
     expect(cmd).toBe("claude");
     expect(args).toContain("-p");
+    expect(args).toContain("--dangerously-skip-permissions");
     expect(args).toContain("hello world");
     return { stdout: "AGENT REPLY", exitCode: 0 };
   };

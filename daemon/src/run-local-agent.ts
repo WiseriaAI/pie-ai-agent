@@ -50,7 +50,14 @@ export async function runLocalAgent(
     ensureDir(cwd);
   }
   // Slice 0: 阻塞取 stdout（无 stream-json 解析，见 plan 顶部 defer）
-  const { stdout, exitCode, stderr } = await spawn("claude", ["-p", params.prompt], cwd);
+  // --dangerously-skip-permissions: headless claude 无人可批工具调用，会卡死写操作。
+  // 用户已在 Pie 的 HITL 授权卡层批准了这个 prompt+cwd（威胁模型里卡就是闸），
+  // 故在受控的隔离 workspace 里跳过 claude 自身的交互审批。
+  const { stdout, exitCode, stderr } = await spawn(
+    "claude",
+    ["-p", "--dangerously-skip-permissions", params.prompt],
+    cwd,
+  );
   // 非零退出时把 stderr 尾巴接到 output 里，给失败留点诊断（T4 defer note）；
   // 零退出保持 stdout 原样，不掺 stderr 噪音。
   const tail = exitCode !== 0 ? stderrTail(stderr ?? "") : "";

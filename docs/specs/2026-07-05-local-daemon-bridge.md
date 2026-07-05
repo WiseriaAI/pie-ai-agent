@@ -82,6 +82,7 @@ pie daemon（常驻，launchd KeepAlive；rendezvous 见 ADR 0005）
 - **花费**：跑用户自己装的 Claude Code（自带 auth/订阅/key），Pie 不付费、不注入 key
 - **时长/中止**：无人为超时；用户 abort Pie 任务 → daemon `kill` 掉 claude **进程组**
 - **cwd（注入面）**：默认临时 workspace `~/pie-handoffs/<slug>/`（产出文件已 stage）；碰真实项目目录必须显式传 `cwd`，且授权卡上 cwd 原文可见
+- **权限姿态（Slice 0 真机验证补）**：daemon spawn 时带 `--dangerously-skip-permissions`。headless `claude -p` 默认无人可批工具调用 → 写文件/跑命令全卡死（真机实测 workspace 空、claude 报「所有写入途径被拦截」）。授权闸已在 Pie 的 HITL 卡层过（用户批了 prompt+cwd），claude 自身的交互审批在 headless 下只会死锁，故跳过。爆炸半径靠默认隔离 cwd 控制；显式真实 cwd 时风险更高，但 cwd 卡上可见=闸。后续 slice 可让权限姿态随 target/cwd 可配
 
 ### 4.3 hand-off（交棒交互式 session）
 
