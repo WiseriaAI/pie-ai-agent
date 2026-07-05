@@ -1,6 +1,6 @@
 import { unlinkSync, existsSync, mkdirSync, chmodSync } from "fs";
 import { PROTOCOL_VERSION, BRIDGE_CAPABILITIES } from "../../src/types/local-bridge";
-import type { BridgeResponse } from "../../src/types/local-bridge";
+import type { BridgeResponse, RunLocalAgentParams } from "../../src/types/local-bridge";
 import { paths } from "./paths";
 import { runLocalAgent } from "./run-local-agent"; // Task 4
 
@@ -23,7 +23,7 @@ export async function handleMessage(line: string): Promise<string> {
       });
     case "run_local_agent": {
       try {
-        const result = await runLocalAgent(msg.params as never);
+        const result = await runLocalAgent(msg.params as RunLocalAgentParams);
         return respond({ ok: true, result });
       } catch (e) {
         return respond({ ok: false, error: { code: "run_failed", message: String(e) } });
