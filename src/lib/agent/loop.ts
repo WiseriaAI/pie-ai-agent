@@ -36,6 +36,8 @@ import { isCdpInputEnabled } from "../cdp-input-enabled";
 import { requestCdpInputConsent } from "../cdp-input-onboarding";
 import { requestLocalFileFromPanel } from "../local-file-request";
 import { requestFromPanel } from "../panel-request";
+import { isBridgeReady, requestLocalAgent } from "@/background/local-bridge";
+import { buildRunLocalAgentTool } from "./tools/local-agent";
 import { buildReadLocalFileTool, buildRequestLocalFileTool, buildOutputFileTool } from "./tools/files";
 import { buildScratchpadTools } from "./tools/scratchpad";
 import {
@@ -1876,10 +1878,23 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         getActiveGroups: () => activeToolGroups,
         headless: isHeadless,
       });
+      // Slice 0 local bridge gate: daemon absent → tool not registered at all,
+      // so the LLM can never see/hallucinate `run_local_agent`. This is a
+      // hard existence gate, not a progressive-disclosure group.
+      const localBridgeTools = isBridgeReady()
+        ? [
+            buildRunLocalAgentTool({
+              run: (p) => requestLocalAgent(p),
+              requestConsent: (p) =>
+                requestFromPanel(sessionId, "run-local-agent", { prompt: p.prompt, cwd: p.cwd }),
+            }),
+          ]
+        : [];
       const fullToolList = [
         ...BUILT_IN_TOOLS, ...mouseTools, ...keyboardTools, ...editorTools,
         readLocalFileTool, requestLocalFileTool, outputFileTool, ...scratchpadTools,
         loadToolsTool,
+        ...localBridgeTools, // Slice 0 — run_local_agent (bridge-gated)
       ];
       const disclosed = selectTools(fullToolList, activeToolGroups);
       const allToolsBeforeExclude = filterToolsByVision(disclosed, modelConfig.vision);

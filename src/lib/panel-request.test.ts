@@ -97,4 +97,13 @@ describe("panel-request", () => {
   it("ignores a response for an unknown requestId", () => {
     expect(() => handlePanelResponse("nope", { ok: true, data: true })).not.toThrow();
   });
+
+  it("run-local-agent kind resolves boolean via handlePanelResponse", async () => {
+    const port = fakePort();
+    registerPanelPort("S1", port);
+    const p = requestFromPanel<"run-local-agent">("S1", "run-local-agent", { prompt: "hi", cwd: "/tmp" });
+    const sent = port.sent.at(-1)!;
+    handlePanelResponse(sent.requestId, { ok: true, data: true });
+    await expect(p).resolves.toBe(true);
+  });
 });
