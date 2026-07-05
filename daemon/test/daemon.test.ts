@@ -1,6 +1,9 @@
 import { test, expect } from "bun:test";
 import { handleMessage, processSocketChunk } from "../src/daemon";
 import { PROTOCOL_VERSION } from "../../src/types/local-bridge";
+import { setLogEnabled } from "../src/log";
+
+setLogEnabled(false); // hermetic：不让 handleMessage 的 log 写真实 ~/.pie/logs
 
 test("hello returns protocolVersion + capabilities", async () => {
   const out = await handleMessage(

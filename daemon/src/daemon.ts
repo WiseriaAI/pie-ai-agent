@@ -4,15 +4,18 @@ import type { BridgeResponse, RunLocalAgentParams } from "../../src/types/local-
 import { paths } from "./paths";
 import { runLocalAgent } from "./run-local-agent"; // Task 4
 import { decodeNdjsonLines } from "./framing";
+import { log } from "./log";
 
 export async function handleMessage(line: string): Promise<string> {
   let msg: { id?: string; method?: string; params?: unknown };
   try {
     msg = JSON.parse(line);
   } catch {
+    log("warn", "request.bad_json");
     return JSON.stringify({ id: "", ok: false, error: { code: "bad_json", message: "invalid JSON" } });
   }
   const id = msg.id ?? "";
+  log("info", "request", { id, method: msg.method });
   const respond = (r: { ok: true; result: unknown } | { ok: false; error: { code: string; message: string } }): string =>
     JSON.stringify({ id, ...r } as BridgeResponse);
 
@@ -27,10 +30,12 @@ export async function handleMessage(line: string): Promise<string> {
         const result = await runLocalAgent(msg.params as RunLocalAgentParams);
         return respond({ ok: true, result });
       } catch (e) {
+        log("error", "run.failed", { id, error: String(e) });
         return respond({ ok: false, error: { code: "run_failed", message: String(e) } });
       }
     }
     default:
+      log("warn", "request.unknown_method", { id, method: String(msg.method) });
       return respond({ ok: false, error: { code: "unknown_method", message: String(msg.method) } });
   }
 }
@@ -66,17 +71,21 @@ export async function startDaemon(): Promise<void> {
         // 每个连接独立的 carry：Bun 的 per-socket data 绑定，多个 host 连接
         // （理论上）互不干扰各自的半行缓冲。
         socket.data = { carry: "" };
+        log("info", "client.connect");
+      },
+      close() {
+        log("info", "client.disconnect");
       },
       data(socket, data) {
         const { carry, pending } = processSocketChunk(socket.data.carry, data.toString(), (out) =>
           socket.write(out),
         );
         socket.data.carry = carry;
-        pending.catch((err) => console.error("[pie daemon] handleMessage failed", err));
+        pending.catch((err) => log("error", "socket.error", { err: String(err) }));
       },
     },
   });
   chmodSync(paths.socketPath, 0o600); // 用户级信任边界
-  console.error(`[pie daemon] listening on ${paths.socketPath}`);
+  log("info", "daemon.listening", { socket: paths.socketPath });
   await new Promise(() => {}); // 常驻
 }

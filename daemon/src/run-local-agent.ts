@@ -2,6 +2,7 @@ import { mkdirSync } from "fs";
 import { join } from "path";
 import type { RunLocalAgentParams, RunLocalAgentResult } from "../../src/types/local-bridge";
 import { paths } from "./paths";
+import { log } from "./log";
 
 export type SpawnFn = (
   cmd: string,
@@ -49,6 +50,8 @@ export async function runLocalAgent(
     cwd = join(paths.handoffsDir, slugify(params.prompt));
     ensureDir(cwd);
   }
+  const startedAt = Date.now();
+  log("info", "run.spawn", { target: "claude", cwd, promptLen: params.prompt.length });
   // Slice 0: 阻塞取 stdout（无 stream-json 解析，见 plan 顶部 defer）
   // --dangerously-skip-permissions: headless claude 无人可批工具调用，会卡死写操作。
   // 用户已在 Pie 的 HITL 授权卡层批准了这个 prompt+cwd（威胁模型里卡就是闸），
@@ -62,5 +65,6 @@ export async function runLocalAgent(
   // 零退出保持 stdout 原样，不掺 stderr 噪音。
   const tail = exitCode !== 0 ? stderrTail(stderr ?? "") : "";
   const output = tail ? (stdout ? `${stdout}\n${tail}` : tail) : stdout;
+  log("info", "run.done", { cwd, exitCode, outputLen: output.length, ms: Date.now() - startedAt });
   return { output, exitCode, cwd };
 }

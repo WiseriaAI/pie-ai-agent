@@ -1,5 +1,8 @@
 import { test, expect } from "bun:test";
 import { runLocalAgent } from "../src/run-local-agent";
+import { setLogEnabled } from "../src/log";
+
+setLogEnabled(false); // hermetic：不让 runLocalAgent 的 log 写真实 ~/.pie/logs
 
 test("spawns target with prompt, returns stdout", async () => {
   const fakeSpawn = async (cmd: string, args: string[], cwd: string) => {
