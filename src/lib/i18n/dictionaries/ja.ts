@@ -123,6 +123,13 @@ export const jaDict = {
     enable: "有効にする",
     decline: "今はしない",
   },
+  runLocalAgent: {
+    title: "ローカルエージェント (claude -p) を実行しますか？",
+    cwdLabel: "作業ディレクトリ",
+    taskLabel: "タスク",
+    allow: "許可",
+    deny: "拒否",
+  },
   chat: {
     elementPicker: {
       idle: "ページ要素を選択",

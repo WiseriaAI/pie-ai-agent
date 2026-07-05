@@ -95,6 +95,7 @@ import SkillSlashPopover from "./SkillSlashPopover";
 import { PendingInstructionList, type PendingItem } from "./PendingInstructionList";
 import { CdpOnboardingCard } from "./CdpOnboardingCard";
 import { LocalFileRequestCard } from "./LocalFileRequestCard";
+import { RunLocalAgentCard } from "./RunLocalAgentCard";
 import { ScheduleDraftCard } from "./ScheduleDraftCard";
 import { AnimatePresence } from "./ui/motion";
 import { usePanelRequest } from "../hooks/usePanelRequest";
@@ -1608,6 +1609,12 @@ After the skill completes, briefly summarize what was created (the user will see
         <LocalFileRequestCard
           onChoose={() => localFileRequestInputRef.current?.click()}
           onCancel={() => respondPanel(panelRequest.requestId, { ok: false, reason: "cancelled by user" })}
+        />
+      )}
+      {panelRequest?.kind === "run-local-agent" && (
+        <RunLocalAgentCard
+          payload={panelRequest.payload as { prompt: string; cwd: string }}
+          onDecision={(ok) => respondPanel(panelRequest.requestId, { ok: true, data: ok })}
         />
       )}
       {showFileAccess && (

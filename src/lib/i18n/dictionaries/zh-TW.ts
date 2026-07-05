@@ -122,6 +122,13 @@ export const zhTWDict = {
     enable: "啟用",
     decline: "不啟用",
   },
+  runLocalAgent: {
+    title: "執行本地 Agent（claude -p）？",
+    cwdLabel: "工作目錄",
+    taskLabel: "任務",
+    allow: "允許",
+    deny: "拒絕",
+  },
   chat: {
     elementPicker: {
       idle: "選取頁面元素",

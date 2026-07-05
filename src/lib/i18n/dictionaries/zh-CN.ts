@@ -122,6 +122,13 @@ export const zhCNDict = {
     enable: "启用",
     decline: "不启用",
   },
+  runLocalAgent: {
+    title: "运行本地 Agent（claude -p）？",
+    cwdLabel: "工作目录",
+    taskLabel: "任务",
+    allow: "允许",
+    deny: "拒绝",
+  },
   chat: {
     elementPicker: {
       idle: "拾取页面元素",

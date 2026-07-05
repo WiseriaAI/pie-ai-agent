@@ -123,6 +123,13 @@ export const es419Dict = {
     enable: "Activar",
     decline: "Ahora no",
   },
+  runLocalAgent: {
+    title: "¿Ejecutar un agente local (claude -p)?",
+    cwdLabel: "Directorio de trabajo",
+    taskLabel: "Tarea",
+    allow: "Permitir",
+    deny: "Denegar",
+  },
   chat: {
     elementPicker: {
       idle: "Elegir elemento de la página",

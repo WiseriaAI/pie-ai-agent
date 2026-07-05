@@ -123,6 +123,13 @@ export const ptBRDict = {
     enable: "Ativar",
     decline: "Agora não",
   },
+  runLocalAgent: {
+    title: "Executar um agente local (claude -p)?",
+    cwdLabel: "Diretório de trabalho",
+    taskLabel: "Tarefa",
+    allow: "Permitir",
+    deny: "Negar",
+  },
   chat: {
     elementPicker: {
       idle: "Escolher elemento da página",

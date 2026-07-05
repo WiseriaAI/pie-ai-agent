@@ -122,6 +122,13 @@ export const enDict = {
     enable: "Enable",
     decline: "Not now",
   },
+  runLocalAgent: {
+    title: "Run a local agent (claude -p)?",
+    cwdLabel: "Working directory",
+    taskLabel: "Task",
+    allow: "Allow",
+    deny: "Deny",
+  },
   chat: {
     elementPicker: {
       idle: "Pick page element",
