@@ -32,8 +32,7 @@ import {
 } from "./runtime-map";
 import { createPortHandlers } from "./port-handlers";
 import { swPort } from "@/lib/sw-connection/manager";
-import { isFilePdfUrl } from "@/lib/pdf/detect";
-import { isRestrictedUrl } from "@/lib/url/restricted";
+import { captureActivePinnedTab } from "@/lib/sessions/capture-active-pinned";
 import {
   type DownloadResult,
   registerDownload,
@@ -79,51 +78,12 @@ import {
 // so the SW side can share the same sentinel string for the LLM title race guard).
 // The DisplayMessage type satisfies TitleableMessage (has role + content fields).
 
-/**
- * M3-U2 — capture the user's currently-active tab + its origin so a new
- * session can anchor to it at creation time. Returns null when the
- * active tab can't be resolved (no window focused, restricted URL, etc.) —
- * the loop's first-iteration origin check would handle a slipped pin
- * defensively, but filtering here keeps the panel UX honest: a session
- * that displays as pinned should actually be runnable.
- *
- * Filters two layers:
- *   1. isRestrictedUrl (shared util src/lib/url/restricted.ts) — the SAME
- *      check the agent loop uses. blob:https://example.com/abc parses to a
- *      non-"null" origin, so the scheme check (not origin equality) is what
- *      stops the pin from sneaking through.
- *   2. URL.origin === "null" — opaque-origin schemes the URL spec gives up on.
- */
-async function captureActivePinned(): Promise<
-  { pinnedTabId: number; pinnedOrigin: string } | null
-> {
-  try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab?.id || !tab.url) return null;
-    // Chrome can return tab.id === -1 for session-restore / detached tabs.
-    // The truthy check above lets that slip through (-1 is truthy). If we
-    // persisted it, a downstream chrome.tabs.get(-1) would synchronously
-    // throw "Value must be at least 0" and crash the agent loop. Filter
-    // explicitly: only pin to a real, addressable tab.
-    if (!Number.isInteger(tab.id) || tab.id < 0) return null;
-    // file://*.pdf exception: PDF viewer is sealed, so URL itself is the pin
-    // identity (mirrors isFilePdfUrl handling). Checked before isRestrictedUrl
-    // so the early-return wins (isRestrictedUrl also returns false for file
-    // PDFs, but the pin identity here is the full URL, not the origin).
-    if (isFilePdfUrl(tab.url)) {
-      return { pinnedTabId: tab.id, pinnedOrigin: tab.url };
-    }
-    // Shared single source of truth (src/lib/url/restricted.ts) — same check the
-    // agent loop uses to gate pinning, so the panel never shows a session as
-    // pinnable that the loop would then hard-stop on iteration 1.
-    if (isRestrictedUrl(tab.url)) return null;
-    const origin = new URL(tab.url).origin;
-    if (!origin || origin === "null") return null;
-    return { pinnedTabId: tab.id, pinnedOrigin: origin };
-  } catch {
-    return null;
-  }
-}
+// M3-U2 / #231 follow-up — active-tab pin capture now lives in the shared
+// module `@/lib/sessions/capture-active-pinned` (one source of truth for
+// panel + SW). Restricted pages (chrome://, new-tab, …) capture as a
+// legitimate pin with EMPTY origin, mirroring the loop's resolveStartupPin —
+// the old panel-local copy returned null for those, which left chrome://
+// sessions with no persisted pin (vanishing pin bar).
 
 interface SendMessageInput {
   /** What the user typed — rendered in the chat. */
@@ -654,9 +614,8 @@ export function useSession(): UseSession {
             if (!meta || meta.status === "archived") return;
             // v1.5 — skip if already has pinnedTabs[]
             if (meta.pinnedTabs && meta.pinnedTabs.length > 0) return;
-            const pin = await captureActivePinned();
-            if (!pin) return;
-            const pinEntry = { tabId: pin.pinnedTabId, origin: pin.pinnedOrigin };
+            const pinEntry = await captureActivePinnedTab();
+            if (!pinEntry) return;
             // Single-transaction conditional patch (replaces the old re-read +
             // full write-back, whose window let concurrent writers clobber
             // each other): skip if someone else pinned or archived meanwhile.
@@ -887,10 +846,9 @@ export function useSession(): UseSession {
     let didMigrate = false;
     const sessionHasContent = (meta.messages?.length ?? 0) > 0;
     if (sessionHasContent && (!meta.pinnedTabs || meta.pinnedTabs.length === 0)) {
-      const pinned = await captureActivePinned();
-      if (pinned) {
-        const pinEntry = { tabId: pinned.pinnedTabId, origin: pinned.pinnedOrigin };
-        // Single-transaction conditional patch — captureActivePinned awaited
+      const pinEntry = await captureActivePinnedTab();
+      if (pinEntry) {
+        // Single-transaction conditional patch — captureActivePinnedTab awaited
         // chrome.tabs.query above; never write the pre-capture `meta` snapshot
         // back wholesale. Skip if a pin landed meanwhile.
         const wrote = await updateSessionMeta(id, (current) =>

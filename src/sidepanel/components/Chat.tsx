@@ -608,6 +608,10 @@ export default function Chat({
       if (lockedPinnedTitle) return truncate(lockedPinnedTitle);
       if (sessionPinnedOrigin)
         return extractHost(sessionPinnedOrigin) ?? sessionPinnedOrigin;
+      // #231 — restricted-page pin (empty origin) whose title is unavailable
+      // (tab closed / inaccessible). Keep the bar mounted — `null` here
+      // unmounts the whole pin bar including the dropdown entry point.
+      if (sessionPinnedTabId !== null) return `#${sessionPinnedTabId}`;
       return null;
     }
     if (livePinnedTitle) return truncate(livePinnedTitle);

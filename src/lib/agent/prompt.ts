@@ -207,11 +207,16 @@ function buildPinnedContextBlock(
 ): string {
   if (pinnedTabs.length === 0) return "";
 
+  // #231 — restricted-page pins (chrome://, new-tab, …) carry an empty
+  // origin by contract; label them so the LLM knows to open_url elsewhere.
+  const originLabel = (origin: string) =>
+    origin === "" ? "(restricted page — not operable; use open_url to navigate)" : origin;
+
   if (pinnedTabs.length === 1) {
     const pin = pinnedTabs[0];
     return `\n\nYou are anchored to a specific browser tab for this conversation:
 - Pinned tab id: ${pin.tabId}
-- Pinned origin: ${pin.origin}
+- Pinned origin: ${originLabel(pin.origin)}
 
 Each iteration's observation gives you only the current URL and page title of the pinned tab. To inspect, extract from, or plan an operation on the page, call \`read_page({tabId: ${pin.tabId}, mode:"atlas"})\` DIRECTLY — do NOT call list_tabs first to look up the id (it's right above). If you need click/type/select indices after choosing an action, call \`read_page({tabId: ${pin.tabId}, mode:"interactive"})\`. If you need full body text, call \`read_page({tabId: ${pin.tabId}, mode:"content"})\`. list_tabs is for discovering OTHER tabs the user might want to act on.`;
   }
@@ -221,7 +226,7 @@ Each iteration's observation gives you only the current URL and page title of th
   const tabLines = pinnedTabs
     .map((p) => {
       const marker = p.tabId === focusId ? " ← current focus" : "";
-      return `  - tab ${p.tabId} (${p.origin})${marker}`;
+      return `  - tab ${p.tabId} (${originLabel(p.origin)})${marker}`;
     })
     .join("\n");
 

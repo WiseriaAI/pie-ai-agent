@@ -85,6 +85,7 @@ import { DEEPLINK_KEY, DEEPLINK_MANAGED_SUBSCRIBE } from "@/lib/deeplink";
 import { runStartupMigrations } from "@/lib/startup-migrations";
 import { getCrossSessionPinnedTabIds } from "@/lib/sessions/pinned-tab-registry";
 import { getEffectivePinMode, getPrimaryPin } from "@/lib/sessions/pin-state";
+import { captureActivePinnedTab } from "@/lib/sessions/capture-active-pinned";
 import { chat } from "@/lib/model-router";
 import { generateTitle, maybeUpgradeFallbackTitle } from "@/lib/sessions/title-generator";
 import {
@@ -273,36 +274,11 @@ function findRecordingSessionByTabId(tabId: number | undefined): RecordingSessio
   return null;
 }
 
-// M5 — SW-side captureActivePinned, mirrors useSession.ts:93-112. Used by
-// upgradeAutoToTaskAtChatStart to capture the send-time active tab.
-// Restricted-URL prefix list matches the panel-side helper exactly so both
-// paths converge on the same eligibility decision (any divergence would
-// produce a session whose pin slipped past one filter but not the other).
-const SW_RESTRICTED_PIN_PREFIXES = [
-  "chrome://",
-  "chrome-extension://",
-  "about:",
-  "edge://",
-  "file://",
-  "data:",
-  "javascript:",
-  "blob:",
-];
-async function captureSwActivePinned(): Promise<
-  { tabId: number; origin: string } | null
-> {
-  try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab?.id || !tab.url) return null;
-    if (!Number.isInteger(tab.id) || tab.id < 0) return null;
-    if (SW_RESTRICTED_PIN_PREFIXES.some((p) => tab.url!.startsWith(p))) return null;
-    const origin = new URL(tab.url).origin;
-    if (!origin || origin === "null") return null;
-    return { tabId: tab.id, origin };
-  } catch {
-    return null;
-  }
-}
+// M5 / #231 follow-up — SW-side pin capture now uses the SAME shared module
+// as the panel (`@/lib/sessions/capture-active-pinned`). The old private copy
+// (with its own restricted-prefix list) returned null for chrome:// etc.,
+// which left restricted-page sessions with no persisted pin even though #231
+// taught the loop to run there — vanishing pin bar + no R7 lock coverage.
 
 // Open side panel when extension icon is clicked
 chrome.action.onClicked.addListener(async (tab) => {
@@ -857,6 +833,12 @@ async function checkPinnedDrift(
       };
     }
 
+    // #231 follow-up — restricted-page pins carry an EMPTY origin by contract
+    // (chrome://, new-tab, …). There is no origin promise to drift from; only
+    // the tab-closed check above applies. Without this skip, every resume of
+    // a restricted-page session would false-positive as "origin-changed".
+    if (pin.origin === "") continue;
+
     const currentUrl = tab.url ?? "";
     const currentOrigin = safeParseOrigin(currentUrl);
     const lastPinnedTabTitle = escapeUntrustedWrappers(tab.title ?? "");
@@ -1305,7 +1287,7 @@ async function handleChatStream(
     // Panel-side fire-and-forget capture (useSession.ts:783) may race with
     // this; both paths set pinMode='task', so the second write is a no-op
     // (idempotent invariant). SW-side path is the authoritative backstop.
-    await upgradeAutoToTaskAtChatStart(sessionId, captureSwActivePinned).catch(
+    await upgradeAutoToTaskAtChatStart(sessionId, captureActivePinnedTab).catch(
       (e) => {
         console.warn(
           `[sw] upgradeAutoToTaskAtChatStart failed for session=${sessionId}:`,
