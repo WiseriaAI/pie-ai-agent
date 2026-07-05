@@ -91,6 +91,15 @@ export const enDict = {
       warning2: "All hover/click/keyboard actions use real CDP events; existing Chrome DevTools sessions on the same tab will conflict.",
       warning3: "Toggle off any time to disable; running tasks abort cleanly.",
     },
+    localBridge: {
+      sectionTitle: "Local integration",
+      title: "Local daemon bridge",
+      description:
+        "Connect to the local pie daemon so run_local_agent can hand tasks off to local Claude Code. Requires the daemon to be installed.",
+      statusOff: "Not enabled.",
+      statusConnected: "Connected to daemon.",
+      statusEnabledNotConnected: "Enabled, but not connected (daemon not running? run pie doctor).",
+    },
     searchProvider: {
       caps: "Search provider",
       statusNotSet: "Not set",
@@ -121,6 +130,13 @@ export const enDict = {
     body2: "While active, Chrome will show a yellow bar at the top of the tab — this is Chrome's required notification and cannot be hidden. It clears when the task ends.",
     enable: "Enable",
     decline: "Not now",
+  },
+  runLocalAgent: {
+    title: "Run a local agent (claude -p)?",
+    cwdLabel: "Working directory",
+    taskLabel: "Task",
+    allow: "Allow",
+    deny: "Deny",
   },
   chat: {
     elementPicker: {

@@ -1,0 +1,12 @@
+{
+  "name": "pie-daemon",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test",
+    "compile": "bun build ./src/cli.ts --compile --outfile dist/pie"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14"
+  }
+}

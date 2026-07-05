@@ -1,0 +1,7 @@
+{
+  "name": "ai.wiseria.pie",
+  "description": "Pie local daemon bridge host",
+  "path": "__PIE_BIN__",
+  "type": "stdio",
+  "allowed_origins": ["chrome-extension://__EXT_ID__/"]
+}

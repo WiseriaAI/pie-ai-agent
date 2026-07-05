@@ -15,6 +15,7 @@ export interface PanelRequestMap {
   "cdp-consent": { req: Record<string, never>; res: boolean };
   "local-file": { req: Record<string, never>; res: LocalFileResult };
   "schedule-model": { req: ScheduleDraftPayload; res: ScheduleModelSelection };
+  "run-local-agent": { req: { prompt: string; cwd: string }; res: boolean };
 }
 export type PanelRequestKind = keyof PanelRequestMap;
 

@@ -91,6 +91,15 @@ export const zhCNDict = {
       warning2: "所有 hover/click/键盘操作都走真实 CDP 事件；同一标签的现有 DevTools 会话会冲突。",
       warning3: "可随时关闭；运行中的任务会干净中止。",
     },
+    localBridge: {
+      sectionTitle: "本地打通",
+      title: "本地 daemon 桥",
+      description:
+        "连接本地 pie daemon，让 run_local_agent 把任务接力给本地 Claude Code。需先安装 daemon。",
+      statusOff: "未启用。",
+      statusConnected: "已连接 daemon。",
+      statusEnabledNotConnected: "已启用，但未连上 daemon（daemon 未运行？运行 pie doctor 检查）。",
+    },
     searchProvider: {
       caps: "网页搜索",
       statusNotSet: "未配置",
@@ -121,6 +130,13 @@ export const zhCNDict = {
     body2: "启用期间标签页顶部会出现「Pie 已开始调试此浏览器」的黄条——这是 Chrome 强制提示，无法关闭。任务结束自动解除。",
     enable: "启用",
     decline: "不启用",
+  },
+  runLocalAgent: {
+    title: "运行本地 Agent（claude -p）？",
+    cwdLabel: "工作目录",
+    taskLabel: "任务",
+    allow: "允许",
+    deny: "拒绝",
   },
   chat: {
     elementPicker: {

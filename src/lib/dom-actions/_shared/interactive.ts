@@ -100,6 +100,7 @@ export const WRAPPER_TAGS_LIST: readonly string[] = [
   "untrusted_local_file",
   "untrusted_editor_content",
   "untrusted_scratchpad_preview",
+  "untrusted_local_agent_output",
 ];
 
 /**

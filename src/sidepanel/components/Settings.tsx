@@ -367,6 +367,7 @@ export default function Settings({ onBack, onRunSkill, openSubscribeNonce }: Pro
               state={cdpInput}
               onSet={async (next) => { setCdpInput(next); await setCdpInputEnabled(next); }}
             />
+            <LocalBridgeSection />
             <FeedbackSection instances={instances} />
             <AboutSection />
           </div>
@@ -538,6 +539,76 @@ function CdpInputSection({
             </ul>
           </div>
         )}
+      </div>
+    </section>
+  );
+}
+
+type BridgeStatus = { hasPermission: boolean; ready: boolean };
+
+// 向 SW 查活桥状态（nativeMessaging 是否授予 + 是否已连上 daemon）。SW 睡了/无响应
+// 时静默返回，不更新——面板保留上次已知状态。
+function queryBridgeStatus(cb: (s: BridgeStatus) => void): void {
+  try {
+    chrome.runtime.sendMessage({ type: "local-bridge:status" }, (res) => {
+      if (chrome.runtime.lastError) return;
+      if (res && typeof res.hasPermission === "boolean") cb(res as BridgeStatus);
+    });
+  } catch {
+    /* noop */
+  }
+}
+
+// 本地打通开关 + 实时状态。开=请求 nativeMessaging（用户手势）→ SW onAdded 连桥；
+// 关=移除权限 → SW onRemoved 断桥。挂载期每 1.5s 轮询一次状态（连接是异步的）。
+function LocalBridgeSection() {
+  const t = useT();
+  const [status, setStatus] = useState<BridgeStatus | null>(null);
+
+  useEffect(() => {
+    queryBridgeStatus(setStatus);
+    const id = setInterval(() => queryBridgeStatus(setStatus), 1500);
+    return () => clearInterval(id);
+  }, []);
+
+  const enabled = status?.hasPermission ?? false;
+  const onToggle = async (next: boolean) => {
+    try {
+      if (next) await chrome.permissions.request({ permissions: ["nativeMessaging"] });
+      else await chrome.permissions.remove({ permissions: ["nativeMessaging"] });
+    } catch {
+      /* 用户取消了权限弹窗 */
+    }
+    queryBridgeStatus(setStatus);
+  };
+
+  const statusText =
+    status == null
+      ? ""
+      : !status.hasPermission
+        ? t("settings.localBridge.statusOff")
+        : status.ready
+          ? t("settings.localBridge.statusConnected")
+          : t("settings.localBridge.statusEnabledNotConnected");
+
+  return (
+    <section className="flex flex-col gap-3">
+      <div className="flex items-baseline justify-between">
+        <span className="text-[15px] font-semibold tracking-[-0.005em] text-fg-1">
+          {t("settings.localBridge.sectionTitle")}
+        </span>
+      </div>
+      <div className="flex flex-col gap-3 rounded-card border border-line bg-surface p-3.5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex flex-col gap-1">
+            <div className="text-[13px] font-medium text-fg-1">{t("settings.localBridge.title")}</div>
+            <div className="text-[12px] leading-relaxed text-fg-3">{t("settings.localBridge.description")}</div>
+            {statusText && (
+              <div className={`text-[12px] ${status?.ready ? "text-fg-1" : "text-fg-3"}`}>{statusText}</div>
+            )}
+          </div>
+          <Switch checked={enabled} onChange={onToggle} />
+        </div>
       </div>
     </section>
   );

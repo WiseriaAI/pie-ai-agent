@@ -127,6 +127,7 @@ import { mergeCarryoverIntoMessages } from "@/lib/agent/loop-drain";
 import type { ChatInstructionRejectedMessage } from "@/types/messages";
 import { isFilePdfUrl } from "@/lib/pdf/detect";
 import { installLogCapture } from "@/lib/log-buffer";
+import { maybeInitLocalBridge, disconnectLocalBridge, isBridgeReady } from "./local-bridge";
 
 // Install log capture at module top level
 installLogCapture("sw");
@@ -212,6 +213,23 @@ const schedulerDeps: SchedulerDeps = {
 // startAt) through the real agent loop. Without this, schedule-meta would arm
 // with a no-op dispatcher and silently drop every immediate/one-shot first run.
 setScheduleRunDep(runScheduleWithDeps);
+
+// Local Daemon Bridge (Slice 0) — only connects when the user has already
+// granted the optional `nativeMessaging` permission, so pure BYOK users who
+// never opt into local integration get zero native-messaging surface. Fire
+// and forget: the bridge degrades silently if no daemon is installed.
+void maybeInitLocalBridge();
+
+// Grant-time init: when the user enables local integration at runtime (settings
+// toggle → chrome.permissions.request), connect the bridge immediately instead
+// of waiting for the next SW restart. Symmetrically, tear the bridge down when
+// the user disables it (removes the permission).
+chrome.permissions.onAdded.addListener((p) => {
+  if (p.permissions?.includes("nativeMessaging")) void maybeInitLocalBridge();
+});
+chrome.permissions.onRemoved.addListener((p) => {
+  if (p.permissions?.includes("nativeMessaging")) disconnectLocalBridge();
+});
 
 // Task 4 — alarm fires (name = "schedule:<id>") route into handleAlarm, which
 // dispatches the run + re-arms the next fire (or disarms). Registered at SW top
@@ -642,6 +660,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === "extract-page") {
     handleExtractPage().then(sendResponse);
+    return true; // async response
+  }
+
+  // Settings「本地打通」section — panel queries live bridge status.
+  if (message?.type === "local-bridge:status") {
+    chrome.permissions
+      .contains({ permissions: ["nativeMessaging"] })
+      .then((hasPermission) => sendResponse({ hasPermission, ready: isBridgeReady() }))
+      .catch(() => sendResponse({ hasPermission: false, ready: false }));
     return true; // async response
   }
 

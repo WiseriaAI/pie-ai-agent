@@ -166,6 +166,12 @@ export const KNOWN_EDITOR_TOOL_NAMES = [
   "set_editor_value",
 ] as const;
 
+// Local Daemon Bridge — round-trip 接力工具。仅当 bridge 连通时由 loop 条件装配
+// 进 fullToolList（非 disclosure 门禁）。class=write：spawn 本地进程，是本地写动作
+// （不碰 tab，故 R7 tab-lock 不触发，但 write 是诚实分类）。group=core：一旦在
+// 列表里就总披露（存在性由 bridge 连通门禁，不靠 disclosure）。
+export const LOCAL_BRIDGE_TOOL_NAMES = ["run_local_agent"] as const;
+
 // ── M3-U4 — Tool class registry ─────────────────────────────────────────────
 //
 // Every built-in tool declares whether it is a `read` or `write` operation
@@ -273,6 +279,8 @@ export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
   // It has no tab target and can never conflict on a tab, so `read` is correct
   // here — this is a tab-lock classification, not a "does it mutate" flag.
   query_scratchpad: "read",
+  // Local Daemon Bridge — spawns a local process; write-class local action.
+  run_local_agent: "write",
 };
 
 // Build-time exhaustive check — every known tool name MUST have a class
@@ -291,6 +299,7 @@ for (const name of [
   ...KNOWN_BUILT_IN_TOOL_NAMES,
   ...KNOWN_KEYBOARD_TOOL_NAMES,
   ...KNOWN_EDITOR_TOOL_NAMES,
+  ...LOCAL_BRIDGE_TOOL_NAMES,
 ]) {
   if (!(name in TOOL_CLASSES)) {
     throw new Error(
@@ -354,6 +363,9 @@ export const TOOL_GROUPS: Readonly<Record<string, DisclosureGroup>> = {
   delete_schedule: "schedule", list_schedules: "schedule",
   create_skill: "skill-authoring", update_skill: "skill-authoring",
   delete_skill: "skill-authoring", list_skills: "skill-authoring",
+  // Local Daemon Bridge — always core (existence gated by bridge connectivity,
+  // not by disclosure).
+  run_local_agent: "core",
 };
 
 // Build-time exhaustive check — every known tool MUST declare a group.
@@ -361,6 +373,7 @@ for (const name of [
   ...KNOWN_BUILT_IN_TOOL_NAMES,
   ...KNOWN_KEYBOARD_TOOL_NAMES,
   ...KNOWN_EDITOR_TOOL_NAMES,
+  ...LOCAL_BRIDGE_TOOL_NAMES,
 ]) {
   if (!(name in TOOL_GROUPS)) {
     throw new Error(

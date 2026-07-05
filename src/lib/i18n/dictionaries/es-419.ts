@@ -92,6 +92,15 @@ export const es419Dict = {
       warning2: "Todas las acciones de hover/clic/teclado usan eventos CDP reales; las sesiones existentes de Chrome DevTools en la misma pestaña tendrán conflicto.",
       warning3: "Puedes desactivarlo en cualquier momento; las tareas en ejecución se cancelan limpiamente.",
     },
+    localBridge: {
+      sectionTitle: "Integración local",
+      title: "Puente al daemon local",
+      description:
+        "Conéctate al daemon pie local para que run_local_agent delegue tareas a Claude Code local. Requiere el daemon instalado.",
+      statusOff: "No habilitado.",
+      statusConnected: "Conectado al daemon.",
+      statusEnabledNotConnected: "Habilitado, pero sin conexión (¿el daemon no está en ejecución? ejecuta pie doctor).",
+    },
     searchProvider: {
       caps: "Proveedor de búsqueda",
       statusNotSet: "Sin configurar",
@@ -122,6 +131,13 @@ export const es419Dict = {
     body2: "Mientras está activo, Chrome mostrará una barra amarilla en la parte superior de la pestaña; es una notificación obligatoria de Chrome y no se puede ocultar. Desaparece cuando termina la tarea.",
     enable: "Activar",
     decline: "Ahora no",
+  },
+  runLocalAgent: {
+    title: "¿Ejecutar un agente local (claude -p)?",
+    cwdLabel: "Directorio de trabajo",
+    taskLabel: "Tarea",
+    allow: "Permitir",
+    deny: "Denegar",
   },
   chat: {
     elementPicker: {

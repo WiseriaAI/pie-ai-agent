@@ -91,6 +91,15 @@ export const zhTWDict = {
       warning2: "所有 hover/click/鍵盤操作都走真實 CDP 事件；同一分頁既有的 DevTools 工作階段會發生衝突。",
       warning3: "可隨時關閉；執行中的任務會乾淨地中止。",
     },
+    localBridge: {
+      sectionTitle: "本機打通",
+      title: "本機 daemon 橋接",
+      description:
+        "連接本機 pie daemon，讓 run_local_agent 把任務接力給本機 Claude Code。需先安裝 daemon。",
+      statusOff: "未啟用。",
+      statusConnected: "已連接 daemon。",
+      statusEnabledNotConnected: "已啟用，但未連上 daemon（daemon 未執行？執行 pie doctor 檢查）。",
+    },
     searchProvider: {
       caps: "網頁搜尋",
       statusNotSet: "未設定",
@@ -121,6 +130,13 @@ export const zhTWDict = {
     body2: "啟用期間分頁頂部會出現「Pie 已開始偵錯此瀏覽器」的黃色提示列——這是 Chrome 強制顯示、無法關閉。任務結束會自動解除。",
     enable: "啟用",
     decline: "不啟用",
+  },
+  runLocalAgent: {
+    title: "執行本地 Agent（claude -p）？",
+    cwdLabel: "工作目錄",
+    taskLabel: "任務",
+    allow: "允許",
+    deny: "拒絕",
   },
   chat: {
     elementPicker: {

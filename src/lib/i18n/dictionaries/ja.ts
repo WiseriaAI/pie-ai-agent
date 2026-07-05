@@ -92,6 +92,15 @@ export const jaDict = {
       warning2: "すべての hover/クリック/キーボード操作は実際の CDP イベントを使います。同じタブの既存 Chrome DevTools セッションとは競合します。",
       warning3: "いつでもオフにできます。実行中のタスクは安全に中止されます。",
     },
+    localBridge: {
+      sectionTitle: "ローカル連携",
+      title: "ローカル daemon ブリッジ",
+      description:
+        "ローカルの pie daemon に接続し、run_local_agent がタスクをローカルの Claude Code に引き継げるようにします。daemon のインストールが必要です。",
+      statusOff: "未有効。",
+      statusConnected: "daemon に接続済み。",
+      statusEnabledNotConnected: "有効ですが未接続です（daemon が起動していない？ pie doctor を実行）。",
+    },
     searchProvider: {
       caps: "検索プロバイダー",
       statusNotSet: "未設定",
@@ -122,6 +131,13 @@ export const jaDict = {
     body2: "有効な間、Chrome はタブ上部に黄色いバーを表示します。これは Chrome が要求する通知で、非表示にはできません。タスク終了時に消えます。",
     enable: "有効にする",
     decline: "今はしない",
+  },
+  runLocalAgent: {
+    title: "ローカルエージェント (claude -p) を実行しますか？",
+    cwdLabel: "作業ディレクトリ",
+    taskLabel: "タスク",
+    allow: "許可",
+    deny: "拒否",
   },
   chat: {
     elementPicker: {
