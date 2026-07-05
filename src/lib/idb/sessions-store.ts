@@ -57,3 +57,52 @@ export async function writeSessionBatch(batch: SessionBatch): Promise<void> {
 export async function setIndex(index: SessionIndexEntry[]): Promise<void> {
   await writeSessionBatch({ index });
 }
+
+/**
+ * Atomic read-modify-write of ONE session record (+ optionally the index) in a
+ * SINGLE readwrite transaction spanning sessions + session_index. IDB
+ * serializes readwrite transactions per store, so `transform` always sees the
+ * latest committed value — this closes the lost-update window of the old
+ * two-transaction get→set pattern (pin-tab clobber bug).
+ *
+ * `transform` MUST be synchronous (IDB transactions auto-commit once the
+ * request callback chain drains) and should not throw — a throw aborts the
+ * transaction (nothing is written) and rejects this promise. Return null to
+ * skip the write entirely (empty transaction commit).
+ *
+ * Returns true when a write was committed.
+ */
+export async function updateSessionRecordWithIndex(
+  recordId: string,
+  transform: (
+    current: unknown,
+    index: SessionIndexEntry[] | undefined,
+  ) => { record: unknown; index?: SessionIndexEntry[] } | null,
+): Promise<boolean> {
+  let wrote = false;
+  await txMulti([STORES.sessions, STORES.sessionIndex], "readwrite", (m) => {
+    const recReq = m[STORES.sessions].get(recordId) as IDBRequest<
+      Wrapped | undefined
+    >;
+    const idxReq = m[STORES.sessionIndex].get(INDEX_ID) as IDBRequest<
+      Wrapped | undefined
+    >;
+    let pending = 2;
+    const ready = () => {
+      if (--pending > 0) return;
+      const result = transform(
+        recReq.result?.value,
+        idxReq.result?.value as SessionIndexEntry[] | undefined,
+      );
+      if (result === null) return;
+      m[STORES.sessions].put({ id: recordId, value: result.record });
+      if (result.index)
+        m[STORES.sessionIndex].put({ id: INDEX_ID, value: result.index });
+      wrote = true;
+    };
+    recReq.onsuccess = ready;
+    idxReq.onsuccess = ready;
+  });
+  if (wrote) publishChange("sessions", "put", recordId);
+  return wrote;
+}

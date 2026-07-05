@@ -66,7 +66,7 @@ import type {
 import type { SessionAgentState } from "../sessions/types";
 import {
   getSessionMeta,
-  setSessionMeta,
+  updateSessionMeta,
   getSessionAgent,
   setSessionAgent,
 } from "../sessions/storage";
@@ -1557,9 +1557,12 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // the unpin immediately, rather than only after the next step's
       // storage refresh. Storage stays the source of truth.
       const stepPinView = createStepPinView(currentPinnedTabs, async (tabId) => {
-        const meta = await getSessionMeta(sessionId);
-        if (!meta) return;
-        await setSessionMeta(removePinFromMeta(meta, tabId));
+        // Single-transaction patch — never write back a stale full snapshot
+        // (removePinFromMeta returns the same reference when the pin is
+        // absent, which updateSessionMeta treats as "skip the write").
+        await updateSessionMeta(sessionId, (meta) =>
+          removePinFromMeta(meta, tabId),
+        );
       });
 
       // Issue #34 — drain any mid-task instructions submitted during the
@@ -2370,9 +2373,13 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             // live, post-unpin list at ctx-build time).
             pinnedTabs: stepPinView.pins,
             appendPinnedTab: async (pin) => {
-              const meta = await getSessionMeta(sessionId);
-              if (!meta) return;
-              await setSessionMeta(addPinToMeta(meta, pin));
+              // Single-transaction patch — a concurrent lastAccessedAt bump
+              // (every-5-steps updateLastAccessed) can no longer erase the
+              // freshly appended pin. addPinToMeta returns the same reference
+              // on duplicate tabId → skip-write.
+              await updateSessionMeta(sessionId, (meta) =>
+                addPinToMeta(meta, pin),
+              );
             },
             setCurrentFocusTabId: async (tabId) => {
               const cur = await getSessionAgent(sessionId);
