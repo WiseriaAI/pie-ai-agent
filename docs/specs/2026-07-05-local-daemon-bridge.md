@@ -37,7 +37,7 @@ Pie 当前是纯 MV3 扩展，三个能力天花板：
 
 愿景层（§1、§2、§6、ADR）保持终局不变；**交付**切成一根曳光弹 + 5 层增量，每层独立可发、各带自己那格授权。
 
-- **Slice 0（曳光弹 / 地基）**：`pie` 单二进制骨架 + `pie host` 透传 + `pie daemon` 空壳 + 扩展 `local-bridge.ts` + `hello` 握手（含 `protocolVersion`）+ `.pkg` 一键安装器 + `pie doctor`，端到端只打通 **round-trip（4.2）** 证明管子通。选 round-trip 作曳光弹：它单独证明「侧栏发起 → daemon spawn 子进程 → 流式回传」全链路，且不需要反向通道。
+- **Slice 0（曳光弹 / 地基）** ✅ **已实现（plan `docs/plans/2026-07-05-local-daemon-bridge-slice0.md`，12 task）**：`pie` 单二进制骨架 + `pie host` 透传 + `pie daemon` 空壳 + 扩展 `local-bridge.ts` + `hello` 握手（含 `protocolVersion`）+ `.pkg` 一键安装器 + `pie doctor`，端到端只打通 **round-trip（4.2）** 证明管子通。选 round-trip 作曳光弹：它单独证明「侧栏发起 → daemon spawn 子进程 → 流式回传」全链路，且不需要反向通道。**daemon 侧已端到端验证**（编译单二进制 61MB + socket hello 往返 + doctor）；**Chrome native-messaging 腿（装 pkg + 授权 + connectNative + 驱动 agent）待真机手测**。round-trip 曳光弹为**阻塞返回最终结果**，live 流式渲染 defer。
 - **Slice 1**：hand-off（4.1）
 - **Slice 2**：skill 执行器（4.3，吸收 #68 路由 + #69）
 - **Slice 3**：stdio MCP 代理（4.4）

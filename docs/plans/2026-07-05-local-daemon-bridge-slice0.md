@@ -1335,9 +1335,11 @@ git commit -m "feat(bridge): optional nativeMessaging permission + gated SW init
 
 - [ ] **Step 3: postinstall 脚本**
 
+> ⚠️ **修正（Task 11 review 抓出的 Critical，此处快照为原始有 bug 版）**：macOS `.pkg` 的 postinstall **以 root 运行，不是用户上下文**——裸 `$HOME` 会解析成 `/var/root`，导致 host manifest / LaunchAgent 落到 root 的家目录，Chrome（以用户身份跑）永远找不到 → connectNative 100% 失败。**实际实现**（commit `b200a643`）已改为：`CONSOLE_USER=$(stat -f%Su /dev/console)` + `dscl . -read /Users/$CONSOLE_USER NFSHomeDirectory` 解析真实用户家目录，per-user 路径基于 `$USER_HOME`，写完 `chown` 给该用户，并用 `launchctl asuser "$USER_UID" launchctl load` 注册进用户会话域 + 无 console user 时 guard 退出。下面代码块是原始有 bug 版，勿照抄。
+
 ```bash
 #!/bin/bash
-# daemon/install/postinstall.sh — .pkg 装完后由 Installer 以用户上下文运行
+# daemon/install/postinstall.sh — .pkg 装完后由 Installer 运行（注意：以 ROOT 运行，见上方修正）
 set -euo pipefail
 
 PIE_BIN="/usr/local/bin/pie"
