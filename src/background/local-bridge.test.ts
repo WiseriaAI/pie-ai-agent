@@ -118,4 +118,20 @@ describe("local-bridge", () => {
     await Promise.resolve();
     expect(isBridgeReady()).toBe(true);
   });
+
+  it("requestHandoff resolves on matching id with the handoff dir", async () => {
+    const { initLocalBridge, requestHandoff } = await import("./local-bridge");
+    initLocalBridge();
+    const helloReq = fakePort.postMessage.mock.calls[0][0] as { id: string };
+    fakePort._emit({
+      id: helloReq.id, ok: true,
+      result: { protocolVersion: PROTOCOL_VERSION, capabilities: ["run_local_agent", "handoff_to_agent"] },
+    });
+
+    const p = requestHandoff({ target: "claude", context: "do the thing" });
+    const req = fakePort.postMessage.mock.calls[1][0] as { id: string; method: string };
+    expect(req.method).toBe("handoff_to_agent");
+    fakePort._emit({ id: req.id, ok: true, result: { dir: "/Users/x/pie-handoffs/2026-07-06-do-the-thing" } });
+    await expect(p).resolves.toMatchObject({ dir: "/Users/x/pie-handoffs/2026-07-06-do-the-thing" });
+  });
 });
