@@ -33,6 +33,7 @@ beforeEach(async () => {
       onCommitted: { addListener: vi.fn(), removeListener: vi.fn() },
       onHistoryStateUpdated: { addListener: vi.fn(), removeListener: vi.fn() },
     } as unknown as typeof chrome.webNavigation,
+    tabs: { onCreated: { addListener: vi.fn(), removeListener: vi.fn() } } as unknown as typeof chrome.tabs,
   } as unknown as typeof chrome;
 });
 

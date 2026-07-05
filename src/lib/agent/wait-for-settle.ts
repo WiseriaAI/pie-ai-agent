@@ -39,6 +39,8 @@
  * landing pages) that would otherwise wedge the loop.
  */
 
+import type { ActionResult } from "../dom-actions/types";
+
 /**
  * Self-contained injected helper. Idempotent install of a global
  * MutationObserver on document.body that updates `window.__pieMutAt`
@@ -77,6 +79,29 @@ function readMutationTimestamp(): number {
   return (window as unknown as { __pieMutAt?: number }).__pieMutAt ?? 0;
 }
 
+/**
+ * #251 — build the observation suffix appended when an action opened one or
+ * more new tabs (target=_blank / window.open fanout). Only browser-derived
+ * tab ids (numbers) and origins parsed via `new URL().origin` make it into
+ * the text — NEVER the page-controlled tab title, which is an injection
+ * surface. The suffix points the model at `switch_to_new_tab`, the
+ * recovery tool that adopts + focuses a tab the session spawned.
+ */
+function formatNewTabNotice(
+  ids: number[],
+  origins: Map<number, string>,
+): string {
+  const label = (id: number) => {
+    const origin = origins.get(id);
+    return origin ? `${id}, ${origin}` : `${id}`;
+  };
+  if (ids.length === 1) {
+    return `This action opened a new tab (id ${label(ids[0])}). If the task continues there, call switch_to_new_tab to adopt and focus it.`;
+  }
+  const list = ids.map(label).join("; ");
+  return `This action opened ${ids.length} new tabs (${list}). If the task continues in one of them, call switch_to_new_tab to adopt and focus it.`;
+}
+
 export interface ActionSettleOptions {
   /**
    * Quiet window required to declare the page settled. After the action
@@ -112,7 +137,7 @@ export interface ActionSettleOptions {
  * `performAction` short-circuit the wait — the result is returned
  * immediately without any settle delay.
  */
-export async function withActionSettle<T extends { success: boolean }>(
+export async function withActionSettle<T extends ActionResult>(
   tabId: number,
   performAction: () => Promise<T>,
   options: ActionSettleOptions = {},
@@ -144,6 +169,33 @@ export async function withActionSettle<T extends { success: boolean }>(
   };
   chrome.webNavigation.onCommitted.addListener(onNavEvent);
   chrome.webNavigation.onHistoryStateUpdated.addListener(onNavEvent);
+
+  // #251 — detect fanout: a click / keypress that opens a new tab via
+  // target=_blank or window.open. The settle signals above are all scoped to
+  // the acting tab, so the model would otherwise never learn a new tab exists
+  // and stall on the original page. Collect tabs whose `openerTabId` is the
+  // acting tab; on a successful action their ids (+ parsed origins, never the
+  // page-controlled title) are appended to the observation.
+  const newTabIds: number[] = [];
+  const newTabOrigins = new Map<number, string>();
+  const onTabCreated = (tab: chrome.tabs.Tab) => {
+    if (tab.id === undefined || tab.openerTabId !== tabId) return;
+    if (newTabIds.includes(tab.id)) return;
+    newTabIds.push(tab.id);
+    // At onCreated time the tab may still be about:blank with the real
+    // destination in `pendingUrl`; prefer whichever parses to a concrete
+    // origin. Unparseable / opaque ("null") origins are simply omitted.
+    const rawUrl = tab.pendingUrl || tab.url || "";
+    if (rawUrl) {
+      try {
+        const origin = new URL(rawUrl).origin;
+        if (origin && origin !== "null") newTabOrigins.set(tab.id, origin);
+      } catch {
+        // unparseable URL — id-only notice
+      }
+    }
+  };
+  chrome.tabs.onCreated.addListener(onTabCreated);
 
   try {
     const result = await performAction();
@@ -202,9 +254,17 @@ export async function withActionSettle<T extends { success: boolean }>(
       if (elapsed >= maxMs) break;
     }
 
+    if (newTabIds.length > 0) {
+      const notice = formatNewTabNotice(newTabIds, newTabOrigins);
+      result.observation = result.observation
+        ? `${result.observation} ${notice}`
+        : notice;
+    }
+
     return result;
   } finally {
     chrome.webNavigation.onCommitted.removeListener(onNavEvent);
     chrome.webNavigation.onHistoryStateUpdated.removeListener(onNavEvent);
+    chrome.tabs.onCreated.removeListener(onTabCreated);
   }
 }
