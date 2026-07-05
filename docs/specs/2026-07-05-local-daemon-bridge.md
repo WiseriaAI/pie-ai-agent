@@ -42,7 +42,7 @@ Pie 当前是纯 MV3 扩展，三个能力天花板：
 - **Slice 2**：skill 执行器（4.3，吸收 #68 路由 + #69）
 - **Slice 3**：stdio MCP 代理（4.4）
 - **Slice 4**：反向 MCP server（4.5）
-- **Slice 5**：安装/更新 UX 精修 + **daemon 自更新**（§9）
+- **Slice 5**：安装/更新 UX 精修 + **daemon 自更新**（§9）。注：设置页「本地打通」**启用开关 + 实时状态提示**已在真机测试期从 Slice 5 前移进 Slice 0（否则 nativeMessaging 授权需用户手势、无 UI 无法触发，测试寸步难行）；Slice 5 只剩安装引导/自更新那部分 UX
 
 ## 4. 架构
 

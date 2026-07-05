@@ -91,6 +91,15 @@ export const zhCNDict = {
       warning2: "所有 hover/click/键盘操作都走真实 CDP 事件；同一标签的现有 DevTools 会话会冲突。",
       warning3: "可随时关闭；运行中的任务会干净中止。",
     },
+    localBridge: {
+      sectionTitle: "本地打通",
+      title: "本地 daemon 桥",
+      description:
+        "连接本地 pie daemon，让 run_local_agent 把任务接力给本地 Claude Code。需先安装 daemon。",
+      statusOff: "未启用。",
+      statusConnected: "已连接 daemon。",
+      statusEnabledNotConnected: "已启用，但未连上 daemon（daemon 未运行？运行 pie doctor 检查）。",
+    },
     searchProvider: {
       caps: "网页搜索",
       statusNotSet: "未配置",

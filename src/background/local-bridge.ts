@@ -85,3 +85,19 @@ export async function maybeInitLocalBridge(): Promise<void> {
     // permissions API 不可用（测试/老 Chrome）→ 静默跳过
   }
 }
+
+/** 用户在设置里关掉本地打通（移除 nativeMessaging）时断桥并清状态。 */
+export function disconnectLocalBridge(): void {
+  if (port) {
+    try {
+      port.disconnect();
+    } catch {
+      /* already dead */
+    }
+  }
+  port = null;
+  ready = false;
+  capabilities = [];
+  for (const p of pending.values()) p.reject(new Error("bridge disabled"));
+  pending.clear();
+}

@@ -92,6 +92,15 @@ export const es419Dict = {
       warning2: "Todas las acciones de hover/clic/teclado usan eventos CDP reales; las sesiones existentes de Chrome DevTools en la misma pestaña tendrán conflicto.",
       warning3: "Puedes desactivarlo en cualquier momento; las tareas en ejecución se cancelan limpiamente.",
     },
+    localBridge: {
+      sectionTitle: "Integración local",
+      title: "Puente al daemon local",
+      description:
+        "Conéctate al daemon pie local para que run_local_agent delegue tareas a Claude Code local. Requiere el daemon instalado.",
+      statusOff: "No habilitado.",
+      statusConnected: "Conectado al daemon.",
+      statusEnabledNotConnected: "Habilitado, pero sin conexión (¿el daemon no está en ejecución? ejecuta pie doctor).",
+    },
     searchProvider: {
       caps: "Proveedor de búsqueda",
       statusNotSet: "Sin configurar",

@@ -91,6 +91,15 @@ export const zhTWDict = {
       warning2: "所有 hover/click/鍵盤操作都走真實 CDP 事件；同一分頁既有的 DevTools 工作階段會發生衝突。",
       warning3: "可隨時關閉；執行中的任務會乾淨地中止。",
     },
+    localBridge: {
+      sectionTitle: "本機打通",
+      title: "本機 daemon 橋接",
+      description:
+        "連接本機 pie daemon，讓 run_local_agent 把任務接力給本機 Claude Code。需先安裝 daemon。",
+      statusOff: "未啟用。",
+      statusConnected: "已連接 daemon。",
+      statusEnabledNotConnected: "已啟用，但未連上 daemon（daemon 未執行？執行 pie doctor 檢查）。",
+    },
     searchProvider: {
       caps: "網頁搜尋",
       statusNotSet: "未設定",

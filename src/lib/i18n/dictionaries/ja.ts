@@ -92,6 +92,15 @@ export const jaDict = {
       warning2: "すべての hover/クリック/キーボード操作は実際の CDP イベントを使います。同じタブの既存 Chrome DevTools セッションとは競合します。",
       warning3: "いつでもオフにできます。実行中のタスクは安全に中止されます。",
     },
+    localBridge: {
+      sectionTitle: "ローカル連携",
+      title: "ローカル daemon ブリッジ",
+      description:
+        "ローカルの pie daemon に接続し、run_local_agent がタスクをローカルの Claude Code に引き継げるようにします。daemon のインストールが必要です。",
+      statusOff: "未有効。",
+      statusConnected: "daemon に接続済み。",
+      statusEnabledNotConnected: "有効ですが未接続です（daemon が起動していない？ pie doctor を実行）。",
+    },
     searchProvider: {
       caps: "検索プロバイダー",
       statusNotSet: "未設定",
