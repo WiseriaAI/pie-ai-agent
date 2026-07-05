@@ -52,6 +52,16 @@ export async function runHandoff(
     opts?.writeFile ?? ((p, c, m) => writeFileSync(p, c, m != null ? { mode: m } : undefined));
   const now = opts?.now ?? (() => new Date().toISOString().slice(0, 10));
 
+  // params 是 JSON 解析自 socket 的运行时值（daemon.ts 里只是 `as HandoffParams`
+  // 断言，编译期字面量类型在运行时不提供任何保证）；target 最终会被拼进
+  // start.command 的 `exec ${cmd} "..."` 里，未经校验的 shell 元字符会在
+  // `open` 拉起 Terminal 的瞬间执行——早于人在终端前的任何审批，直接击穿
+  // hand-off 相对 round-trip 的安全前提。Slice 1 只认 "claude"；引入 codex
+  // 时这里改成 allow-list。
+  if (params.target !== "claude") {
+    throw new Error(`unsupported handoff target: ${JSON.stringify(params.target)}`);
+  }
+
   const dir = join(paths.handoffsDir, `${now()}-${slugify(params.context)}`);
   ensureDir(dir);
   writeFile(join(dir, "context.md"), params.context);
@@ -62,9 +72,12 @@ export async function runHandoff(
   // --dangerously-skip-permissions —— 人就在终端前，claude 自己的交互审批有人可批，
   // 这正是 hand-off 区别于 round-trip 的地方。exec 让 claude 接管终端；退出后
   // Terminal 显示 process completed，错误（如 claude 未装）对用户可见。
-  // dir 是 daemon 派生（homedir + [a-z0-9-] slug），非 raw 用户输入 → 无命令注入；
-  // JSON.stringify 的引号处理兼容 bash 双引号（含路径空格）。
-  const cmd = params.target; // Slice 1 只 claude
+  // dir 是 daemon 派生（homedir + ISO 日期 + slugify 限制字符集在
+  // [a-z0-9-]），charset 由构造方式圈定，不是靠 JSON.stringify 的引号规则
+  // 恰好兼容 bash 双引号语义（两者其实不等价：JSON 的 \n / \uXXXX 转义与 bash
+  // 双引号转义规则不同）——这里安全性来自 dir 本身不含双引号/反引号/`$`
+  // 等元字符，JSON.stringify 只是顺手拿来加一层引号。
+  const cmd = params.target; // Slice 1 只 claude（上面已校验）
   const script =
     `#!/bin/bash\n` +
     `cd ${JSON.stringify(dir)} || exit 1\n` +
