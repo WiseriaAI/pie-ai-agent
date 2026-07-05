@@ -1,0 +1,11 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "target": "ESNext",
+    "types": ["bun-types"],
+    "paths": { "@shared/*": ["../src/types/*"] }
+  },
+  "include": ["src", "test", "../src/types/local-bridge.ts"]
+}
