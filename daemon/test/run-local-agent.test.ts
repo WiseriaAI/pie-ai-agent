@@ -38,3 +38,55 @@ test("honors explicit cwd", async () => {
   );
   expect(r.cwd).toBe("/tmp/proj");
 });
+
+// Finding 1 follow-up: stderr must be drained concurrently with stdout (never
+// awaited-then-read), and a non-zero exit should carry a stderr tail in
+// `output` so failures aren't silently empty. Zero exit stays untouched.
+test("zero exit: output is stdout unchanged even when stderr has content", async () => {
+  const fakeSpawn = async () => ({ stdout: "AGENT REPLY", exitCode: 0, stderr: "some warning noise" });
+  const r = await runLocalAgent(
+    { target: "claude", prompt: "x" },
+    { spawn: fakeSpawn, ensureDir: () => {} },
+  );
+  expect(r.output).toBe("AGENT REPLY");
+  expect(r.exitCode).toBe(0);
+});
+
+test("non-zero exit: stderr tail is appended to output for diagnostics", async () => {
+  const fakeSpawn = async () => ({ stdout: "", exitCode: 1, stderr: "boom: something broke\n" });
+  const r = await runLocalAgent(
+    { target: "claude", prompt: "x" },
+    { spawn: fakeSpawn, ensureDir: () => {} },
+  );
+  expect(r.exitCode).toBe(1);
+  expect(r.output).toContain("boom: something broke");
+});
+
+test("non-zero exit: stdout and stderr tail are both present, stdout first", async () => {
+  const fakeSpawn = async () => ({ stdout: "partial output", exitCode: 2, stderr: "fatal error" });
+  const r = await runLocalAgent(
+    { target: "claude", prompt: "x" },
+    { spawn: fakeSpawn, ensureDir: () => {} },
+  );
+  expect(r.output.indexOf("partial output")).toBeLessThan(r.output.indexOf("fatal error"));
+});
+
+test("non-zero exit with no stderr: output stays as stdout (no stray tail)", async () => {
+  const fakeSpawn = async () => ({ stdout: "still nothing", exitCode: 1, stderr: "" });
+  const r = await runLocalAgent(
+    { target: "claude", prompt: "x" },
+    { spawn: fakeSpawn, ensureDir: () => {} },
+  );
+  expect(r.output).toBe("still nothing");
+});
+
+test("non-zero exit: fake spawn omitting stderr entirely does not throw", async () => {
+  // Backward-compat: SpawnFn.stderr is optional; older/simpler fakes may omit it.
+  const fakeSpawn = async () => ({ stdout: "x", exitCode: 1 });
+  const r = await runLocalAgent(
+    { target: "claude", prompt: "x" },
+    { spawn: fakeSpawn, ensureDir: () => {} },
+  );
+  expect(r.output).toBe("x");
+  expect(r.exitCode).toBe(1);
+});

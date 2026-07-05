@@ -3,6 +3,7 @@ import { PROTOCOL_VERSION, BRIDGE_CAPABILITIES } from "../../src/types/local-bri
 import type { BridgeResponse, RunLocalAgentParams } from "../../src/types/local-bridge";
 import { paths } from "./paths";
 import { runLocalAgent } from "./run-local-agent"; // Task 4
+import { decodeNdjsonLines } from "./framing";
 
 export async function handleMessage(line: string): Promise<string> {
   let msg: { id?: string; method?: string; params?: unknown };
@@ -34,17 +35,44 @@ export async function handleMessage(line: string): Promise<string> {
   }
 }
 
+// Unix domain STREAM socket 不保留消息边界：一个 run_local_agent 请求的 JSON
+// 可能跨两次 data 回调被截断。未缓冲直接 split("\n") 会让两个半行各自 JSON.parse
+// 失败 → daemon 回 {id:"",...bad_json} → SW 里没有 id="" 的 pending 请求能匹配
+// 上 → 工具永久挂起。这是 host 侧（commit 69c17be1，见 host.ts）已经修过的同一个
+// bug，这里对称地在 daemon 的 socket 层复用 decodeNdjsonLines。
+//
+// 抽成纯函数是为了绕开「Bun.listen 的真实 socket 不可单测」的问题：调用方只需
+// 传入 carry + 本次 chunk + 一个 write 回调，就能在测试里断言半行不会被提前
+// dispatch、且下一次 chunk 到达后能拼出完整消息。
+export function processSocketChunk(
+  carry: string,
+  chunk: string,
+  write: (out: string) => void,
+): { carry: string; pending: Promise<void> } {
+  const { lines, carry: nextCarry } = decodeNdjsonLines(carry, chunk);
+  const pending = Promise.all(lines.map((line) => handleMessage(line).then((out) => write(out + "\n")))).then(
+    () => undefined,
+  );
+  return { carry: nextCarry, pending };
+}
+
 export async function startDaemon(): Promise<void> {
   if (!existsSync(paths.pieDir)) mkdirSync(paths.pieDir, { recursive: true });
   if (existsSync(paths.socketPath)) unlinkSync(paths.socketPath); // 清残留
-  Bun.listen({
+  Bun.listen<{ carry: string }>({
     unix: paths.socketPath,
     socket: {
+      open(socket) {
+        // 每个连接独立的 carry：Bun 的 per-socket data 绑定，多个 host 连接
+        // （理论上）互不干扰各自的半行缓冲。
+        socket.data = { carry: "" };
+      },
       data(socket, data) {
-        const text = data.toString();
-        for (const line of text.split("\n").filter(Boolean)) {
-          handleMessage(line).then((out) => socket.write(out + "\n"));
-        }
+        const { carry, pending } = processSocketChunk(socket.data.carry, data.toString(), (out) =>
+          socket.write(out),
+        );
+        socket.data.carry = carry;
+        pending.catch((err) => console.error("[pie daemon] handleMessage failed", err));
       },
     },
   });
