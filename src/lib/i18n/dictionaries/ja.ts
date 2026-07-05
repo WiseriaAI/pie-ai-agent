@@ -139,6 +139,14 @@ export const jaDict = {
     allow: "許可",
     deny: "拒否",
   },
+  handoff: {
+    title: "ローカルエージェントに引き継ぐ（対話型）？",
+    targetLabel: "ローカルエージェント",
+    contextLabel: "コンテキスト",
+    filesLabel: "引き継ぐファイル",
+    allow: "引き継ぐ",
+    deny: "キャンセル",
+  },
   chat: {
     elementPicker: {
       idle: "ページ要素を選択",

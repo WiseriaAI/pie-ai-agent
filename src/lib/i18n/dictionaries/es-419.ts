@@ -139,6 +139,14 @@ export const es419Dict = {
     allow: "Permitir",
     deny: "Denegar",
   },
+  handoff: {
+    title: "¿Delegar a un agente local (interactivo)?",
+    targetLabel: "Agente local",
+    contextLabel: "Contexto",
+    filesLabel: "Archivos a preparar",
+    allow: "Delegar",
+    deny: "Cancelar",
+  },
   chat: {
     elementPicker: {
       idle: "Elegir elemento de la página",

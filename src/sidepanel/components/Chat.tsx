@@ -96,6 +96,7 @@ import { PendingInstructionList, type PendingItem } from "./PendingInstructionLi
 import { CdpOnboardingCard } from "./CdpOnboardingCard";
 import { LocalFileRequestCard } from "./LocalFileRequestCard";
 import { RunLocalAgentCard } from "./RunLocalAgentCard";
+import { HandoffCard } from "./HandoffCard";
 import { ScheduleDraftCard } from "./ScheduleDraftCard";
 import { AnimatePresence } from "./ui/motion";
 import { usePanelRequest } from "../hooks/usePanelRequest";
@@ -1622,6 +1623,12 @@ After the skill completes, briefly summarize what was created (the user will see
       {panelRequest?.kind === "run-local-agent" && (
         <RunLocalAgentCard
           payload={panelRequest.payload as { prompt: string; cwd: string }}
+          onDecision={(ok) => respondPanel(panelRequest.requestId, { ok: true, data: ok })}
+        />
+      )}
+      {panelRequest?.kind === "handoff-to-agent" && (
+        <HandoffCard
+          payload={panelRequest.payload as { context: string; target: string; fileCount: number }}
           onDecision={(ok) => respondPanel(panelRequest.requestId, { ok: true, data: ok })}
         />
       )}
