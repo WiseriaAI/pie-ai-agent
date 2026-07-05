@@ -13,8 +13,11 @@ import {
   putSessionRecord,
   getIndex,
   writeSessionBatch,
+  updateSessionRecordWithIndex,
 } from "@/lib/idb/sessions-store";
 import { tx, STORES } from "@/lib/idb/db";
+import type { DisplayMessage } from "@/types";
+import { deriveTitleFromMessages } from "./title";
 
 // ── Key shape ────────────────────────────────────────────────────────────────
 //
@@ -328,26 +331,112 @@ function scrubAttachmentBytes(meta: SessionMeta): SessionMeta {
  * persisting. Bytes live in the in-memory image cache; placeholders survive
  * in storage so identity is preserved for warm-resume hydration.
  */
+function indexEntryChanged(
+  existing: SessionIndexEntry | undefined,
+  next: SessionIndexEntry,
+): boolean {
+  return (
+    !existing ||
+    existing.lastAccessedAt !== next.lastAccessedAt ||
+    existing.status !== next.status ||
+    existing.title !== next.title ||
+    JSON.stringify(existing.pinnedTabIds) !== JSON.stringify(next.pinnedTabIds) ||
+    existing.messageCount !== next.messageCount ||
+    existing.origin !== next.origin
+  );
+}
+
 export async function setSessionMeta(meta: SessionMeta): Promise<void> {
   const scrubbedMeta = scrubAttachmentBytes(meta);
   const index = await readIndex();
   const nextEntry = indexEntryFromMeta(scrubbedMeta);
   const existingEntry = index.find((e) => e.id === scrubbedMeta.id);
 
-  const indexChanged =
-    !existingEntry ||
-    existingEntry.lastAccessedAt !== nextEntry.lastAccessedAt ||
-    existingEntry.status !== nextEntry.status ||
-    existingEntry.title !== nextEntry.title ||
-    JSON.stringify(existingEntry.pinnedTabIds) !== JSON.stringify(nextEntry.pinnedTabIds) ||
-    existingEntry.messageCount !== nextEntry.messageCount ||
-    existingEntry.origin !== nextEntry.origin;
-
   const batch: WriteBatch = { [metaKey(scrubbedMeta.id)]: scrubbedMeta };
-  if (indexChanged) {
+  if (indexEntryChanged(existingEntry, nextEntry)) {
     batch[INDEX_KEY] = upsertIndexEntry(index, nextEntry);
   }
   await writeAtomic(batch);
+}
+
+/**
+ * Atomic read-modify-write of a session's meta (+ index sync) in ONE IDB
+ * readwrite transaction. THE way to patch individual fields on SessionMeta.
+ *
+ * Why this exists: SessionMeta is a single full record shared by many writers
+ * (panel message persistence, SW lastAccessedAt bumps, chat-start pin upgrade,
+ * loop pin append/remove, ...). The old pattern — getSessionMeta in one
+ * transaction, setSessionMeta in another — let two concurrent writers
+ * interleave and the later write clobber the earlier one (lost update). Most
+ * visible casualty: the chat-start task pin, erased by the panel's stale
+ * message write-back → pin bar vanished mid-send + focus_tab failed in-loop.
+ *
+ * `transform` runs INSIDE the transaction and always sees the latest committed
+ * meta. It MUST be synchronous and cheap. Return a new meta object to write,
+ * or null (or the same reference) to skip writing.
+ *
+ * Note: `transform` receives the RAW stored meta — no `backfillInstanceId`
+ * (that helper is async and cannot run inside an IDB transaction). Patch-style
+ * transforms spread `current`, so legacy fields ride along unchanged and the
+ * read path still backfills.
+ *
+ * Returns true when a write was committed.
+ */
+export async function updateSessionMeta(
+  id: string,
+  transform: (current: SessionMeta) => SessionMeta | null,
+): Promise<boolean> {
+  return updateSessionRecordWithIndex(metaKey(id), (raw, rawIndex) => {
+    if (raw === undefined || raw === null) return null;
+    const current = raw as SessionMeta;
+    const next = transform(current);
+    if (next === null || next === current) return null;
+    const scrubbed = scrubAttachmentBytes(next);
+    const index = Array.isArray(rawIndex)
+      ? rawIndex.filter(
+          (e): e is SessionIndexEntry =>
+            e !== null &&
+            typeof e === "object" &&
+            typeof (e as SessionIndexEntry).id === "string" &&
+            typeof (e as SessionIndexEntry).lastAccessedAt === "number" &&
+            typeof (e as SessionIndexEntry).status === "string",
+        )
+      : [];
+    const nextEntry = indexEntryFromMeta(scrubbed);
+    const existingEntry = index.find((e) => e.id === scrubbed.id);
+    return {
+      record: scrubbed,
+      ...(indexEntryChanged(existingEntry, nextEntry)
+        ? { index: upsertIndexEntry(index, nextEntry) }
+        : {}),
+    };
+  });
+}
+
+/**
+ * Panel message persistence (patch semantics). Replaces the old hook-local
+ * read→spread→setSessionMeta which wrote back a stale full snapshot and could
+ * erase a concurrently-written task pin (the pin-bar bug). Only touches
+ * `messages`, `lastAccessedAt` and (when unset) `title`; every other field —
+ * pin state included — is whatever is committed at transaction time.
+ */
+export async function persistSessionMessages(
+  id: string,
+  next: DisplayMessage[],
+): Promise<void> {
+  await updateSessionMeta(id, (current) => {
+    if (current.status === "archived") return null;
+    const titlePatch =
+      current.title === undefined || current.title === ""
+        ? deriveTitleFromMessages(next)
+        : undefined;
+    return {
+      ...current,
+      messages: next,
+      lastAccessedAt: Date.now(),
+      ...(titlePatch !== undefined ? { title: titlePatch } : {}),
+    };
+  });
 }
 
 export async function getSessionAgent(
@@ -428,9 +517,6 @@ export async function updateLastAccessed(
     pinMode?: "auto" | "task" | "user";
   } = {},
 ): Promise<boolean> {
-  const meta = await getSessionMeta(id);
-  if (!meta) return false;
-
   // v1.5 — Resolve pinnedTabs from either native option or legacy back-compat.
   // Both pinnedTabId AND pinnedOrigin must be present for legacy conversion;
   // a partial legacy patch (only one field) is a no-op for the pin.
@@ -448,7 +534,9 @@ export async function updateLastAccessed(
       ? "user"
       : undefined);
 
-  const updated: SessionMeta = {
+  // Single-transaction patch: the bump must never write back a stale full
+  // snapshot (it used to clobber a concurrently-written task pin — pin bug).
+  return updateSessionMeta(id, (meta) => ({
     ...meta,
     lastAccessedAt: options.now ?? Date.now(),
     ...(options.status !== undefined ? { status: options.status } : {}),
@@ -457,10 +545,7 @@ export async function updateLastAccessed(
     ...(resolvedPinnedTabs !== undefined
       ? { pinnedTabs: resolvedPinnedTabs }
       : {}),
-  };
-
-  await setSessionMeta(updated);
-  return true;
+  }));
 }
 
 /**
@@ -493,7 +578,7 @@ export async function markPaused(id: string): Promise<boolean> {
   const meta = await getSessionMeta(id);
   if (!meta) return false;
   if (meta.status === "paused") return true;
-  await setSessionMeta({ ...meta, status: "paused" });
+  await updateSessionMeta(id, (current) => ({ ...current, status: "paused" }));
   return true;
 }
 
@@ -508,7 +593,7 @@ export async function markFailed(id: string): Promise<boolean> {
   const meta = await getSessionMeta(id);
   if (!meta) return false;
   if (meta.status === "failed") return true;
-  await setSessionMeta({ ...meta, status: "failed" });
+  await updateSessionMeta(id, (current) => ({ ...current, status: "failed" }));
   return true;
 }
 
@@ -551,12 +636,19 @@ export async function upgradeAutoToTaskAtChatStart(
   if (mode !== "auto") return null;
   const pin = await captureFn();
   if (!pin) return null;
-  await setSessionMeta({
-    ...meta,
-    pinMode: "task",
-    pinnedTabs: [{ tabId: pin.tabId, origin: pin.origin }],
+  // Single-transaction upgrade: re-check the mode against the meta committed
+  // NOW (captureFn awaited chrome.tabs.query in between — the panel's pin
+  // patch may have landed), and never write back the pre-capture snapshot
+  // (it would erase fields written concurrently, e.g. the panel's messages).
+  const wrote = await updateSessionMeta(sessionId, (current) => {
+    if (getEffectivePinMode(current, agent) !== "auto") return null;
+    return {
+      ...current,
+      pinMode: "task",
+      pinnedTabs: [{ tabId: pin.tabId, origin: pin.origin }],
+    };
   });
-  return pin;
+  return wrote ? pin : null;
 }
 
 /**
@@ -575,12 +667,9 @@ export async function upgradeAutoToTaskAtChatStart(
 export async function clearTaskPinAtSessionEnd(
   sessionId: string,
 ): Promise<boolean> {
-  const meta = await getSessionMeta(sessionId);
-  if (!meta) return false;
-  const cleared = clearTaskPinIfActive(meta);
-  if (cleared === meta) return false;
-  await setSessionMeta(cleared);
-  return true;
+  // clearTaskPinIfActive returns the same reference when nothing changed,
+  // which updateSessionMeta treats as "skip the write" — one read, no write.
+  return updateSessionMeta(sessionId, clearTaskPinIfActive);
 }
 
 /**

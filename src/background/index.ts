@@ -41,7 +41,7 @@ import {
   setPendingConfirm,
   getSessionAgent,
   getSessionMeta,
-  setSessionMeta,
+  updateSessionMeta,
   markFailedAndScrub,
   updateLastAccessed,
   clearLastTaskSynth,
@@ -982,11 +982,13 @@ async function handleResumeRequest(
 
   // Flip session back to `active`, and if we fell back to global active, pin
   // the instanceId so future resumes don't depend on the global active changing.
-  await setSessionMeta({
-    ...meta,
+  // Single-transaction patch — `meta` was read several awaits ago; writing it
+  // back wholesale could clobber concurrent writers.
+  await updateSessionMeta(sessionId, (current) => ({
+    ...current,
     status: "active",
-    ...(meta.instanceId ? {} : { instanceId: resumeSel.instanceId, model: resumeSel.model }),
-  });
+    ...(current.instanceId ? {} : { instanceId: resumeSel.instanceId, model: resumeSel.model }),
+  }));
 
   // Phase 5 — Task 12: mint a fresh taskId for the resumed loop so the
   // per-task screenshot budget and pre-capture keys are fresh.
@@ -1105,10 +1107,10 @@ async function handleDiscardRequest(
     summary: recapText,
     stepCount: lastStepIndex,
   };
-  await setSessionMeta({
-    ...meta,
-    messages: [...meta.messages, recapMessage],
-  });
+  await updateSessionMeta(sessionId, (current) => ({
+    ...current,
+    messages: [...current.messages, recapMessage],
+  }));
 
   // Mark failed + scrub. (markFailedAndScrub handles ordering.)
   await markFailedAndScrub(sessionId);
@@ -1329,10 +1331,15 @@ async function handleChatStream(
 
     // Per-session pin: if we fell back to global active, persist instanceId so
     // future chat-starts for this session don't depend on global active changing.
-    // Placed AFTER upgradeAutoToTaskAtChatStart to avoid clobbering the
-    // upgraded pinMode='task' + pinnedTabs[] (lost-update fix).
+    // Single-transaction patch — the synthMeta snapshot is never written back
+    // wholesale, so it cannot clobber concurrently-written fields (task pin,
+    // panel messages).
     if (synthMeta && !synthMeta.instanceId && chatSel) {
-      await setSessionMeta({ ...synthMeta, instanceId: chatSel.instanceId, model: chatSel.model }).catch((e) => {
+      await updateSessionMeta(sessionId, (current) =>
+        current.instanceId
+          ? null
+          : { ...current, instanceId: chatSel.instanceId, model: chatSel.model },
+      ).catch((e) => {
         console.warn(`[sw] instanceId pin failed for session=${sessionId}:`, e);
       });
     }

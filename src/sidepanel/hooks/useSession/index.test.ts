@@ -344,15 +344,22 @@ describe("useSession — persistence boundaries", () => {
     act(() => result.current.sendMessage({ content: "ping" }));
     const port = chromeMock.runtime.__ports[0]!;
     const sid = result.current.sessionId!;
+
+    // sendMessage fire-and-forgets the user-message persist (single IDB
+    // transaction since the pin-bug fix, so it lands fast) — wait for it,
+    // then verify chat-chunks add nothing on top.
+    await waitFor(async () => {
+      const seeded = (await getSessionMeta(sid))!.messages;
+      expect(seeded).toMatchObject([{ role: "user", content: "ping" }]);
+    });
+
     act(() => emitWithSession(port, { type: "chat-chunk", text: "Hel" }, sid));
     act(() => emitWithSession(port, { type: "chat-chunk", text: "lo" }, sid));
 
-    // Storage is still at the seed state — sendMessage does not persist
-    // mid-flow, and chat-chunk events don't either. Only done boundaries
-    // write storage, which we haven't reached yet.
-    const persisted = (await getSessionMeta(result.current.sessionId!))!
-      .messages;
-    expect(persisted).toEqual([]);
+    // chat-chunk events never write storage — still just the user message.
+    // Only done boundaries append the assistant turn.
+    const persisted = (await getSessionMeta(sid))!.messages;
+    expect(persisted).toMatchObject([{ role: "user", content: "ping" }]);
 
     // React state has the user message + streaming text, as expected.
     expect(result.current.messages).toEqual([

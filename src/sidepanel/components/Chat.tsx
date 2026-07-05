@@ -39,7 +39,7 @@ import { useT } from "@/lib/i18n";
 import { useStoreChange } from "@/sidepanel/hooks/useStoreChange";
 import {
   getSessionMeta,
-  setSessionMeta,
+  updateSessionMeta,
 } from "@/lib/sessions/storage";
 
 const MAX_IMAGES_PER_TURN = 3;
@@ -302,11 +302,15 @@ export default function Chat({
   const [currentInstanceId, setCurrentInstanceId] = useState<string | null>(null);
   const [currentModel, setCurrentModel] = useState<string | null>(null);
 
-  // Helper to persist the (instanceId, model) selection to session meta
+  // Helper to persist the (instanceId, model) selection to session meta.
+  // Single-transaction patch — a mid-task model switch must not write back a
+  // stale full snapshot (it raced the SW's per-5-steps lastAccessedAt bump).
   async function persistSelection(sessionId: string, id: string, model: string) {
-    const existing = await getSessionMeta(sessionId);
-    if (!existing) return;
-    await setSessionMeta({ ...existing, instanceId: id, model });
+    await updateSessionMeta(sessionId, (existing) => ({
+      ...existing,
+      instanceId: id,
+      model,
+    }));
   }
 
   // Load instances list + current session's instanceId on mount / sessionId change

@@ -14,7 +14,7 @@
  */
 
 import { escapeUntrustedWrappers } from "@/lib/agent/untrusted-wrappers";
-import { getSessionMeta, setSessionMeta } from "./storage";
+import { updateSessionMeta } from "./storage";
 
 /**
  * Emoji Unicode range strip regex.
@@ -97,10 +97,11 @@ export async function maybeUpgradeFallbackTitle(
   expectedFallback: string,
   newTitle: string,
 ): Promise<boolean> {
-  const current = await getSessionMeta(sessionId);
-  if (!current) return false;
-  if (current.title !== expectedFallback) return false;
-
-  await setSessionMeta({ ...current, title: newTitle });
-  return true;
+  // Single-transaction conditional patch: the guard check and the write happen
+  // atomically, and the LLM-latency-stale snapshot can no longer clobber
+  // fields written meanwhile (e.g. the chat-start task pin).
+  return updateSessionMeta(sessionId, (current) => {
+    if (current.title !== expectedFallback) return null;
+    return { ...current, title: newTitle };
+  });
 }

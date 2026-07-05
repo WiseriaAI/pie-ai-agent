@@ -15,14 +15,14 @@ import {
   getSessionMeta,
   listSessionIndex,
   setSessionAgent,
-  setSessionMeta,
+  updateSessionMeta,
+  persistSessionMessages,
   updateLastAccessed,
 } from "@/lib/sessions/storage";
 import { buildRewindAgentTombstone } from "./rewind";
 import { hardDeleteSession } from "@/lib/sessions/lifecycle";
 import { useStoreChange } from "@/sidepanel/hooks/useStoreChange";
 import type { SessionAgentState, SessionMeta, SessionStatus } from "@/lib/sessions/types";
-import { deriveTitleFromMessages } from "@/lib/sessions/title";
 import { togglePinTabUserMode } from "@/lib/sessions/pin-state";
 import {
   EMPTY_SLOT,
@@ -308,19 +308,10 @@ export function useSession(): UseSession {
   // migration and removed in Task 9b once all callers move off it.
   const persistMessagesById = useCallback(
     async (id: string, next: DisplayMessage[]) => {
-      const current = await getSessionMeta(id);
-      if (!current) return;
-      if (current.status === "archived") return;
-      const titlePatch =
-        current.title === undefined || current.title === ""
-          ? deriveTitleFromMessages(next)
-          : undefined;
-      await setSessionMeta({
-        ...current,
-        messages: next,
-        lastAccessedAt: Date.now(),
-        ...(titlePatch !== undefined ? { title: titlePatch } : {}),
-      });
+      // Pin-bug fix — delegates to the storage-layer single-transaction patch.
+      // The old read→spread→setSessionMeta here wrote back a stale full
+      // snapshot and could erase the SW's freshly-written task pin.
+      await persistSessionMessages(id, next);
     },
     [],
   );
@@ -665,23 +656,28 @@ export function useSession(): UseSession {
             if (meta.pinnedTabs && meta.pinnedTabs.length > 0) return;
             const pin = await captureActivePinned();
             if (!pin) return;
-            // Re-read in case something else patched in the meantime.
-            const fresh = await getSessionMeta(id);
-            if (!fresh || fresh.status === "archived") return;
-            if (fresh.pinnedTabs && fresh.pinnedTabs.length > 0) return;
             const pinEntry = { tabId: pin.pinnedTabId, origin: pin.pinnedOrigin };
-            await setSessionMeta({
-              ...fresh,
-              // M5 — first-message capture is the task-mode upgrade. Set
-              // pinMode='task' so the storage normalize-on-write invariant
-              // (auto mode never persists pin) doesn't strip it.
-              pinMode: "task",
-              // v1.5 — write source-of-truth pinnedTabs[].
-              pinnedTabs: [pinEntry],
-              lastAccessedAt: Date.now(),
+            // Single-transaction conditional patch (replaces the old re-read +
+            // full write-back, whose window let concurrent writers clobber
+            // each other): skip if someone else pinned or archived meanwhile.
+            const wrote = await updateSessionMeta(id, (fresh) => {
+              if (fresh.status === "archived") return null;
+              if (fresh.pinnedTabs && fresh.pinnedTabs.length > 0) return null;
+              return {
+                ...fresh,
+                // M5 — first-message capture is the task-mode upgrade. Set
+                // pinMode='task' so the storage normalize-on-write invariant
+                // (auto mode never persists pin) doesn't strip it.
+                pinMode: "task",
+                // v1.5 — write source-of-truth pinnedTabs[].
+                pinnedTabs: [pinEntry],
+                lastAccessedAt: Date.now(),
+              };
             });
-            setPinnedTabsState([pinEntry]);
-            setPinModeState("task");
+            if (wrote) {
+              setPinnedTabsState([pinEntry]);
+              setPinModeState("task");
+            }
           } catch (e) {
             console.warn("[useSession] pin patch on first send failed:", e);
           }
@@ -894,15 +890,24 @@ export function useSession(): UseSession {
       const pinned = await captureActivePinned();
       if (pinned) {
         const pinEntry = { tabId: pinned.pinnedTabId, origin: pinned.pinnedOrigin };
-        const patched = {
-          ...meta,
-          pinMode: "task" as const,
-          pinnedTabs: [pinEntry],
-          lastAccessedAt: Date.now(),
-        };
-        await setSessionMeta(patched);
-        metaForActivate = patched;
-        didMigrate = true;
+        // Single-transaction conditional patch — captureActivePinned awaited
+        // chrome.tabs.query above; never write the pre-capture `meta` snapshot
+        // back wholesale. Skip if a pin landed meanwhile.
+        const wrote = await updateSessionMeta(id, (current) =>
+          current.pinnedTabs && current.pinnedTabs.length > 0
+            ? null
+            : {
+                ...current,
+                pinMode: "task" as const,
+                pinnedTabs: [pinEntry],
+                lastAccessedAt: Date.now(),
+              },
+        );
+        if (wrote) {
+          const fresh = await getSessionMeta(id);
+          if (fresh) metaForActivate = fresh;
+          didMigrate = true;
+        }
       }
     }
     if (!didMigrate) await updateLastAccessed(id);
@@ -983,13 +988,16 @@ export function useSession(): UseSession {
     async (tabId: number, origin: string): Promise<void> => {
       const id = sessionIdRef.current;
       if (!id) return;
-      const meta = await getSessionMeta(id);
-      if (!meta) return;
-      const next = togglePinTabUserMode(meta, { tabId, origin });
-      if (next === meta) return; // no-op (e.g. task mode)
-      await setSessionMeta(next);
+      // togglePinTabUserMode returns the same reference on no-op (e.g. task
+      // mode) → updateSessionMeta skips the write and returns false.
+      const wrote = await updateSessionMeta(id, (meta) =>
+        togglePinTabUserMode(meta, { tabId, origin }),
+      );
+      if (!wrote) return;
       // Mirror in local state immediately so UI reflects the choice without
       // waiting for storage onChanged round-trip.
+      const next = await getSessionMeta(id);
+      if (!next || sessionIdRef.current !== id) return;
       const nextPins = next.pinnedTabs;
       setPinnedTabsState(nextPins && nextPins.length > 0 ? nextPins : null);
       setPinModeState(next.pinMode ?? "auto");
@@ -1000,18 +1008,19 @@ export function useSession(): UseSession {
   const clearUserPin = useCallback(async (): Promise<void> => {
     const id = sessionIdRef.current;
     if (!id) return;
-    const meta = await getSessionMeta(id);
-    if (!meta) return;
-    if (meta.pinMode !== "user") return; // only user mode is user-clearable
-    // v1.5 — `delete next.pinnedTabs` is LOAD-BEARING here (not cosmetic):
-    // storage's syncLegacyFromArray dual-write shim re-synthesizes legacy
-    // pinnedTabId/pinnedOrigin from `pinnedTabs[0]` on every persist. If we
-    // left `pinnedTabs` on the meta and only flipped pinMode to 'auto', the
-    // shim would resurrect the legacy fields from the leftover array, leaving
-    // the session pinned despite the user's clear-pin action.
-    const next = { ...meta, pinMode: "auto" as const };
-    delete (next as { pinnedTabs?: SessionMeta["pinnedTabs"] }).pinnedTabs;
-    await setSessionMeta(next);
+    const wrote = await updateSessionMeta(id, (meta) => {
+      if (meta.pinMode !== "user") return null; // only user mode is user-clearable
+      // v1.5 — `delete next.pinnedTabs` is LOAD-BEARING here (not cosmetic):
+      // storage's syncLegacyFromArray dual-write shim re-synthesizes legacy
+      // pinnedTabId/pinnedOrigin from `pinnedTabs[0]` on every persist. If we
+      // left `pinnedTabs` on the meta and only flipped pinMode to 'auto', the
+      // shim would resurrect the legacy fields from the leftover array, leaving
+      // the session pinned despite the user's clear-pin action.
+      const next = { ...meta, pinMode: "auto" as const };
+      delete (next as { pinnedTabs?: SessionMeta["pinnedTabs"] }).pinnedTabs;
+      return next;
+    });
+    if (!wrote) return;
     setPinModeState("auto");
     setPinnedTabsState(null);
   }, []);
