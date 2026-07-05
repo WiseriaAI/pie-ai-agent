@@ -367,6 +367,7 @@ export default function Settings({ onBack, onRunSkill, openSubscribeNonce }: Pro
               state={cdpInput}
               onSet={async (next) => { setCdpInput(next); await setCdpInputEnabled(next); }}
             />
+            <LocalBridgeDevSection />
             <FeedbackSection instances={instances} />
             <AboutSection />
           </div>
@@ -538,6 +539,44 @@ function CdpInputSection({
             </ul>
           </div>
         )}
+      </div>
+    </section>
+  );
+}
+
+// Slice 0 临时启用器：授予 nativeMessaging 需要用户手势，正式设置页 UX 归 Slice 5。
+// 点击 = 真手势 → 请求权限；SW 侧 chrome.permissions.onAdded 监听到后立即连桥。
+function LocalBridgeDevSection() {
+  const [state, setState] = useState<"idle" | "granted" | "denied">("idle");
+  return (
+    <section className="flex flex-col gap-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex flex-col gap-1">
+          <div className="text-[13px] font-medium text-fg-1">本地打通（临时 · Slice 0）</div>
+          <div className="text-[12px] leading-relaxed text-fg-3">
+            连接本地 pie daemon，让 run_local_agent 可用。授予后无需重启 Chrome，下一轮任务即生效。
+          </div>
+          {state === "granted" && (
+            <div className="text-[12px] text-fg-1">已授予 nativeMessaging，桥已尝试连接。</div>
+          )}
+          {state === "denied" && (
+            <div className="text-[12px] text-fg-3">已拒绝或未授予。</div>
+          )}
+        </div>
+        <button
+          type="button"
+          className="shrink-0 rounded-md border border-line px-3 py-1.5 text-[12px] font-medium text-fg-1"
+          onClick={async () => {
+            try {
+              const granted = await chrome.permissions.request({ permissions: ["nativeMessaging"] });
+              setState(granted ? "granted" : "denied");
+            } catch {
+              setState("denied");
+            }
+          }}
+        >
+          启用
+        </button>
       </div>
     </section>
   );

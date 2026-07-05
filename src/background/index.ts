@@ -219,6 +219,13 @@ setScheduleRunDep(runScheduleWithDeps);
 // and forget: the bridge degrades silently if no daemon is installed.
 void maybeInitLocalBridge();
 
+// Grant-time init: when the user enables local integration at runtime (Slice 0
+// temp settings button → chrome.permissions.request), connect the bridge
+// immediately instead of waiting for the next SW restart.
+chrome.permissions.onAdded.addListener((p) => {
+  if (p.permissions?.includes("nativeMessaging")) void maybeInitLocalBridge();
+});
+
 // Task 4 — alarm fires (name = "schedule:<id>") route into handleAlarm, which
 // dispatches the run + re-arms the next fire (or disarms). Registered at SW top
 // level so it re-binds on every SW restart.
