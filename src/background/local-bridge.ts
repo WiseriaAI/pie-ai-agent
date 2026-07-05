@@ -75,3 +75,13 @@ export async function requestLocalAgent(params: RunLocalAgentParams): Promise<Ru
   const r = await send("run_local_agent", params);
   return r as RunLocalAgentResult;
 }
+
+/** SW 启动调用：仅当已授予 nativeMessaging 才连桥（纯 BYOK 用户零感知）。 */
+export async function maybeInitLocalBridge(): Promise<void> {
+  try {
+    const has = await chrome.permissions.contains({ permissions: ["nativeMessaging"] });
+    if (has) initLocalBridge();
+  } catch {
+    // permissions API 不可用（测试/老 Chrome）→ 静默跳过
+  }
+}

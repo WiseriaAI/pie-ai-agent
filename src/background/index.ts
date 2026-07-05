@@ -126,6 +126,7 @@ import { mergeCarryoverIntoMessages } from "@/lib/agent/loop-drain";
 import type { ChatInstructionRejectedMessage } from "@/types/messages";
 import { isFilePdfUrl } from "@/lib/pdf/detect";
 import { installLogCapture } from "@/lib/log-buffer";
+import { maybeInitLocalBridge } from "./local-bridge";
 
 // Install log capture at module top level
 installLogCapture("sw");
@@ -211,6 +212,12 @@ const schedulerDeps: SchedulerDeps = {
 // startAt) through the real agent loop. Without this, schedule-meta would arm
 // with a no-op dispatcher and silently drop every immediate/one-shot first run.
 setScheduleRunDep(runScheduleWithDeps);
+
+// Local Daemon Bridge (Slice 0) — only connects when the user has already
+// granted the optional `nativeMessaging` permission, so pure BYOK users who
+// never opt into local integration get zero native-messaging surface. Fire
+// and forget: the bridge degrades silently if no daemon is installed.
+void maybeInitLocalBridge();
 
 // Task 4 — alarm fires (name = "schedule:<id>") route into handleAlarm, which
 // dispatches the run + re-arms the next fire (or disarms). Registered at SW top
