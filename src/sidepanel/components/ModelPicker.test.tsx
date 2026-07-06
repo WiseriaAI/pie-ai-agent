@@ -151,7 +151,7 @@ describe("ModelPicker managed rendering", () => {
     await seedManaged();
     render(<ModelPicker instances={managedInsts} currentInstanceId="m" currentModel="default" locked={false} onSelect={() => {}} onManage={() => {}} />);
     fireEvent.click(screen.getAllByRole("button")[0]!);
-    fireEvent.click(screen.getByText("Pie 官方订阅"));
+    fireEvent.click(screen.getByText("Pie Official"));
     expect(screen.getAllByText("标准").length).toBeGreaterThan(0);
     expect(screen.getByText("推理更强")).toBeTruthy();
     expect(screen.queryByRole("textbox", { name: /Pie/i })).toBeNull();
@@ -162,7 +162,7 @@ describe("ModelPicker managed rendering", () => {
     const onSelect = vi.fn();
     render(<ModelPicker instances={managedInsts} currentInstanceId="m" currentModel="default" locked={false} onSelect={onSelect} onManage={() => {}} />);
     fireEvent.click(screen.getAllByRole("button")[0]!);
-    fireEvent.click(screen.getByText("Pie 官方订阅"));
+    fireEvent.click(screen.getByText("Pie Official"));
     fireEvent.click(screen.getByText("进阶"));
     expect(onSelect).toHaveBeenCalledWith("m", "pro");
   });
@@ -171,7 +171,7 @@ describe("ModelPicker managed rendering", () => {
     const onRefreshModels = vi.fn();
     render(<ModelPicker instances={managedInsts} currentInstanceId="m" currentModel="default" locked={false} onSelect={() => {}} onManage={() => {}} onRefreshModels={onRefreshModels} />);
     fireEvent.click(screen.getAllByRole("button")[0]!);
-    fireEvent.click(screen.getByText("Pie 官方订阅"));
+    fireEvent.click(screen.getByText("Pie Official"));
     expect(onRefreshModels).toHaveBeenCalledWith("m");
   });
 
@@ -179,7 +179,7 @@ describe("ModelPicker managed rendering", () => {
     const cold: DecryptedInstance[] = [{ id: "m2", provider: "managed", nickname: "Pie", apiKey: "sk-rerender", createdAt: 1 }];
     render(<ModelPicker instances={cold} currentInstanceId="m2" currentModel="default" locked={false} onSelect={() => {}} onManage={() => {}} />);
     fireEvent.click(screen.getAllByRole("button")[0]!);
-    fireEvent.click(screen.getByText("Pie 官方订阅"));
+    fireEvent.click(screen.getByText("Pie Official"));
     expect(screen.queryByText("进阶")).toBeNull(); // 冷启动只有兜底 default
     const ent = { plan: "active", email: "e", subscription: null, quota: null, models: [
       { id: "default", name: "标准", vision: false, maxContextTokens: 128000, costLevel: 1 },

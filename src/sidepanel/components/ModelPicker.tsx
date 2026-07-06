@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Popover } from "./ui/Popover";
 import { useAnchorRect } from "./ui/useAnchorRect";
-import { useT } from "@/lib/i18n";
+import { useT, providerDisplayName } from "@/lib/i18n";
 import type { DecryptedInstance } from "@/lib/instances";
 import type { BuiltinProvider, ModelMeta } from "@/lib/model-router";
 import { getProviderMeta, resolveEndpointVariant } from "@/lib/model-router";
@@ -31,9 +31,10 @@ function shortModel(modelId: string): string {
   return modelId;
 }
 
-function providerName(inst: DecryptedInstance): string {
+function providerName(inst: DecryptedInstance, t: ReturnType<typeof useT>): string {
   if (inst.provider.startsWith(CUSTOM_PREFIX)) return inst.nickname || inst.provider;
-  return getProviderMeta(inst.provider as BuiltinProvider)?.name ?? inst.nickname ?? inst.provider;
+  const meta = getProviderMeta(inst.provider as BuiltinProvider);
+  return meta ? providerDisplayName(meta, t) : (inst.nickname ?? inst.provider);
 }
 
 function displayModel(inst: DecryptedInstance | null, modelId: string | null): string {
@@ -177,11 +178,11 @@ export default function ModelPicker(props: Props) {
         onClick={() => !props.locked && setOpen(!open)}
         disabled={props.locked}
         className="flex items-center gap-1.5 px-1.5 py-1 text-[12px] text-fg-2 disabled:opacity-50"
-        aria-label={current ? `${providerName(current)} ${props.currentModel ?? ""}` : t("modelPicker.none")}
+        aria-label={current ? `${providerName(current, t)} ${props.currentModel ?? ""}` : t("modelPicker.none")}
       >
         {current && <ProviderIcon provider={current.provider} size={16} className="text-accent" />}
         <span className="font-mono">
-          {current ? `${providerName(current)} · ${displayModel(current, props.currentModel)}` : t("modelPicker.none")}
+          {current ? `${providerName(current, t)} · ${displayModel(current, props.currentModel)}` : t("modelPicker.none")}
         </span>
         {props.locked ? (
           <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden className="text-fg-3">
@@ -217,7 +218,7 @@ export default function ModelPicker(props: Props) {
                     className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left transition-colors hover:bg-field"
                   >
                     <ProviderIcon provider={inst.provider} size={22} className={isCurrentProvider ? "text-accent" : "text-fg-2"} />
-                    <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-fg-1">{providerName(inst)}</span>
+                    <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-fg-1">{providerName(inst, t)}</span>
                     {!isExpanded && isCurrentProvider && props.currentModel && (
                       <span className="font-mono text-[10px] text-accent">{displayModel(inst, props.currentModel)}</span>
                     )}
@@ -240,7 +241,7 @@ export default function ModelPicker(props: Props) {
                         setQuery={setQuery}
                         currentModel={isCurrentProvider ? props.currentModel : null}
                         onPick={(model) => { props.onSelect(inst.id, model); setOpen(false); }}
-                        placeholder={`${providerName(inst)} ${t("modelPicker.searchSuffix")}`}
+                        placeholder={`${providerName(inst, t)} ${t("modelPicker.searchSuffix")}`}
                         emptyText={t("modelPicker.noModels")}
                       />
                     </div>
