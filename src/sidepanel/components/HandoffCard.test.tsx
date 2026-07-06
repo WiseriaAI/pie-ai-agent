@@ -1,6 +1,10 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { HandoffCard } from "./HandoffCard";
+
+afterEach(() => {
+  cleanup();
+});
 
 const AGENTS = [
   { id: "claude-app", label: "Claude Code (App)" },
@@ -24,29 +28,26 @@ describe("HandoffCard", () => {
 
   it("allow returns the picked agent id", () => {
     const onDecision = vi.fn();
-    const { container } = render(
+    render(
       <HandoffCard
         payload={{ context: "x", fileCount: 0, agents: AGENTS }}
         onDecision={onDecision}
       />,
     );
-    const radioInputs = container.querySelectorAll('input[type="radio"]');
-    fireEvent.click(radioInputs[1] as HTMLInputElement); // Click the second radio
-    const buttonElems = container.querySelectorAll("button");
-    fireEvent.click(buttonElems[0] as HTMLButtonElement); // Click the first button (Hand off)
+    fireEvent.click(screen.getByText("Claude Code (Terminal)"));
+    fireEvent.click(screen.getByText("Hand off"));
     expect(onDecision).toHaveBeenCalledWith("claude-terminal");
   });
 
   it("deny returns null", () => {
     const onDecision = vi.fn();
-    const { container } = render(
+    render(
       <HandoffCard
         payload={{ context: "x", fileCount: 0, agents: AGENTS }}
         onDecision={onDecision}
       />,
     );
-    const buttonElems = container.querySelectorAll("button");
-    fireEvent.click(buttonElems[1] as HTMLButtonElement); // Click the second button (Cancel)
+    fireEvent.click(screen.getByText("Cancel"));
     expect(onDecision).toHaveBeenCalledWith(null);
   });
 });
