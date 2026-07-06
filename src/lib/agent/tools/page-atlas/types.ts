@@ -1,3 +1,7 @@
+import type { AtlasExtractSignature } from "../../../dom-actions/probe-core";
+
+export type { AtlasExtractSignature };
+
 export type AtlasTargetType = "collection" | "table" | "detail_region" | "region";
 
 export type AtlasConfidence = "high" | "medium" | "low";
@@ -27,6 +31,7 @@ export interface AtlasTarget {
   visibleCount?: number;
   estimatedTotal?: number;
   cursor?: string;
+  signature?: AtlasExtractSignature;
 }
 
 export interface AtlasControl {
