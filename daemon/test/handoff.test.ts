@@ -20,7 +20,7 @@ function harness() {
   return { writes, dirs, spawns, opts };
 }
 
-test("creates dated dir, writes context.md, opens .command via `open`", async () => {
+test("creates dated dir, writes context.md, launches via osascript do script (padded)", async () => {
   const h = harness();
   const r = await runHandoff({ target: "claude", context: "Refactor the auth module" }, h.opts);
   // 目录含日期前缀 + slug
@@ -35,10 +35,15 @@ test("creates dated dir, writes context.md, opens .command via `open`", async ()
   expect(cmd?.mode).toBe(0o755);
   expect(cmd?.content).toContain("exec claude");
   expect(cmd?.content).not.toContain("--dangerously-skip-permissions");
-  // 用 `open` 唤起 .command
+  // 用 osascript do script 唤起（不是 `open`——那条路径把脚本路径当键盘输入喂给
+  // 交互式 zsh，zsh 启动期 stdin 消费者会吞首字符；见 handoff.ts LAUNCH_PAD 注释）
   expect(h.spawns).toHaveLength(1);
-  expect(h.spawns[0].cmd).toBe("open");
-  expect(h.spawns[0].args[0]).toContain("start.command");
+  expect(h.spawns[0].cmd).toBe("osascript");
+  const doScript = h.spawns[0].args.find((a) => a.startsWith("do script"));
+  expect(doScript).toBeDefined();
+  // 注入串必须带前导牺牲空格垫片，且引用 start.command
+  expect(doScript!).toContain('do script "        exec');
+  expect(doScript!).toContain("start.command");
 });
 
 test("stages files with basename, neutralizing path traversal", async () => {
@@ -67,13 +72,24 @@ test("safeFileName rejects reserved names case-insensitively (APFS/HFS+ is case-
   expect(() => safeFileName("Context.MD")).toThrow();
 });
 
-test("runHandoff never awaits claude (fire-and-forget): spawns only `open`", async () => {
+test("runHandoff never awaits claude (fire-and-forget): spawns only osascript", async () => {
   const h = harness();
   await runHandoff({ target: "claude", context: "x" }, h.opts);
-  // 至少确实 spawn 了一次（否则下面的 every 在空数组上永真，删掉 open 调用也测不出来）
+  // 至少确实 spawn 了一次（否则下面的 every 在空数组上永真，删掉唤起调用也测不出来）
   expect(h.spawns.length).toBeGreaterThan(0);
-  // 唯一的 spawn 是 open；claude 不由 daemon 直接 spawn（它住在 .command 脚本里）
-  expect(h.spawns.every((s) => s.cmd === "open")).toBe(true);
+  // 唯一的 spawn 是 osascript；claude 不由 daemon 直接 spawn（它住在 .command 脚本里）
+  expect(h.spawns.every((s) => s.cmd === "osascript")).toBe(true);
+});
+
+test("osascript failure (e.g. TCC Automation denied) throws with manual fallback path", async () => {
+  const h = harness();
+  h.opts.spawn = async (cmd: string, args: string[], cwd: string) => {
+    h.spawns.push({ cmd, args, cwd });
+    return { stdout: "", exitCode: 1, stderr: "execution error: Not authorized to send Apple events to Terminal. (-1743)" };
+  };
+  await expect(runHandoff({ target: "claude", context: "x" }, h.opts)).rejects.toThrow(
+    /failed to open Terminal[\s\S]*start\.command/,
+  );
 });
 
 test("rejects unsupported/injected target before building the script or spawning anything", async () => {

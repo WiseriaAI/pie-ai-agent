@@ -86,7 +86,8 @@ pie daemon（常驻，launchd KeepAlive；rendezvous 见 ADR 0005）
 
 ### 4.3 hand-off（交棒交互式 session）
 
-`handoff_to_agent(target, context, files)` → HITL 卡 → daemon 建 `~/pie-handoffs/<date>-<slug>/`，落盘 `context.md` + 产出文件 → `open -a`（Terminal/iTerm，可配置）唤起交互式 session（预注入「读 context.md 继续」）→ 侧栏「已交棒 + 路径」卡。fire-and-forget，不回传。
+`handoff_to_agent(target, context, files)` → HITL 卡 → daemon 建 `~/pie-handoffs/<date>-<slug>/`，落盘 `context.md` + 产出文件 → 唤起交互式 session（预注入「读 context.md 继续」）→ 侧栏「已交棒 + 路径」卡。fire-and-forget，不回传。
+- **唤起机制（Slice 1 真机验证补）**：不能用 `open start.command`——Terminal 打开 `.command` 是「spawn 交互式 login zsh + 把脚本路径当键盘输入喂进 TTY」，zsh 启动期任何 stdin 消费者（omz 升级提示 `read -k 1`）会吞掉路径首字符 → 交棒静默失败（真机实锤）。改走 AppleScript `do script`，注入串前垫 8 个牺牲空格（消费者吃到的只是空格）。代价：daemon 需一次性 TCC Automation 授权（pie → Terminal），被拒时报错并给出手动跑 `start.command` 的自救路径。`.terminal` profile 的 `RunCommandAsShell=false` 实测不被 file-open 路径尊重（仍走 zsh 打字注入），不可用。
 
 ### 4.4 skill 真执行
 

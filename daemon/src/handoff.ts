@@ -9,6 +9,12 @@ import { log } from "./log";
 /** 我们在 handoff 目录里写死的文件名——用户传的文件不许撞它们。 */
 const RESERVED = new Set(["context.md", "start.command"]);
 
+/**
+ * do script 注入串的前导牺牲空格数。zsh 启动期的 stdin 消费者（omz 升级提示
+ * read -k 1 等）每次吃 1 字符；8 个空格覆盖多个消费者叠加，剩余空格 shell 忽略。
+ */
+const LAUNCH_PAD = 8;
+
 /** slug：context 前 24 字符小写、非字母数字转 -。 */
 function slugify(context: string): string {
   return (
@@ -79,8 +85,29 @@ export async function runHandoff(
   const scriptPath = join(dir, "start.command");
   writeFile(scriptPath, script, 0o755);
   log("info", "handoff.open", { dir, target: cmd, files: (params.files ?? []).length });
-  // macOS `open` 双击 .command → 默认 Terminal.app 跑它 → 交互式会话。
-  // fire-and-forget：open 启动终端后立刻退，不等 claude。
-  await spawn("open", [scriptPath], dir);
+  // 为什么不用 `open start.command`：Terminal 打开 .command 的机制是「spawn 交互式
+  // login zsh + 把脚本路径当键盘输入喂进 TTY」（真机 ps 链验证：Terminal → login →
+  // -zsh → script）。zsh 启动期任何读 stdin 的东西（oh-my-zsh 升级提示的 read -k 1
+  // 是实锤案例）会吃掉路径首字符 → 路径残缺 → 交棒静默失败。改走 AppleScript
+  // do script：注入的字符串由我们控制，前面垫 LAUNCH_PAD 个牺牲空格——启动期
+  // 消费者吃掉的只是空格，命令本体无损（shell 忽略前导空白）。
+  // scriptPath 是 daemon 派生路径（homedir + ISO 日期 + [a-z0-9-] slug），不含
+  // 双引号/反斜杠，可安全嵌入 AppleScript 双引号字符串与 shell 单引号。
+  const padded = `${" ".repeat(LAUNCH_PAD)}exec '${scriptPath}'`;
+  const r = await spawn(
+    "osascript",
+    ["-e", 'tell application "Terminal"', "-e", `do script "${padded}"`, "-e", "activate", "-e", "end tell"],
+    dir,
+  );
+  // osascript 非零 = Terminal 没被唤起（典型：TCC Automation 权限被拒 -1743）。
+  // fire-and-forget 只对 claude 进程成立，唤起终端这步失败必须让用户知道并给
+  // 自救路径（手动跑 start.command，文件已落盘）。
+  if (r.exitCode !== 0) {
+    throw new Error(
+      `failed to open Terminal (osascript exit ${r.exitCode}): ${(r.stderr ?? "").trim().slice(0, 300)} — ` +
+        `grant Automation permission for pie → Terminal in System Settings › Privacy & Security › Automation, ` +
+        `or run it manually: ${scriptPath}`,
+    );
+  }
   return { dir };
 }
