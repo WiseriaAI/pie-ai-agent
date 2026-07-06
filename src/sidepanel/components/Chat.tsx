@@ -1628,8 +1628,14 @@ After the skill completes, briefly summarize what was created (the user will see
       )}
       {panelRequest?.kind === "handoff-to-agent" && (
         <HandoffCard
-          payload={panelRequest.payload as { context: string; target: string; fileCount: number }}
-          onDecision={(ok) => respondPanel(panelRequest.requestId, { ok: true, data: ok })}
+          payload={
+            panelRequest.payload as {
+              context: string;
+              fileCount: number;
+              agents: { id: string; label: string }[];
+            }
+          }
+          onDecision={(target) => respondPanel(panelRequest.requestId, { ok: true, data: target })}
         />
       )}
       {showFileAccess && (
