@@ -9,3 +9,7 @@ export {
   createPageAtlasTargetTools,
   type PageAtlasTargetToolDeps,
 } from "./target-tools";
+export {
+  createExtractRecordsTool,
+  type ExtractRecordsDeps,
+} from "./extract-tool";

@@ -41,6 +41,7 @@ import { buildRunLocalAgentTool } from "./tools/local-agent";
 import { buildHandoffTool } from "./tools/handoff";
 import { buildReadLocalFileTool, buildRequestLocalFileTool, buildOutputFileTool } from "./tools/files";
 import { buildScratchpadTools } from "./tools/scratchpad";
+import { createExtractRecordsTool } from "./tools/page-atlas";
 import {
   saveRecords as svcSaveRecords,
   updateNotes as svcUpdateNotes,
@@ -1871,6 +1872,12 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         clearScratchpad: (collection) => svcClearScratchpad(sessionId, collection),
         queryScratchpad: (args) => svcQueryScratchpad(sessionId, args),
       });
+      // extract_records writes to the SAME per-session scratchpad and rides the
+      // loop's abort signal so a long scroll-extract loop is interruptible.
+      const extractRecordsTool = createExtractRecordsTool({
+        saveRecords: (collection, records, opts) => svcSaveRecords(sessionId, collection, records, opts),
+        signal,
+      });
       // Progressive disclosure (Task 7) — `load_tools` lets the model arm a
       // lazy group; its handler mutates the live `activeToolGroups` set (passed
       // by reference via getActiveGroups). `selectTools` then narrows the schema
@@ -1907,6 +1914,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       const fullToolList = [
         ...BUILT_IN_TOOLS, ...mouseTools, ...keyboardTools, ...editorTools,
         readLocalFileTool, requestLocalFileTool, outputFileTool, ...scratchpadTools,
+        extractRecordsTool,
         loadToolsTool,
         ...localBridgeTools, // Slice 0 — run_local_agent (bridge-gated)
       ];
