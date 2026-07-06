@@ -4,6 +4,7 @@ import type { BridgeResponse, RunLocalAgentParams, HandoffParams } from "../../s
 import { paths } from "./paths";
 import { runLocalAgent } from "./run-local-agent"; // Task 4
 import { runHandoff } from "./handoff";
+import { detectAgents } from "./agents";
 import { decodeNdjsonLines } from "./framing";
 import { log } from "./log";
 
@@ -44,6 +45,11 @@ export async function handleMessage(line: string): Promise<string> {
         return respond({ ok: false, error: { code: "handoff_failed", message: String(e) } });
       }
     }
+    case "list_agents":
+      return respond({
+        ok: true,
+        result: { agents: detectAgents().map(({ id, label }) => ({ id, label })) },
+      });
     default:
       log("warn", "request.unknown_method", { id, method: String(msg.method) });
       return respond({ ok: false, error: { code: "unknown_method", message: String(msg.method) } });

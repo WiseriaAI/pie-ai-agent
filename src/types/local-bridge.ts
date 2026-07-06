@@ -4,7 +4,7 @@
 export const PROTOCOL_VERSION = 1;
 
 /** daemon 声明它能处理的方法。扩展按此决定装配哪些本地工具。 */
-export const BRIDGE_CAPABILITIES = ["run_local_agent", "handoff_to_agent"] as const;
+export const BRIDGE_CAPABILITIES = ["run_local_agent", "handoff_to_agent", "list_agents"] as const;
 export type BridgeCapability = (typeof BRIDGE_CAPABILITIES)[number];
 
 // ── 握手 ──────────────────────────────────────────────────────────────
@@ -33,9 +33,19 @@ export interface RunLocalAgentResult {
   cwd: string;
 }
 
+// ── list_agents ──────────────────────────────────────────────────────
+/** daemon 静态候选表 ∩ 本机检测（CLI 走 Bun.which，app 走存在性）的结果。 */
+export interface ListAgentsResult {
+  agents: { id: string; label: string }[];
+}
+
 // ── handoff_to_agent ─────────────────────────────────────────────────
 export interface HandoffParams {
-  target: "claude"; // Slice 1 只 claude；codex 后续 slice
+  /**
+   * agent id（用户在 HandoffCard 上选的，非 LLM 传入）。daemon 运行时校验
+   * ∈ 本次检测到的 id 集；旧 wire 值 "claude" 是 claude-terminal 的 alias。
+   */
+  target: string;
   /** markdown brief，daemon 落盘为 context.md 供交互式 session 读取 */
   context: string;
   /** 可选：随交棒 stage 进 handoff 目录的文件（名字取 basename，防遍历） */
@@ -44,12 +54,14 @@ export interface HandoffParams {
 export interface HandoffResult {
   /** daemon 建的 handoff 目录（回填给侧栏卡片/observation） */
   dir: string;
+  /** terminal = 自动开跑；app = Cowork 已打开但需用户发一句话启动 */
+  mode: "terminal" | "app";
 }
 
 // ── 通用信封 ──────────────────────────────────────────────────────────
 export interface BridgeRequest {
   id: string;
-  method: "hello" | "run_local_agent" | "handoff_to_agent";
+  method: "hello" | "run_local_agent" | "handoff_to_agent" | "list_agents";
   params: unknown;
 }
 export type BridgeResponse =

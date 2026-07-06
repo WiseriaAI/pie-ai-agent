@@ -92,3 +92,24 @@ test("processSocketChunk: independent carry state per connection (no cross-talk)
   expect(writtenB).toHaveLength(1);
   expect(JSON.parse(writtenB[0]).id).toBe("conn-b");
 });
+
+test("hello advertises list_agents capability", async () => {
+  const out = JSON.parse(
+    await handleMessage(
+      JSON.stringify({ id: "la0", method: "hello", params: { protocolVersion: PROTOCOL_VERSION } }),
+    ),
+  );
+  expect(out.result.capabilities).toContain("list_agents");
+});
+
+test("list_agents returns {id,label}[] (shape only — detection is machine-dependent)", async () => {
+  const out = JSON.parse(
+    await handleMessage(JSON.stringify({ id: "la1", method: "list_agents", params: {} })),
+  );
+  expect(out.ok).toBe(true);
+  expect(Array.isArray(out.result.agents)).toBe(true);
+  for (const a of out.result.agents) {
+    expect(typeof a.id).toBe("string");
+    expect(typeof a.label).toBe("string");
+  }
+});
