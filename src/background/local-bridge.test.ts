@@ -134,4 +134,35 @@ describe("local-bridge", () => {
     fakePort._emit({ id: req.id, ok: true, result: { dir: "/Users/x/pie-handoffs/2026-07-06-do-the-thing" } });
     await expect(p).resolves.toMatchObject({ dir: "/Users/x/pie-handoffs/2026-07-06-do-the-thing" });
   });
+
+  it("requestListAgents sends list_agents when daemon advertises the capability", async () => {
+    const { initLocalBridge, requestListAgents } = await import("./local-bridge");
+    initLocalBridge();
+    const helloReq = fakePort.postMessage.mock.calls[0][0] as { id: string };
+    fakePort._emit({
+      id: helloReq.id, ok: true,
+      result: { protocolVersion: PROTOCOL_VERSION, capabilities: ["run_local_agent", "handoff_to_agent", "list_agents"] },
+    });
+    await Promise.resolve();
+
+    const p = requestListAgents();
+    const req = fakePort.postMessage.mock.calls[1][0] as { id: string; method: string };
+    expect(req.method).toBe("list_agents");
+    fakePort._emit({ id: req.id, ok: true, result: { agents: [{ id: "claude-app", label: "Claude Code (App)" }] } });
+    await expect(p).resolves.toEqual([{ id: "claude-app", label: "Claude Code (App)" }]);
+  });
+
+  it("requestListAgents degrades to single legacy claude entry when capability missing (old daemon)", async () => {
+    const { initLocalBridge, requestListAgents } = await import("./local-bridge");
+    initLocalBridge();
+    const helloReq = fakePort.postMessage.mock.calls[0][0] as { id: string };
+    fakePort._emit({
+      id: helloReq.id, ok: true,
+      result: { protocolVersion: PROTOCOL_VERSION, capabilities: ["run_local_agent", "handoff_to_agent"] },
+    });
+    await Promise.resolve();
+
+    await expect(requestListAgents()).resolves.toEqual([{ id: "claude", label: "Claude Code (Terminal)" }]);
+    expect(fakePort.postMessage.mock.calls).toHaveLength(1); // 没有第二个 wire 请求
+  });
 });
