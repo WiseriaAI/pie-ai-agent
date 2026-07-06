@@ -42,6 +42,8 @@ export function buildScratchpadTools(deps: ScratchpadToolDeps): Tool[] {
     description:
       `Append structured records to a named scratchpad collection. Persisted outside the chat context and survives compaction. ALWAYS use this to store intermediate results when scraping structured data from pages — never accumulate extracted rows in your reply. Pass dedupeKey on the first save to skip duplicate rows on retry/re-scrape.
 
+If the rows are visible as an atlas collection/table target, prefer extract_records — it stores them without transcription.
+
 USE WHEN:
 - You are extracting ANY rows of structured data (products, links, table rows, search results) — store them here as you go, not in your reply.
 - A long task produces data incrementally and you must not lose it to context compaction.

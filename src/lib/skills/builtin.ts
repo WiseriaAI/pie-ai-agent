@@ -40,13 +40,20 @@ Never accumulate rows in your reply.
 ## Collect
 1. Choose a collection name and a dedupeKey that uniquely identifies a row
    (e.g. "url"), so re-visiting a page never double-counts.
-2. read_page to understand the list structure on the current page.
-3. save_scratchpad(collection, rows, dedupeKey) to append this page's rows.
-4. update_scratchpad_notes to record progress and the next step
-   (e.g. "page 2/N done, next: click Next").
-5. If more pages remain, paginate (click next / open_url) and repeat.
-   Check <scratchpad_overview> each turn for the count and your position.
-   A single page is just one pass.
+2. read_page({mode:"atlas"}) to find the collection/table target holding the
+   data.
+3. **Preferred: extract_records(atlas_id, target_id, collection, dedupeKey)**
+   — bulk-extracts every row straight into the scratchpad without the data
+   passing through your context. For infinite/virtualized lists pass
+   scroll:true and it drives the scroll loop for you. Verify the returned
+   field coverage + sample; clean up names later with query_scratchpad.
+4. Fallback (no suitable target — page too unstructured): read the page and
+   save_scratchpad the rows you read, page by page.
+5. Paginated lists: navigate to the next page (click next / open_url),
+   re-run read_page({mode:"atlas"}) + extract_records with the SAME
+   collection and dedupeKey; duplicates are skipped automatically.
+6. update_scratchpad_notes to record progress and the next step.
+   Check <scratchpad_overview> each turn for counts and position.
 
 ## Check with the user before exporting
 Don't export silently. Report what you collected — total count, collection

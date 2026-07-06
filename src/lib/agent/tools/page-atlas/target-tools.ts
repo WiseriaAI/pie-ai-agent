@@ -373,7 +373,8 @@ USE WHEN:
 - You want all fields per item (omit "fields"), or only specific fields (pass "fields").
 
 **DO NOT USE WHEN:**
-- You want a block overview or a plain free-text region — use read_target.`,
+- You want a block overview or a plain free-text region — use read_target.
+- You are bulk-collecting rows into the scratchpad — use extract_records (full fidelity, no context cost).`,
     parameters: {
       type: "object",
       properties: {
