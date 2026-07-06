@@ -220,9 +220,17 @@ interface FakeTab {
   windowId?: number;
 }
 
+// chrome.tabs.onCreated mock — wait-for-settle.ts subscribes to it around any
+// DOM-touching action to detect target=_blank / window.open fanout (#251).
+// Tests that exercise action handlers (click / type / keyboard) need the API
+// to exist so the listener registration doesn't throw; tests that want to
+// simulate a new tab appearing mid-action can call __emitCreated.
+type TabCreatedListener = (tab: chrome.tabs.Tab) => void;
+
 const tabs = {
   __activeTab: null as FakeTab | null,
   __tabsById: new Map<number, FakeTab>(),
+  __createdListeners: [] as TabCreatedListener[],
   query: vi.fn(async (info: chrome.tabs.QueryInfo): Promise<FakeTab[]> => {
     if (info.active && info.currentWindow) {
       return tabs.__activeTab ? [tabs.__activeTab] : [];
@@ -234,6 +242,15 @@ const tabs = {
     if (!t) throw new Error(`No tab with id ${id}`);
     return t;
   }),
+  onCreated: {
+    addListener: (l: TabCreatedListener) => tabs.__createdListeners.push(l),
+    removeListener: (l: TabCreatedListener) => {
+      tabs.__createdListeners = tabs.__createdListeners.filter((x) => x !== l);
+    },
+  },
+  __emitCreated: (tab: chrome.tabs.Tab) => {
+    for (const l of [...tabs.__createdListeners]) l(tab);
+  },
 };
 
 // chrome.webNavigation mock — wait-for-settle.ts adds onCommitted /
@@ -367,6 +384,7 @@ beforeEach(() => {
   __resetSwPort();
   tabs.__activeTab = null;
   tabs.__tabsById.clear();
+  tabs.__createdListeners = [];
   tabs.query.mockClear();
   tabs.get.mockClear();
   webNavigation.__committedListeners = [];

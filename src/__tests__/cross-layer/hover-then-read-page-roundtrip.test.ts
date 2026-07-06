@@ -42,6 +42,7 @@ beforeEach(async () => {
       onCommitted: ({ addListener: vi.fn(), removeListener: vi.fn() } as unknown as typeof chrome.webNavigation.onCommitted),
       onHistoryStateUpdated: ({ addListener: vi.fn(), removeListener: vi.fn() } as unknown as typeof chrome.webNavigation.onHistoryStateUpdated),
     },
+    tabs: ({ onCreated: { addListener: vi.fn(), removeListener: vi.fn() } } as unknown as typeof chrome.tabs),
   } as unknown as typeof chrome;
   await setCdpInputEnabled(true);
   vi.mocked(elementToPagePoint).mockResolvedValue({ x: 100, y: 200 });

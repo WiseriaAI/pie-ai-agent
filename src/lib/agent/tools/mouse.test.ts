@@ -41,6 +41,10 @@ beforeEach(() => {
       onCommitted: { addListener: vi.fn(), removeListener: vi.fn() } as unknown as typeof chrome.webNavigation.onCommitted,
       onHistoryStateUpdated: { addListener: vi.fn(), removeListener: vi.fn() } as unknown as typeof chrome.webNavigation.onHistoryStateUpdated,
     },
+    // #251 — withActionSettle subscribes to tabs.onCreated to detect fanout.
+    tabs: {
+      onCreated: { addListener: vi.fn(), removeListener: vi.fn() },
+    } as unknown as typeof chrome.tabs,
   } as unknown as typeof chrome;
 });
 
