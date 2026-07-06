@@ -240,21 +240,22 @@ USE WHEN:
 
   {
     name: "wait",
-    description: "Wait for a number of seconds (capped at 10) before proceeding.",
+    description:
+      "Wait for a number of seconds (capped at 300, i.e. 5 minutes) before proceeding. For page-monitoring scenarios (waiting for auto-refresh, a countdown/queue to clear, polling for content to change) prefer a single long wait over chaining short waits — each call costs a full LLM round-trip.",
     parameters: {
       type: "object",
       properties: {
         seconds: {
           type: "number",
-          description: "Number of seconds to wait (capped at 10).",
+          description: "Number of seconds to wait (capped at 300).",
         },
       },
       required: ["seconds"],
       additionalProperties: false,
     },
-    handler: async (args: unknown, _ctx: ToolHandlerContext): Promise<ActionResult> => {
+    handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
       const a = args as { seconds: number };
-      return wait(a.seconds);
+      return wait(a.seconds, ctx.signal);
     },
   },
 

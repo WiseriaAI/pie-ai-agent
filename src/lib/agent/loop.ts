@@ -2412,6 +2412,8 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             // HEADLESS_EXCLUDE_TOOL_NAMES), so requestFromPanel is never called.
             requestModelSelection: (payload) =>
               requestFromPanel(sessionId, "schedule-model", payload),
+            // #254 — long-running tools (wait) resolve early on user abort.
+            signal,
           });
         } catch (e) {
           result = {
