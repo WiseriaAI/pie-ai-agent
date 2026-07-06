@@ -16,6 +16,7 @@ export interface PanelRequestMap {
   "local-file": { req: Record<string, never>; res: LocalFileResult };
   "schedule-model": { req: ScheduleDraftPayload; res: ScheduleModelSelection };
   "run-local-agent": { req: { prompt: string; cwd: string }; res: boolean };
+  "handoff-to-agent": { req: { context: string; target: string; fileCount: number }; res: boolean };
 }
 export type PanelRequestKind = keyof PanelRequestMap;
 

@@ -138,6 +138,14 @@ export const enDict = {
     allow: "Allow",
     deny: "Deny",
   },
+  handoff: {
+    title: "Hand off to a local agent (interactive)?",
+    targetLabel: "Local agent",
+    contextLabel: "Context",
+    filesLabel: "Files to stage",
+    allow: "Hand off",
+    deny: "Cancel",
+  },
   chat: {
     elementPicker: {
       idle: "Pick page element",

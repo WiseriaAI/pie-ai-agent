@@ -36,8 +36,9 @@ import { isCdpInputEnabled } from "../cdp-input-enabled";
 import { requestCdpInputConsent } from "../cdp-input-onboarding";
 import { requestLocalFileFromPanel } from "../local-file-request";
 import { requestFromPanel } from "../panel-request";
-import { isBridgeReady, requestLocalAgent } from "@/background/local-bridge";
+import { isBridgeReady, bridgeCapabilities, requestLocalAgent, requestHandoff } from "@/background/local-bridge";
 import { buildRunLocalAgentTool } from "./tools/local-agent";
+import { buildHandoffTool } from "./tools/handoff";
 import { buildReadLocalFileTool, buildRequestLocalFileTool, buildOutputFileTool } from "./tools/files";
 import { buildScratchpadTools } from "./tools/scratchpad";
 import {
@@ -1891,6 +1892,16 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
               requestConsent: (p) =>
                 requestFromPanel(sessionId, "run-local-agent", { prompt: p.prompt, cwd: p.cwd }),
             }),
+            // hand-off 门禁在 daemon 声明的能力上（spec §7 能力交集降级）：新扩展对旧
+            // daemon（Slice 0，不报 handoff_to_agent）时不装配此工具，静默降级。
+            ...(bridgeCapabilities().includes("handoff_to_agent")
+              ? [
+                  buildHandoffTool({
+                    run: (p) => requestHandoff(p),
+                    requestConsent: (p) => requestFromPanel(sessionId, "handoff-to-agent", p),
+                  }),
+                ]
+              : []),
           ]
         : [];
       const fullToolList = [

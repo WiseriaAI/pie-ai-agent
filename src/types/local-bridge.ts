@@ -4,7 +4,7 @@
 export const PROTOCOL_VERSION = 1;
 
 /** daemon 声明它能处理的方法。扩展按此决定装配哪些本地工具。 */
-export const BRIDGE_CAPABILITIES = ["run_local_agent"] as const;
+export const BRIDGE_CAPABILITIES = ["run_local_agent", "handoff_to_agent"] as const;
 export type BridgeCapability = (typeof BRIDGE_CAPABILITIES)[number];
 
 // ── 握手 ──────────────────────────────────────────────────────────────
@@ -33,10 +33,23 @@ export interface RunLocalAgentResult {
   cwd: string;
 }
 
+// ── handoff_to_agent ─────────────────────────────────────────────────
+export interface HandoffParams {
+  target: "claude"; // Slice 1 只 claude；codex 后续 slice
+  /** markdown brief，daemon 落盘为 context.md 供交互式 session 读取 */
+  context: string;
+  /** 可选：随交棒 stage 进 handoff 目录的文件（名字取 basename，防遍历） */
+  files?: { name: string; content: string }[];
+}
+export interface HandoffResult {
+  /** daemon 建的 handoff 目录（回填给侧栏卡片/observation） */
+  dir: string;
+}
+
 // ── 通用信封 ──────────────────────────────────────────────────────────
 export interface BridgeRequest {
   id: string;
-  method: "hello" | "run_local_agent";
+  method: "hello" | "run_local_agent" | "handoff_to_agent";
   params: unknown;
 }
 export type BridgeResponse =

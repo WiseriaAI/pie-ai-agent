@@ -4,6 +4,8 @@ import {
   type BridgeResponse,
   type RunLocalAgentParams,
   type RunLocalAgentResult,
+  type HandoffParams,
+  type HandoffResult,
 } from "@/types/local-bridge";
 
 const HOST_NAME = "ai.wiseria.pie";
@@ -74,6 +76,11 @@ export function initLocalBridge(): void {
 export async function requestLocalAgent(params: RunLocalAgentParams): Promise<RunLocalAgentResult> {
   const r = await send("run_local_agent", params);
   return r as RunLocalAgentResult;
+}
+
+export async function requestHandoff(params: HandoffParams): Promise<HandoffResult> {
+  const r = await send("handoff_to_agent", params);
+  return r as HandoffResult;
 }
 
 /** SW 启动调用：仅当已授予 nativeMessaging 才连桥（纯 BYOK 用户零感知）。 */

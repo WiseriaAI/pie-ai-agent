@@ -14,6 +14,7 @@ test("hello returns protocolVersion + capabilities", async () => {
   expect(res.ok).toBe(true);
   expect(res.result.protocolVersion).toBe(PROTOCOL_VERSION);
   expect(res.result.capabilities).toContain("run_local_agent");
+  expect(res.result.capabilities).toContain("handoff_to_agent");
 });
 
 test("unknown method returns structured error", async () => {

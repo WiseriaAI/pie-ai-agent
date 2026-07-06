@@ -138,6 +138,14 @@ export const zhTWDict = {
     allow: "允許",
     deny: "拒絕",
   },
+  handoff: {
+    title: "交棒給本地 Agent（互動式）？",
+    targetLabel: "本地 Agent",
+    contextLabel: "上下文",
+    filesLabel: "隨交棒檔案",
+    allow: "交棒",
+    deny: "取消",
+  },
   chat: {
     elementPicker: {
       idle: "選取頁面元素",

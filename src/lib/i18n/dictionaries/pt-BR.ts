@@ -139,6 +139,14 @@ export const ptBRDict = {
     allow: "Permitir",
     deny: "Negar",
   },
+  handoff: {
+    title: "Repassar para um agente local (interativo)?",
+    targetLabel: "Agente local",
+    contextLabel: "Contexto",
+    filesLabel: "Arquivos a preparar",
+    allow: "Repassar",
+    deny: "Cancelar",
+  },
   chat: {
     elementPicker: {
       idle: "Escolher elemento da página",
