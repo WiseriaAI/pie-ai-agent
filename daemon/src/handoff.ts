@@ -95,10 +95,10 @@ export async function runHandoff(
     return { dir, mode: "app" };
   }
 
-  // 交互式会话脚本：cd 进目录、用初始 prompt 拉起 agent。**不带**
-  // --dangerously-skip-permissions —— 人就在终端前，agent 自己的交互审批有人可批，
-  // 这正是 hand-off 区别于 round-trip 的地方。exec 让 agent 接管终端；退出后
-  // Terminal 显示 process completed，错误（如未装）对用户可见。
+  // 交互式会话脚本：cd 进目录、用初始 prompt 拉起 claude。**不带**
+  // --dangerously-skip-permissions —— 人就在终端前，claude 自己的交互审批有人可批，
+  // 这正是 hand-off 区别于 round-trip 的地方。exec 让 claude 接管终端；退出后
+  // Terminal 显示 process completed，错误（如 claude 未装）对用户可见。
   // dir 是 daemon 派生（homedir + ISO 日期 + slugify 限制字符集在
   // [a-z0-9-]），charset 由构造方式圈定，不是靠 JSON.stringify 的引号规则
   // 恰好兼容 bash 双引号语义（两者其实不等价：JSON 的 \n / \uXXXX 转义与 bash
@@ -126,7 +126,7 @@ export async function runHandoff(
     dir,
   );
   // osascript 非零 = Terminal 没被唤起（典型：TCC Automation 权限被拒 -1743）。
-  // fire-and-forget 只对 agent 进程成立，唤起终端这步失败必须让用户知道并给
+  // fire-and-forget 只对 claude 进程成立，唤起终端这步失败必须让用户知道并给
   // 自救路径（手动跑 start.command，文件已落盘）。
   if (r.exitCode !== 0) {
     throw new Error(
