@@ -137,6 +137,7 @@ export const jaDict = {
   },
   runLocalAgent: {
     title: "ローカルエージェント (claude -p) を実行しますか？",
+    semanticsNote: "バックグラウンドで無人実行され、結果はこの会話に戻ります。",
     cwdLabel: "作業ディレクトリ",
     taskLabel: "タスク",
     allow: "許可",
@@ -144,6 +145,7 @@ export const jaDict = {
   },
   handoff: {
     title: "ローカルエージェントに引き継ぐ（対話型）？",
+    semanticsNote: "タスクはローカル agent に引き継がれ、結果はこの会話には戻りません。",
     targetLabel: "ローカルエージェント",
     contextLabel: "コンテキスト",
     filesLabel: "引き継ぐファイル",

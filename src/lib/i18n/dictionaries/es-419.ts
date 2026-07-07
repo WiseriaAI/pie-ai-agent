@@ -137,6 +137,7 @@ export const es419Dict = {
   },
   runLocalAgent: {
     title: "¿Ejecutar un agente local (claude -p)?",
+    semanticsNote: "Se ejecuta sin supervisión en segundo plano; el resultado vuelve a esta conversación.",
     cwdLabel: "Directorio de trabajo",
     taskLabel: "Tarea",
     allow: "Permitir",
@@ -144,6 +145,7 @@ export const es419Dict = {
   },
   handoff: {
     title: "¿Delegar a un agente local (interactivo)?",
+    semanticsNote: "La tarea pasa a tu agente local; los resultados no vuelven a esta conversación.",
     targetLabel: "Agente local",
     contextLabel: "Contexto",
     filesLabel: "Archivos a preparar",

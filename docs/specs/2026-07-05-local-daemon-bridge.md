@@ -94,6 +94,26 @@ pie daemon（常驻，launchd KeepAlive；rendezvous 见 ADR 0005）
   - `app`（真机已验证）：`open -a Claude <dir>` → Cowork 会话根在该目录。无 prompt 注入面（深链只有 claude://claude|resume|cowork/shared-artifact）→ 目录内落 `CLAUDE.md`（写「读 context.md 继续」约定），人到场发一句即开跑。比 Terminal 稳（无 shell、无 TCC），但不自动开跑；`HandoffResult.mode` 回传，observation 明示「用户需在 app 里发一句话启动」。保留名单相应加 `claude.md`（大小写不敏感）。
 - **唤起机制（Slice 1 真机验证补）**：不能用 `open start.command`——Terminal 打开 `.command` 是「spawn 交互式 login zsh + 把脚本路径当键盘输入喂进 TTY」，zsh 启动期任何 stdin 消费者（omz 升级提示 `read -k 1`）会吞掉路径首字符 → 交棒静默失败（真机实锤）。改走 AppleScript `do script`，注入串前垫 8 个牺牲空格（消费者吃到的只是空格）。代价：daemon 需一次性 TCC Automation 授权（pie → Terminal），被拒时报错并给出手动跑 `start.command` 的自救路径。`.terminal` profile 的 `RunCommandAsShell=false` 实测不被 file-open 路径尊重（仍走 zsh 打字注入），不可用。
 
+#### 4.3.1 round-trip vs hand-off：使用场景区分（2026-07-07 定稿）
+
+一句话框架：**委托 vs 交接**。判别模糊会同时迷惑用户和模型，故固化于此；两个工具的 description 内置同一判别规则（互相引用），两张授权卡各带一行语义副文案（`runLocalAgent.semanticsNote` / `handoff.semanticsNote`）。
+
+| | `run_local_agent`（委托） | `handoff_to_agent`（交接） |
+|---|---|---|
+| 心智模型 | 函数调用：Pie 雇本地 agent 干一个子环节，拿结果继续 | 换班：接力棒交出去，Pie 退场 |
+| 主线在哪 | 还在浏览器/侧栏对话里 | 移到本地（终端/app + 人） |
+| 结果去向 | 回到 Pie，喂给后续步骤 | 不回传，人是消费者 |
+| 形态 | 有界、headless、无人值守一把跑完 | 开放式、交互式、人在场 |
+| 权限姿态 | 带 skip-permissions（headless 无人可批，见 §4.2） | 不带（人逐步批，见 §4.3） |
+| 任务结束时 | Pie 的任务还没完 | Pie 的任务到此为止 |
+
+**判别规则（按优先级）**：
+1. **结果去向**：对话/网页接下来还需要这个产出 → 委托；人在本地接着干 → 交接。第一判据，多数场景到此分完。
+2. **有界 vs 开放**：一句 prompt 无人值守能跑完 → 委托；长程/要来回商量/边干边定 → 交接。
+3. **风险姿态**：要在真实项目目录里大量写 → 倾向交接（人在场逐步批；委托是 skip-permissions 盲跑，适合隔离 cwd 或只读分析）。
+
+**已知空白**：「结果要回来、但任务开放长程」两头不沾——v1 答案 = 交接，人干完自己把结果带回对话；若该场景高频，再考虑「hand-off 完成回执」混合形态（当前 spec 明确 hand-off 不回传，不预建）。
+
 ### 4.4 skill 真执行
 
 **能力声明（Q6，合并三字段为一个）**：

@@ -137,6 +137,7 @@ export const ptBRDict = {
   },
   runLocalAgent: {
     title: "Executar um agente local (claude -p)?",
+    semanticsNote: "Executa sem supervisão em segundo plano; o resultado volta para esta conversa.",
     cwdLabel: "Diretório de trabalho",
     taskLabel: "Tarefa",
     allow: "Permitir",
@@ -144,6 +145,7 @@ export const ptBRDict = {
   },
   handoff: {
     title: "Repassar para um agente local (interativo)?",
+    semanticsNote: "A tarefa passa para o seu agente local; os resultados não voltam para esta conversa.",
     targetLabel: "Agente local",
     contextLabel: "Contexto",
     filesLabel: "Arquivos a preparar",

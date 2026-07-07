@@ -13,12 +13,16 @@ export function buildRunLocalAgentTool(deps: RunLocalAgentToolDeps): Tool {
   return {
     name: "run_local_agent",
     description:
-      "Hand a BOUNDED, non-interactive sub-task to the user's local Claude Code agent " +
-      "(claude -p, headless) and get its final output back. Use for work that needs a full " +
-      "local coding/analysis agent with filesystem + shell — e.g. run an analysis over exported " +
-      "files, generate code, summarize a repo. The call BLOCKS until the local agent finishes and " +
-      "returns its result. Requires user authorization each call. Do NOT use for open-ended " +
-      "interactive coding (that is hand-off, a later capability).",
+      "DELEGATE a bounded, non-interactive sub-task to the user's local Claude Code agent " +
+      "(claude -p, headless) and get its final output back — the conversation continues with the " +
+      "result. Use for work that needs a full local coding/analysis agent with filesystem + shell " +
+      "— e.g. run an analysis over exported files, generate code, summarize a repo. The call " +
+      "BLOCKS until the local agent finishes. Decision rule vs handoff_to_agent: use " +
+      "run_local_agent when THIS conversation still needs the output afterwards AND the task can " +
+      "run unattended in one shot; use handoff_to_agent when the human will continue the work " +
+      "locally (open-ended / interactive / long-running — results not needed back here). Heavy " +
+      "writes inside a real project directory also favor handoff_to_agent (a human approves each " +
+      "step there; this tool runs headless). Requires user authorization each call.",
     parameters: {
       type: "object",
       properties: {

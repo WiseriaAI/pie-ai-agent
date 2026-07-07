@@ -22,12 +22,15 @@ export function buildHandoffTool(deps: HandoffToolDeps): Tool {
     name: "handoff_to_agent",
     description:
       "Hand OFF an open-ended, interactive task to a local agent installed on the user's machine " +
-      "(e.g. Claude Code, Codex). Unlike run_local_agent (which BLOCKS and returns output), this is " +
+      "(e.g. Claude Code, Codex): ownership of the task MOVES to the local agent and the human. " +
       "FIRE-AND-FORGET: it writes your context to context.md, stages any files you provide, and opens " +
       "an interactive session (terminal or app) where the local agent continues the work WITH THE " +
       "HUMAN PRESENT. You do NOT choose the recipient — the user picks it on the authorization card. " +
-      "Use for open-ended / collaborative / long-running work that a blocking headless call can't " +
-      "handle. You get back ONLY the handoff directory path — results are NOT returned to you. " +
+      "You get back ONLY the handoff directory path — results are NOT returned to you. Decision rule " +
+      "vs run_local_agent: hand off when the human continues the work locally and this conversation " +
+      "does not need the output (open-ended / collaborative / long-running, or heavy writes in a " +
+      "real project directory where a human should approve each step); use run_local_agent instead " +
+      "when this conversation still needs the result and the task can run unattended in one shot. " +
       "Requires user authorization each call.",
     parameters: {
       type: "object",

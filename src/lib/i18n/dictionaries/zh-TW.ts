@@ -136,6 +136,7 @@ export const zhTWDict = {
   },
   runLocalAgent: {
     title: "執行本地 Agent（claude -p）？",
+    semanticsNote: "背景無人值守執行，結果將返回此對話。",
     cwdLabel: "工作目錄",
     taskLabel: "任務",
     allow: "允許",
@@ -143,6 +144,7 @@ export const zhTWDict = {
   },
   handoff: {
     title: "交棒給本地 Agent（互動式）？",
+    semanticsNote: "任務將移交本機 agent，結果不會返回此對話。",
     targetLabel: "本地 Agent",
     contextLabel: "上下文",
     filesLabel: "隨交棒檔案",

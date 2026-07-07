@@ -22,6 +22,8 @@ export function HandoffCard({ payload, onDecision }: Props) {
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-warning-line bg-warning-tint px-3 py-2.5 text-[12px] leading-[18px] text-warning">
       <div className="text-[13px] font-medium text-warning">{t("handoff.title")}</div>
+      {/* 语义副文案：与 run_local_agent 卡的核心区分——任务移交出去，结果不回来 */}
+      <div className="text-[12px] leading-relaxed text-warning/70">{t("handoff.semanticsNote")}</div>
       <div>
         <div className="text-warning/70">{t("handoff.targetLabel")}</div>
         <div className="mt-1 flex flex-col gap-1">
