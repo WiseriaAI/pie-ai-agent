@@ -12,12 +12,22 @@ export async function setEnabledLocalAgents(ids: string[]): Promise<void> {
   await setConfig(KEY, ids);
 }
 
+/** 单 agent 可用谓词 = 已安装 且 已启用（null 偏好 = 已安装全启用）。
+ *  唯一真源：settings 列表的 enabled 标注（background/index.ts）与 handoff
+ *  过滤（filterUsableAgents）都走这里，两处永不漂移。 */
+export function isAgentUsable(
+  a: { id: string; installed: boolean },
+  enabled: string[] | null,
+): boolean {
+  return a.installed && (enabled == null || enabled.includes(a.id));
+}
+
 /** handoff 卡片可用列表 = 已安装 ∩ 已启用（null = 已安装全启用）。 */
 export function filterUsableAgents<T extends { id: string; installed: boolean }>(
   detected: T[],
   enabled: string[] | null,
 ): T[] {
-  return detected.filter((a) => a.installed && (enabled == null || enabled.includes(a.id)));
+  return detected.filter((a) => isAgentUsable(a, enabled));
 }
 
 /** 开关决策纯函数：启用时现检测把关——未安装启用不了；null 偏好先物化为「当前已安装全启用」。 */

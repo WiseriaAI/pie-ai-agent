@@ -128,7 +128,7 @@ import type { ChatInstructionRejectedMessage } from "@/types/messages";
 import { isFilePdfUrl } from "@/lib/pdf/detect";
 import { installLogCapture } from "@/lib/log-buffer";
 import { maybeInitLocalBridge, disconnectLocalBridge, isBridgeReady, requestListAgents } from "./local-bridge";
-import { getEnabledLocalAgents, setEnabledLocalAgents, applyToggle } from "@/lib/local-agents-prefs";
+import { getEnabledLocalAgents, setEnabledLocalAgents, applyToggle, isAgentUsable } from "@/lib/local-agents-prefs";
 
 // Install log capture at module top level
 installLogCapture("sw");
@@ -682,7 +682,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return {
         agents: detected.map((a) => ({
           ...a,
-          enabled: a.installed && (enabled == null || enabled.includes(a.id)),
+          enabled: isAgentUsable(a, enabled),
         })),
       };
     })()

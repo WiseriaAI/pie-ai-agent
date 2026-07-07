@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { _resetForTests } from "@/lib/idb/db";
 import {
+  isAgentUsable,
   filterUsableAgents,
   applyToggle,
   getEnabledLocalAgents,
@@ -12,6 +13,18 @@ const DETECTED = [
   { id: "claude-terminal", label: "Claude Code (Terminal)", installed: false },
   { id: "codex-terminal", label: "Codex (Terminal)", installed: true },
 ];
+
+describe("isAgentUsable (shared predicate: settings enabled 标注与 handoff 过滤的唯一真源)", () => {
+  it("installed + null prefs → usable; not installed → never usable", () => {
+    expect(isAgentUsable(DETECTED[0], null)).toBe(true);
+    expect(isAgentUsable(DETECTED[1], null)).toBe(false);
+    expect(isAgentUsable(DETECTED[1], ["claude-terminal"])).toBe(false);
+  });
+  it("explicit prefs gate installed agents", () => {
+    expect(isAgentUsable(DETECTED[0], ["codex-terminal"])).toBe(false);
+    expect(isAgentUsable(DETECTED[2], ["codex-terminal"])).toBe(true);
+  });
+});
 
 describe("filterUsableAgents", () => {
   it("null prefs = every installed agent usable (out-of-box default)", () => {
