@@ -63,6 +63,10 @@ export async function runScript(
 // ── Runtime wiring（vitest/直开页面时跳过：只在被 iframe 内嵌时监听）─────────
 if (typeof window !== "undefined" && window.parent !== window) {
   window.addEventListener("message", (ev) => {
+    // 只认内嵌宿主（offscreen 文档）。sandbox 页拿不到 chrome.*，无法比对
+    // extension origin；parent 引用比对是这里唯一可靠的发件人锚。
+    if (ev.source !== window.parent) return;
+
     const msg = ev.data as Partial<SandboxRunRequest> | undefined;
     if (msg?.type !== "skill-sandbox:run" || typeof msg.id !== "string") return;
     const id = msg.id;
@@ -79,7 +83,7 @@ if (typeof window !== "undefined" && window.parent !== window) {
           error: e instanceof Error ? e.message : String(e),
         };
       }
-      (ev.source as Window | null)?.postMessage(reply, "*");
+      window.parent.postMessage(reply, "*");
     })();
   });
 }
