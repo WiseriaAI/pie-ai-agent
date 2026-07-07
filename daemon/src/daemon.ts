@@ -1,9 +1,10 @@
 import { unlinkSync, existsSync, mkdirSync, chmodSync } from "fs";
 import { PROTOCOL_VERSION, BRIDGE_CAPABILITIES } from "../../src/types/local-bridge";
-import type { BridgeResponse, RunLocalAgentParams, HandoffParams } from "../../src/types/local-bridge";
+import type { BridgeResponse, RunLocalAgentParams, HandoffParams, ListAgentsResult } from "../../src/types/local-bridge";
 import { paths } from "./paths";
 import { runLocalAgent } from "./run-local-agent"; // Task 4
 import { runHandoff } from "./handoff";
+import { detectAgents, AGENT_CANDIDATES } from "./agents";
 import { decodeNdjsonLines } from "./framing";
 import { log } from "./log";
 
@@ -42,6 +43,20 @@ export async function handleMessage(line: string): Promise<string> {
       } catch (e) {
         log("error", "handoff.failed", { id, error: String(e) });
         return respond({ ok: false, error: { code: "handoff_failed", message: String(e) } });
+      }
+    }
+    case "list_agents": {
+      // 与兄弟 case 同构的 try/catch：SW 的 send() 无超时，这里若抛异常会
+      // 让 handleMessage 整体 reject → socket 层只 log 不回包 → 工具永久挂起。
+      try {
+        const detected = new Set(detectAgents().map((a) => a.id));
+        const result: ListAgentsResult = {
+          agents: AGENT_CANDIDATES.map(({ id, label }) => ({ id, label, installed: detected.has(id) })),
+        };
+        return respond({ ok: true, result });
+      } catch (e) {
+        log("error", "list_agents.failed", { id, error: String(e) });
+        return respond({ ok: false, error: { code: "list_agents_failed", message: String(e) } });
       }
     }
     default:

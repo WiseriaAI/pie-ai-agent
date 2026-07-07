@@ -99,6 +99,9 @@ export const enDict = {
       statusOff: "Not enabled.",
       statusConnected: "Connected to daemon.",
       statusEnabledNotConnected: "Enabled, but not connected (daemon not running? run pie doctor).",
+      agentsTitle: "Local agents",
+      agentNotInstalled: "Not installed",
+      agentEnableFailed: "Can't enable — not detected on this machine.",
     },
     searchProvider: {
       caps: "Search provider",
@@ -133,6 +136,7 @@ export const enDict = {
   },
   runLocalAgent: {
     title: "Run a local agent (claude -p)?",
+    semanticsNote: "Runs headless in the background; the result comes back to this conversation.",
     cwdLabel: "Working directory",
     taskLabel: "Task",
     allow: "Allow",
@@ -140,6 +144,7 @@ export const enDict = {
   },
   handoff: {
     title: "Hand off to a local agent (interactive)?",
+    semanticsNote: "The task moves to your local agent; results are not returned to this conversation.",
     targetLabel: "Local agent",
     contextLabel: "Context",
     filesLabel: "Files to stage",

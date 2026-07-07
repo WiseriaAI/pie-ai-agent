@@ -100,6 +100,9 @@ export const jaDict = {
       statusOff: "未有効。",
       statusConnected: "daemon に接続済み。",
       statusEnabledNotConnected: "有効ですが未接続です（daemon が起動していない？ pie doctor を実行）。",
+      agentsTitle: "ローカル Agent",
+      agentNotInstalled: "未インストール",
+      agentEnableFailed: "有効にできません——このマシンで検出されませんでした。",
     },
     searchProvider: {
       caps: "検索プロバイダー",
@@ -134,6 +137,7 @@ export const jaDict = {
   },
   runLocalAgent: {
     title: "ローカルエージェント (claude -p) を実行しますか？",
+    semanticsNote: "バックグラウンドで無人実行され、結果はこの会話に戻ります。",
     cwdLabel: "作業ディレクトリ",
     taskLabel: "タスク",
     allow: "許可",
@@ -141,6 +145,7 @@ export const jaDict = {
   },
   handoff: {
     title: "ローカルエージェントに引き継ぐ（対話型）？",
+    semanticsNote: "タスクはローカル agent に引き継がれ、結果はこの会話には戻りません。",
     targetLabel: "ローカルエージェント",
     contextLabel: "コンテキスト",
     filesLabel: "引き継ぐファイル",

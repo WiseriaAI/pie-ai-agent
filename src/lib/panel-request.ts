@@ -16,7 +16,10 @@ export interface PanelRequestMap {
   "local-file": { req: Record<string, never>; res: LocalFileResult };
   "schedule-model": { req: ScheduleDraftPayload; res: ScheduleModelSelection };
   "run-local-agent": { req: { prompt: string; cwd: string }; res: boolean };
-  "handoff-to-agent": { req: { context: string; target: string; fileCount: number }; res: boolean };
+  "handoff-to-agent": {
+    req: { context: string; fileCount: number; agents: { id: string; label: string }[] };
+    res: string | null; // 用户选中的 agent id；null = 拒绝
+  };
 }
 export type PanelRequestKind = keyof PanelRequestMap;
 

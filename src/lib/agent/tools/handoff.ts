@@ -4,21 +4,34 @@ import type { HandoffParams, HandoffResult } from "@/types/local-bridge";
 
 export interface HandoffToolDeps {
   run: (p: HandoffParams) => Promise<HandoffResult>;
-  /** HITL 授权卡：展示 context + target + 文件数原文，返回是否放行。 */
-  requestConsent: (p: { context: string; target: string; fileCount: number }) => Promise<boolean>;
+  /** 桥：本机已检测 agent 列表（旧 daemon 的单项降级在 local-bridge 层做）。 */
+  listAgents: () => Promise<{ id: string; label: string }[]>;
+  /**
+   * HITL 卡：用户选收件人 + 授权一步完成。返回选中的 agent id，null = 拒绝。
+   * target 不由 LLM 传——被 untrusted 页面驱动的 LLM 无法诱导选收件人。
+   */
+  requestConsent: (p: {
+    context: string;
+    fileCount: number;
+    agents: { id: string; label: string }[];
+  }) => Promise<string | null>;
 }
 
 export function buildHandoffTool(deps: HandoffToolDeps): Tool {
   return {
     name: "handoff_to_agent",
     description:
-      "Hand OFF an open-ended, interactive task to the user's local Claude Code in a real terminal " +
-      "session. Unlike run_local_agent (which BLOCKS and returns output), this is FIRE-AND-FORGET: it " +
-      "writes your context to context.md, stages any files you provide, and opens an interactive " +
-      "terminal where the user's local agent continues the work WITH THE HUMAN PRESENT. Use for " +
-      "open-ended / collaborative / long-running work that a blocking headless call can't handle. You " +
-      "get back ONLY the handoff directory path — results are NOT returned to you. Requires user " +
-      "authorization each call.",
+      "Hand OFF an open-ended, interactive task to a local agent installed on the user's machine " +
+      "(e.g. Claude Code, Codex): ownership of the task MOVES to the local agent and the human. " +
+      "FIRE-AND-FORGET: it writes your context to context.md, stages any files you provide, and opens " +
+      "an interactive session (terminal or app) where the local agent continues the work WITH THE " +
+      "HUMAN PRESENT. You do NOT choose the recipient — the user picks it on the authorization card. " +
+      "You get back ONLY the handoff directory path — results are NOT returned to you. Decision rule " +
+      "vs run_local_agent: hand off when the human continues the work locally and this conversation " +
+      "does not need the output (open-ended / collaborative / long-running, or heavy writes in a " +
+      "real project directory where a human should approve each step); use run_local_agent instead " +
+      "when this conversation still needs the result and the task can run unattended in one shot. " +
+      "Requires user authorization each call.",
     parameters: {
       type: "object",
       properties: {
@@ -52,22 +65,37 @@ export function buildHandoffTool(deps: HandoffToolDeps): Tool {
       const files = Array.isArray(a.files)
         ? (a.files as { name: string; content: string }[])
         : undefined;
-      const granted = await deps.requestConsent({
+      const agents = await deps.listAgents();
+      if (agents.length === 0) {
+        return {
+          success: false,
+          error:
+            "handoff_to_agent: no supported local agents detected on this machine " +
+            "(looked for the Claude app and the `claude` / `codex` CLIs).",
+        };
+      }
+      const target = await deps.requestConsent({
         context: a.context,
-        target: "claude",
         fileCount: files?.length ?? 0,
+        agents,
       });
-      if (!granted) {
+      if (target == null) {
         return { success: false, error: "User declined the hand-off." };
       }
-      const result = await deps.run({ target: "claude", context: a.context, files });
+      const result = await deps.run({ target, context: a.context, files });
       // fire-and-forget：无 untrusted 内容回传。dir 是 daemon 派生路径（可信），
-      // 直接作 trusted observation 让 LLM 转述给用户去那个终端接着干。
+      // 直接作 trusted observation 让 LLM 转述给用户去接着干。
+      const label = agents.find((x) => x.id === target)?.label ?? target;
+      const started =
+        result.mode === "app"
+          ? `The app was opened rooted at that folder; the user must send a message there to start the local agent.`
+          : `An interactive terminal session was opened there and is already running.`;
       return {
         success: true,
         observation:
-          `Handed off to the user's local Claude Code. An interactive terminal session was opened at:\n` +
+          `Handed off to ${label} (picked by the user). Handoff directory:\n` +
           `${result.dir}\n` +
+          `${started}\n` +
           `This is fire-and-forget — the local agent continues independently with the user; ` +
           `results are NOT returned here.`,
       };

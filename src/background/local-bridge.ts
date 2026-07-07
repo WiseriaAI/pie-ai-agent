@@ -6,6 +6,7 @@ import {
   type RunLocalAgentResult,
   type HandoffParams,
   type HandoffResult,
+  type ListAgentsResult,
 } from "@/types/local-bridge";
 
 const HOST_NAME = "ai.wiseria.pie";
@@ -81,6 +82,16 @@ export async function requestLocalAgent(params: RunLocalAgentParams): Promise<Ru
 export async function requestHandoff(params: HandoffParams): Promise<HandoffResult> {
   const r = await send("handoff_to_agent", params);
   return r as HandoffResult;
+}
+
+export async function requestListAgents(): Promise<{ id: string; label: string; installed: boolean }[]> {
+  // 旧 daemon（无 list_agents capability）降级为单项 legacy 列表：id "claude"
+  // 是旧 wire 值，installed 视为 true（维持旧 daemon 可 handoff 的语义）。
+  if (!capabilities.includes("list_agents")) {
+    return [{ id: "claude", label: "Claude Code (Terminal)", installed: true }];
+  }
+  const r = (await send("list_agents", {})) as ListAgentsResult;
+  return r.agents;
 }
 
 /** SW 启动调用：仅当已授予 nativeMessaging 才连桥（纯 BYOK 用户零感知）。 */

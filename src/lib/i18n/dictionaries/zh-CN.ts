@@ -99,6 +99,9 @@ export const zhCNDict = {
       statusOff: "未启用。",
       statusConnected: "已连接 daemon。",
       statusEnabledNotConnected: "已启用，但未连上 daemon（daemon 未运行？运行 pie doctor 检查）。",
+      agentsTitle: "本地 Agent",
+      agentNotInstalled: "未安装",
+      agentEnableFailed: "无法启用——未在本机检测到安装。",
     },
     searchProvider: {
       caps: "网页搜索",
@@ -133,6 +136,7 @@ export const zhCNDict = {
   },
   runLocalAgent: {
     title: "运行本地 Agent（claude -p）？",
+    semanticsNote: "后台无人值守运行，结果将返回此对话。",
     cwdLabel: "工作目录",
     taskLabel: "任务",
     allow: "允许",
@@ -140,6 +144,7 @@ export const zhCNDict = {
   },
   handoff: {
     title: "交棒给本地 Agent（交互式）？",
+    semanticsNote: "任务将移交本地 agent，结果不返回此对话。",
     targetLabel: "本地 Agent",
     contextLabel: "上下文",
     filesLabel: "随交棒文件",

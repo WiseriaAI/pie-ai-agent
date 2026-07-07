@@ -127,7 +127,8 @@ import { mergeCarryoverIntoMessages } from "@/lib/agent/loop-drain";
 import type { ChatInstructionRejectedMessage } from "@/types/messages";
 import { isFilePdfUrl } from "@/lib/pdf/detect";
 import { installLogCapture } from "@/lib/log-buffer";
-import { maybeInitLocalBridge, disconnectLocalBridge, isBridgeReady } from "./local-bridge";
+import { maybeInitLocalBridge, disconnectLocalBridge, isBridgeReady, requestListAgents } from "./local-bridge";
+import { getEnabledLocalAgents, setEnabledLocalAgents, applyToggle, isAgentUsable } from "@/lib/local-agents-prefs";
 
 // Install log capture at module top level
 installLogCapture("sw");
@@ -669,6 +670,39 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .contains({ permissions: ["nativeMessaging"] })
       .then((hasPermission) => sendResponse({ hasPermission, ready: isBridgeReady() }))
       .catch(() => sendResponse({ hasPermission: false, ready: false }));
+    return true; // async response
+  }
+
+  // Settings「本地 Agent」列表 — 一次性查询（无轮询）。桥没 ready → 空列表。
+  if (message?.type === "local-agents:list") {
+    (async () => {
+      if (!isBridgeReady()) return { agents: [] };
+      const detected = await requestListAgents();
+      const enabled = await getEnabledLocalAgents();
+      return {
+        agents: detected.map((a) => ({
+          ...a,
+          enabled: isAgentUsable(a, enabled),
+        })),
+      };
+    })()
+      .then(sendResponse)
+      .catch(() => sendResponse({ agents: [] }));
+    return true; // async response
+  }
+
+  // Settings 开关 — 启用时现检测把关：未安装启用不了（决策在 applyToggle 纯函数）。
+  if (message?.type === "local-agents:toggle") {
+    const m = message as { type: string; id: string; next: boolean };
+    (async () => {
+      const detected = isBridgeReady() ? await requestListAgents() : [];
+      const decision = applyToggle(detected, await getEnabledLocalAgents(), m.id, m.next);
+      if (!decision.ok) return decision;
+      await setEnabledLocalAgents(decision.next);
+      return { ok: true };
+    })()
+      .then(sendResponse)
+      .catch((e) => sendResponse({ ok: false, reason: String(e) }));
     return true; // async response
   }
 

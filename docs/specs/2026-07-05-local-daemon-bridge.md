@@ -86,8 +86,33 @@ pie daemon（常驻，launchd KeepAlive；rendezvous 见 ADR 0005）
 
 ### 4.3 hand-off（交棒交互式 session）
 
-`handoff_to_agent(target, context, files)` → HITL 卡 → daemon 建 `~/pie-handoffs/<date>-<slug>/`，落盘 `context.md` + 产出文件 → 唤起交互式 session（预注入「读 context.md 继续」）→ 侧栏「已交棒 + 路径」卡。fire-and-forget，不回传。
+`handoff_to_agent(context, files?)` → SW 取已检测 agent 列表 → HITL 卡（用户**选收件人 + 授权**一步完成）→ daemon 建 `~/pie-handoffs/<date>-<slug>/`，落盘 `context.md` + 产出文件 → 按所选 agent 的 launch 模式唤起交互式 session → 侧栏「已交棒 + 路径」卡。fire-and-forget，不回传。
+- **收件人选择（Slice 1.5）**：target **不由 LLM 传**（工具签名无 target 参数）——被 untrusted 页面驱动的 LLM 无法诱导选收件人；用户在授权卡上从已检测列表中选（预选列表第一项），选择与授权合一步。列表为空（本机没装任何受支持 agent）→ 工具直接返回结构化错误，不弹卡。
+- **Agent 注册表（Slice 1.5）**：daemon 内静态候选表（launch 命令/路径**绝不来自 wire**）+ 按需检测：CLI 用 `Bun.which`，app 用 `/Applications/Claude.app` 存在性。首批三条：`claude-app`（Claude Code (App)）/ `claude-terminal`（Claude Code (Terminal)）/ `codex-terminal`（Codex (Terminal)）；Hermes/Openclaw 等待用户提供 CLI 命令后再加——绝不凭空编 spawn 命令。新桥方法 `list_agents`（+capability，纯增量，PROTOCOL_VERSION 不动）返回 `{id,label}[]`。handoff 的 target 硬闸从 `!=="claude"` 泛化为「∈ **本次 handoff 现检测**到的 id 集」（不信任 list 时刻的旧结果）；旧 wire 值 `"claude"` 作为 `claude-terminal` 的 alias 保留（旧扩展兼容）。扩展侧对旧 daemon（无 `list_agents` capability）降级为单项列表 `[claude]`。
+- **launch 模式两种**：
+  - `terminal`：既有 osascript `do script` 路径（含 8 空格垫片，见下）；`start.command` 内 `exec <bin> "读 context.md 继续"`，bin 来自静态表（`claude` / `codex`）。
+  - `app`（真机已验证）：`open -a Claude <dir>` → Cowork 会话根在该目录。无 prompt 注入面（深链只有 claude://claude|resume|cowork/shared-artifact）→ 目录内落 `CLAUDE.md`（写「读 context.md 继续」约定），人到场发一句即开跑。比 Terminal 稳（无 shell、无 TCC），但不自动开跑；`HandoffResult.mode` 回传，observation 明示「用户需在 app 里发一句话启动」。保留名单相应加 `claude.md`（大小写不敏感）。
 - **唤起机制（Slice 1 真机验证补）**：不能用 `open start.command`——Terminal 打开 `.command` 是「spawn 交互式 login zsh + 把脚本路径当键盘输入喂进 TTY」，zsh 启动期任何 stdin 消费者（omz 升级提示 `read -k 1`）会吞掉路径首字符 → 交棒静默失败（真机实锤）。改走 AppleScript `do script`，注入串前垫 8 个牺牲空格（消费者吃到的只是空格）。代价：daemon 需一次性 TCC Automation 授权（pie → Terminal），被拒时报错并给出手动跑 `start.command` 的自救路径。`.terminal` profile 的 `RunCommandAsShell=false` 实测不被 file-open 路径尊重（仍走 zsh 打字注入），不可用。
+
+#### 4.3.1 round-trip vs hand-off：使用场景区分（2026-07-07 定稿）
+
+一句话框架：**委托 vs 交接**。判别模糊会同时迷惑用户和模型，故固化于此；两个工具的 description 内置同一判别规则（互相引用），两张授权卡各带一行语义副文案（`runLocalAgent.semanticsNote` / `handoff.semanticsNote`）。
+
+| | `run_local_agent`（委托） | `handoff_to_agent`（交接） |
+|---|---|---|
+| 心智模型 | 函数调用：Pie 雇本地 agent 干一个子环节，拿结果继续 | 换班：接力棒交出去，Pie 退场 |
+| 主线在哪 | 还在浏览器/侧栏对话里 | 移到本地（终端/app + 人） |
+| 结果去向 | 回到 Pie，喂给后续步骤 | 不回传，人是消费者 |
+| 形态 | 有界、headless、无人值守一把跑完 | 开放式、交互式、人在场 |
+| 权限姿态 | 带 skip-permissions（headless 无人可批，见 §4.2） | 不带（人逐步批，见 §4.3） |
+| 任务结束时 | Pie 的任务还没完 | Pie 的任务到此为止 |
+
+**判别规则（按优先级）**：
+1. **结果去向**：对话/网页接下来还需要这个产出 → 委托；人在本地接着干 → 交接。第一判据，多数场景到此分完。
+2. **有界 vs 开放**：一句 prompt 无人值守能跑完 → 委托；长程/要来回商量/边干边定 → 交接。
+3. **风险姿态**：要在真实项目目录里大量写 → 倾向交接（人在场逐步批；委托是 skip-permissions 盲跑，适合隔离 cwd 或只读分析）。
+
+**已知空白**：「结果要回来、但任务开放长程」两头不沾——v1 答案 = 交接，人干完自己把结果带回对话；若该场景高频，再考虑「hand-off 完成回执」混合形态（当前 spec 明确 hand-off 不回传，不预建）。
 
 ### 4.4 skill 真执行
 

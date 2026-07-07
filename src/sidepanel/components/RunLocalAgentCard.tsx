@@ -18,6 +18,8 @@ export function RunLocalAgentCard({ payload, onDecision }: Props) {
       <div className="text-[13px] font-medium text-warning">
         {t("runLocalAgent.title")}
       </div>
+      {/* 语义副文案：与 handoff 卡的核心区分——这个的结果会回到对话 */}
+      <div className="text-[12px] leading-relaxed text-warning/70">{t("runLocalAgent.semanticsNote")}</div>
       <div>
         <div className="text-warning/70">{t("runLocalAgent.cwdLabel")}</div>
         <code className="mt-1 block break-all rounded border border-warning-line/50 bg-black/5 px-2 py-1 text-warning">
