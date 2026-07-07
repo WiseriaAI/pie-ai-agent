@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   TOOL_CLASSES,
+  TOOL_GROUPS,
   getToolClass,
   KNOWN_BUILT_IN_TOOL_NAMES,
   KNOWN_KEYBOARD_TOOL_NAMES,
@@ -75,21 +76,31 @@ describe("M3-U4 — TOOL_CLASSES registry", () => {
     expect(getToolClass("list_tabs")).toBe("read");
   });
 
-  it("registers Page Atlas target tools as built-in read tools and retires search_page", () => {
+  it("registers Page Atlas target tools as built-in tools and retires search_page", () => {
     expect(PAGE_SNAPSHOT_TOOL_NAMES).toEqual(["read_page"]);
     expect(PAGE_ATLAS_TOOL_NAMES).toEqual([
       "find_target",
       "read_struct",
       "read_target",
+      "extract_records",
     ]);
 
     for (const name of PAGE_ATLAS_TOOL_NAMES) {
       expect(KNOWN_BUILT_IN_TOOL_NAMES).toContain(name);
-      expect(getToolClass(name)).toBe("read");
     }
+    // The read-only target tools stay read; extract_records is write (see below).
+    expect(getToolClass("find_target")).toBe("read");
+    expect(getToolClass("read_struct")).toBe("read");
+    expect(getToolClass("read_target")).toBe("read");
 
     expect(KNOWN_BUILT_IN_TOOL_NAMES).not.toContain("search_page");
     expect(TOOL_CLASSES).not.toHaveProperty("search_page");
+  });
+
+  it("extract_records is a known write-class core tool", () => {
+    expect(KNOWN_BUILT_IN_TOOL_NAMES).toContain("extract_records");
+    expect(TOOL_CLASSES.extract_records).toBe("write");
+    expect(TOOL_GROUPS.extract_records).toBe("core");
   });
 
   it("every KNOWN_BUILT_IN_TOOL_NAMES entry has a class (build-time exhaustive)", () => {

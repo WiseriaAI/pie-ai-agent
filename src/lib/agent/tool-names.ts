@@ -97,6 +97,7 @@ export const PAGE_ATLAS_TOOL_NAMES = [
   "find_target",
   "read_struct",
   "read_target",
+  "extract_records",
 ] as const;
 
 // PDF tools (always present in BUILT_IN_TOOLS once Task 10 lands).
@@ -258,6 +259,11 @@ export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
   find_target: "read",
   read_struct: "read",
   read_target: "read",
+  // extract_records — write: it holds and scrolls the target tab for a long time
+  //   AND writes scratchpad IDB. Unlike query_scratchpad (no tab arg, classed read
+  //   deliberately), extract_records is exactly what the cross-session tab lock is
+  //   meant to protect — a long-running tab occupant.
+  extract_records: "write",
   // PDF tools — pure text producers, parse-only, no tab mutation
   read_pdf: "read",
   search_pdf: "read",
@@ -345,6 +351,7 @@ export const TOOL_GROUPS: Readonly<Record<string, DisclosureGroup>> = {
   wait: "core", done: "core", fail: "core",
   read_page: "core",
   find_target: "core", read_struct: "core", read_target: "core",
+  extract_records: "core",
   list_tabs: "core", close_tabs: "core", activate_tab: "core", group_tabs: "core",
   ungroup_tabs: "core", move_tabs: "core", focus_tab: "core", open_url: "core",
   unpin_tab: "core", switch_to_new_tab: "core",

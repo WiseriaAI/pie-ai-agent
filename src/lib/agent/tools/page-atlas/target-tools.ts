@@ -6,7 +6,7 @@ import { pageAtlasStore, type PageAtlasStore } from "./state";
 import type { AtlasFingerprint, AtlasRecord, AtlasTarget, AtlasTargetType, PageAtlasState } from "./types";
 
 type GetTabUrl = (tabId: number) => Promise<string | undefined>;
-type GetPageState = (tabId: number) => Promise<{ url?: string; fingerprint?: AtlasFingerprint }>;
+export type GetPageState = (tabId: number) => Promise<{ url?: string; fingerprint?: AtlasFingerprint }>;
 
 export interface PageAtlasTargetToolDeps {
   store?: PageAtlasStore;
@@ -142,7 +142,7 @@ async function defaultGetPageState(tabId: number): Promise<{ url?: string; finge
   return {};
 }
 
-function pageStateGetter(deps: PageAtlasTargetToolDeps): GetPageState {
+export function pageStateGetter(deps: PageAtlasTargetToolDeps): GetPageState {
   if (deps.getPageState) return deps.getPageState;
   if (deps.getTabUrl) {
     return async (tabId) => ({ url: await deps.getTabUrl!(tabId) });
@@ -158,7 +158,7 @@ async function getCurrentPageState(getPageState: GetPageState, tabId: number): P
   }
 }
 
-async function resolveTarget(
+export async function resolveTarget(
   store: PageAtlasStore,
   getPageState: GetPageState,
   ctx: ToolHandlerContext,
@@ -373,7 +373,8 @@ USE WHEN:
 - You want all fields per item (omit "fields"), or only specific fields (pass "fields").
 
 **DO NOT USE WHEN:**
-- You want a block overview or a plain free-text region — use read_target.`,
+- You want a block overview or a plain free-text region — use read_target.
+- You are bulk-collecting rows into the scratchpad — use extract_records (full fidelity, no context cost).`,
     parameters: {
       type: "object",
       properties: {

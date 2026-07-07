@@ -49,6 +49,17 @@ export interface AtlasProbeRecord {
   evidence: string;
 }
 
+/**
+ * Structural signature carried on collection/table atlas targets so the
+ * extract op can RE-LOCATE the same repeated structure on a later call without
+ * holding an element reference (virtualized lists recycle nodes — stamps and
+ * CSS paths don't survive a scroll). Derived from the SAME scan the atlas
+ * targets use, so a signature always round-trips back to its target.
+ */
+export type AtlasExtractSignature =
+  | { kind: "table"; ordinal: number; columnsKey: string }
+  | { kind: "collection"; ordinal: number; itemShapeKey: string };
+
 export interface AtlasProbeTarget {
   id: string;
   type: "collection" | "table" | "detail_region" | "region";
@@ -60,6 +71,7 @@ export interface AtlasProbeTarget {
   records?: AtlasProbeRecord[];
   visibleCount?: number;
   estimatedTotal?: number;
+  signature?: AtlasExtractSignature;
 }
 
 export interface AtlasProbeFingerprint {
@@ -74,6 +86,13 @@ export type ProbeParams =
   | { op: "snapshot" }
   | { op: "atlas" }
   | {
+      op: "extract";
+      signature: AtlasExtractSignature;
+      cursor: number; // 0-based, index into the currently-visible row/item list
+      batchSize: number; // max rows this call returns (SW passes 500)
+      maxFieldChars: number; // per-field character cap (SW passes 2048)
+    }
+  | {
       op: "search";
       queries: string[];
       regex: boolean;
@@ -81,6 +100,10 @@ export type ProbeParams =
       maxResults: number;
       searchBy: "text" | "role" | "tag" | "attribute";
     };
+
+export interface ExtractRow {
+  [field: string]: string;
+}
 
 export type ProbeResult =
   | {
@@ -95,6 +118,15 @@ export type ProbeResult =
       forms: AtlasProbeForm[];
       targets: AtlasProbeTarget[];
       fingerprint: AtlasProbeFingerprint;
+    }
+  | {
+      op: "extract";
+      found: boolean; // false = signature no longer locates the structure
+      slots: string[]; // union of field names seen in this batch
+      rows: ExtractRow[]; // full-fidelity rows
+      totalVisible: number; // count of visible rows/items at scan time
+      nextCursor: number;
+      done: boolean; // nextCursor >= totalVisible
     }
   | {
       op: "search";
@@ -688,10 +720,14 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
   }
 
   // ──────────────────────────────────────────────────────────────────────────
-  // op:"atlas" — compact page-world structure probe. This runs inside the page
-  // and must stay self-contained, so it reuses only helpers nested above.
+  // op:"atlas" / op:"extract" — compact page-world structure probe + full-fidelity
+  // record extraction. Both run inside the page and must stay self-contained, so
+  // they reuse only helpers nested above. atlas builds the target catalog; extract
+  // re-locates a single collection/table target by its structural signature and
+  // pulls every visible row at full fidelity. They SHARE the table/collection scan
+  // helpers below so a signature always round-trips back to the same structure.
   // ──────────────────────────────────────────────────────────────────────────
-  if (params.op === "atlas") {
+  if (params.op === "atlas" || params.op === "extract") {
     const liveBodyElements = [...walkDeep(document.body)];
     stampLiveDom(liveBodyElements, new Map<Element, Element>());
 
@@ -851,6 +887,239 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
       return text;
     };
 
+    // ── Shared table/collection scan helpers (atlas + extract) ──
+    // Written ONCE so the atlas catalog and the extract relocation derive their
+    // structure from the exact same logic — that identity is what makes a
+    // signature reliably round-trip back to its target.
+
+    const shapeKey = (el: Element): string => {
+      const childTags = Array.from(el.children)
+        .slice(0, 8)
+        .map((child) => `${child.tagName.toLowerCase()}:${child.children.length}`)
+        .join(",");
+      const markers = [
+        el.querySelector("a") ? "a" : "",
+        el.querySelector("img") ? "img" : "",
+        el.querySelector("h1,h2,h3,h4,h5,h6") ? "heading" : "",
+        el.className && typeof el.className === "string" ? `class:${el.className.trim().split(/\s+/).sort().join(".")}` : "",
+      ].filter(Boolean).join("|");
+      return `${el.tagName.toLowerCase()}|${childTags}|${markers}`;
+    };
+
+    const isUnsafeHrefValue = (href: string): boolean => {
+      const collapsed = href.replace(/[\u0000-\u0020]+/g, "");
+      return UNSAFE_URL.test(collapsed);
+    };
+
+    const safeLinkHref = (link: HTMLAnchorElement): string => {
+      const raw = link.getAttribute("href") ?? "";
+      const normalized = link.href || raw;
+      if (isUnsafeHrefValue(raw) || isUnsafeHrefValue(normalized)) return "";
+      return safeText(raw || normalized);
+    };
+
+    const scanTables = (): HTMLTableElement[] =>
+      liveBodyElements.filter((el): el is HTMLTableElement => el instanceof HTMLTableElement);
+
+    const columnsOf = (table: HTMLTableElement): string[] => {
+      const headerCells = Array.from(table.querySelectorAll<HTMLTableCellElement>("thead th"));
+      const firstRow = table.rows.item(0);
+      const fallbackHeaderCells = headerCells.length > 0
+        ? headerCells
+        : Array.from(firstRow?.cells ?? []);
+      return fallbackHeaderCells.map((cell, idx) => textFrom(cell) || `Column ${idx + 1}`);
+    };
+
+    const visibleRowsOf = (table: HTMLTableElement): HTMLTableRowElement[] => {
+      const headerCells = Array.from(table.querySelectorAll<HTMLTableCellElement>("thead th"));
+      const firstRow = table.rows.item(0);
+      const firstRowHasTh = !!firstRow && Array.from(firstRow.cells).some((cell) => cell.tagName.toLowerCase() === "th");
+      const bodyRows = Array.from(table.querySelectorAll<HTMLTableRowElement>("tbody tr"));
+      const sourceRows = bodyRows.length > 0
+        ? bodyRows.slice(firstRowHasTh && bodyRows[0] === firstRow ? 1 : 0)
+        : Array.from(table.rows).slice(headerCells.length > 0 || firstRowHasTh ? 1 : 0);
+      return sourceRows.filter((row) => isAtlasVisible(row));
+    };
+
+    // Repeated-item collections, in the SAME iteration order the atlas assigns
+    // collection ordinals (result[i] ⇔ collection_c{i}).
+    const scanCollections = (): Array<{ parent: Element; group: Element[]; key: string }> => {
+      const result: Array<{ parent: Element; group: Element[]; key: string }> = [];
+      const seenParents = new Set<Element>();
+      for (const parent of liveBodyElements) {
+        if (seenParents.has(parent)) continue;
+        if (parent.closest("table")) continue;
+        const visibleChildren = Array.from(parent.children).filter((child) => {
+          if (child.closest("table")) return false;
+          return isAtlasVisible(child);
+        });
+        if (visibleChildren.length < 3) continue;
+
+        const groups = new Map<string, Element[]>();
+        for (const child of visibleChildren) {
+          const key = shapeKey(child);
+          const group = groups.get(key) ?? [];
+          group.push(child);
+          groups.set(key, group);
+        }
+
+        for (const [key, group] of groups.entries()) {
+          if (group.length < 3) continue;
+          seenParents.add(parent);
+          result.push({ parent, group, key });
+        }
+      }
+      return result;
+    };
+
+    // ── extract-only text helpers (full fidelity — NOT capped at 120 like the
+    // atlas summary path; single field capped at maxFieldChars with a marker). ──
+    const capText = (s: string, max: number): string => {
+      const cleaned = sanitizeText(escapeWrapperMarkup(s)).replace(/\s+/g, " ").trim();
+      return cleaned.length > max ? cleaned.slice(0, max) + "…[truncated]" : cleaned;
+    };
+    const fullTextFrom = (el: Element | null | undefined, max: number): string =>
+      el ? capText(visibleText(el), max) : "";
+    const directTextRaw = (el: Element): string => {
+      let s = "";
+      for (const child of el.childNodes) {
+        if (child.nodeType === Node.TEXT_NODE) s += child.nodeValue ?? "";
+      }
+      return s;
+    };
+    // ["A","A","B"] → ["A","A_2","B"]
+    const dedupeNames = (names: string[]): string[] => {
+      const seen = new Map<string, number>();
+      return names.map((name) => {
+        const count = seen.get(name) ?? 0;
+        seen.set(name, count + 1);
+        return count === 0 ? name : `${name}_${count + 1}`;
+      });
+    };
+
+    // ──────────────────────────────────────────────────────────────────────
+    // op:"extract" — re-locate one target by signature and pull full rows.
+    // ──────────────────────────────────────────────────────────────────────
+    if (params.op === "extract") {
+      const p = params;
+      const empty = (found: boolean): Extract<ProbeResult, { op: "extract" }> => ({
+        op: "extract",
+        found,
+        slots: [],
+        rows: [],
+        totalVisible: 0,
+        nextCursor: p.cursor,
+        done: true,
+      });
+
+      if (p.signature.kind === "table") {
+        const sig = p.signature;
+        const tables = scanTables();
+        const keyOf = (t: HTMLTableElement): string => columnsOf(t).join("");
+        const byOrdinal = tables[sig.ordinal];
+        const table = byOrdinal && keyOf(byOrdinal) === sig.columnsKey
+          ? byOrdinal
+          : tables.find((t) => keyOf(t) === sig.columnsKey);
+        if (!table) return empty(false);
+
+        const visibleRows = visibleRowsOf(table);
+        const slots = dedupeNames(columnsOf(table));
+        const batch = visibleRows.slice(p.cursor, p.cursor + p.batchSize);
+        const rows: ExtractRow[] = batch.map((row) => {
+          const rec: ExtractRow = {};
+          Array.from(row.cells).forEach((cell, idx) => {
+            const key = slots[idx] ?? `Column ${idx + 1}`;
+            rec[key] = fullTextFrom(cell, p.maxFieldChars);
+          });
+          return rec;
+        });
+        const nextCursor = p.cursor + batch.length;
+        return {
+          op: "extract",
+          found: true,
+          slots,
+          rows,
+          totalVisible: visibleRows.length,
+          nextCursor,
+          done: nextCursor >= visibleRows.length,
+        };
+      }
+
+      // collection signature
+      const sig = p.signature;
+      const groups = scanCollections();
+      const byOrdinal = groups[sig.ordinal];
+      const matched = byOrdinal && shapeKey(byOrdinal.group[0]) === sig.itemShapeKey
+        ? byOrdinal
+        : groups.find((g) => shapeKey(g.group[0]) === sig.itemShapeKey);
+      if (!matched) return empty(false);
+
+      // slot naming: semantic evidence first (itemprop / <time> / class stem);
+      // position fallback (text_N) only when nothing semantic is available.
+      // Known ceiling: text_N drifts across ragged items — coverage stats expose
+      // it, cleaned up downstream via query_scratchpad SQL. Real semantic slots
+      // (itemprop/class-stem) are stable.
+      const slotNameFor = (el: Element): string | null => {
+        const itemprop = el.getAttribute("itemprop");
+        if (itemprop && /^[A-Za-z][\w-]{0,24}$/.test(itemprop)) return itemprop.toLowerCase();
+        const tag = el.tagName.toLowerCase();
+        if (tag === "time") return "time";
+        const cls = typeof el.className === "string" ? el.className : "";
+        const stem = cls.split(/\s+/).find((c) => /^[a-z][a-z-]{2,24}$/i.test(c) && !/\d/.test(c) && !/^(css|sc|jsx)-/i.test(c));
+        if (stem) return stem.toLowerCase().replace(/-/g, "_");
+        return null;
+      };
+
+      const extractItem = (item: Element): ExtractRow => {
+        const rec: ExtractRow = {};
+        const put = (name: string, value: string): void => {
+          if (!value) return;
+          let key = name;
+          let n = 2;
+          while (key in rec) key = `${name}_${n++}`;
+          rec[key] = value;
+        };
+        const heading = item.querySelector("h1,h2,h3,h4,h5,h6");
+        const link = item.querySelector("a[href]") as HTMLAnchorElement | null;
+        if (heading) put("title", fullTextFrom(heading, p.maxFieldChars));
+        else if (link) put("title", fullTextFrom(link, p.maxFieldChars));
+        if (link) {
+          const href = safeLinkHref(link);
+          if (href) put("link", href);
+        }
+        const img = item.querySelector("img[src]") as HTMLImageElement | null;
+        if (img) put("img", capText(img.getAttribute("src") ?? "", p.maxFieldChars));
+        // Remaining text leaves: elements with their own direct text, skipping
+        // the heading subtree (already captured as title) to avoid duplication.
+        let textIdx = 0;
+        for (const el of Array.from(item.querySelectorAll("*"))) {
+          if (heading && (el === heading || heading.contains(el))) continue;
+          const direct = directTextRaw(el).trim();
+          if (!direct) continue;
+          const named = slotNameFor(el);
+          const name = named ?? `text_${textIdx++}`;
+          put(name, capText(direct, p.maxFieldChars));
+        }
+        return rec;
+      };
+
+      const items = matched.group.filter((el) => isAtlasVisible(el));
+      const batch = items.slice(p.cursor, p.cursor + p.batchSize);
+      const rows = batch.map(extractItem);
+      const slotSet = new Set<string>();
+      for (const row of rows) for (const k of Object.keys(row)) slotSet.add(k);
+      const nextCursor = p.cursor + batch.length;
+      return {
+        op: "extract",
+        found: true,
+        slots: Array.from(slotSet),
+        rows,
+        totalVisible: items.length,
+        nextCursor,
+        done: nextCursor >= items.length,
+      };
+    }
+
     const controls: AtlasProbeControl[] = [];
     const controlByElement = new Map<Element, string>();
     for (const el of liveBodyElements) {
@@ -904,23 +1173,11 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
 
     const targets: AtlasProbeTarget[] = [];
 
-    const tables = liveBodyElements.filter((el): el is HTMLTableElement => el instanceof HTMLTableElement);
+    const tables = scanTables();
     for (let i = 0; i < tables.length; i++) {
       const table = tables[i];
-      const headerCells = Array.from(table.querySelectorAll<HTMLTableCellElement>("thead th"));
-      const firstRow = table.rows.item(0);
-      const firstRowHasTh = !!firstRow && Array.from(firstRow.cells).some((cell) => cell.tagName.toLowerCase() === "th");
-      const fallbackHeaderCells = headerCells.length > 0
-        ? headerCells
-        : Array.from(firstRow?.cells ?? []);
-      const columns = fallbackHeaderCells
-        .map((cell, idx) => textFrom(cell) || `Column ${idx + 1}`);
-
-      const bodyRows = Array.from(table.querySelectorAll<HTMLTableRowElement>("tbody tr"));
-      const sourceRows = bodyRows.length > 0
-        ? bodyRows.slice(firstRowHasTh && bodyRows[0] === firstRow ? 1 : 0)
-        : Array.from(table.rows).slice(headerCells.length > 0 || firstRowHasTh ? 1 : 0);
-      const visibleRows = sourceRows.filter((row) => isAtlasVisible(row));
+      const columns = columnsOf(table);
+      const visibleRows = visibleRowsOf(table);
       const records = visibleRows.slice(0, 25).map((row, rowIndex) => {
         const fields: Record<string, string> = {};
         const cellTexts: string[] = [];
@@ -948,22 +1205,9 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
         records,
         visibleCount: visibleRows.length,
         estimatedTotal: visibleRows.length,
+        signature: { kind: "table", ordinal: i, columnsKey: columns.join("") },
       });
     }
-
-    const shapeKey = (el: Element): string => {
-      const childTags = Array.from(el.children)
-        .slice(0, 8)
-        .map((child) => `${child.tagName.toLowerCase()}:${child.children.length}`)
-        .join(",");
-      const markers = [
-        el.querySelector("a") ? "a" : "",
-        el.querySelector("img") ? "img" : "",
-        el.querySelector("h1,h2,h3,h4,h5,h6") ? "heading" : "",
-        el.className && typeof el.className === "string" ? `class:${el.className.trim().split(/\s+/).sort().join(".")}` : "",
-      ].filter(Boolean).join("|");
-      return `${el.tagName.toLowerCase()}|${childTags}|${markers}`;
-    };
 
     const fieldConfidence = (name: string): "high" | "medium" | "low" => {
       if (name === "title") return "high";
@@ -1004,58 +1248,30 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
       };
     };
 
-    const isUnsafeHrefValue = (href: string): boolean => {
-      const collapsed = href.replace(/[\u0000-\u0020]+/g, "");
-      return UNSAFE_URL.test(collapsed);
-    };
 
-    const safeLinkHref = (link: HTMLAnchorElement): string => {
-      const raw = link.getAttribute("href") ?? "";
-      const normalized = link.href || raw;
-      if (isUnsafeHrefValue(raw) || isUnsafeHrefValue(normalized)) return "";
-      return safeText(raw || normalized);
-    };
-
-    let collectionIndex = 0;
-    const seenCollectionParents = new Set<Element>();
-    for (const parent of liveBodyElements) {
-      if (seenCollectionParents.has(parent)) continue;
-      if (parent.closest("table")) continue;
-      const visibleChildren = Array.from(parent.children).filter((child) => {
-        if (child.closest("table")) return false;
-        return isAtlasVisible(child);
+    // Consume the SAME scanCollections() the extract op re-locates against, so
+    // ordinal i ⇔ collection_c{i} and a collection signature always round-trips.
+    const collectionGroups = scanCollections();
+    for (let ordinal = 0; ordinal < collectionGroups.length; ordinal++) {
+      const { parent, group } = collectionGroups[ordinal];
+      const fallbackLabel = `Collection ${ordinal + 1}`;
+      const collectionId = `collection_c${ordinal}`;
+      const records = group
+        .slice(0, 20)
+        .map((el, recordIndex) => collectionRecord(el, `${collectionId}_r${recordIndex}`));
+      const label = targetLabel(parent, nearestSection(group[0]) || fallbackLabel);
+      targets.push({
+        id: collectionId,
+        type: "collection",
+        label,
+        confidence: "medium",
+        summary: `${group.length} repeated ${group[0].tagName.toLowerCase()} items`,
+        fieldGuesses: fieldGuessesFromRecords(records),
+        records,
+        visibleCount: group.length,
+        estimatedTotal: group.length,
+        signature: { kind: "collection", ordinal, itemShapeKey: shapeKey(group[0]) },
       });
-      if (visibleChildren.length < 3) continue;
-
-      const groups = new Map<string, Element[]>();
-      for (const child of visibleChildren) {
-        const key = shapeKey(child);
-        const group = groups.get(key) ?? [];
-        group.push(child);
-        groups.set(key, group);
-      }
-
-      for (const group of groups.values()) {
-        if (group.length < 3) continue;
-        seenCollectionParents.add(parent);
-        const fallbackLabel = `Collection ${collectionIndex + 1}`;
-        const collectionId = `collection_c${collectionIndex++}`;
-        const records = group
-          .slice(0, 20)
-          .map((el, recordIndex) => collectionRecord(el, `${collectionId}_r${recordIndex}`));
-        const label = targetLabel(parent, nearestSection(group[0]) || fallbackLabel);
-        targets.push({
-          id: collectionId,
-          type: "collection",
-          label,
-          confidence: "medium",
-          summary: `${group.length} repeated ${group[0].tagName.toLowerCase()} items`,
-          fieldGuesses: fieldGuessesFromRecords(records),
-          records,
-          visibleCount: group.length,
-          estimatedTotal: group.length,
-        });
-      }
     }
 
     const bucket = (value: number, size: number): number => {
