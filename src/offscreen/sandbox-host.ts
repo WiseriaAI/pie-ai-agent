@@ -43,6 +43,14 @@ export function createSandboxRpc(opts: SandboxRpcOpts): {
           pending.delete(id);
           opts.recycle();
           reject(new Error(`skill script timed out after ${timeoutMs}ms`));
+          // recycle() 把 iframe 整个丢了，同一 iframe 里其它在途请求的执行环境
+          // 也跟着没了——不能让它们傻等自己的超时再拒绝，那样报的 "timed out"
+          // 会误导（它们不是自己超时，是被这次 recycle 连坐销毁的）。
+          for (const [otherId, other] of Array.from(pending)) {
+            clearTimeout(other.timer);
+            other.reject(new Error("sandbox recycled after another script timed out"));
+            pending.delete(otherId);
+          }
         }, timeoutMs);
         pending.set(id, { resolve, reject, timer });
         post({ type: "skill-sandbox:run", id, code, input });
@@ -79,9 +87,18 @@ export function initSandboxHost(): (code: string, input: unknown) => Promise<str
     el.style.display = "none";
     loaded = new Promise<void>((resolve, reject) => {
       el.addEventListener("load", () => resolve(), { once: true });
-      el.addEventListener("error", () => reject(new Error("sandbox iframe failed to load")), {
-        once: true,
-      });
+      el.addEventListener(
+        "error",
+        () => {
+          // 加载失败自愈：别把这个 rejected promise 缓存到天荒地老，
+          // 复原状态（镜像 recycle）让下次调用重建 iframe 重试。
+          el.remove();
+          iframe = null;
+          loaded = null;
+          reject(new Error("sandbox iframe failed to load"));
+        },
+        { once: true },
+      );
     });
     document.body.appendChild(el);
     iframe = el;
@@ -101,6 +118,8 @@ export function initSandboxHost(): (code: string, input: unknown) => Promise<str
   });
 
   window.addEventListener("message", (ev) => {
+    // 发件人锚：只认当前 sandbox iframe
+    if (!iframe || ev.source !== iframe.contentWindow) return;
     const msg = ev.data as Partial<SandboxRunReply> | undefined;
     if (msg?.type !== "skill-sandbox:result" || typeof msg.id !== "string") return;
     rpc.handleReply(msg as SandboxRunReply);

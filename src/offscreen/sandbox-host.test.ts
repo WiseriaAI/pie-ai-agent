@@ -63,6 +63,28 @@ describe("createSandboxRpc", () => {
     }
   });
 
+  it("超时连坐：A 超时触发 recycle 时，仍在途的 B 一并拒绝且报「recycled」而非「timed out」", async () => {
+    vi.useFakeTimers();
+    try {
+      const { rpc, recycle } = makeRpc({ timeoutMs: 50 });
+      const pa = rpc.run("a-while(1){}", null);
+      await Promise.resolve(); // flush ensurePort，让 A 的计时器真正挂上
+      await vi.advanceTimersByTimeAsync(10);
+      const pb = rpc.run("b-while(1){}", null);
+      await Promise.resolve(); // flush ensurePort，让 B 的计时器真正挂上
+      const assertA = expect(pa).rejects.toThrow(/timed out/);
+      const assertB = expect(pb).rejects.toThrow(/recycled/);
+      // 只推过 A 的超时点（A 在 t=50 到期，B 要到 t=60 才到期）——
+      // B 不该傻等到自己的 60ms 才拒绝。
+      await vi.advanceTimersByTimeAsync(45);
+      await assertA;
+      await assertB;
+      expect(recycle).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("超时后的迟到 reply 被忽略（不 throw 不串台）", async () => {
     vi.useFakeTimers();
     try {
