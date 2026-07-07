@@ -99,6 +99,9 @@ export const zhTWDict = {
       statusOff: "未啟用。",
       statusConnected: "已連接 daemon。",
       statusEnabledNotConnected: "已啟用，但未連上 daemon（daemon 未執行？執行 pie doctor 檢查）。",
+      agentsTitle: "本機 Agent",
+      agentNotInstalled: "未安裝",
+      agentEnableFailed: "無法啟用——未在本機偵測到安裝。",
     },
     searchProvider: {
       caps: "網頁搜尋",

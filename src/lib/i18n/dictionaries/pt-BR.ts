@@ -100,6 +100,9 @@ export const ptBRDict = {
       statusOff: "Não ativado.",
       statusConnected: "Conectado ao daemon.",
       statusEnabledNotConnected: "Ativado, mas sem conexão (o daemon não está em execução? execute pie doctor).",
+      agentsTitle: "Agentes locais",
+      agentNotInstalled: "Não instalado",
+      agentEnableFailed: "Não é possível habilitar — não detectado nesta máquina.",
     },
     searchProvider: {
       caps: "Provedor de busca",

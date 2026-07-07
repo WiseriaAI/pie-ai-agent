@@ -37,6 +37,7 @@ import { requestCdpInputConsent } from "../cdp-input-onboarding";
 import { requestLocalFileFromPanel } from "../local-file-request";
 import { requestFromPanel } from "../panel-request";
 import { isBridgeReady, bridgeCapabilities, requestLocalAgent, requestHandoff, requestListAgents } from "@/background/local-bridge";
+import { filterUsableAgents, getEnabledLocalAgents } from "@/lib/local-agents-prefs";
 import { buildRunLocalAgentTool } from "./tools/local-agent";
 import { buildHandoffTool } from "./tools/handoff";
 import { buildReadLocalFileTool, buildRequestLocalFileTool, buildOutputFileTool } from "./tools/files";
@@ -1898,7 +1899,11 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
               ? [
                   buildHandoffTool({
                     run: (p) => requestHandoff(p),
-                    listAgents: () => requestListAgents(),
+                    listAgents: async () => {
+                      const detected = await requestListAgents();
+                      const usable = filterUsableAgents(detected, await getEnabledLocalAgents());
+                      return usable.map(({ id, label }) => ({ id, label }));
+                    },
                     requestConsent: (p) => requestFromPanel(sessionId, "handoff-to-agent", p),
                   }),
                 ]

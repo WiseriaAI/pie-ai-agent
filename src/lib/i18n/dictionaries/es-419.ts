@@ -100,6 +100,9 @@ export const es419Dict = {
       statusOff: "No habilitado.",
       statusConnected: "Conectado al daemon.",
       statusEnabledNotConnected: "Habilitado, pero sin conexión (¿el daemon no está en ejecución? ejecuta pie doctor).",
+      agentsTitle: "Agentes locales",
+      agentNotInstalled: "No instalado",
+      agentEnableFailed: "No se puede habilitar: no se detectó en esta máquina.",
     },
     searchProvider: {
       caps: "Proveedor de búsqueda",

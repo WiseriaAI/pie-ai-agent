@@ -99,6 +99,9 @@ export const enDict = {
       statusOff: "Not enabled.",
       statusConnected: "Connected to daemon.",
       statusEnabledNotConnected: "Enabled, but not connected (daemon not running? run pie doctor).",
+      agentsTitle: "Local agents",
+      agentNotInstalled: "Not installed",
+      agentEnableFailed: "Can't enable — not detected on this machine.",
     },
     searchProvider: {
       caps: "Search provider",

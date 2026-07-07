@@ -99,6 +99,9 @@ export const zhCNDict = {
       statusOff: "未启用。",
       statusConnected: "已连接 daemon。",
       statusEnabledNotConnected: "已启用，但未连上 daemon（daemon 未运行？运行 pie doctor 检查）。",
+      agentsTitle: "本地 Agent",
+      agentNotInstalled: "未安装",
+      agentEnableFailed: "无法启用——未在本机检测到安装。",
     },
     searchProvider: {
       caps: "网页搜索",
