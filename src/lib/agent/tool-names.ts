@@ -40,10 +40,13 @@ const SCHEDULE_META_TOOL_NAMES_FOR_REGISTRY = [
 
 // Standard skill mediation tools — use_skill invokes a skill by name;
 // read_skill_file reads a file from a skill's bundle. Both are pure text
-// producers (no tab/page side effects) → class=read.
+// producers (no tab/page side effects) → class=read. run_skill_script executes
+// a skill-declared script (pure-compute → offscreen sandbox; privileged →
+// structured error until Slice 2b) → class=write.
 const SKILL_MEDIATION_TOOL_NAMES = [
   "use_skill",
   "read_skill_file",
+  "run_skill_script",
 ] as const;
 
 // The progressive-disclosure mediator tool. Always core.
@@ -231,6 +234,9 @@ export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
   // Standard skill mediation tools — pure text producers, no tab/page side effects
   use_skill: "read",
   read_skill_file: "read",
+  // run_skill_script — write：与 run_local_agent 同理由——执行 skill 包代码，
+  // Slice 2b 起特权路径可产生本地副作用，诚实分类；无 tab 目标故 R7 锁不触发。
+  run_skill_script: "write",
   // Phase 3 cross-tab tools
   list_tabs: "read",
   activate_tab: "read",
@@ -363,6 +369,7 @@ export const TOOL_GROUPS: Readonly<Record<string, DisclosureGroup>> = {
   // env-lit
   capture_visible_tab: "screenshot", capture_fullpage_tab: "screenshot",
   use_skill: "skill-mediation", read_skill_file: "skill-mediation",
+  run_skill_script: "skill-mediation",
   read_pdf: "pdf", search_pdf: "pdf", get_pdf_outline: "pdf",
   read_local_file: "local-file", request_local_file: "local-file",
   // lazy

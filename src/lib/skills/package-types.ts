@@ -10,8 +10,10 @@ export interface SkillFrontmatter {
   inputs?: string[];
   capabilities?: {
     tools?: string[];
-    scripts?: string[]; // SP-2 占位
-    hosts?: string[];   // SP-3 占位
+    /** 脚本声明。string 简写=纯计算；JSON flow 对象形=特权。归一化见 script-decl.ts。 */
+    scripts?: string[];
+    /** @deprecated spec §4.4：hosts 白名单折进 per-script network，仅解析不消费。 */
+    hosts?: string[];
   };
 }
 

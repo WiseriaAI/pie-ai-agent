@@ -2,6 +2,7 @@ import initLiteParse, { LiteParse } from "@llamaindex/liteparse-wasm";
 import { tabUrlForCacheKey } from "@/lib/pdf/detect";
 import { base64ToArrayBuffer } from "@/lib/files/base64";
 import { runQuery } from "./sql-engine";
+import { initSandboxHost } from "./sandbox-host";
 
 export interface ParsedPage {
   page: number; // 1-indexed
@@ -32,6 +33,8 @@ export function createState(): ParserState {
 export interface ParserDeps {
   parseBytes: (bytes: ArrayBuffer) => Promise<ParsedPdf>;
   fetchImpl: typeof fetch;
+  /** sandbox 脚本执行（initSandboxHost 提供）；测试环境可缺省。 */
+  runSandboxScript?: (code: string, input: unknown) => Promise<string>;
 }
 
 export type OffscreenMessage =
@@ -39,7 +42,8 @@ export type OffscreenMessage =
   | { type: "pdf:read_page"; url: string; pages: number[] }
   | { type: "pdf:search"; url: string; query: string; maxResults: number }
   | { type: "pdf:parse_bytes"; base64: string; cacheKey: string }
-  | { type: "sql:run"; table: string; records: Array<Record<string, unknown>>; sql: string };
+  | { type: "sql:run"; table: string; records: Array<Record<string, unknown>>; sql: string }
+  | { type: "skill:run_script"; code: string; input: unknown };
 
 export type HandleResult =
   | { ok: true; result: unknown }
@@ -142,6 +146,16 @@ export async function handleMessage(
       const r = await runQuery(msg.table, msg.records, msg.sql);
       if ("error" in r) return { ok: false, error: r.error };
       return { ok: true, result: r };
+    }
+
+    if (msg.type === "skill:run_script") {
+      if (!deps.runSandboxScript) return { ok: false, error: "sandbox_unavailable" };
+      try {
+        const result = await deps.runSandboxScript(msg.code, msg.input);
+        return { ok: true, result };
+      } catch (e) {
+        return { ok: false, error: e instanceof Error ? e.message : String(e) };
+      }
     }
 
     const parsed = await getParsed(msg.url, state, deps);
@@ -285,7 +299,11 @@ async function realParseBytes(bytes: ArrayBuffer): Promise<ParsedPdf> {
 // ── Runtime wiring (skipped under vitest / non-extension contexts) ───────────
 if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
   const state = createState();
-  const deps: ParserDeps = { parseBytes: realParseBytes, fetchImpl: fetch.bind(globalThis) };
+  const deps: ParserDeps = {
+    parseBytes: realParseBytes,
+    fetchImpl: fetch.bind(globalThis),
+    runSandboxScript: initSandboxHost(),
+  };
 
   chrome.runtime.onMessage.addListener((raw, _sender, sendResponse) => {
     const msg = raw as { target?: string; requestId?: string } & Partial<OffscreenMessage>;

@@ -16,7 +16,8 @@ export type OffscreenRequest =
   | { type: "pdf:read_page"; url: string; pages: number[] }
   | { type: "pdf:search"; url: string; query: string; maxResults: number }
   | { type: "pdf:parse_bytes"; base64: string; cacheKey: string }
-  | { type: "sql:run"; table: string; records: Array<Record<string, unknown>>; sql: string };
+  | { type: "sql:run"; table: string; records: Array<Record<string, unknown>>; sql: string }
+  | { type: "skill:run_script"; code: string; input: unknown };
 
 export interface OffscreenSuccess<T = unknown> {
   ok: true;
@@ -41,7 +42,7 @@ export async function ensureOffscreen(): Promise<void> {
       url: chrome.runtime.getURL(OFFSCREEN_HTML),
       reasons: [chrome.offscreen.Reason.BLOBS],
       justification:
-        "Parse PDF bytes with the LiteParse WASM module; SWs cannot load WASM streaming + run heavy parsing while servicing other events.",
+        "Parse PDF bytes with the LiteParse WASM module and host the skill-script sandbox iframe; SWs have no DOM and cannot run WASM streaming or embed sandboxed pages.",
     });
   })().catch((err) => {
     ensurePromise = null;
