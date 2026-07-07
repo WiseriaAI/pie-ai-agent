@@ -133,6 +133,28 @@ describe("extract_records — single pass", () => {
     expect(sink.calls).toHaveLength(1);
   });
 
+  it("samples first + last rows, not just the head", async () => {
+    const sink = fakeSaveRecords();
+    const rows: ExtractRow[] = Array.from({ length: 6 }, (_, i) => ({ title: `R${i}` }));
+    const { exec } = scriptedExec([batch(rows)]);
+    const tool = createExtractRecordsTool({
+      saveRecords: sink.saveRecords,
+      store: storeWithTarget(),
+      getPageState,
+      exec,
+    });
+    const r = await tool.handler(
+      { atlas_id: "atlas_1", target_id: "collection_c0", collection: "products" },
+      CTX,
+    );
+    expect(r.success).toBe(true);
+    expect(r.observation).toContain("R0");
+    expect(r.observation).toContain("R1");
+    expect(r.observation).toContain("R4");
+    expect(r.observation).toContain("R5");
+    expect(r.observation).not.toContain("R2");
+  });
+
   it("injects _hash dedupe when dedupeKey omitted", async () => {
     const sink = fakeSaveRecords();
     const { exec } = scriptedExec([batch([{ title: "A" }, { title: "B" }])]);

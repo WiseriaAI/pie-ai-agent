@@ -44,16 +44,25 @@ Never accumulate rows in your reply.
    data.
 3. **Preferred: extract_records(atlas_id, target_id, collection, dedupeKey)**
    — bulk-extracts every row straight into the scratchpad without the data
-   passing through your context. For infinite/virtualized lists pass
-   scroll:true and it drives the scroll loop for you. Verify the returned
-   field coverage + sample; clean up names later with query_scratchpad.
+   passing through your context. Verify the returned field coverage + sample;
+   clean up names later with query_scratchpad. Pick ONE loading mode:
+   - Infinite scroll (more items load as you scroll, no pagination links):
+     call extract_records ONCE with scroll:true — it drives the whole
+     scroll-extract loop internally. Do NOT scroll manually and re-extract
+     per screen.
+   - Paginated (next-page links): navigate to the next page (click next /
+     open_url), re-run read_page({mode:"atlas"}) + extract_records with the
+     SAME collection and dedupeKey; duplicates are skipped automatically.
 4. Fallback (no suitable target — page too unstructured): read the page and
    save_scratchpad the rows you read, page by page.
-5. Paginated lists: navigate to the next page (click next / open_url),
-   re-run read_page({mode:"atlas"}) + extract_records with the SAME
-   collection and dedupeKey; duplicates are skipped automatically.
-6. update_scratchpad_notes to record progress and the next step.
+5. update_scratchpad_notes to record progress and the next step.
    Check <scratchpad_overview> each turn for counts and position.
+
+## Review before cleaning
+Before writing any cleanup SQL, spot-check the raw data: read_scratchpad a
+page of rows (the extract sample only shows first + last rows) and look for
+noise — promoted/ad rows, empty or shifted fields, concatenated junk. Base
+your cleanup on what you actually see, not on assumptions.
 
 ## Check with the user before exporting
 Don't export silently. Report what you collected — total count, collection
@@ -68,7 +77,9 @@ want and the data is clean, you may skip straight to export.
 ## Clean and export
 - If cleanup is wanted, run query_scratchpad(from, sql, into?) — the
   collection loads as a SQL table; write the result to a new collection
-  with \`into\`.
+  with \`into\` (the raw collection stays intact, so cleanup is recoverable).
+- After cleaning, read_scratchpad a few rows of the NEW collection to
+  confirm the SQL did what you intended before exporting.
 - Export the final collection with output_file (CSV or JSON); the user
   gets a download card. Report the total.
 

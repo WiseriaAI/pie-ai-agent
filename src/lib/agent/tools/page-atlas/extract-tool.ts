@@ -142,11 +142,12 @@ export function createExtractRecordsTool(deps: ExtractRecordsDeps): Tool {
   return {
     name: "extract_records",
     description:
-      `Bulk-extract every record of a collection/table target straight into a scratchpad collection — full fidelity, without the data passing through your context. Returns counts + field coverage + a 2-row sample for verification. Pass scroll:true for infinite/virtualized lists.
+      `Bulk-extract every record of a collection/table target straight into a scratchpad collection — full fidelity, without the data passing through your context. Returns counts + field coverage + a sample (first + last rows) for verification.
 
 USE WHEN:
 - You are collecting many rows (products, listings, table rows) from a repeated structure the atlas already identified.
-- The list is long or virtualized — scroll:true drives the scroll-extract loop for you.
+- The list loads more items as you scroll (infinite/virtualized, no pagination links) — pass scroll:true and ONE call drives the whole scroll-extract loop. Never scroll manually and re-extract per screen.
+- The list is paginated (next-page links) — extract each page into the SAME collection; duplicates are skipped.
 
 **DO NOT USE WHEN:**
 - You need a handful of rows to reason about in context — use read_struct.
@@ -193,11 +194,14 @@ USE WHEN:
       const slotSeen = new Set<string>();
       const coverage = new Map<string, number>();
       let rowsSeen = 0;
-      const sample: ExtractRow[] = [];
+      // Head + rolling tail: the first rows of a list are usually its most
+      // regular; noise (promoted cards, sentinels) tends to live at the end.
+      const sampleHead: ExtractRow[] = [];
+      const sampleTail: Array<{ idx: number; row: ExtractRow }> = [];
 
       const account = (rows: ExtractRow[]): void => {
         for (const row of rows) {
-          rowsSeen++;
+          const idx = rowsSeen++;
           for (const [k, v] of Object.entries(row)) {
             if (!slotSeen.has(k)) {
               slotSeen.add(k);
@@ -205,7 +209,9 @@ USE WHEN:
             }
             if (v) coverage.set(k, (coverage.get(k) ?? 0) + 1);
           }
-          if (sample.length < 2) sample.push(row);
+          if (sampleHead.length < 2) sampleHead.push(row);
+          sampleTail.push({ idx, row });
+          if (sampleTail.length > 2) sampleTail.shift();
         }
       };
 
@@ -225,8 +231,10 @@ USE WHEN:
           .map((s) => `${s} ${rowsSeen > 0 ? Math.round(((coverage.get(s) ?? 0) / rowsSeen) * 100) : 0}%`)
           .join(" · ");
 
-      const sampleBlock = (): string =>
-        `<untrusted_scratchpad_preview>${escapeUntrustedWrappers(JSON.stringify(sample))}</untrusted_scratchpad_preview>`;
+      const sampleBlock = (): string => {
+        const rows = [...sampleHead, ...sampleTail.filter((t) => t.idx >= 2).map((t) => t.row)];
+        return `<untrusted_scratchpad_preview>${escapeUntrustedWrappers(JSON.stringify(rows))}</untrusted_scratchpad_preview>`;
+      };
 
       // ── Single pass (scroll=false) ──
       if (!doScroll) {
@@ -244,7 +252,7 @@ USE WHEN:
           `Extracted from "${target.label}" into "${collection}": added ${res.added}, skipped ${res.skipped} (duplicates), total ${res.total}.\n` +
           (capped ? `Stopped: reached max_rows (${maxRows}).\n` : "") +
           `Fields (coverage): ${coverageLine()}\n` +
-          `Sample: ${sampleBlock()}`;
+          `Sample (first + last rows): ${sampleBlock()}`;
         return ok(observation);
       }
 
@@ -301,7 +309,7 @@ USE WHEN:
         `Extracted from "${target.label}" into "${collection}": added ${totalAdded}, skipped ${totalSkipped} (duplicates), total ${collectionTotal}.\n` +
         `Scrolled ${screens} screens; stopped: ${stopReason}.\n` +
         `Fields (coverage): ${coverageLine()}\n` +
-        `Sample: ${sampleBlock()}`;
+        `Sample (first + last rows): ${sampleBlock()}`;
       return ok(observation);
     },
   };
