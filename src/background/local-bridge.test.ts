@@ -148,8 +148,11 @@ describe("local-bridge", () => {
     const p = requestListAgents();
     const req = fakePort.postMessage.mock.calls[1][0] as { id: string; method: string };
     expect(req.method).toBe("list_agents");
-    fakePort._emit({ id: req.id, ok: true, result: { agents: [{ id: "claude-app", label: "Claude Code (App)" }] } });
-    await expect(p).resolves.toEqual([{ id: "claude-app", label: "Claude Code (App)" }]);
+    fakePort._emit({
+      id: req.id, ok: true,
+      result: { agents: [{ id: "claude-app", label: "Claude Code (App)", installed: true }] },
+    });
+    await expect(p).resolves.toEqual([{ id: "claude-app", label: "Claude Code (App)", installed: true }]);
   });
 
   it("requestListAgents degrades to single legacy claude entry when capability missing (old daemon)", async () => {
@@ -162,7 +165,7 @@ describe("local-bridge", () => {
     });
     await Promise.resolve();
 
-    await expect(requestListAgents()).resolves.toEqual([{ id: "claude", label: "Claude Code (Terminal)" }]);
+    await expect(requestListAgents()).resolves.toEqual([{ id: "claude", label: "Claude Code (Terminal)", installed: true }]);
     expect(fakePort.postMessage.mock.calls).toHaveLength(1); // 没有第二个 wire 请求
   });
 });

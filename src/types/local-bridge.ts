@@ -34,9 +34,9 @@ export interface RunLocalAgentResult {
 }
 
 // ── list_agents ──────────────────────────────────────────────────────
-/** daemon 静态候选表 ∩ 本机检测（CLI 走 Bun.which，app 走存在性）的结果。 */
+/** daemon 静态候选表全量（含未安装项，installed 标注检测结果——settings 页渲染"未安装"态需要）。 */
 export interface ListAgentsResult {
-  agents: { id: string; label: string }[];
+  agents: { id: string; label: string; installed: boolean }[];
 }
 
 // ── handoff_to_agent ─────────────────────────────────────────────────

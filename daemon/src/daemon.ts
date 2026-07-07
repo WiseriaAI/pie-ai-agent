@@ -4,7 +4,7 @@ import type { BridgeResponse, RunLocalAgentParams, HandoffParams, ListAgentsResu
 import { paths } from "./paths";
 import { runLocalAgent } from "./run-local-agent"; // Task 4
 import { runHandoff } from "./handoff";
-import { detectAgents } from "./agents";
+import { detectAgents, AGENT_CANDIDATES } from "./agents";
 import { decodeNdjsonLines } from "./framing";
 import { log } from "./log";
 
@@ -49,8 +49,9 @@ export async function handleMessage(line: string): Promise<string> {
       // 与兄弟 case 同构的 try/catch：SW 的 send() 无超时，这里若抛异常会
       // 让 handleMessage 整体 reject → socket 层只 log 不回包 → 工具永久挂起。
       try {
+        const detected = new Set(detectAgents().map((a) => a.id));
         const result: ListAgentsResult = {
-          agents: detectAgents().map(({ id, label }) => ({ id, label })),
+          agents: AGENT_CANDIDATES.map(({ id, label }) => ({ id, label, installed: detected.has(id) })),
         };
         return respond({ ok: true, result });
       } catch (e) {

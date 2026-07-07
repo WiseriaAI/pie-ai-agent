@@ -102,14 +102,19 @@ test("hello advertises list_agents capability", async () => {
   expect(out.result.capabilities).toContain("list_agents");
 });
 
-test("list_agents returns {id,label}[] (shape only — detection is machine-dependent)", async () => {
+test("list_agents returns ALL candidates with installed flag (shape only — detection machine-dependent)", async () => {
   const out = JSON.parse(
     await handleMessage(JSON.stringify({ id: "la1", method: "list_agents", params: {} })),
   );
   expect(out.ok).toBe(true);
-  expect(Array.isArray(out.result.agents)).toBe(true);
+  // 全部候选恒定返回（未安装的也在，settings 页靠它渲染"未安装"态）
+  expect(out.result.agents.map((a: { id: string }) => a.id)).toEqual([
+    "claude-app",
+    "claude-terminal",
+    "codex-terminal",
+  ]);
   for (const a of out.result.agents) {
-    expect(typeof a.id).toBe("string");
     expect(typeof a.label).toBe("string");
+    expect(typeof a.installed).toBe("boolean");
   }
 });
