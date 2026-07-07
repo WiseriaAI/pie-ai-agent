@@ -84,6 +84,13 @@ export interface ToolHandlerContext {
    * create_schedule 已被 disabledScheduleTools 摘除，不会走到这里。
    */
   requestModelSelection?: (payload: ScheduleDraftPayload) => Promise<ScheduleModelSelection>;
+  /**
+   * #254 — the running task's abort signal, threaded from the loop's internal
+   * controller. Long-running tools (wait) honor it so a user abort resolves
+   * immediately instead of blocking until a timer elapses. The loop otherwise
+   * only checks `signal.aborted` between steps.
+   */
+  signal?: AbortSignal;
 }
 
 export interface Tool {
