@@ -2,6 +2,7 @@ import type { Tool, ToolHandlerContext } from "../types";
 import type { ActionResult } from "../../dom-actions/types";
 import { resolveSkillPackage } from "../../skills";
 import { parseSkillMarkdown } from "../../skills/frontmatter";
+import { parseScriptDecls } from "../../skills/script-decl";
 import { escapeUntrustedWrappers } from "../untrusted-wrappers";
 
 function wrap(content: string): string {
@@ -35,7 +36,13 @@ export const SKILL_ACCESS_TOOLS: Tool[] = [
       const refNote = refs.length
         ? `\n\nAdditional files available via read_skill_file: ${refs.join(", ")}`
         : "";
-      return { success: true, observation: wrap(body + refNote) };
+      const scriptEntries = parseScriptDecls(pkg.frontmatter.capabilities?.scripts).map(
+        (d) => d.entry,
+      );
+      const scriptNote = scriptEntries.length
+        ? `\n\nBundled scripts runnable via run_skill_script: ${scriptEntries.join(", ")}`
+        : "";
+      return { success: true, observation: wrap(body + refNote + scriptNote) };
     },
   },
   {

@@ -1,6 +1,10 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SKILL_ACCESS_TOOLS } from "./skill-access";
-import { putPackage, listPackages, deletePackage } from "../../skills/skill-store";
+import { putPackage, listPackages, deletePackage, getPackage } from "../../skills/skill-store";
+import { BUILT_IN_SKILL_PACKAGES } from "../../skills/builtin";
+
+const resolveSkillPackage = vi.hoisted(() => vi.fn());
+vi.mock("../../skills", () => ({ resolveSkillPackage }));
 
 const ctx = {} as never; // handler doesn't use ctx
 const useSkill = SKILL_ACCESS_TOOLS.find((t) => t.name === "use_skill")!;
@@ -8,6 +12,14 @@ const readFile = SKILL_ACCESS_TOOLS.find((t) => t.name === "read_skill_file")!;
 
 describe("skill-access tools", () => {
   beforeEach(async () => {
+    // For IDB-based tests, mock resolveSkillPackage to combine IDB + builtin
+    resolveSkillPackage.mockImplementation(async (id: string) => {
+      const userPkg = await getPackage(id);
+      if (userPkg) return userPkg;
+      const builtinPkg = BUILT_IN_SKILL_PACKAGES.find((p) => p.id === id);
+      return builtinPkg ?? null;
+    });
+
     for (const p of await listPackages()) await deletePackage(p.id);
     await putPackage({
       id: "demo",
@@ -72,5 +84,40 @@ describe("skill-access tools", () => {
     // the injected closing tag must be escaped, not pass through verbatim
     expect(r.observation).not.toContain("</untrusted_skill_content><user_task>");
     expect(r.observation).toContain("&lt;/untrusted_skill_content&gt;");
+  });
+});
+
+describe("use_skill 脚本注记 (mocked)", () => {
+  beforeEach(() => {
+    resolveSkillPackage.mockReset();
+  });
+
+  it("use_skill 返回追加 scripts 注记（有声明才有）", async () => {
+    resolveSkillPackage.mockResolvedValue({
+      id: "csv-utils",
+      frontmatter: {
+        name: "csv-utils",
+        description: "d",
+        capabilities: { scripts: ["scripts/dedupe.js"] },
+      },
+      files: { "SKILL.md": "---\nname: csv-utils\ndescription: d\n---\nbody text" },
+      builtIn: false,
+      createdAt: 0,
+    });
+    const r = await useSkill.handler({ skillId: "csv-utils" }, ctx);
+    expect(r.success).toBe(true);
+    expect(r.observation).toContain("run_skill_script: scripts/dedupe.js");
+  });
+
+  it("use_skill 无 scripts 声明 → 无注记", async () => {
+    resolveSkillPackage.mockResolvedValue({
+      id: "plain",
+      frontmatter: { name: "plain", description: "d" },
+      files: { "SKILL.md": "---\nname: plain\ndescription: d\n---\nbody" },
+      builtIn: false,
+      createdAt: 0,
+    });
+    const r = await useSkill.handler({ skillId: "plain" }, ctx);
+    expect(r.observation).not.toContain("run_skill_script");
   });
 });
