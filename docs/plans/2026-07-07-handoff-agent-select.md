@@ -1027,3 +1027,326 @@ Expected: 全绿
 git add -A && git commit -m "chore: slice 1.5 full-suite fixes"
 ```
 （无修复则跳过。）
+
+---
+
+## 追加（2026-07-07）：设置页 Agent 启用管理
+
+用户需求：设置页显示本地 Agent 列表；已安装自动检测（默认启用）；用户可手动启用/禁用某个 agent，**启用时现场检测**——已安装才能启用，未安装启用不了。**零轮询**（agent 列表只在挂载 / 桥 ready 翻转 / 开关交互时查一次）。
+
+追加约束（在原 Global Constraints 之上）：
+- A1. `list_agents` 改为返回**全部候选 + `installed` 标志**（未安装的条目要能出现在设置页才谈得上"启用不了"）。daemon 安全闸不变（仍只认现检测已安装集）。
+- A2. 启用偏好 = 扩展侧 IDB config 单值 `enabled_local_agents: string[]`；**缺省（null）= 已安装即启用**（开箱即用）；用户动过开关后落显式数组。
+- A3. handoff 卡片列表 = 已安装 ∩ 已启用（`filterUsableAgents` 纯函数）；工具/卡片（Task 5/6 产物）零改动——过滤在 loop.ts 装配闭包里做。
+- A4. 旧 daemon fallback 单项 `{id:"claude"}` 补 `installed: true`（维持可 handoff 语义）。
+- A5. i18n 新 key 3 个（agentsTitle / agentNotInstalled / agentEnableFailed），6 字典真翻译，parity 不许挂。
+
+### Task 8: 协议 installed 标志 + 偏好模块
+
+**Files:**
+- Modify: `src/types/local-bridge.ts` — `ListAgentsResult.agents` 加 `installed: boolean`
+- Modify: `daemon/src/daemon.ts` — `list_agents` 返回全部候选 + installed
+- Modify: `daemon/test/daemon.test.ts`
+- Modify: `src/background/local-bridge.ts` — fallback 补 installed
+- Modify: `src/background/local-bridge.test.ts`
+- Create: `src/lib/local-agents-prefs.ts` + `src/lib/local-agents-prefs.test.ts`
+
+**Interfaces:**
+- Produces: `ListAgentsResult = { agents: { id; label; installed: boolean }[] }`；`getEnabledLocalAgents(): Promise<string[] | null>`；`setEnabledLocalAgents(ids): Promise<void>`；`filterUsableAgents(detected, enabled)` 纯函数；`applyToggle(detected, enabled, id, next)` 纯函数。Task 9 全部消费。
+
+- [ ] **Step 1: 失败测试**
+
+`daemon/test/daemon.test.ts` 现有 list_agents shape 测试改为：
+
+```ts
+test("list_agents returns ALL candidates with installed flag (shape only — detection machine-dependent)", async () => {
+  const out = JSON.parse(
+    await handleMessage(JSON.stringify({ id: "la1", method: "list_agents", params: {} })),
+  );
+  expect(out.ok).toBe(true);
+  // 全部候选恒定返回（未安装的也在，settings 页靠它渲染"未安装"态）
+  expect(out.result.agents.map((a: { id: string }) => a.id)).toEqual([
+    "claude-app",
+    "claude-terminal",
+    "codex-terminal",
+  ]);
+  for (const a of out.result.agents) {
+    expect(typeof a.label).toBe("string");
+    expect(typeof a.installed).toBe("boolean");
+  }
+});
+```
+
+`src/lib/local-agents-prefs.test.ts`（纯函数部分；get/set 走 config-store，参考 `src/lib/skills/storage` 相关测试对 IDB 的处理方式——若现有测试直接用真 config-store + fake IDB 环境则照搬，否则只测纯函数）：
+
+```ts
+import { describe, it, expect } from "vitest";
+import { filterUsableAgents, applyToggle } from "./local-agents-prefs";
+
+const DETECTED = [
+  { id: "claude-app", label: "Claude Code (App)", installed: true },
+  { id: "claude-terminal", label: "Claude Code (Terminal)", installed: false },
+  { id: "codex-terminal", label: "Codex (Terminal)", installed: true },
+];
+
+describe("filterUsableAgents", () => {
+  it("null prefs = every installed agent usable (out-of-box default)", () => {
+    expect(filterUsableAgents(DETECTED, null).map((a) => a.id)).toEqual(["claude-app", "codex-terminal"]);
+  });
+  it("explicit prefs intersect with installed", () => {
+    expect(filterUsableAgents(DETECTED, ["codex-terminal"]).map((a) => a.id)).toEqual(["codex-terminal"]);
+  });
+  it("not-installed never usable even if listed in prefs", () => {
+    expect(filterUsableAgents(DETECTED, ["claude-terminal"])).toEqual([]);
+  });
+});
+
+describe("applyToggle", () => {
+  it("enabling a not-installed agent is rejected", () => {
+    expect(applyToggle(DETECTED, null, "claude-terminal", true)).toEqual({ ok: false, reason: "not_installed" });
+  });
+  it("first toggle materializes null prefs as all-installed, then applies", () => {
+    expect(applyToggle(DETECTED, null, "codex-terminal", false)).toEqual({ ok: true, next: ["claude-app"] });
+  });
+  it("re-enabling adds without duplicates", () => {
+    expect(applyToggle(DETECTED, ["claude-app"], "codex-terminal", true)).toEqual({
+      ok: true,
+      next: ["claude-app", "codex-terminal"],
+    });
+  });
+  it("disabling is allowed regardless of installed state", () => {
+    expect(applyToggle(DETECTED, ["claude-app", "claude-terminal"], "claude-terminal", false)).toEqual({
+      ok: true,
+      next: ["claude-app"],
+    });
+  });
+});
+```
+
+`src/background/local-bridge.test.ts`：现有 requestListAgents 成功测试的 result 改带 `installed: true` 并断言透传；fallback 测试断言 `[{ id: "claude", label: "Claude Code (Terminal)", installed: true }]`。
+
+- [ ] **Step 2: 确认失败**（`cd daemon && bun test test/daemon.test.ts`；`pnpm test -- src/lib/local-agents-prefs.test.ts src/background/local-bridge.test.ts`）
+
+- [ ] **Step 3: 实现**
+
+`src/types/local-bridge.ts`：
+
+```ts
+/** daemon 静态候选表全量（含未安装项，installed 标注检测结果——settings 页渲染"未安装"态需要）。 */
+export interface ListAgentsResult {
+  agents: { id: string; label: string; installed: boolean }[];
+}
+```
+
+`daemon/src/daemon.ts` 的 `list_agents` case（保留 try/catch）：
+
+```ts
+        const detected = new Set(detectAgents().map((a) => a.id));
+        const result: ListAgentsResult = {
+          agents: AGENT_CANDIDATES.map(({ id, label }) => ({ id, label, installed: detected.has(id) })),
+        };
+        return respond({ ok: true, result });
+```
+
+（import 处补 `AGENT_CANDIDATES`。）
+
+`src/background/local-bridge.ts`：
+
+```ts
+export async function requestListAgents(): Promise<{ id: string; label: string; installed: boolean }[]> {
+  // 旧 daemon（无 list_agents capability）降级为单项 legacy 列表：id "claude"
+  // 是旧 wire 值，installed 视为 true（维持旧 daemon 可 handoff 的语义）。
+  if (!capabilities.includes("list_agents")) {
+    return [{ id: "claude", label: "Claude Code (Terminal)", installed: true }];
+  }
+  const r = (await send("list_agents", {})) as ListAgentsResult;
+  return r.agents;
+}
+```
+
+`src/lib/local-agents-prefs.ts`：
+
+```ts
+import { getConfig, setConfig } from "@/lib/idb/config-store";
+
+// 设置页「本地 Agent」启用偏好。null（用户从没动过开关）= 已安装即启用（开箱
+// 即用，"安装之后自动检测"）；一旦动过开关就落显式数组。
+const KEY = "enabled_local_agents";
+
+export async function getEnabledLocalAgents(): Promise<string[] | null> {
+  return (await getConfig<string[]>(KEY)) ?? null;
+}
+
+export async function setEnabledLocalAgents(ids: string[]): Promise<void> {
+  await setConfig(KEY, ids);
+}
+
+/** handoff 卡片可用列表 = 已安装 ∩ 已启用（null = 已安装全启用）。 */
+export function filterUsableAgents<T extends { id: string; installed: boolean }>(
+  detected: T[],
+  enabled: string[] | null,
+): T[] {
+  return detected.filter((a) => a.installed && (enabled == null || enabled.includes(a.id)));
+}
+
+/** 开关决策纯函数：启用时现检测把关——未安装启用不了；null 偏好先物化为「当前已安装全启用」。 */
+export function applyToggle(
+  detected: { id: string; installed: boolean }[],
+  enabled: string[] | null,
+  id: string,
+  next: boolean,
+): { ok: true; next: string[] } | { ok: false; reason: "not_installed" } {
+  if (next && !detected.some((a) => a.id === id && a.installed)) {
+    return { ok: false, reason: "not_installed" };
+  }
+  const base = enabled ?? detected.filter((a) => a.installed).map((a) => a.id);
+  return { ok: true, next: next ? [...new Set([...base, id])] : base.filter((x) => x !== id) };
+}
+```
+
+- [ ] **Step 4: 确认通过**（同 Step 2 两条命令 + `pnpm typecheck`。注意：此时 loop.ts 的 listAgents 闭包直接透传 `requestListAgents()` 的结果给 `HandoffToolDeps.listAgents`（期望 `{id,label}[]`），多出的 installed 字段是结构化子类型、typecheck 不挂；语义过滤在 Task 9 接上。）
+
+- [ ] **Step 5: Commit**（`feat(bridge): list_agents carries all candidates + installed flag; local-agent enable prefs module`）
+
+### Task 9: SW messages + loop 过滤 + Settings UI + i18n
+
+**Files:**
+- Modify: `src/background/index.ts` — `local-agents:list` / `local-agents:toggle` 两个 message handler（仿 `local-bridge:status`，薄壳调纯函数）
+- Modify: `src/lib/agent/loop.ts` — listAgents 闭包接 `filterUsableAgents`
+- Modify: `src/sidepanel/components/Settings.tsx` — LocalBridgeSection 内加 Agent 列表
+- Modify: `src/lib/i18n/dictionaries/{en,zh-CN,zh-TW,es-419,ja,pt-BR}.ts` — `settings.localBridge` 下加 3 key
+
+**Interfaces:**
+- Consumes: Task 8 全部产物。
+- Produces: message 协议 `{type:"local-agents:list"}` → `{agents:{id,label,installed,enabled}[]}`；`{type:"local-agents:toggle",id,next}` → `{ok:true}|{ok:false,reason:"not_installed"|string}`。
+
+- [ ] **Step 1: SW handlers**（`src/background/index.ts`，插在 `local-bridge:status` handler 之后；import 补 `requestListAgents`、`getEnabledLocalAgents`/`setEnabledLocalAgents`/`applyToggle`）
+
+```ts
+  // Settings「本地 Agent」列表 — 一次性查询（无轮询）。桥没 ready → 空列表。
+  if (message?.type === "local-agents:list") {
+    (async () => {
+      if (!isBridgeReady()) return { agents: [] };
+      const detected = await requestListAgents();
+      const enabled = await getEnabledLocalAgents();
+      return {
+        agents: detected.map((a) => ({
+          ...a,
+          enabled: a.installed && (enabled == null || enabled.includes(a.id)),
+        })),
+      };
+    })()
+      .then(sendResponse)
+      .catch(() => sendResponse({ agents: [] }));
+    return true; // async response
+  }
+
+  // Settings 开关 — 启用时现检测把关：未安装启用不了（决策在 applyToggle 纯函数）。
+  if (message?.type === "local-agents:toggle") {
+    const m = message as { type: string; id: string; next: boolean };
+    (async () => {
+      const detected = isBridgeReady() ? await requestListAgents() : [];
+      const decision = applyToggle(detected, await getEnabledLocalAgents(), m.id, m.next);
+      if (!decision.ok) return decision;
+      await setEnabledLocalAgents(decision.next);
+      return { ok: true };
+    })()
+      .then(sendResponse)
+      .catch((e) => sendResponse({ ok: false, reason: String(e) }));
+    return true; // async response
+  }
+```
+
+- [ ] **Step 2: loop.ts 装配闭包接过滤**（import 补 `filterUsableAgents`/`getEnabledLocalAgents`；工具与卡片零改动）
+
+```ts
+                    listAgents: async () => {
+                      const detected = await requestListAgents();
+                      const usable = filterUsableAgents(detected, await getEnabledLocalAgents());
+                      return usable.map(({ id, label }) => ({ id, label }));
+                    },
+```
+
+- [ ] **Step 3: Settings UI**（`LocalBridgeSection` 内。零轮询：挂载查一次 + `status?.ready` 翻 true 时查一次 + 开关交互后重查。agent label 是产品名不翻译）
+
+```tsx
+type PanelAgent = { id: string; label: string; installed: boolean; enabled: boolean };
+
+function queryLocalAgents(cb: (agents: PanelAgent[]) => void): void {
+  try {
+    chrome.runtime.sendMessage({ type: "local-agents:list" }, (res) => {
+      if (chrome.runtime.lastError) return;
+      if (res && Array.isArray(res.agents)) cb(res.agents as PanelAgent[]);
+    });
+  } catch {
+    /* noop */
+  }
+}
+```
+
+LocalBridgeSection 内加 state 与 effect（**不动**现有 1.5s 桥状态轮询——那是已合并行为；agent 列表自身零轮询）：
+
+```tsx
+  const [agents, setAgents] = useState<PanelAgent[]>([]);
+  const [failedId, setFailedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (status?.ready) queryLocalAgents(setAgents);
+    else setAgents([]);
+  }, [status?.ready]);
+
+  const onAgentToggle = (id: string, next: boolean) => {
+    setFailedId(null);
+    try {
+      chrome.runtime.sendMessage({ type: "local-agents:toggle", id, next }, (res) => {
+        if (chrome.runtime.lastError) return;
+        if (res?.ok) queryLocalAgents(setAgents);
+        else setFailedId(id);
+      });
+    } catch {
+      /* noop */
+    }
+  };
+```
+
+渲染（卡片 div 内、现有 toggle 行之后；仅桥已连时出现）：
+
+```tsx
+        {status?.ready && agents.length > 0 && (
+          <div className="flex flex-col gap-2 border-t border-line pt-3">
+            <div className="text-[12px] font-medium text-fg-2">{t("settings.localBridge.agentsTitle")}</div>
+            {agents.map((a) => (
+              <div key={a.id} className="flex flex-col gap-1">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-[13px] text-fg-1">{a.label}</span>
+                    {!a.installed && (
+                      <span className="text-[11px] text-fg-3">{t("settings.localBridge.agentNotInstalled")}</span>
+                    )}
+                  </div>
+                  <Switch checked={a.enabled} onChange={(next) => onAgentToggle(a.id, next)} />
+                </div>
+                {failedId === a.id && (
+                  <div className="text-[11px] text-fg-3">{t("settings.localBridge.agentEnableFailed")}</div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+```
+
+- [ ] **Step 4: i18n 3 key × 6 字典**（`settings.localBridge` 块尾部追加；各语言真翻译）
+
+en：
+```ts
+      agentsTitle: "Local agents",
+      agentNotInstalled: "Not installed",
+      agentEnableFailed: "Can't enable — not detected on this machine.",
+```
+zh-CN：`本地 Agent` / `未安装` / `无法启用——未在本机检测到安装。`
+zh-TW：`本機 Agent` / `未安裝` / `無法啟用——未在本機偵測到安裝。`
+ja：`ローカル Agent` / `未インストール` / `有効にできません——このマシンで検出されませんでした。`
+es-419：`Agentes locales` / `No instalado` / `No se puede habilitar: no se detectó en esta máquina.`
+pt-BR：`Agentes locais` / `Não instalado` / `Não é possível habilitar — não detectado nesta máquina.`
+
+- [ ] **Step 5: 验证 + Commit**（`pnpm test`（含 dictionary-parity）+ `pnpm typecheck` + `pnpm build`；commit `feat(settings): local agent enable toggles — detect-on-enable, zero polling`）
