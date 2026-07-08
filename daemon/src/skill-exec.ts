@@ -79,6 +79,10 @@ const realSkillSpawn: NonNullable<SkillExecDeps["spawn"]> = async (argv, cwd, en
     timedOut = true;
     proc.kill();
   }, TIMEOUT_MS);
+  // 必须并发排空 stdout 和 stderr（同 src/spawn.ts 的教训）：只顺序读 stdout 会让
+  // stderr 管道（OS 缓冲区 ~64KB）写满后阻塞子进程，子进程卡住不退出，读 stdout
+  // 的循环也就卡住，直到 60s 超时才误判成 timeout（脚本本身可能早跑完了）。
+  const stderrPromise = new Response(proc.stderr).text();
   try {
     const reader = proc.stdout.getReader();
     const dec = new TextDecoder();
@@ -95,7 +99,7 @@ const realSkillSpawn: NonNullable<SkillExecDeps["spawn"]> = async (argv, cwd, en
         break;
       }
     }
-    const stderr = await new Response(proc.stderr).text();
+    const stderr = await stderrPromise;
     const exitCode = await proc.exited;
     return { stdout, stderr, exitCode, timedOut, truncated };
   } finally {
