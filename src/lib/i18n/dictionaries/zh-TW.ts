@@ -151,6 +151,16 @@ export const zhTWDict = {
     allow: "交棒",
     deny: "取消",
   },
+  skillGrant: {
+    title: "允許該 skill 執行本機腳本？",
+    semanticsNote: "腳本將在你的機器上以檔案系統權限執行，限於隔離的工作目錄。",
+    skillLabel: "Skill",
+    scriptLabel: "腳本",
+    permsLabel: "請求的權限",
+    permFs: "在 skill 工作目錄內讀寫檔案",
+    allow: "允許",
+    deny: "拒絕",
+  },
   chat: {
     elementPicker: {
       idle: "選取頁面元素",

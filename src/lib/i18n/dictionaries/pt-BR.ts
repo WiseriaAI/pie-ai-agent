@@ -152,6 +152,16 @@ export const ptBRDict = {
     allow: "Repassar",
     deny: "Cancelar",
   },
+  skillGrant: {
+    title: "Permitir que este skill execute um script local?",
+    semanticsNote: "O script roda na sua máquina com acesso ao sistema de arquivos, em um espaço de trabalho isolado.",
+    skillLabel: "Skill",
+    scriptLabel: "Script",
+    permsLabel: "Acesso solicitado",
+    permFs: "Ler e gravar arquivos no espaço de trabalho do skill",
+    allow: "Permitir",
+    deny: "Negar",
+  },
   chat: {
     elementPicker: {
       idle: "Escolher elemento da página",

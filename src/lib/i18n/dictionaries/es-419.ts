@@ -152,6 +152,16 @@ export const es419Dict = {
     allow: "Delegar",
     deny: "Cancelar",
   },
+  skillGrant: {
+    title: "¿Permitir que este skill ejecute un script local?",
+    semanticsNote: "El script se ejecuta en tu máquina con acceso al sistema de archivos, en un espacio de trabajo aislado.",
+    skillLabel: "Skill",
+    scriptLabel: "Script",
+    permsLabel: "Acceso solicitado",
+    permFs: "Leer y escribir archivos en el espacio de trabajo del skill",
+    allow: "Permitir",
+    deny: "Denegar",
+  },
   chat: {
     elementPicker: {
       idle: "Elegir elemento de la página",

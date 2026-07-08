@@ -151,6 +151,16 @@ export const zhCNDict = {
     allow: "交棒",
     deny: "取消",
   },
+  skillGrant: {
+    title: "允许该 skill 运行本地脚本？",
+    semanticsNote: "脚本将在你机器上以文件系统权限运行，限于隔离的工作目录。",
+    skillLabel: "Skill",
+    scriptLabel: "脚本",
+    permsLabel: "请求的权限",
+    permFs: "在 skill 工作目录内读写文件",
+    allow: "允许",
+    deny: "拒绝",
+  },
   chat: {
     elementPicker: {
       idle: "拾取页面元素",

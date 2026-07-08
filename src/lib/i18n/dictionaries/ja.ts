@@ -152,6 +152,16 @@ export const jaDict = {
     allow: "引き継ぐ",
     deny: "キャンセル",
   },
+  skillGrant: {
+    title: "この skill がローカルスクリプトを実行するのを許可しますか？",
+    semanticsNote: "スクリプトは隔離された作業ディレクトリ内で、ファイルシステムへのアクセス権を持ってあなたのマシン上で実行されます。",
+    skillLabel: "Skill",
+    scriptLabel: "スクリプト",
+    permsLabel: "要求されるアクセス権",
+    permFs: "skill の作業ディレクトリ内でファイルを読み書きする",
+    allow: "許可",
+    deny: "拒否",
+  },
   chat: {
     elementPicker: {
       idle: "ページ要素を選択",

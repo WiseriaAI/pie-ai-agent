@@ -151,6 +151,16 @@ export const enDict = {
     allow: "Hand off",
     deny: "Cancel",
   },
+  skillGrant: {
+    title: "Allow this skill to run a local script?",
+    semanticsNote: "The script runs on your machine with filesystem access, in an isolated workspace.",
+    skillLabel: "Skill",
+    scriptLabel: "Script",
+    permsLabel: "Requested access",
+    permFs: "Read and write files in the skill's workspace",
+    allow: "Allow",
+    deny: "Deny",
+  },
   chat: {
     elementPicker: {
       idle: "Pick page element",
