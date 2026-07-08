@@ -40,8 +40,8 @@ Pie 当前是纯 MV3 扩展，三个能力天花板：
 - **Slice 0（曳光弹 / 地基）** ✅ **已实现（plan `docs/plans/2026-07-05-local-daemon-bridge-slice0.md`，12 task）**：`pie` 单二进制骨架 + `pie host` 透传 + `pie daemon` 空壳 + 扩展 `local-bridge.ts` + `hello` 握手（含 `protocolVersion`）+ `.pkg` 一键安装器 + `pie doctor`，端到端只打通 **round-trip（4.2）** 证明管子通。选 round-trip 作曳光弹：它单独证明「侧栏发起 → daemon spawn 子进程 → 流式回传」全链路，且不需要反向通道。**daemon 侧已端到端验证**（编译单二进制 61MB + socket hello 往返 + doctor）；**Chrome native-messaging 腿（装 pkg + 授权 + connectNative + 驱动 agent）待真机手测**。round-trip 曳光弹为**阻塞返回最终结果**，live 流式渲染 defer。
 - **Slice 1**：hand-off（4.1）✅ **已实现**（PR #252，2026-07-07）
 - **Slice 1.5**：Agent 检测 + hand-off 收件人选择 + app 直开 + 设置页 Agent 管理（4.3/4.3.1）✅ **已实现**（PR #259，2026-07-07）
-- **Slice 2**：skill 执行器（4.4，吸收 #68 路由 + #69）。**拆两个 PR 交付（2026-07-08 定稿）**：**2a** = 纯计算 sandbox 路径（schema + 路由 + MV3 sandbox + `run_skill_script` 工具，零 daemon 依赖，所有 BYOK 用户受益、可独立发版）；**2b** = daemon 特权路径（执行器 + grants 账本 + 撤销 UI + audit）
-- **Slice 3**：stdio MCP 代理（4.4）
+- **Slice 2**：skill 执行器（4.4，吸收 #68 路由 + #69）。**拆三片交付（2026-07-08/09 定稿，见 §4.4「交付切分」）**：**2a** = 纯计算 sandbox 路径 ✅ 已合并（PR #262）；**2b** = daemon **fs-only** 特权路径（执行器 + grants 账本 + `needs_authorization` 往返 + HITL 卡 + 撤销 UI + audit）；**2c** = network 能力（单独 SSRF 评审 + 强制模型选型）
+- **Slice 3**：stdio MCP 代理（4.5）
 - **Slice 4**：反向 MCP server（4.5）
 - **Slice 5**：安装/更新 UX 精修 + **daemon 自更新**（§9）。注：设置页「本地打通」**启用开关 + 实时状态提示**已在真机测试期从 Slice 5 前移进 Slice 0（否则 nativeMessaging 授权需用户手势、无 UI 无法触发，测试寸步难行）；Slice 5 只剩安装引导/自更新那部分 UX
 
@@ -135,6 +135,12 @@ pie daemon（常驻，launchd KeepAlive；rendezvous 见 ADR 0005）
 - **daemon 路径运行时**：skill 包住扩展 IndexedDB，daemon 没有 → **脚本内容随 wire 传**（params = skillId + entry + 脚本内容 + perms + input）。**LLM 只能传 `skill_id + entry + input`**，脚本内容由扩展 tool handler 从已安装包解析——延续「静态表是唯一 launch 权威」模式，LLM 永远不能注入代码。daemon 用 **`BUN_BE_BUN=1` self-spawn**（编译后的 `pie` 二进制自带完整 bun runtime，spike 已验证）跑 runner，用户零额外安装。
 - **隔离强制（spike 已验证）**：macOS **`sandbox-exec` profile** 给 OS 级真强制——fs 写限 workspace subpath、无 network 声明时网络全断；有 network 声明时放开网络 + runner 内 fetch shim 做域名白名单（诚实层）。
 - **授权往返（§6.3 强制流的 wire 形态）**：daemon 查账本 miss → 回 `needs_authorization` 错误码（带 permsHash）→ 扩展弹 HITL 卡（perms 原文）→ 批准 → 重调带 `grantApproved: true` → daemon 写 grant + 执行 + audit。
+
+**交付切分（2026-07-09 定稿，用户拍板）**：特权路径按能力再切两片，因为 fs 与 network 的隔离强度和风险等级差一档——
+- **Slice 2a**：纯计算 sandbox 路径 ✅ 已合并（PR #262，2026-07-08）。
+- **Slice 2b（fs-only 特权路径）**：整套 daemon 执行器 + grants 账本 + `needs_authorization` 往返 + HITL 卡 + 设置页撤销 UI + audit，**只放行 fs 声明**（`sandbox-exec` 对 fs 是 OS 级真隔离，spike 已证 workspace 外写被拒）。**带 network 声明的脚本在 2b 仍回结构化错误**（指向 2c，与「未装 daemon」错误区分）。
+- **Slice 2c（network 能力）**：`network` 声明放行 + #69 要求的 SSRF/exfil 威胁建模 + 网络强制模型选型（诚实层 fetch shim 天花板 = 裸 socket 可绕；强制模型 = 双进程 + 网络代理，OS 级断网 + 白名单进程外强制）。切出来单独过安全评审，不与 2b 基建混在一次 review/真机里。
+- **判据**：`sandbox-exec` network 只能全放/全禁、做不到 per-domain；fs 干净、network 需专门设计，故按 #68（compute，已进 2a）/ #69（network，单独高危评审）的原始分界切。
 
 ### 4.5 stdio MCP 代理
 
