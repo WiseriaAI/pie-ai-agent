@@ -44,7 +44,7 @@ export interface SkillExecDeps {
  * 第二遍 replace 把全点号结果收敛成安全字面量，非全点号结果不受影响。
  */
 export function sanitizeSkillId(id: string): string {
-  return id.replace(/[^a-zA-Z0-9_.-]/g, "_").replace(/^\.+$/, "_");
+  return id.replace(/[^a-zA-Z0-9_.-]/g, "_").replace(/^\.*$/, "_");
 }
 
 // fs-only sandbox-exec profile：写限 skillDir 子树、网络全断、读放开（需读 pie

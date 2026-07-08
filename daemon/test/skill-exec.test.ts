@@ -105,17 +105,21 @@ test("sanitizeSkillId 去路径分隔符（防遍历）", () => {
   expect(sanitizeSkillId("csv-utils")).toBe("csv-utils");
 });
 
-test("sanitizeSkillId 纯点号（. / ..）不能原样逃逸（防写权逃出 skillsDir）", () => {
+test("sanitizeSkillId 纯点号（. / .. / 空串）不能原样逃逸（防写权逃出 skillsDir）", () => {
   expect(sanitizeSkillId("..")).not.toBe("..");
   expect(sanitizeSkillId(".")).not.toBe(".");
+  expect(sanitizeSkillId("")).not.toBe("");
   expect(sanitizeSkillId("..")).not.toMatch(/^\.+$/);
   expect(sanitizeSkillId(".")).not.toMatch(/^\.+$/);
+  expect(sanitizeSkillId("")).not.toMatch(/^\.+$/);
 
   const skillsRoot = "/home/u/.pie/skills";
   const resolvedDotDot = join(skillsRoot, sanitizeSkillId(".."));
   const resolvedDot = join(skillsRoot, sanitizeSkillId("."));
+  const resolvedEmpty = join(skillsRoot, sanitizeSkillId(""));
   expect(resolvedDotDot.startsWith(skillsRoot + "/")).toBe(true);
   expect(resolvedDot.startsWith(skillsRoot + "/")).toBe(true);
+  expect(resolvedEmpty.startsWith(skillsRoot + "/")).toBe(true);
 });
 
 test("audit 落盘一行 JSON", async () => {
