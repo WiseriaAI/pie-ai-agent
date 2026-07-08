@@ -36,9 +36,15 @@ export interface SkillExecDeps {
   auditPath?: string;
 }
 
-/** skillId 来自扩展（已安装包 id），仍去路径分隔符防目录遍历。 */
+/**
+ * skillId 来自扩展（已安装包 id），仍去路径分隔符防目录遍历。
+ * 字符类里保留了 "."（合法 id 里可能出现），但纯点号结果（"."/".."/"..."...）
+ * 经 join(skillsDir, id) 会逃出 skillsDir（"." = skillsDir 本身，".." = 上一级、
+ * 即 ~/.pie 根，拿到 grants.json/audit.jsonl/其他 skill workspace 的写权限）。
+ * 第二遍 replace 把全点号结果收敛成安全字面量，非全点号结果不受影响。
+ */
 export function sanitizeSkillId(id: string): string {
-  return id.replace(/[^a-zA-Z0-9_.-]/g, "_");
+  return id.replace(/[^a-zA-Z0-9_.-]/g, "_").replace(/^\.+$/, "_");
 }
 
 // fs-only sandbox-exec profile：写限 skillDir 子树、网络全断、读放开（需读 pie
@@ -82,7 +88,25 @@ const realSkillSpawn: NonNullable<SkillExecDeps["spawn"]> = async (argv, cwd, en
   // 必须并发排空 stdout 和 stderr（同 src/spawn.ts 的教训）：只顺序读 stdout 会让
   // stderr 管道（OS 缓冲区 ~64KB）写满后阻塞子进程，子进程卡住不退出，读 stdout
   // 的循环也就卡住，直到 60s 超时才误判成 timeout（脚本本身可能早跑完了）。
-  const stderrPromise = new Response(proc.stderr).text();
+  // stderr 同 stdout 一样增量读、封顶 MAX_OUTPUT_BYTES 即停（只顶多读一点点溢出，
+  // 不会无界）——stderr 只在报错时取尾部 2000 字符展示，截断无损；封顶前用
+  // .getReader() 而非 new Response(...).text()，否则读不到一半就没法喊停，脚本
+  // 在 60s 超时窗口内狂吐 stderr 会把 daemon 内存打爆。读栈本身不 kill 进程
+  // （避免 stdout/stderr 谁先封顶就抢着 kill 打架），封顶只丢弃后续字节。
+  const stderrPromise = (async () => {
+    const reader = proc.stderr.getReader();
+    const dec = new TextDecoder();
+    let stderr = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (stderr.length <= MAX_OUTPUT_BYTES) {
+        stderr += dec.decode(value, { stream: true });
+      }
+      // 已封顶：继续读走剩余 chunk（保持管道排空、子进程不阻塞），只是不再拼接。
+    }
+    return stderr.length > MAX_OUTPUT_BYTES ? stderr.slice(0, MAX_OUTPUT_BYTES) : stderr;
+  })();
   try {
     const reader = proc.stdout.getReader();
     const dec = new TextDecoder();
