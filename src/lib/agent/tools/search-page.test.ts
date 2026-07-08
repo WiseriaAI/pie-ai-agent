@@ -50,6 +50,15 @@ describe("search_page tool", () => {
     expect(r.observation).toContain('matched="refund"');
   });
 
+  it("注入传 injectImmediately:true 避免永载 frame 挂起", async () => {
+    stubChrome({
+      inject: [frameResult(0, [{ pieIdx: 3, tag: "button", matched: "x", snippet: "x" }], 1)],
+    });
+    await searchPageTool.handler({ tabId: 7, query: "x" }, {} as any);
+    const call = (chrome.scripting.executeScript as any).mock.calls[0][0];
+    expect(call.injectImmediately).toBe(true);
+  });
+
   it("纯文本命中 pie_idx 输出空串", async () => {
     stubChrome({
       inject: [frameResult(0, [{ pieIdx: null, tag: "p", matched: "x", snippet: "x" }], 1)],

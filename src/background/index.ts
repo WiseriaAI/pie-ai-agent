@@ -549,6 +549,9 @@ async function handleExtractPage(): Promise<ExtractPageResponse> {
     const results = await chrome.scripting.executeScript({
       target: { tabId: tab.id, allFrames: true },
       func: extractPageContent,
+      // Read current DOM — never wait for document_idle. A never-idle sandbox
+      // frame (e.g. micro-app iframe mode) would otherwise hang the injection.
+      injectImmediately: true,
     });
 
     type RawContent = { title: string; url: string; description: string; content: string };

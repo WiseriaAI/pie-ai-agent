@@ -319,6 +319,88 @@ describe("read_page tool", () => {
     expect(r.observation).toMatch(/frame_id="5".*unreachable="true".*reason="about-blank"/s);
   });
 
+  it("atlas 注入传 injectImmediately:true 避免永载 frame 挂起", async () => {
+    const executeScript = vi.fn().mockResolvedValue([{ frameId: 0, result: atlasProbe() }]);
+    vi.stubGlobal("chrome", {
+      tabs: {
+        get: vi.fn().mockResolvedValue({
+          id: 7,
+          url: "https://example.com/products",
+          title: "Products",
+          discarded: false,
+        }),
+      },
+      scripting: { executeScript },
+      webNavigation: {
+        getAllFrames: vi.fn().mockResolvedValue([{ frameId: 0, url: "https://example.com/products" }]),
+      },
+    });
+    await readPageTool.handler({ tabId: 7, mode: "atlas" }, {} as any);
+    expect(executeScript.mock.calls[0][0].injectImmediately).toBe(true);
+  });
+
+  it("snapshot 注入传 injectImmediately:true 避免永载 frame 挂起", async () => {
+    const executeScript = vi.fn().mockResolvedValue([
+      { frameId: 0, result: emptySnapshot("<h1>Hi</h1>") },
+    ]);
+    vi.stubGlobal("chrome", {
+      tabs: { get: vi.fn().mockResolvedValue({ id: 7, url: "https://example.com/", discarded: false }) },
+      scripting: { executeScript },
+      webNavigation: {
+        getAllFrames: vi.fn().mockResolvedValue([{ frameId: 0, url: "https://example.com/" }]),
+      },
+    });
+    await readPageTool.handler({ tabId: 7, mode: "content" }, {} as any);
+    expect(executeScript.mock.calls[0][0].injectImmediately).toBe(true);
+  });
+
+  it("atlas 模式上报注入失败的子 frame 为 unreachable（不再静默丢弃）", async () => {
+    // frame 3 出现在 getAllFrames 但注入没返回 atlas 结果（micro-app 永载沙箱 frame /
+    // CSP 拦截 / sandbox iframe）→ 必须作为 unreachable 上报，LLM 才能停止盲目重试。
+    const executeScript = vi.fn().mockResolvedValue([{ frameId: 0, result: atlasProbe() }]);
+    vi.stubGlobal("chrome", {
+      tabs: {
+        get: vi.fn().mockResolvedValue({
+          id: 7,
+          url: "https://example.com/products",
+          title: "Products",
+          discarded: false,
+        }),
+      },
+      scripting: { executeScript },
+      webNavigation: {
+        getAllFrames: vi.fn().mockResolvedValue([
+          { frameId: 0, url: "https://example.com/products" },
+          { frameId: 3, url: "https://sub.example.com/app", errorOccurred: false },
+        ]),
+      },
+    });
+    const r = await readPageTool.handler({ tabId: 7, mode: "atlas" }, {} as any);
+    expect(r.success).toBe(true);
+    expect(r.observation).toMatch(/frame_id="3".*unreachable="true".*reason="sandbox"/s);
+  });
+
+  it("atlas 模式所有 frame 都读到时不输出 unreachable 块", async () => {
+    const executeScript = vi.fn().mockResolvedValue([{ frameId: 0, result: atlasProbe() }]);
+    vi.stubGlobal("chrome", {
+      tabs: {
+        get: vi.fn().mockResolvedValue({
+          id: 7,
+          url: "https://example.com/products",
+          title: "Products",
+          discarded: false,
+        }),
+      },
+      scripting: { executeScript },
+      webNavigation: {
+        getAllFrames: vi.fn().mockResolvedValue([{ frameId: 0, url: "https://example.com/products" }]),
+      },
+    });
+    const r = await readPageTool.handler({ tabId: 7, mode: "atlas" }, {} as any);
+    expect(r.success).toBe(true);
+    expect(r.observation).not.toContain('unreachable="true"');
+  });
+
   it("拒 restrictedScheme URL", async () => {
     vi.stubGlobal("chrome", {
       tabs: { get: vi.fn().mockResolvedValue({ id: 7, url: "chrome://settings/", discarded: false }) },

@@ -46,6 +46,25 @@ function classifyUnreachable(url: string, errorOccurred?: boolean): string {
   return "sandbox";
 }
 
+// atlas/auto mode counterpart to the snapshot path's per-frame unreachable
+// blocks: list every frame that yielded no atlas result so the LLM can tell a
+// child app frame is genuinely unreadable (and stop retrying) rather than
+// having it vanish silently.
+function renderAtlasUnreachableFrames(
+  frames: chrome.webNavigation.GetAllFrameResultDetails[],
+  reachableFrameIds: Set<number>,
+): string {
+  const lines = frames
+    .filter((f) => !reachableFrameIds.has(f.frameId))
+    .sort((a, b) => a.frameId - b.frameId)
+    .map((f) => {
+      const reason = classifyUnreachable(f.url, f.errorOccurred);
+      return `  frame_id="${f.frameId}" url="${escapeWrapperAttribute(f.url)}" unreachable="true" reason="${reason}"`;
+    });
+  if (lines.length === 0) return "";
+  return ["<frame_map>", ...lines, "</frame_map>"].join("\n");
+}
+
 function attr(name: string, value: string | number | boolean): string {
   return `${name}="${escapeWrapperAttribute(String(value))}"`;
 }
@@ -230,6 +249,11 @@ export const readPageTool: Tool = {
           target: { tabId: a.tabId, allFrames: true },
           func: probePageInjected,
           args: [{ op: "atlas" }],
+          // Read the current DOM state — never wait for document_idle. A frame
+          // whose navigation was interrupted (e.g. micro-app's iframe-sandbox
+          // frame, or a never-settling ad iframe) never reaches idle and would
+          // otherwise hang the whole allFrames injection indefinitely.
+          injectImmediately: true,
         }) as chrome.scripting.InjectionResult<ProbeResult>[];
       } catch (e) {
         return { success: false, error: e instanceof Error ? e.message : "executeScript failed" };
@@ -267,10 +291,12 @@ export const readPageTool: Tool = {
         navigation: [],
       };
 
+      const reachableFrameIds = new Set<number>();
       for (const result of atlasResults) {
         const data = result.result;
         if (data?.op !== "atlas") continue;
         const frameId = result.frameId;
+        reachableFrameIds.add(frameId);
         const scoped = namespaceAtlasResult(data, frameId);
         atlas.targets.push(...scoped.targets);
         atlas.controls.push(...scoped.controls);
@@ -278,7 +304,14 @@ export const readPageTool: Tool = {
       }
 
       pageAtlasStore.save(atlas);
-      return { success: true, observation: wrapPageAtlasObservation(atlas, renderPageAtlas(atlas)) };
+      // Surface frames that returned no atlas result (injection failed / blocked
+      // by CSP / sandbox iframe / still navigating) so the LLM knows content is
+      // missing instead of silently re-running read_page forever.
+      const unreachableBlock = renderAtlasUnreachableFrames(frames, reachableFrameIds);
+      const atlasBody = unreachableBlock
+        ? `${renderPageAtlas(atlas)}\n${unreachableBlock}`
+        : renderPageAtlas(atlas);
+      return { success: true, observation: wrapPageAtlasObservation(atlas, atlasBody) };
     }
 
     let results: chrome.scripting.InjectionResult<ProbeResult>[];
@@ -287,6 +320,9 @@ export const readPageTool: Tool = {
         target: { tabId: a.tabId, allFrames: true },
         func: probePageInjected,
         args: [{ op: "snapshot" }],
+        // See atlas path: read current DOM, never wait for a frame that may
+        // never reach document_idle (interrupted-navigation sandbox frames).
+        injectImmediately: true,
       }) as chrome.scripting.InjectionResult<ProbeResult>[];
     } catch (e) {
       return { success: false, error: e instanceof Error ? e.message : "executeScript failed" };

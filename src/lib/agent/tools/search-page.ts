@@ -117,6 +117,9 @@ export const searchPageTool: Tool = {
         target: { tabId: a.tabId, allFrames: true },
         func: probePageInjected,
         args: [{ op: "search", queries, regex, mode, maxResults, searchBy }],
+        // Read current DOM — never wait for document_idle. A never-idle sandbox
+        // frame (e.g. micro-app iframe mode) would otherwise hang the injection.
+        injectImmediately: true,
       })) as chrome.scripting.InjectionResult<ProbeResult>[];
     } catch (e) {
       return { success: false, error: e instanceof Error ? e.message : "executeScript failed" };

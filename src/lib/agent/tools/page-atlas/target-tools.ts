@@ -131,6 +131,7 @@ async function defaultGetPageState(tabId: number): Promise<{ url?: string; finge
       target: { tabId, frameIds: [0] },
       func: probePageInjected,
       args: [{ op: "atlas" }],
+      injectImmediately: true,
     }) as chrome.scripting.InjectionResult<ProbeResult>[];
     const result = results[0]?.result;
     if (result?.op === "atlas") {

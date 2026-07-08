@@ -85,7 +85,9 @@ async function execInTab<T extends unknown[]>(
     : { tabId };
 
   try {
-    const results = await chrome.scripting.executeScript({ target, func, args });
+    // Act on the current DOM — never block on document_idle, which a
+    // never-settling sandbox frame (micro-app iframe mode) never reaches.
+    const results = await chrome.scripting.executeScript({ target, func, args, injectImmediately: true });
     return (results[0]?.result as ActionResult) ?? { success: false, error: "Execution failed" };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
