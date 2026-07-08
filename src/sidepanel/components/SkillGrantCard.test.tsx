@@ -24,8 +24,10 @@ describe("SkillGrantCard", () => {
     expect(
       screen.getByText("Read files anywhere on your computer; write only in the skill's workspace"),
     ).toBeTruthy();
-    // 2b: empty network list — no network row rendered
-    expect(screen.queryByText(/network/i)).toBeNull();
+    // 2b: empty network list — only the fs perm row renders (no network perm row).
+    // （semanticsNote 现在会提到 network「已断」，故断言改为盯 perms 列表项数量，
+    // 而非任意 "network" 文本。）
+    expect(screen.getAllByRole("listitem")).toHaveLength(1);
   });
 
   it("allow calls onDecision(true)", () => {
