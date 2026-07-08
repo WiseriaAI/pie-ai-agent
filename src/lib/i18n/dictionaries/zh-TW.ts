@@ -155,11 +155,11 @@ export const zhTWDict = {
   },
   skillGrant: {
     title: "允許該 skill 執行本機腳本？",
-    semanticsNote: "腳本將在你的機器上以檔案系統權限執行，限於隔離的工作目錄。",
+    semanticsNote: "腳本在你的機器上執行。它可讀取機器上任意位置的檔案，但只能寫入 skill 的隔離工作目錄。網路存取已禁用。",
     skillLabel: "Skill",
     scriptLabel: "腳本",
     permsLabel: "請求的權限",
-    permFs: "在 skill 工作目錄內讀寫檔案",
+    permFs: "讀取你電腦上任意位置的檔案；僅能在 skill 工作目錄內寫入",
     allow: "允許",
     deny: "拒絕",
   },

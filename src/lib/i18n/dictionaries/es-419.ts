@@ -156,11 +156,11 @@ export const es419Dict = {
   },
   skillGrant: {
     title: "¿Permitir que este skill ejecute un script local?",
-    semanticsNote: "El script se ejecuta en tu máquina con acceso al sistema de archivos, en un espacio de trabajo aislado.",
+    semanticsNote: "El script se ejecuta en tu máquina. Puede leer archivos en cualquier lugar de ella, pero solo puede escribir dentro del espacio de trabajo aislado del skill. El acceso a la red está bloqueado.",
     skillLabel: "Skill",
     scriptLabel: "Script",
     permsLabel: "Acceso solicitado",
-    permFs: "Leer y escribir archivos en el espacio de trabajo del skill",
+    permFs: "Leer archivos en cualquier lugar de tu computadora; escribir solo en el espacio de trabajo del skill",
     allow: "Permitir",
     deny: "Denegar",
   },

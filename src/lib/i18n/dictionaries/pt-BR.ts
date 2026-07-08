@@ -156,11 +156,11 @@ export const ptBRDict = {
   },
   skillGrant: {
     title: "Permitir que este skill execute um script local?",
-    semanticsNote: "O script roda na sua máquina com acesso ao sistema de arquivos, em um espaço de trabalho isolado.",
+    semanticsNote: "O script é executado na sua máquina. Ele pode ler arquivos em qualquer lugar dela, mas só pode gravar dentro do espaço de trabalho isolado do skill. O acesso à rede está bloqueado.",
     skillLabel: "Skill",
     scriptLabel: "Script",
     permsLabel: "Acesso solicitado",
-    permFs: "Ler e gravar arquivos no espaço de trabalho do skill",
+    permFs: "Ler arquivos em qualquer lugar do seu computador; gravar apenas no espaço de trabalho do skill",
     allow: "Permitir",
     deny: "Negar",
   },
