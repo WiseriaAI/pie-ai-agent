@@ -1,6 +1,5 @@
 import type { Tool, ToolHandlerContext } from "../types";
 import type { ActionResult } from "@/lib/dom-actions/types";
-import { sendToOffscreen } from "@/background/offscreen-manager";
 import { resolveSkillPackage } from "../../skills";
 import { findScriptDecl, isPureCompute, parseScriptDecls } from "../../skills/script-decl";
 import { escapeUntrustedWrappers } from "../untrusted-wrappers";
@@ -8,6 +7,23 @@ import { escapeUntrustedWrappers } from "../untrusted-wrappers";
 export interface SkillScriptDeps {
   /** 纯计算路径：送 offscreen sandbox 执行，返回 JSON string。 */
   runInSandbox: (code: string, input: unknown) => Promise<string>;
+  /** fs-only 特权路径：调 daemon。缺省（无 daemon 能力）→ 特权脚本报「需要本地组件」。 */
+  runPrivileged?: (params: {
+    skillId: string;
+    entry: string;
+    code: string;
+    perms: { fs: boolean; network: string[] };
+    input: unknown;
+    grantApproved?: boolean;
+  }) => Promise<
+    { ok: true; result: { output: string; truncated?: boolean } } | { ok: false; needsAuth: boolean; error: string }
+  >;
+  /** HITL 卡：展示 perms 原文，返回是否批准。 */
+  requestGrantConsent?: (p: { skillId: string; skillName: string; entry: string; perms: { fs: boolean; network: string[] } }) => Promise<boolean>;
+  /** 2b 前置项：skill 是否已启用（禁用 skill 的脚本不放行 daemon 执行）。 */
+  isSkillEnabled?: (skillId: string) => Promise<boolean>;
+  /** skill 展示名（授权卡用）。缺省用 skillId。 */
+  skillName?: (skillId: string) => Promise<string>;
 }
 
 export function buildRunSkillScriptTool(deps: SkillScriptDeps): Tool {
@@ -57,13 +73,42 @@ export function buildRunSkillScriptTool(deps: SkillScriptDeps): Tool {
       if (typeof code !== "string")
         return { success: false, error: `Script file missing from package: ${decl.entry}` };
       if (!isPureCompute(decl)) {
-        // 特权脚本（fs/network）走 daemon 执行器 —— Slice 2b。
+        // network 声明 → 2c，不在 2b 执行（sandbox-exec 做不到 per-domain）
+        if (decl.network.length > 0) {
+          return {
+            success: false,
+            error:
+              `privileged_script: ${decl.entry} declares network access, which is not available yet ` +
+              `(planned for a later release). Only filesystem-capable scripts can run today.`,
+          };
+        }
+        // fs-only：走 daemon。无 daemon 能力 → 结构化「需要本地组件」。
+        if (!deps.runPrivileged || !deps.requestGrantConsent) {
+          return {
+            success: false,
+            error:
+              `privileged_script: ${decl.entry} needs the Pie local daemon to run (filesystem access). ` +
+              `Install/enable the local bridge in Settings.`,
+          };
+        }
+        // 2b 前置项：禁用 skill 不放行
+        if (deps.isSkillEnabled && !(await deps.isSkillEnabled(a.skillId))) {
+          return { success: false, error: `Skill ${a.skillId} is not enabled; enable it before running its scripts.` };
+        }
+        const perms = { fs: decl.fs, network: decl.network };
+        let res = await deps.runPrivileged({ skillId: a.skillId, entry: decl.entry, code, perms, input: a.input });
+        if (!res.ok && res.needsAuth) {
+          const skillName = deps.skillName ? await deps.skillName(a.skillId) : a.skillId;
+          const approved = await deps.requestGrantConsent({ skillId: a.skillId, skillName, entry: decl.entry, perms });
+          if (!approved) return { success: false, error: "User declined the skill script authorization." };
+          res = await deps.runPrivileged({ skillId: a.skillId, entry: decl.entry, code, perms, input: a.input, grantApproved: true });
+        }
+        if (!res.ok) {
+          return { success: false, error: `run_skill_script failed: ${res.error}` };
+        }
         return {
-          success: false,
-          error:
-            `privileged_script: ${decl.entry} declares fs/network permissions and requires the ` +
-            `Pie local daemon; privileged script execution is not available yet. ` +
-            `Only pure-compute scripts can run today.`,
+          success: true,
+          observation: `<untrusted_skill_content>${escapeUntrustedWrappers(res.result.output)}</untrusted_skill_content>`,
         };
       }
       try {
@@ -81,8 +126,3 @@ export function buildRunSkillScriptTool(deps: SkillScriptDeps): Tool {
     },
   };
 }
-
-/** 默认实例：wired 到 offscreen sandbox。 */
-export const RUN_SKILL_SCRIPT_TOOL: Tool = buildRunSkillScriptTool({
-  runInSandbox: (code, input) => sendToOffscreen<string>({ type: "skill:run_script", code, input }),
-});

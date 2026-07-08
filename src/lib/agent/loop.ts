@@ -36,10 +36,19 @@ import { isCdpInputEnabled } from "../cdp-input-enabled";
 import { requestCdpInputConsent } from "../cdp-input-onboarding";
 import { requestLocalFileFromPanel } from "../local-file-request";
 import { requestFromPanel } from "../panel-request";
-import { isBridgeReady, bridgeCapabilities, requestLocalAgent, requestHandoff, requestListAgents } from "@/background/local-bridge";
+import {
+  isBridgeReady,
+  bridgeCapabilities,
+  requestLocalAgent,
+  requestHandoff,
+  requestListAgents,
+  bridgeHasSkillScript,
+  requestSkillScript,
+} from "@/background/local-bridge";
 import { filterUsableAgents, getEnabledLocalAgents } from "@/lib/local-agents-prefs";
 import { buildRunLocalAgentTool } from "./tools/local-agent";
 import { buildHandoffTool } from "./tools/handoff";
+import { buildRunSkillScriptTool } from "./tools/skill-script";
 import { buildReadLocalFileTool, buildRequestLocalFileTool, buildOutputFileTool } from "./tools/files";
 import { buildScratchpadTools } from "./tools/scratchpad";
 import { createExtractRecordsTool } from "./tools/page-atlas";
@@ -51,7 +60,8 @@ import {
   getOverview as svcGetOverview,
 } from "../scratchpad/service";
 import { queryScratchpad as svcQueryScratchpad } from "../scratchpad/sql-bridge";
-import { getEnabledSkillPackages } from "../skills";
+import { getEnabledSkillPackages, resolveSkillPackage } from "../skills";
+import { sendToOffscreen } from "@/background/offscreen-manager";
 import { isFilePdfUrl, isPdfTab } from "../pdf/detect";
 import { groupsForEnv, selectTools, growActiveGroups, type EnvSignals } from "./disclosure";
 import { buildLoadToolsTool } from "./tools/disclosure";
@@ -1917,11 +1927,34 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
               : []),
           ]
         : [];
+      // Slice 2b — run_skill_script is assembled UNCONDITIONALLY (unlike
+      // localBridgeTools above): the pure-compute path (offscreen sandbox) must
+      // always work regardless of daemon presence. Privileged (fs-only) deps
+      // are injected only when the bridge is ready AND declares the
+      // run_skill_script capability; otherwise runPrivileged/requestGrantConsent
+      // stay undefined and the tool's own fallback reports "needs the Pie local
+      // daemon" for fs-only scripts — pure-compute scripts never consult these
+      // deps, so they are unaffected either way. The grant card needs
+      // `sessionId` (requestFromPanel), which ToolHandlerContext does not carry,
+      // hence this can only be wired here in the loop closure, not statically
+      // in BUILT_IN_TOOLS.
+      const skillScriptTool = buildRunSkillScriptTool({
+        runInSandbox: (code, input) => sendToOffscreen<string>({ type: "skill:run_script", code, input }),
+        ...(isBridgeReady() && bridgeHasSkillScript()
+          ? {
+              runPrivileged: (p) => requestSkillScript(p),
+              requestGrantConsent: (p) => requestFromPanel(sessionId, "skill-grant", p),
+              isSkillEnabled: async (id) => (await getEnabledSkillPackages()).some((pkg) => pkg.id === id),
+              skillName: async (id) => (await resolveSkillPackage(id))?.frontmatter.name ?? id,
+            }
+          : {}),
+      });
       const fullToolList = [
         ...BUILT_IN_TOOLS, ...mouseTools, ...keyboardTools, ...editorTools,
         readLocalFileTool, requestLocalFileTool, outputFileTool, ...scratchpadTools,
         extractRecordsTool,
         loadToolsTool,
+        skillScriptTool, // Slice 2b — run_skill_script (loop-assembled; privileged deps bridge-gated)
         ...localBridgeTools, // Slice 0 — run_local_agent (bridge-gated)
       ];
       const disclosed = selectTools(fullToolList, activeToolGroups);

@@ -20,6 +20,10 @@ export interface PanelRequestMap {
     req: { context: string; fileCount: number; agents: { id: string; label: string }[] };
     res: string | null; // 用户选中的 agent id；null = 拒绝
   };
+  "skill-grant": {
+    req: { skillId: string; skillName: string; entry: string; perms: { fs: boolean; network: string[] } };
+    res: boolean; // true = 批准
+  };
 }
 export type PanelRequestKind = keyof PanelRequestMap;
 

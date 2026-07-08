@@ -40,13 +40,19 @@ const SCHEDULE_META_TOOL_NAMES_FOR_REGISTRY = [
 
 // Standard skill mediation tools — use_skill invokes a skill by name;
 // read_skill_file reads a file from a skill's bundle. Both are pure text
-// producers (no tab/page side effects) → class=read. run_skill_script executes
-// a skill-declared script (pure-compute → offscreen sandbox; privileged →
-// structured error until Slice 2b) → class=write.
+// producers (no tab/page side effects) → class=read.
+//
+// run_skill_script is NOT in this list (Slice 2b): its fs-only privileged
+// branch needs a HITL grant card, which requires `sessionId` — a field
+// `ToolHandlerContext` does not carry. Like run_local_agent/handoff_to_agent,
+// it is loop-assembled (see loop.ts `skillScriptTool`), not statically built
+// into BUILT_IN_TOOLS, so it stays out of KNOWN_BUILT_IN_TOOL_NAMES too. Its
+// TOOL_CLASSES ("write") and TOOL_GROUPS ("skill-mediation") entries below
+// are kept so getToolClass/getToolGroup still resolve it correctly at
+// dispatch/disclosure time.
 const SKILL_MEDIATION_TOOL_NAMES = [
   "use_skill",
   "read_skill_file",
-  "run_skill_script",
 ] as const;
 
 // The progressive-disclosure mediator tool. Always core.
