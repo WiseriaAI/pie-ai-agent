@@ -103,6 +103,8 @@ export const es419Dict = {
       agentsTitle: "Agentes locales",
       agentNotInstalled: "No instalado",
       agentEnableFailed: "No se puede habilitar: no se detectó en esta máquina.",
+      grantsTitle: "Scripts de skill autorizados",
+      grantRevoke: "Revocar",
     },
     searchProvider: {
       caps: "Proveedor de búsqueda",

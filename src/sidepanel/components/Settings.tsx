@@ -573,6 +573,20 @@ function queryLocalAgents(cb: (agents: PanelAgent[]) => void): void {
   }
 }
 
+type PanelGrant = { key: string; skillId: string; entry: string };
+
+// Settings「已授权 skill 脚本」列表 — 一次性查询，无轮询（桥就绪/撤销后各触发一次）。
+function queryGrants(cb: (grants: PanelGrant[]) => void): void {
+  try {
+    chrome.runtime.sendMessage({ type: "skill-grants:list" }, (res) => {
+      if (chrome.runtime.lastError) return;
+      if (res && Array.isArray(res.grants)) cb(res.grants as PanelGrant[]);
+    });
+  } catch {
+    /* noop */
+  }
+}
+
 // 本地打通开关 + 实时状态。开=请求 nativeMessaging（用户手势）→ SW onAdded 连桥；
 // 关=移除权限 → SW onRemoved 断桥。挂载期每 1.5s 轮询一次状态（连接是异步的）。
 function LocalBridgeSection() {
@@ -580,6 +594,7 @@ function LocalBridgeSection() {
   const [status, setStatus] = useState<BridgeStatus | null>(null);
   const [agents, setAgents] = useState<PanelAgent[]>([]);
   const [failedId, setFailedId] = useState<string | null>(null);
+  const [grants, setGrants] = useState<PanelGrant[]>([]);
 
   useEffect(() => {
     queryBridgeStatus(setStatus);
@@ -590,6 +605,11 @@ function LocalBridgeSection() {
   useEffect(() => {
     if (status?.ready) queryLocalAgents(setAgents);
     else setAgents([]);
+  }, [status?.ready]);
+
+  useEffect(() => {
+    if (status?.ready) queryGrants(setGrants);
+    else setGrants([]);
   }, [status?.ready]);
 
   const enabled = status?.hasPermission ?? false;
@@ -610,6 +630,17 @@ function LocalBridgeSection() {
         if (chrome.runtime.lastError) return;
         if (res?.ok) queryLocalAgents(setAgents);
         else setFailedId(id);
+      });
+    } catch {
+      /* noop */
+    }
+  };
+
+  const onRevokeGrant = (key: string) => {
+    try {
+      chrome.runtime.sendMessage({ type: "skill-grants:revoke", key }, (res) => {
+        if (chrome.runtime.lastError) return;
+        if (res?.ok) queryGrants(setGrants);
       });
     } catch {
       /* noop */
@@ -660,6 +691,25 @@ function LocalBridgeSection() {
                 {failedId === a.id && (
                   <div className="text-[11px] text-fg-3">{t("settings.localBridge.agentEnableFailed")}</div>
                 )}
+              </div>
+            ))}
+          </div>
+        )}
+        {status?.ready && grants.length > 0 && (
+          <div className="flex flex-col gap-2 border-t border-line pt-3">
+            <div className="text-[12px] font-medium text-fg-2">{t("settings.localBridge.grantsTitle")}</div>
+            {grants.map((g) => (
+              <div key={g.key} className="flex items-center justify-between gap-3">
+                <span className="text-[13px] text-fg-1">
+                  {g.skillId} · {g.entry}
+                </span>
+                <button
+                  type="button"
+                  className="text-[12px] text-fg-3 hover:text-fg-1"
+                  onClick={() => onRevokeGrant(g.key)}
+                >
+                  {t("settings.localBridge.grantRevoke")}
+                </button>
               </div>
             ))}
           </div>

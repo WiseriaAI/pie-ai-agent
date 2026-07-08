@@ -103,6 +103,8 @@ export const ptBRDict = {
       agentsTitle: "Agentes locais",
       agentNotInstalled: "Não instalado",
       agentEnableFailed: "Não é possível habilitar — não detectado nesta máquina.",
+      grantsTitle: "Scripts de skill autorizados",
+      grantRevoke: "Revogar",
     },
     searchProvider: {
       caps: "Provedor de busca",

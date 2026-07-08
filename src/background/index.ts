@@ -127,7 +127,14 @@ import { mergeCarryoverIntoMessages } from "@/lib/agent/loop-drain";
 import type { ChatInstructionRejectedMessage } from "@/types/messages";
 import { isFilePdfUrl } from "@/lib/pdf/detect";
 import { installLogCapture } from "@/lib/log-buffer";
-import { maybeInitLocalBridge, disconnectLocalBridge, isBridgeReady, requestListAgents } from "./local-bridge";
+import {
+  maybeInitLocalBridge,
+  disconnectLocalBridge,
+  isBridgeReady,
+  requestListAgents,
+  requestListGrants,
+  requestRevokeGrant,
+} from "./local-bridge";
 import { getEnabledLocalAgents, setEnabledLocalAgents, applyToggle, isAgentUsable } from "@/lib/local-agents-prefs";
 
 // Install log capture at module top level
@@ -703,6 +710,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     })()
       .then(sendResponse)
       .catch((e) => sendResponse({ ok: false, reason: String(e) }));
+    return true; // async response
+  }
+
+  // Settings「已授权 skill 脚本」列表 — 一次性查询（无轮询）。桥没 ready → 空列表。
+  if (message?.type === "skill-grants:list") {
+    (async () => {
+      if (!isBridgeReady()) return { grants: [] };
+      return { grants: await requestListGrants() };
+    })()
+      .then(sendResponse)
+      .catch(() => sendResponse({ grants: [] }));
+    return true; // async response
+  }
+
+  // Settings 撤销一条 grant——桥没 ready 或 daemon 无 revoke_grant capability → false。
+  if (message?.type === "skill-grants:revoke") {
+    const m = message as { type: string; key: string };
+    (async () => {
+      if (!isBridgeReady()) return { ok: false };
+      return { ok: await requestRevokeGrant(m.key) };
+    })()
+      .then(sendResponse)
+      .catch(() => sendResponse({ ok: false }));
     return true; // async response
   }
 
