@@ -155,11 +155,11 @@ export const enDict = {
   },
   skillGrant: {
     title: "Allow this skill to run a local script?",
-    semanticsNote: "The script runs on your machine with filesystem access, in an isolated workspace.",
+    semanticsNote: "The script runs on your machine. It can read files anywhere on it, but can only write inside the skill's isolated workspace. Network access is blocked.",
     skillLabel: "Skill",
     scriptLabel: "Script",
     permsLabel: "Requested access",
-    permFs: "Read and write files in the skill's workspace",
+    permFs: "Read files anywhere on your computer; write only in the skill's workspace",
     allow: "Allow",
     deny: "Deny",
   },

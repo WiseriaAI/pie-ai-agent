@@ -155,11 +155,11 @@ export const zhCNDict = {
   },
   skillGrant: {
     title: "允许该 skill 运行本地脚本？",
-    semanticsNote: "脚本将在你机器上以文件系统权限运行，限于隔离的工作目录。",
+    semanticsNote: "脚本将在你机器上运行。它可读取机器上任意位置的文件，但只能写入 skill 的隔离工作目录，网络访问已禁用。",
     skillLabel: "Skill",
     scriptLabel: "脚本",
     permsLabel: "请求的权限",
-    permFs: "在 skill 工作目录内读写文件",
+    permFs: "读取你电脑上任意位置的文件；仅能在 skill 工作目录内写入",
     allow: "允许",
     deny: "拒绝",
   },
