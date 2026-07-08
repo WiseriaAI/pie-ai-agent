@@ -21,7 +21,9 @@ describe("SkillGrantCard", () => {
     );
     expect(screen.getByText("My Skill")).toBeTruthy();
     expect(screen.getByText("scripts/run.ts")).toBeTruthy();
-    expect(screen.getByText("Read and write files in the skill's workspace")).toBeTruthy();
+    expect(
+      screen.getByText("Read files anywhere on your computer; write only in the skill's workspace"),
+    ).toBeTruthy();
     // 2b: empty network list — no network row rendered
     expect(screen.queryByText(/network/i)).toBeNull();
   });
