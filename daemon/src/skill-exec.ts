@@ -2,24 +2,9 @@ import { mkdirSync, writeFileSync, rmSync } from "fs";
 import { join } from "path";
 import { paths } from "./paths";
 import { log } from "./log";
-import { hasGrant, putGrant, permsHash, grantKey, type ScriptPerms } from "./grants";
+import { hasGrant, putGrant, permsHash, grantKey } from "./grants";
 import { appendAudit } from "./audit";
-
-// Task 3 把这两个 interface 迁进 src/types/local-bridge.ts（共享源）后，改成
-// `import type { RunSkillScriptParams, RunSkillScriptResult } from "../../src/types/local-bridge"`。
-// 本 task 先本地定义以保持可独立编译/测试。
-export interface RunSkillScriptParams {
-  skillId: string;
-  entry: string;
-  code: string; // 扩展从已安装包解析；LLM 传不了
-  perms: ScriptPerms;
-  input: unknown;
-  grantApproved?: boolean;
-}
-export interface RunSkillScriptResult {
-  output: string; // 脚本返回值 JSON string；<untrusted_skill_content> 包裹在扩展侧做
-  truncated?: boolean;
-}
+import type { RunSkillScriptParams, RunSkillScriptResult } from "../../src/types/local-bridge";
 
 const TIMEOUT_MS = 60_000;
 const MAX_OUTPUT_BYTES = 1024 * 1024;

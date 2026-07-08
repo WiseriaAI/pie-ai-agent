@@ -1,10 +1,21 @@
 import { unlinkSync, existsSync, mkdirSync, chmodSync } from "fs";
 import { PROTOCOL_VERSION, BRIDGE_CAPABILITIES } from "../../src/types/local-bridge";
-import type { BridgeResponse, RunLocalAgentParams, HandoffParams, ListAgentsResult } from "../../src/types/local-bridge";
+import type {
+  BridgeResponse,
+  RunLocalAgentParams,
+  HandoffParams,
+  ListAgentsResult,
+  RunSkillScriptParams,
+  ListGrantsResult,
+  RevokeGrantParams,
+  RevokeGrantResult,
+} from "../../src/types/local-bridge";
 import { paths } from "./paths";
 import { runLocalAgent } from "./run-local-agent"; // Task 4
 import { runHandoff } from "./handoff";
 import { detectAgents, AGENT_CANDIDATES } from "./agents";
+import { runSkillScript } from "./skill-exec";
+import { listGrants, revokeGrant } from "./grants";
 import { decodeNdjsonLines } from "./framing";
 import { log } from "./log";
 
@@ -57,6 +68,35 @@ export async function handleMessage(line: string): Promise<string> {
       } catch (e) {
         log("error", "list_agents.failed", { id, error: String(e) });
         return respond({ ok: false, error: { code: "list_agents_failed", message: String(e) } });
+      }
+    }
+    case "run_skill_script": {
+      try {
+        const result = await runSkillScript(msg.params as RunSkillScriptParams);
+        return respond({ ok: true, result });
+      } catch (e) {
+        // needs_authorization / network_not_supported / timeout / script_error 走
+        // error.code；扩展据 code 决定弹卡/报错。
+        const code = (e as { code?: string }).code ?? "skill_exec_failed";
+        log(code === "needs_authorization" ? "info" : "error", "skill.failed", { id, code });
+        return respond({ ok: false, error: { code, message: String((e as Error).message ?? e) } });
+      }
+    }
+    case "list_grants": {
+      try {
+        const result: ListGrantsResult = { grants: listGrants() };
+        return respond({ ok: true, result });
+      } catch (e) {
+        return respond({ ok: false, error: { code: "list_grants_failed", message: String(e) } });
+      }
+    }
+    case "revoke_grant": {
+      try {
+        const { key } = msg.params as RevokeGrantParams;
+        const result: RevokeGrantResult = { revoked: revokeGrant(key) };
+        return respond({ ok: true, result });
+      } catch (e) {
+        return respond({ ok: false, error: { code: "revoke_grant_failed", message: String(e) } });
       }
     }
     default:

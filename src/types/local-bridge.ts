@@ -4,7 +4,14 @@
 export const PROTOCOL_VERSION = 1;
 
 /** daemon 声明它能处理的方法。扩展按此决定装配哪些本地工具。 */
-export const BRIDGE_CAPABILITIES = ["run_local_agent", "handoff_to_agent", "list_agents"] as const;
+export const BRIDGE_CAPABILITIES = [
+  "run_local_agent",
+  "handoff_to_agent",
+  "list_agents",
+  "run_skill_script",
+  "list_grants",
+  "revoke_grant",
+] as const;
 export type BridgeCapability = (typeof BRIDGE_CAPABILITIES)[number];
 
 // ── 握手 ──────────────────────────────────────────────────────────────
@@ -58,10 +65,49 @@ export interface HandoffResult {
   mode: "terminal" | "app";
 }
 
+// ── run_skill_script（fs-only 特权路径，Slice 2b）────────────────────────
+export interface ScriptPerms {
+  fs: boolean;
+  network: string[];
+}
+export interface RunSkillScriptParams {
+  skillId: string;
+  entry: string;
+  /** 扩展从已安装包解析的脚本内容；LLM 传不了。 */
+  code: string;
+  perms: ScriptPerms;
+  input: unknown;
+  /** 用户在 HITL 卡批准后重调时置 true（daemon 据此写 grant）。 */
+  grantApproved?: boolean;
+}
+export interface RunSkillScriptResult {
+  output: string; // 脚本返回值 JSON string；<untrusted_skill_content> 包裹在扩展侧
+  truncated?: boolean;
+}
+// grant miss → error 通道 { ok:false, error:{ code:"needs_authorization", ... } }
+
+// ── list_grants / revoke_grant（设置页撤销 UI）────────────────────────────
+export interface GrantRecord {
+  key: string;
+  skillId: string;
+  entry: string;
+  perms: ScriptPerms;
+  grantedAt: number;
+}
+export interface ListGrantsResult {
+  grants: GrantRecord[];
+}
+export interface RevokeGrantParams {
+  key: string;
+}
+export interface RevokeGrantResult {
+  revoked: boolean;
+}
+
 // ── 通用信封 ──────────────────────────────────────────────────────────
 export interface BridgeRequest {
   id: string;
-  method: "hello" | "run_local_agent" | "handoff_to_agent" | "list_agents";
+  method: "hello" | "run_local_agent" | "handoff_to_agent" | "list_agents" | "run_skill_script" | "list_grants" | "revoke_grant";
   params: unknown;
 }
 export type BridgeResponse =

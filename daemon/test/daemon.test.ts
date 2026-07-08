@@ -118,3 +118,35 @@ test("list_agents returns ALL candidates with installed flag (shape only — det
     expect(typeof a.installed).toBe("boolean");
   }
 });
+
+test("run_skill_script 无 grant → needs_authorization", async () => {
+  const res = JSON.parse(
+    await handleMessage(
+      JSON.stringify({
+        id: "1",
+        method: "run_skill_script",
+        params: { skillId: "z", entry: "a.js", code: "export default () => 1", perms: { fs: true, network: [] }, input: null },
+      }),
+    ),
+  );
+  expect(res.ok).toBe(false);
+  expect(res.error.code).toBe("needs_authorization");
+});
+
+test("list_grants / revoke_grant 往返（空账本）", async () => {
+  const list = JSON.parse(await handleMessage(JSON.stringify({ id: "2", method: "list_grants", params: {} })));
+  expect(list.ok).toBe(true);
+  expect(Array.isArray(list.result.grants)).toBe(true);
+  const rev = JSON.parse(
+    await handleMessage(JSON.stringify({ id: "3", method: "revoke_grant", params: { key: "nope" } })),
+  );
+  expect(rev.ok).toBe(true);
+  expect(rev.result.revoked).toBe(false);
+});
+
+test("hello capabilities 含新三项", async () => {
+  const res = JSON.parse(await handleMessage(JSON.stringify({ id: "4", method: "hello", params: { protocolVersion: 1 } })));
+  expect(res.result.capabilities).toContain("run_skill_script");
+  expect(res.result.capabilities).toContain("list_grants");
+  expect(res.result.capabilities).toContain("revoke_grant");
+});

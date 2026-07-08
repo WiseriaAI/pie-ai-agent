@@ -2,11 +2,11 @@ import { createHash } from "crypto";
 import { existsSync, readFileSync, writeFileSync, renameSync, mkdirSync } from "fs";
 import { dirname } from "path";
 import { paths } from "./paths";
+import type { ScriptPerms } from "../../src/types/local-bridge";
 
-export interface ScriptPerms {
-  fs: boolean;
-  network: string[];
-}
+// 共享源单一定义（src/types/local-bridge.ts）；此处 re-export 保持
+// `import { ..., type ScriptPerms } from "../src/grants"` 的既有调用点不动。
+export type { ScriptPerms };
 export interface GrantRecord {
   key: string;
   skillId: string;
