@@ -102,7 +102,7 @@ export const zhTWDict = {
       agentsTitle: "本機 Agent",
       agentNotInstalled: "未安裝",
       agentEnableFailed: "無法啟用——未在本機偵測到安裝。",
-      grantsTitle: "已授權的 skill 指令碼",
+      grantsTitle: "已授權的 skill 腳本",
       grantRevoke: "撤銷",
     },
     searchProvider: {
