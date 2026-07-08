@@ -57,7 +57,10 @@ export function initLocalBridge(): void {
     if (msg.ok) p.resolve(msg.result);
     else {
       const err = new Error(msg.error.message);
-      (err as Error & { code?: string }).code = msg.error.code;
+      // 非枚举，与 Error.message 一致：requestSkillScript 按属性访问读 .code（正常
+      // 可读），但一旦未来有人 {...err} / structuredClone，.code 不会诡异地存活而
+      // .message 却丢失。
+      Object.defineProperty(err, "code", { value: msg.error.code, enumerable: false });
       p.reject(err);
     }
   });
