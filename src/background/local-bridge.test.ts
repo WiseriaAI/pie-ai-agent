@@ -168,4 +168,149 @@ describe("local-bridge", () => {
     await expect(requestListAgents()).resolves.toEqual([{ id: "claude", label: "Claude Code (Terminal)", installed: true }]);
     expect(fakePort.postMessage.mock.calls).toHaveLength(1); // 没有第二个 wire 请求
   });
+
+  // ── run_skill_script / list_grants / revoke_grant（Slice 2b） ──────────
+
+  it("requestSkillScript resolves { ok: true, result } on success", async () => {
+    const { initLocalBridge, requestSkillScript } = await import("./local-bridge");
+    initLocalBridge();
+    const helloReq = fakePort.postMessage.mock.calls[0][0] as { id: string };
+    fakePort._emit({
+      id: helloReq.id, ok: true,
+      result: { protocolVersion: PROTOCOL_VERSION, capabilities: ["run_skill_script"] },
+    });
+    await Promise.resolve();
+
+    const p = requestSkillScript({
+      skillId: "demo", entry: "main.js", code: "return 1;", perms: { fs: true, network: [] }, input: {},
+    });
+    const req = fakePort.postMessage.mock.calls[1][0] as { id: string; method: string };
+    expect(req.method).toBe("run_skill_script");
+    fakePort._emit({ id: req.id, ok: true, result: { output: "42" } });
+    await expect(p).resolves.toEqual({ ok: true, result: { output: "42" } });
+  });
+
+  it("requestSkillScript resolves { ok:false, needsAuth:true } on needs_authorization error (does not throw)", async () => {
+    const { initLocalBridge, requestSkillScript } = await import("./local-bridge");
+    initLocalBridge();
+    const helloReq = fakePort.postMessage.mock.calls[0][0] as { id: string };
+    fakePort._emit({
+      id: helloReq.id, ok: true,
+      result: { protocolVersion: PROTOCOL_VERSION, capabilities: ["run_skill_script"] },
+    });
+    await Promise.resolve();
+
+    const p = requestSkillScript({
+      skillId: "demo", entry: "main.js", code: "return 1;", perms: { fs: true, network: [] }, input: {},
+    });
+    const req = fakePort.postMessage.mock.calls[1][0] as { id: string };
+    fakePort._emit({ id: req.id, ok: false, error: { code: "needs_authorization", message: "grant required" } });
+    await expect(p).resolves.toEqual({ ok: false, needsAuth: true, error: "grant required" });
+  });
+
+  it("requestSkillScript resolves { ok:false, needsAuth:false } on non-auth script_error", async () => {
+    const { initLocalBridge, requestSkillScript } = await import("./local-bridge");
+    initLocalBridge();
+    const helloReq = fakePort.postMessage.mock.calls[0][0] as { id: string };
+    fakePort._emit({
+      id: helloReq.id, ok: true,
+      result: { protocolVersion: PROTOCOL_VERSION, capabilities: ["run_skill_script"] },
+    });
+    await Promise.resolve();
+
+    const p = requestSkillScript({
+      skillId: "demo", entry: "main.js", code: "throw new Error('boom')", perms: { fs: true, network: [] }, input: {},
+    });
+    const req = fakePort.postMessage.mock.calls[1][0] as { id: string };
+    fakePort._emit({ id: req.id, ok: false, error: { code: "script_error", message: "boom" } });
+    await expect(p).resolves.toEqual({ ok: false, needsAuth: false, error: "boom" });
+  });
+
+  it("bridgeHasSkillScript is true when daemon advertises run_skill_script capability", async () => {
+    const { initLocalBridge, bridgeHasSkillScript } = await import("./local-bridge");
+    initLocalBridge();
+    const helloReq = fakePort.postMessage.mock.calls[0][0] as { id: string };
+    fakePort._emit({
+      id: helloReq.id, ok: true,
+      result: { protocolVersion: PROTOCOL_VERSION, capabilities: ["run_skill_script"] },
+    });
+    await Promise.resolve();
+    expect(bridgeHasSkillScript()).toBe(true);
+  });
+
+  it("bridgeHasSkillScript is false when daemon capability list omits run_skill_script", async () => {
+    const { initLocalBridge, bridgeHasSkillScript } = await import("./local-bridge");
+    initLocalBridge();
+    const helloReq = fakePort.postMessage.mock.calls[0][0] as { id: string };
+    fakePort._emit({
+      id: helloReq.id, ok: true,
+      result: { protocolVersion: PROTOCOL_VERSION, capabilities: ["run_local_agent"] },
+    });
+    await Promise.resolve();
+    expect(bridgeHasSkillScript()).toBe(false);
+  });
+
+  it("requestListGrants resolves result.grants when daemon advertises list_grants", async () => {
+    const { initLocalBridge, requestListGrants } = await import("./local-bridge");
+    initLocalBridge();
+    const helloReq = fakePort.postMessage.mock.calls[0][0] as { id: string };
+    fakePort._emit({
+      id: helloReq.id, ok: true,
+      result: { protocolVersion: PROTOCOL_VERSION, capabilities: ["list_grants"] },
+    });
+    await Promise.resolve();
+
+    const p = requestListGrants();
+    const req = fakePort.postMessage.mock.calls[1][0] as { id: string; method: string };
+    expect(req.method).toBe("list_grants");
+    const grants = [{ key: "demo:main.js", skillId: "demo", entry: "main.js", perms: { fs: true, network: [] }, grantedAt: 123 }];
+    fakePort._emit({ id: req.id, ok: true, result: { grants } });
+    await expect(p).resolves.toEqual(grants);
+  });
+
+  it("requestListGrants resolves [] with zero wire when capability missing", async () => {
+    const { initLocalBridge, requestListGrants } = await import("./local-bridge");
+    initLocalBridge();
+    const helloReq = fakePort.postMessage.mock.calls[0][0] as { id: string };
+    fakePort._emit({
+      id: helloReq.id, ok: true,
+      result: { protocolVersion: PROTOCOL_VERSION, capabilities: [] },
+    });
+    await Promise.resolve();
+
+    await expect(requestListGrants()).resolves.toEqual([]);
+    expect(fakePort.postMessage.mock.calls).toHaveLength(1); // 没有第二个 wire 请求
+  });
+
+  it("requestRevokeGrant resolves result.revoked when daemon advertises revoke_grant", async () => {
+    const { initLocalBridge, requestRevokeGrant } = await import("./local-bridge");
+    initLocalBridge();
+    const helloReq = fakePort.postMessage.mock.calls[0][0] as { id: string };
+    fakePort._emit({
+      id: helloReq.id, ok: true,
+      result: { protocolVersion: PROTOCOL_VERSION, capabilities: ["revoke_grant"] },
+    });
+    await Promise.resolve();
+
+    const p = requestRevokeGrant("demo:main.js");
+    const req = fakePort.postMessage.mock.calls[1][0] as { id: string; method: string; params: unknown };
+    expect(req.method).toBe("revoke_grant");
+    expect(req.params).toEqual({ key: "demo:main.js" });
+    fakePort._emit({ id: req.id, ok: true, result: { revoked: true } });
+    await expect(p).resolves.toBe(true);
+  });
+
+  it("requestRevokeGrant resolves false with zero wire when capability missing", async () => {
+    const { initLocalBridge, requestRevokeGrant } = await import("./local-bridge");
+    initLocalBridge();
+    const helloReq = fakePort.postMessage.mock.calls[0][0] as { id: string };
+    fakePort._emit({
+      id: helloReq.id, ok: true,
+      result: { protocolVersion: PROTOCOL_VERSION, capabilities: [] },
+    });
+    await Promise.resolve();
+
+    await expect(requestRevokeGrant("demo:main.js")).resolves.toBe(false);
+    expect(fakePort.postMessage.mock.calls).toHaveLength(1); // 没有第二个 wire 请求
+  });
 });

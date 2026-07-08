@@ -7,6 +7,11 @@ import {
   type HandoffParams,
   type HandoffResult,
   type ListAgentsResult,
+  type RunSkillScriptParams,
+  type RunSkillScriptResult,
+  type GrantRecord,
+  type ListGrantsResult,
+  type RevokeGrantResult,
 } from "@/types/local-bridge";
 
 const HOST_NAME = "ai.wiseria.pie";
@@ -50,7 +55,11 @@ export function initLocalBridge(): void {
     if (!p) return;
     pending.delete(msg.id);
     if (msg.ok) p.resolve(msg.result);
-    else p.reject(new Error(msg.error.message));
+    else {
+      const err = new Error(msg.error.message);
+      (err as Error & { code?: string }).code = msg.error.code;
+      p.reject(err);
+    }
   });
   port.onDisconnect.addListener(() => {
     void chrome.runtime?.lastError; // 读一下避免 Chrome 打印 "Unchecked runtime.lastError"
@@ -92,6 +101,37 @@ export async function requestListAgents(): Promise<{ id: string; label: string; 
   }
   const r = (await send("list_agents", {})) as ListAgentsResult;
   return r.agents;
+}
+
+export function bridgeHasSkillScript(): boolean {
+  return capabilities.includes("run_skill_script");
+}
+
+export async function requestSkillScript(
+  params: RunSkillScriptParams,
+): Promise<
+  | { ok: true; result: RunSkillScriptResult }
+  | { ok: false; needsAuth: boolean; error: string }
+> {
+  try {
+    const r = (await send("run_skill_script", params)) as RunSkillScriptResult;
+    return { ok: true, result: r };
+  } catch (e) {
+    const code = (e as { code?: string }).code;
+    return { ok: false, needsAuth: code === "needs_authorization", error: (e as Error).message };
+  }
+}
+
+export async function requestListGrants(): Promise<GrantRecord[]> {
+  if (!capabilities.includes("list_grants")) return [];
+  const r = (await send("list_grants", {})) as ListGrantsResult;
+  return r.grants;
+}
+
+export async function requestRevokeGrant(key: string): Promise<boolean> {
+  if (!capabilities.includes("revoke_grant")) return false;
+  const r = (await send("revoke_grant", { key })) as RevokeGrantResult;
+  return r.revoked;
 }
 
 /** SW 启动调用：仅当已授予 nativeMessaging 才连桥（纯 BYOK 用户零感知）。 */
