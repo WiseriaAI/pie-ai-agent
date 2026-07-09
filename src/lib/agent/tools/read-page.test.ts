@@ -85,6 +85,13 @@ describe("read_page tool", () => {
     },
   });
 
+  // 逐 frame 定向注入（#261 per-frame fan-out）的 mock：按 target.frameIds 分发结果
+  const perFrameExecuteScript = (byFrame: Record<number, unknown>) =>
+    vi.fn().mockImplementation(async (opts: { target: { frameIds?: number[] } }) => {
+      const fid = opts.target.frameIds?.[0] ?? 0;
+      return fid in byFrame ? [{ frameId: fid, result: byFrame[fid] }] : [];
+    });
+
   it("mode=content 返回 success + observation 含 frame_map + per-frame HTML", async () => {
     const fakeTab = { id: 7, url: "https://example.com/", discarded: false };
     const executeScript = vi.fn().mockResolvedValue([
@@ -179,7 +186,7 @@ describe("read_page tool", () => {
     const calls = (executeScript as any).mock.calls;
     expect(calls.length).toBe(1);
     expect(calls[0][0].func).toBe(probePageInjected);
-    expect(calls[0][0].target).toEqual({ tabId: 7, allFrames: true });
+    expect(calls[0][0].target).toEqual({ tabId: 7, frameIds: [0] });
     expect(calls[0][0].args).toEqual([{ op: "atlas" }]);
   });
 
@@ -195,10 +202,7 @@ describe("read_page tool", () => {
       },
     ];
     childAtlas.targets[0] = { ...childAtlas.targets[0], label: "Child products" };
-    const executeScript = vi.fn().mockResolvedValue([
-      { frameId: 0, result: atlasProbe() },
-      { frameId: 3, result: childAtlas },
-    ]);
+    const executeScript = perFrameExecuteScript({ 0: atlasProbe(), 3: childAtlas });
     vi.stubGlobal("chrome", {
       tabs: {
         get: vi.fn().mockResolvedValue({
@@ -286,10 +290,10 @@ describe("read_page tool", () => {
     vi.stubGlobal("chrome", {
       tabs: { get: vi.fn().mockResolvedValue({ id: 7, url: "https://parent.com/", discarded: false }) },
       scripting: {
-        executeScript: vi.fn().mockResolvedValue([
-          { frameId: 0, result: emptySnapshot("<h1>P</h1>") },
-          { frameId: 3, result: emptySnapshot("<h2>C</h2>") },
-        ]),
+        executeScript: perFrameExecuteScript({
+          0: emptySnapshot("<h1>P</h1>"),
+          3: emptySnapshot("<h2>C</h2>"),
+        }),
       },
       webNavigation: {
         getAllFrames: vi.fn().mockResolvedValue([
@@ -306,7 +310,7 @@ describe("read_page tool", () => {
     vi.stubGlobal("chrome", {
       tabs: { get: vi.fn().mockResolvedValue({ id: 7, url: "https://x.com/", discarded: false }) },
       scripting: {
-        executeScript: vi.fn().mockResolvedValue([{ frameId: 0, result: emptySnapshot("") }]),
+        executeScript: perFrameExecuteScript({ 0: emptySnapshot("") }),
       },
       webNavigation: {
         getAllFrames: vi.fn().mockResolvedValue([
@@ -317,6 +321,127 @@ describe("read_page tool", () => {
     });
     const r = await readPageTool.handler({ tabId: 7, mode: "content" }, {} as any);
     expect(r.observation).toMatch(/frame_id="5".*unreachable="true".*reason="about-blank"/s);
+  });
+
+  it("atlas 注入传 injectImmediately:true 避免永载 frame 挂起", async () => {
+    const executeScript = vi.fn().mockResolvedValue([{ frameId: 0, result: atlasProbe() }]);
+    vi.stubGlobal("chrome", {
+      tabs: {
+        get: vi.fn().mockResolvedValue({
+          id: 7,
+          url: "https://example.com/products",
+          title: "Products",
+          discarded: false,
+        }),
+      },
+      scripting: { executeScript },
+      webNavigation: {
+        getAllFrames: vi.fn().mockResolvedValue([{ frameId: 0, url: "https://example.com/products" }]),
+      },
+    });
+    await readPageTool.handler({ tabId: 7, mode: "atlas" }, {} as any);
+    expect(executeScript.mock.calls[0][0].injectImmediately).toBe(true);
+  });
+
+  it("snapshot 注入传 injectImmediately:true 避免永载 frame 挂起", async () => {
+    const executeScript = vi.fn().mockResolvedValue([
+      { frameId: 0, result: emptySnapshot("<h1>Hi</h1>") },
+    ]);
+    vi.stubGlobal("chrome", {
+      tabs: { get: vi.fn().mockResolvedValue({ id: 7, url: "https://example.com/", discarded: false }) },
+      scripting: { executeScript },
+      webNavigation: {
+        getAllFrames: vi.fn().mockResolvedValue([{ frameId: 0, url: "https://example.com/" }]),
+      },
+    });
+    await readPageTool.handler({ tabId: 7, mode: "content" }, {} as any);
+    expect(executeScript.mock.calls[0][0].injectImmediately).toBe(true);
+  });
+
+  it("atlas 模式上报注入失败的子 frame 为 unreachable（不再静默丢弃）", async () => {
+    // frame 3 出现在 getAllFrames 但注入没返回 atlas 结果（micro-app 永载沙箱 frame /
+    // CSP 拦截 / sandbox iframe）→ 必须作为 unreachable 上报，LLM 才能停止盲目重试。
+    const executeScript = perFrameExecuteScript({ 0: atlasProbe() });
+    vi.stubGlobal("chrome", {
+      tabs: {
+        get: vi.fn().mockResolvedValue({
+          id: 7,
+          url: "https://example.com/products",
+          title: "Products",
+          discarded: false,
+        }),
+      },
+      scripting: { executeScript },
+      webNavigation: {
+        getAllFrames: vi.fn().mockResolvedValue([
+          { frameId: 0, url: "https://example.com/products" },
+          { frameId: 3, url: "https://sub.example.com/app", errorOccurred: false },
+        ]),
+      },
+    });
+    const r = await readPageTool.handler({ tabId: 7, mode: "atlas" }, {} as any);
+    expect(r.success).toBe(true);
+    expect(r.observation).toMatch(/frame_id="3".*unreachable="true".*reason="sandbox"/s);
+  });
+
+  it("僵尸 frame 注入永不返回时超时标 not-responding，不拖垮整个 read_page", async () => {
+    // 真机实测（issue #261 / Chrome 149.0.7827.201）：micro-app 沙箱 frame 连
+    // injectImmediately 定向注入都永不 resolve。read_page 必须在超时后继续，
+    // 把该 frame 上报为 not-responding，而不是整个工具挂死。
+    vi.useFakeTimers();
+    try {
+      const executeScript = vi.fn().mockImplementation((opts: { target: { frameIds?: number[] } }) => {
+        const fid = opts.target.frameIds?.[0] ?? 0;
+        if (fid === 396) return new Promise(() => {}); // 僵尸沙箱 frame
+        return Promise.resolve([{ frameId: fid, result: atlasProbe() }]);
+      });
+      vi.stubGlobal("chrome", {
+        tabs: {
+          get: vi.fn().mockResolvedValue({
+            id: 7,
+            url: "https://example.com/products",
+            title: "Products",
+            discarded: false,
+          }),
+        },
+        scripting: { executeScript },
+        webNavigation: {
+          getAllFrames: vi.fn().mockResolvedValue([
+            { frameId: 0, url: "https://example.com/products" },
+            { frameId: 396, url: "https://example.com/", errorOccurred: false },
+          ]),
+        },
+      });
+      const pending = readPageTool.handler({ tabId: 7, mode: "atlas" }, {} as any);
+      await vi.advanceTimersByTimeAsync(2_000);
+      const r = await pending;
+      expect(r.success).toBe(true);
+      expect(r.observation).toContain("<page_atlas");
+      expect(r.observation).toMatch(/frame_id="396".*unreachable="true".*reason="not-responding"/s);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("atlas 模式所有 frame 都读到时不输出 unreachable 块", async () => {
+    const executeScript = vi.fn().mockResolvedValue([{ frameId: 0, result: atlasProbe() }]);
+    vi.stubGlobal("chrome", {
+      tabs: {
+        get: vi.fn().mockResolvedValue({
+          id: 7,
+          url: "https://example.com/products",
+          title: "Products",
+          discarded: false,
+        }),
+      },
+      scripting: { executeScript },
+      webNavigation: {
+        getAllFrames: vi.fn().mockResolvedValue([{ frameId: 0, url: "https://example.com/products" }]),
+      },
+    });
+    const r = await readPageTool.handler({ tabId: 7, mode: "atlas" }, {} as any);
+    expect(r.success).toBe(true);
+    expect(r.observation).not.toContain('unreachable="true"');
   });
 
   it("拒 restrictedScheme URL", async () => {
@@ -332,10 +457,10 @@ describe("read_page tool", () => {
     vi.stubGlobal("chrome", {
       tabs: { get: vi.fn().mockResolvedValue({ id: 7, url: "https://parent.com/", title: "P", discarded: false }) },
       scripting: {
-        executeScript: vi.fn().mockResolvedValue([
-          { frameId: 0, result: emptySnapshot('<main><iframe data-pie-iframe-position="0">[iframe placeholder]</iframe></main>') },
-          { frameId: 9, result: emptySnapshot("<p>child</p>") },
-        ]),
+        executeScript: perFrameExecuteScript({
+          0: emptySnapshot('<main><iframe data-pie-iframe-position="0">[iframe placeholder]</iframe></main>'),
+          9: emptySnapshot("<p>child</p>"),
+        }),
       },
       webNavigation: {
         getAllFrames: vi.fn().mockResolvedValue([
@@ -354,10 +479,10 @@ describe("read_page tool", () => {
     vi.stubGlobal("chrome", {
       tabs: { get: vi.fn().mockResolvedValue({ id: 7, url: "https://x.com/", discarded: false }) },
       scripting: {
-        executeScript: vi.fn().mockResolvedValue([
-          { frameId: 0, result: emptySnapshot(big) },
-          { frameId: 3, result: emptySnapshot("small") },
-        ]),
+        executeScript: perFrameExecuteScript({
+          0: emptySnapshot(big),
+          3: emptySnapshot("small"),
+        }),
       },
       webNavigation: {
         getAllFrames: vi.fn().mockResolvedValue([
@@ -453,58 +578,52 @@ describe("read_page tool", () => {
     vi.stubGlobal("chrome", {
       tabs: { get: vi.fn().mockResolvedValue({ id: 7, url: "https://x.com/", discarded: false }) },
       scripting: {
-        executeScript: vi.fn().mockResolvedValue([
-          {
-            frameId: 0,
-            result: {
-              op: "snapshot" as const,
-              html: big,
-              interactiveElements: [
-                {
-                  pieIdx: 1,
-                  tag: "button",
-                  role: "button",
-                  name: "Top action",
-                  text: "Top",
-                  placeholder: "",
-                  label: "",
-                  section: "",
-                  type: "",
-                  contenteditable: false,
-                  disabled: false,
-                  checked: false,
-                  selected: false,
-                },
-              ],
-              scrollableHints: [],
-            },
+        executeScript: perFrameExecuteScript({
+          0: {
+            op: "snapshot" as const,
+            html: big,
+            interactiveElements: [
+              {
+                pieIdx: 1,
+                tag: "button",
+                role: "button",
+                name: "Top action",
+                text: "Top",
+                placeholder: "",
+                label: "",
+                section: "",
+                type: "",
+                contenteditable: false,
+                disabled: false,
+                checked: false,
+                selected: false,
+              },
+            ],
+            scrollableHints: [],
           },
-          {
-            frameId: 3,
-            result: {
-              op: "snapshot" as const,
-              html: "small",
-              interactiveElements: [
-                {
-                  pieIdx: 2,
-                  tag: "div",
-                  role: "textbox",
-                  name: "",
-                  text: "",
-                  placeholder: "",
-                  label: "Reply",
-                  section: "",
-                  type: "",
-                  contenteditable: true,
-                  disabled: false,
-                  checked: false,
-                  selected: false,
-                },
-              ],
-              scrollableHints: [],
-            },
+          3: {
+            op: "snapshot" as const,
+            html: "small",
+            interactiveElements: [
+              {
+                pieIdx: 2,
+                tag: "div",
+                role: "textbox",
+                name: "",
+                text: "",
+                placeholder: "",
+                label: "Reply",
+                section: "",
+                type: "",
+                contenteditable: true,
+                disabled: false,
+                checked: false,
+                selected: false,
+              },
+            ],
+            scrollableHints: [],
           },
-        ]),
+        }),
       },
       webNavigation: {
         getAllFrames: vi.fn().mockResolvedValue([

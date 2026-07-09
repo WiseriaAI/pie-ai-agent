@@ -4,6 +4,7 @@ import { probePageInjected, type ProbeResult, type SearchMatch } from "../../dom
 import { escapeWrapperAttribute, escapeUntrustedWrappers } from "../untrusted-wrappers";
 import { isRestrictedSchemeForGrouping } from "./tabs";
 import { isPdfTab } from "@/lib/pdf/detect";
+import { executeScriptAllFrames, type AllFramesInjectionOutcome } from "../inject-all-frames";
 
 const DEFAULT_MAX = 10;
 
@@ -111,15 +112,22 @@ export const searchPageTool: Tool = {
       return { success: false, error: "discardedTabRequiresActivation" };
     }
 
-    let results: chrome.scripting.InjectionResult<ProbeResult>[];
+    // Per-frame fan-out (see inject-all-frames.ts): a zombie frame with an
+    // interrupted navigation must cost only its own timeout budget instead of
+    // hanging the whole search.
+    let injection: AllFramesInjectionOutcome<ProbeResult>;
     try {
-      results = (await chrome.scripting.executeScript({
-        target: { tabId: a.tabId, allFrames: true },
-        func: probePageInjected,
-        args: [{ op: "search", queries, regex, mode, maxResults, searchBy }],
-      })) as chrome.scripting.InjectionResult<ProbeResult>[];
+      injection = await executeScriptAllFrames<ProbeResult>(a.tabId, probePageInjected, [
+        { op: "search", queries, regex, mode, maxResults, searchBy },
+      ]);
     } catch (e) {
       return { success: false, error: e instanceof Error ? e.message : "executeScript failed" };
+    }
+    const results = injection.results;
+    // Every frame failed (restricted page / denied injection) — that's a tool
+    // error, not "no matches".
+    if (results.length > 0 && results.every((r) => r.result === undefined)) {
+      return { success: false, error: "executeScript failed" };
     }
 
     for (const r of results) {

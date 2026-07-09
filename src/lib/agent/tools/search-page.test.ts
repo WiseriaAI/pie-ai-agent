@@ -21,12 +21,27 @@ describe("search_page tool", () => {
     injectThrows?: boolean;
   }) {
     const tab = opts.tab ?? { id: 7, url: "https://example.com/", discarded: false };
+    // 逐 frame 定向注入（#261 per-frame fan-out）：按 target.frameIds 分发结果
+    const byFrame = new Map<number, any>((opts.inject ?? []).map((r) => [r.frameId, r]));
+    const frameIds = byFrame.size > 0 ? [...byFrame.keys()] : [0];
     vi.stubGlobal("chrome", {
       tabs: { get: vi.fn().mockResolvedValue(tab) },
       scripting: {
         executeScript: opts.injectThrows
           ? vi.fn().mockRejectedValue(new Error("boom"))
-          : vi.fn().mockResolvedValue(opts.inject ?? []),
+          : vi.fn().mockImplementation(async (o: { target: { frameIds?: number[] } }) => {
+              const fid = o.target.frameIds?.[0] ?? 0;
+              return byFrame.has(fid) ? [byFrame.get(fid)] : [];
+            }),
+      },
+      webNavigation: {
+        getAllFrames: vi.fn().mockResolvedValue(
+          frameIds.map((frameId) => ({
+            frameId,
+            url: "https://example.com/",
+            errorOccurred: false,
+          })),
+        ),
       },
     });
   }
@@ -48,6 +63,15 @@ describe("search_page tool", () => {
     expect(r.observation).toContain('<untrusted_page_match frame_id="0" pie_idx="3"');
     expect(r.observation).toContain('tag="button"');
     expect(r.observation).toContain('matched="refund"');
+  });
+
+  it("注入传 injectImmediately:true 避免永载 frame 挂起", async () => {
+    stubChrome({
+      inject: [frameResult(0, [{ pieIdx: 3, tag: "button", matched: "x", snippet: "x" }], 1)],
+    });
+    await searchPageTool.handler({ tabId: 7, query: "x" }, {} as any);
+    const call = (chrome.scripting.executeScript as any).mock.calls[0][0];
+    expect(call.injectImmediately).toBe(true);
   });
 
   it("纯文本命中 pie_idx 输出空串", async () => {

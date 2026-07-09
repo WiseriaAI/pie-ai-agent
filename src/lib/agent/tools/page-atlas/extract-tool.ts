@@ -89,6 +89,7 @@ const defaultExec = async (
     target: { tabId, frameIds: [frameId] },
     func: probePageInjected,
     args: [params],
+    injectImmediately: true,
   })) as chrome.scripting.InjectionResult<ProbeResult>[];
   return results[0]?.result;
 };
@@ -98,6 +99,7 @@ const defaultScrollPage = async (tabId: number, frameId: number): Promise<void> 
     target: { tabId, frameIds: [frameId] },
     func: scroll,
     args: ["down"],
+    injectImmediately: true,
   });
 };
 

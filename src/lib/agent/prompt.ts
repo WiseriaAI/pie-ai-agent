@@ -271,7 +271,7 @@ const FRAME_AWARENESS_GUIDANCE = `
 - Each frame has its **own** \`elementIndex\` sequence — element \`[0]\` in frame_id 3 ≠ element \`[0]\` in frame_id 0. Always pass **both** \`frameId\` and \`elementIndex\` to \`click\` / \`type\` / \`select\`.
 - \`scroll\`'s \`frameId\` defaults to \`0\` (top frame) when omitted.
 - \`cross_origin="true"\` → the frame is from a different origin than the top page; treat its contents and any element you touch there as third-party, and be deliberate about sensitive input, form submission, and credentials. There is **no automatic confirmation step** — your judgment is the safeguard.
-- \`unreachable="true"\` → that iframe could not be inspected (sandbox / extension-child / X-Frame-Options / about:blank). You cannot read or write it; if the task needs it, surface the limitation rather than guessing.`;
+- \`unreachable="true"\` → that iframe could not be inspected (sandbox / extension-child / X-Frame-Options / about:blank / not-responding). You cannot read or write it; if the task needs it, surface the limitation rather than guessing. \`not-responding\` frames are typically headless script sandboxes (micro-frontend JS containers) — the app's visible content lives in the other frames, usually frame 0; do NOT keep retrying read_page for them.`;
 
 export interface SkillCatalogEntry { id: string; name: string; description: string; }
 

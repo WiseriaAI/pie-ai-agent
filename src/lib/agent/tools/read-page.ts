@@ -6,6 +6,7 @@ import { isRestrictedSchemeForGrouping } from "./tabs";
 import { isPdfTab } from "@/lib/pdf/detect";
 import { pageAtlasStore, parseOrigin, type PageAtlasState } from "./page-atlas";
 import { renderPageAtlas } from "./page-atlas/render";
+import { executeScriptAllFrames, type AllFramesInjectionOutcome } from "../inject-all-frames";
 
 // read_page byte budgets per mode. Default is the hard cap — don't truncate
 // by default; the LLM can still pass a smaller max_bytes to save tokens when
@@ -39,11 +40,34 @@ function resolveHtmlBudget(mode: ReadPageMode, rawMaxBytes: unknown): number {
   return Math.max(1, Math.min(cfg.maxBytes, Math.floor(rawMaxBytes)));
 }
 
-function classifyUnreachable(url: string, errorOccurred?: boolean): string {
+function classifyUnreachable(url: string, errorOccurred?: boolean, timedOut?: boolean): string {
+  // 注入永不返回的僵尸 frame（导航被打断的沙箱 frame，如 micro-app/wujie iframe
+  // 模式）——元数据看起来完全健康，只能靠超时识别。
+  if (timedOut) return "not-responding";
   if (url.startsWith("chrome-extension://")) return "extension-child";
   if (url === "about:blank" && !errorOccurred) return "about-blank";
   if (errorOccurred) return "frame-error";
   return "sandbox";
+}
+
+// atlas/auto mode counterpart to the snapshot path's per-frame unreachable
+// blocks: list every frame that yielded no atlas result so the LLM can tell a
+// child app frame is genuinely unreadable (and stop retrying) rather than
+// having it vanish silently.
+function renderAtlasUnreachableFrames(
+  frames: chrome.webNavigation.GetAllFrameResultDetails[],
+  reachableFrameIds: Set<number>,
+  timedOutFrameIds: Set<number>,
+): string {
+  const lines = frames
+    .filter((f) => !reachableFrameIds.has(f.frameId))
+    .sort((a, b) => a.frameId - b.frameId)
+    .map((f) => {
+      const reason = classifyUnreachable(f.url, f.errorOccurred, timedOutFrameIds.has(f.frameId));
+      return `  frame_id="${f.frameId}" url="${escapeWrapperAttribute(f.url)}" unreachable="true" reason="${reason}"`;
+    });
+  if (lines.length === 0) return "";
+  return ["<frame_map>", ...lines, "</frame_map>"].join("\n");
 }
 
 function attr(name: string, value: string | number | boolean): string {
@@ -224,19 +248,18 @@ export const readPageTool: Tool = {
     }
 
     if (mode === "atlas" || mode === "auto") {
-      let atlasResults: chrome.scripting.InjectionResult<ProbeResult>[];
+      // Per-frame fan-out (see inject-all-frames.ts): a zombie frame with an
+      // interrupted navigation must cost only its own timeout budget instead
+      // of hanging the whole read.
+      let injection: AllFramesInjectionOutcome<ProbeResult>;
       try {
-        atlasResults = await chrome.scripting.executeScript({
-          target: { tabId: a.tabId, allFrames: true },
-          func: probePageInjected,
-          args: [{ op: "atlas" }],
-        }) as chrome.scripting.InjectionResult<ProbeResult>[];
+        injection = await executeScriptAllFrames<ProbeResult>(a.tabId, probePageInjected, [
+          { op: "atlas" },
+        ]);
       } catch (e) {
         return { success: false, error: e instanceof Error ? e.message : "executeScript failed" };
       }
-
-      const frames = await chrome.webNavigation.getAllFrames({ tabId: a.tabId });
-      if (!frames) return { success: false, error: "Tab unavailable" };
+      const { frames, results: atlasResults, timedOutFrameIds } = injection;
 
       const top = frames.find((f) => f.frameId === 0);
       const topUrl = top?.url ?? tab.url ?? "";
@@ -267,10 +290,12 @@ export const readPageTool: Tool = {
         navigation: [],
       };
 
+      const reachableFrameIds = new Set<number>();
       for (const result of atlasResults) {
         const data = result.result;
         if (data?.op !== "atlas") continue;
         const frameId = result.frameId;
+        reachableFrameIds.add(frameId);
         const scoped = namespaceAtlasResult(data, frameId);
         atlas.targets.push(...scoped.targets);
         atlas.controls.push(...scoped.controls);
@@ -278,22 +303,27 @@ export const readPageTool: Tool = {
       }
 
       pageAtlasStore.save(atlas);
-      return { success: true, observation: wrapPageAtlasObservation(atlas, renderPageAtlas(atlas)) };
+      // Surface frames that returned no atlas result (injection failed / blocked
+      // by CSP / sandbox iframe / still navigating) so the LLM knows content is
+      // missing instead of silently re-running read_page forever.
+      const unreachableBlock = renderAtlasUnreachableFrames(frames, reachableFrameIds, timedOutFrameIds);
+      const atlasBody = unreachableBlock
+        ? `${renderPageAtlas(atlas)}\n${unreachableBlock}`
+        : renderPageAtlas(atlas);
+      return { success: true, observation: wrapPageAtlasObservation(atlas, atlasBody) };
     }
 
-    let results: chrome.scripting.InjectionResult<ProbeResult>[];
+    // See atlas path: per-frame fan-out so a never-responding frame can't
+    // wedge the snapshot read.
+    let snapshotInjection: AllFramesInjectionOutcome<ProbeResult>;
     try {
-      results = await chrome.scripting.executeScript({
-        target: { tabId: a.tabId, allFrames: true },
-        func: probePageInjected,
-        args: [{ op: "snapshot" }],
-      }) as chrome.scripting.InjectionResult<ProbeResult>[];
+      snapshotInjection = await executeScriptAllFrames<ProbeResult>(a.tabId, probePageInjected, [
+        { op: "snapshot" },
+      ]);
     } catch (e) {
       return { success: false, error: e instanceof Error ? e.message : "executeScript failed" };
     }
-
-    const frames = await chrome.webNavigation.getAllFrames({ tabId: a.tabId });
-    if (!frames) return { success: false, error: "Tab unavailable" };
+    const { frames, results, timedOutFrameIds } = snapshotInjection;
 
     const top = frames.find((f) => f.frameId === 0);
     const topUrl = top?.url ?? tab.url ?? "";
@@ -347,7 +377,7 @@ export const readPageTool: Tool = {
       const crossOrigin = topOrigin !== null && origin !== null && origin !== topOrigin;
 
       if (!data) {
-        const reason = classifyUnreachable(f.url, f.errorOccurred);
+        const reason = classifyUnreachable(f.url, f.errorOccurred, timedOutFrameIds.has(f.frameId));
         frameMapLines.push(
           `  frame_id="${f.frameId}" url="${escapeWrapperAttribute(f.url)}" unreachable="true" reason="${reason}"`,
         );

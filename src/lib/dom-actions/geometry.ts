@@ -21,6 +21,7 @@ export async function elementToPagePoint(
     target: { tabId, frameIds: [0] },
     func: actByIdxInjected,
     args: [{ op: "rect", idx: elementIndex } as const],
+    injectImmediately: true,
   });
   const out = injection[0]?.result;
   const rect = out && out.ok && out.op === "rect" ? out.rect : null;

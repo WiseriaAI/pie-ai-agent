@@ -19,6 +19,9 @@ export async function execActInTab(
       target,
       func: actByIdxInjected,
       args: [params],
+      // Act on the current DOM — never block on document_idle, which a
+      // never-settling sandbox frame (micro-app iframe mode) never reaches.
+      injectImmediately: true,
     });
     return (
       (results[0]?.result as ActResult | undefined) ?? {
