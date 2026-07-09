@@ -28,6 +28,7 @@ import {
   mergeSessionAgentSnapshot,
 } from "@/lib/agent/loop";
 import { planAbortResumeSeed } from "@/lib/agent/abort-resume";
+import { executeScriptAllFrames, type AllFramesInjectionOutcome } from "@/lib/agent/inject-all-frames";
 // Eval harness (dev-only). STATIC import is required: MV3 service workers do
 // NOT support runtime dynamic import(), so the bridge must be in the static
 // module graph (loaded at SW registration). Prod build sets __PIE_EVAL__=false,
@@ -545,28 +546,21 @@ async function handleExtractPage(): Promise<ExtractPageResponse> {
       };
     }
 
-    // iframe spec §6: allFrames fan-out + merge.
-    const results = await chrome.scripting.executeScript({
-      target: { tabId: tab.id, allFrames: true },
-      func: extractPageContent,
-      // Read current DOM — never wait for document_idle. A never-idle sandbox
-      // frame (e.g. micro-app iframe mode) would otherwise hang the injection.
-      injectImmediately: true,
-    });
-
+    // iframe spec §6: per-frame fan-out + merge (see inject-all-frames.ts) —
+    // a zombie frame costs only its own timeout budget instead of hanging the
+    // whole extract.
     type RawContent = { title: string; url: string; description: string; content: string };
-    const injections = results.map((r) => ({
-      frameId: r.frameId,
-      result: r.result as RawContent | undefined,
-    }));
-
-    const tree = await chrome.webNavigation.getAllFrames({ tabId: tab.id });
-    if (!tree) {
+    let injection: AllFramesInjectionOutcome<RawContent>;
+    try {
+      injection = await executeScriptAllFrames<RawContent>(tab.id, extractPageContent);
+    } catch {
+      // Tab torn down mid-extract — same empty payload the old tree-null path returned.
       return {
         type: "page-content",
         data: { title: "", url, description: "", content: "", frames: [] },
       };
     }
+    const { frames: tree, results: injections, timedOutFrameIds } = injection;
 
     const top = tree.find((f) => f.frameId === 0);
     const topUrl = top?.url ?? url;
@@ -588,7 +582,8 @@ async function handleExtractPage(): Promise<ExtractPageResponse> {
 
       const raw = injectionMap.get(entry.frameId);
       if (!raw) {
-        const reason = entry.url.startsWith("chrome-extension://") ? "extension-child"
+        const reason = timedOutFrameIds.has(entry.frameId) ? "not-responding"
+          : entry.url.startsWith("chrome-extension://") ? "extension-child"
           : entry.url === "about:blank" && !entry.errorOccurred ? "about-blank"
           : entry.errorOccurred ? "frame-error"
           : "sandbox";

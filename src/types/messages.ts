@@ -16,7 +16,7 @@ export interface ExtractedFrameContent {
   content: string;
   truncated?: true;
   unreachable?: true;
-  reason?: "sandbox" | "extension-child" | "about-blank" | "frame-error";
+  reason?: "sandbox" | "extension-child" | "about-blank" | "frame-error" | "not-responding";
 }
 
 export interface PageContent {
