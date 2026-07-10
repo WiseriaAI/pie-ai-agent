@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import type { SkillPackage } from "@/lib/skills";
+import type { SkillEntry } from "@/lib/skills/source";
+import { filterEnabled } from "@/lib/skills/source";
+import { listSkillEntries } from "@/lib/skills/panel-actions";
 import {
-  getEnabledSkillPackages,
+  getEnabledSkillIds,
   resolveSlashCommand,
   expandSlashCommand,
   normalizeSkillSlashKey,
@@ -127,12 +129,12 @@ interface ChatProps {
 
 function filterAndSortSkillsForSlash(
   query: string,
-  skills: SkillPackage[],
-): SkillPackage[] {
+  skills: SkillEntry[],
+): SkillEntry[] {
   const q = normalizeSkillSlashKey(query);
-  const scored: Array<{ skill: SkillPackage; score: number }> = [];
+  const scored: Array<{ skill: SkillEntry; score: number }> = [];
   for (const s of skills) {
-    const slug = normalizeSkillSlashKey(s.frontmatter.name);
+    const slug = normalizeSkillSlashKey(s.name);
     const id = s.id.toLowerCase();
     let score = 0;
     if (q === "") {
@@ -152,7 +154,7 @@ function filterAndSortSkillsForSlash(
   }
   scored.sort((a, b) => {
     if (b.score !== a.score) return b.score - a.score;
-    return (b.skill.createdAt ?? 0) - (a.skill.createdAt ?? 0); // SkillPackage.createdAt is always set
+    return (b.skill.createdAt ?? 0) - (a.skill.createdAt ?? 0); // disk entries may lack createdAt
   });
   return scored.map((x) => x.skill);
 }
@@ -211,7 +213,7 @@ export default function Chat({
   const pinBarRef = useRef<HTMLDivElement>(null);
   const pinAnchorRef = useRef<HTMLButtonElement>(null);
   const [pickerActive, setPickerActive] = useState(false);
-  const [enabledSkills, setEnabledSkills] = useState<SkillPackage[]>([]);
+  const [enabledSkills, setEnabledSkills] = useState<SkillEntry[]>([]);
   const [popoverSelected, setPopoverSelected] = useState(0);
   const [dismissedInput, setDismissedInput] = useState<string | null>(null);
   // Esc-to-terminate (keyboard shortcut): while a task is streaming, the first
@@ -388,22 +390,41 @@ export default function Chat({
     };
   }, []);
 
+  // Task 9 — slash popover's skill list comes from the SW's active
+  // SkillSource via RPC (panel can't reach the daemon disk backend
+  // directly), then filtered client-side by the enabled markers (an
+  // extension-side pref that stays a direct IDB read in both modes).
+  // RPC failure degrades silently to an empty list — the popover just
+  // doesn't offer skills; no new user-facing copy.
+  async function loadEnabledSkillsForSlash() {
+    try {
+      const res = await listSkillEntries();
+      if (!res.ok) {
+        console.warn("[Chat] listSkillEntries failed:", res.error);
+        setEnabledSkills([]);
+        return;
+      }
+      const markers = await getEnabledSkillIds();
+      setEnabledSkills(filterEnabled(res.skills, markers));
+    } catch (e) {
+      console.warn("[Chat] failed to load skills for slash popover:", e);
+      setEnabledSkills([]);
+    }
+  }
+
   useEffect(() => {
-    getEnabledSkillPackages()
-      .then(setEnabledSkills)
-      .catch(() => setEnabledSkills([]));
+    void loadEnabledSkillsForSlash();
   }, []);
 
-  // The enabled-skills toggle (`enabled_skills`) now lives in the IDB `config`
-  // store. NOTE: skill *package* definitions live in a separate `pie-skills`
-  // IDB that does NOT emit store-bus events, so edits to a package's contents
-  // won't trigger this reload — only enable/disable toggles do. (Known gap;
-  // matches the migration scope.)
+  // The enabled-skills toggle (`enabled_skills`) still lives in the IDB
+  // `config` store (extension-side pref, valid in both IDB and disk modes).
+  // NOTE: skill *content* now comes from the SW's active SkillSource via RPC
+  // and does NOT emit store-bus events, so edits to a skill's contents won't
+  // trigger this reload — only enable/disable toggles do. (Known gap;
+  // matches the prior migration scope.)
   useStoreChange("config", (c) => {
     if (c.id && c.id !== "enabled_skills") return;
-    getEnabledSkillPackages()
-      .then(setEnabledSkills)
-      .catch(() => setEnabledSkills([]));
+    void loadEnabledSkillsForSlash();
   });
 
   useEffect(() => {
@@ -861,8 +882,8 @@ export default function Chat({
     }
   }, [quotes, pickerActive]);
 
-  function pickSlashSkill(skill: SkillPackage) {
-    const slug = normalizeSkillSlashKey(skill.frontmatter.name) || skill.id;
+  function pickSlashSkill(skill: SkillEntry) {
+    const slug = normalizeSkillSlashKey(skill.name) || skill.id;
     setInput(`/${slug} `);
     setPopoverSelected(0);
     setDismissedInput(null);
@@ -909,10 +930,14 @@ After the skill completes, briefly summarize what was created (the user will see
       if (onPendingRecordingConsumed) onPendingRecordingConsumed();
     } else if (content.startsWith("/")) {
       try {
-        const skills = await getEnabledSkillPackages();
-        const match = resolveSlashCommand(content, skills);
-        if (match) {
-          expandedForLLM = expandSlashCommand(match);
+        const res = await listSkillEntries();
+        if (res.ok) {
+          const markers = await getEnabledSkillIds();
+          const skills = filterEnabled(res.skills, markers);
+          const match = resolveSlashCommand(content, skills);
+          if (match) {
+            expandedForLLM = expandSlashCommand(match);
+          }
         }
       } catch {
         // resolver failure is non-fatal
@@ -2055,13 +2080,13 @@ function Composer({
    *  Textarea is disabled when false (paused/failed/archived). */
   sessionAllowsInput: boolean;
   popoverOpen: boolean;
-  slashState: { query: string; results: SkillPackage[] } | null;
+  slashState: { query: string; results: SkillEntry[] } | null;
   popoverSelected: number;
   supportsVision: boolean;
   attachmentCount: number;
   onChange: (v: string) => void;
   onSelectPopover: (i: number) => void;
-  onPickSkill: (skill: SkillPackage) => void;
+  onPickSkill: (skill: SkillEntry) => void;
   onKeyDown: (e: React.KeyboardEvent) => void;
   /** Issue #34 — unified submit: queues during streaming, sends otherwise. */
   onSubmit: () => void;

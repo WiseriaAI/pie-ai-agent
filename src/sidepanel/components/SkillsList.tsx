@@ -1,15 +1,13 @@
 import { useState, useEffect } from "react";
-import type { SkillPackage } from "@/lib/skills";
+import type { SkillEntry } from "@/lib/skills/source";
+import { filterEnabled, stripFrontmatter } from "@/lib/skills/source";
+import { getEnabledSkillIds, setSkillEnabled, generateUserSkillId } from "@/lib/skills";
 import {
-  getAllSkillPackages,
-  getEnabledSkillIds,
-  setSkillEnabled,
-  putPackage,
-  resolveSkillPackage,
-  deletePackage,
-  generateUserSkillId,
-  parseSkillMarkdown,
-} from "@/lib/skills";
+  listSkillEntries,
+  readSkillFileRpc,
+  writeSkillRpc,
+  deleteSkillRpc,
+} from "@/lib/skills/panel-actions";
 import { buildSkillMd, isSingleLineSafe } from "@/lib/skills/skill-md";
 import { useT } from "@/lib/i18n";
 
@@ -18,11 +16,9 @@ interface SkillsListProps {
 }
 
 const INSTRUCTIONS_MAX = 8 * 1024;
-const STORAGE_QUOTA_BYTES = 1 * 1024 * 1024;
 
 interface SkillFormState {
   editingId?: string;
-  editingCreatedAt?: number;
   name: string;
   description: string;
   instructions: string;
@@ -34,32 +30,6 @@ function emptyForm(): SkillFormState {
     description: "",
     instructions: "",
   };
-}
-
-/** Extract the SKILL.md body (instructions) from a package, tolerating
- *  malformed frontmatter by falling back to the raw file. */
-function instructionsOf(pkg: SkillPackage): string {
-  const md = pkg.files["SKILL.md"] ?? "";
-  try {
-    return parseSkillMarkdown(md).body;
-  } catch {
-    return md;
-  }
-}
-
-function formFromSkill(skill: SkillPackage): SkillFormState {
-  return {
-    editingId: skill.id,
-    editingCreatedAt: skill.createdAt ?? 0,
-    name: skill.frontmatter.name,
-    description: skill.frontmatter.description,
-    instructions: instructionsOf(skill),
-  };
-}
-
-/** Approximate IndexedDB bytes a package consumes (matches skill-meta.ts). */
-function estimatePackageBytes(pkg: SkillPackage): number {
-  return JSON.stringify(pkg).length + pkg.id.length;
 }
 
 interface BuiltSkillFields {
@@ -95,12 +65,6 @@ function validateAndBuild(
   };
 }
 
-function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / 1024 / 1024).toFixed(2)} MB`;
-}
-
 function normalizeSlug(name: string): string {
   return name
     .toLowerCase()
@@ -110,58 +74,57 @@ function normalizeSlug(name: string): string {
 
 export default function SkillsList({ onRunSkill }: SkillsListProps) {
   const t = useT();
-  const [skills, setSkills] = useState<SkillPackage[]>([]);
+  const [skills, setSkills] = useState<SkillEntry[]>([]);
+  // Effective enabled-id set — derived via the SAME filterEnabled() rule the
+  // slash popover and the agent loop use (builtin OR origin==="disk" default
+  // on; explicit markers override), not a locally reimplemented default.
   const [enabledIds, setEnabledIds] = useState<Set<string>>(new Set());
-  const [explicitDisabledIds, setExplicitDisabledIds] = useState<Set<string>>(new Set());
-  const [storageBytes, setStorageBytes] = useState<number>(0);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<SkillFormState>(emptyForm());
   const [formError, setFormError] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   useEffect(() => {
-    loadSkills();
+    void loadSkills();
   }, []);
 
   async function loadSkills() {
-    const [all, ids] = await Promise.all([
-      getAllSkillPackages(),
-      getEnabledSkillIds(),
-    ]);
+    const [res, markers] = await Promise.all([listSkillEntries(), getEnabledSkillIds()]);
+    if (!res.ok) {
+      console.error("[SkillsList] listSkillEntries failed:", res.error);
+      setSkills([]);
+      setEnabledIds(new Set());
+      return;
+    }
+    const all = res.skills;
     const sorted = [...all].sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
     setSkills(sorted);
-    // Storage budget only accounts for user (non-built-in) packages — built-ins
-    // ship with the extension and don't consume the user's IndexedDB quota.
-    const bytes = sorted
-      .filter((p) => !p.builtIn)
-      .reduce((sum, p) => sum + estimatePackageBytes(p), 0);
-    setStorageBytes(bytes);
-    const enabled = new Set(ids.filter((id) => !id.startsWith("!")));
-    const disabled = new Set(ids.filter((id) => id.startsWith("!")).map((id) => id.slice(1)));
-    setEnabledIds(enabled);
-    setExplicitDisabledIds(disabled);
+    setEnabledIds(new Set(filterEnabled(all, markers).map((e) => e.id)));
   }
 
-  function isEffectivelyEnabled(skill: SkillPackage): boolean {
-    if (explicitDisabledIds.has(skill.id)) return false;
-    if (enabledIds.has(skill.id)) return true;
-    // Absent marker: built-ins default ON (mirrors getEnabledSkillPackages).
-    // User packages require an explicit enabled marker — which the create path
-    // writes via setSkillEnabled(id, true) — so an absent marker on a user
-    // package means OFF. (In practice every persisted user package has a
-    // marker; this fallback just keeps display parity with the loop's view.)
-    return skill.builtIn;
+  function isEffectivelyEnabled(skill: SkillEntry): boolean {
+    return enabledIds.has(skill.id);
   }
 
-  async function handleToggle(skill: SkillPackage) {
+  async function handleToggle(skill: SkillEntry) {
     const current = isEffectivelyEnabled(skill);
     await setSkillEnabled(skill.id, !current);
     await loadSkills();
   }
 
-  function openEditForm(skill: SkillPackage) {
-    setForm(formFromSkill(skill));
+  async function openEditForm(skill: SkillEntry) {
     setFormError(null);
+    const res = await readSkillFileRpc(skill.id, "SKILL.md");
+    if (!res.ok) {
+      setFormError(res.error);
+      return;
+    }
+    setForm({
+      editingId: skill.id,
+      name: skill.name,
+      description: skill.description,
+      instructions: stripFrontmatter(res.content ?? ""),
+    });
     setShowForm(true);
   }
 
@@ -180,56 +143,32 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
 
     const isEdit = !!form.editingId;
 
-    let pkg: SkillPackage;
+    // Builtin re-check against the freshly-loaded merged list (same guard as
+    // before: the UI already hides Edit for builtin rows, but this is the
+    // authoritative recheck at submit time).
     if (isEdit) {
-      // resolveSkillPackage (merged set) so editing a builtin id resolves to the
-      // builtin and is correctly blocked — store-only getPackage returned null
-      // for un-overridden builtins, silently bypassing this guard.
-      const existing = await resolveSkillPackage(form.editingId!);
-      if (existing && existing.builtIn) {
+      const existing = skills.find((s) => s.id === form.editingId);
+      if (existing?.builtIn) {
         setFormError("Built-in skills cannot be edited.");
         return;
       }
-      const md = buildSkillMd(v.built.name, v.built.description, "1.0.0", "user", v.built.instructions);
-      pkg = {
-        id: form.editingId!,
-        frontmatter: { ...(existing?.frontmatter ?? {}), name: v.built.name, description: v.built.description, version: "1.0.0", author: "user" },
-        files: { ...(existing?.files ?? {}), "SKILL.md": md },
-        builtIn: false,
-        createdAt: existing?.createdAt ?? form.editingCreatedAt ?? Date.now(),
-      };
-    } else {
-      const md = buildSkillMd(v.built.name, v.built.description, "1.0.0", "user", v.built.instructions);
-      pkg = {
-        id: generateUserSkillId(),
-        frontmatter: { name: v.built.name, description: v.built.description, version: "1.0.0", author: "user" },
-        files: { "SKILL.md": md },
-        builtIn: false,
-        createdAt: Date.now(),
-      };
     }
 
-    const newBytes = estimatePackageBytes(pkg);
-    const oldBytes = isEdit
-      ? (() => {
-          const existing = skills.find((s) => s.id === form.editingId);
-          return existing && !existing.builtIn ? estimatePackageBytes(existing) : 0;
-        })()
-      : 0;
-    if (storageBytes - oldBytes + newBytes > STORAGE_QUOTA_BYTES) {
-      setFormError(
-        `Skill storage quota would be exceeded (${formatBytes(storageBytes - oldBytes + newBytes)}/${formatBytes(STORAGE_QUOTA_BYTES)}). Delete an existing skill first.`,
-      );
-      return;
-    }
+    const id = isEdit ? form.editingId! : generateUserSkillId();
+    const md = buildSkillMd(v.built.name, v.built.description, "1.0.0", "user", v.built.instructions);
 
     try {
-      await putPackage(pkg);
-      // New user packages need an explicit enabled marker — getEnabledSkillPackages
-      // only defaults BUILT-IN packages on, so without this a freshly created
-      // skill would be excluded from the agent loop + slash popover. Only on
-      // create: editing must not resurrect a skill the user had explicitly disabled.
-      if (!isEdit) await setSkillEnabled(pkg.id, true);
+      const res = await writeSkillRpc(id, [{ path: "SKILL.md", content: md }]);
+      if (!res.ok) {
+        setFormError(`Save failed: ${res.error}`);
+        return;
+      }
+      // New user packages need an explicit enabled marker — the default-on
+      // rule only covers builtin/disk origins, so without this a freshly
+      // created IDB skill would be excluded from the agent loop + slash
+      // popover. Only on create: editing must not resurrect a skill the user
+      // had explicitly disabled.
+      if (!isEdit) await setSkillEnabled(id, true);
       await loadSkills();
       setShowForm(false);
     } catch (e) {
@@ -237,15 +176,19 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
     }
   }
 
-  async function handleDelete(skill: SkillPackage) {
+  async function handleDelete(skill: SkillEntry) {
     if (skill.builtIn) return;
     try {
-      await deletePackage(skill.id);
+      const res = await deleteSkillRpc(skill.id);
+      if (!res.ok) {
+        console.error("deleteSkillRpc failed:", res.error);
+        return;
+      }
       await setSkillEnabled(skill.id, false);
       await loadSkills();
       setConfirmDeleteId(null);
     } catch (e) {
-      console.error("deletePackage failed:", e);
+      console.error("deleteSkillRpc failed:", e);
     }
   }
 
@@ -278,7 +221,7 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
               skill={skill}
               enabled={isEffectivelyEnabled(skill)}
               onToggle={() => handleToggle(skill)}
-              onRun={() => onRunSkill(skill.id, skill.frontmatter.name)}
+              onRun={() => onRunSkill(skill.id, skill.name)}
               onEdit={() => openEditForm(skill)}
               confirmDelete={confirmDeleteId === skill.id}
               onAskDelete={() => setConfirmDeleteId(skill.id)}
@@ -329,7 +272,7 @@ function SkillRow({
   onCancelDelete,
   onDelete,
 }: {
-  skill: SkillPackage;
+  skill: SkillEntry;
   enabled: boolean;
   onToggle: () => void;
   onRun: () => void;
@@ -342,10 +285,10 @@ function SkillRow({
   const t = useT();
   const tag = skill.builtIn
     ? t("skills.authorTag.builtIn")
-    : skill.frontmatter.author === "agent"
+    : skill.author === "agent"
       ? t("skills.authorTag.agent")
       : t("skills.authorTag.user");
-  const slug = normalizeSlug(skill.frontmatter.name) || skill.id;
+  const slug = normalizeSlug(skill.name) || skill.id;
 
   return (
     <div className="flex flex-col gap-2 border-t border-line bg-surface px-3.5 py-3.5 first:border-t-0">
@@ -359,8 +302,8 @@ function SkillRow({
           }`}
           aria-label={
             enabled
-              ? t("skills.toggleAria.disable", { name: skill.frontmatter.name })
-              : t("skills.toggleAria.enable", { name: skill.frontmatter.name })
+              ? t("skills.toggleAria.disable", { name: skill.name })
+              : t("skills.toggleAria.enable", { name: skill.name })
           }
         />
         <code className="font-mono text-[12px] text-accent">/{slug}</code>
@@ -369,14 +312,9 @@ function SkillRow({
         </span>
       </div>
 
-      <p className="text-[12px] leading-[18px] text-fg-2">{skill.frontmatter.description}</p>
+      <p className="text-[12px] leading-[18px] text-fg-2">{skill.description}</p>
 
       <div className="flex items-center gap-2 pt-1.5">
-        <span className="font-mono text-[10px] text-fg-3">
-          {skill.createdAt && skill.createdAt > 0
-            ? formatBytes(estimatePackageBytes(skill))
-            : ""}
-        </span>
         <div className="flex-1" />
         <button
           onClick={onRun}
