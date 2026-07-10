@@ -78,6 +78,8 @@ export interface SkillSummary {
   /** scripts/ 下可执行文件的相对名（如 "fetch.ts"）；run_skill_script 的 allowlist */
   runnableScripts: string[];
   declaredCaps: SkillCaps;
+  /** 包内文件相对路径（POSIX 分隔；排除 workspace/ 与 .runs/ 及点文件；上限 200） */
+  files: string[];
 }
 export interface ListSkillsResult {
   skills: SkillSummary[];

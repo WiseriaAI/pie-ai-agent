@@ -55,6 +55,35 @@ function runnableScripts(skillDir: string): string[] {
   }
 }
 
+const FILES_CAP = 200;
+const EXCLUDED_DIRS = new Set(["workspace", ".runs"]);
+
+/** skill 目录内文件相对路径（递归；排除 workspace/.runs 与点文件；封顶 FILES_CAP）。 */
+function packageFiles(skillDir: string): string[] {
+  const out: string[] = [];
+  const walk = (dir: string, prefix: string): void => {
+    if (out.length >= FILES_CAP) return;
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (out.length >= FILES_CAP) return;
+      if (e.name.startsWith(".")) continue;
+      if (e.isDirectory()) {
+        if (!prefix && EXCLUDED_DIRS.has(e.name)) continue;
+        walk(join(dir, e.name), prefix ? `${prefix}/${e.name}` : e.name);
+      } else if (e.isFile()) {
+        out.push(prefix ? `${prefix}/${e.name}` : e.name);
+      }
+    }
+  };
+  walk(skillDir, "");
+  return out;
+}
+
 export function listSkills(root: string = paths.skillsDir): SkillSummary[] {
   if (!existsSync(root)) return [];
   const out: SkillSummary[] = [];
@@ -70,6 +99,7 @@ export function listSkills(root: string = paths.skillsDir): SkillSummary[] {
         description: parsed.description,
         runnableScripts: runnableScripts(dir),
         declaredCaps: parsed.declaredCaps,
+        files: packageFiles(dir),
       });
     } catch {
       // 坏 skill 跳过、不让整个 list 挂（韧性；坏 skill 在 authoring 期暴露）

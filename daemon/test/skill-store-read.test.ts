@@ -66,3 +66,19 @@ test("assertSkillName rejects traversal / bad chars", () => {
   expect(() => assertSkillName("Web_Fetch")).toThrow();
   expect(() => assertSkillName("")).toThrow();
 });
+
+test("listSkills enumerates package files, excluding workspace/.runs/dotfiles", () => {
+  const root = tmpRoot();
+  makeSkill(root, "s", `---\nname: s\ndescription: d\n---\nb\n`, ["run.ts"]);
+  const dir = join(root, "s");
+  mkdirSync(join(dir, "references"), { recursive: true });
+  writeFileSync(join(dir, "references", "guide.md"), "g");
+  mkdirSync(join(dir, "workspace"), { recursive: true });
+  writeFileSync(join(dir, "workspace", "out.txt"), "x");
+  mkdirSync(join(dir, ".runs"), { recursive: true });
+  writeFileSync(join(dir, ".runs", "tmp"), "x");
+  writeFileSync(join(dir, ".DS_Store"), "x");
+  const [s] = listSkills(root);
+  expect(s.files.sort()).toEqual(["SKILL.md", "references/guide.md", "scripts/run.ts"]);
+  rmSync(root, { recursive: true, force: true });
+});
