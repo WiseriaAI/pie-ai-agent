@@ -1,8 +1,8 @@
-import { existsSync, readFileSync, readdirSync, lstatSync, realpathSync } from "fs";
-import { join, resolve, relative, isAbsolute, sep } from "path";
+import { existsSync, readFileSync, readdirSync, lstatSync, realpathSync, mkdirSync, writeFileSync, rmSync } from "fs";
+import { join, resolve, relative, isAbsolute, sep, dirname } from "path";
 import { paths } from "./paths";
 import { parseSkillMd } from "./skill-md";
-import type { SkillSummary } from "../../src/types/local-bridge";
+import type { SkillSummary, WriteSkillFile } from "../../src/types/local-bridge";
 
 const NAME_RE = /^[a-z0-9][a-z0-9-]*$/;
 
@@ -81,4 +81,26 @@ export function listSkills(root: string = paths.skillsDir): SkillSummary[] {
 export function readSkillFile(name: string, rel: string, root: string = paths.skillsDir): string {
   const dir = join(root, assertSkillName(name));
   return readFileSync(safeRelPath(dir, rel), "utf8");
+}
+
+export function writeSkill(
+  name: string,
+  files: WriteSkillFile[],
+  root: string = paths.skillsDir,
+): { dir: string } {
+  const dir = join(root, assertSkillName(name));
+  mkdirSync(dir, { recursive: true });
+  for (const f of files) {
+    const abs = safeRelPath(dir, f.path); // 遍历/越界即 throw
+    mkdirSync(dirname(abs), { recursive: true });
+    writeFileSync(abs, f.content);
+  }
+  return { dir };
+}
+
+export function deleteSkill(name: string, root: string = paths.skillsDir): boolean {
+  const dir = join(root, assertSkillName(name));
+  if (!existsSync(dir)) return false;
+  rmSync(dir, { recursive: true, force: true });
+  return true;
 }
