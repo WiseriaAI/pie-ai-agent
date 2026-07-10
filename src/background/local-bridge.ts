@@ -166,11 +166,25 @@ export async function requestRevokeGrant(p: RevokeGrantParams): Promise<RevokeGr
 
 /** SW 启动调用：仅当已授予 nativeMessaging 才连桥（纯 BYOK 用户零感知）。 */
 export async function maybeInitLocalBridge(): Promise<void> {
+  // 同步换上「init 决策」promise：SW 冷启动时，消息处理器里同 tick 的
+  // bridgeSettled() 调用方若跑在 permissions IPC 前，拿到的不再是
+  // module-init 的已 resolve promise（那会让首次读误判成 IDB 模式），
+  // 而是等到决策（无权限→立即 / 有权限→握手落定）才 resolve。
+  let settleDecision!: () => void;
+  settledPromise = new Promise<void>((r) => { settleDecision = r; });
   try {
     const has = await chrome.permissions.contains({ permissions: ["nativeMessaging"] });
-    if (has) initLocalBridge();
+    if (has) {
+      initLocalBridge(); // 同步把 settledPromise 换成真握手 promise
+      // 决策 promise 链到握手落定：早抓到决策 promise 的调用方与
+      // 晚抓到握手 promise 的调用方在同一时刻解除等待。
+      void settledPromise.then(settleDecision);
+    } else {
+      settleDecision();
+    }
   } catch {
-    // permissions API 不可用（测试/老 Chrome）→ 静默跳过
+    // permissions API 不可用（测试/老 Chrome）→ 静默跳过，但决策必须落定
+    settleDecision();
   }
 }
 

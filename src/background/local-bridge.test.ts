@@ -319,4 +319,55 @@ describe("local-bridge", () => {
     await expect(Promise.race([pA, timeout(500)])).resolves.toBeUndefined();
     await expect(Promise.race([pB, timeout(500)])).resolves.toBeUndefined();
   });
+
+  it("maybeInitLocalBridge: bridgeSettled grabbed before permissions IPC resolves waits for handshake (cold-start race)", async () => {
+    const { maybeInitLocalBridge, bridgeSettled, bridgeHasSkillFs } = await import("./local-bridge");
+
+    // 可控的 permissions.contains deferred，模拟跨进程 IPC 尚未返回
+    let grantPermission!: (v: boolean) => void;
+    (globalThis as any).chrome.permissions = {
+      contains: vi.fn(() => new Promise<boolean>((r) => { grantPermission = r; })),
+    };
+
+    void maybeInitLocalBridge();
+    // 同 tick 抓 settled promise（模拟消息处理器在 permissions IPC 返回前就跑）
+    const p = bridgeSettled();
+    let settled = false;
+    void p.then(() => { settled = true; });
+
+    // permissions 还没回来：决策 promise 不许落定（否则首次读会误判成 IDB 模式）
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    // permissions 回 true → initLocalBridge 发 hello
+    grantPermission(true);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const helloReq = fakePort.postMessage.mock.calls[0][0] as { id: string };
+    fakePort._emit({
+      id: helloReq.id, ok: true,
+      result: { protocolVersion: PROTOCOL_VERSION, capabilities: ["skill_fs"] },
+    });
+
+    await p; // 决策 promise 链到握手落定
+    expect(bridgeHasSkillFs()).toBe(true);
+  });
+
+  it("maybeInitLocalBridge: no-permission branch settles the early-grabbed bridgeSettled", async () => {
+    const { maybeInitLocalBridge, bridgeSettled, isBridgeReady } = await import("./local-bridge");
+
+    let grantPermission!: (v: boolean) => void;
+    (globalThis as any).chrome.permissions = {
+      contains: vi.fn(() => new Promise<boolean>((r) => { grantPermission = r; })),
+    };
+
+    void maybeInitLocalBridge();
+    const p = bridgeSettled();
+
+    grantPermission(false);
+    await p; // 无权限分支也必须落定，绝不悬空
+    expect(isBridgeReady()).toBe(false);
+  });
 });
