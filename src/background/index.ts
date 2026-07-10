@@ -130,9 +130,9 @@ import { mergeCarryoverIntoMessages } from "@/lib/agent/loop-drain";
 import type { ChatInstructionRejectedMessage } from "@/types/messages";
 import { isFilePdfUrl } from "@/lib/pdf/detect";
 import { installLogCapture } from "@/lib/log-buffer";
-import { maybeInitLocalBridge, disconnectLocalBridge, isBridgeReady, requestListAgents } from "./local-bridge";
+import { disconnectLocalBridge, isBridgeReady, requestListAgents } from "./local-bridge";
 import { getEnabledLocalAgents, setEnabledLocalAgents, applyToggle, isAgentUsable } from "@/lib/local-agents-prefs";
-import { migrateIdbSkillsToDisk } from "./skill-migration";
+import { initBridgeAndMigrate } from "./skill-migration";
 
 // Install log capture at module top level
 installLogCapture("sw");
@@ -223,17 +223,22 @@ setScheduleRunDep(runScheduleWithDeps);
 // granted the optional `nativeMessaging` permission, so pure BYOK users who
 // never opt into local integration get zero native-messaging surface. Fire
 // and forget: the bridge degrades silently if no daemon is installed.
-void maybeInitLocalBridge();
-// Task 10 — one-shot idempotent IDB→disk skill migration. Self-gates on
-// bridgeSettled() internally, so this never blocks the rest of SW startup.
-void migrateIdbSkillsToDisk();
+// Task 10 — bridge init + one-shot idempotent IDB→disk skill migration,
+// SEQUENCED: migration must await maybeInitLocalBridge() so bridgeSettled()
+// captures the real handshake promise (parallel fire would race the
+// permissions IPC and deterministically no-op every cold start). Never
+// throws; never blocks the rest of SW startup.
+void initBridgeAndMigrate();
 
 // Grant-time init: when the user enables local integration at runtime (settings
 // toggle → chrome.permissions.request), connect the bridge immediately instead
 // of waiting for the next SW restart. Symmetrically, tear the bridge down when
 // the user disables it (removes the permission).
 chrome.permissions.onAdded.addListener((p) => {
-  if (p.permissions?.includes("nativeMessaging")) void maybeInitLocalBridge();
+  // initBridgeAndMigrate (not bare maybeInitLocalBridge): the mid-session
+  // grant is the most common FIRST moment skill_fs becomes available, so the
+  // migration pass must run here too.
+  if (p.permissions?.includes("nativeMessaging")) void initBridgeAndMigrate();
 });
 chrome.permissions.onRemoved.addListener((p) => {
   if (p.permissions?.includes("nativeMessaging")) disconnectLocalBridge();

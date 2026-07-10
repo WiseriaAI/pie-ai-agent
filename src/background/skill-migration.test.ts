@@ -9,12 +9,14 @@ let hasSkillFs = true;
 let settledPromise: Promise<void> = Promise.resolve();
 const requestListSkills = vi.fn();
 const requestWriteSkill = vi.fn();
+const maybeInitLocalBridge = vi.fn();
 
 vi.mock("./local-bridge", () => ({
   bridgeHasSkillFs: () => hasSkillFs,
   bridgeSettled: () => settledPromise,
   requestListSkills: (...args: unknown[]) => requestListSkills(...args),
   requestWriteSkill: (...args: unknown[]) => requestWriteSkill(...args),
+  maybeInitLocalBridge: (...args: unknown[]) => maybeInitLocalBridge(...args),
 }));
 
 // Partial mock of skill-store: everything is the real implementation (backed
@@ -26,12 +28,21 @@ vi.mock("@/lib/skills/skill-store", async (importOriginal) => {
   return { ...actual, listPackages: vi.fn(actual.listPackages) };
 });
 
+// Partial mock of storage: setSkillEnabled spy-wraps the real impl so test
+// (重要2) can force a single rejection while every other call (including the
+// tests' own marker seeding) still hits the real IDB-backed store.
+vi.mock("@/lib/skills/storage", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/skills/storage")>();
+  return { ...actual, setSkillEnabled: vi.fn(actual.setSkillEnabled) };
+});
+
 import { listPackages, putPackage, deletePackage } from "@/lib/skills/skill-store";
 import { getEnabledSkillIds, setSkillEnabled } from "@/lib/skills/storage";
 import { _resetForTests } from "@/lib/idb/db";
-import { migrateIdbSkillsToDisk } from "./skill-migration";
+import { migrateIdbSkillsToDisk, initBridgeAndMigrate } from "./skill-migration";
 
 const mockedListPackages = vi.mocked(listPackages);
+const mockedSetSkillEnabled = vi.mocked(setSkillEnabled);
 
 function makePkg(id: string, name: string, files?: Record<string, string>): SkillPackage {
   return {
@@ -60,6 +71,11 @@ beforeEach(async () => {
   requestListSkills.mockResolvedValue({ skills: [] });
   requestWriteSkill.mockReset();
   requestWriteSkill.mockResolvedValue({ dir: "/tmp/whatever" });
+  maybeInitLocalBridge.mockReset();
+  maybeInitLocalBridge.mockResolvedValue(undefined);
+  // mockClear（非 mockReset）：保留 vi.fn(actual.setSkillEnabled) 烘进去的真实现，
+  // 只清调用计数；(重要2) 的 mockRejectedValueOnce 是一次性的，测试内即耗尽。
+  mockedSetSkillEnabled.mockClear();
   warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
   // enabled_skills marker 存 "pie" config store，须每测重置，否则跨测试串味。
@@ -189,5 +205,75 @@ describe("migrateIdbSkillsToDisk", () => {
 
     expect(result).toEqual({ migrated: [], skipped: [] });
     expect(warnSpy).toHaveBeenCalled();
+  });
+
+  it("(重要1a) crash 恢复：已在盘 skip 分支也继承显式关 marker（slug 无任何 marker 时）", async () => {
+    // 场景：上一轮写完盘但没来得及写 marker 就挂了 → 这一轮走 skip 分支自愈补写。
+    await putPackage(makePkg("skill_user_1", "Disabled Skill"));
+    await setSkillEnabled("skill_user_1", false);
+    requestListSkills.mockResolvedValue({ skills: [daemonEntry("disabled-skill")] });
+
+    const result = await migrateIdbSkillsToDisk();
+
+    expect(result.skipped).toEqual(["disabled-skill"]);
+    expect(result.migrated).toEqual([]);
+    const markers = await getEnabledSkillIds();
+    expect(markers).toContain("!disabled-skill");
+  });
+
+  it("(重要1b) 不覆盖用户磁盘侧选择：slug 已有 plain marker → skip 分支不写 !slug", async () => {
+    await putPackage(makePkg("skill_user_1", "Disabled Skill"));
+    await setSkillEnabled("skill_user_1", false);
+    await setSkillEnabled("disabled-skill", true); // 用户在磁盘模式下显式开过
+    requestListSkills.mockResolvedValue({ skills: [daemonEntry("disabled-skill")] });
+
+    await migrateIdbSkillsToDisk();
+
+    const markers = await getEnabledSkillIds();
+    expect(markers).toContain("disabled-skill");
+    expect(markers).not.toContain("!disabled-skill");
+    // 迁移过程零 marker 写入：仅有的 2 次调用是本测试自己的 seeding。
+    expect(mockedSetSkillEnabled).toHaveBeenCalledTimes(2);
+  });
+
+  it("(重要2) marker 写失败 → slug 只在 migrated（不入 skipped）+ warn", async () => {
+    await putPackage(makePkg("skill_user_1", "Disabled Skill"));
+    await setSkillEnabled("skill_user_1", false); // 真 seeding
+    mockedSetSkillEnabled.mockRejectedValueOnce(new Error("marker write failed"));
+
+    const result = await migrateIdbSkillsToDisk();
+
+    expect(result.migrated).toEqual(["disabled-skill"]);
+    expect(result.skipped).toEqual([]);
+    expect(warnSpy).toHaveBeenCalled();
+  });
+});
+
+describe("initBridgeAndMigrate", () => {
+  it("(严重) 顺序契约：等 maybeInitLocalBridge 完成才迁移（并行发射会确定性空转）", async () => {
+    // 复现原缺陷形态：init 挂在跨进程 IPC（这里用受控 deferred 模拟）期间，
+    // skill_fs 能力还不可见。若实现并行发射（void init; migrate()），migrate
+    // 会在 hasSkillFs=false 时早退——resolveInit 之后 requestListSkills 也
+    // 永远不会被调，最终断言失败。
+    await putPackage(makePkg("skill_user_1", "My Skill"));
+    hasSkillFs = false;
+    let resolveInit!: () => void;
+    maybeInitLocalBridge.mockImplementation(
+      () => new Promise<void>((r) => { resolveInit = r; }),
+    );
+
+    const pending = initBridgeAndMigrate();
+
+    // init 未落定：迁移不得已经开跑（排干几轮微任务给错误实现暴露机会）。
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(requestListSkills).not.toHaveBeenCalled();
+
+    hasSkillFs = true; // 模拟 init 完成把能力翻亮
+    resolveInit();
+    await pending;
+
+    expect(requestListSkills).toHaveBeenCalled();
   });
 });

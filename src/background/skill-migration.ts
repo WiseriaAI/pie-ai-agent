@@ -6,6 +6,7 @@
 import {
   bridgeHasSkillFs,
   bridgeSettled,
+  maybeInitLocalBridge,
   requestListSkills,
   requestWriteSkill,
 } from "./local-bridge";
@@ -16,6 +17,29 @@ import { getEnabledSkillIds, setSkillEnabled } from "@/lib/skills/storage";
 export interface MigrateSkillsResult {
   migrated: string[];
   skipped: string[];
+}
+
+/** 启动/授权后入口：先等 bridge init 分派完成（settledPromise 已换成真握手），
+ *  再迁移。若两者并行发射，migrate 同步捕获的是模块初始的已 resolve promise，
+ *  微任务排干时 IPC 还没回来 → bridgeHasSkillFs 恒 false → 每次冷启动确定性
+ *  空转。维持绝不 throw 的启动路径契约（两个被调方各自 never-throws）。 */
+export async function initBridgeAndMigrate(): Promise<void> {
+  await maybeInitLocalBridge(); // 同步分支内已调 initLocalBridge → settledPromise 已换真
+  await migrateIdbSkillsToDisk(); // 自身 never-throws
+}
+
+/** marker 写入的窄 try/catch：写失败只 warn，绝不改变迁移结果的归属——
+ *  盘上的迁移本身已成功，slug 留在 migrated；下一轮跑到 skip 分支时
+ *  no-marker guard 的自愈继承会补写上。 */
+async function writeDisabledMarker(slug: string, pkgId: string): Promise<void> {
+  try {
+    await setSkillEnabled(slug, false);
+  } catch (e) {
+    console.warn(
+      `[skill-migration] skill "${slug}" (${pkgId}) 的禁用 marker 写入失败（下一轮自愈补写）：`,
+      e,
+    );
+  }
 }
 
 export async function migrateIdbSkillsToDisk(): Promise<MigrateSkillsResult> {
@@ -49,6 +73,16 @@ export async function migrateIdbSkillsToDisk(): Promise<MigrateSkillsResult> {
           // 幂等核心：磁盘上已有同名目录 = 已经迁过，或用户在磁盘模式下自建的——
           // 两种情况都绝不覆盖。
           skipped.push(slug);
+          // crash 自愈：上一轮写完盘但 marker 没落上就挂了 → 本轮补继承。
+          // no-marker guard（slug 两种 marker 都不存在才写）保证幂等，且绝不
+          // 覆盖用户在磁盘模式下对 slug 已做出的显式开/关选择。
+          if (
+            markers.includes(`!${pkg.id}`) &&
+            !markers.includes(slug) &&
+            !markers.includes(`!${slug}`)
+          ) {
+            await writeDisabledMarker(slug, pkg.id);
+          }
           continue;
         }
         await requestWriteSkill({
@@ -58,8 +92,10 @@ export async function migrateIdbSkillsToDisk(): Promise<MigrateSkillsResult> {
         migrated.push(slug);
         existing.add(slug);
         // enabled 继承：只有旧 marker 显式关过才继承关闭；其余不动，磁盘默认开覆盖。
+        // 窄 try/catch 在 writeDisabledMarker 内——marker 失败不把已成功迁移的
+        // slug 二次归入 skipped（避免同一 slug 同时出现在两个数组的矛盾结果）。
         if (markers.includes(`!${pkg.id}`)) {
-          await setSkillEnabled(slug, false);
+          await writeDisabledMarker(slug, pkg.id);
         }
       } catch (e) {
         console.warn(`[skill-migration] 迁移 skill "${pkg.frontmatter.name}" (${pkg.id}) 失败，已跳过：`, e);
