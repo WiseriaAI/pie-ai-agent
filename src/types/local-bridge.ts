@@ -4,7 +4,12 @@
 export const PROTOCOL_VERSION = 1;
 
 /** daemon 声明它能处理的方法。扩展按此决定装配哪些本地工具。 */
-export const BRIDGE_CAPABILITIES = ["run_local_agent", "handoff_to_agent", "list_agents"] as const;
+export const BRIDGE_CAPABILITIES = [
+  "run_local_agent",
+  "handoff_to_agent",
+  "list_agents",
+  "skill_fs",
+] as const;
 export type BridgeCapability = (typeof BRIDGE_CAPABILITIES)[number];
 
 // ── 握手 ──────────────────────────────────────────────────────────────
@@ -58,10 +63,108 @@ export interface HandoffResult {
   mode: "terminal" | "app";
 }
 
+// ── skill_fs ──────────────────────────────────────────────────────────
+/** skill 声明的高危能力（来自 SKILL.md metadata.pie）。 */
+export interface SkillCaps {
+  /** 允许出口的域名 */
+  network: string[];
+  /** 工作区外额外可写路径（可含 ~） */
+  write: string[];
+}
+/** list_skills 每项：catalog 呈现 + 授权卡渲染所需的结构化摘要。 */
+export interface SkillSummary {
+  name: string;
+  description: string;
+  /** scripts/ 下可执行文件的相对名（如 "fetch.ts"）；run_skill_script 的 allowlist */
+  runnableScripts: string[];
+  declaredCaps: SkillCaps;
+}
+export interface ListSkillsResult {
+  skills: SkillSummary[];
+}
+
+export interface ReadSkillFileParams {
+  name: string;
+  /** skill 目录内相对路径（如 "SKILL.md" / "references/foo.md"） */
+  path: string;
+}
+export interface ReadSkillFileResult {
+  content: string;
+}
+
+export interface RunSkillScriptParams {
+  name: string;
+  /** 必须 ∈ 该 skill runnableScripts */
+  entry: string;
+  /** CLI 风格参数 */
+  args?: string[];
+  /** 用户在授权卡批准后置 true；缺省首跑 ungranted skill 会回 needs_authorization */
+  grantApproved?: boolean;
+}
+export interface RunSkillScriptResult {
+  /** 脚本 stdout，调用方包 <untrusted_skill_content> */
+  output: string;
+  truncated?: boolean;
+}
+
+export interface WriteSkillFile {
+  /** skill 目录内相对路径 */
+  path: string;
+  content: string;
+}
+export interface WriteSkillParams {
+  name: string;
+  files: WriteSkillFile[];
+}
+export interface WriteSkillResult {
+  /** 落盘的 skill 目录绝对路径 */
+  dir: string;
+}
+
+export interface DeleteSkillParams {
+  name: string;
+}
+export interface DeleteSkillResult {
+  deleted: boolean;
+}
+
+/** grant 信封：三者规范化后哈希即 grant 身份。 */
+export interface GrantEnvelope {
+  allowedDomains: string[];
+  extraWrites: string[];
+  runnableScripts: string[];
+}
+export interface GrantRecord {
+  key: string;
+  skillName: string;
+  envelope: GrantEnvelope;
+  grantedAt: number;
+}
+export interface ListGrantsResult {
+  grants: GrantRecord[];
+}
+export interface RevokeGrantParams {
+  key: string;
+}
+export interface RevokeGrantResult {
+  revoked: boolean;
+}
+
 // ── 通用信封 ──────────────────────────────────────────────────────────
 export interface BridgeRequest {
   id: string;
-  method: "hello" | "run_local_agent" | "handoff_to_agent" | "list_agents";
+  method:
+    | "hello"
+    | "run_local_agent"
+    | "handoff_to_agent"
+    | "list_agents"
+    | "list_skills"
+    | "read_skill_file"
+    | "run_skill_script"
+    | "write_skill"
+    | "delete_skill"
+    | "list_grants"
+    | "revoke_grant";
   params: unknown;
 }
 export type BridgeResponse =

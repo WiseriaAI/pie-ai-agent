@@ -7,4 +7,7 @@ export const paths = {
   socketPath: join(pieDir, "daemon.sock"),
   handoffsDir: join(homedir(), "pie-handoffs"),
   logsDir: join(pieDir, "logs"),
+  skillsDir: join(pieDir, "skills"),
+  grantsPath: join(pieDir, "grants.json"),
+  auditPath: join(pieDir, "logs", "audit.jsonl"),
 };
