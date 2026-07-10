@@ -7,6 +7,18 @@ import {
   type HandoffParams,
   type HandoffResult,
   type ListAgentsResult,
+  type ListSkillsResult,
+  type ReadSkillFileParams,
+  type ReadSkillFileResult,
+  type RunSkillScriptParams,
+  type RunSkillScriptResult,
+  type WriteSkillParams,
+  type WriteSkillResult,
+  type DeleteSkillParams,
+  type DeleteSkillResult,
+  type ListGrantsResult,
+  type RevokeGrantParams,
+  type RevokeGrantResult,
 } from "@/types/local-bridge";
 
 const HOST_NAME = "ai.wiseria.pie";
@@ -16,11 +28,24 @@ let ready = false;
 let capabilities: string[] = [];
 const pending = new Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
 
+// 握手落定 promise：从未 init 过 → 已 resolve；initLocalBridge() 换上新的 pending
+// promise，握手 .then/.catch 落定（或 connectNative 失败 / disconnect）后 resolve。
+// 用途：SW 冷启动时想等"桥要么连上要么确定连不上"再决定要不要装配本地工具，避免竞态。
+let settledResolve: (() => void) | null = null;
+let settledPromise: Promise<void> = Promise.resolve();
+
+export function bridgeSettled(): Promise<void> {
+  return settledPromise;
+}
+
 export function isBridgeReady(): boolean {
   return ready;
 }
 export function bridgeCapabilities(): string[] {
   return capabilities;
+}
+export function bridgeHasSkillFs(): boolean {
+  return ready && capabilities.includes("skill_fs");
 }
 
 function send(method: BridgeRequest["method"], params: unknown): Promise<unknown> {
@@ -33,6 +58,7 @@ function send(method: BridgeRequest["method"], params: unknown): Promise<unknown
 }
 
 export function initLocalBridge(): void {
+  settledPromise = new Promise((r) => { settledResolve = r; });
   try {
     port = chrome.runtime.connectNative(HOST_NAME);
   } catch {
@@ -42,6 +68,8 @@ export function initLocalBridge(): void {
     ready = false;
     capabilities = [];
     pending.clear();
+    settledResolve?.();
+    settledResolve = null;
     return;
   }
   port.onMessage.addListener((raw: unknown) => {
@@ -50,7 +78,12 @@ export function initLocalBridge(): void {
     if (!p) return;
     pending.delete(msg.id);
     if (msg.ok) p.resolve(msg.result);
-    else p.reject(new Error(msg.error.message));
+    else {
+      const err = new Error(msg.error.message);
+      // 非枚举：防止 JSON.stringify(err) 把内部错误码泄进 LLM 可见文案
+      Object.defineProperty(err, "code", { value: msg.error.code, enumerable: false });
+      p.reject(err);
+    }
   });
   port.onDisconnect.addListener(() => {
     void chrome.runtime?.lastError; // 读一下避免 Chrome 打印 "Unchecked runtime.lastError"
@@ -70,8 +103,14 @@ export function initLocalBridge(): void {
         capabilities = res.capabilities;
         ready = true;
       }
+      settledResolve?.();
+      settledResolve = null;
     })
-    .catch(() => { ready = false; });
+    .catch(() => {
+      ready = false;
+      settledResolve?.();
+      settledResolve = null;
+    });
 }
 
 export async function requestLocalAgent(params: RunLocalAgentParams): Promise<RunLocalAgentResult> {
@@ -92,6 +131,38 @@ export async function requestListAgents(): Promise<{ id: string; label: string; 
   }
   const r = (await send("list_agents", {})) as ListAgentsResult;
   return r.agents;
+}
+
+export async function requestListSkills(): Promise<ListSkillsResult> {
+  return (await send("list_skills", {})) as ListSkillsResult;
+}
+export async function requestReadSkillFile(p: ReadSkillFileParams): Promise<ReadSkillFileResult> {
+  return (await send("read_skill_file", p)) as ReadSkillFileResult;
+}
+export type RunSkillScriptOutcome =
+  | { ok: true; result: RunSkillScriptResult }
+  | { ok: false; needsAuth: true }
+  | { ok: false; needsAuth: false; error: string };
+export async function requestRunSkillScript(p: RunSkillScriptParams): Promise<RunSkillScriptOutcome> {
+  try {
+    return { ok: true, result: (await send("run_skill_script", p)) as RunSkillScriptResult };
+  } catch (e) {
+    const code = (e as { code?: string }).code;
+    if (code === "needs_authorization") return { ok: false, needsAuth: true };
+    return { ok: false, needsAuth: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+export async function requestWriteSkill(p: WriteSkillParams): Promise<WriteSkillResult> {
+  return (await send("write_skill", p)) as WriteSkillResult;
+}
+export async function requestDeleteSkill(p: DeleteSkillParams): Promise<DeleteSkillResult> {
+  return (await send("delete_skill", p)) as DeleteSkillResult;
+}
+export async function requestListGrants(): Promise<ListGrantsResult> {
+  return (await send("list_grants", {})) as ListGrantsResult;
+}
+export async function requestRevokeGrant(p: RevokeGrantParams): Promise<RevokeGrantResult> {
+  return (await send("revoke_grant", p)) as RevokeGrantResult;
 }
 
 /** SW 启动调用：仅当已授予 nativeMessaging 才连桥（纯 BYOK 用户零感知）。 */
@@ -118,4 +189,6 @@ export function disconnectLocalBridge(): void {
   capabilities = [];
   for (const p of pending.values()) p.reject(new Error("bridge disabled"));
   pending.clear();
+  settledResolve?.();
+  settledResolve = null;
 }
