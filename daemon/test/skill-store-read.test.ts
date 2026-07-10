@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { mkdirSync, writeFileSync, rmSync } from "fs";
+import { mkdirSync, writeFileSync, rmSync, symlinkSync } from "fs";
 import { join } from "path";
 import { assertSkillName, listSkills, readSkillFile } from "../src/skill-store";
 
@@ -48,6 +48,14 @@ test("readSkillFile returns file content; rejects traversal", () => {
   makeSkill(root, "s", `---\nname: s\ndescription: d\n---\nBODY\n`, []);
   expect(readSkillFile("s", "SKILL.md", root)).toContain("BODY");
   expect(() => readSkillFile("s", "../../etc/passwd", root)).toThrow();
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("readSkillFile rejects symlink escape (link -> /etc)", () => {
+  const root = tmpRoot();
+  makeSkill(root, "s", `---\nname: s\ndescription: d\n---\nBODY\n`, []);
+  symlinkSync("/etc", join(root, "s", "etc-link"));
+  expect(() => readSkillFile("s", "etc-link/passwd", root)).toThrow();
   rmSync(root, { recursive: true, force: true });
 });
 

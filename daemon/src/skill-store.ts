@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, readdirSync } from "fs";
-import { join, resolve, relative, isAbsolute } from "path";
+import { existsSync, readFileSync, readdirSync, lstatSync, realpathSync } from "fs";
+import { join, resolve, relative, isAbsolute, sep } from "path";
 import { paths } from "./paths";
 import { parseSkillMd } from "./skill-md";
 import type { SkillSummary } from "../../src/types/local-bridge";
@@ -16,10 +16,28 @@ export function assertSkillName(name: string): string {
 
 /** 把 skill 目录内相对路径解析成绝对路径，越出目录即 throw。 */
 export function safeRelPath(skillDir: string, rel: string): string {
-  const abs = resolve(skillDir, rel);
-  const r = relative(skillDir, abs);
+  // 规范化根（skillDir 调用时一定存在）后再判定，杜绝根本身经 symlink 逃逸。
+  const realRoot = realpathSync(skillDir);
+  const abs = resolve(realRoot, rel);
+  const r = relative(realRoot, abs);
   if (r === "" || r.startsWith("..") || isAbsolute(r)) {
     throw new Error(`unsafe path: ${JSON.stringify(rel)}`);
+  }
+  // 逐段拒 symlink：字符串检查挡不住 `link/passwd`（link -> /etc）——OS 层 readFile
+  // 会跟随 symlink 逃出 skillDir。已存在的每一段若是 symlink 即拒（新建文件的尾段
+  // 尚不存在，lstat ENOENT → break，其父段已校验）。
+  let cur = realRoot;
+  for (const seg of r.split(sep)) {
+    cur = join(cur, seg);
+    let st;
+    try {
+      st = lstatSync(cur);
+    } catch {
+      break; // 段不存在（新建文件路径）→ 后续段也不存在，停
+    }
+    if (st.isSymbolicLink()) {
+      throw new Error(`symlink in skill path: ${JSON.stringify(rel)}`);
+    }
   }
   return abs;
 }
