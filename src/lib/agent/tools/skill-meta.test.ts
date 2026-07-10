@@ -1,7 +1,10 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { SKILL_META_TOOLS } from "./skill-meta";
+import { SKILL_META_TOOLS, buildSkillMetaTools } from "./skill-meta";
 import { listPackages, deletePackage, putPackage } from "../../skills/skill-store";
 import { getEnabledSkillPackages } from "../../skills";
+import { getEnabledSkillIds } from "../../skills/storage";
+import { parseSkillMarkdown } from "../../skills/frontmatter";
+import type { SkillEntry, SkillSource, SkillWriteFile } from "../../skills/source";
 
 const ctx = {} as never; // handler does not use ctx
 
@@ -319,5 +322,262 @@ describe("skill-meta CRUD tools (SkillPackage model)", () => {
     expect(r.observation).not.toContain("secret instructions");
     // But name should be present
     expect(r.observation).toContain("Summary");
+  });
+});
+
+// ── Disk mode (Task 6: dual-mode via SkillSource) ─────────────────────────────
+
+interface FakeDiskSeed {
+  id: string;
+  md: string;
+  builtIn?: boolean;
+}
+
+function toEntryFromMd(id: string, builtIn: boolean, files: Record<string, string>): SkillEntry {
+  const md = files["SKILL.md"] ?? "";
+  let name = id;
+  let description = "";
+  let author: string | undefined;
+  try {
+    const parsed = parseSkillMarkdown(md);
+    name = parsed.frontmatter.name;
+    description = parsed.frontmatter.description;
+    author = parsed.frontmatter.author;
+  } catch {
+    // malformed seed md — leave defaults
+  }
+  return {
+    id,
+    name,
+    description,
+    builtIn,
+    origin: "disk",
+    files: Object.keys(files),
+    runnableScripts: [],
+    author,
+  };
+}
+
+/** Minimal in-memory fake of a disk-mode SkillSource, tracking write/delete calls
+ *  so tests can assert exactly what the tools send to the real DaemonSkillSource. */
+function makeFakeDiskSource(seed: FakeDiskSeed[] = []) {
+  const store = new Map<string, { files: Record<string, string>; builtIn: boolean }>();
+  for (const s of seed) store.set(s.id, { files: { "SKILL.md": s.md }, builtIn: s.builtIn ?? false });
+  const writeCalls: Array<{ id: string; files: SkillWriteFile[] }> = [];
+  const deleteCalls: string[] = [];
+
+  const source: SkillSource = {
+    mode: "disk",
+    async list() {
+      return [...store.entries()].map(([id, rec]) => toEntryFromMd(id, rec.builtIn, rec.files));
+    },
+    async readFile(id, path) {
+      return store.get(id)?.files[path] ?? null;
+    },
+    async write(id, files) {
+      writeCalls.push({ id, files });
+      const rec = store.get(id) ?? { files: {}, builtIn: false };
+      const newFiles = { ...rec.files };
+      for (const f of files) newFiles[f.path] = f.content;
+      store.set(id, { files: newFiles, builtIn: rec.builtIn });
+    },
+    async delete(id) {
+      const had = store.has(id);
+      store.delete(id);
+      deleteCalls.push(id);
+      return had;
+    },
+  };
+  return { source, writeCalls, deleteCalls, store };
+}
+
+describe("skill-meta CRUD tools (disk mode via SkillSource)", () => {
+  beforeEach(clearAll);
+
+  // ── create_skill (disk) ─────────────────────────────────────────────────────
+
+  it("create_skill (disk mode) 用 kebabSlug(name) 当 id, write 一次只带 SKILL.md", async () => {
+    const { source, writeCalls } = makeFakeDiskSource();
+    const tools = buildSkillMetaTools({ getSource: () => source });
+    const create = tools.find((t) => t.name === "create_skill")!;
+
+    const r = await create.handler(
+      { name: "Web Fetch 2", description: "fetch stuff", instructions: "do it" },
+      ctx,
+    );
+    expect(r.success).toBe(true);
+    expect(r.observation).toContain('id=web-fetch-2 name="Web Fetch 2"');
+    expect(writeCalls).toHaveLength(1);
+    expect(writeCalls[0].id).toBe("web-fetch-2");
+    expect(writeCalls[0].files).toHaveLength(1);
+    expect(writeCalls[0].files[0].path).toBe("SKILL.md");
+    expect(writeCalls[0].files[0].content).toContain("do it");
+
+    const entries = await source.list();
+    expect(entries.find((e) => e.id === "web-fetch-2")).toBeTruthy();
+  });
+
+  it("create_skill (disk mode) 撞名报错 (merged list 已有该 id)", async () => {
+    const { source, writeCalls } = makeFakeDiskSource([
+      { id: "taken", md: "---\nname: Taken\ndescription: d\n---\nbody" },
+    ]);
+    const tools = buildSkillMetaTools({ getSource: () => source });
+    const create = tools.find((t) => t.name === "create_skill")!;
+
+    const r = await create.handler(
+      { name: "Taken", description: "d2", instructions: "i" },
+      ctx,
+    );
+    expect(r.success).toBe(false);
+    expect(r.error).toBe("skill name already exists: taken");
+    expect(writeCalls).toHaveLength(0);
+  });
+
+  it("create_skill (disk mode) 名字无 ASCII 字母数字 → slug 为空 → 随机 skill-xxxxxxxx id", async () => {
+    const { source } = makeFakeDiskSource();
+    const tools = buildSkillMetaTools({ getSource: () => source });
+    const create = tools.find((t) => t.name === "create_skill")!;
+
+    const r = await create.handler(
+      { name: "中文名字", description: "d", instructions: "do it" },
+      ctx,
+    );
+    expect(r.success).toBe(true);
+    const idMatch = r.observation!.match(/id=(\S+) name=/);
+    expect(idMatch).toBeTruthy();
+    expect(idMatch![1]).toMatch(/^skill-[0-9a-f]{8}$/);
+  });
+
+  it("create_skill (disk mode) 不跑 P1-H quota,即使 real IndexedDB 已超额", async () => {
+    // Pollute the *real* IDB store the same way the IDB quota test does, to
+    // prove the disk-mode create path never consults getAllSkillPackages().
+    const bigInstructions = "x".repeat(8000);
+    const count = Math.ceil(
+      (1024 * 1024) /
+        JSON.stringify({ id: "skill_agent_x".repeat(8), instructions: bigInstructions }).length,
+    );
+    for (let i = 0; i < count + 2; i++) {
+      await putPackage({
+        id: `skill_agent_fat_disktest_${i}`,
+        frontmatter: { name: `Fat${i}`, description: "d" },
+        files: { "SKILL.md": `---\nname: Fat${i}\ndescription: d\n---\n${"x".repeat(8000)}` },
+        builtIn: false,
+        createdAt: 1,
+      });
+    }
+
+    const { source, writeCalls } = makeFakeDiskSource();
+    const tools = buildSkillMetaTools({ getSource: () => source });
+    const create = tools.find((t) => t.name === "create_skill")!;
+
+    const r = await create.handler(
+      { name: "Disk Skill", description: "d", instructions: "small" },
+      ctx,
+    );
+    expect(r.success).toBe(true);
+    expect(writeCalls).toHaveLength(1);
+  });
+
+  // ── update_skill (disk) ──────────────────────────────────────────────────────
+
+  it("update_skill (disk mode) 拒绝 builtIn 条目 (P0-A)", async () => {
+    const { source } = makeFakeDiskSource([
+      { id: "b1", md: "---\nname: B\ndescription: d\n---\nbody", builtIn: true },
+    ]);
+    const tools = buildSkillMetaTools({ getSource: () => source });
+    const update = tools.find((t) => t.name === "update_skill")!;
+
+    const r = await update.handler({ id: "b1", name: "Hacked" }, ctx);
+    expect(r.success).toBe(false);
+    expect(r.error).toContain("built-in");
+  });
+
+  it("update_skill (disk mode) body 经 stripFrontmatter 取出,重建 md,write 只带 SKILL.md,id/目录不变", async () => {
+    const { source, writeCalls } = makeFakeDiskSource([
+      {
+        id: "my-skill",
+        md: "---\nname: My Skill\ndescription: orig desc\nversion: 1.0.0\nauthor: user\n---\noriginal body",
+      },
+    ]);
+    const tools = buildSkillMetaTools({ getSource: () => source });
+    const update = tools.find((t) => t.name === "update_skill")!;
+
+    const r = await update.handler(
+      { id: "my-skill", name: "Renamed", instructions: "new body" },
+      ctx,
+    );
+    expect(r.success).toBe(true);
+    expect(r.observation).toContain("id=my-skill");
+    expect(r.observation).toContain("note: on-disk directory name (id) is unchanged");
+
+    expect(writeCalls).toHaveLength(1);
+    expect(writeCalls[0].id).toBe("my-skill"); // directory name/id never changes
+    expect(writeCalls[0].files).toHaveLength(1);
+    expect(writeCalls[0].files[0].path).toBe("SKILL.md");
+    expect(writeCalls[0].files[0].content).toContain("name: Renamed");
+    expect(writeCalls[0].files[0].content).toContain("new body");
+    expect(writeCalls[0].files[0].content).not.toContain("original body");
+    expect(writeCalls[0].files[0].content).toContain("author: agent"); // P0-C taint
+  });
+
+  it("update_skill (disk mode) 未改 name 时 observation 不带 on-disk note", async () => {
+    const { source } = makeFakeDiskSource([
+      {
+        id: "my-skill2",
+        md: "---\nname: Foo\ndescription: d\nversion: 1.0.0\nauthor: user\n---\nbody",
+      },
+    ]);
+    const tools = buildSkillMetaTools({ getSource: () => source });
+    const update = tools.find((t) => t.name === "update_skill")!;
+
+    const r = await update.handler({ id: "my-skill2", description: "new d" }, ctx);
+    expect(r.success).toBe(true);
+    expect(r.observation).not.toContain("note:");
+  });
+
+  // ── delete_skill (dual-mode) ──────────────────────────────────────────────────
+
+  it("delete_skill (disk mode) 调 source.delete + setSkillEnabled(id,false)(清 stale marker)", async () => {
+    const { source, deleteCalls } = makeFakeDiskSource([
+      { id: "to-delete", md: "---\nname: ToDelete\ndescription: d\n---\nbody" },
+    ]);
+    const tools = buildSkillMetaTools({ getSource: () => source });
+    const del = tools.find((t) => t.name === "delete_skill")!;
+
+    const r = await del.handler({ id: "to-delete" }, ctx);
+    expect(r.success).toBe(true);
+    expect(deleteCalls).toEqual(["to-delete"]);
+
+    const enabledIds = await getEnabledSkillIds();
+    expect(enabledIds).toContain("!to-delete");
+  });
+
+  it("delete_skill (disk mode) 拒绝 builtIn 条目 (P0-A)", async () => {
+    const { source } = makeFakeDiskSource([
+      { id: "b2", md: "---\nname: B2\ndescription: d\n---\nbody", builtIn: true },
+    ]);
+    const tools = buildSkillMetaTools({ getSource: () => source });
+    const del = tools.find((t) => t.name === "delete_skill")!;
+
+    const r = await del.handler({ id: "b2" }, ctx);
+    expect(r.success).toBe(false);
+    expect(r.error).toContain("built-in");
+  });
+
+  // ── list_skills (disk) ───────────────────────────────────────────────────────
+
+  it("list_skills (disk mode) 同形状摘要, author 缺省 'user'", async () => {
+    const { source } = makeFakeDiskSource([
+      { id: "d1", md: "---\nname: D1\ndescription: dd\n---\nbody" }, // no author field
+    ]);
+    const tools = buildSkillMetaTools({ getSource: () => source });
+    const list = tools.find((t) => t.name === "list_skills")!;
+
+    const r = await list.handler({}, ctx);
+    expect(r.success).toBe(true);
+    const items = JSON.parse(r.observation!);
+    expect(items).toEqual([
+      { id: "d1", name: "D1", description: "dd", author: "user", builtIn: false },
+    ]);
   });
 });
