@@ -132,6 +132,7 @@ import { isFilePdfUrl } from "@/lib/pdf/detect";
 import { installLogCapture } from "@/lib/log-buffer";
 import { maybeInitLocalBridge, disconnectLocalBridge, isBridgeReady, requestListAgents } from "./local-bridge";
 import { getEnabledLocalAgents, setEnabledLocalAgents, applyToggle, isAgentUsable } from "@/lib/local-agents-prefs";
+import { migrateIdbSkillsToDisk } from "./skill-migration";
 
 // Install log capture at module top level
 installLogCapture("sw");
@@ -223,6 +224,9 @@ setScheduleRunDep(runScheduleWithDeps);
 // never opt into local integration get zero native-messaging surface. Fire
 // and forget: the bridge degrades silently if no daemon is installed.
 void maybeInitLocalBridge();
+// Task 10 — one-shot idempotent IDB→disk skill migration. Self-gates on
+// bridgeSettled() internally, so this never blocks the rest of SW startup.
+void migrateIdbSkillsToDisk();
 
 // Grant-time init: when the user enables local integration at runtime (settings
 // toggle → chrome.permissions.request), connect the bridge immediately instead
