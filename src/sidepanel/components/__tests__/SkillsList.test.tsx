@@ -156,6 +156,27 @@ describe("SkillsList", () => {
     });
   });
 
+  it("a readSkillFileRpc failure still opens the form (name/description prefilled, empty body) with the error visible", async () => {
+    vi.mocked(listSkillEntries).mockResolvedValue({ ok: true, skills: [DISK_ENTRY] });
+    vi.mocked(readSkillFileRpc).mockResolvedValue({ ok: false, error: "daemon unreachable" });
+
+    render(<SkillsList onRunSkill={vi.fn()} />);
+    await screen.findByRole("switch", { name: "Disable Disk Skill" });
+
+    fireEvent.click(screen.getByText("Edit"));
+
+    // The form must mount (not a silent no-op) — prefilled from the
+    // already-loaded entry, with an empty body...
+    const instructions = (await screen.findByPlaceholderText(
+      /instructions/i,
+    )) as HTMLTextAreaElement;
+    expect(instructions.value).toBe("");
+    expect(screen.getByDisplayValue("Disk Skill")).toBeTruthy();
+    expect(screen.getByDisplayValue("A skill living on disk")).toBeTruthy();
+    // ...and the RPC error surfaced through the existing formError banner.
+    expect(screen.getByText(/daemon unreachable/)).toBeTruthy();
+  });
+
   it("a listSkillEntries RPC failure renders an empty list instead of throwing", async () => {
     vi.mocked(listSkillEntries).mockResolvedValue({ ok: false, error: "daemon unreachable" });
 

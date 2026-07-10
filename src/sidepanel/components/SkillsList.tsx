@@ -116,7 +116,19 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
     setFormError(null);
     const res = await readSkillFileRpc(skill.id, "SKILL.md");
     if (!res.ok) {
-      setFormError(res.error);
+      // Still open the form (prefilled from the already-loaded entry, empty
+      // body) — a silent no-op on Edit-click would be indistinguishable from
+      // a dead button. The error surfaces through the existing formError
+      // banner; formError only renders inside the mounted <SkillForm>.
+      console.error("readSkillFileRpc failed:", res.error);
+      setForm({
+        editingId: skill.id,
+        name: skill.name,
+        description: skill.description,
+        instructions: "",
+      });
+      setFormError(`Load failed: ${res.error}`);
+      setShowForm(true);
       return;
     }
     setForm({
