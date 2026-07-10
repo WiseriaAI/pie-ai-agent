@@ -31,7 +31,6 @@ const pending = new Map<string, { resolve: (v: unknown) => void; reject: (e: Err
 // 握手落定 promise：从未 init 过 → 已 resolve；initLocalBridge() 换上新的 pending
 // promise，握手 .then/.catch 落定（或 connectNative 失败 / disconnect）后 resolve。
 // 用途：SW 冷启动时想等"桥要么连上要么确定连不上"再决定要不要装配本地工具，避免竞态。
-let settledResolve: (() => void) | null = null;
 let settledPromise: Promise<void> = Promise.resolve();
 
 export function bridgeSettled(): Promise<void> {
@@ -58,7 +57,10 @@ function send(method: BridgeRequest["method"], params: unknown): Promise<unknown
 }
 
 export function initLocalBridge(): void {
-  settledPromise = new Promise((r) => { settledResolve = r; });
+  // 每次 init 造一个新的落定 promise；resolver 由本次 init 的闭包独占——
+  // 重叠 init 时，旧 handshake 只落定自己那个 promise，不会错序落定新的。
+  let settleThis!: () => void;
+  settledPromise = new Promise<void>((r) => { settleThis = r; });
   try {
     port = chrome.runtime.connectNative(HOST_NAME);
   } catch {
@@ -68,8 +70,7 @@ export function initLocalBridge(): void {
     ready = false;
     capabilities = [];
     pending.clear();
-    settledResolve?.();
-    settledResolve = null;
+    settleThis();
     return;
   }
   port.onMessage.addListener((raw: unknown) => {
@@ -103,13 +104,11 @@ export function initLocalBridge(): void {
         capabilities = res.capabilities;
         ready = true;
       }
-      settledResolve?.();
-      settledResolve = null;
+      settleThis();
     })
     .catch(() => {
       ready = false;
-      settledResolve?.();
-      settledResolve = null;
+      settleThis();
     });
 }
 
@@ -189,6 +188,5 @@ export function disconnectLocalBridge(): void {
   capabilities = [];
   for (const p of pending.values()) p.reject(new Error("bridge disabled"));
   pending.clear();
-  settledResolve?.();
-  settledResolve = null;
+  // 落定级联：disconnect reject 掉 pending 的 hello → 其 .catch 调自己的 settleThis
 }

@@ -292,4 +292,31 @@ describe("local-bridge", () => {
     await Promise.resolve();
     expect(settled).toBe(true);
   });
+
+  it("bridgeSettled: overlapping initLocalBridge — both promises settle, no dangle", async () => {
+    const { initLocalBridge, bridgeSettled } = await import("./local-bridge");
+
+    // init A：hello 尚未回复
+    const portA = fakePort;
+    initLocalBridge();
+    const pA = bridgeSettled();
+
+    // A 的 hello 还没落定时 init B（connectNative 返回一个全新 fake port）
+    const portB = makeFakePort();
+    (globalThis as any).chrome.runtime.connectNative = vi.fn(() => portB);
+    initLocalBridge();
+    const pB = bridgeSettled();
+
+    // 先回 A 的 hello（port A 上），再回 B 的（port B 上）
+    const helloA = portA.postMessage.mock.calls[0][0] as { id: string };
+    portA._emit({ id: helloA.id, ok: true, result: { protocolVersion: PROTOCOL_VERSION, capabilities: [] } });
+    const helloB = portB.postMessage.mock.calls[0][0] as { id: string };
+    portB._emit({ id: helloB.id, ok: true, result: { protocolVersion: PROTOCOL_VERSION, capabilities: [] } });
+
+    // 两个 promise 都必须落定；race 短超时让悬空快速失败而不是拖满测试超时
+    const timeout = (ms: number) =>
+      new Promise<never>((_, rej) => setTimeout(() => rej(new Error("dangling bridgeSettled promise")), ms));
+    await expect(Promise.race([pA, timeout(500)])).resolves.toBeUndefined();
+    await expect(Promise.race([pB, timeout(500)])).resolves.toBeUndefined();
+  });
 });
