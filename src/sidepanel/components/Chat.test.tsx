@@ -1357,3 +1357,52 @@ describe("WorkingIndicator Pie face", () => {
     expect(document.querySelector('[data-pie-state="working"]')).toBeTruthy();
   });
 });
+
+describe("celebrate on completion", () => {
+  it("任务成功收尾后最后一行播 success，2.5s 后归静止", async () => {
+    seedProvider("anthropic");
+    vi.useFakeTimers();
+    try {
+      const doneMessages: DisplayMessage[] = [
+        { role: "user", content: "do it" },
+        { role: "assistant", content: "first reply" },
+        { role: "agent-summary", success: true, summary: "done", stepCount: 2 },
+      ];
+      const { rerender } = render(
+        <Chat
+          session={makeSession({
+            streaming: true,
+            messages: [{ role: "user", content: "do it" }],
+          })}
+          onOpenSettings={() => {}}
+          providerLabel={null}
+        />,
+      );
+      // checkConfig() runs async (awaits listInstances/getSessionMeta/
+      // resolveSelection/getInstance) — flush the microtask queue so
+      // hasConfig settles before we render on the done-messages props.
+      await act(async () => {});
+      rerender(
+        <Chat
+          session={makeSession({ streaming: false, messages: doneMessages })}
+          onOpenSettings={() => {}}
+          providerLabel={null}
+        />,
+      );
+      await act(async () => {});
+      // 只有最后一行（agent-summary）庆祝；上面的 assistant 行保持 static
+      expect(
+        document.querySelectorAll('[data-pie-state="success"]').length,
+      ).toBe(1);
+      expect(
+        document.querySelectorAll('[data-pie-state="static"]').length,
+      ).toBeGreaterThan(0);
+      act(() => {
+        vi.advanceTimersByTime(2500);
+      });
+      expect(document.querySelector('[data-pie-state="success"]')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

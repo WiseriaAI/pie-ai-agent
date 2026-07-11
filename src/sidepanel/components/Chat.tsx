@@ -38,6 +38,7 @@ import type { Quote, TextQuote, ElementQuote } from "@/types";
 import ModelPicker from "./ModelPicker";
 import PieFace from "./PieFace";
 import ThinkingSection from "./ThinkingSection";
+import { useCelebrate } from "@/sidepanel/hooks/useCelebrate";
 import { useT } from "@/lib/i18n";
 import { useStoreChange } from "@/sidepanel/hooks/useStoreChange";
 import {
@@ -857,6 +858,20 @@ export default function Chat({
   // (React error #310 happened when this was below `if (hasConfig === null)`).
   const segments = useMemo(() => buildSegments(visibleMessages), [visibleMessages]);
 
+  // Pie IP — 完成庆祝只落在最后一条 agent 行（assistant 或 agent-summary）。
+  const celebrating = useCelebrate({ streaming, error, messages, sessionId });
+  const lastAgentRowIndex = (() => {
+    for (let i = segments.length - 1; i >= 0; i--) {
+      const seg = segments[i]!;
+      if (
+        seg.kind === "msg" &&
+        (seg.msg.role === "assistant" || seg.msg.role === "agent-summary")
+      )
+        return i;
+    }
+    return -1;
+  })();
+
   // Issue #245 — rewind/edit-resend. `msg` is a live object reference from the
   // `messages` array (visibleMessages preserves those references), so indexOf
   // recovers its true position even though the render maps `visibleMessages`.
@@ -1289,7 +1304,7 @@ After the skill completes, briefly summarize what was created (the user will see
               <PageChangedBanner onNewTask={handleNewTask} />
             )}
 
-            {segments.map((seg) => {
+            {segments.map((seg, segIndex) => {
               // M5 motion: bubble-in for content rows, scale-in for
               // session-confirm cards. Wrappers carry the animation class
               // so message components stay layout-agnostic.
@@ -1316,6 +1331,7 @@ After the skill completes, briefly summarize what was created (the user will see
                   <div key={firstIndex} className="bubble-in">
                     <MessageBubble
                       message={msg}
+                      celebrating={celebrating && segIndex === lastAgentRowIndex}
                       {...(msg.role === "user" && !streaming
                         ? {
                             onRewind: (editedContent?: string) =>
@@ -1333,6 +1349,7 @@ After the skill completes, briefly summarize what was created (the user will see
                       success={msg.success}
                       summary={msg.summary}
                       stepCount={msg.stepCount}
+                      celebrating={celebrating && segIndex === lastAgentRowIndex}
                     />
                   </div>
                 );
