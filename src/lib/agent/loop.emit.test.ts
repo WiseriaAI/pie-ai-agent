@@ -113,7 +113,20 @@ vi.mock("../scratchpad/service", () => ({
   getOverview: vi.fn(),
 }));
 vi.mock("../scratchpad/sql-bridge", () => ({ queryScratchpad: vi.fn() }));
-vi.mock("@/background/skill-source", () => ({ getEnabledSkillEntries: vi.fn(async () => []) }));
+vi.mock("@/background/skill-source", () => ({
+  getEnabledSkillEntries: vi.fn(async () => []),
+  // run_skill_script (Slice 3 Task 5) is now assembled per-run in loop.ts and
+  // reads getActiveSkillSource directly (bypassing the "./tools" mock below,
+  // which only stubs the static BUILT_IN_TOOLS array) — stub a minimal source
+  // so tool construction doesn't throw; no test here exercises the handler.
+  getActiveSkillSource: vi.fn(() => ({
+    mode: "idb",
+    list: vi.fn(async () => []),
+    readFile: vi.fn(async () => null),
+    write: vi.fn(async () => {}),
+    delete: vi.fn(async () => false),
+  })),
+}));
 vi.mock("../pdf/detect", () => ({ isFilePdfUrl: vi.fn(() => false), isPdfTab: vi.fn(() => false) }));
 vi.mock("../../background/cdp-session", () => ({
   acquireCdpSession: vi.fn(async () => null),

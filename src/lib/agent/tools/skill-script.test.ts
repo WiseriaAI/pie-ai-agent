@@ -3,6 +3,20 @@ import { buildRunSkillScriptTool, type SkillScriptDeps } from "./skill-script";
 import type { SkillPackage } from "@/lib/skills/package-types";
 import type { SkillEntry, SkillSource } from "@/lib/skills/source";
 import type { RunSkillScriptOutcome } from "@/background/local-bridge";
+import type { RunSkillScriptParams, SkillAuthPayload } from "@/types/local-bridge";
+
+/** needs_authorization 授权卡 payload 定夹具（daemon 权威给出，卡片按行渲染）。 */
+const AUTH_PAYLOAD: SkillAuthPayload = {
+  skillName: "disk-tool",
+  displayName: "Disk Tool",
+  description: "d",
+  envelope: {
+    allowedDomains: ["api.example.com"],
+    extraWrites: ["out/"],
+    runnableScripts: ["scripts/run.sh"],
+  },
+  envelopeHash: "hash-abc123",
+};
 
 const resolveSkillPackage = vi.hoisted(() => vi.fn());
 vi.mock("../../skills", () => ({ resolveSkillPackage }));
@@ -61,6 +75,8 @@ function fakeSource(entries: SkillEntry[]): SkillSource {
 const defaultRunOnDaemon = vi.fn(
   async (): Promise<RunSkillScriptOutcome> => ({ ok: true, result: { output: "{}" } }),
 );
+// 默认拒绝：没有显式覆写 requestGrant 的用例不该意外走通授权（fail-closed 默认）。
+const defaultRequestGrant = vi.fn(async () => false);
 
 function makeTool(
   runInSandbox = vi.fn(async () => '{"ok":true}'),
@@ -68,10 +84,12 @@ function makeTool(
 ) {
   const getSource = overrides.getSource ?? (() => fakeSource([idbEntry()]));
   const runOnDaemon = overrides.runOnDaemon ?? defaultRunOnDaemon;
+  const requestGrant = overrides.requestGrant ?? defaultRequestGrant;
   return {
-    tool: buildRunSkillScriptTool({ runInSandbox, getSource, runOnDaemon }),
+    tool: buildRunSkillScriptTool({ runInSandbox, getSource, runOnDaemon, requestGrant }),
     runInSandbox,
     runOnDaemon,
+    requestGrant,
   };
 }
 
@@ -79,6 +97,7 @@ beforeEach(() => {
   resolveSkillPackage.mockReset();
   resolveSkillPackage.mockResolvedValue(PKG);
   defaultRunOnDaemon.mockClear();
+  defaultRequestGrant.mockClear();
 });
 
 describe("run_skill_script — builtin/idb path（2a offscreen sandbox，逐字保留）", () => {
@@ -270,15 +289,20 @@ describe("run_skill_script — disk 路径（daemon 执行）", () => {
     expect(r.error).toBe("Skill disk-tool declares no scripts.");
   });
 
-  it("needsAuth → authorization_required 结构化错误", async () => {
+  it("needsAuth without auth payload (old daemon) → update-daemon error, no card", async () => {
     const runOnDaemon = vi.fn(async (): Promise<RunSkillScriptOutcome> => ({ ok: false, needsAuth: true }));
-    const { tool } = makeTool(undefined, { getSource: () => fakeSource([diskEntry()]), runOnDaemon });
+    const { tool, requestGrant } = makeTool(undefined, {
+      getSource: () => fakeSource([diskEntry()]),
+      runOnDaemon,
+    });
     const r = await tool.handler({ skillId: "disk-tool", entry: "scripts/run.sh" }, ctx);
     expect(r.success).toBe(false);
     expect(r.error).toBe(
-      "authorization_required: this skill needs your approval to run scripts on this machine. " +
-        "The authorization card UI ships in the next update — for now the user can pre-authorize via daemon tooling.",
+      "authorization_required: this skill needs user approval, but the connected Pie " +
+        "daemon is too old to describe what it would grant. Ask the user to update the Pie daemon.",
     );
+    expect(requestGrant).not.toHaveBeenCalled();
+    expect(runOnDaemon).toHaveBeenCalledTimes(1);
   });
 
   it("daemon 其余失败 → run_skill_script failed: <message> 透传", async () => {
@@ -323,5 +347,113 @@ describe("run_skill_script — disk 路径（daemon 执行）", () => {
     const r = await tool.handler({ skillId: "disk-tool", entry: "scripts/run.sh" }, ctx);
     expect(r.success).toBe(false);
     expect(r.error).toBe("Unknown skill: disk-tool");
+  });
+});
+
+describe("run_skill_script — disk 授权流（skill-grant panel-request）", () => {
+  function diskEntry(overrides: Partial<SkillEntry> = {}): SkillEntry {
+    return {
+      id: "disk-tool",
+      name: "disk-tool",
+      description: "d",
+      builtIn: false,
+      origin: "disk",
+      files: ["SKILL.md", "scripts/run.sh"],
+      runnableScripts: ["scripts/run.sh"],
+      ...overrides,
+    };
+  }
+
+  it("disk needsAuth → card approved → retries with grantApproved + approvedEnvelopeHash → ok", async () => {
+    const calls: RunSkillScriptParams[] = [];
+    const runOnDaemon = vi.fn(async (p: RunSkillScriptParams): Promise<RunSkillScriptOutcome> => {
+      calls.push(p);
+      if (!p.grantApproved) return { ok: false, needsAuth: true, auth: AUTH_PAYLOAD };
+      return { ok: true, result: { output: "ran" } };
+    });
+    const requestGrant = vi.fn(async () => true);
+    const { tool } = makeTool(undefined, {
+      getSource: () => fakeSource([diskEntry()]),
+      runOnDaemon,
+      requestGrant,
+    });
+    const r = await tool.handler({ skillId: "disk-tool", entry: "scripts/run.sh" }, ctx);
+    expect(r.success).toBe(true);
+    expect(r.observation).toBe("<untrusted_skill_content>ran</untrusted_skill_content>");
+    expect(requestGrant).toHaveBeenCalledWith({
+      skillName: AUTH_PAYLOAD.skillName,
+      displayName: AUTH_PAYLOAD.displayName,
+      description: AUTH_PAYLOAD.description,
+      scripts: AUTH_PAYLOAD.envelope.runnableScripts,
+      network: AUTH_PAYLOAD.envelope.allowedDomains,
+      write: AUTH_PAYLOAD.envelope.extraWrites,
+    });
+    expect(calls).toHaveLength(2);
+    expect(calls[0]).toEqual({ name: "disk-tool", entry: "scripts/run.sh", args: [] });
+    expect(calls[1]).toMatchObject({
+      name: "disk-tool",
+      entry: "scripts/run.sh",
+      grantApproved: true,
+      approvedEnvelopeHash: AUTH_PAYLOAD.envelopeHash,
+    });
+  });
+
+  it("card denied → error, no retry", async () => {
+    const runOnDaemon = vi.fn(async (): Promise<RunSkillScriptOutcome> => ({
+      ok: false,
+      needsAuth: true,
+      auth: AUTH_PAYLOAD,
+    }));
+    const requestGrant = vi.fn(async () => false);
+    const { tool } = makeTool(undefined, {
+      getSource: () => fakeSource([diskEntry()]),
+      runOnDaemon,
+      requestGrant,
+    });
+    const r = await tool.handler({ skillId: "disk-tool", entry: "scripts/run.sh" }, ctx);
+    expect(r.success).toBe(false);
+    expect(r.error).toBe("User declined skill authorization.");
+    expect(runOnDaemon).toHaveBeenCalledTimes(1);
+  });
+
+  it("requestGrant rejects (panel closed / headless) → declined error", async () => {
+    const runOnDaemon = vi.fn(async (): Promise<RunSkillScriptOutcome> => ({
+      ok: false,
+      needsAuth: true,
+      auth: AUTH_PAYLOAD,
+    }));
+    const requestGrant = vi.fn(async () => {
+      throw new Error("no sidepanel port for session S1");
+    });
+    const { tool } = makeTool(undefined, {
+      getSource: () => fakeSource([diskEntry()]),
+      runOnDaemon,
+      requestGrant,
+    });
+    const r = await tool.handler({ skillId: "disk-tool", entry: "scripts/run.sh" }, ctx);
+    expect(r.success).toBe(false);
+    expect(r.error).toBe(
+      "authorization_required: no user present to approve (sidepanel closed or headless run).",
+    );
+    expect(runOnDaemon).toHaveBeenCalledTimes(1);
+  });
+
+  it("retry hits needsAuth again (envelope changed mid-card) → explanatory error, no loop", async () => {
+    const runOnDaemon = vi.fn(async (): Promise<RunSkillScriptOutcome> => ({
+      ok: false,
+      needsAuth: true,
+      auth: AUTH_PAYLOAD,
+    }));
+    const requestGrant = vi.fn(async () => true);
+    const { tool } = makeTool(undefined, {
+      getSource: () => fakeSource([diskEntry()]),
+      runOnDaemon,
+      requestGrant,
+    });
+    const r = await tool.handler({ skillId: "disk-tool", entry: "scripts/run.sh" }, ctx);
+    expect(r.success).toBe(false);
+    expect(r.error).toBe("Skill declarations changed while awaiting approval — call run_skill_script again.");
+    expect(runOnDaemon).toHaveBeenCalledTimes(2);
+    expect(requestGrant).toHaveBeenCalledTimes(1);
   });
 });

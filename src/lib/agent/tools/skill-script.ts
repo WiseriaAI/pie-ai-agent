@@ -1,12 +1,21 @@
 import type { Tool, ToolHandlerContext } from "../types";
 import type { ActionResult } from "@/lib/dom-actions/types";
-import { sendToOffscreen } from "@/background/offscreen-manager";
 import { resolveSkillPackage } from "../../skills";
 import { findScriptDecl, isPureCompute, parseScriptDecls } from "../../skills/script-decl";
 import { escapeUntrustedWrappers } from "../untrusted-wrappers";
 import type { SkillSource } from "../../skills/source";
-import { getActiveSkillSource } from "@/background/skill-source";
-import { requestRunSkillScript, type RunSkillScriptOutcome } from "@/background/local-bridge";
+import type { RunSkillScriptOutcome } from "@/background/local-bridge";
+import type { RunSkillScriptParams } from "@/types/local-bridge";
+
+/** skill-grant 授权卡 payload：daemon SkillAuthPayload 的展开（卡片按行渲染）。 */
+export interface SkillGrantRequest {
+  skillName: string;
+  displayName?: string;
+  description: string;
+  scripts: string[];
+  network: string[];
+  write: string[];
+}
 
 export interface SkillScriptDeps {
   /** 纯计算路径：送 offscreen sandbox 执行，返回 JSON string。 */
@@ -14,7 +23,9 @@ export interface SkillScriptDeps {
   /** 真源查询：entry.origin 判路由——disk 走 daemon，builtin/idb 走既有 sandbox 路径。 */
   getSource: () => SkillSource;
   /** 磁盘 skill 特权脚本执行器：走本地 daemon 的 OS 沙箱。 */
-  runOnDaemon: (p: { name: string; entry: string; args?: string[] }) => Promise<RunSkillScriptOutcome>;
+  runOnDaemon: (p: RunSkillScriptParams) => Promise<RunSkillScriptOutcome>;
+  /** HITL 授权卡：展示信封原文，用户批/拒。panel 不在（headless/已关）时 reject。 */
+  requestGrant: (p: SkillGrantRequest) => Promise<boolean>;
 }
 
 function isStringArray(x: unknown): x is string[] {
@@ -28,8 +39,9 @@ export function buildRunSkillScriptTool(deps: SkillScriptDeps): Tool {
       "Run a script bundled with an enabled skill (available entries are listed when you call use_skill). " +
       "Pure-compute scripts (parse/transform/validate data) run in an isolated sandbox with no page, " +
       "network, or browser access. Pass `input` as the JSON argument the skill's documentation asks for; " +
-      "the script's return value comes back as JSON. You cannot supply code — only scripts declared by " +
-      "the installed skill package can run.",
+      "the script's return value comes back as JSON. Scripts from disk-based skills may pause for the " +
+      "user to approve the skill on an authorization card the first time. You cannot supply code — only " +
+      "scripts declared by the installed skill package can run.",
     parameters: {
       type: "object",
       properties: {
@@ -84,7 +96,50 @@ export function buildRunSkillScriptTool(deps: SkillScriptDeps): Tool {
           };
         }
         const finalArgs = argv ?? (a.input !== undefined ? [JSON.stringify(a.input)] : []);
-        const outcome = await deps.runOnDaemon({ name: a.skillId, entry, args: finalArgs });
+        let outcome = await deps.runOnDaemon({ name: a.skillId, entry, args: finalArgs });
+        if (!outcome.ok && outcome.needsAuth) {
+          const auth = outcome.auth;
+          if (!auth) {
+            return {
+              success: false,
+              error:
+                "authorization_required: this skill needs user approval, but the connected Pie " +
+                "daemon is too old to describe what it would grant. Ask the user to update the Pie daemon.",
+            };
+          }
+          let approved = false;
+          try {
+            approved = await deps.requestGrant({
+              skillName: auth.skillName,
+              displayName: auth.displayName,
+              description: auth.description,
+              scripts: auth.envelope.runnableScripts,
+              network: auth.envelope.allowedDomains,
+              write: auth.envelope.extraWrites,
+            });
+          } catch {
+            return {
+              success: false,
+              error:
+                "authorization_required: no user present to approve (sidepanel closed or headless run).",
+            };
+          }
+          if (!approved) return { success: false, error: "User declined skill authorization." };
+          outcome = await deps.runOnDaemon({
+            name: a.skillId,
+            entry,
+            args: finalArgs,
+            grantApproved: true,
+            approvedEnvelopeHash: auth.envelopeHash,
+          });
+          if (!outcome.ok && outcome.needsAuth) {
+            return {
+              success: false,
+              error:
+                "Skill declarations changed while awaiting approval — call run_skill_script again.",
+            };
+          }
+        }
         if (outcome.ok) {
           const suffix = outcome.result.truncated ? " [output truncated]" : "";
           return {
@@ -94,15 +149,7 @@ export function buildRunSkillScriptTool(deps: SkillScriptDeps): Tool {
               `</untrusted_skill_content>${suffix}`,
           };
         }
-        if (outcome.needsAuth) {
-          return {
-            success: false,
-            error:
-              "authorization_required: this skill needs your approval to run scripts on this machine. " +
-              "The authorization card UI ships in the next update — for now the user can pre-authorize via daemon tooling.",
-          };
-        }
-        return { success: false, error: `run_skill_script failed: ${outcome.error}` };
+        return { success: false, error: `run_skill_script failed: ${(outcome as { error: string }).error}` };
       }
 
       // builtin / idb：既有 2a offscreen sandbox 路径，逐字保留。
@@ -149,10 +196,3 @@ export function buildRunSkillScriptTool(deps: SkillScriptDeps): Tool {
     },
   };
 }
-
-/** 默认实例：builtin/idb 走 offscreen sandbox，disk 走本地 daemon。 */
-export const RUN_SKILL_SCRIPT_TOOL: Tool = buildRunSkillScriptTool({
-  runInSandbox: (code, input) => sendToOffscreen<string>({ type: "skill:run_script", code, input }),
-  getSource: getActiveSkillSource,
-  runOnDaemon: requestRunSkillScript,
-});

@@ -9,6 +9,7 @@
 
 import type { LocalFileResult } from "./local-file-request";
 import type { ScheduleDraftPayload, ScheduleModelSelection } from "./agent/tools/schedule-meta";
+import type { SkillGrantRequest } from "./agent/tools/skill-script";
 
 /** kind 注册表：加一种人机交互 = 加一行，编译期校验 payload/返回。 */
 export interface PanelRequestMap {
@@ -20,6 +21,7 @@ export interface PanelRequestMap {
     req: { context: string; fileCount: number; agents: { id: string; label: string }[] };
     res: string | null; // 用户选中的 agent id；null = 拒绝
   };
+  "skill-grant": { req: SkillGrantRequest; res: boolean };
 }
 export type PanelRequestKind = keyof PanelRequestMap;
 

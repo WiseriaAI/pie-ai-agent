@@ -36,13 +36,21 @@ import { isCdpInputEnabled } from "../cdp-input-enabled";
 import { requestCdpInputConsent } from "../cdp-input-onboarding";
 import { requestLocalFileFromPanel } from "../local-file-request";
 import { requestFromPanel } from "../panel-request";
-import { isBridgeReady, bridgeCapabilities, requestLocalAgent, requestHandoff, requestListAgents } from "@/background/local-bridge";
+import {
+  isBridgeReady,
+  bridgeCapabilities,
+  requestLocalAgent,
+  requestHandoff,
+  requestListAgents,
+  requestRunSkillScript,
+} from "@/background/local-bridge";
 import { filterUsableAgents, getEnabledLocalAgents } from "@/lib/local-agents-prefs";
 import { buildRunLocalAgentTool } from "./tools/local-agent";
 import { buildHandoffTool } from "./tools/handoff";
 import { buildReadLocalFileTool, buildRequestLocalFileTool, buildOutputFileTool } from "./tools/files";
 import { buildScratchpadTools } from "./tools/scratchpad";
 import { createExtractRecordsTool } from "./tools/page-atlas";
+import { buildRunSkillScriptTool } from "./tools/skill-script";
 import {
   saveRecords as svcSaveRecords,
   updateNotes as svcUpdateNotes,
@@ -51,7 +59,8 @@ import {
   getOverview as svcGetOverview,
 } from "../scratchpad/service";
 import { queryScratchpad as svcQueryScratchpad } from "../scratchpad/sql-bridge";
-import { getEnabledSkillEntries } from "@/background/skill-source";
+import { getEnabledSkillEntries, getActiveSkillSource } from "@/background/skill-source";
+import { sendToOffscreen } from "@/background/offscreen-manager";
 import { isFilePdfUrl, isPdfTab } from "../pdf/detect";
 import { groupsForEnv, selectTools, growActiveGroups, type EnvSignals } from "./disclosure";
 import { buildLoadToolsTool } from "./tools/disclosure";
@@ -1890,6 +1899,15 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         getActiveGroups: () => activeToolGroups,
         headless: isHeadless,
       });
+      // run_skill_script 需要 sessionId（skill-grant 授权卡走 panel-request）——
+      // 与 mouse/keyboard 同模式 per-run 装配，不进 BUILT_IN_TOOLS 静态表。
+      const runSkillScriptTool = buildRunSkillScriptTool({
+        runInSandbox: (code, input) =>
+          sendToOffscreen<string>({ type: "skill:run_script", code, input }),
+        getSource: getActiveSkillSource,
+        runOnDaemon: requestRunSkillScript,
+        requestGrant: (p) => requestFromPanel(sessionId, "skill-grant", p),
+      });
       // Slice 0 local bridge gate: daemon absent → tool not registered at all,
       // so the LLM can never see/hallucinate `run_local_agent`. This is a
       // hard existence gate, not a progressive-disclosure group.
@@ -1921,6 +1939,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         ...BUILT_IN_TOOLS, ...mouseTools, ...keyboardTools, ...editorTools,
         readLocalFileTool, requestLocalFileTool, outputFileTool, ...scratchpadTools,
         extractRecordsTool,
+        runSkillScriptTool,
         loadToolsTool,
         ...localBridgeTools, // Slice 0 — run_local_agent (bridge-gated)
       ];
