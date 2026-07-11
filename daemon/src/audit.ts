@@ -26,7 +26,10 @@ export function readAuditTail(limit = 20, path = paths.auditPath): AuditEntry[] 
     const parsed: AuditEntry[] = [];
     for (const line of lines) {
       try {
-        parsed.push(JSON.parse(line) as AuditEntry);
+        const e = JSON.parse(line) as AuditEntry;
+        // 契约过滤：老格式行（2b 时代 skillId/perms 字段）不符合 AuditEntry wire
+        // 类型，返回会让设置页渲染空名字——按 wire 契约只放行当前格式。
+        if (typeof e.skillName === "string" && typeof e.entry === "string") parsed.push(e);
       } catch {
         /* 坏行跳过 */
       }
