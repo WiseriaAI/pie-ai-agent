@@ -1,5 +1,6 @@
 // Slash-command resolution for Chat input. Phase 2.6 follow-up; migrated to
-// SkillPackage in the standard-skill-architecture refactor (SP-1).
+// SkillPackage in the standard-skill-architecture refactor (SP-1), then to
+// SkillEntry (Task 9 — panel reads skills via RPC, not the IDB-only store).
 //
 // User types `/<key>` (or `/<key> <args>`) where <key> is either a skill id
 // or a slugified skill name. If a match is found, the chat input is
@@ -11,7 +12,7 @@
 // — it routes through the same resolver after stripping the `/skill`
 // prefix.
 
-import type { SkillPackage } from "./package-types";
+import type { SkillEntry } from "./source";
 
 /**
  * Normalize a string for slash-key comparison.
@@ -42,9 +43,9 @@ export function normalizeSkillSlashKey(s: string): string {
  * deliberate naming wins over a built-in coincidence).
  */
 export function findSkillBySlashKey(
-  skills: SkillPackage[],
+  skills: SkillEntry[],
   key: string,
-): SkillPackage | null {
+): SkillEntry | null {
   // 1. exact id match (covers programmatic Run-button case where prefill
   // is already the literal id)
   const byId = skills.find((s) => s.id === key);
@@ -54,19 +55,19 @@ export function findSkillBySlashKey(
   const nKey = normalizeSkillSlashKey(key);
   if (!nKey) return null;
   const matches = skills.filter(
-    (s) => normalizeSkillSlashKey(s.frontmatter.name) === nKey,
+    (s) => normalizeSkillSlashKey(s.name) === nKey,
   );
   if (matches.length === 0) return null;
   if (matches.length === 1) return matches[0];
 
   // 3. tie-break: user-authored > agent-authored > built-in
-  const rank = (s: SkillPackage): number =>
-    s.builtIn ? 2 : s.frontmatter.author === "agent" ? 1 : 0;
+  const rank = (s: SkillEntry): number =>
+    s.builtIn ? 2 : s.author === "agent" ? 1 : 0;
   return [...matches].sort((a, b) => rank(a) - rank(b))[0];
 }
 
 export interface SlashCommandMatch {
-  skill: SkillPackage;
+  skill: SkillEntry;
   /** Whatever the user typed after the skill key, untouched. May be empty. */
   rest: string;
 }
@@ -82,7 +83,7 @@ export interface SlashCommandMatch {
  */
 export function resolveSlashCommand(
   text: string,
-  skills: SkillPackage[],
+  skills: SkillEntry[],
 ): SlashCommandMatch | null {
   // Legacy /skill <key> [rest] — strip prefix, fall through.
   const legacy = text.match(/^\/skill\s+(\S+)(?:\s+([\s\S]*))?$/);
@@ -110,7 +111,7 @@ export function resolveSlashCommand(
  * with the resolved skill id; the skill body is fetched at call time.
  */
 export function expandSlashCommand(match: SlashCommandMatch): string {
-  const base = `Use the "${match.skill.frontmatter.name}" skill (id: ${match.skill.id}) by invoking the use_skill tool with that id, then follow its instructions.`;
+  const base = `Use the "${match.skill.name}" skill (id: ${match.skill.id}) by invoking the use_skill tool with that id, then follow its instructions.`;
   return match.rest
     ? `${base} Additional input from the user: ${match.rest}`
     : base;

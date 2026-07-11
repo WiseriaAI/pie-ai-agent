@@ -51,7 +51,7 @@ import {
   getOverview as svcGetOverview,
 } from "../scratchpad/service";
 import { queryScratchpad as svcQueryScratchpad } from "../scratchpad/sql-bridge";
-import { getEnabledSkillPackages } from "../skills";
+import { getEnabledSkillEntries } from "@/background/skill-source";
 import { isFilePdfUrl, isPdfTab } from "../pdf/detect";
 import { groupsForEnv, selectTools, growActiveGroups, type EnvSignals } from "./disclosure";
 import { buildLoadToolsTool } from "./tools/disclosure";
@@ -1393,11 +1393,11 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
   // Skill catalog — advertise enabled skill packages in the system prompt.
   // Fetched once at task start; the agent discovers + reads skills at runtime
   // via the built-in use_skill / read_skill_file mediation tools.
-  const enabledPkgs = await getEnabledSkillPackages();
-  const skillCatalog = enabledPkgs.map((p) => ({
-    id: p.id,
-    name: p.frontmatter.name,
-    description: p.frontmatter.description,
+  const enabledEntries = await getEnabledSkillEntries();
+  const skillCatalog = enabledEntries.map((e) => ({
+    id: e.id,
+    name: e.name,
+    description: e.description,
   }));
   const uiLocale = await resolveLocale();
   const assistantLanguageSetting = await getAssistantLanguageSetting();

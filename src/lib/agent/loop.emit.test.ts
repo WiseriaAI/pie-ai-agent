@@ -113,7 +113,7 @@ vi.mock("../scratchpad/service", () => ({
   getOverview: vi.fn(),
 }));
 vi.mock("../scratchpad/sql-bridge", () => ({ queryScratchpad: vi.fn() }));
-vi.mock("../skills", () => ({ getEnabledSkillPackages: vi.fn(async () => []) }));
+vi.mock("@/background/skill-source", () => ({ getEnabledSkillEntries: vi.fn(async () => []) }));
 vi.mock("../pdf/detect", () => ({ isFilePdfUrl: vi.fn(() => false), isPdfTab: vi.fn(() => false) }));
 vi.mock("../../background/cdp-session", () => ({
   acquireCdpSession: vi.fn(async () => null),

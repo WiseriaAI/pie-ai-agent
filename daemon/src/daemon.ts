@@ -7,6 +7,12 @@ import { runHandoff } from "./handoff";
 import { detectAgents, AGENT_CANDIDATES } from "./agents";
 import { decodeNdjsonLines } from "./framing";
 import { log } from "./log";
+import { listSkills, readSkillFile, writeSkill, deleteSkill } from "./skill-store";
+import { runSkillScript } from "./skill-exec";
+import { listGrants, revokeGrant } from "./grants";
+import type {
+  ReadSkillFileParams, RunSkillScriptParams, WriteSkillParams, DeleteSkillParams, RevokeGrantParams,
+} from "../../src/types/local-bridge";
 
 export async function handleMessage(line: string): Promise<string> {
   let msg: { id?: string; method?: string; params?: unknown };
@@ -57,6 +63,69 @@ export async function handleMessage(line: string): Promise<string> {
       } catch (e) {
         log("error", "list_agents.failed", { id, error: String(e) });
         return respond({ ok: false, error: { code: "list_agents_failed", message: String(e) } });
+      }
+    }
+    case "list_skills": {
+      try {
+        return respond({ ok: true, result: { skills: listSkills() } });
+      } catch (e) {
+        log("error", "list_skills.failed", { id, error: String(e) });
+        return respond({ ok: false, error: { code: "list_skills_failed", message: String(e) } });
+      }
+    }
+    case "read_skill_file": {
+      try {
+        const p = msg.params as ReadSkillFileParams;
+        return respond({ ok: true, result: { content: readSkillFile(p.name, p.path) } });
+      } catch (e) {
+        log("error", "read_skill_file.failed", { id, error: String(e) });
+        return respond({ ok: false, error: { code: "read_skill_file_failed", message: String(e) } });
+      }
+    }
+    case "run_skill_script": {
+      try {
+        const result = await runSkillScript(msg.params as RunSkillScriptParams);
+        return respond({ ok: true, result });
+      } catch (e) {
+        // 保留业务错误码（needs_authorization / unknown_skill / unknown_entry / timeout / script_error）
+        const code = (e as { code?: string }).code ?? "run_skill_script_failed";
+        log("error", "run_skill_script.failed", { id, code, error: String(e) });
+        return respond({ ok: false, error: { code, message: String(e) } });
+      }
+    }
+    case "write_skill": {
+      try {
+        const p = msg.params as WriteSkillParams;
+        return respond({ ok: true, result: writeSkill(p.name, p.files) });
+      } catch (e) {
+        log("error", "write_skill.failed", { id, error: String(e) });
+        return respond({ ok: false, error: { code: "write_skill_failed", message: String(e) } });
+      }
+    }
+    case "delete_skill": {
+      try {
+        const p = msg.params as DeleteSkillParams;
+        return respond({ ok: true, result: { deleted: deleteSkill(p.name) } });
+      } catch (e) {
+        log("error", "delete_skill.failed", { id, error: String(e) });
+        return respond({ ok: false, error: { code: "delete_skill_failed", message: String(e) } });
+      }
+    }
+    case "list_grants": {
+      try {
+        return respond({ ok: true, result: { grants: listGrants() } });
+      } catch (e) {
+        log("error", "list_grants.failed", { id, error: String(e) });
+        return respond({ ok: false, error: { code: "list_grants_failed", message: String(e) } });
+      }
+    }
+    case "revoke_grant": {
+      try {
+        const p = msg.params as RevokeGrantParams;
+        return respond({ ok: true, result: { revoked: revokeGrant(p.key) } });
+      } catch (e) {
+        log("error", "revoke_grant.failed", { id, error: String(e) });
+        return respond({ ok: false, error: { code: "revoke_grant_failed", message: String(e) } });
       }
     }
     default:

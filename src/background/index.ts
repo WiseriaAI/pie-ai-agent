@@ -66,6 +66,8 @@ import { handleScheduleNotificationClick } from "@/lib/schedules/notify";
 import { setScheduleRunDep } from "@/lib/agent/tools/schedule-meta";
 import { handleScheduleAction } from "@/lib/schedules/action-handler";
 import { SCHEDULE_ACTION_MESSAGE, type ScheduleActionMessage } from "@/lib/schedules/panel-actions";
+import { handleSkillsAction } from "./skills-action-handler";
+import { SKILLS_ACTION_MESSAGE, type SkillsActionMessage } from "@/lib/skills/panel-actions";
 import {
   handleExternalDetach,
   detachAllSessions,
@@ -128,8 +130,9 @@ import { mergeCarryoverIntoMessages } from "@/lib/agent/loop-drain";
 import type { ChatInstructionRejectedMessage } from "@/types/messages";
 import { isFilePdfUrl } from "@/lib/pdf/detect";
 import { installLogCapture } from "@/lib/log-buffer";
-import { maybeInitLocalBridge, disconnectLocalBridge, isBridgeReady, requestListAgents } from "./local-bridge";
+import { disconnectLocalBridge, isBridgeReady, requestListAgents } from "./local-bridge";
 import { getEnabledLocalAgents, setEnabledLocalAgents, applyToggle, isAgentUsable } from "@/lib/local-agents-prefs";
+import { initBridgeAndMigrate } from "./skill-migration";
 
 // Install log capture at module top level
 installLogCapture("sw");
@@ -220,14 +223,22 @@ setScheduleRunDep(runScheduleWithDeps);
 // granted the optional `nativeMessaging` permission, so pure BYOK users who
 // never opt into local integration get zero native-messaging surface. Fire
 // and forget: the bridge degrades silently if no daemon is installed.
-void maybeInitLocalBridge();
+// Task 10 — bridge init + one-shot idempotent IDB→disk skill migration,
+// SEQUENCED: migration must await maybeInitLocalBridge() so bridgeSettled()
+// captures the real handshake promise (parallel fire would race the
+// permissions IPC and deterministically no-op every cold start). Never
+// throws; never blocks the rest of SW startup.
+void initBridgeAndMigrate();
 
 // Grant-time init: when the user enables local integration at runtime (settings
 // toggle → chrome.permissions.request), connect the bridge immediately instead
 // of waiting for the next SW restart. Symmetrically, tear the bridge down when
 // the user disables it (removes the permission).
 chrome.permissions.onAdded.addListener((p) => {
-  if (p.permissions?.includes("nativeMessaging")) void maybeInitLocalBridge();
+  // initBridgeAndMigrate (not bare maybeInitLocalBridge): the mid-session
+  // grant is the most common FIRST moment skill_fs becomes available, so the
+  // migration pass must run here too.
+  if (p.permissions?.includes("nativeMessaging")) void initBridgeAndMigrate();
 });
 chrome.permissions.onRemoved.addListener((p) => {
   if (p.permissions?.includes("nativeMessaging")) disconnectLocalBridge();
@@ -712,6 +723,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === SCHEDULE_ACTION_MESSAGE) {
     const m = message as ScheduleActionMessage;
     handleScheduleAction({ action: m.action, payload: m.payload })
+      .then(sendResponse)
+      .catch((e) => sendResponse({ ok: false, error: String(e) }));
+    return true; // async response
+  }
+
+  // Task 8 — panel RPC channel for skills reads/writes. The panel cannot
+  // connectNative (SW-only), so it routes every skills action through the
+  // SW's active SkillSource. handleSkillsAction never rejects — it resolves
+  // { ok, error? } which we forward to the panel.
+  if (message?.type === SKILLS_ACTION_MESSAGE) {
+    const m = message as SkillsActionMessage;
+    handleSkillsAction(m)
       .then(sendResponse)
       .catch((e) => sendResponse({ ok: false, error: String(e) }));
     return true; // async response

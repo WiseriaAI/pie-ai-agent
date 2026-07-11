@@ -1,13 +1,13 @@
-import type { SkillPackage } from "@/lib/skills";
+import type { SkillEntry } from "@/lib/skills/source";
 import { normalizeSkillSlashKey } from "@/lib/skills";
 import { useT } from "@/lib/i18n";
 
 interface SkillSlashPopoverProps {
-  skills: SkillPackage[];
+  skills: SkillEntry[];
   query: string;
   selectedIndex: number;
   onSelect: (index: number) => void;
-  onPick: (skill: SkillPackage) => void;
+  onPick: (skill: SkillEntry) => void;
 }
 
 const MAX_VISIBLE = 8;
@@ -63,10 +63,10 @@ export default function SkillSlashPopover({
       </div>
       <ul className="max-h-72 divide-y divide-line overflow-auto">
         {visible.map((skill, i) => {
-          const slug = normalizeSkillSlashKey(skill.frontmatter.name) || skill.id;
+          const slug = normalizeSkillSlashKey(skill.name) || skill.id;
           const tag = skill.builtIn
             ? t("skills.authorTag.builtIn")
-            : skill.frontmatter.author === "agent"
+            : skill.author === "agent"
               ? t("skills.authorTag.agent")
               : t("skills.authorTag.user");
           const selected = i === selectedIndex;
@@ -90,9 +90,9 @@ export default function SkillSlashPopover({
                   {tag}
                 </span>
               </div>
-              {skill.frontmatter.description && (
+              {skill.description && (
                 <div className="truncate text-[12px] leading-[18px] text-fg-2">
-                  {skill.frontmatter.description}
+                  {skill.description}
                 </div>
               )}
             </li>

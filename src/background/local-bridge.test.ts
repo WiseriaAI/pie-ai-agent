@@ -168,4 +168,206 @@ describe("local-bridge", () => {
     await expect(requestListAgents()).resolves.toEqual([{ id: "claude", label: "Claude Code (Terminal)", installed: true }]);
     expect(fakePort.postMessage.mock.calls).toHaveLength(1); // 没有第二个 wire 请求
   });
+
+  it("requestRunSkillScript maps needs_authorization to { needsAuth: true }", async () => {
+    const { initLocalBridge, requestRunSkillScript } = await import("./local-bridge");
+    initLocalBridge();
+    const helloReq = fakePort.postMessage.mock.calls[0][0] as { id: string };
+    fakePort._emit({
+      id: helloReq.id, ok: true,
+      result: { protocolVersion: PROTOCOL_VERSION, capabilities: ["skill_fs"] },
+    });
+    await Promise.resolve();
+
+    const p = requestRunSkillScript({ name: "demo", entry: "fetch.ts" });
+    const req = fakePort.postMessage.mock.calls[1][0] as { id: string; method: string };
+    expect(req.method).toBe("run_skill_script");
+    fakePort._emit({
+      id: req.id, ok: false,
+      error: { code: "needs_authorization", message: "authorization required" },
+    });
+    await expect(p).resolves.toEqual({ ok: false, needsAuth: true });
+  });
+
+  it("requestRunSkillScript maps other errors to { needsAuth:false, error }", async () => {
+    const { initLocalBridge, requestRunSkillScript } = await import("./local-bridge");
+    initLocalBridge();
+    const helloReq = fakePort.postMessage.mock.calls[0][0] as { id: string };
+    fakePort._emit({
+      id: helloReq.id, ok: true,
+      result: { protocolVersion: PROTOCOL_VERSION, capabilities: ["skill_fs"] },
+    });
+    await Promise.resolve();
+
+    const p = requestRunSkillScript({ name: "demo", entry: "fetch.ts" });
+    const req = fakePort.postMessage.mock.calls[1][0] as { id: string; method: string };
+    fakePort._emit({
+      id: req.id, ok: false,
+      error: { code: "script_error", message: "script threw: boom" },
+    });
+    await expect(p).resolves.toEqual({ ok: false, needsAuth: false, error: "script threw: boom" });
+  });
+
+  it("requestListSkills round-trips result.skills", async () => {
+    const { initLocalBridge, requestListSkills } = await import("./local-bridge");
+    initLocalBridge();
+    const helloReq = fakePort.postMessage.mock.calls[0][0] as { id: string };
+    fakePort._emit({
+      id: helloReq.id, ok: true,
+      result: { protocolVersion: PROTOCOL_VERSION, capabilities: ["skill_fs"] },
+    });
+    await Promise.resolve();
+
+    const p = requestListSkills();
+    const req = fakePort.postMessage.mock.calls[1][0] as { id: string; method: string };
+    expect(req.method).toBe("list_skills");
+    const skills = [
+      {
+        name: "demo",
+        description: "demo skill",
+        runnableScripts: ["fetch.ts"],
+        declaredCaps: { network: [], write: [] },
+        files: ["SKILL.md"],
+      },
+    ];
+    fakePort._emit({ id: req.id, ok: true, result: { skills } });
+    await expect(p).resolves.toEqual({ skills });
+  });
+
+  it("bridgeHasSkillFs true only when ready && capability present", async () => {
+    // 场景一：ready 但 capabilities 不含 skill_fs
+    {
+      const { initLocalBridge, bridgeHasSkillFs } = await import("./local-bridge");
+      initLocalBridge();
+      expect(bridgeHasSkillFs()).toBe(false); // 还没 ready
+
+      const helloReq = fakePort.postMessage.mock.calls[0][0] as { id: string };
+      fakePort._emit({
+        id: helloReq.id, ok: true,
+        result: { protocolVersion: PROTOCOL_VERSION, capabilities: ["run_local_agent"] },
+      });
+      await Promise.resolve();
+      expect(bridgeHasSkillFs()).toBe(false); // ready 但没有 skill_fs capability
+    }
+
+    // 场景二：ready 且 capabilities 含 skill_fs
+    vi.resetModules();
+    fakePort = makeFakePort();
+    (globalThis as any).chrome = { runtime: { connectNative: vi.fn(() => fakePort) } };
+    {
+      const { initLocalBridge, bridgeHasSkillFs } = await import("./local-bridge");
+      initLocalBridge();
+      const helloReq = fakePort.postMessage.mock.calls[0][0] as { id: string };
+      fakePort._emit({
+        id: helloReq.id, ok: true,
+        result: { protocolVersion: PROTOCOL_VERSION, capabilities: ["run_local_agent", "skill_fs"] },
+      });
+      await Promise.resolve();
+      expect(bridgeHasSkillFs()).toBe(true);
+    }
+  });
+
+  it("bridgeSettled resolves after handshake completes (and immediately when never inited)", async () => {
+    const { initLocalBridge, bridgeSettled } = await import("./local-bridge");
+
+    // 从未 init 过：bridgeSettled() 立即已 resolve
+    await expect(bridgeSettled()).resolves.toBeUndefined();
+
+    initLocalBridge();
+    let settled = false;
+    bridgeSettled().then(() => { settled = true; });
+
+    // hello 还没回复：新一轮 settled promise 尚未落定
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    const helloReq = fakePort.postMessage.mock.calls[0][0] as { id: string };
+    fakePort._emit({
+      id: helloReq.id, ok: true,
+      result: { protocolVersion: PROTOCOL_VERSION, capabilities: [] },
+    });
+
+    // 握手 .then 回调跑完（内部调用 settledResolve）+ settledPromise 自身的回调再跑一轮
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(settled).toBe(true);
+  });
+
+  it("bridgeSettled: overlapping initLocalBridge — both promises settle, no dangle", async () => {
+    const { initLocalBridge, bridgeSettled } = await import("./local-bridge");
+
+    // init A：hello 尚未回复
+    const portA = fakePort;
+    initLocalBridge();
+    const pA = bridgeSettled();
+
+    // A 的 hello 还没落定时 init B（connectNative 返回一个全新 fake port）
+    const portB = makeFakePort();
+    (globalThis as any).chrome.runtime.connectNative = vi.fn(() => portB);
+    initLocalBridge();
+    const pB = bridgeSettled();
+
+    // 先回 A 的 hello（port A 上），再回 B 的（port B 上）
+    const helloA = portA.postMessage.mock.calls[0][0] as { id: string };
+    portA._emit({ id: helloA.id, ok: true, result: { protocolVersion: PROTOCOL_VERSION, capabilities: [] } });
+    const helloB = portB.postMessage.mock.calls[0][0] as { id: string };
+    portB._emit({ id: helloB.id, ok: true, result: { protocolVersion: PROTOCOL_VERSION, capabilities: [] } });
+
+    // 两个 promise 都必须落定；race 短超时让悬空快速失败而不是拖满测试超时
+    const timeout = (ms: number) =>
+      new Promise<never>((_, rej) => setTimeout(() => rej(new Error("dangling bridgeSettled promise")), ms));
+    await expect(Promise.race([pA, timeout(500)])).resolves.toBeUndefined();
+    await expect(Promise.race([pB, timeout(500)])).resolves.toBeUndefined();
+  });
+
+  it("maybeInitLocalBridge: bridgeSettled grabbed before permissions IPC resolves waits for handshake (cold-start race)", async () => {
+    const { maybeInitLocalBridge, bridgeSettled, bridgeHasSkillFs } = await import("./local-bridge");
+
+    // 可控的 permissions.contains deferred，模拟跨进程 IPC 尚未返回
+    let grantPermission!: (v: boolean) => void;
+    (globalThis as any).chrome.permissions = {
+      contains: vi.fn(() => new Promise<boolean>((r) => { grantPermission = r; })),
+    };
+
+    void maybeInitLocalBridge();
+    // 同 tick 抓 settled promise（模拟消息处理器在 permissions IPC 返回前就跑）
+    const p = bridgeSettled();
+    let settled = false;
+    void p.then(() => { settled = true; });
+
+    // permissions 还没回来：决策 promise 不许落定（否则首次读会误判成 IDB 模式）
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    // permissions 回 true → initLocalBridge 发 hello
+    grantPermission(true);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const helloReq = fakePort.postMessage.mock.calls[0][0] as { id: string };
+    fakePort._emit({
+      id: helloReq.id, ok: true,
+      result: { protocolVersion: PROTOCOL_VERSION, capabilities: ["skill_fs"] },
+    });
+
+    await p; // 决策 promise 链到握手落定
+    expect(bridgeHasSkillFs()).toBe(true);
+  });
+
+  it("maybeInitLocalBridge: no-permission branch settles the early-grabbed bridgeSettled", async () => {
+    const { maybeInitLocalBridge, bridgeSettled, isBridgeReady } = await import("./local-bridge");
+
+    let grantPermission!: (v: boolean) => void;
+    (globalThis as any).chrome.permissions = {
+      contains: vi.fn(() => new Promise<boolean>((r) => { grantPermission = r; })),
+    };
+
+    void maybeInitLocalBridge();
+    const p = bridgeSettled();
+
+    grantPermission(false);
+    await p; // 无权限分支也必须落定，绝不悬空
+    expect(isBridgeReady()).toBe(false);
+  });
 });
