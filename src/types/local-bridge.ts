@@ -74,6 +74,9 @@ export interface SkillCaps {
 /** list_skills 每项：catalog 呈现 + 授权卡渲染所需的结构化摘要。 */
 export interface SkillSummary {
   name: string;
+  /** 展示名 = frontmatter.name（目录名产不出 ASCII slug 时两者不同，如中文名
+   *  skill 迁到 hash 目录）；缺省同 name。身份/调用一律用 name（目录名）。 */
+  displayName?: string;
   description: string;
   /** scripts/ 下可执行文件的相对名（如 "fetch.ts"）；run_skill_script 的 allowlist */
   runnableScripts: string[];

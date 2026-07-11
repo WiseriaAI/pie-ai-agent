@@ -42,6 +42,14 @@ async function writeDisabledMarker(slug: string, pkgId: string): Promise<void> {
   }
 }
 
+/** 名字产不出 ASCII slug（中文名是常态）时的确定性目录名：同名恒同 slug，
+ *  existing 幂等检查照常工作。随机名被明确否掉——每轮会迁一份新的。 */
+async function hashSlug(name: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(name));
+  const hex = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  return `skill-${hex.slice(0, 8)}`;
+}
+
 export async function migrateIdbSkillsToDisk(): Promise<MigrateSkillsResult> {
   const migrated: string[] = [];
   const skipped: string[] = [];
@@ -58,17 +66,10 @@ export async function migrateIdbSkillsToDisk(): Promise<MigrateSkillsResult> {
     const markers = await getEnabledSkillIds();
 
     for (const pkg of userPkgs) {
-      const slug = kebabSlug(pkg.frontmatter.name);
+      // 名字产不出 ASCII slug（中文名）→ 确定性 hash 目录名，绝不静默跳过
+      //（真机教训：用户的中文名 skill 曾因此永远不迁移且无可见提示）。
+      const slug = kebabSlug(pkg.frontmatter.name) || (await hashSlug(pkg.frontmatter.name));
       try {
-        if (!slug) {
-          // 名字里没有可用的 ASCII 字母数字，无法生成可预期的磁盘目录名——
-          // 不造随机名（那样每次迁移结果都不一样，用户认不出自己的 skill）。
-          console.warn(
-            `[skill-migration] skill "${pkg.frontmatter.name}" (${pkg.id}) 的名字生成不出磁盘目录名，已跳过；请改个含字母/数字的名字后重新触发迁移。`,
-          );
-          skipped.push(pkg.frontmatter.name || pkg.id);
-          continue;
-        }
         if (existing.has(slug)) {
           // 幂等核心：磁盘上已有同名目录 = 已经迁过，或用户在磁盘模式下自建的——
           // 两种情况都绝不覆盖。
@@ -102,7 +103,7 @@ export async function migrateIdbSkillsToDisk(): Promise<MigrateSkillsResult> {
         }
       } catch (e) {
         console.warn(`[skill-migration] 迁移 skill "${pkg.frontmatter.name}" (${pkg.id}) 失败，已跳过：`, e);
-        skipped.push(slug || pkg.frontmatter.name || pkg.id);
+        skipped.push(slug);
       }
     }
     return { migrated, skipped };

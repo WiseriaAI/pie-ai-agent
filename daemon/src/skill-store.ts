@@ -95,7 +95,8 @@ export function listSkills(root: string = paths.skillsDir): SkillSummary[] {
     try {
       const parsed = parseSkillMd(readFileSync(mdPath, "utf8"));
       out.push({
-        name: e.name, // 目录名即身份（与 frontmatter.name 应一致，以目录为准）
+        name: e.name, // 目录名即身份（调用/grant 一律用它，以目录为准）
+        displayName: parsed.name, // 展示名 = frontmatter.name（中文名 skill 迁到 hash 目录时两者不同）
         description: parsed.description,
         runnableScripts: runnableScripts(dir),
         declaredCaps: parsed.declaredCaps,

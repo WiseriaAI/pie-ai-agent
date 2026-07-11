@@ -10,7 +10,8 @@ export const daemonSkillSource: SkillSource = {
     const { skills } = await requestListSkills();
     return skills.map((s) => ({
       id: s.name,
-      name: s.name,
+      // 展示名优先 frontmatter.name（中文名 skill 迁到 hash 目录时目录名不可读）
+      name: s.displayName ?? s.name,
       description: s.description,
       builtIn: false,
       origin: "disk" as const,

@@ -82,3 +82,14 @@ test("listSkills enumerates package files, excluding workspace/.runs/dotfiles", 
   expect(s.files.sort()).toEqual(["SKILL.md", "references/guide.md", "scripts/run.ts"]);
   rmSync(root, { recursive: true, force: true });
 });
+
+test("listSkills carries displayName from frontmatter (dir name stays identity)", () => {
+  // hash 目录名（中文名迁移）场景：目录 skill-ab12cd34，frontmatter.name 是中文——
+  // 列表展示要用后者，id/身份仍是目录名。
+  const root = tmpRoot();
+  makeSkill(root, "skill-ab12cd34", `---\nname: 纯中文技能名\ndescription: d\n---\nb\n`, []);
+  const [s] = listSkills(root);
+  expect(s.name).toBe("skill-ab12cd34");
+  expect(s.displayName).toBe("纯中文技能名");
+  rmSync(root, { recursive: true, force: true });
+});

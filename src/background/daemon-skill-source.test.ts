@@ -55,6 +55,26 @@ describe("daemonSkillSource", () => {
     ]);
   });
 
+  it("list() displayName 存在时作展示名（id 仍是目录名）——中文名 skill 迁到 hash 目录场景", async () => {
+    requestListSkills.mockResolvedValue({
+      skills: [
+        {
+          name: "skill-ab12cd34",
+          displayName: "纯中文技能名",
+          description: "d",
+          runnableScripts: [],
+          declaredCaps: { network: [], write: [] },
+          files: ["SKILL.md"],
+        },
+      ],
+    });
+
+    const [entry] = await daemonSkillSource.list();
+
+    expect(entry.id).toBe("skill-ab12cd34"); // 调用身份 = 目录名
+    expect(entry.name).toBe("纯中文技能名"); // 展示名 = frontmatter.name
+  });
+
   it("list() 空数组时返回空数组", async () => {
     requestListSkills.mockResolvedValue({ skills: [] });
     expect(await daemonSkillSource.list()).toEqual([]);

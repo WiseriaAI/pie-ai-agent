@@ -171,15 +171,29 @@ describe("migrateIdbSkillsToDisk", () => {
     expect(markers).not.toContain("enabled-skill");
   });
 
-  it("(e) 空 slug（纯非 ASCII 名字）→ skipped + console.warn，不写盘", async () => {
+  it("(e) 空 slug（纯非 ASCII 名字）→ 确定性 hash 目录名迁移（skill-<hex8>），二跑幂等", async () => {
+    // 中文名是常态，不能静默不迁移；hash(名字) 派生目录名保证同名恒同 slug →
+    // existing 检查照常幂等（随机名会每轮迁一份新的，被明确否掉）。
     await putPackage(makePkg("skill_user_1", "纯中文技能名"));
 
     const result = await migrateIdbSkillsToDisk();
 
-    expect(result.migrated).toEqual([]);
-    expect(result.skipped).toEqual(["纯中文技能名"]);
+    expect(result.migrated).toHaveLength(1);
+    const slug = result.migrated[0];
+    expect(slug).toMatch(/^skill-[0-9a-f]{8}$/);
+    expect(result.skipped).toEqual([]);
+    expect(requestWriteSkill).toHaveBeenCalledTimes(1);
+    expect(requestWriteSkill).toHaveBeenCalledWith(
+      expect.objectContaining({ name: slug }),
+    );
+
+    // 二跑：磁盘上已有该 slug → skip（幂等成立的前提 = slug 确定性）
+    requestListSkills.mockResolvedValue({ skills: [daemonEntry(slug)] });
+    requestWriteSkill.mockClear();
+    const second = await migrateIdbSkillsToDisk();
+    expect(second.migrated).toEqual([]);
+    expect(second.skipped).toEqual([slug]);
     expect(requestWriteSkill).not.toHaveBeenCalled();
-    expect(warnSpy).toHaveBeenCalled();
   });
 
   it("(f) 一个 pkg 的 requestWriteSkill 拒绝 → 落 skipped，其余仍正常迁移", async () => {
