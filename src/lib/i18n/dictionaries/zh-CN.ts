@@ -151,6 +151,17 @@ export const zhCNDict = {
     allow: "交棒",
     deny: "取消",
   },
+  skillGrant: {
+    title: "允许该 skill 在你的电脑上运行脚本？",
+    scriptsLabel: "可执行脚本",
+    networkLabel: "网络访问",
+    networkNone: "无——默认沙箱已断网",
+    writeLabel: "工作区外额外写入路径",
+    disclosure:
+      "脚本将以你的本机权限在默认沙箱内运行：未列出的域名一律断网，写入仅限该 skill 的工作区与上列路径，敏感目录拒绝读取。批准后免再确认，直到该 skill 的声明发生变化。",
+    allow: "允许",
+    deny: "拒绝",
+  },
   chat: {
     elementPicker: {
       idle: "拾取页面元素",

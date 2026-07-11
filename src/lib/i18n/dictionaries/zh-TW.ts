@@ -151,6 +151,17 @@ export const zhTWDict = {
     allow: "交棒",
     deny: "取消",
   },
+  skillGrant: {
+    title: "允許該 skill 在你的電腦上執行指令碼？",
+    scriptsLabel: "可執行指令碼",
+    networkLabel: "網路存取",
+    networkNone: "無——預設沙箱已斷網",
+    writeLabel: "工作區外額外寫入路徑",
+    disclosure:
+      "指令碼將以你的本機權限在預設沙箱內執行：未列出的網域一律斷網，寫入僅限該 skill 的工作區與上列路徑，敏感目錄拒絕讀取。核准後免再確認，直到該 skill 的宣告發生變化。",
+    allow: "允許",
+    deny: "拒絕",
+  },
   chat: {
     elementPicker: {
       idle: "選取頁面元素",
