@@ -219,6 +219,7 @@ export const enDict = {
     agent: "AGENT",
     agentWorking: "Agent is working",
     working: "WORKING",
+    thinking: "THINKING",
     expandFull: "Show more",
     collapse: "Show less",
     copyCode: "Copy",

@@ -220,6 +220,7 @@ export const jaDict = {
     agent: "エージェント",
     agentWorking: "エージェントが作業中です",
     working: "作業中",
+    thinking: "思考中",
     expandFull: "もっと表示",
     collapse: "折りたたむ",
     copyCode: "コピー",

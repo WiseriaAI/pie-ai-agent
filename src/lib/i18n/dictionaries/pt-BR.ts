@@ -220,6 +220,7 @@ export const ptBRDict = {
     agent: "AGENTE",
     agentWorking: "O agente está trabalhando",
     working: "TRABALHANDO",
+    thinking: "PENSANDO",
     expandFull: "Mostrar mais",
     collapse: "Mostrar menos",
     copyCode: "Copiar",

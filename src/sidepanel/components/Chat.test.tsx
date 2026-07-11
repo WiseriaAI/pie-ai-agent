@@ -116,6 +116,7 @@ function makeSession(overrides?: Partial<UseSession>): UseSession {
     messages: [] as DisplayMessage[],
     streaming: false,
     streamingText: "",
+    streamingThinking: "",
     error: null,
     toast: null,
     sendMessage: vi.fn(),
@@ -1294,5 +1295,41 @@ describe("Chat — Esc-to-terminate keyboard shortcut", () => {
     });
     expect(abort).not.toHaveBeenCalled();
     expect(screen.queryByTitle(/Press Esc again to stop/i)).toBeNull();
+  });
+});
+
+describe("WorkingIndicator Pie face", () => {
+  it("thinking 流期间显示 THINKING + thinking 态脸", async () => {
+    seedProvider("anthropic");
+    render(
+      <Chat
+        session={makeSession({
+          streaming: true,
+          streamingThinking: "hmm",
+          streamingText: "",
+        })}
+        onOpenSettings={() => {}}
+        providerLabel={null}
+      />,
+    );
+    expect(await screen.findByText("THINKING")).toBeTruthy();
+    expect(document.querySelector('[data-pie-state="thinking"]')).toBeTruthy();
+  });
+
+  it("正文流出后切换 WORKING + working 态脸", async () => {
+    seedProvider("anthropic");
+    render(
+      <Chat
+        session={makeSession({
+          streaming: true,
+          streamingThinking: "",
+          streamingText: "Hello",
+        })}
+        onOpenSettings={() => {}}
+        providerLabel={null}
+      />,
+    );
+    expect(await screen.findByText("WORKING")).toBeTruthy();
+    expect(document.querySelector('[data-pie-state="working"]')).toBeTruthy();
   });
 });

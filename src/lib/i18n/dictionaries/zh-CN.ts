@@ -219,6 +219,7 @@ export const zhCNDict = {
     agent: "Agent",
     agentWorking: "Agent 工作中",
     working: "工作中",
+    thinking: "思考中",
     expandFull: "展开全文",
     collapse: "收起",
     copyCode: "复制",

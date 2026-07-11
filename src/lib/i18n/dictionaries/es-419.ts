@@ -220,6 +220,7 @@ export const es419Dict = {
     agent: "AGENTE",
     agentWorking: "El agente está trabajando",
     working: "TRABAJANDO",
+    thinking: "PENSANDO",
     expandFull: "Mostrar más",
     collapse: "Mostrar menos",
     copyCode: "Copiar",

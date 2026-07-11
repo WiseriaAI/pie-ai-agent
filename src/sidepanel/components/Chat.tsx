@@ -36,6 +36,7 @@ import { QuoteChip } from "./QuoteChip";
 import { escapeWrapperAttribute } from "@/lib/agent/untrusted-wrappers";
 import type { Quote, TextQuote, ElementQuote } from "@/types";
 import ModelPicker from "./ModelPicker";
+import PieFace from "./PieFace";
 import ThinkingSection from "./ThinkingSection";
 import { useT } from "@/lib/i18n";
 import { useStoreChange } from "@/sidepanel/hooks/useStoreChange";
@@ -1383,7 +1384,9 @@ After the skill completes, briefly summarize what was created (the user will see
                 window, so a static preamble bubble alone would look frozen.
                 Sits at the tail so there's a single place to confirm "still
                 working" — also covers the gaps between tool calls. */}
-            {streaming && panelRequest?.kind !== "schedule-model" && <WorkingIndicator />}
+            {streaming && panelRequest?.kind !== "schedule-model" && (
+              <WorkingIndicator thinking={!!streamingThinking && !streamingText} />
+            )}
             <AnimatePresence>
               {panelRequest?.kind === "schedule-model" && (
                 <ScheduleDraftCard
@@ -2022,7 +2025,7 @@ function MessageBubble({
   );
 }
 
-function WorkingIndicator() {
+function WorkingIndicator({ thinking }: { thinking: boolean }) {
   const t = useT();
   return (
     <div
@@ -2031,11 +2034,10 @@ function WorkingIndicator() {
       aria-label={t("chat.agentWorking")}
       className="flex items-center gap-2 px-1 py-0.5"
     >
-      <span className="relative flex h-2 w-2 items-center justify-center">
-        <span className="absolute inset-0 animate-ping rounded-full bg-accent opacity-50" />
-        <span className="relative h-1.5 w-1.5 rounded-full bg-accent" />
+      <PieFace state={thinking ? "thinking" : "working"} size={22} />
+      <span className="caps text-fg-3">
+        {thinking ? t("chat.thinking") : t("chat.working")}
       </span>
-      <span className="caps text-fg-3">{t("chat.working")}</span>
     </div>
   );
 }
