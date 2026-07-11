@@ -236,6 +236,22 @@ describe("migrateIdbSkillsToDisk", () => {
     expect(mockedSetSkillEnabled).toHaveBeenCalledTimes(2);
   });
 
+  it("(M-T10a) slug 撞名：本轮刚迁的 slug 不被撞名包的 skip 自愈禁用", async () => {
+    // A "Foo Bar"（无 marker，默认开）先迁成 "foo-bar"；B "Foo  Bar!"（显式关）
+    // kebab 撞出同一 slug 走 skip 分支——B 的自愈继承不得把刚迁好的 A 关掉。
+    await putPackage(makePkg("skill_user_1", "Foo Bar"));
+    await putPackage(makePkg("skill_user_2", "Foo  Bar!"));
+    await setSkillEnabled("skill_user_2", false);
+
+    const result = await migrateIdbSkillsToDisk();
+
+    expect(result.migrated).toEqual(["foo-bar"]);
+    expect(result.skipped).toEqual(["foo-bar"]);
+    expect(mockedSetSkillEnabled).not.toHaveBeenCalledWith("foo-bar", false);
+    const markers = await getEnabledSkillIds();
+    expect(markers).not.toContain("!foo-bar");
+  });
+
   it("(重要2) marker 写失败 → slug 只在 migrated（不入 skipped）+ warn", async () => {
     await putPackage(makePkg("skill_user_1", "Disabled Skill"));
     await setSkillEnabled("skill_user_1", false); // 真 seeding

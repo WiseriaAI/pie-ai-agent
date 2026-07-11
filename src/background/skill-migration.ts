@@ -76,8 +76,11 @@ export async function migrateIdbSkillsToDisk(): Promise<MigrateSkillsResult> {
           // crash 自愈：上一轮写完盘但 marker 没落上就挂了 → 本轮补继承。
           // no-marker guard（slug 两种 marker 都不存在才写）保证幂等，且绝不
           // 覆盖用户在磁盘模式下对 slug 已做出的显式开/关选择。
+          // !migrated.includes(slug)：撞名护栏——两个 IDB 包 kebab 后同 slug 时，
+          // 后到的显式关包走到这里，不得把本轮刚迁好的前一个包给关掉。
           if (
             markers.includes(`!${pkg.id}`) &&
+            !migrated.includes(slug) &&
             !markers.includes(slug) &&
             !markers.includes(`!${slug}`)
           ) {
