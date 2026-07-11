@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { PROTOCOL_VERSION } from "@/types/local-bridge";
+import { PROTOCOL_VERSION, type SkillAuthPayload } from "@/types/local-bridge";
 
 // 一个可编程的假 native port
 function makeFakePort() {
@@ -206,6 +206,83 @@ describe("local-bridge", () => {
       error: { code: "script_error", message: "script threw: boom" },
     });
     await expect(p).resolves.toEqual({ ok: false, needsAuth: false, error: "script threw: boom" });
+  });
+
+  it("requestRunSkillScript surfaces needs_authorization data as outcome.auth", async () => {
+    const { initLocalBridge, requestRunSkillScript } = await import("./local-bridge");
+    initLocalBridge();
+    const helloReq = fakePort.postMessage.mock.calls[0][0] as { id: string };
+    fakePort._emit({
+      id: helloReq.id, ok: true,
+      result: { protocolVersion: PROTOCOL_VERSION, capabilities: ["skill_fs"] },
+    });
+    await Promise.resolve();
+
+    const PAYLOAD: SkillAuthPayload = {
+      skillName: "demo",
+      description: "demo skill",
+      envelope: { allowedDomains: [], extraWrites: [], runnableScripts: ["fetch.ts"] },
+      envelopeHash: "abc123",
+    };
+
+    const p = requestRunSkillScript({ name: "s", entry: "e.ts" });
+    const req = fakePort.postMessage.mock.calls[1][0] as { id: string; method: string };
+    fakePort._emit({
+      id: req.id, ok: false,
+      error: { code: "needs_authorization", message: "authorization required", data: PAYLOAD },
+    });
+    const outcome = await p;
+    expect(outcome).toMatchObject({ ok: false, needsAuth: true });
+    expect((outcome as { auth?: SkillAuthPayload }).auth?.envelopeHash).toBe(PAYLOAD.envelopeHash);
+  });
+
+  it("needs_authorization without data (old daemon) → auth undefined", async () => {
+    const { initLocalBridge, requestRunSkillScript } = await import("./local-bridge");
+    initLocalBridge();
+    const helloReq = fakePort.postMessage.mock.calls[0][0] as { id: string };
+    fakePort._emit({
+      id: helloReq.id, ok: true,
+      result: { protocolVersion: PROTOCOL_VERSION, capabilities: ["skill_fs"] },
+    });
+    await Promise.resolve();
+
+    const p = requestRunSkillScript({ name: "s", entry: "e.ts" });
+    const req = fakePort.postMessage.mock.calls[1][0] as { id: string; method: string };
+    fakePort._emit({
+      id: req.id, ok: false,
+      error: { code: "needs_authorization", message: "authorization required" },
+    });
+    const outcome = await p;
+    expect(outcome).toEqual({ ok: false, needsAuth: true, auth: undefined });
+  });
+
+  it("requestListAudit round-trips entries", async () => {
+    const { initLocalBridge, requestListAudit } = await import("./local-bridge");
+    initLocalBridge();
+    const helloReq = fakePort.postMessage.mock.calls[0][0] as { id: string };
+    fakePort._emit({
+      id: helloReq.id, ok: true,
+      result: { protocolVersion: PROTOCOL_VERSION, capabilities: ["skill_fs"] },
+    });
+    await Promise.resolve();
+
+    const p = requestListAudit({ limit: 10 });
+    const req = fakePort.postMessage.mock.calls[1][0] as { id: string; method: string };
+    expect(req.method).toBe("list_audit");
+    const entries = [
+      {
+        ts: 1720000000000,
+        skillName: "demo",
+        entry: "fetch.ts",
+        envelope: { allowedDomains: [], extraWrites: [], runnableScripts: ["fetch.ts"] },
+        exitCode: 0,
+        timedOut: false,
+        truncated: false,
+        ms: 42,
+      },
+    ];
+    fakePort._emit({ id: req.id, ok: true, result: { entries } });
+    await expect(p).resolves.toEqual({ entries });
   });
 
   it("requestListSkills round-trips result.skills", async () => {

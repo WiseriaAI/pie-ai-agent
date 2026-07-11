@@ -19,6 +19,9 @@ import {
   type ListGrantsResult,
   type RevokeGrantParams,
   type RevokeGrantResult,
+  type SkillAuthPayload,
+  type ListAuditParams,
+  type ListAuditResult,
 } from "@/types/local-bridge";
 
 const HOST_NAME = "ai.wiseria.pie";
@@ -83,6 +86,9 @@ export function initLocalBridge(): void {
       const err = new Error(msg.error.message);
       // 非枚举：防止 JSON.stringify(err) 把内部错误码泄进 LLM 可见文案
       Object.defineProperty(err, "code", { value: msg.error.code, enumerable: false });
+      if (msg.error.data !== undefined)
+        // 非枚举：与 code 同理，防 JSON.stringify(err) 把 payload 泄进 LLM 可见文案
+        Object.defineProperty(err, "data", { value: msg.error.data, enumerable: false });
       p.reject(err);
     }
   });
@@ -140,14 +146,16 @@ export async function requestReadSkillFile(p: ReadSkillFileParams): Promise<Read
 }
 export type RunSkillScriptOutcome =
   | { ok: true; result: RunSkillScriptResult }
-  | { ok: false; needsAuth: true }
+  | { ok: false; needsAuth: true; auth?: SkillAuthPayload }
   | { ok: false; needsAuth: false; error: string };
 export async function requestRunSkillScript(p: RunSkillScriptParams): Promise<RunSkillScriptOutcome> {
   try {
     return { ok: true, result: (await send("run_skill_script", p)) as RunSkillScriptResult };
   } catch (e) {
     const code = (e as { code?: string }).code;
-    if (code === "needs_authorization") return { ok: false, needsAuth: true };
+    if (code === "needs_authorization") {
+      return { ok: false, needsAuth: true, auth: (e as { data?: SkillAuthPayload }).data };
+    }
     return { ok: false, needsAuth: false, error: e instanceof Error ? e.message : String(e) };
   }
 }
@@ -162,6 +170,9 @@ export async function requestListGrants(): Promise<ListGrantsResult> {
 }
 export async function requestRevokeGrant(p: RevokeGrantParams): Promise<RevokeGrantResult> {
   return (await send("revoke_grant", p)) as RevokeGrantResult;
+}
+export async function requestListAudit(p: ListAuditParams = {}): Promise<ListAuditResult> {
+  return (await send("list_audit", p)) as ListAuditResult;
 }
 
 /** SW 启动调用：仅当已授予 nativeMessaging 才连桥（纯 BYOK 用户零感知）。 */
