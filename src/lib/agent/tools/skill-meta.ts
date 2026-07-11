@@ -83,7 +83,10 @@ export function buildSkillMetaTools(deps: SkillMetaDeps): Tool[] {
       properties: {
         name: {
           type: "string",
-          description: "Short human-readable label shown in SkillsList.",
+          description:
+            "Short English name in kebab-style words (it becomes the skill id and on-disk folder name), " +
+            'e.g. "summarize-tabs". Always name skills in English even when the conversation is in ' +
+            "another language — put any native-language wording in `description` instead.",
         },
         description: {
           type: "string",

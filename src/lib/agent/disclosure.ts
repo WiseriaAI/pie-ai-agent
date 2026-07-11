@@ -47,6 +47,8 @@ const SCHEDULE_GUIDANCE =
 const SKILL_AUTHORING_GUIDANCE =
   "Skill authoring: list_skills / create_skill / update_skill / delete_skill " +
   "grow the user's skill library (a name + when-to-use description + SKILL.md). " +
+  "Name skills in short English kebab-style words (the name becomes the skill id / folder name); " +
+  "native-language wording goes in the description. " +
   "Propose create_skill ONLY when the user repeats a similar multi-step workflow — never for one-offs.";
 
 const LOCAL_FILE_GUIDANCE =
