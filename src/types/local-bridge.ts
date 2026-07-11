@@ -169,6 +169,25 @@ export interface RevokeGrantResult {
   revoked: boolean;
 }
 
+/** audit.jsonl 单行（daemon 每次脚本执行追加）。 */
+export interface AuditEntry {
+  ts: number;
+  skillName: string;
+  entry: string;
+  envelope: GrantEnvelope;
+  exitCode: number;
+  timedOut: boolean;
+  truncated: boolean;
+  ms: number;
+}
+export interface ListAuditParams {
+  /** 返回最近 N 条（默认 20，上限 200） */
+  limit?: number;
+}
+export interface ListAuditResult {
+  entries: AuditEntry[];
+}
+
 // ── 通用信封 ──────────────────────────────────────────────────────────
 export interface BridgeRequest {
   id: string;
@@ -183,7 +202,8 @@ export interface BridgeRequest {
     | "write_skill"
     | "delete_skill"
     | "list_grants"
-    | "revoke_grant";
+    | "revoke_grant"
+    | "list_audit";
   params: unknown;
 }
 export type BridgeResponse =

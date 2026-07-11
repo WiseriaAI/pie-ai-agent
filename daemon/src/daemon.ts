@@ -10,8 +10,10 @@ import { log } from "./log";
 import { listSkills, readSkillFile, writeSkill, deleteSkill } from "./skill-store";
 import { runSkillScript } from "./skill-exec";
 import { listGrants, revokeGrant } from "./grants";
+import { readAuditTail } from "./audit";
 import type {
   ReadSkillFileParams, RunSkillScriptParams, WriteSkillParams, DeleteSkillParams, RevokeGrantParams,
+  ListAuditParams, ListAuditResult,
 } from "../../src/types/local-bridge";
 
 export async function handleMessage(line: string): Promise<string> {
@@ -131,6 +133,15 @@ export async function handleMessage(line: string): Promise<string> {
       } catch (e) {
         log("error", "revoke_grant.failed", { id, error: String(e) });
         return respond({ ok: false, error: { code: "revoke_grant_failed", message: String(e) } });
+      }
+    }
+    case "list_audit": {
+      try {
+        const p = (msg.params ?? {}) as ListAuditParams;
+        return respond({ ok: true, result: { entries: readAuditTail(p.limit) } satisfies ListAuditResult });
+      } catch (e) {
+        log("error", "list_audit.failed", { id, error: String(e) });
+        return respond({ ok: false, error: { code: "list_audit_failed", message: String(e) } });
       }
     }
     default:
