@@ -58,7 +58,12 @@ export function putGrant(record: GrantRecord, path = paths.grantsPath): void {
 }
 
 export function listGrants(path = paths.grantsPath): GrantRecord[] {
-  return Object.values(read(path).grants);
+  // 契约过滤：2b 旧格式残留（skillId/perms，无 envelope）不符合 GrantRecord wire
+  // 类型——设置页渲染 g.envelope.* 会整页 crash。旧记录是死数据（新 grantKey 永远
+  // 命不中 permsHash 键），只从 list 输出滤掉，文件内容不动。
+  return Object.values(read(path).grants).filter(
+    (g) => typeof g.skillName === "string" && g.envelope != null && Array.isArray(g.envelope.runnableScripts),
+  );
 }
 
 export function revokeGrant(key: string, path = paths.grantsPath): boolean {

@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { mkdirSync, rmSync } from "fs";
+import { mkdirSync, rmSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 import {
   canonicalEnvelope, grantKey, hasGrant, putGrant, listGrants, revokeGrant,
@@ -35,4 +35,25 @@ test("put/has/list/revoke round-trip", () => {
 test("envelope change (added domain) → different key → re-prompt", () => {
   const wider: GrantEnvelope = { ...ENV, allowedDomains: [...ENV.allowedDomains, "c.com"] };
   expect(grantKey("s", wider)).not.toBe(grantKey("s", ENV));
+});
+
+test("listGrants filters legacy 2b-format records (skillId/perms, no envelope) that violate the wire type", () => {
+  const p = tmpPath();
+  const key = grantKey("s", ENV);
+  putGrant({ key, skillName: "s", envelope: canonicalEnvelope(ENV), grantedAt: 1 }, p);
+  // 真机 grants.json 里的 2b 旧格式残留（skillId/entry/perms，无 envelope）——
+  // 设置页渲染 g.envelope.runnableScripts 会整页 crash（真机 A3 验收案例）
+  const raw = JSON.parse(readFileSync(p, "utf8"));
+  raw.grants["skill:legacy:deadbeef"] = {
+    key: "skill:legacy:deadbeef",
+    skillId: "legacy",
+    entry: "scripts/save.js",
+    perms: { fs: true, network: [] },
+    grantedAt: 2,
+  };
+  writeFileSync(p, JSON.stringify(raw));
+  const grants = listGrants(p);
+  expect(grants).toHaveLength(1); // toEqual 会忽略 undefined 元素,必须断长度
+  expect(grants[0].skillName).toBe("s");
+  rmSync(p, { force: true });
 });
