@@ -447,4 +447,65 @@ describe("local-bridge", () => {
     await p; // 无权限分支也必须落定，绝不悬空
     expect(isBridgeReady()).toBe(false);
   });
+
+  it("rejects with code and data non-enumerable, not in JSON.stringify", async () => {
+    const { initLocalBridge, requestListSkills } = await import("./local-bridge");
+    initLocalBridge();
+    const helloReq = fakePort.postMessage.mock.calls[0][0] as { id: string };
+    fakePort._emit({
+      id: helloReq.id, ok: true,
+      result: { protocolVersion: PROTOCOL_VERSION, capabilities: ["skill_fs"] },
+    });
+    await Promise.resolve();
+
+    const p = requestListSkills();
+    const req = fakePort.postMessage.mock.calls[1][0] as { id: string; method: string };
+    fakePort._emit({
+      id: req.id, ok: false,
+      error: { code: "access_denied", message: "permission denied", data: { secret: "SECRET_MARKER_12345" } },
+    });
+
+    try {
+      await p;
+      expect.fail("should have rejected");
+    } catch (e) {
+      const err = e as any;
+      // Assert code is non-enumerable
+      expect(Object.getOwnPropertyDescriptor(err, "code")?.enumerable).toBe(false);
+      // Assert data is non-enumerable
+      expect(Object.getOwnPropertyDescriptor(err, "data")?.enumerable).toBe(false);
+      // Assert JSON.stringify does not contain the secret marker
+      const stringified = JSON.stringify(err);
+      expect(stringified).not.toContain("SECRET_MARKER_12345");
+    }
+  });
+
+  it("requestListAudit with zero args uses default empty params object", async () => {
+    const { initLocalBridge, requestListAudit } = await import("./local-bridge");
+    initLocalBridge();
+    const helloReq = fakePort.postMessage.mock.calls[0][0] as { id: string };
+    fakePort._emit({
+      id: helloReq.id, ok: true,
+      result: { protocolVersion: PROTOCOL_VERSION, capabilities: ["skill_fs"] },
+    });
+    await Promise.resolve();
+
+    const p = requestListAudit();
+    const req = fakePort.postMessage.mock.calls[1][0] as { id: string; method: string };
+    expect(req.method).toBe("list_audit");
+    const entries = [
+      {
+        ts: 1720000000000,
+        skillName: "example",
+        entry: "main.ts",
+        envelope: { allowedDomains: [], extraWrites: [], runnableScripts: ["main.ts"] },
+        exitCode: 0,
+        timedOut: false,
+        truncated: false,
+        ms: 10,
+      },
+    ];
+    fakePort._emit({ id: req.id, ok: true, result: { entries } });
+    await expect(p).resolves.toEqual({ entries });
+  });
 });
