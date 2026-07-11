@@ -50,6 +50,40 @@ export function bridgeHasSkillFs(): boolean {
   return ready && capabilities.includes("skill_fs");
 }
 
+// ── 自动重连（退避）──────────────────────────────────────────────────
+// SW 存活期内桥意外断开（daemon 重启/热替换/崩溃）→ 按退避序列重试；用户显式
+// 关闭不重试。SW 被回收则计时器自然消失，下次唤醒由 startup 兜底。真机案例：
+// Slice 2 验收期 daemon 重启后 UI 掉回 IDB 模式直到手动刷新扩展。
+const RECONNECT_DELAYS_MS = [1_000, 2_000, 5_000, 15_000, 30_000];
+let reconnectAttempt = 0;
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let userDisabled = false;
+let reconnectAction: (() => void) | null = null;
+
+/** index.ts 注入重连动作（initBridgeAndMigrate）——动作注入避免反向依赖 skill-migration。 */
+export function setBridgeReconnectAction(fn: () => void): void {
+  reconnectAction = fn;
+}
+
+/** Test-only：清重连状态。 */
+export function __resetBridgeReconnectState(): void {
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  reconnectTimer = null;
+  reconnectAttempt = 0;
+  userDisabled = false;
+  reconnectAction = null;
+}
+
+function scheduleReconnect(): void {
+  if (userDisabled || !reconnectAction || reconnectTimer) return;
+  const delay = RECONNECT_DELAYS_MS[Math.min(reconnectAttempt, RECONNECT_DELAYS_MS.length - 1)];
+  reconnectAttempt++;
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    reconnectAction?.();
+  }, delay);
+}
+
 function send(method: BridgeRequest["method"], params: unknown): Promise<unknown> {
   if (!port) return Promise.reject(new Error("bridge not connected"));
   const id = crypto.randomUUID();
@@ -99,7 +133,7 @@ export function initLocalBridge(): void {
     capabilities = [];
     for (const p of pending.values()) p.reject(new Error("bridge disconnected"));
     pending.clear();
-    // ponytail: Slice 0 不做指数退避重连；spec §8 的重连留后续 slice
+    scheduleReconnect();
   });
   // 握手
   send("hello", { protocolVersion: PROTOCOL_VERSION })
@@ -109,6 +143,7 @@ export function initLocalBridge(): void {
       if (Math.abs(res.protocolVersion - PROTOCOL_VERSION) <= 1) {
         capabilities = res.capabilities;
         ready = true;
+        reconnectAttempt = 0;
       }
       settleThis();
     })
@@ -177,6 +212,7 @@ export async function requestListAudit(p: ListAuditParams = {}): Promise<ListAud
 
 /** SW 启动调用：仅当已授予 nativeMessaging 才连桥（纯 BYOK 用户零感知）。 */
 export async function maybeInitLocalBridge(): Promise<void> {
+  userDisabled = false;
   // 同步换上「init 决策」promise：SW 冷启动时，消息处理器里同 tick 的
   // bridgeSettled() 调用方若跑在 permissions IPC 前，拿到的不再是
   // module-init 的已 resolve promise（那会让首次读误判成 IDB 模式），
@@ -201,6 +237,12 @@ export async function maybeInitLocalBridge(): Promise<void> {
 
 /** 用户在设置里关掉本地打通（移除 nativeMessaging）时断桥并清状态。 */
 export function disconnectLocalBridge(): void {
+  userDisabled = true;
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  reconnectAttempt = 0;
   if (port) {
     try {
       port.disconnect();

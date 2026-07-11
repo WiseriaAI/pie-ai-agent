@@ -138,6 +138,7 @@ import {
   requestListGrants,
   requestRevokeGrant,
   requestListAudit,
+  setBridgeReconnectAction,
 } from "./local-bridge";
 import { getEnabledLocalAgents, setEnabledLocalAgents, applyToggle, isAgentUsable } from "@/lib/local-agents-prefs";
 import { initBridgeAndMigrate } from "./skill-migration";
@@ -236,6 +237,11 @@ setScheduleRunDep(runScheduleWithDeps);
 // captures the real handshake promise (parallel fire would race the
 // permissions IPC and deterministically no-op every cold start). Never
 // throws; never blocks the rest of SW startup.
+// Task 8 — inject the reconnect action (not a bare import) to avoid a reverse
+// dependency from local-bridge.ts onto skill-migration.ts: an unexpected
+// disconnect (daemon restart/hot-swap/crash) re-runs the full init+migrate
+// pass via backoff (see local-bridge.ts scheduleReconnect).
+setBridgeReconnectAction(() => void initBridgeAndMigrate());
 void initBridgeAndMigrate();
 
 // Grant-time init: when the user enables local integration at runtime (settings

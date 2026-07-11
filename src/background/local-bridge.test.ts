@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { PROTOCOL_VERSION, type SkillAuthPayload } from "@/types/local-bridge";
 
 // 一个可编程的假 native port
@@ -507,5 +507,172 @@ describe("local-bridge", () => {
     ];
     fakePort._emit({ id: req.id, ok: true, result: { entries } });
     await expect(p).resolves.toEqual({ entries });
+  });
+
+  describe("auto-reconnect", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("unexpected disconnect schedules reconnect action with backoff", async () => {
+      const { initLocalBridge, setBridgeReconnectAction, __resetBridgeReconnectState } =
+        await import("./local-bridge");
+      __resetBridgeReconnectState();
+      const action = vi.fn();
+      setBridgeReconnectAction(action);
+      initLocalBridge();
+      fakePort._disconnect();
+      await vi.advanceTimersByTimeAsync(999);
+      expect(action).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(action).toHaveBeenCalledTimes(1);
+    });
+
+    it("consecutive failures walk the delay ladder and cap at 30s", async () => {
+      const { initLocalBridge, setBridgeReconnectAction, __resetBridgeReconnectState } =
+        await import("./local-bridge");
+      __resetBridgeReconnectState();
+      const action = vi.fn();
+      setBridgeReconnectAction(action);
+      initLocalBridge();
+
+      // 1st disconnect → 1s
+      fakePort._disconnect();
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(action).toHaveBeenCalledTimes(1);
+
+      // action doesn't reconnect the fake port itself (it's a fake), so the
+      // bridge stays disconnected; simulate the next failed attempt directly
+      // by disconnecting the (already-dead) port state again is impossible
+      // since port is null after disconnect. Re-init to simulate the action
+      // actually calling initLocalBridge, then disconnect again to walk the
+      // ladder.
+      initLocalBridge();
+      fakePort._disconnect();
+      await vi.advanceTimersByTimeAsync(1_999);
+      expect(action).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(action).toHaveBeenCalledTimes(2);
+
+      initLocalBridge();
+      fakePort._disconnect();
+      await vi.advanceTimersByTimeAsync(4_999);
+      expect(action).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(action).toHaveBeenCalledTimes(3);
+
+      initLocalBridge();
+      fakePort._disconnect();
+      await vi.advanceTimersByTimeAsync(14_999);
+      expect(action).toHaveBeenCalledTimes(3);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(action).toHaveBeenCalledTimes(4);
+
+      initLocalBridge();
+      fakePort._disconnect();
+      await vi.advanceTimersByTimeAsync(29_999);
+      expect(action).toHaveBeenCalledTimes(4);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(action).toHaveBeenCalledTimes(5);
+
+      // capped at 30s from here on
+      initLocalBridge();
+      fakePort._disconnect();
+      await vi.advanceTimersByTimeAsync(29_999);
+      expect(action).toHaveBeenCalledTimes(5);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(action).toHaveBeenCalledTimes(6);
+    });
+
+    it("successful handshake resets the ladder", async () => {
+      const { initLocalBridge, setBridgeReconnectAction, __resetBridgeReconnectState } =
+        await import("./local-bridge");
+      __resetBridgeReconnectState();
+      const action = vi.fn();
+      setBridgeReconnectAction(action);
+      initLocalBridge();
+
+      // First disconnect → schedules at 1s
+      fakePort._disconnect();
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(action).toHaveBeenCalledTimes(1);
+
+      // Reconnect + successful handshake resets the attempt counter
+      initLocalBridge();
+      const helloReq = fakePort.postMessage.mock.calls.at(-1)![0] as { id: string };
+      fakePort._emit({
+        id: helloReq.id, ok: true,
+        result: { protocolVersion: PROTOCOL_VERSION, capabilities: [] },
+      });
+      await vi.advanceTimersByTimeAsync(0);
+
+      // Disconnect again — should go back to 1s (not 2s)
+      fakePort._disconnect();
+      await vi.advanceTimersByTimeAsync(999);
+      expect(action).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(action).toHaveBeenCalledTimes(2);
+    });
+
+    it("disconnectLocalBridge (user off) suppresses reconnect and clears pending timer", async () => {
+      const {
+        initLocalBridge,
+        disconnectLocalBridge,
+        setBridgeReconnectAction,
+        __resetBridgeReconnectState,
+      } = await import("./local-bridge");
+      __resetBridgeReconnectState();
+      const action = vi.fn();
+      setBridgeReconnectAction(action);
+      initLocalBridge();
+
+      // A pending reconnect timer gets cleared by the user turning it off.
+      fakePort._disconnect();
+      disconnectLocalBridge();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(action).not.toHaveBeenCalled();
+
+      // And disconnecting first (no pending timer yet) also suppresses any
+      // future unexpected disconnect from scheduling a reconnect.
+      __resetBridgeReconnectState();
+      setBridgeReconnectAction(action);
+      initLocalBridge();
+      disconnectLocalBridge();
+      fakePort._disconnect();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(action).not.toHaveBeenCalled();
+    });
+
+    it("maybeInitLocalBridge clears the user-disabled flag", async () => {
+      const {
+        initLocalBridge,
+        disconnectLocalBridge,
+        maybeInitLocalBridge,
+        setBridgeReconnectAction,
+        __resetBridgeReconnectState,
+      } = await import("./local-bridge");
+      __resetBridgeReconnectState();
+      const action = vi.fn();
+      setBridgeReconnectAction(action);
+      initLocalBridge();
+
+      // Turn off (user-disabled), then re-enable via maybeInitLocalBridge.
+      disconnectLocalBridge();
+      (globalThis as any).chrome.permissions = {
+        contains: vi.fn(() => Promise.resolve(true)),
+      };
+      await maybeInitLocalBridge();
+      await vi.advanceTimersByTimeAsync(0);
+
+      // Now an unexpected disconnect should schedule reconnect again.
+      fakePort._disconnect();
+      await vi.advanceTimersByTimeAsync(999);
+      expect(action).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(action).toHaveBeenCalledTimes(1);
+    });
   });
 });
