@@ -102,6 +102,11 @@ export const zhTWDict = {
       agentsTitle: "本機 Agent",
       agentNotInstalled: "未安裝",
       agentEnableFailed: "無法啟用——未在本機偵測到安裝。",
+      grantsTitle: "已授權 skill",
+      revoke: "撤銷",
+      auditTitle: "最近指令碼執行",
+      auditOk: "成功",
+      auditFailed: "失敗",
     },
     searchProvider: {
       caps: "網頁搜尋",

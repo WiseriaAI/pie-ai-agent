@@ -103,6 +103,11 @@ export const jaDict = {
       agentsTitle: "ローカル Agent",
       agentNotInstalled: "未インストール",
       agentEnableFailed: "有効にできません——このマシンで検出されませんでした。",
+      grantsTitle: "承認済みスキル",
+      revoke: "取り消す",
+      auditTitle: "最近のスクリプト実行",
+      auditOk: "成功",
+      auditFailed: "失敗",
     },
     searchProvider: {
       caps: "検索プロバイダー",

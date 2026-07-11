@@ -130,7 +130,15 @@ import { mergeCarryoverIntoMessages } from "@/lib/agent/loop-drain";
 import type { ChatInstructionRejectedMessage } from "@/types/messages";
 import { isFilePdfUrl } from "@/lib/pdf/detect";
 import { installLogCapture } from "@/lib/log-buffer";
-import { disconnectLocalBridge, isBridgeReady, requestListAgents } from "./local-bridge";
+import {
+  disconnectLocalBridge,
+  isBridgeReady,
+  requestListAgents,
+  bridgeHasSkillFs,
+  requestListGrants,
+  requestRevokeGrant,
+  requestListAudit,
+} from "./local-bridge";
 import { getEnabledLocalAgents, setEnabledLocalAgents, applyToggle, isAgentUsable } from "@/lib/local-agents-prefs";
 import { initBridgeAndMigrate } from "./skill-migration";
 
@@ -712,6 +720,40 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     })()
       .then(sendResponse)
       .catch((e) => sendResponse({ ok: false, reason: String(e) }));
+    return true; // async response
+  }
+
+  // Settings「本地打通」— 已授权 skill grants 列表（一次性查询，无轮询）。
+  if (message?.type === "local-grants:list") {
+    (async () => {
+      if (!bridgeHasSkillFs()) return { grants: [] };
+      const { grants } = await requestListGrants();
+      return { grants };
+    })()
+      .then(sendResponse)
+      .catch(() => sendResponse({ grants: [] }));
+    return true; // async response
+  }
+  // Settings「本地打通」— 撤销单条 grant。
+  if (message?.type === "local-grants:revoke") {
+    (async () => {
+      if (!bridgeHasSkillFs() || typeof message.key !== "string") return { ok: false };
+      const { revoked } = await requestRevokeGrant({ key: message.key });
+      return { ok: revoked };
+    })()
+      .then(sendResponse)
+      .catch(() => sendResponse({ ok: false }));
+    return true; // async response
+  }
+  // Settings「本地打通」— 最近脚本执行审计。旧 daemon（无 list_audit）→ 空列表。
+  if (message?.type === "local-audit:list") {
+    (async () => {
+      if (!bridgeHasSkillFs()) return { entries: [] };
+      const { entries } = await requestListAudit({ limit: 20 });
+      return { entries };
+    })()
+      .then(sendResponse)
+      .catch(() => sendResponse({ entries: [] })); // 旧 daemon unknown_method → 空列表
     return true; // async response
   }
 

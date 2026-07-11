@@ -102,6 +102,11 @@ export const zhCNDict = {
       agentsTitle: "本地 Agent",
       agentNotInstalled: "未安装",
       agentEnableFailed: "无法启用——未在本机检测到安装。",
+      grantsTitle: "已授权 skill",
+      revoke: "撤销",
+      auditTitle: "最近脚本执行",
+      auditOk: "成功",
+      auditFailed: "失败",
     },
     searchProvider: {
       caps: "网页搜索",

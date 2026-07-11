@@ -102,6 +102,11 @@ export const enDict = {
       agentsTitle: "Local agents",
       agentNotInstalled: "Not installed",
       agentEnableFailed: "Can't enable — not detected on this machine.",
+      grantsTitle: "Authorized skills",
+      revoke: "Revoke",
+      auditTitle: "Recent script runs",
+      auditOk: "ok",
+      auditFailed: "failed",
     },
     searchProvider: {
       caps: "Search provider",
