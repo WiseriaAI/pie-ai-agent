@@ -24,8 +24,9 @@ export async function handleMessage(line: string): Promise<string> {
   }
   const id = msg.id ?? "";
   log("info", "request", { id, method: msg.method });
-  const respond = (r: { ok: true; result: unknown } | { ok: false; error: { code: string; message: string } }): string =>
-    JSON.stringify({ id, ...r } as BridgeResponse);
+  const respond = (
+    r: { ok: true; result: unknown } | { ok: false; error: { code: string; message: string; data?: unknown } },
+  ): string => JSON.stringify({ id, ...r } as BridgeResponse);
 
   switch (msg.method) {
     case "hello":
@@ -89,8 +90,12 @@ export async function handleMessage(line: string): Promise<string> {
       } catch (e) {
         // 保留业务错误码（needs_authorization / unknown_skill / unknown_entry / timeout / script_error）
         const code = (e as { code?: string }).code ?? "run_skill_script_failed";
+        const data = (e as { data?: unknown }).data;
         log("error", "run_skill_script.failed", { id, code, error: String(e) });
-        return respond({ ok: false, error: { code, message: String(e) } });
+        return respond({
+          ok: false,
+          error: { code, message: String(e), ...(data !== undefined ? { data } : {}) },
+        });
       }
     }
     case "write_skill": {
