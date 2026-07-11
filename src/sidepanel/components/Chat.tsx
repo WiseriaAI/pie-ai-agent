@@ -1282,7 +1282,7 @@ After the skill completes, briefly summarize what was created (the user will see
         className="flex-1 overflow-y-auto"
       >
         {messages.length === 0 && !streaming && !pageChanged ? (
-          <EmptyState />
+          <EmptyState listening={input.length > 0} />
         ) : (
           <div className="flex flex-col gap-[18px] px-4 py-5">
             {pageChanged && (
@@ -1734,8 +1734,13 @@ After the skill completes, briefly summarize what was created (the user will see
 }
 
 
-function EmptyState() {
+function EmptyState({ listening }: { listening: boolean }) {
   const t = useT();
+  // wake 是单次开场 morph；播完（或用户直接开始输入）即视为已唤醒。
+  const [awake, setAwake] = useState(false);
+  useEffect(() => {
+    if (listening) setAwake(true);
+  }, [listening]);
   const greetingKey = useMemo(() => {
     const keys = [
       "greeting1",
@@ -1749,9 +1754,13 @@ function EmptyState() {
     return keys[Math.floor(Math.random() * keys.length)];
   }, []);
   const greeting = t(`chat.${greetingKey}`);
+  const face = listening ? "listening" : awake ? "idle" : "wake";
   return (
     <div className="flex min-h-full flex-col items-center justify-center gap-3 px-6 text-center">
       <div className="flex max-w-[280px] flex-col items-center gap-3">
+        <div className="mb-2">
+          <PieFace state={face} size={140} onWakeEnd={() => setAwake(true)} />
+        </div>
         <h1 className="text-[24px] font-semibold leading-8 tracking-[-0.015em] text-fg-1">
           {greeting}
         </h1>

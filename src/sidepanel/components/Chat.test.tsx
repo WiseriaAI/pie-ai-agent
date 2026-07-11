@@ -1183,6 +1183,30 @@ describe("EmptyState centered greeting", () => {
     expect(screen.queryByText("SUGGESTED")).toBeNull();
     expect(screen.queryByText("推荐")).toBeNull();
   });
+
+  it("空态挂载播 wake，onAnimationEnd 后转 idle", async () => {
+    render(
+      <Chat session={makeSession()} onOpenSettings={() => {}} providerLabel={null} />,
+    );
+    await waitFor(() => {
+      expect(document.querySelector('[data-pie-state="wake"]')).toBeTruthy();
+    });
+    const wake = document.querySelector('[data-pie-state="wake"]')!;
+    fireEvent.animationEnd(wake, { animationName: "pie-wake-in" });
+    expect(document.querySelector('[data-pie-state="idle"]')).toBeTruthy();
+  });
+
+  it("composer 输入非空时切 listening，清空后回 idle（不重播 wake）", async () => {
+    render(
+      <Chat session={makeSession()} onOpenSettings={() => {}} providerLabel={null} />,
+    );
+    // composer 的 textarea 是页面唯一 textbox（附件 input 非 textbox role）
+    const textarea = await screen.findByRole("textbox");
+    fireEvent.change(textarea, { target: { value: "hi" } });
+    expect(document.querySelector('[data-pie-state="listening"]')).toBeTruthy();
+    fireEvent.change(textarea, { target: { value: "" } });
+    expect(document.querySelector('[data-pie-state="idle"]')).toBeTruthy();
+  });
 });
 
 // ── Composer keyboard guards — IME composition + rapid double-Enter ──────────
