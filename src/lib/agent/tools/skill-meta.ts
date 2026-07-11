@@ -28,7 +28,7 @@ import type { SkillSource } from "../../skills/source";
 import { stripFrontmatter, kebabSlug } from "../../skills/source";
 import { getAllSkillPackages, resolveSkillPackage } from "../../skills";
 import { setSkillEnabled, generateSkillId } from "../../skills/storage";
-import { buildSkillMd, isSingleLineSafe } from "../../skills/skill-md";
+import { buildSkillMd, patchSkillMd, isSingleLineSafe } from "../../skills/skill-md";
 import { getActiveSkillSource } from "@/background/skill-source";
 
 // ── Configuration / limits ───────────────────────────────────────────────────
@@ -248,8 +248,10 @@ export function buildSkillMetaTools(deps: SkillMetaDeps): Tool[] {
         );
       }
 
-      // P0-C taint propagation
-      const md = buildSkillMd(name, description, "1.0.0", "agent", instructions);
+      // P0-C taint propagation。patchSkillMd 而非整体重建：手写/历史 frontmatter
+      //（metadata.pie 能力声明、capabilities.scripts、license 等）原样保留，
+      // 只动 name/description/author 三键 + 正文（Slice 2 终审 Important#1）。
+      const md = patchSkillMd(currentMd, { name, description, author: "agent" }, instructions);
 
       // P1-H quota — net change (idb mode only; disk has no quota semantics)
       if (source.mode === "idb") {

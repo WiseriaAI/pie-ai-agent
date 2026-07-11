@@ -8,7 +8,7 @@ import {
   writeSkillRpc,
   deleteSkillRpc,
 } from "@/lib/skills/panel-actions";
-import { buildSkillMd, isSingleLineSafe } from "@/lib/skills/skill-md";
+import { buildSkillMd, patchSkillMd, isSingleLineSafe } from "@/lib/skills/skill-md";
 import { useT } from "@/lib/i18n";
 
 interface SkillsListProps {
@@ -81,6 +81,9 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
   const [enabledIds, setEnabledIds] = useState<Set<string>>(new Set());
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<SkillFormState>(emptyForm());
+  // 编辑打开时的原始 SKILL.md：保存走 patchSkillMd 保真更新（手写 frontmatter
+  // 如 metadata.pie 原样保留）；读失败/新建为 null → 退回 buildSkillMd 全新构建。
+  const [editRawMd, setEditRawMd] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
@@ -121,6 +124,7 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
       // a dead button. The error surfaces through the existing formError
       // banner; formError only renders inside the mounted <SkillForm>.
       console.error("readSkillFileRpc failed:", res.error);
+      setEditRawMd(null); // 没拿到原文 → 保存时退回全新构建
       setForm({
         editingId: skill.id,
         name: skill.name,
@@ -131,6 +135,7 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
       setShowForm(true);
       return;
     }
+    setEditRawMd(res.content ?? null);
     setForm({
       editingId: skill.id,
       name: skill.name,
@@ -167,7 +172,16 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
     }
 
     const id = isEdit ? form.editingId! : generateUserSkillId();
-    const md = buildSkillMd(v.built.name, v.built.description, "1.0.0", "user", v.built.instructions);
+    // 编辑且拿到过原文 → patchSkillMd 保真更新（metadata.pie 等手写 frontmatter
+    // 原样保留）；新建/读失败 → buildSkillMd 全新构建。
+    const md =
+      isEdit && editRawMd !== null
+        ? patchSkillMd(
+            editRawMd,
+            { name: v.built.name, description: v.built.description, author: "user" },
+            v.built.instructions,
+          )
+        : buildSkillMd(v.built.name, v.built.description, "1.0.0", "user", v.built.instructions);
 
     try {
       const res = await writeSkillRpc(id, [{ path: "SKILL.md", content: md }]);

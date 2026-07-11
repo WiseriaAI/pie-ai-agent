@@ -433,6 +433,35 @@ describe("skill-meta CRUD tools (disk mode via SkillSource)", () => {
     expect(writeCalls).toHaveLength(0);
   });
 
+  it("update_skill (disk mode) 保留手写 frontmatter（metadata.pie 能力声明不被剥掉）", async () => {
+    const { source, writeCalls } = makeFakeDiskSource([
+      {
+        id: "web-fetch",
+        md: `---
+name: web-fetch
+description: old desc
+license: MIT
+metadata:
+  pie:
+    network: [api.example.com]
+---
+OLD BODY`,
+      },
+    ]);
+    const tools = buildSkillMetaTools({ getSource: () => source });
+    const update = tools.find((t) => t.name === "update_skill")!;
+
+    const r = await update.handler({ id: "web-fetch", description: "new desc" }, ctx);
+    expect(r.success).toBe(true);
+    expect(writeCalls).toHaveLength(1);
+    const written = writeCalls[0].files[0].content;
+    expect(written).toContain("description: new desc");
+    expect(written).toContain("license: MIT");
+    expect(written).toContain("network: [api.example.com]"); // 能力声明存活
+    expect(written).toContain("author: agent"); // P0-C taint 仍生效（追加）
+    expect(written).not.toContain("old desc");
+  });
+
   it("create_skill (disk mode) 名字无 ASCII 字母数字 → slug 为空 → 随机 skill-xxxxxxxx id", async () => {
     const { source } = makeFakeDiskSource();
     const tools = buildSkillMetaTools({ getSource: () => source });

@@ -177,6 +177,40 @@ describe("SkillsList", () => {
     expect(screen.getByText(/daemon unreachable/)).toBeTruthy();
   });
 
+  it("edit save preserves hand-authored frontmatter (metadata.pie survives; only name/description/author/body change)", async () => {
+    vi.mocked(listSkillEntries).mockResolvedValue({ ok: true, skills: [DISK_ENTRY] });
+    vi.mocked(readSkillFileRpc).mockResolvedValue({
+      ok: true,
+      content:
+        "---\nname: Disk Skill\ndescription: A skill living on disk\nlicense: MIT\nmetadata:\n  pie:\n    network: [api.example.com]\n---\nDo the thing.",
+    });
+    vi.mocked(writeSkillRpc).mockResolvedValue({ ok: true });
+
+    render(<SkillsList onRunSkill={vi.fn()} />);
+    await screen.findByRole("switch", { name: "Disable Disk Skill" });
+
+    fireEvent.click(screen.getByText("Edit"));
+    const instructions = (await screen.findByPlaceholderText(
+      /instructions/i,
+    )) as HTMLTextAreaElement;
+    await waitFor(() => {
+      expect(instructions.value).toBe("Do the thing.");
+    });
+
+    fireEvent.change(instructions, { target: { value: "Do it better." } });
+    fireEvent.click(screen.getByText("Save changes"));
+
+    await waitFor(() => {
+      expect(writeSkillRpc).toHaveBeenCalledTimes(1);
+    });
+    const [, files] = vi.mocked(writeSkillRpc).mock.calls[0];
+    const written = files[0].content;
+    expect(written).toContain("license: MIT");
+    expect(written).toContain("network: [api.example.com]"); // 能力声明存活
+    expect(written).toContain("Do it better.");
+    expect(written).not.toContain("Do the thing.");
+  });
+
   it("a listSkillEntries RPC failure renders an empty list instead of throwing", async () => {
     vi.mocked(listSkillEntries).mockResolvedValue({ ok: false, error: "daemon unreachable" });
 
