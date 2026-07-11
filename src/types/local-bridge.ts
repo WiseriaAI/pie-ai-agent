@@ -105,6 +105,10 @@ export interface RunSkillScriptParams {
   args?: string[];
   /** 用户在授权卡批准后置 true；缺省首跑 ungranted skill 会回 needs_authorization */
   grantApproved?: boolean;
+  /** 授权卡批准的信封 hash（grantApproved=true 时必带）；daemon 校验它等于
+   *  当前磁盘信封的 hash，不等 → 重新 needs_authorization（堵卡片挂起期间
+   *  skill 声明被改的 TOCTOU）。 */
+  approvedEnvelopeHash?: string;
 }
 export interface RunSkillScriptResult {
   /** 脚本 stdout，调用方包 <untrusted_skill_content> */
@@ -145,6 +149,16 @@ export interface GrantRecord {
   envelope: GrantEnvelope;
   grantedAt: number;
 }
+/** needs_authorization 错误随带的结构化 payload：授权卡的唯一渲染源（daemon 权威给出）。 */
+export interface SkillAuthPayload {
+  skillName: string;
+  displayName?: string;
+  description: string;
+  /** canonical 化后的信封（卡上原文展示） */
+  envelope: GrantEnvelope;
+  /** 批准后随 run 回传（approvedEnvelopeHash） */
+  envelopeHash: string;
+}
 export interface ListGrantsResult {
   grants: GrantRecord[];
 }
@@ -153,6 +167,25 @@ export interface RevokeGrantParams {
 }
 export interface RevokeGrantResult {
   revoked: boolean;
+}
+
+/** audit.jsonl 单行（daemon 每次脚本执行追加）。 */
+export interface AuditEntry {
+  ts: number;
+  skillName: string;
+  entry: string;
+  envelope: GrantEnvelope;
+  exitCode: number;
+  timedOut: boolean;
+  truncated: boolean;
+  ms: number;
+}
+export interface ListAuditParams {
+  /** 返回最近 N 条（默认 20，上限 200） */
+  limit?: number;
+}
+export interface ListAuditResult {
+  entries: AuditEntry[];
 }
 
 // ── 通用信封 ──────────────────────────────────────────────────────────
@@ -169,9 +202,10 @@ export interface BridgeRequest {
     | "write_skill"
     | "delete_skill"
     | "list_grants"
-    | "revoke_grant";
+    | "revoke_grant"
+    | "list_audit";
   params: unknown;
 }
 export type BridgeResponse =
   | { id: string; ok: true; result: unknown }
-  | { id: string; ok: false; error: { code: string; message: string } };
+  | { id: string; ok: false; error: { code: string; message: string; data?: unknown } };

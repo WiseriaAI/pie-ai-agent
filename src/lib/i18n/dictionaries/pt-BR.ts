@@ -103,6 +103,11 @@ export const ptBRDict = {
       agentsTitle: "Agentes locais",
       agentNotInstalled: "Não instalado",
       agentEnableFailed: "Não é possível habilitar — não detectado nesta máquina.",
+      grantsTitle: "Skills autorizadas",
+      revoke: "Revogar",
+      auditTitle: "Execuções recentes de scripts",
+      auditOk: "ok",
+      auditFailed: "falhou",
     },
     searchProvider: {
       caps: "Provedor de busca",
@@ -151,6 +156,17 @@ export const ptBRDict = {
     filesLabel: "Arquivos a preparar",
     allow: "Repassar",
     deny: "Cancelar",
+  },
+  skillGrant: {
+    title: "Permitir que esta skill execute scripts no seu computador?",
+    scriptsLabel: "Scripts que ela pode executar",
+    networkLabel: "Acesso à rede",
+    networkNone: "Nenhum — a sandbox padrão bloqueia a rede",
+    writeLabel: "Locais extras de escrita (fora do espaço de trabalho dela)",
+    disclosure:
+      "Os scripts rodam com as suas permissões de usuário dentro de uma sandbox padrão: sem rede além dos domínios listados, escrita limitada ao espaço de trabalho da skill e aos caminhos listados, e leitura bloqueada em pastas sensíveis. A aprovação vale até as declarações da skill mudarem.",
+    allow: "Permitir",
+    deny: "Recusar",
   },
   chat: {
     elementPicker: {

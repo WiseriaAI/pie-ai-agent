@@ -130,7 +130,16 @@ import { mergeCarryoverIntoMessages } from "@/lib/agent/loop-drain";
 import type { ChatInstructionRejectedMessage } from "@/types/messages";
 import { isFilePdfUrl } from "@/lib/pdf/detect";
 import { installLogCapture } from "@/lib/log-buffer";
-import { disconnectLocalBridge, isBridgeReady, requestListAgents } from "./local-bridge";
+import {
+  disconnectLocalBridge,
+  isBridgeReady,
+  requestListAgents,
+  bridgeHasSkillFs,
+  requestListGrants,
+  requestRevokeGrant,
+  requestListAudit,
+  setBridgeReconnectAction,
+} from "./local-bridge";
 import { getEnabledLocalAgents, setEnabledLocalAgents, applyToggle, isAgentUsable } from "@/lib/local-agents-prefs";
 import { initBridgeAndMigrate } from "./skill-migration";
 
@@ -228,6 +237,11 @@ setScheduleRunDep(runScheduleWithDeps);
 // captures the real handshake promise (parallel fire would race the
 // permissions IPC and deterministically no-op every cold start). Never
 // throws; never blocks the rest of SW startup.
+// Task 8 — inject the reconnect action (not a bare import) to avoid a reverse
+// dependency from local-bridge.ts onto skill-migration.ts: an unexpected
+// disconnect (daemon restart/hot-swap/crash) re-runs the full init+migrate
+// pass via backoff (see local-bridge.ts scheduleReconnect).
+setBridgeReconnectAction(() => void initBridgeAndMigrate());
 void initBridgeAndMigrate();
 
 // Grant-time init: when the user enables local integration at runtime (settings
@@ -712,6 +726,40 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     })()
       .then(sendResponse)
       .catch((e) => sendResponse({ ok: false, reason: String(e) }));
+    return true; // async response
+  }
+
+  // Settings「本地打通」— 已授权 skill grants 列表（一次性查询，无轮询）。
+  if (message?.type === "local-grants:list") {
+    (async () => {
+      if (!bridgeHasSkillFs()) return { grants: [] };
+      const { grants } = await requestListGrants();
+      return { grants };
+    })()
+      .then(sendResponse)
+      .catch(() => sendResponse({ grants: [] }));
+    return true; // async response
+  }
+  // Settings「本地打通」— 撤销单条 grant。
+  if (message?.type === "local-grants:revoke") {
+    (async () => {
+      if (!bridgeHasSkillFs() || typeof message.key !== "string") return { ok: false };
+      const { revoked } = await requestRevokeGrant({ key: message.key });
+      return { ok: revoked };
+    })()
+      .then(sendResponse)
+      .catch(() => sendResponse({ ok: false }));
+    return true; // async response
+  }
+  // Settings「本地打通」— 最近脚本执行审计。旧 daemon（无 list_audit）→ 空列表。
+  if (message?.type === "local-audit:list") {
+    (async () => {
+      if (!bridgeHasSkillFs()) return { entries: [] };
+      const { entries } = await requestListAudit({ limit: 20 });
+      return { entries };
+    })()
+      .then(sendResponse)
+      .catch(() => sendResponse({ entries: [] })); // 旧 daemon unknown_method → 空列表
     return true; // async response
   }
 

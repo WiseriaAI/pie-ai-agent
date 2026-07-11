@@ -10,8 +10,10 @@ import { log } from "./log";
 import { listSkills, readSkillFile, writeSkill, deleteSkill } from "./skill-store";
 import { runSkillScript } from "./skill-exec";
 import { listGrants, revokeGrant } from "./grants";
+import { readAuditTail } from "./audit";
 import type {
   ReadSkillFileParams, RunSkillScriptParams, WriteSkillParams, DeleteSkillParams, RevokeGrantParams,
+  ListAuditParams, ListAuditResult,
 } from "../../src/types/local-bridge";
 
 export async function handleMessage(line: string): Promise<string> {
@@ -24,8 +26,9 @@ export async function handleMessage(line: string): Promise<string> {
   }
   const id = msg.id ?? "";
   log("info", "request", { id, method: msg.method });
-  const respond = (r: { ok: true; result: unknown } | { ok: false; error: { code: string; message: string } }): string =>
-    JSON.stringify({ id, ...r } as BridgeResponse);
+  const respond = (
+    r: { ok: true; result: unknown } | { ok: false; error: { code: string; message: string; data?: unknown } },
+  ): string => JSON.stringify({ id, ...r } as BridgeResponse);
 
   switch (msg.method) {
     case "hello":
@@ -89,8 +92,12 @@ export async function handleMessage(line: string): Promise<string> {
       } catch (e) {
         // 保留业务错误码（needs_authorization / unknown_skill / unknown_entry / timeout / script_error）
         const code = (e as { code?: string }).code ?? "run_skill_script_failed";
+        const data = (e as { data?: unknown }).data;
         log("error", "run_skill_script.failed", { id, code, error: String(e) });
-        return respond({ ok: false, error: { code, message: String(e) } });
+        return respond({
+          ok: false,
+          error: { code, message: String(e), ...(data !== undefined ? { data } : {}) },
+        });
       }
     }
     case "write_skill": {
@@ -126,6 +133,15 @@ export async function handleMessage(line: string): Promise<string> {
       } catch (e) {
         log("error", "revoke_grant.failed", { id, error: String(e) });
         return respond({ ok: false, error: { code: "revoke_grant_failed", message: String(e) } });
+      }
+    }
+    case "list_audit": {
+      try {
+        const p = (msg.params ?? {}) as ListAuditParams;
+        return respond({ ok: true, result: { entries: readAuditTail(p.limit) } satisfies ListAuditResult });
+      } catch (e) {
+        log("error", "list_audit.failed", { id, error: String(e) });
+        return respond({ ok: false, error: { code: "list_audit_failed", message: String(e) } });
       }
     }
     default:

@@ -9,7 +9,6 @@ import { buildKeyboardTools, type KeyboardToolDeps } from "./tools/keyboard";
 import { buildEditorTools, type EditorToolDeps } from "./tools/editor";
 import { SKILL_META_TOOLS } from "./tools/skill-meta";
 import { SKILL_ACCESS_TOOLS } from "./tools/skill-access";
-import { RUN_SKILL_SCRIPT_TOOL } from "./tools/skill-script";
 import { SCHEDULE_META_TOOLS } from "./tools/schedule-meta";
 import { TAB_TOOLS } from "./tools/tabs";
 import { searchWebTool } from "./tools/search";
@@ -312,7 +311,10 @@ USE WHEN:
 
   // SP-1 — Skill access tools: use_skill + read_skill_file (see tools/skill-access.ts)
   ...SKILL_ACCESS_TOOLS,
-  RUN_SKILL_SCRIPT_TOOL,
+  // run_skill_script moved to per-run assembly in loop.ts (Slice 3 Task 5) —
+  // its disk branch needs sessionId to open a skill-grant panel-request, and
+  // ToolHandlerContext carries no sessionId (same reason mouse/keyboard tools
+  // are assembled per-run instead of living in this static array).
 
   // Phase 3 — Cross-tab tools (see tools/tabs.ts)
   ...TAB_TOOLS,

@@ -1,5 +1,5 @@
-import { test, expect } from "bun:test";
-import { parseSkillMd } from "../src/skill-md";
+import { test, expect, describe } from "bun:test";
+import { parseSkillMd, normalizeDomain } from "../src/skill-md";
 
 const SKILL = `---
 name: web-fetch
@@ -57,4 +57,38 @@ BODY HERE`;
 
 test("lenient fallback still throws when name line is absent", () => {
   expect(() => parseSkillMd(`---\ndescription: has: colon but no name\n---\nb`)).toThrow(/name/);
+});
+
+describe("normalizeDomain", () => {
+  test("strips scheme / path / query / port and lowercases", () => {
+    expect(normalizeDomain("https://API.Example.COM:8443/v1/x?q=1#frag")).toBe("api.example.com");
+  });
+  test("keeps bare domains and wildcard subdomains", () => {
+    expect(normalizeDomain("api.example.com")).toBe("api.example.com");
+    expect(normalizeDomain("*.example.com")).toBe("*.example.com");
+  });
+  test("strips trailing dots and userinfo", () => {
+    expect(normalizeDomain("example.com.")).toBe("example.com");
+    expect(normalizeDomain("user@ftp.example.com")).toBe("ftp.example.com");
+  });
+  test("rejects garbage", () => {
+    expect(normalizeDomain("not a domain!!")).toBeNull();
+    expect(normalizeDomain("")).toBeNull();
+  });
+});
+
+describe("parseSkillMd network normalization", () => {
+  test("normalizes metadata.pie.network entries and drops invalid ones", () => {
+    const md = [
+      "---",
+      "name: net-skill",
+      "description: d",
+      "metadata:",
+      "  pie:",
+      '    network: ["https://API.example.com/v1", "plain.example.org", "!!bad!!"]',
+      "---",
+      "body",
+    ].join("\n");
+    expect(parseSkillMd(md).declaredCaps.network).toEqual(["api.example.com", "plain.example.org"]);
+  });
 });

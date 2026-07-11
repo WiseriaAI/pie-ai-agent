@@ -27,3 +27,15 @@ test("run_skill_script on missing skill → ok:false with unknown_skill code (no
   expect(out.ok).toBe(false);
   expect(out.error.code).toBe("unknown_skill");
 });
+
+test("list_audit returns ok envelope with entries array", async () => {
+  const out = JSON.parse(await handleMessage(JSON.stringify({ id: "5", method: "list_audit", params: {} })));
+  expect(out.ok).toBe(true);
+  expect(Array.isArray(out.result.entries)).toBe(true);
+});
+
+test("list_audit clamps out-of-range limit to 200", async () => {
+  const out = JSON.parse(await handleMessage(JSON.stringify({ id: "6", method: "list_audit", params: { limit: 99999 } })));
+  expect(out.ok).toBe(true);
+  expect(Array.isArray(out.result.entries)).toBe(true);
+});

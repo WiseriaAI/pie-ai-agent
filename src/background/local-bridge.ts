@@ -19,6 +19,9 @@ import {
   type ListGrantsResult,
   type RevokeGrantParams,
   type RevokeGrantResult,
+  type SkillAuthPayload,
+  type ListAuditParams,
+  type ListAuditResult,
 } from "@/types/local-bridge";
 
 const HOST_NAME = "ai.wiseria.pie";
@@ -47,6 +50,40 @@ export function bridgeHasSkillFs(): boolean {
   return ready && capabilities.includes("skill_fs");
 }
 
+// ── 自动重连（退避）──────────────────────────────────────────────────
+// SW 存活期内桥意外断开（daemon 重启/热替换/崩溃）→ 按退避序列重试；用户显式
+// 关闭不重试。SW 被回收则计时器自然消失，下次唤醒由 startup 兜底。真机案例：
+// Slice 2 验收期 daemon 重启后 UI 掉回 IDB 模式直到手动刷新扩展。
+const RECONNECT_DELAYS_MS = [1_000, 2_000, 5_000, 15_000, 30_000];
+let reconnectAttempt = 0;
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let userDisabled = false;
+let reconnectAction: (() => void) | null = null;
+
+/** index.ts 注入重连动作（initBridgeAndMigrate）——动作注入避免反向依赖 skill-migration。 */
+export function setBridgeReconnectAction(fn: () => void): void {
+  reconnectAction = fn;
+}
+
+/** Test-only：清重连状态。 */
+export function __resetBridgeReconnectState(): void {
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  reconnectTimer = null;
+  reconnectAttempt = 0;
+  userDisabled = false;
+  reconnectAction = null;
+}
+
+function scheduleReconnect(): void {
+  if (userDisabled || !reconnectAction || reconnectTimer) return;
+  const delay = RECONNECT_DELAYS_MS[Math.min(reconnectAttempt, RECONNECT_DELAYS_MS.length - 1)];
+  reconnectAttempt++;
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    reconnectAction?.();
+  }, delay);
+}
+
 function send(method: BridgeRequest["method"], params: unknown): Promise<unknown> {
   if (!port) return Promise.reject(new Error("bridge not connected"));
   const id = crypto.randomUUID();
@@ -71,6 +108,10 @@ export function initLocalBridge(): void {
     capabilities = [];
     pending.clear();
     settleThis();
+    // 重连尝试本身失败（daemon 仍在重启中，端口都没建起来）→ onDisconnect 永远
+    // 不会触发，若不在这里续排就等于梯子死掉；scheduleReconnect 自带
+    // userDisabled/单飞守卫，此处调用安全不会重复排。
+    scheduleReconnect();
     return;
   }
   port.onMessage.addListener((raw: unknown) => {
@@ -83,6 +124,9 @@ export function initLocalBridge(): void {
       const err = new Error(msg.error.message);
       // 非枚举：防止 JSON.stringify(err) 把内部错误码泄进 LLM 可见文案
       Object.defineProperty(err, "code", { value: msg.error.code, enumerable: false });
+      if (msg.error.data !== undefined)
+        // 非枚举：与 code 同理，防 JSON.stringify(err) 把 payload 泄进 LLM 可见文案
+        Object.defineProperty(err, "data", { value: msg.error.data, enumerable: false });
       p.reject(err);
     }
   });
@@ -93,7 +137,7 @@ export function initLocalBridge(): void {
     capabilities = [];
     for (const p of pending.values()) p.reject(new Error("bridge disconnected"));
     pending.clear();
-    // ponytail: Slice 0 不做指数退避重连；spec §8 的重连留后续 slice
+    scheduleReconnect();
   });
   // 握手
   send("hello", { protocolVersion: PROTOCOL_VERSION })
@@ -103,12 +147,16 @@ export function initLocalBridge(): void {
       if (Math.abs(res.protocolVersion - PROTOCOL_VERSION) <= 1) {
         capabilities = res.capabilities;
         ready = true;
+        reconnectAttempt = 0;
       }
       settleThis();
     })
     .catch(() => {
       ready = false;
       settleThis();
+      // 握手本身失败（端口建起来了但 hello 被拒/超时）同样不会经过 onDisconnect
+      // —— 同上，必须在这里主动续排梯子，否则 daemon 恢复后桥永远连不回去。
+      scheduleReconnect();
     });
 }
 
@@ -140,14 +188,16 @@ export async function requestReadSkillFile(p: ReadSkillFileParams): Promise<Read
 }
 export type RunSkillScriptOutcome =
   | { ok: true; result: RunSkillScriptResult }
-  | { ok: false; needsAuth: true }
+  | { ok: false; needsAuth: true; auth?: SkillAuthPayload }
   | { ok: false; needsAuth: false; error: string };
 export async function requestRunSkillScript(p: RunSkillScriptParams): Promise<RunSkillScriptOutcome> {
   try {
     return { ok: true, result: (await send("run_skill_script", p)) as RunSkillScriptResult };
   } catch (e) {
     const code = (e as { code?: string }).code;
-    if (code === "needs_authorization") return { ok: false, needsAuth: true };
+    if (code === "needs_authorization") {
+      return { ok: false, needsAuth: true, auth: (e as { data?: SkillAuthPayload }).data };
+    }
     return { ok: false, needsAuth: false, error: e instanceof Error ? e.message : String(e) };
   }
 }
@@ -163,9 +213,13 @@ export async function requestListGrants(): Promise<ListGrantsResult> {
 export async function requestRevokeGrant(p: RevokeGrantParams): Promise<RevokeGrantResult> {
   return (await send("revoke_grant", p)) as RevokeGrantResult;
 }
+export async function requestListAudit(p: ListAuditParams = {}): Promise<ListAuditResult> {
+  return (await send("list_audit", p)) as ListAuditResult;
+}
 
 /** SW 启动调用：仅当已授予 nativeMessaging 才连桥（纯 BYOK 用户零感知）。 */
 export async function maybeInitLocalBridge(): Promise<void> {
+  userDisabled = false;
   // 同步换上「init 决策」promise：SW 冷启动时，消息处理器里同 tick 的
   // bridgeSettled() 调用方若跑在 permissions IPC 前，拿到的不再是
   // module-init 的已 resolve promise（那会让首次读误判成 IDB 模式），
@@ -190,6 +244,12 @@ export async function maybeInitLocalBridge(): Promise<void> {
 
 /** 用户在设置里关掉本地打通（移除 nativeMessaging）时断桥并清状态。 */
 export function disconnectLocalBridge(): void {
+  userDisabled = true;
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  reconnectAttempt = 0;
   if (port) {
     try {
       port.disconnect();

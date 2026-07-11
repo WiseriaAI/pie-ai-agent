@@ -4,11 +4,11 @@ import { homedir } from "os";
 import { paths } from "./paths";
 import { log } from "./log";
 import { assertSkillName, listSkills } from "./skill-store";
-import { hasGrant, putGrant, grantKey, canonicalEnvelope } from "./grants";
+import { hasGrant, putGrant, grantKey, canonicalEnvelope, envelopeHash } from "./grants";
 import { appendAudit } from "./audit";
 import { realSkillSandbox } from "./skill-sandbox";
 import type { SkillSandbox } from "./skill-sandbox";
-import type { GrantEnvelope, RunSkillScriptParams, RunSkillScriptResult } from "../../src/types/local-bridge";
+import type { GrantEnvelope, RunSkillScriptParams, RunSkillScriptResult, SkillAuthPayload } from "../../src/types/local-bridge";
 
 export interface SkillExecDeps {
   sandbox?: SkillSandbox;
@@ -66,8 +66,19 @@ export async function runSkillScript(
   });
 
   if (!hasGrant(name, envelope, grantsPath)) {
-    if (!params.grantApproved) {
-      throw Object.assign(new Error("authorization required"), { code: "needs_authorization" });
+    const hash = envelopeHash(envelope);
+    if (!params.grantApproved || params.approvedEnvelopeHash !== hash) {
+      const data: SkillAuthPayload = {
+        skillName: name,
+        displayName: summary.displayName,
+        description: summary.description,
+        envelope,
+        envelopeHash: hash,
+      };
+      throw Object.assign(new Error("authorization required"), {
+        code: "needs_authorization",
+        data,
+      });
     }
     putGrant({ key: grantKey(name, envelope), skillName: name, envelope, grantedAt: now() }, grantsPath);
   }

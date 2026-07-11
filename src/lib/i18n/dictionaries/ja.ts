@@ -103,6 +103,11 @@ export const jaDict = {
       agentsTitle: "ローカル Agent",
       agentNotInstalled: "未インストール",
       agentEnableFailed: "有効にできません——このマシンで検出されませんでした。",
+      grantsTitle: "承認済みスキル",
+      revoke: "取り消す",
+      auditTitle: "最近のスクリプト実行",
+      auditOk: "成功",
+      auditFailed: "失敗",
     },
     searchProvider: {
       caps: "検索プロバイダー",
@@ -151,6 +156,17 @@ export const jaDict = {
     filesLabel: "引き継ぐファイル",
     allow: "引き継ぐ",
     deny: "キャンセル",
+  },
+  skillGrant: {
+    title: "このスキルにお使いのパソコンでスクリプトの実行を許可しますか？",
+    scriptsLabel: "実行可能なスクリプト",
+    networkLabel: "ネットワークアクセス",
+    networkNone: "なし——デフォルトのサンドボックスが通信を遮断します",
+    writeLabel: "ワークスペース外の追加書き込み先",
+    disclosure:
+      "スクリプトはあなたのユーザー権限でデフォルトのサンドボックス内で実行されます。上記以外のドメインへの通信は遮断され、書き込みはこのスキルのワークスペースと記載のパスに限定され、機密フォルダの読み取りは拒否されます。承認はスキルの宣言が変わるまで有効です。",
+    allow: "許可",
+    deny: "拒否",
   },
   chat: {
     elementPicker: {

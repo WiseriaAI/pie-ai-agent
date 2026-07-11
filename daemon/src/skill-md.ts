@@ -15,6 +15,19 @@ function strArray(v: unknown): string[] {
   return v.filter((x): x is string => typeof x === "string" && x.length > 0);
 }
 
+/** metadata.pie.network 归一化：整 URL / 带端口路径 → 裸域名（srt allowedDomains 语义）。
+ *  解析不出合法域名形 → null（调用方丢弃——静默失效比放行错误值安全）。 */
+export function normalizeDomain(raw: string): string | null {
+  let s = raw.trim().toLowerCase();
+  s = s.replace(/^[a-z][a-z0-9+.-]*:\/\//, ""); // scheme
+  s = s.split(/[/?#]/)[0]; // path / query / fragment
+  s = s.replace(/^[^@]*@/, ""); // userinfo
+  s = s.replace(/:\d+$/, ""); // port
+  s = s.replace(/\.+$/, ""); // trailing dots
+  const DOMAIN_RE = /^(\*\.)?[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/;
+  return DOMAIN_RE.test(s) ? s : null;
+}
+
 /** strict YAML 解析失败时的宽松回退：只提零缩进的顶层 `name:`/`description:` 行。
  *  手写 SKILL.md 的 description 含「: 」（冒号+空格，中文语境极常见）会让 strict
  *  yaml 抛 Nested-mappings 错——不能因此让 skill 在 listSkills 里隐身（真机案例：
@@ -50,7 +63,12 @@ export function parseSkillMd(md: string): ParsedSkillMd {
   return {
     name,
     description,
-    declaredCaps: { network: strArray(pie.network), write: strArray(pie.write) },
+    declaredCaps: {
+      network: strArray(pie.network)
+        .map(normalizeDomain)
+        .filter((d): d is string => d !== null),
+      write: strArray(pie.write),
+    },
     body,
   };
 }

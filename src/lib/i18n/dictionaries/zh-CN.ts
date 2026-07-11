@@ -102,6 +102,11 @@ export const zhCNDict = {
       agentsTitle: "本地 Agent",
       agentNotInstalled: "未安装",
       agentEnableFailed: "无法启用——未在本机检测到安装。",
+      grantsTitle: "已授权 skill",
+      revoke: "撤销",
+      auditTitle: "最近脚本执行",
+      auditOk: "成功",
+      auditFailed: "失败",
     },
     searchProvider: {
       caps: "网页搜索",
@@ -150,6 +155,17 @@ export const zhCNDict = {
     filesLabel: "随交棒文件",
     allow: "交棒",
     deny: "取消",
+  },
+  skillGrant: {
+    title: "允许该 skill 在你的电脑上运行脚本？",
+    scriptsLabel: "可执行脚本",
+    networkLabel: "网络访问",
+    networkNone: "无——默认沙箱已断网",
+    writeLabel: "工作区外额外写入路径",
+    disclosure:
+      "脚本将以你的本机权限在默认沙箱内运行：未列出的域名一律断网，写入仅限该 skill 的工作区与上列路径，敏感目录拒绝读取。批准后免再确认，直到该 skill 的声明发生变化。",
+    allow: "允许",
+    deny: "拒绝",
   },
   chat: {
     elementPicker: {

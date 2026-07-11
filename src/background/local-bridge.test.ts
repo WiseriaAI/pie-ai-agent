@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { PROTOCOL_VERSION } from "@/types/local-bridge";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { PROTOCOL_VERSION, type SkillAuthPayload } from "@/types/local-bridge";
 
 // 一个可编程的假 native port
 function makeFakePort() {
@@ -208,6 +208,83 @@ describe("local-bridge", () => {
     await expect(p).resolves.toEqual({ ok: false, needsAuth: false, error: "script threw: boom" });
   });
 
+  it("requestRunSkillScript surfaces needs_authorization data as outcome.auth", async () => {
+    const { initLocalBridge, requestRunSkillScript } = await import("./local-bridge");
+    initLocalBridge();
+    const helloReq = fakePort.postMessage.mock.calls[0][0] as { id: string };
+    fakePort._emit({
+      id: helloReq.id, ok: true,
+      result: { protocolVersion: PROTOCOL_VERSION, capabilities: ["skill_fs"] },
+    });
+    await Promise.resolve();
+
+    const PAYLOAD: SkillAuthPayload = {
+      skillName: "demo",
+      description: "demo skill",
+      envelope: { allowedDomains: [], extraWrites: [], runnableScripts: ["fetch.ts"] },
+      envelopeHash: "abc123",
+    };
+
+    const p = requestRunSkillScript({ name: "s", entry: "e.ts" });
+    const req = fakePort.postMessage.mock.calls[1][0] as { id: string; method: string };
+    fakePort._emit({
+      id: req.id, ok: false,
+      error: { code: "needs_authorization", message: "authorization required", data: PAYLOAD },
+    });
+    const outcome = await p;
+    expect(outcome).toMatchObject({ ok: false, needsAuth: true });
+    expect((outcome as { auth?: SkillAuthPayload }).auth?.envelopeHash).toBe(PAYLOAD.envelopeHash);
+  });
+
+  it("needs_authorization without data (old daemon) → auth undefined", async () => {
+    const { initLocalBridge, requestRunSkillScript } = await import("./local-bridge");
+    initLocalBridge();
+    const helloReq = fakePort.postMessage.mock.calls[0][0] as { id: string };
+    fakePort._emit({
+      id: helloReq.id, ok: true,
+      result: { protocolVersion: PROTOCOL_VERSION, capabilities: ["skill_fs"] },
+    });
+    await Promise.resolve();
+
+    const p = requestRunSkillScript({ name: "s", entry: "e.ts" });
+    const req = fakePort.postMessage.mock.calls[1][0] as { id: string; method: string };
+    fakePort._emit({
+      id: req.id, ok: false,
+      error: { code: "needs_authorization", message: "authorization required" },
+    });
+    const outcome = await p;
+    expect(outcome).toEqual({ ok: false, needsAuth: true, auth: undefined });
+  });
+
+  it("requestListAudit round-trips entries", async () => {
+    const { initLocalBridge, requestListAudit } = await import("./local-bridge");
+    initLocalBridge();
+    const helloReq = fakePort.postMessage.mock.calls[0][0] as { id: string };
+    fakePort._emit({
+      id: helloReq.id, ok: true,
+      result: { protocolVersion: PROTOCOL_VERSION, capabilities: ["skill_fs"] },
+    });
+    await Promise.resolve();
+
+    const p = requestListAudit({ limit: 10 });
+    const req = fakePort.postMessage.mock.calls[1][0] as { id: string; method: string };
+    expect(req.method).toBe("list_audit");
+    const entries = [
+      {
+        ts: 1720000000000,
+        skillName: "demo",
+        entry: "fetch.ts",
+        envelope: { allowedDomains: [], extraWrites: [], runnableScripts: ["fetch.ts"] },
+        exitCode: 0,
+        timedOut: false,
+        truncated: false,
+        ms: 42,
+      },
+    ];
+    fakePort._emit({ id: req.id, ok: true, result: { entries } });
+    await expect(p).resolves.toEqual({ entries });
+  });
+
   it("requestListSkills round-trips result.skills", async () => {
     const { initLocalBridge, requestListSkills } = await import("./local-bridge");
     initLocalBridge();
@@ -369,5 +446,333 @@ describe("local-bridge", () => {
     grantPermission(false);
     await p; // 无权限分支也必须落定，绝不悬空
     expect(isBridgeReady()).toBe(false);
+  });
+
+  it("rejects with code and data non-enumerable, not in JSON.stringify", async () => {
+    const { initLocalBridge, requestListSkills } = await import("./local-bridge");
+    initLocalBridge();
+    const helloReq = fakePort.postMessage.mock.calls[0][0] as { id: string };
+    fakePort._emit({
+      id: helloReq.id, ok: true,
+      result: { protocolVersion: PROTOCOL_VERSION, capabilities: ["skill_fs"] },
+    });
+    await Promise.resolve();
+
+    const p = requestListSkills();
+    const req = fakePort.postMessage.mock.calls[1][0] as { id: string; method: string };
+    fakePort._emit({
+      id: req.id, ok: false,
+      error: { code: "access_denied", message: "permission denied", data: { secret: "SECRET_MARKER_12345" } },
+    });
+
+    try {
+      await p;
+      expect.fail("should have rejected");
+    } catch (e) {
+      const err = e as any;
+      // Assert code is non-enumerable
+      expect(Object.getOwnPropertyDescriptor(err, "code")?.enumerable).toBe(false);
+      // Assert data is non-enumerable
+      expect(Object.getOwnPropertyDescriptor(err, "data")?.enumerable).toBe(false);
+      // Assert JSON.stringify does not contain the secret marker
+      const stringified = JSON.stringify(err);
+      expect(stringified).not.toContain("SECRET_MARKER_12345");
+    }
+  });
+
+  it("requestListAudit with zero args uses default empty params object", async () => {
+    const { initLocalBridge, requestListAudit } = await import("./local-bridge");
+    initLocalBridge();
+    const helloReq = fakePort.postMessage.mock.calls[0][0] as { id: string };
+    fakePort._emit({
+      id: helloReq.id, ok: true,
+      result: { protocolVersion: PROTOCOL_VERSION, capabilities: ["skill_fs"] },
+    });
+    await Promise.resolve();
+
+    const p = requestListAudit();
+    const req = fakePort.postMessage.mock.calls[1][0] as { id: string; method: string };
+    expect(req.method).toBe("list_audit");
+    const entries = [
+      {
+        ts: 1720000000000,
+        skillName: "example",
+        entry: "main.ts",
+        envelope: { allowedDomains: [], extraWrites: [], runnableScripts: ["main.ts"] },
+        exitCode: 0,
+        timedOut: false,
+        truncated: false,
+        ms: 10,
+      },
+    ];
+    fakePort._emit({ id: req.id, ok: true, result: { entries } });
+    await expect(p).resolves.toEqual({ entries });
+  });
+
+  describe("auto-reconnect", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("unexpected disconnect schedules reconnect action with backoff", async () => {
+      const { initLocalBridge, setBridgeReconnectAction, __resetBridgeReconnectState } =
+        await import("./local-bridge");
+      __resetBridgeReconnectState();
+      const action = vi.fn();
+      setBridgeReconnectAction(action);
+      initLocalBridge();
+      fakePort._disconnect();
+      await vi.advanceTimersByTimeAsync(999);
+      expect(action).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(action).toHaveBeenCalledTimes(1);
+    });
+
+    it("consecutive failures walk the delay ladder and cap at 30s", async () => {
+      const { initLocalBridge, setBridgeReconnectAction, __resetBridgeReconnectState } =
+        await import("./local-bridge");
+      __resetBridgeReconnectState();
+      const action = vi.fn();
+      setBridgeReconnectAction(action);
+      initLocalBridge();
+
+      // 1st disconnect → 1s
+      fakePort._disconnect();
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(action).toHaveBeenCalledTimes(1);
+
+      // action doesn't reconnect the fake port itself (it's a fake), so the
+      // bridge stays disconnected; simulate the next failed attempt directly
+      // by disconnecting the (already-dead) port state again is impossible
+      // since port is null after disconnect. Re-init to simulate the action
+      // actually calling initLocalBridge, then disconnect again to walk the
+      // ladder.
+      initLocalBridge();
+      fakePort._disconnect();
+      await vi.advanceTimersByTimeAsync(1_999);
+      expect(action).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(action).toHaveBeenCalledTimes(2);
+
+      initLocalBridge();
+      fakePort._disconnect();
+      await vi.advanceTimersByTimeAsync(4_999);
+      expect(action).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(action).toHaveBeenCalledTimes(3);
+
+      initLocalBridge();
+      fakePort._disconnect();
+      await vi.advanceTimersByTimeAsync(14_999);
+      expect(action).toHaveBeenCalledTimes(3);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(action).toHaveBeenCalledTimes(4);
+
+      initLocalBridge();
+      fakePort._disconnect();
+      await vi.advanceTimersByTimeAsync(29_999);
+      expect(action).toHaveBeenCalledTimes(4);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(action).toHaveBeenCalledTimes(5);
+
+      // capped at 30s from here on
+      initLocalBridge();
+      fakePort._disconnect();
+      await vi.advanceTimersByTimeAsync(29_999);
+      expect(action).toHaveBeenCalledTimes(5);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(action).toHaveBeenCalledTimes(6);
+    });
+
+    it("successful handshake resets the ladder", async () => {
+      const { initLocalBridge, setBridgeReconnectAction, __resetBridgeReconnectState } =
+        await import("./local-bridge");
+      __resetBridgeReconnectState();
+      const action = vi.fn();
+      setBridgeReconnectAction(action);
+      initLocalBridge();
+
+      // First disconnect → schedules at 1s
+      fakePort._disconnect();
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(action).toHaveBeenCalledTimes(1);
+
+      // Reconnect + successful handshake resets the attempt counter
+      initLocalBridge();
+      const helloReq = fakePort.postMessage.mock.calls.at(-1)![0] as { id: string };
+      fakePort._emit({
+        id: helloReq.id, ok: true,
+        result: { protocolVersion: PROTOCOL_VERSION, capabilities: [] },
+      });
+      await vi.advanceTimersByTimeAsync(0);
+
+      // Disconnect again — should go back to 1s (not 2s)
+      fakePort._disconnect();
+      await vi.advanceTimersByTimeAsync(999);
+      expect(action).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(action).toHaveBeenCalledTimes(2);
+    });
+
+    it("disconnectLocalBridge (user off) suppresses reconnect and clears pending timer", async () => {
+      const {
+        initLocalBridge,
+        disconnectLocalBridge,
+        setBridgeReconnectAction,
+        __resetBridgeReconnectState,
+      } = await import("./local-bridge");
+      __resetBridgeReconnectState();
+      const action = vi.fn();
+      setBridgeReconnectAction(action);
+      initLocalBridge();
+
+      // A pending reconnect timer gets cleared by the user turning it off.
+      fakePort._disconnect();
+      disconnectLocalBridge();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(action).not.toHaveBeenCalled();
+
+      // And disconnecting first (no pending timer yet) also suppresses any
+      // future unexpected disconnect from scheduling a reconnect.
+      __resetBridgeReconnectState();
+      setBridgeReconnectAction(action);
+      initLocalBridge();
+      disconnectLocalBridge();
+      fakePort._disconnect();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(action).not.toHaveBeenCalled();
+    });
+
+    it("maybeInitLocalBridge clears the user-disabled flag", async () => {
+      const {
+        initLocalBridge,
+        disconnectLocalBridge,
+        maybeInitLocalBridge,
+        setBridgeReconnectAction,
+        __resetBridgeReconnectState,
+      } = await import("./local-bridge");
+      __resetBridgeReconnectState();
+      const action = vi.fn();
+      setBridgeReconnectAction(action);
+      initLocalBridge();
+
+      // Turn off (user-disabled), then re-enable via maybeInitLocalBridge.
+      disconnectLocalBridge();
+      (globalThis as any).chrome.permissions = {
+        contains: vi.fn(() => Promise.resolve(true)),
+      };
+      await maybeInitLocalBridge();
+      await vi.advanceTimersByTimeAsync(0);
+
+      // Now an unexpected disconnect should schedule reconnect again.
+      fakePort._disconnect();
+      await vi.advanceTimersByTimeAsync(999);
+      expect(action).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(action).toHaveBeenCalledTimes(1);
+    });
+
+    it("reconnect attempt that throws at connectNative keeps the ladder alive", async () => {
+      const { initLocalBridge, setBridgeReconnectAction, __resetBridgeReconnectState } =
+        await import("./local-bridge");
+      __resetBridgeReconnectState();
+      // Mirrors production's initBridgeAndMigrate → maybeInitLocalBridge →
+      // initLocalBridge path: the injected action itself re-runs init.
+      const action = vi.fn(() => initLocalBridge());
+      setBridgeReconnectAction(action);
+      initLocalBridge();
+
+      // Unexpected disconnect arms the first timer (1s).
+      fakePort._disconnect();
+
+      // The reconnect attempt's own connectNative call throws — daemon is
+      // mid-restart and the native messaging host isn't accepting yet.
+      (globalThis as any).chrome.runtime.connectNative = vi.fn(() => {
+        throw new Error("ECONNREFUSED");
+      });
+
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(action).toHaveBeenCalledTimes(1);
+
+      // Ladder must still be alive: advancing past the SECOND delay (2s)
+      // should invoke the action again, proving a new timer got armed after
+      // the failed attempt above instead of dying silently.
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(action).toHaveBeenCalledTimes(2);
+    });
+
+    it("handshake failure during reconnect keeps the ladder alive", async () => {
+      const { initLocalBridge, setBridgeReconnectAction, __resetBridgeReconnectState } =
+        await import("./local-bridge");
+      __resetBridgeReconnectState();
+      const action = vi.fn(() => initLocalBridge());
+      setBridgeReconnectAction(action);
+      initLocalBridge();
+
+      // First unexpected disconnect arms the ladder (1s).
+      fakePort._disconnect();
+
+      // The reconnect attempt's connectNative succeeds (fresh port), but the
+      // handshake itself fails — e.g. daemon accepted the pipe but rejected
+      // hello mid-upgrade.
+      const secondPort = makeFakePort();
+      (globalThis as any).chrome.runtime.connectNative = vi.fn(() => secondPort);
+
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(action).toHaveBeenCalledTimes(1);
+
+      const helloReq = secondPort.postMessage.mock.calls[0][0] as { id: string };
+      secondPort._emit({
+        id: helloReq.id,
+        ok: false,
+        error: { code: "incompatible", message: "protocol mismatch" },
+      });
+      await Promise.resolve(); // flush the rejected hello's .catch()
+
+      // Ladder must still be alive: advancing past the SECOND delay (2s)
+      // should invoke the action again.
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(action).toHaveBeenCalledTimes(2);
+    });
+
+    it("user disable still suppresses rescheduling from the failure branches", async () => {
+      const {
+        initLocalBridge,
+        disconnectLocalBridge,
+        setBridgeReconnectAction,
+        __resetBridgeReconnectState,
+      } = await import("./local-bridge");
+      __resetBridgeReconnectState();
+      const action = vi.fn(() => initLocalBridge());
+      setBridgeReconnectAction(action);
+      initLocalBridge();
+      disconnectLocalBridge();
+
+      // Branch 1 (connectNative throws) while userDisabled is set: no timer
+      // should ever get armed.
+      (globalThis as any).chrome.runtime.connectNative = vi.fn(() => {
+        throw new Error("ECONNREFUSED");
+      });
+      initLocalBridge();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(action).not.toHaveBeenCalled();
+
+      // Branch 2 (handshake .catch()) while userDisabled is set: same.
+      const secondPort = makeFakePort();
+      (globalThis as any).chrome.runtime.connectNative = vi.fn(() => secondPort);
+      initLocalBridge();
+      const helloReq = secondPort.postMessage.mock.calls[0][0] as { id: string };
+      secondPort._emit({
+        id: helloReq.id,
+        ok: false,
+        error: { code: "incompatible", message: "protocol mismatch" },
+      });
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(action).not.toHaveBeenCalled();
+    });
   });
 });

@@ -1,18 +1,11 @@
-import { appendFileSync, mkdirSync } from "fs";
+import { appendFileSync, mkdirSync, readFileSync } from "fs";
 import { dirname } from "path";
 import { paths } from "./paths";
-import type { GrantEnvelope } from "../../src/types/local-bridge";
+import type { AuditEntry } from "../../src/types/local-bridge";
 
-export interface AuditEntry {
-  ts: number;
-  skillName: string;
-  entry: string;
-  envelope: GrantEnvelope;
-  exitCode: number;
-  timedOut: boolean;
-  truncated: boolean;
-  ms: number;
-}
+// wire 类型单一权威源在 src/types/local-bridge.ts；此处 re-export 保住既有 import 方
+// （如 skill-exec.ts）不用改 import 路径。
+export type { AuditEntry };
 
 // best-effort：审计失败绝不阻断执行（spec §安全模型 audit = 知情权，非闸）。
 export function appendAudit(entry: AuditEntry, path = paths.auditPath): void {
@@ -21,5 +14,28 @@ export function appendAudit(entry: AuditEntry, path = paths.auditPath): void {
     appendFileSync(path, JSON.stringify(entry) + "\n");
   } catch {
     /* swallow */
+  }
+}
+
+export function readAuditTail(limit = 20, path = paths.auditPath): AuditEntry[] {
+  // ponytail: 全量读文件解析取尾——一行一条,v1 量级 MB 内;文件真大了再改 seek 尾块。
+  // 先解析全量再切尾（而非先切尾再解析）：否则尾部混进坏行会把合法条目挤出窗口。
+  const n = Math.max(1, Math.min(limit, 200));
+  try {
+    const lines = readFileSync(path, "utf8").split("\n").filter(Boolean);
+    const parsed: AuditEntry[] = [];
+    for (const line of lines) {
+      try {
+        const e = JSON.parse(line) as AuditEntry;
+        // 契约过滤：老格式行（2b 时代 skillId/perms 字段）不符合 AuditEntry wire
+        // 类型，返回会让设置页渲染空名字——按 wire 契约只放行当前格式。
+        if (typeof e.skillName === "string" && typeof e.entry === "string") parsed.push(e);
+      } catch {
+        /* 坏行跳过 */
+      }
+    }
+    return parsed.slice(-n).reverse(); // 新的在前
+  } catch {
+    return [];
   }
 }

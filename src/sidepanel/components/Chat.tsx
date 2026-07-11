@@ -99,6 +99,7 @@ import { CdpOnboardingCard } from "./CdpOnboardingCard";
 import { LocalFileRequestCard } from "./LocalFileRequestCard";
 import { RunLocalAgentCard } from "./RunLocalAgentCard";
 import { HandoffCard } from "./HandoffCard";
+import { SkillGrantCard } from "./SkillGrantCard";
 import { ScheduleDraftCard } from "./ScheduleDraftCard";
 import { AnimatePresence } from "./ui/motion";
 import { usePanelRequest } from "../hooks/usePanelRequest";
@@ -1661,6 +1662,12 @@ After the skill completes, briefly summarize what was created (the user will see
             }
           }
           onDecision={(target) => respondPanel(panelRequest.requestId, { ok: true, data: target })}
+        />
+      )}
+      {panelRequest?.kind === "skill-grant" && (
+        <SkillGrantCard
+          payload={panelRequest.payload as import("@/lib/agent/tools/skill-script").SkillGrantRequest}
+          onDecision={(approved) => respondPanel(panelRequest.requestId, { ok: true, data: approved })}
         />
       )}
       {showFileAccess && (
