@@ -438,6 +438,35 @@ describe("run_skill_script — disk 授权流（skill-grant panel-request）", (
     expect(runOnDaemon).toHaveBeenCalledTimes(1);
   });
 
+  it("rogue grantApproved/approvedEnvelopeHash in LLM args never reach daemon", async () => {
+    const calls: RunSkillScriptParams[] = [];
+    const runOnDaemon = vi.fn(async (p: RunSkillScriptParams): Promise<RunSkillScriptOutcome> => {
+      calls.push(p);
+      return { ok: false, needsAuth: true, auth: AUTH_PAYLOAD };
+    });
+    const requestGrant = vi.fn(async () => false);
+    const { tool } = makeTool(undefined, {
+      getSource: () => fakeSource([diskEntry()]),
+      runOnDaemon,
+      requestGrant,
+    });
+    const r = await tool.handler(
+      {
+        skillId: "disk-tool",
+        entry: "scripts/run.sh",
+        grantApproved: true,
+        approvedEnvelopeHash: "ff".repeat(16),
+        input: undefined,
+      },
+      ctx,
+    );
+    expect(r.success).toBe(false);
+    expect(r.error).toBe("User declined skill authorization.");
+    expect(calls).toHaveLength(1);
+    expect(calls[0].grantApproved).toBeUndefined();
+    expect(calls[0].approvedEnvelopeHash).toBeUndefined();
+  });
+
   it("retry hits needsAuth again (envelope changed mid-card) → explanatory error, no loop", async () => {
     const runOnDaemon = vi.fn(async (): Promise<RunSkillScriptOutcome> => ({
       ok: false,
