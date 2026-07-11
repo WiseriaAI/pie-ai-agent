@@ -1791,11 +1791,14 @@ function MessageBubble({
   message,
   thinkingStreaming = false,
   streaming = false,
+  celebrating = false,
   onRewind,
 }: {
   message: Extract<DisplayMessage, { role: "user" | "assistant" }>;
   thinkingStreaming?: boolean;
   streaming?: boolean;
+  /** Pie IP 完成庆祝 —— Chat 只对最后一条 agent 行传 true。 */
+  celebrating?: boolean;
   /** Issue #245 — present only on idle user bubbles. Called with the edited
    *  text (or undefined to resend as-is) to rewind history and resend. */
   onRewind?: (editedContent?: string) => void;
@@ -1978,7 +1981,7 @@ function MessageBubble({
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex items-center gap-2">
-        <div className="h-1 w-1 rounded-full bg-accent" />
+        <PieFace state={celebrating ? "success" : "static"} size={16} />
         <span className="caps text-fg-2">{t("chat.agent")}</span>
       </div>
       {(message.thinking || thinkingStreaming) && (
