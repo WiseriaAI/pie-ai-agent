@@ -108,6 +108,10 @@ export function initLocalBridge(): void {
     capabilities = [];
     pending.clear();
     settleThis();
+    // 重连尝试本身失败（daemon 仍在重启中，端口都没建起来）→ onDisconnect 永远
+    // 不会触发，若不在这里续排就等于梯子死掉；scheduleReconnect 自带
+    // userDisabled/单飞守卫，此处调用安全不会重复排。
+    scheduleReconnect();
     return;
   }
   port.onMessage.addListener((raw: unknown) => {
@@ -150,6 +154,9 @@ export function initLocalBridge(): void {
     .catch(() => {
       ready = false;
       settleThis();
+      // 握手本身失败（端口建起来了但 hello 被拒/超时）同样不会经过 onDisconnect
+      // —— 同上，必须在这里主动续排梯子，否则 daemon 恢复后桥永远连不回去。
+      scheduleReconnect();
     });
 }
 

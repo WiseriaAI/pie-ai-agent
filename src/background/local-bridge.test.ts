@@ -674,5 +674,105 @@ describe("local-bridge", () => {
       await vi.advanceTimersByTimeAsync(1);
       expect(action).toHaveBeenCalledTimes(1);
     });
+
+    it("reconnect attempt that throws at connectNative keeps the ladder alive", async () => {
+      const { initLocalBridge, setBridgeReconnectAction, __resetBridgeReconnectState } =
+        await import("./local-bridge");
+      __resetBridgeReconnectState();
+      // Mirrors production's initBridgeAndMigrate → maybeInitLocalBridge →
+      // initLocalBridge path: the injected action itself re-runs init.
+      const action = vi.fn(() => initLocalBridge());
+      setBridgeReconnectAction(action);
+      initLocalBridge();
+
+      // Unexpected disconnect arms the first timer (1s).
+      fakePort._disconnect();
+
+      // The reconnect attempt's own connectNative call throws — daemon is
+      // mid-restart and the native messaging host isn't accepting yet.
+      (globalThis as any).chrome.runtime.connectNative = vi.fn(() => {
+        throw new Error("ECONNREFUSED");
+      });
+
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(action).toHaveBeenCalledTimes(1);
+
+      // Ladder must still be alive: advancing past the SECOND delay (2s)
+      // should invoke the action again, proving a new timer got armed after
+      // the failed attempt above instead of dying silently.
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(action).toHaveBeenCalledTimes(2);
+    });
+
+    it("handshake failure during reconnect keeps the ladder alive", async () => {
+      const { initLocalBridge, setBridgeReconnectAction, __resetBridgeReconnectState } =
+        await import("./local-bridge");
+      __resetBridgeReconnectState();
+      const action = vi.fn(() => initLocalBridge());
+      setBridgeReconnectAction(action);
+      initLocalBridge();
+
+      // First unexpected disconnect arms the ladder (1s).
+      fakePort._disconnect();
+
+      // The reconnect attempt's connectNative succeeds (fresh port), but the
+      // handshake itself fails — e.g. daemon accepted the pipe but rejected
+      // hello mid-upgrade.
+      const secondPort = makeFakePort();
+      (globalThis as any).chrome.runtime.connectNative = vi.fn(() => secondPort);
+
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(action).toHaveBeenCalledTimes(1);
+
+      const helloReq = secondPort.postMessage.mock.calls[0][0] as { id: string };
+      secondPort._emit({
+        id: helloReq.id,
+        ok: false,
+        error: { code: "incompatible", message: "protocol mismatch" },
+      });
+      await Promise.resolve(); // flush the rejected hello's .catch()
+
+      // Ladder must still be alive: advancing past the SECOND delay (2s)
+      // should invoke the action again.
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(action).toHaveBeenCalledTimes(2);
+    });
+
+    it("user disable still suppresses rescheduling from the failure branches", async () => {
+      const {
+        initLocalBridge,
+        disconnectLocalBridge,
+        setBridgeReconnectAction,
+        __resetBridgeReconnectState,
+      } = await import("./local-bridge");
+      __resetBridgeReconnectState();
+      const action = vi.fn(() => initLocalBridge());
+      setBridgeReconnectAction(action);
+      initLocalBridge();
+      disconnectLocalBridge();
+
+      // Branch 1 (connectNative throws) while userDisabled is set: no timer
+      // should ever get armed.
+      (globalThis as any).chrome.runtime.connectNative = vi.fn(() => {
+        throw new Error("ECONNREFUSED");
+      });
+      initLocalBridge();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(action).not.toHaveBeenCalled();
+
+      // Branch 2 (handshake .catch()) while userDisabled is set: same.
+      const secondPort = makeFakePort();
+      (globalThis as any).chrome.runtime.connectNative = vi.fn(() => secondPort);
+      initLocalBridge();
+      const helloReq = secondPort.postMessage.mock.calls[0][0] as { id: string };
+      secondPort._emit({
+        id: helloReq.id,
+        ok: false,
+        error: { code: "incompatible", message: "protocol mismatch" },
+      });
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(action).not.toHaveBeenCalled();
+    });
   });
 });
