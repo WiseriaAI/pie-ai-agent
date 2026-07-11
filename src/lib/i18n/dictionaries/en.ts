@@ -374,6 +374,14 @@ export const enDict = {
       createSkill: "Create skill",
     },
     authorTag: { builtIn: "BUILT-IN", agent: "AGENT", user: "USER" },
+    sourceTag: { agents: "~/.agents" },
+    agentsImport: {
+      title: "Found {count} local skills",
+      body: "These live in ~/.agents/skills (shared across agents). Choose which ones Pie can use — you can change this anytime in this list.",
+      selectAll: "Select all",
+      confirm: "Enable selected",
+      dismiss: "Not now",
+    },
     toggleAria: { enable: "Enable {name}", disable: "Disable {name}" },
   },
   skillSlashPopover: {
