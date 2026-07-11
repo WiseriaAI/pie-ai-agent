@@ -36,7 +36,8 @@ export function buildRunSkillScriptTool(deps: SkillScriptDeps): Tool {
         skillId: { type: "string", description: "The skill id (from the skill catalog)." },
         entry: {
           type: "string",
-          description: "Script path inside the skill package, e.g. scripts/dedupe.js.",
+          description:
+            "Script entry exactly as listed by use_skill (e.g. hello.ts; older packaged skills may list paths like scripts/dedupe.js).",
         },
         input: { description: "JSON input passed to the script's default export." },
         args: {
@@ -63,7 +64,17 @@ export function buildRunSkillScriptTool(deps: SkillScriptDeps): Tool {
       if (!skillEntry) return { success: false, error: `Unknown skill: ${a.skillId}` };
 
       if (skillEntry.origin === "disk") {
-        if (!skillEntry.runnableScripts.includes(a.entry)) {
+        // 磁盘可执行集是 scripts/ 目录下的裸文件名（daemon readdirSync 语义），但
+        // LLM 被 2a 惯例/schema 示例教成传 "scripts/xxx"——两种形式都接受，送
+        // daemon 用命中 allowlist 的那个（daemon 只认裸名）。先精确后剥前缀，
+        // 老式声明（allowlist 本身含 scripts/ 前缀）不受影响。
+        const stripped = a.entry.startsWith("scripts/") ? a.entry.slice("scripts/".length) : a.entry;
+        const entry = skillEntry.runnableScripts.includes(a.entry)
+          ? a.entry
+          : skillEntry.runnableScripts.includes(stripped)
+            ? stripped
+            : null;
+        if (entry === null) {
           const declared = skillEntry.runnableScripts;
           return {
             success: false,
@@ -73,7 +84,7 @@ export function buildRunSkillScriptTool(deps: SkillScriptDeps): Tool {
           };
         }
         const finalArgs = argv ?? (a.input !== undefined ? [JSON.stringify(a.input)] : []);
-        const outcome = await deps.runOnDaemon({ name: a.skillId, entry: a.entry, args: finalArgs });
+        const outcome = await deps.runOnDaemon({ name: a.skillId, entry, args: finalArgs });
         if (outcome.ok) {
           const suffix = outcome.result.truncated ? " [output truncated]" : "";
           return {

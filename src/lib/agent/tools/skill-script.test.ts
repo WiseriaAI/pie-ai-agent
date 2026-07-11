@@ -198,6 +198,23 @@ describe("run_skill_script — disk 路径（daemon 执行）", () => {
     expect(runOnDaemon).toHaveBeenCalledWith({ name: "disk-tool", entry: "scripts/run.sh", args: ["--foo", "bar"] });
   });
 
+  it("entry 带 scripts/ 前缀而可执行集是裸文件名 → 归一化后放行并以裸名送 daemon", async () => {
+    // 真实 daemon 的 runnableScripts 是 readdirSync(scripts/) 的裸文件名（hello.ts），
+    // 但 LLM 被 2a 惯例/schema 旧示例教成传 scripts/hello.ts——两种形式都要接受。
+    const runOnDaemon = vi.fn(async (): Promise<RunSkillScriptOutcome> => ({
+      ok: true,
+      result: { output: "hi" },
+    }));
+    const { tool } = makeTool(undefined, {
+      getSource: () =>
+        fakeSource([diskEntry({ files: ["SKILL.md", "scripts/hello.ts"], runnableScripts: ["hello.ts"] })]),
+      runOnDaemon,
+    });
+    const r = await tool.handler({ skillId: "disk-tool", entry: "scripts/hello.ts" }, ctx);
+    expect(r.success).toBe(true);
+    expect(runOnDaemon).toHaveBeenCalledWith({ name: "disk-tool", entry: "hello.ts", args: [] });
+  });
+
   it("无 args 但有 input → input 序列化成单个 JSON 字符串参数", async () => {
     const runOnDaemon = vi.fn(async (): Promise<RunSkillScriptOutcome> => ({
       ok: true,
