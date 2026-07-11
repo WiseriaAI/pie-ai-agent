@@ -7,7 +7,7 @@ import { runHandoff } from "./handoff";
 import { detectAgents, AGENT_CANDIDATES } from "./agents";
 import { decodeNdjsonLines } from "./framing";
 import { log } from "./log";
-import { listSkills, readSkillFile, writeSkill, deleteSkill } from "./skill-store";
+import { readSkillFile, writeSkill, listSkillsMerged, resolveSkillRoot, deleteSkillGuarded } from "./skill-store";
 import { runSkillScript } from "./skill-exec";
 import { listGrants, revokeGrant } from "./grants";
 import { readAuditTail } from "./audit";
@@ -70,7 +70,7 @@ export async function handleMessage(line: string): Promise<string> {
     }
     case "list_skills": {
       try {
-        return respond({ ok: true, result: { skills: listSkills() } });
+        return respond({ ok: true, result: { skills: listSkillsMerged() } });
       } catch (e) {
         log("error", "list_skills.failed", { id, error: String(e) });
         return respond({ ok: false, error: { code: "list_skills_failed", message: String(e) } });
@@ -79,7 +79,10 @@ export async function handleMessage(line: string): Promise<string> {
     case "read_skill_file": {
       try {
         const p = msg.params as ReadSkillFileParams;
-        return respond({ ok: true, result: { content: readSkillFile(p.name, p.path) } });
+        const located = resolveSkillRoot(p.name);
+        // 未命中任何根 → 按主根路径读，让 ENOENT 自然抛出（错误语义与单根时代一致）
+        const content = readSkillFile(p.name, p.path, located?.root ?? paths.skillsDir);
+        return respond({ ok: true, result: { content } });
       } catch (e) {
         log("error", "read_skill_file.failed", { id, error: String(e) });
         return respond({ ok: false, error: { code: "read_skill_file_failed", message: String(e) } });
@@ -112,10 +115,11 @@ export async function handleMessage(line: string): Promise<string> {
     case "delete_skill": {
       try {
         const p = msg.params as DeleteSkillParams;
-        return respond({ ok: true, result: { deleted: deleteSkill(p.name) } });
+        return respond({ ok: true, result: { deleted: deleteSkillGuarded(p.name) } });
       } catch (e) {
-        log("error", "delete_skill.failed", { id, error: String(e) });
-        return respond({ ok: false, error: { code: "delete_skill_failed", message: String(e) } });
+        const code = (e as { code?: string }).code ?? "delete_skill_failed";
+        log("error", "delete_skill.failed", { id, code, error: String(e) });
+        return respond({ ok: false, error: { code, message: String(e) } });
       }
     }
     case "list_grants": {
