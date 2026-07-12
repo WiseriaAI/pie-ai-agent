@@ -355,6 +355,7 @@ export const enDict = {
     screenshotUnavailable: "[Screenshot unavailable]",
   },
   skills: {
+    grant: { granted: "Scripts authorized", revoke: "Revoke" },
     empty: {
       cta: "Displays reusable workflows (skills). Underlying tools auto-resolve from the prompt. Want a new one? Just ask Pie to create a skill and describe what it should do — Pie will write it for you.",
     },

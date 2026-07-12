@@ -350,6 +350,7 @@ export const jaDict = {
     screenshotUnavailable: "[スクリーンショットなし]",
   },
   skills: {
+    grant: { granted: "スクリプト承認済み", revoke: "承認を取り消す" },
     empty: {
       cta: "再利用できるワークフロー (スキル) を表示します。基盤ツールはプロンプトから自動解決されます。新しいものが必要ですか？Pie に作成を依頼し、何をするべきか説明してください。Pie が書いてくれます。",
     },

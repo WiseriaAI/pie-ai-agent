@@ -350,6 +350,7 @@ export const es419Dict = {
     screenshotUnavailable: "[Captura no disponible]",
   },
   skills: {
+    grant: { granted: "Scripts autorizados", revoke: "Revocar" },
     empty: {
       cta: "Muestra flujos reutilizables (habilidades). Las herramientas subyacentes se resuelven automáticamente desde el prompt. ¿Quieres una nueva? Pídele a Pie que cree una habilidad y describe qué debe hacer; Pie la escribirá por ti.",
     },

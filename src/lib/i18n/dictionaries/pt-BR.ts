@@ -350,6 +350,7 @@ export const ptBRDict = {
     screenshotUnavailable: "[Captura indisponível]",
   },
   skills: {
+    grant: { granted: "Scripts autorizados", revoke: "Revogar" },
     empty: {
       cta: "Exibe fluxos reutilizáveis (habilidades). As ferramentas subjacentes são resolvidas automaticamente a partir do prompt. Quer uma nova? Peça ao Pie para criar uma habilidade e descreva o que ela deve fazer; o Pie escreverá para você.",
     },

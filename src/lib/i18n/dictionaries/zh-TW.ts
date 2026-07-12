@@ -349,6 +349,7 @@ export const zhTWDict = {
     screenshotUnavailable: "[螢幕截圖無法使用]",
   },
   skills: {
+    grant: { granted: "腳本已授權", revoke: "撤銷授權" },
     empty: {
       cta: "顯示可重複使用的工作流程（skill）。底層工具會依 prompt 自動解析。想新建？直接跟 Pie 說「幫我建立一個 skill」並說明要做的事，讓 Pie 幫你寫好它。",
     },
