@@ -104,6 +104,10 @@ export const ptBRDict = {
       manageAgents: "Gerenciar agentes",
       agentNotInstalled: "Não instalado",
       agentEnableFailed: "Não é possível habilitar — não detectado nesta máquina.",
+      statusIncompatible: "Versão incompatível — atualize o Pie Link para usar a ponte local.",
+      upgradeAvailable: "Há uma versão mais recente do Pie Link disponível. Baixe e reinstale para atualizar.",
+      upgradeRequired: "O Pie Link é incompatível com esta extensão. Atualize-o para poder usar a ponte local.",
+      downloadUpdate: "Baixar atualização",
     },
     searchProvider: {
       caps: "Provedor de busca",

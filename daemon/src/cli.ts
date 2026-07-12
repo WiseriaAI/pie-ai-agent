@@ -18,8 +18,14 @@ export async function runCli(argv: string[]): Promise<number> {
       for (const l of r.lines) console.error(l);
       return r.ok ? 0 : 1;
     }
+    case "--version":
+    case "version": {
+      const { DAEMON_VERSION } = await import("./version");
+      console.log(DAEMON_VERSION);
+      return 0;
+    }
     default:
-      console.error(`unknown command: ${cmd ?? "(none)"}. usage: pie <daemon|host|doctor>`);
+      console.error(`unknown command: ${cmd ?? "(none)"}. usage: pie <daemon|host|doctor|version>`);
       return 2;
   }
 }

@@ -103,6 +103,10 @@ export const zhCNDict = {
       manageAgents: "Agent 管理",
       agentNotInstalled: "未安装",
       agentEnableFailed: "无法启用——未在本机检测到安装。",
+      statusIncompatible: "版本不兼容——升级 Pie Link 后才能使用本地打通。",
+      upgradeAvailable: "有新版本的 Pie Link 可用，下载后重新安装即可升级。",
+      upgradeRequired: "Pie Link 版本与扩展不兼容，需要升级后才能使用本地打通。",
+      downloadUpdate: "下载新版",
     },
     searchProvider: {
       caps: "网页搜索",

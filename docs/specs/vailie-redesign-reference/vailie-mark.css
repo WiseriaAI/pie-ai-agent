@@ -1,0 +1,58 @@
+/* Motion for <VailieMark>. Import once (e.g. from src/sidepanel/index.css).
+ * The blob deforms only while animating; each keyframe returns to a circle.
+ * Silhouette stays inside the box (transforms are sub-pixel-safe at 16px). */
+
+.vailie-mark {
+  display: inline-block;
+  flex-shrink: 0;
+  /* transform-origin center so scale/rotate breathe symmetrically */
+  transform-origin: 50% 50%;
+  /* NOTE: no will-change here — a permanent will-change on every instance
+   * (incl. static history rows) pins compositor layers for nothing. It is
+   * declared only on the busy animated states below (G3). */
+}
+
+/* G3 — static instance (history rows, done lists): mesh only, zero motion.
+ * Set via <VailieMark animate={false}>. Beats will-change bookkeeping:
+ * a non-animating element needs neither. */
+.vailie-mark--static { animation: none !important; }
+
+/* idle — slow breathe, ~8s, barely perceptible */
+.vailie-mark--idle { animation: vailie-breathe 8s ease-in-out infinite; }
+@keyframes vailie-breathe {
+  0%, 100% { transform: scale(1) rotate(0deg); }
+  50%      { transform: scale(1.03) rotate(1.5deg); }
+}
+
+/* thinking — quicker pulse + gentle churn, ~2.4s */
+.vailie-mark--thinking { animation: vailie-think 2.4s ease-in-out infinite; will-change: transform, filter; }
+@keyframes vailie-think {
+  0%, 100% { transform: scale(1) rotate(0deg);   filter: saturate(1); }
+  50%      { transform: scale(1.05) rotate(-3deg); filter: saturate(1.15); }
+}
+
+/* working — tighter, faster, directional; denser feel */
+.vailie-mark--working { animation: vailie-work 1.6s ease-in-out infinite; will-change: transform, filter; }
+@keyframes vailie-work {
+  0%, 100% { transform: scale(0.98) rotate(0deg);  filter: brightness(1); }
+  50%      { transform: scale(1.02) rotate(4deg);  filter: brightness(1.06); }
+}
+
+/* done — one bloom (scale to 1.08) then settle; run once, then swap to idle */
+.vailie-mark--done { animation: vailie-bloom 900ms cubic-bezier(0.22, 1, 0.36, 1) 1; }
+@keyframes vailie-bloom {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.08); filter: saturate(1.2) brightness(1.05); }
+  100% { transform: scale(1);    filter: saturate(1)   brightness(1); }
+}
+
+/* recording — steady soft pulse; distinct by the peach-forward mesh, not hue */
+.vailie-mark--recording { animation: vailie-rec 1.4s ease-in-out infinite; will-change: transform, filter; }
+@keyframes vailie-rec {
+  0%, 100% { transform: scale(1);    filter: saturate(1); }
+  50%      { transform: scale(1.045); filter: saturate(1.12); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vailie-mark { animation: none !important; }
+}

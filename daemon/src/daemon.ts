@@ -1,5 +1,6 @@
 import { unlinkSync, existsSync, mkdirSync, chmodSync } from "fs";
 import { PROTOCOL_VERSION, BRIDGE_CAPABILITIES } from "../../src/types/local-bridge";
+import { DAEMON_VERSION } from "./version";
 import type { BridgeResponse, RunLocalAgentParams, HandoffParams, ListAgentsResult } from "../../src/types/local-bridge";
 import { paths } from "./paths";
 import { runLocalAgent } from "./run-local-agent"; // Task 4
@@ -34,7 +35,7 @@ export async function handleMessage(line: string): Promise<string> {
     case "hello":
       return respond({
         ok: true,
-        result: { protocolVersion: PROTOCOL_VERSION, capabilities: [...BRIDGE_CAPABILITIES] },
+        result: { protocolVersion: PROTOCOL_VERSION, capabilities: [...BRIDGE_CAPABILITIES], daemonVersion: DAEMON_VERSION },
       });
     case "run_local_agent": {
       try {

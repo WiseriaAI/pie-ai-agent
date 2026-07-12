@@ -104,6 +104,10 @@ export const es419Dict = {
       manageAgents: "Gestionar agentes",
       agentNotInstalled: "No instalado",
       agentEnableFailed: "No se puede habilitar: no se detectó en esta máquina.",
+      statusIncompatible: "Versión incompatible: actualiza Pie Link para usar el puente local.",
+      upgradeAvailable: "Hay una versión más reciente de Pie Link disponible. Descárgala y reinstálala para actualizar.",
+      upgradeRequired: "Pie Link no es compatible con esta extensión. Actualízalo para poder usar el puente local.",
+      downloadUpdate: "Descargar actualización",
     },
     searchProvider: {
       caps: "Proveedor de búsqueda",

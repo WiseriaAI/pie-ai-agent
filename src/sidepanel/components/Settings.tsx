@@ -545,7 +545,16 @@ function CdpInputSection({
   );
 }
 
-type BridgeStatus = { hasPermission: boolean; ready: boolean };
+type BridgeStatus = {
+  hasPermission: boolean;
+  ready: boolean;
+  daemonVersion?: string | null;
+  needsUpgrade?: boolean;
+  protocolMismatch?: boolean;
+};
+
+// Pie Link 安装包稳定 URL（release latest）——升级卡下载按钮 + Slice 4 安装卡共用。
+const PKG_URL = "https://github.com/WiseriaAI/pie-ai-agent/releases/latest/download/pie-link.pkg";
 
 // 向 SW 查活桥状态（nativeMessaging 是否授予 + 是否已连上 daemon）。SW 睡了/无响应
 // 时静默返回，不更新——面板保留上次已知状态。
@@ -636,8 +645,17 @@ export function LocalBridgeSection() {
       : !status.hasPermission
         ? t("settings.localBridge.statusOff")
         : status.ready
-          ? t("settings.localBridge.statusConnected")
-          : t("settings.localBridge.statusEnabledNotConnected");
+          ? t("settings.localBridge.statusConnected") +
+            (status.daemonVersion ? ` · Pie Link v${status.daemonVersion}` : "")
+          : // protocol 硬不兼容时握手不置 ready（ready===false 与 protocolMismatch===true
+            // 互斥），单独给强状态文案，别让它落到普通「未连接」。
+            status.protocolMismatch
+            ? t("settings.localBridge.statusIncompatible")
+            : t("settings.localBridge.statusEnabledNotConnected");
+
+  // protocolMismatch 是 not-ready 状态（见 local-bridge.ts 握手），不能被 ready 门住；
+  // 只有软升级（needsUpgrade）要求已连上（ready）。
+  const showUpgrade = !!status?.protocolMismatch || (!!status?.ready && !!status.needsUpgrade);
 
   const enabledAgents = agents.filter((a) => a.enabled);
 
@@ -664,6 +682,23 @@ export function LocalBridgeSection() {
               </div>
               <Switch checked={enabled} onChange={onToggle} />
             </div>
+            {showUpgrade && (
+              <div className="flex flex-col gap-2 border-t border-line pt-3">
+                <div className="text-[12px] leading-relaxed text-fg-2">
+                  {status?.protocolMismatch
+                    ? t("settings.localBridge.upgradeRequired")
+                    : t("settings.localBridge.upgradeAvailable")}
+                </div>
+                <a
+                  href={PKG_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="self-start rounded border border-line px-2 py-0.5 text-[11px] text-fg-2 hover:text-fg-1"
+                >
+                  {t("settings.localBridge.downloadUpdate")}
+                </a>
+              </div>
+            )}
             {status?.ready && agents.length > 0 && (
               <div className="flex flex-col gap-2.5 border-t border-line pt-3">
                 {enabledAgents.length > 0 && (

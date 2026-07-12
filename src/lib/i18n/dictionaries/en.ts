@@ -103,6 +103,10 @@ export const enDict = {
       manageAgents: "Manage agents",
       agentNotInstalled: "Not installed",
       agentEnableFailed: "Can't enable — not detected on this machine.",
+      statusIncompatible: "Incompatible version — upgrade Pie Link to use the local bridge.",
+      upgradeAvailable: "A newer Pie Link is available. Download and reinstall to upgrade.",
+      upgradeRequired: "Pie Link is incompatible with this extension. Upgrade it before the local bridge can be used.",
+      downloadUpdate: "Download update",
     },
     searchProvider: {
       caps: "Search provider",

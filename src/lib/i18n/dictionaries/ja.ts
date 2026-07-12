@@ -104,6 +104,10 @@ export const jaDict = {
       manageAgents: "エージェント管理",
       agentNotInstalled: "未インストール",
       agentEnableFailed: "有効にできません——このマシンで検出されませんでした。",
+      statusIncompatible: "バージョンが非互換です。ローカル連携を使うには Pie Link をアップグレードしてください。",
+      upgradeAvailable: "新しいバージョンの Pie Link が利用可能です。ダウンロードして再インストールするとアップグレードできます。",
+      upgradeRequired: "Pie Link がこの拡張機能と互換性がありません。ローカル連携を使うにはアップグレードが必要です。",
+      downloadUpdate: "更新をダウンロード",
     },
     searchProvider: {
       caps: "検索プロバイダー",
