@@ -16,7 +16,8 @@ export type SettingsPage =
   | "cdp"
   | "uiLanguage"
   | "assistantLanguage"
-  | "feedback";
+  | "feedback"
+  | "about";
 
 // Sub-page → top-bar title key. cdp / language pages reuse their feature keys
 // instead of minting settings.nav.* duplicates.
@@ -28,6 +29,7 @@ const SETTINGS_PAGE_TITLE_KEY = {
   uiLanguage: "settings.language.uiLabel",
   assistantLanguage: "settings.language.assistantLabel",
   feedback: "settings.nav.feedback",
+  about: "settings.nav.about",
 } as const;
 
 export interface TopBarProps {

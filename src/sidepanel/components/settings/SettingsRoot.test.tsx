@@ -32,10 +32,19 @@ function make(over: Partial<React.ComponentProps<typeof SettingsRoot>> = {}) {
 }
 
 describe("SettingsRoot", () => {
-  it("renders seven drill-down rows; row-models triggers onOpenPage('models')", () => {
+  it("renders eight drill-down rows; row-models triggers onOpenPage('models')", () => {
     const p = make();
     render(<SettingsRoot {...p} />);
-    for (const id of ["models", "bridge", "search", "cdp", "uiLanguage", "assistantLanguage", "feedback"]) {
+    for (const id of [
+      "models",
+      "bridge",
+      "search",
+      "cdp",
+      "uiLanguage",
+      "assistantLanguage",
+      "feedback",
+      "about",
+    ]) {
       expect(screen.getByTestId(`settings-row-${id}`)).toBeTruthy();
     }
     fireEvent.click(screen.getByTestId("settings-row-models"));
@@ -71,8 +80,11 @@ describe("SettingsRoot", () => {
     expect(p.onThemeModeChange).toHaveBeenCalledWith("light");
   });
 
-  it("About footer shows the manifest version", () => {
-    render(<SettingsRoot {...make()} />);
-    expect(screen.getByText(/9\.9\.9/)).toBeTruthy();
+  it("about row drills into the About page and badges the manifest version", () => {
+    const p = make();
+    render(<SettingsRoot {...p} />);
+    expect(screen.getByTestId("settings-badge-about").textContent).toContain("9.9.9");
+    fireEvent.click(screen.getByTestId("settings-row-about"));
+    expect(p.onOpenPage).toHaveBeenCalledWith("about");
   });
 });

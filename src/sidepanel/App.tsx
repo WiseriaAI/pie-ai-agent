@@ -8,6 +8,7 @@ import ModelsPage from "@/sidepanel/components/settings/pages/ModelsPage";
 import BridgePage from "@/sidepanel/components/settings/pages/BridgePage";
 import CdpPage from "@/sidepanel/components/settings/pages/CdpPage";
 import FeedbackPage from "@/sidepanel/components/settings/pages/FeedbackPage";
+import AboutPage from "@/sidepanel/components/settings/pages/AboutPage";
 import { UiLanguagePage, AssistantLanguagePage } from "@/sidepanel/components/settings/pages/LanguagePage";
 import TopBar, { type AppView, type SettingsPage } from "@/sidepanel/components/TopBar";
 import type { ThemeMode } from "@/sidepanel/theme";
@@ -446,6 +447,8 @@ export default function App() {
               <UiLanguagePage />
             ) : settingsPage === "assistantLanguage" ? (
               <AssistantLanguagePage />
+            ) : settingsPage === "about" ? (
+              <AboutPage />
             ) : (
               <FeedbackPage />
             )}
