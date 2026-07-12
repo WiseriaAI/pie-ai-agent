@@ -3,7 +3,9 @@ import { useT, setLocale, type LocaleSetting } from "@/lib/i18n";
 import { getConfig } from "@/lib/idb/config-store";
 import { LOCALE_REGISTRY, SUPPORTED_LOCALES } from "@/lib/i18n/locales";
 import { STORAGE_KEY_UI_LOCALE } from "@/lib/i18n";
-import { DropdownPanel } from "./ui/DropdownPanel";
+import { Popover } from "./ui/Popover";
+import { useAnchorRect } from "./ui/useAnchorRect";
+import { computePopoverCoords } from "./ModelPicker";
 
 const OPTIONS: { value: LocaleSetting; label: string; labelKey?: Parameters<ReturnType<typeof useT>>[0] }[] = [
   { value: "auto", label: "", labelKey: "settings.language.optionAuto" },
@@ -18,6 +20,14 @@ export default function LanguageSelect() {
   const [value, setValue] = useState<LocaleSetting>("auto");
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  // 下拉 portal 到 body（设置根页分组容器 overflow-hidden 会裁掉组件内 absolute
+  // 面板）；useAnchorRect 量测 + computePopoverCoords 钳位，与 ModelPicker 同款。
+  const triggerRect = useAnchorRect(triggerRef, open);
+  const coords = triggerRect
+    ? computePopoverCoords(triggerRect, window.innerWidth, window.innerHeight)
+    : null;
 
   useEffect(() => {
     getConfig<string>(STORAGE_KEY_UI_LOCALE).then((v) => {
@@ -28,7 +38,9 @@ export default function LanguageSelect() {
   useEffect(() => {
     if (!open) return;
     const onDoc = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      // 面板已 portal 到 body，外点判定要同时看触发器与面板两边。
+      if (!ref.current?.contains(target) && !popoverRef.current?.contains(target)) setOpen(false);
     };
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
@@ -45,6 +57,7 @@ export default function LanguageSelect() {
   return (
     <div ref={ref} className="relative">
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="listbox"
@@ -62,10 +75,13 @@ export default function LanguageSelect() {
           />
         </svg>
       </button>
-      <DropdownPanel
-        open={open}
+      <Popover
+        open={open && !!coords}
+        popoverRef={popoverRef}
         role="listbox"
-        className="absolute z-10 mt-1 flex w-full flex-col gap-0.5 rounded-[9px] border border-line bg-surface p-1"
+        placement={coords?.bottom != null ? "above" : "below"}
+        style={{ left: coords?.left, top: coords?.top, bottom: coords?.bottom }}
+        className="fixed z-[100] flex w-[300px] max-w-[calc(100vw-1.5rem)] flex-col gap-0.5 rounded-[9px] border border-line bg-surface p-1 shadow-pop"
       >
         {OPTIONS.map((o) => {
           const active = o.value === value;
@@ -95,7 +111,7 @@ export default function LanguageSelect() {
             </button>
           );
         })}
-      </DropdownPanel>
+      </Popover>
     </div>
   );
 }

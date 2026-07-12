@@ -57,6 +57,18 @@ describe("LanguageSelect", () => {
     expect(screen.getByText("Português (Brasil)")).toBeTruthy();
   });
 
+  // 回归守卫：设置根页的分组容器是 overflow-hidden，组件内 absolute 面板会被裁到
+  // 只剩一项——下拉必须 portal 到 body 逃逸渲染容器（#292 验收发现）。
+  it("portals the open listbox to document.body (escapes overflow-hidden ancestors)", async () => {
+    const { container } = renderLanguageSelect();
+
+    fireEvent.click(screen.getByRole("button"));
+
+    const listbox = await screen.findByRole("listbox");
+    expect(document.body.contains(listbox)).toBe(true);
+    expect(container.contains(listbox)).toBe(false);
+  });
+
   it("writes a selected locale to config and closes the menu", async () => {
     renderLanguageSelect();
 
