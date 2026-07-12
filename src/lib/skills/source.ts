@@ -20,6 +20,9 @@ export interface SkillEntry {
   source?: "pie" | "agents";
   files: string[];
   runnableScripts: string[];
+  /** metadata.pie.network 里解析不出合法域名、被安全丢弃的原始声明（作者信号）。
+   *  仅 disk 后端可能有值；IDB/builtin 恒 undefined；旧 daemon 不给 → undefined。 */
+  invalidNetwork?: string[];
   createdAt?: number;
   author?: string;
 }

@@ -94,14 +94,18 @@ export function listSkills(root: string = paths.skillsDir): SkillSummary[] {
     if (!existsSync(mdPath)) continue;
     try {
       const parsed = parseSkillMd(readFileSync(mdPath, "utf8"));
-      out.push({
+      const summary: SkillSummary = {
         name: e.name, // 目录名即身份（调用/grant 一律用它，以目录为准）
         displayName: parsed.name, // 展示名 = frontmatter.name（中文名 skill 迁到 hash 目录时两者不同）
         description: parsed.description,
         runnableScripts: runnableScripts(dir),
         declaredCaps: parsed.declaredCaps,
         files: packageFiles(dir),
-      });
+      };
+      // optional 加法字段：全合法时省略（多数 skill），仅在有被丢弃的域名声明时带上
+      // 作者信号，让面板出 badge / doctor 列出。
+      if (parsed.invalidNetwork.length > 0) summary.invalidNetwork = parsed.invalidNetwork;
+      out.push(summary);
     } catch {
       // 坏 skill 跳过、不让整个 list 挂（韧性；坏 skill 在 authoring 期暴露）
     }

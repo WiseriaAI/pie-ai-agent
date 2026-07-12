@@ -376,6 +376,7 @@ export const enDict = {
     },
     authorTag: { builtIn: "BUILT-IN", agent: "AGENT", user: "USER" },
     sourceTag: { agents: "~/.agents" },
+    invalidNetwork: "{count} invalid network domain(s) ignored",
     agentsImport: {
       title: "Found {count} local skills",
       body: "These live in ~/.agents/skills (shared across agents). Choose which ones Pie can use — you can change this anytime in this list.",

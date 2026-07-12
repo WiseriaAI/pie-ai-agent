@@ -70,7 +70,15 @@ export async function handleMessage(line: string): Promise<string> {
     }
     case "list_skills": {
       try {
-        return respond({ ok: true, result: { skills: listSkillsMerged() } });
+        const skills = listSkillsMerged();
+        // 作者信号：某个 skill 的 metadata.pie.network 里有归一化不出合法域名的条目
+        // （被安全丢弃、srt 运行时会断这些网），打一行 warn 让作者能查到原因。
+        for (const s of skills) {
+          if (s.invalidNetwork && s.invalidNetwork.length > 0) {
+            log("warn", "skill.invalid_network", { skill: s.name, invalid: s.invalidNetwork });
+          }
+        }
+        return respond({ ok: true, result: { skills } });
       } catch (e) {
         log("error", "list_skills.failed", { id, error: String(e) });
         return respond({ ok: false, error: { code: "list_skills_failed", message: String(e) } });

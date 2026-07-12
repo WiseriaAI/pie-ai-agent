@@ -5,6 +5,10 @@ export interface ParsedSkillMd {
   name: string;
   description: string;
   declaredCaps: SkillCaps;
+  /** metadata.pie.network 里归一化不出合法域名、被安全丢弃的原始条目（作者信号用；
+   *  空数组=全部合法）。安全语义不变：这些条目仍不进 declaredCaps.network，只是留个凭据
+   *  让面板/日志/doctor 能告诉作者「你写错的域名被忽略了」。 */
+  invalidNetwork: string[];
   body: string;
 }
 
@@ -60,15 +64,23 @@ export function parseSkillMd(md: string): ParsedSkillMd {
     throw new Error("SKILL.md frontmatter missing required `description`");
 
   const pie = ((fm.metadata as Record<string, unknown> | undefined)?.pie ?? {}) as Record<string, unknown>;
+  // 单趟归一化：合法域名进 declaredCaps.network（安全语义不变），归一化不出的原始
+  // 条目留进 invalidNetwork 供作者信号（面板 badge / daemon 日志 / pie doctor）。
+  const network: string[] = [];
+  const invalidNetwork: string[] = [];
+  for (const raw of strArray(pie.network)) {
+    const d = normalizeDomain(raw);
+    if (d !== null) network.push(d);
+    else invalidNetwork.push(raw);
+  }
   return {
     name,
     description,
     declaredCaps: {
-      network: strArray(pie.network)
-        .map(normalizeDomain)
-        .filter((d): d is string => d !== null),
+      network,
       write: strArray(pie.write),
     },
+    invalidNetwork,
     body,
   };
 }

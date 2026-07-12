@@ -18,6 +18,7 @@ export const daemonSkillSource: SkillSource = {
       source: s.source ?? "pie", // 旧 daemon 无 source → 主根语义
       files: s.files,
       runnableScripts: s.runnableScripts,
+      invalidNetwork: s.invalidNetwork, // 旧 daemon / 全合法 → undefined（无 badge）
     }));
   },
   async readFile(id, path) {

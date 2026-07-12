@@ -376,6 +376,7 @@ export const zhCNDict = {
     },
     authorTag: { builtIn: "内置", agent: "Agent", user: "用户" },
     sourceTag: { agents: "~/.agents" },
+    invalidNetwork: "{count} 个网络域名声明无效，已忽略",
     agentsImport: {
       title: "发现 {count} 个本地 skill",
       body: "它们来自 ~/.agents/skills（跨 agent 共享目录）。勾选允许 Pie 使用的条目——之后随时可在本列表中开关。",

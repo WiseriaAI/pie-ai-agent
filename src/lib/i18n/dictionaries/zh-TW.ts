@@ -376,6 +376,7 @@ export const zhTWDict = {
     },
     authorTag: { builtIn: "內建", agent: "Agent", user: "使用者" },
     sourceTag: { agents: "~/.agents" },
+    invalidNetwork: "{count} 個網路網域宣告無效，已忽略",
     agentsImport: {
       title: "發現 {count} 個本地 skill",
       body: "它們來自 ~/.agents/skills（跨 agent 共享目錄）。勾選允許 Pie 使用的條目——之後隨時可在本列表中開關。",

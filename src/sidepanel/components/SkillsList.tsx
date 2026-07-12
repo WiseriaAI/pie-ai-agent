@@ -438,6 +438,15 @@ function SkillRow({
 
       <p className="text-[12px] leading-[18px] text-fg-2">{skill.description}</p>
 
+      {skill.invalidNetwork && skill.invalidNetwork.length > 0 && (
+        <span
+          title={skill.invalidNetwork.join(", ")}
+          className="self-start rounded-full border border-warning-line bg-warning-tint px-2 py-0.5 text-[10px] leading-[16px] text-warning"
+        >
+          {t("skills.invalidNetwork", { count: skill.invalidNetwork.length })}
+        </span>
+      )}
+
       <div className="flex items-center gap-2 pt-1.5">
         <div className="flex-1" />
         <button
