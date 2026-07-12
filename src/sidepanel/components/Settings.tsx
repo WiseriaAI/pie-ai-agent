@@ -682,9 +682,15 @@ export function LocalBridgeSection() {
         : status.ready
           ? t("settings.localBridge.statusConnected") +
             (status.daemonVersion ? ` · Pie Link v${status.daemonVersion}` : "")
-          : t("settings.localBridge.statusEnabledNotConnected");
+          : // protocol 硬不兼容时握手不置 ready（ready===false 与 protocolMismatch===true
+            // 互斥），单独给强状态文案，别让它落到普通「未连接」。
+            status.protocolMismatch
+            ? t("settings.localBridge.statusIncompatible")
+            : t("settings.localBridge.statusEnabledNotConnected");
 
-  const showUpgrade = !!status?.ready && (!!status.needsUpgrade || !!status.protocolMismatch);
+  // protocolMismatch 是 not-ready 状态（见 local-bridge.ts 握手），不能被 ready 门住；
+  // 只有软升级（needsUpgrade）要求已连上（ready）。
+  const showUpgrade = !!status?.protocolMismatch || (!!status?.ready && !!status.needsUpgrade);
 
   return (
     <section className="flex flex-col gap-3">

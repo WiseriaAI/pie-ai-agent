@@ -138,11 +138,13 @@ describe("LocalBridgeSection — grants & audit", () => {
     );
   });
 
-  it("shows the hard-incompatible upgrade text when protocolMismatch", async () => {
+  it("shows the hard-incompatible upgrade text when protocolMismatch (not ready)", async () => {
+    // 真机运行时状态：protocol 硬不兼容时握手不置 ready → ready:false。
+    // 升级卡与强状态文案都必须在这个状态下渲染（不能被 ready 门住）。
     mockSendMessage({
       "local-bridge:status": () => ({
         hasPermission: true,
-        ready: true,
+        ready: false,
         daemonVersion: null,
         needsUpgrade: false,
         protocolMismatch: true,
@@ -157,8 +159,11 @@ describe("LocalBridgeSection — grants & audit", () => {
     expect(link.getAttribute("href")).toBe(
       "https://github.com/WiseriaAI/pie-ai-agent/releases/latest/download/pie-link.pkg",
     );
-    // 硬不兼容强文案（incompatible），区别于软提示
-    expect(screen.getByText(/incompatible/i)).toBeTruthy();
+    // 升级卡强文案（incompatible），区别于软提示
+    expect(screen.getByText(/is incompatible with this extension/i)).toBeTruthy();
+    // 状态行给出独立的「不兼容」文案，而非普通「未连接」
+    expect(screen.getByText(/incompatible version/i)).toBeTruthy();
+    expect(screen.queryByText(/not connected/i)).toBeNull();
   });
 
   it("renders recent runs from local-audit:list", async () => {

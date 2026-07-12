@@ -99,6 +99,7 @@ export const zhCNDict = {
       statusOff: "未启用。",
       statusConnected: "已连接 daemon。",
       statusEnabledNotConnected: "已启用，但未连上 daemon（daemon 未运行？运行 pie doctor 检查）。",
+      statusIncompatible: "版本不兼容——升级 Pie Link 后才能使用本地打通。",
       agentsTitle: "本地 Agent",
       agentNotInstalled: "未安装",
       agentEnableFailed: "无法启用——未在本机检测到安装。",

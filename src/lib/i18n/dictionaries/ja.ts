@@ -100,6 +100,7 @@ export const jaDict = {
       statusOff: "未有効。",
       statusConnected: "daemon に接続済み。",
       statusEnabledNotConnected: "有効ですが未接続です（daemon が起動していない？ pie doctor を実行）。",
+      statusIncompatible: "バージョンが非互換です。ローカル連携を使うには Pie Link をアップグレードしてください。",
       agentsTitle: "ローカル Agent",
       agentNotInstalled: "未インストール",
       agentEnableFailed: "有効にできません——このマシンで検出されませんでした。",

@@ -100,6 +100,7 @@ export const ptBRDict = {
       statusOff: "Não ativado.",
       statusConnected: "Conectado ao daemon.",
       statusEnabledNotConnected: "Ativado, mas sem conexão (o daemon não está em execução? execute pie doctor).",
+      statusIncompatible: "Versão incompatível — atualize o Pie Link para usar a ponte local.",
       agentsTitle: "Agentes locais",
       agentNotInstalled: "Não instalado",
       agentEnableFailed: "Não é possível habilitar — não detectado nesta máquina.",
