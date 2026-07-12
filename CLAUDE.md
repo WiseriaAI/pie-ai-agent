@@ -99,6 +99,7 @@ Workflow 内置 invariant（任一失败则 CI fail，不会上传）：
 ## Docs Map
 
 - `docs/ROADMAP.md` — 已交付 phases + backlog（single source of truth）
+- `docs/agents/auto-acceptance.md` — 自动化真机验收操作文档（Playwright + scratch daemon 全链路跑 `need-human-test` 清单；流程/配方坑/验收标准/报告格式；参考脚本 `eval/acceptance/`）
 - `docs/solutions/` — 落地后的 invariant trace docs（per phase / per milestone）
 - `docs/specs/` — superpowers `brainstorming` skill 产出（design / requirements / spec），含 Phase 1–3 历史 brainstorm 合并归档
 - `docs/plans/` — superpowers `planning` skill 产出（实施 plan），含 Phase 1–3 历史 plan 合并归档
@@ -162,7 +163,7 @@ Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agent
        └ need-confirm → 人打 confirmed 拍板 → Step1 routine 补方案 → ready-for-implement
 ```
 
-人在这条链上的人工闸有两处：`need-confirm` 处拍板（打 `confirmed`）、与 PR 的真机验收（`need-human-test` → 打 `human-approved`）；其余交给云端。
+人在这条链上的人工闸有两处：`need-confirm` 处拍板（打 `confirmed`）、与 PR 的真机验收（`need-human-test` → 打 `human-approved`）；其余交给云端。真机验收可先跑自动化预检吃掉大部分清单项（见 `docs/agents/auto-acceptance.md`），人只看报告 + 抽查报告列出的结构性盲区（品牌 Chrome 差异 / 权限弹框流等）。
 
 **默认路径**：不开 brainstorm/grill/plan 仪式。把需求写成 issue（或让分诊 routine 接住），让云端 Loop 实现。本地 session 多做的是「把工作落成清晰的 issue」与「review/merge PR」，**不是亲自实现**。
 
