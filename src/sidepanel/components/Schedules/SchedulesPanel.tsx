@@ -179,19 +179,18 @@ export default function SchedulesPanel({ onOpenSession, onCreateViaChat }: Props
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between px-4 pt-5">
-        <span className="text-[16px] font-semibold tracking-[-0.01em] text-fg-1">
-          {t("schedules.title")}
-        </span>
-        {!showCreate && !editingId && (
+      {/* Title lives in the contextual TopBar now (single-top-bar invariant);
+          this panel keeps only its "new schedule" action, right-aligned. */}
+      {!showCreate && !editingId && (
+        <div className="flex items-center justify-end px-4 pt-5">
           <button
             onClick={() => setShowChoice((v) => !v)}
             className="flex h-8 items-center gap-2 rounded-[10px] border border-line bg-transparent px-3 text-[12px] text-accent hover:bg-field"
           >
             {t("schedules.newButton")}
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto px-4 py-5">
         <div className="flex flex-col gap-4">

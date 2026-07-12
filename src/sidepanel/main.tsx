@@ -1,6 +1,6 @@
 // Theme bootstrap — runs before React mounts (and before first paint, since
 // this module is deferred). Mirrors the ThemeMode contract in
-// TopBarThemeButton.tsx (light | dark | system); "system" leaves data-theme
+// theme.ts (light | dark | system); "system" leaves data-theme
 // unset so the prefers-color-scheme @media fallback in index.css applies.
 //
 // Inline <script> in index.html is blocked by MV3's default CSP
