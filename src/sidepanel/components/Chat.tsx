@@ -1775,7 +1775,9 @@ function EmptyState({ listening }: { listening: boolean }) {
   return (
     <div className="flex min-h-full flex-col items-center justify-center gap-3 px-6 text-center">
       <div className="flex max-w-[280px] flex-col items-center gap-3">
-        <div className="mb-2">
+        {/* scale-in 入场（240ms 焦点拉近）→ 定格图标帧 2s（wake 的
+            animation-delay）→ 睁眼 morph：进入 → 停顿 → 活过来 */}
+        <div className="mb-2 scale-in">
           <PieFace state={face} size={140} onWakeEnd={() => setAwake(true)} />
         </div>
         <h1 className="text-[24px] font-semibold leading-8 tracking-[-0.015em] text-fg-1">

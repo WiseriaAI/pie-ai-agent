@@ -1158,13 +1158,13 @@ describe("EmptyState centered greeting", () => {
     render(<Chat session={session} onOpenSettings={() => {}} providerLabel={null} />);
 
     const greetings = [
-      "Hey, what are we looking at today?",
-      "So, what's the plan?",
-      "I'm here — what's up?",
-      "What can I do for you today?",
-      "Hey there — where to?",
-      "Got something on your mind?",
-      "Anything fun on this page?",
+      "Hi, I'm Pie — what are we looking at today?",
+      "Pie's awake. Ready when you are.",
+      "I'm here — anything you need me to do?",
+      "Just opened my eyes. Show me this page?",
+      "Got a task? I'm all warmed up.",
+      "Something on your mind? Tell me about it.",
+      "Anything fun on this page? I'd love a look.",
     ];
     await waitFor(() => {
       const found = greetings.some((g) => screen.queryByText(g) !== null);
