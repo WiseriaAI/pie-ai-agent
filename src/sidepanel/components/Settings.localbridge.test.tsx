@@ -99,6 +99,68 @@ describe("LocalBridgeSection — grants & audit", () => {
     );
   });
 
+  it("shows the daemon version when connected", async () => {
+    mockSendMessage({
+      "local-bridge:status": () => ({
+        hasPermission: true,
+        ready: true,
+        daemonVersion: "0.1.0",
+        needsUpgrade: false,
+        protocolMismatch: false,
+      }),
+      "local-agents:list": () => ({ agents: [] }),
+      "local-grants:list": () => ({ grants: [] }),
+      "local-audit:list": () => ({ entries: [] }),
+    });
+
+    render(<LocalBridgeSection />);
+    expect(await screen.findByText(/0\.1\.0/)).toBeTruthy();
+  });
+
+  it("shows the soft-upgrade card with download link when needsUpgrade", async () => {
+    mockSendMessage({
+      "local-bridge:status": () => ({
+        hasPermission: true,
+        ready: true,
+        daemonVersion: "0.0.9",
+        needsUpgrade: true,
+        protocolMismatch: false,
+      }),
+      "local-agents:list": () => ({ agents: [] }),
+      "local-grants:list": () => ({ grants: [] }),
+      "local-audit:list": () => ({ entries: [] }),
+    });
+
+    render(<LocalBridgeSection />);
+    const link = await screen.findByRole("link", { name: /update|升级|更新/i });
+    expect(link.getAttribute("href")).toBe(
+      "https://github.com/WiseriaAI/pie-ai-agent/releases/latest/download/pie-link.pkg",
+    );
+  });
+
+  it("shows the hard-incompatible upgrade text when protocolMismatch", async () => {
+    mockSendMessage({
+      "local-bridge:status": () => ({
+        hasPermission: true,
+        ready: true,
+        daemonVersion: null,
+        needsUpgrade: false,
+        protocolMismatch: true,
+      }),
+      "local-agents:list": () => ({ agents: [] }),
+      "local-grants:list": () => ({ grants: [] }),
+      "local-audit:list": () => ({ entries: [] }),
+    });
+
+    render(<LocalBridgeSection />);
+    const link = await screen.findByRole("link", { name: /update|升级|更新/i });
+    expect(link.getAttribute("href")).toBe(
+      "https://github.com/WiseriaAI/pie-ai-agent/releases/latest/download/pie-link.pkg",
+    );
+    // 硬不兼容强文案（incompatible），区别于软提示
+    expect(screen.getByText(/incompatible/i)).toBeTruthy();
+  });
+
   it("renders recent runs from local-audit:list", async () => {
     mockSendMessage({
       "local-bridge:status": () => ({ hasPermission: true, ready: true }),

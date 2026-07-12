@@ -107,6 +107,9 @@ export const zhTWDict = {
       auditTitle: "最近指令碼執行",
       auditOk: "成功",
       auditFailed: "失敗",
+      upgradeAvailable: "有新版本的 Pie Link 可用，下載後重新安裝即可升級。",
+      upgradeRequired: "Pie Link 版本與擴充功能不相容，需要升級後才能使用本地打通。",
+      downloadUpdate: "下載新版",
     },
     searchProvider: {
       caps: "網頁搜尋",

@@ -108,6 +108,10 @@ export const es419Dict = {
       auditTitle: "Ejecuciones recientes de scripts",
       auditOk: "ok",
       auditFailed: "falló",
+      upgradeAvailable: "Hay una versión más reciente de Pie Link disponible. Descárgala y reinstálala para actualizar.",
+      upgradeRequired:
+        "Pie Link no es compatible con esta extensión. Actualízalo para poder usar el puente local.",
+      downloadUpdate: "Descargar actualización",
     },
     searchProvider: {
       caps: "Proveedor de búsqueda",

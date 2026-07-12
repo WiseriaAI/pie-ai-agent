@@ -107,6 +107,10 @@ export const enDict = {
       auditTitle: "Recent script runs",
       auditOk: "ok",
       auditFailed: "failed",
+      upgradeAvailable: "A newer Pie Link is available. Download and reinstall to upgrade.",
+      upgradeRequired:
+        "Pie Link is incompatible with this extension. Upgrade it before the local bridge can be used.",
+      downloadUpdate: "Download update",
     },
     searchProvider: {
       caps: "Search provider",

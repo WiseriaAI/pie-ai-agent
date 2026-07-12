@@ -108,6 +108,10 @@ export const ptBRDict = {
       auditTitle: "Execuções recentes de scripts",
       auditOk: "ok",
       auditFailed: "falhou",
+      upgradeAvailable: "Há uma versão mais recente do Pie Link disponível. Baixe e reinstale para atualizar.",
+      upgradeRequired:
+        "O Pie Link é incompatível com esta extensão. Atualize-o para poder usar a ponte local.",
+      downloadUpdate: "Baixar atualização",
     },
     searchProvider: {
       caps: "Provedor de busca",

@@ -108,6 +108,9 @@ export const jaDict = {
       auditTitle: "最近のスクリプト実行",
       auditOk: "成功",
       auditFailed: "失敗",
+      upgradeAvailable: "新しいバージョンの Pie Link が利用可能です。ダウンロードして再インストールするとアップグレードできます。",
+      upgradeRequired: "Pie Link がこの拡張機能と互換性がありません。ローカル連携を使うにはアップグレードが必要です。",
+      downloadUpdate: "更新をダウンロード",
     },
     searchProvider: {
       caps: "検索プロバイダー",
