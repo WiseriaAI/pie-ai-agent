@@ -46,11 +46,14 @@ export default function PieFace({ state, size, onWakeEnd }: PieFaceProps) {
 
   // ── wake：图标缺口 → 双眼滑入（单次，both fill），身体同步呼吸。
   //    2s delay + both fill：打开界面先定住 0% 帧（图标形态）再播 morph，
-  //    "先是熟悉的图标，然后活过来" ──
+  //    "先是熟悉的图标，然后活过来"。
+  //    左右眼错峰 0.2s（直译设计稿 pm-morph 16%→40% / pm-morph-r 20%→44%
+  //    的先后落定）：左眼先落，右眼晚 0.2s；onWakeEnd 挂在右眼（最后
+  //    落定者）上，否则父层会在左眼落定时提前切 idle、掐断右眼滑行 ──
   if (state === "wake") {
     const eyeW = disc * 0.15;
     const ecy = dOff + disc * 0.45;
-    const eye = (cx: number, bx: number): CSSProperties => ({
+    const eye = (cx: number, bx: number, delaySec: number): CSSProperties => ({
       position: "absolute",
       width: eyeW,
       height: eyeW,
@@ -61,18 +64,13 @@ export default function PieFace({ state, size, onWakeEnd }: PieFaceProps) {
       transformOrigin: "center",
       ["--pie-bx" as string]: `${bx}px`,
       ["--pie-by" as string]: `${-disc * 0.366}px`,
-      animation: `pie-wake-in 1.2s ${EE} 2s both`,
+      animation: `pie-wake-in 1.2s ${EE} ${delaySec}s both`,
     });
     return (
       <div
         style={{ position: "relative", width: size, height: size, flexShrink: 0 }}
         data-pie-state="wake"
         aria-hidden="true"
-        onAnimationEnd={(e) => {
-          // 两只眼的 animationend 都会冒泡到这里；父层切 state 后组件即
-          // 重渲染为其它分支，重复调用无害。
-          if (e.animationName === "pie-wake-in") onWakeEnd?.();
-        }}
       >
         <div
           style={{
@@ -96,9 +94,15 @@ export default function PieFace({ state, size, onWakeEnd }: PieFaceProps) {
                 background: DISC,
               }}
             />
-            {/* 左右眼同源自图标缺口（右上大黑点）分裂滑入 */}
-            <div style={eye(size / 2 - disc * 0.16, disc * 0.546)} />
-            <div style={eye(size / 2 + disc * 0.16, disc * 0.226)} />
+            {/* 左右眼同源自图标缺口（右上大黑点）分裂滑入；左先右后 */}
+            <div style={eye(size / 2 - disc * 0.16, disc * 0.546, 2)} />
+            <div
+              style={eye(size / 2 + disc * 0.16, disc * 0.226, 2.2)}
+              data-pie-eye="right"
+              onAnimationEnd={(e) => {
+                if (e.animationName === "pie-wake-in") onWakeEnd?.();
+              }}
+            />
           </div>
         </div>
       </div>

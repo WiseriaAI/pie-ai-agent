@@ -65,19 +65,24 @@ describe("PieFace", () => {
     expect(h).toContain("pie-pop");
   });
 
-  it("wake: 双眼滑入 morph，animationend(pie-wake-in) 触发 onWakeEnd", () => {
+  it("wake: 双眼错峰滑入，右眼（最后落定）的 animationend 触发 onWakeEnd", () => {
     const onWakeEnd = vi.fn();
     const { container } = render(
       <PieFace state="wake" size={140} onWakeEnd={onWakeEnd} />,
     );
-    const root = container.querySelector('[data-pie-state="wake"]')!;
     expect(container.innerHTML).toContain("pie-wake-in");
-    // 2s delay + both fill：先定住图标帧再播 morph（用户拍板的开场节奏）
+    // 定格图标帧后先左（2s delay）后右（2.2s delay）错峰落定
     expect(container.innerHTML).toContain("2s both");
+    expect(container.innerHTML).toContain("2.2s both");
+    const rightEye = container.querySelector('[data-pie-eye="right"]')!;
     // 无关动画结束（如 pie-breathe）不触发
-    fireEvent.animationEnd(root, { animationName: "pie-breathe" });
+    fireEvent.animationEnd(rightEye, { animationName: "pie-breathe" });
     expect(onWakeEnd).not.toHaveBeenCalled();
+    // 左眼落定（事件冒泡经过 root）也不触发——只认右眼自己的 wake-in
+    const root = container.querySelector('[data-pie-state="wake"]')!;
     fireEvent.animationEnd(root, { animationName: "pie-wake-in" });
+    expect(onWakeEnd).not.toHaveBeenCalled();
+    fireEvent.animationEnd(rightEye, { animationName: "pie-wake-in" });
     expect(onWakeEnd).toHaveBeenCalledTimes(1);
   });
 

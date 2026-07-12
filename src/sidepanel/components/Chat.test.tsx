@@ -1184,15 +1184,15 @@ describe("EmptyState centered greeting", () => {
     expect(screen.queryByText("推荐")).toBeNull();
   });
 
-  it("空态挂载播 wake，onAnimationEnd 后转 idle", async () => {
+  it("空态挂载播 wake，右眼（最后落定）animationend 后转 idle", async () => {
     render(
       <Chat session={makeSession()} onOpenSettings={() => {}} providerLabel={null} />,
     );
     await waitFor(() => {
       expect(document.querySelector('[data-pie-state="wake"]')).toBeTruthy();
     });
-    const wake = document.querySelector('[data-pie-state="wake"]')!;
-    fireEvent.animationEnd(wake, { animationName: "pie-wake-in" });
+    const rightEye = document.querySelector('[data-pie-eye="right"]')!;
+    fireEvent.animationEnd(rightEye, { animationName: "pie-wake-in" });
     expect(document.querySelector('[data-pie-state="idle"]')).toBeTruthy();
   });
 

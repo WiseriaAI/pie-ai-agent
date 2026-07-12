@@ -88,6 +88,7 @@
 - 右眼起点偏移：`translate(0.226d, -0.366d) scale(3.33)`
 - 左眼起点偏移：`translate(0.546d, -0.366d) scale(3.33)`
 - 即两眼都从右上缺口的大黑点出发，缩小滑入眼位。眼睛层需包在 `overflow: hidden` 的圆形 clip 内（滑入过程不出框）。
+- **错峰落定**：左眼先落、右眼晚 0.2s（`animation-delay` 左 2s / 右 2.2s；直译设计稿 `pm-morph` 16%→40% 与 `pm-morph-r` 20%→44% 的 4% 错峰）。`onWakeEnd` 监听**右眼**（最后落定者）的 `animationend`——挂在左眼或按任一 wake-in 触发都会提前切 idle、掐断右眼滑行。
 - wake 期间身体同时跑 `pie-breathe`。
 
 ## 状态接线（全部在 Chat.tsx 内 derive，无新全局状态、不持久化）
