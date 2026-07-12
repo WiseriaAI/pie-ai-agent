@@ -10,18 +10,20 @@ function svgOf(agentId: string): SVGSVGElement {
 }
 
 describe("AgentBrandIcon", () => {
-  it("claude-* → Claude mark with brand stroke", () => {
+  it("claude-* → Claude mark filled with the brand orange", () => {
     for (const id of ["claude-app", "claude-terminal"]) {
       const svg = svgOf(id);
       expect(svg.getAttribute("data-brand")).toBe("claude");
-      expect(svg.getAttribute("stroke")).toBe("#D97757");
+      expect(svg.getAttribute("fill")).toBe("#D97757");
+      expect(svg.querySelector("path")).toBeTruthy();
     }
   });
 
-  it("codex-* → Codex mark with currentColor stroke", () => {
+  it("codex-* → Codex mark filled with currentColor (flips with the theme)", () => {
     const svg = svgOf("codex-terminal");
     expect(svg.getAttribute("data-brand")).toBe("codex");
-    expect(svg.getAttribute("stroke")).toBe("currentColor");
+    expect(svg.getAttribute("fill")).toBe("currentColor");
+    expect(svg.querySelector("path")).toBeTruthy();
   });
 
   it("unknown id → generic terminal fallback", () => {
