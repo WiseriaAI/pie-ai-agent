@@ -9,6 +9,7 @@ import {
   deleteSkillRpc,
 } from "@/lib/skills/panel-actions";
 import { buildSkillMd, patchSkillMd, isSingleLineSafe } from "@/lib/skills/skill-md";
+import { getConfig, setConfig } from "@/lib/idb/config-store";
 import { useT } from "@/lib/i18n";
 
 interface SkillsListProps {
@@ -16,6 +17,7 @@ interface SkillsListProps {
 }
 
 const INSTRUCTIONS_MAX = 8 * 1024;
+const AGENTS_IMPORT_PROMPTED_KEY = "agents_import_prompted";
 
 interface SkillFormState {
   editingId?: string;
@@ -86,9 +88,15 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
   const [editRawMd, setEditRawMd] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  // 首连导入向导：null=标记加载中（不闪卡），false=未提示过，true=已提示
+  const [importPrompted, setImportPrompted] = useState<boolean | null>(null);
 
   useEffect(() => {
     void loadSkills();
+  }, []);
+
+  useEffect(() => {
+    void getConfig<boolean>(AGENTS_IMPORT_PROMPTED_KEY).then((v) => setImportPrompted(v ?? false));
   }, []);
 
   async function loadSkills() {
@@ -219,6 +227,19 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
   }
 
   const custom = skills.filter((s) => !s.builtIn);
+  const agentsSkills = skills.filter((s) => s.source === "agents");
+
+  async function handleImportConfirm(ids: string[]) {
+    for (const id of ids) await setSkillEnabled(id, true);
+    await setConfig(AGENTS_IMPORT_PROMPTED_KEY, true);
+    setImportPrompted(true);
+    await loadSkills();
+  }
+
+  async function handleImportDismiss() {
+    await setConfig(AGENTS_IMPORT_PROMPTED_KEY, true);
+    setImportPrompted(true);
+  }
 
   return (
     <div className="flex flex-col gap-7">
@@ -228,6 +249,14 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
       <div className="rounded-[10px] border border-line bg-surface px-3 py-2.5 text-[12px] leading-[18px] text-fg-2">
         {t("skills.empty.cta")}
       </div>
+
+      {importPrompted === false && agentsSkills.length > 0 && (
+        <AgentsImportCard
+          skills={agentsSkills}
+          onConfirm={(ids) => void handleImportConfirm(ids)}
+          onDismiss={() => void handleImportDismiss()}
+        />
+      )}
 
       {showForm && (
         <SkillForm
@@ -262,6 +291,73 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
         <p className="text-[12px] text-fg-3">{t("skills.noSkills")}</p>
       )}
     </div>
+  );
+}
+
+function AgentsImportCard({
+  skills,
+  onConfirm,
+  onDismiss,
+}: {
+  skills: SkillEntry[];
+  onConfirm: (ids: string[]) => void;
+  onDismiss: () => void;
+}) {
+  const t = useT();
+  const [checked, setChecked] = useState<Set<string>>(new Set());
+  const allChecked = checked.size === skills.length;
+
+  function toggle(id: string) {
+    setChecked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  return (
+    <section className="flex flex-col gap-3 rounded-[14px] border border-line bg-surface p-3.5">
+      <div className="flex items-baseline justify-between">
+        <span className="text-[15px] font-semibold tracking-[-0.005em] text-fg-1">
+          {t("skills.agentsImport.title", { count: skills.length })}
+        </span>
+        <button
+          onClick={() => setChecked(allChecked ? new Set() : new Set(skills.map((s) => s.id)))}
+          className="rounded-[10px] border border-line bg-transparent px-2.5 py-1 text-[11px] text-fg-2 hover:text-fg-1"
+        >
+          {t("skills.agentsImport.selectAll")}
+        </button>
+      </div>
+      <p className="text-[12px] leading-[18px] text-fg-2">{t("skills.agentsImport.body")}</p>
+      <div className="flex max-h-56 flex-col overflow-y-auto rounded-[10px] border border-line">
+        {skills.map((s) => (
+          <label
+            key={s.id}
+            className="flex cursor-pointer items-center gap-2.5 border-t border-line px-3 py-2 first:border-t-0"
+          >
+            <input type="checkbox" checked={checked.has(s.id)} onChange={() => toggle(s.id)} />
+            <code className="font-mono text-[12px] text-fg-1">{s.name}</code>
+            <span className="ml-auto min-w-0 truncate text-[11px] text-fg-3">{s.description}</span>
+          </label>
+        ))}
+      </div>
+      <div className="flex justify-end gap-2">
+        <button
+          onClick={onDismiss}
+          className="rounded-[10px] border border-line bg-transparent px-3 py-1.5 text-[11px] text-fg-2 hover:text-fg-1"
+        >
+          {t("skills.agentsImport.dismiss")}
+        </button>
+        <button
+          onClick={() => onConfirm([...checked])}
+          disabled={checked.size === 0}
+          className="rounded-[10px] bg-fg-1 px-3 py-1.5 text-[11px] font-medium text-canvas hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {t("skills.agentsImport.confirm")}
+        </button>
+      </div>
+    </section>
   );
 }
 
@@ -311,9 +407,11 @@ function SkillRow({
   const t = useT();
   const tag = skill.builtIn
     ? t("skills.authorTag.builtIn")
-    : skill.author === "agent"
-      ? t("skills.authorTag.agent")
-      : t("skills.authorTag.user");
+    : skill.source === "agents"
+      ? t("skills.sourceTag.agents")
+      : skill.author === "agent"
+        ? t("skills.authorTag.agent")
+        : t("skills.authorTag.user");
   const slug = normalizeSlug(skill.name) || skill.id;
 
   return (
@@ -349,7 +447,7 @@ function SkillRow({
         >
           {t("common.run")}
         </button>
-        {!skill.builtIn && (
+        {!skill.builtIn && skill.source !== "agents" && (
           <>
             <button
               onClick={onEdit}

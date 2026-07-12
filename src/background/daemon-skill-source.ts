@@ -15,6 +15,7 @@ export const daemonSkillSource: SkillSource = {
       description: s.description,
       builtIn: false,
       origin: "disk" as const,
+      source: s.source ?? "pie", // 旧 daemon 无 source → 主根语义
       files: s.files,
       runnableScripts: s.runnableScripts,
     }));

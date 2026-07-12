@@ -49,6 +49,7 @@ describe("daemonSkillSource", () => {
         description: "fetch a url",
         builtIn: false,
         origin: "disk",
+        source: "pie", // 旧 daemon 无 source → 主根语义
         files: ["SKILL.md", "scripts/fetch.ts"],
         runnableScripts: ["fetch.ts"],
       },
