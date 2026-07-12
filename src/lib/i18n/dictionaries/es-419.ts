@@ -77,7 +77,6 @@ export const es419Dict = {
     backToAgent: "Volver al agente",
     title: "Configuración",
     forgetConfirm: "¿Olvidar esta configuración?",
-    tabs: { configs: "Configuraciones", skills: "Habilidades", search: "Buscar", general: "General" },
     nav: {
       models: "Configuración de modelos",
       bridge: "Puente local",

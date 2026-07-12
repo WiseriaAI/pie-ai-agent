@@ -76,7 +76,6 @@ export const zhCNDict = {
     backToAgent: "返回 Agent",
     title: "设置",
     forgetConfirm: "确认删除此配置？",
-    tabs: { configs: "配置", skills: "技能", search: "搜索", general: "通用" },
     nav: {
       models: "模型配置",
       bridge: "本地打通",

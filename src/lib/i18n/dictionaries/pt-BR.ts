@@ -77,7 +77,6 @@ export const ptBRDict = {
     backToAgent: "Voltar ao agente",
     title: "Configurações",
     forgetConfirm: "Esquecer esta configuração?",
-    tabs: { configs: "Configurações", skills: "Habilidades", search: "Buscar", general: "Geral" },
     nav: {
       models: "Configurações de modelo",
       bridge: "Ponte local",

@@ -76,7 +76,6 @@ export const enDict = {
     backToAgent: "Back to agent",
     title: "Settings",
     forgetConfirm: "Forget this config?",
-    tabs: { configs: "Configs", skills: "Skills", search: "Search", general: "General" },
     nav: {
       models: "Model Configs",
       bridge: "Local Bridge",

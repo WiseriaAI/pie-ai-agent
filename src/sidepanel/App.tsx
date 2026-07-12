@@ -1,9 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
 import Chat from "@/sidepanel/components/Chat";
-import Settings from "@/sidepanel/components/Settings";
 import SessionDrawer from "@/sidepanel/components/SessionDrawer";
 import SkillsList from "@/sidepanel/components/SkillsList";
+import SearchProviderSection from "@/sidepanel/components/SearchProviderSection";
 import SettingsRoot from "@/sidepanel/components/settings/SettingsRoot";
+import ModelsPage from "@/sidepanel/components/settings/pages/ModelsPage";
+import BridgePage from "@/sidepanel/components/settings/pages/BridgePage";
+import ExperimentalPage from "@/sidepanel/components/settings/pages/ExperimentalPage";
+import FeedbackPage from "@/sidepanel/components/settings/pages/FeedbackPage";
 import TopBar, { type AppView, type SettingsPage } from "@/sidepanel/components/TopBar";
 import type { ThemeMode } from "@/sidepanel/theme";
 import SchedulesPanel from "@/sidepanel/components/Schedules/SchedulesPanel";
@@ -409,21 +413,27 @@ export default function App() {
           <div className="flex-1 overflow-y-auto px-4 py-6">
             <SkillsList onRunSkill={(id, name) => void handleRunSkill(id, name)} />
           </div>
-        ) : view === "settings" && settingsPage === "root" ? (
-          <div className="flex-1 overflow-y-auto px-4 py-6">
-            <SettingsRoot
-              themeMode={themeMode}
-              onThemeModeChange={setThemeMode}
-              onOpenPage={(p) => setSettingsPage(p)}
-            />
+        ) : view === "settings" ? (
+          <div key={settingsPage} className="view-enter flex-1 overflow-y-auto px-4 py-6">
+            {settingsPage === "root" ? (
+              <SettingsRoot
+                themeMode={themeMode}
+                onThemeModeChange={setThemeMode}
+                onOpenPage={(p) => setSettingsPage(p)}
+              />
+            ) : settingsPage === "models" ? (
+              <ModelsPage openSubscribeNonce={subscribeNonce} />
+            ) : settingsPage === "bridge" ? (
+              <BridgePage />
+            ) : settingsPage === "search" ? (
+              <SearchProviderSection />
+            ) : settingsPage === "experimental" ? (
+              <ExperimentalPage />
+            ) : (
+              <FeedbackPage />
+            )}
           </div>
-        ) : (
-          <Settings
-            onBack={goBack}
-            onRunSkill={(id, name) => void handleRunSkill(id, name)}
-            openSubscribeNonce={subscribeNonce}
-          />
-        )}
+        ) : null}
       </div>
 
       {/* ── Session drawer (overlay) ──────────────────────────────────────── */}

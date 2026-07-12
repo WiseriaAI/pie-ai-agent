@@ -1,6 +1,6 @@
 import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { FeedbackSection } from "./Settings";
+import { FeedbackSection } from "./settings/pages/FeedbackPage";
 
 afterEach(() => cleanup());
 

@@ -76,7 +76,6 @@ export const zhTWDict = {
     backToAgent: "返回 Agent",
     title: "設定",
     forgetConfirm: "確認刪除此設定檔？",
-    tabs: { configs: "設定檔", skills: "技能", search: "搜尋", general: "一般" },
     nav: {
       models: "模型配置",
       bridge: "本地打通",

@@ -77,7 +77,6 @@ export const jaDict = {
     backToAgent: "エージェントに戻る",
     title: "設定",
     forgetConfirm: "この設定を削除しますか？",
-    tabs: { configs: "設定", skills: "スキル", search: "検索", general: "一般" },
     nav: {
       models: "モデル設定",
       bridge: "ローカル連携",
