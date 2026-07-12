@@ -116,5 +116,6 @@ test("list_agents returns ALL candidates with installed flag (shape only — det
   for (const a of out.result.agents) {
     expect(typeof a.label).toBe("string");
     expect(typeof a.installed).toBe("boolean");
+    expect(["app", "terminal"]).toContain(a.kind); // #270: wire 加法字段
   }
 });

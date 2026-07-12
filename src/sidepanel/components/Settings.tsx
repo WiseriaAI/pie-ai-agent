@@ -560,7 +560,7 @@ function queryBridgeStatus(cb: (s: BridgeStatus) => void): void {
   }
 }
 
-type PanelAgent = { id: string; label: string; installed: boolean; enabled: boolean };
+type PanelAgent = { id: string; label: string; installed: boolean; enabled: boolean; kind?: "app" | "terminal" };
 
 // Settings「本地 Agent」列表 — 一次性查询，无轮询（挂载/桥就绪/开关交互后各触发一次）。
 function queryLocalAgents(cb: (agents: PanelAgent[]) => void): void {
