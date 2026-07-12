@@ -15,6 +15,9 @@ export interface SkillEntry {
   description: string;
   builtIn: boolean;
   origin: "builtin" | "idb" | "disk";
+  /** 磁盘来源根（daemon 模式）："pie"=主根 ~/.pie/skills，"agents"=只读副根 ~/.agents/skills。
+   *  IDB/builtin 恒 undefined；旧 daemon 不给时视同 "pie"。 */
+  source?: "pie" | "agents";
   files: string[];
   runnableScripts: string[];
   createdAt?: number;
@@ -112,7 +115,9 @@ export function filterEnabled(entries: SkillEntry[], markers: string[]): SkillEn
   return entries.filter((e) => {
     if (off.has(e.id)) return false;
     if (on.has(e.id)) return true;
-    return e.builtIn || BUILT_IN_IDS.has(e.id) || e.origin === "disk";
+    // 磁盘默认开只给主根（放上 ~/.pie/skills = 意图）；副根 ~/.agents/skills 是
+    // 别的 agent 生态的目录，默认关，经首连导入向导 / 列表开关显式启用。
+    return e.builtIn || BUILT_IN_IDS.has(e.id) || (e.origin === "disk" && e.source !== "agents");
   });
 }
 

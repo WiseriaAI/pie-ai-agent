@@ -83,6 +83,9 @@ export interface SkillSummary {
   declaredCaps: SkillCaps;
   /** 包内文件相对路径（POSIX 分隔；排除 workspace/ 与 .runs/ 及点文件；上限 200） */
   files: string[];
+  /** 来源根：主根 ~/.pie/skills = "pie"，只读副根 ~/.agents/skills = "agents"。
+   *  optional 加法字段：旧 daemon 不给 → 扩展按 "pie" 处理（无 badge）。 */
+  source?: "pie" | "agents";
 }
 export interface ListSkillsResult {
   skills: SkillSummary[];

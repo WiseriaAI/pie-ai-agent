@@ -8,6 +8,7 @@ export const paths = {
   handoffsDir: join(homedir(), "pie-handoffs"),
   logsDir: join(pieDir, "logs"),
   skillsDir: join(pieDir, "skills"),
+  agentsSkillsDir: join(homedir(), ".agents", "skills"),
   grantsPath: join(pieDir, "grants.json"),
   auditPath: join(pieDir, "logs", "audit.jsonl"),
 };

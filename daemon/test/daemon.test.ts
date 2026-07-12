@@ -119,3 +119,56 @@ test("list_agents returns ALL candidates with installed flag (shape only — det
     expect(["app", "terminal"]).toContain(a.kind); // #270: wire 加法字段
   }
 });
+
+// ── makeBackpressureWriter ──────────────────────────────────────────────────
+// 真机案例：32 个 ~/.agents skill 的 list_skills 响应 >8KB，裸 socket.write
+// 只送出首个内核缓冲块（8192B），余量被丢弃 → 客户端永远收不到完整行。
+// 写出器必须缓存余量并在 drain 时续写，且按字节切（响应含多字节 UTF-8）。
+
+import { makeBackpressureWriter } from "../src/daemon";
+
+/** fake socket：每次 write 最多吞 capacity 字节，收到的字节全记账 */
+function fakeSocket(capacity: number) {
+  const chunks: Uint8Array[] = [];
+  return {
+    received: () => {
+      const total = chunks.reduce((a, c) => a + c.length, 0);
+      const all = new Uint8Array(total);
+      let off = 0;
+      for (const c of chunks) { all.set(c, off); off += c.length; }
+      return new TextDecoder().decode(all);
+    },
+    write: (bytes: Uint8Array) => {
+      const n = Math.min(bytes.length, capacity);
+      chunks.push(bytes.slice(0, n));
+      return n;
+    },
+  };
+}
+
+test("backpressure writer: partial write queues remainder, drain delivers the rest byte-exact", () => {
+  const sock = fakeSocket(8192);
+  const w = makeBackpressureWriter(sock.write);
+  const big = JSON.stringify({ id: "t", result: { skills: Array.from({ length: 40 }, (_, i) => ({ name: `skill-${i}`, description: "描述——多字节🥧".repeat(20) })) } }) + "\n";
+  w.write(big);
+  expect(w.pendingBytes()).toBeGreaterThan(0); // 首块之外的余量在排队
+  while (w.pendingBytes() > 0) w.drain(); // 每次 drain 模拟一次内核缓冲腾空
+  expect(sock.received()).toBe(big); // 逐字节还原，多字节字符未被切坏
+});
+
+test("backpressure writer: writes while backlogged stay queued and keep order", () => {
+  const sock = fakeSocket(10);
+  const w = makeBackpressureWriter(sock.write);
+  w.write("first-response\n");
+  w.write("second-response\n"); // 有积压：只排队，不与余量交错
+  while (w.pendingBytes() > 0) w.drain();
+  expect(sock.received()).toBe("first-response\nsecond-response\n");
+});
+
+test("backpressure writer: small write with room passes straight through", () => {
+  const sock = fakeSocket(8192);
+  const w = makeBackpressureWriter(sock.write);
+  w.write("ok\n");
+  expect(w.pendingBytes()).toBe(0);
+  expect(sock.received()).toBe("ok\n");
+});

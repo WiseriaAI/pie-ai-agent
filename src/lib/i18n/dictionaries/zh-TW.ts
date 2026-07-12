@@ -375,6 +375,14 @@ export const zhTWDict = {
       createSkill: "建立技能",
     },
     authorTag: { builtIn: "內建", agent: "Agent", user: "使用者" },
+    sourceTag: { agents: "~/.agents" },
+    agentsImport: {
+      title: "發現 {count} 個本地 skill",
+      body: "它們來自 ~/.agents/skills（跨 agent 共享目錄）。勾選允許 Pie 使用的條目——之後隨時可在本列表中開關。",
+      selectAll: "全選",
+      confirm: "啟用所選",
+      dismiss: "暫不",
+    },
     toggleAria: { enable: "啟用 {name}", disable: "停用 {name}" },
   },
   skillSlashPopover: {

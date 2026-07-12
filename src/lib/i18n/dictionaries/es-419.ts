@@ -376,6 +376,14 @@ export const es419Dict = {
       createSkill: "Crear habilidad",
     },
     authorTag: { builtIn: "INTEGRADA", agent: "AGENTE", user: "USUARIO" },
+    sourceTag: { agents: "~/.agents" },
+    agentsImport: {
+      title: "Se encontraron {count} skills locales",
+      body: "Provienen de ~/.agents/skills (directorio compartido entre agentes). Elige cuáles puede usar Pie; puedes cambiarlo en esta lista cuando quieras.",
+      selectAll: "Seleccionar todo",
+      confirm: "Habilitar seleccionados",
+      dismiss: "Ahora no",
+    },
     toggleAria: { enable: "Activar {name}", disable: "Desactivar {name}" },
   },
   skillSlashPopover: {

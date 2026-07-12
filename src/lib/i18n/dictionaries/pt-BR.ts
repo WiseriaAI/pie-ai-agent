@@ -376,6 +376,14 @@ export const ptBRDict = {
       createSkill: "Criar habilidade",
     },
     authorTag: { builtIn: "INTEGRADO", agent: "AGENTE", user: "USUÁRIO" },
+    sourceTag: { agents: "~/.agents" },
+    agentsImport: {
+      title: "Encontramos {count} skills locais",
+      body: "Elas vêm de ~/.agents/skills (diretório compartilhado entre agentes). Escolha quais o Pie pode usar — você pode mudar isso nesta lista a qualquer momento.",
+      selectAll: "Selecionar tudo",
+      confirm: "Habilitar selecionadas",
+      dismiss: "Agora não",
+    },
     toggleAria: { enable: "Ativar {name}", disable: "Desativar {name}" },
   },
   skillSlashPopover: {
