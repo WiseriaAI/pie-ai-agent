@@ -40,6 +40,9 @@ import type { SessionIndexEntry } from "@/lib/sessions/types";
 export default function App() {
   const [view, setView] = useState<AppView>("agent");
   const [settingsPage, setSettingsPage] = useState<SettingsPage>("root");
+  // Slide direction for the settings root ↔ sub-page swap: drilling in slides
+  // from the right, going back slides from the left (page-enter-* classes).
+  const [settingsNavDir, setSettingsNavDir] = useState<"fwd" | "back">("fwd");
   const [providerLabel, setProviderLabel] = useState<string | null>(null);
   const [chatPrefill, setChatPrefill] = useState<string | undefined>(undefined);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -311,14 +314,17 @@ export default function App() {
   // closes the drawer. goBack pops one level: settings sub-page → root; root /
   // schedules / skills → chat.
   const openSettings = useCallback((page: SettingsPage = "root") => {
+    setSettingsNavDir("fwd");
     setSettingsPage(page);
     setView("settings");
     setDrawerOpen(false);
   }, []);
 
   const goBack = useCallback(() => {
-    if (view === "settings" && settingsPage !== "root") setSettingsPage("root");
-    else setView("agent");
+    if (view === "settings" && settingsPage !== "root") {
+      setSettingsNavDir("back");
+      setSettingsPage("root");
+    } else setView("agent");
   }, [view, settingsPage]);
 
   // ── Keyboard shortcuts (panel-focused) ─────────────────────────────────────
@@ -414,12 +420,18 @@ export default function App() {
             <SkillsList onRunSkill={(id, name) => void handleRunSkill(id, name)} />
           </div>
         ) : view === "settings" ? (
-          <div key={settingsPage} className="view-enter flex-1 overflow-y-auto px-4 py-6">
+          <div
+            key={settingsPage}
+            className={`${settingsNavDir === "back" ? "page-enter-back" : "page-enter-fwd"} flex-1 overflow-y-auto px-4 py-6`}
+          >
             {settingsPage === "root" ? (
               <SettingsRoot
                 themeMode={themeMode}
                 onThemeModeChange={setThemeMode}
-                onOpenPage={(p) => setSettingsPage(p)}
+                onOpenPage={(p) => {
+                  setSettingsNavDir("fwd");
+                  setSettingsPage(p);
+                }}
               />
             ) : settingsPage === "models" ? (
               <ModelsPage openSubscribeNonce={subscribeNonce} />
