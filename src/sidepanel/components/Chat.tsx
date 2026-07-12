@@ -28,9 +28,6 @@ import { buildRewindInput } from "@/sidepanel/hooks/useSession/rewind";
 import { swPort } from "@/lib/sw-connection/manager";
 import AgentStepGroup, { type AgentStepData } from "./AgentStepGroup";
 import ManagedErrorCta from "./ManagedErrorCta";
-import PinnedTabDropdown from "./PinnedTabDropdown";
-import { Popover } from "./ui/Popover";
-import { useAnchorRect } from "./ui/useAnchorRect";
 import type { DisplayMessage } from "@/types";
 import { QuoteChip } from "./QuoteChip";
 import { escapeWrapperAttribute } from "@/lib/agent/untrusted-wrappers";
@@ -183,8 +180,6 @@ export default function Chat({
     toast,
     pinnedTabs,
     pinMode,
-    togglePinTab,
-    clearUserPin,
     sendMessage: sessionSendMessage,
     abort,
     clearMessages,
@@ -200,21 +195,13 @@ export default function Chat({
     cancelPendingInstruction,
     pendingByChatMessageId,
   } = session;
-  // Derive convenience aliases from pinnedTabs[] for the locked-pin display.
-  // Primary pin is the first entry (oldest / chat-start anchor).
-  const sessionPinnedOrigin = pinnedTabs?.[0]?.origin ?? null;
-  const sessionPinnedTabId = pinnedTabs?.[0]?.tabId ?? null;
   const [input, setInput] = useState("");
   const [hasConfig, setHasConfig] = useState<boolean | null>(null);
+  // M5 — page-changed banner: navigation on a pinned tab during a 'task'-mode
+  // in-flight task. The pin DISPLAY subsystem now lives in the TopBar sub-row
+  // (usePinDisplay hook); Chat only keeps the pageChanged detection below.
   const [pageChanged, setPageChanged] = useState(false);
   const t = useT();
-  // M5 — PinnedTabDropdown open state. Lives in Chat (not the dropdown
-  // itself) because the dropdown's anchor is the PINNED row in the info bar.
-  const [pinDropdownOpen, setPinDropdownOpen] = useState(false);
-  // The info-bar row the dropdown hangs off of — measured by useAnchorRect to
-  // position the portaled <Popover> (left-aligned, full width, just below it).
-  const pinBarRef = useRef<HTMLDivElement>(null);
-  const pinAnchorRef = useRef<HTMLButtonElement>(null);
   const [pickerActive, setPickerActive] = useState(false);
   const [enabledSkills, setEnabledSkills] = useState<SkillEntry[]>([]);
   const [popoverSelected, setPopoverSelected] = useState(0);
@@ -257,18 +244,6 @@ export default function Chat({
       setEscArmed(false);
     };
   }, [streaming, abort]);
-  // Live preview of the user's currently-active tab origin + title. Only
-  // used when the session is in 'auto' mode — then the user can still
-  // freely tab-switch and the panel reflects "the tab your next first-
-  // message will lock to". In 'task'/'user' mode, the display flips to
-  // the persisted `sessionPinnedOrigin` + `lockedPinnedTitle` (frozen).
-  const [livePinnedOrigin, setLivePinnedOrigin] = useState<string | null>(null);
-  const [livePinnedTitle, setLivePinnedTitle] = useState<string | null>(null);
-  // M5 follow-up — locked pin's title (task / user mode). Read from
-  // chrome.tabs.get(sessionPinnedTabId); refreshed on onUpdated when the
-  // tab itself changes title (most pages update document.title async).
-  // null = not yet fetched / tab closed → fall back to host display.
-  const [lockedPinnedTitle, setLockedPinnedTitle] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   // Stick-to-bottom: track whether the user is currently near the bottom and
   // only auto-scroll in that case, using an INSTANT jump (not smooth). When we
@@ -442,14 +417,6 @@ export default function Chat({
     atBottomRef.current = c.scrollHeight - c.scrollTop - c.clientHeight <= 60;
   };
 
-  // Position the portaled pin dropdown just below the info-bar row, matching
-  // its left edge + width. <Popover> owns mount/leave animation, so there's no
-  // separate "visible" state to keep it mounted through the exit anymore.
-  const pinRect = useAnchorRect(pinBarRef, pinDropdownOpen);
-  const pinDropdownStyle = pinRect
-    ? { left: pinRect.left, top: pinRect.bottom + 4, width: pinRect.width }
-    : undefined;
-
   useEffect(() => {
     if (prefillInput) {
       setInput(prefillInput);
@@ -459,86 +426,6 @@ export default function Chat({
       onPrefillConsumed?.();
     }
   }, [prefillInput]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // PINNED display contract (M3-U2 post-acceptance, per user feedback):
-  //   - empty session AND not streaming  → live preview of current active
-  //     tab. User can freely tab-switch; PINNED follows. The session is
-  //     not locked yet — first sendMessage will capture and persist.
-  //   - non-empty session OR streaming   → frozen to the persisted pin
-  //     (sessionPinnedOrigin from session meta). Tab-switching in this
-  //     state is irrelevant: the agent will operate on the locked tab.
-  //
-  // Why messages.length > 0 (not just streaming): between tasks (after
-  // chat-done / agent-done-task / paused) `streaming` is false but the
-  // session still has content. The earlier "lock only during streaming"
-  // rule let PINNED drift between tasks, which surprised users who
-  // expected the pin to stay put for the whole conversation. The new
-  // rule mirrors the underlying persistence: pin is captured once at
-  // first send and stays until the session is cleared.
-  // M5 — isLocked is now driven by pinMode, not messages.length:
-  //   - 'auto' (default for empty + post-task sessions): UI live-tracks
-  //     the user's currently-active tab; PINNED row updates dynamically
-  //   - 'task' (in-flight): pin frozen to send-time active tab
-  //   - 'user' (user-locked): pin frozen to user's dropdown choice
-  // Streaming forces locked regardless of mode (defensive — there's
-  // always a task pin while streaming, and we don't want the UI to
-  // re-render mid-task as the user tab-switches).
-  const isLocked = streaming || (pinMode !== null && pinMode !== "auto");
-
-  useEffect(() => {
-    if (isLocked) {
-      // No live tracking when locked — the displayed pin comes from
-      // sessionPinnedOrigin (session meta) and storage onChanged keeps
-      // it fresh. Skip the chrome.tabs listeners entirely so they don't
-      // burn cycles in the locked state.
-      return;
-    }
-    async function refreshLive() {
-      try {
-        const [tab] = await chrome.tabs.query({
-          active: true,
-          currentWindow: true,
-        });
-        setLivePinnedOrigin(tab?.url ? extractOrigin(tab.url) : null);
-        setLivePinnedTitle(tab?.title ? tab.title : null);
-      } catch {
-        // non-fatal — keep prior value
-      }
-    }
-
-    void refreshLive();
-
-    const onActivated = () => {
-      void refreshLive();
-    };
-    const onUpdated = (
-      _tabId: number,
-      changeInfo: chrome.tabs.OnUpdatedInfo,
-      tab: chrome.tabs.Tab,
-    ) => {
-      // Refresh on any url OR title change of the active tab. Title alone
-      // (no url change) covers SPAs that update document.title after load
-      // and same-origin route changes that just rename the tab.
-      if (tab.active && (changeInfo.url || changeInfo.title)) {
-        void refreshLive();
-      }
-    };
-    const onFocusChanged = (winId: number) => {
-      // chrome.windows.WINDOW_ID_NONE === -1 fires when chrome loses focus
-      // entirely; ignore to avoid clearing pin on app-switch.
-      if (winId === chrome.windows.WINDOW_ID_NONE) return;
-      void refreshLive();
-    };
-
-    chrome.tabs.onActivated.addListener(onActivated);
-    chrome.tabs.onUpdated.addListener(onUpdated);
-    chrome.windows.onFocusChanged.addListener(onFocusChanged);
-    return () => {
-      chrome.tabs.onActivated.removeListener(onActivated);
-      chrome.tabs.onUpdated.removeListener(onUpdated);
-      chrome.windows.onFocusChanged.removeListener(onFocusChanged);
-    };
-  }, [isLocked]);
 
   // v1.5 — Set of ALL pinned tab IDs for the pageChanged effect filter.
   const pinnedTabIds = useMemo(
@@ -577,73 +464,6 @@ export default function Chat({
     chrome.tabs.onUpdated.addListener(onUpdated);
     return () => chrome.tabs.onUpdated.removeListener(onUpdated);
   }, [pinMode, pinnedTabIds]);
-
-  // M5 follow-up — locked-mode title fetcher. Reads the pinned tab's
-  // current title via chrome.tabs.get; refreshes whenever the pinned tab
-  // updates its title (SPAs change document.title async on route change).
-  // Falls back to null on closed/inaccessible tab — display layer handles
-  // host-fallback in that case.
-  useEffect(() => {
-    if (!isLocked) {
-      setLockedPinnedTitle(null);
-      return;
-    }
-    if (sessionPinnedTabId === null) {
-      setLockedPinnedTitle(null);
-      return;
-    }
-    const targetTabId = sessionPinnedTabId;
-    let cancelled = false;
-    async function fetchTitle() {
-      try {
-        const tab = await chrome.tabs.get(targetTabId);
-        if (cancelled) return;
-        setLockedPinnedTitle(tab.title ?? null);
-      } catch {
-        if (cancelled) return;
-        setLockedPinnedTitle(null);
-      }
-    }
-    void fetchTitle();
-    const onUpdated = (
-      tabId: number,
-      changeInfo: chrome.tabs.OnUpdatedInfo,
-      tab: chrome.tabs.Tab,
-    ) => {
-      if (tabId !== targetTabId) return;
-      if (changeInfo.title || changeInfo.url) {
-        setLockedPinnedTitle(tab.title ?? null);
-      }
-    };
-    chrome.tabs.onUpdated.addListener(onUpdated);
-    return () => {
-      cancelled = true;
-      chrome.tabs.onUpdated.removeListener(onUpdated);
-    };
-  }, [isLocked, sessionPinnedTabId]);
-
-  // Display label — prefer tab title for human readability; fall back to
-  // host (extracted from origin) when title is unavailable. Locked vs
-  // free state pick from different sources but same fallback chain.
-  const PIN_LABEL_MAX_LEN = 60;
-  function truncate(s: string): string {
-    return s.length > PIN_LABEL_MAX_LEN ? s.slice(0, PIN_LABEL_MAX_LEN - 1) + "…" : s;
-  }
-  const displayPinnedOrigin = (() => {
-    if (isLocked) {
-      if (lockedPinnedTitle) return truncate(lockedPinnedTitle);
-      if (sessionPinnedOrigin)
-        return extractHost(sessionPinnedOrigin) ?? sessionPinnedOrigin;
-      // #231 — restricted-page pin (empty origin) whose title is unavailable
-      // (tab closed / inaccessible). Keep the bar mounted — `null` here
-      // unmounts the whole pin bar including the dropdown entry point.
-      if (sessionPinnedTabId !== null) return `#${sessionPinnedTabId}`;
-      return null;
-    }
-    if (livePinnedTitle) return truncate(livePinnedTitle);
-    if (livePinnedOrigin) return extractHost(livePinnedOrigin) ?? livePinnedOrigin;
-    return null;
-  })();
 
   async function checkConfig() {
     try {
@@ -1216,59 +1036,9 @@ After the skill completes, briefly summarize what was created (the user will see
 
   return (
     <div className="flex h-full flex-col">
-      {/* Pinned origin info bar.
-       *  M5 follow-up: provider/model label removed — was getting squeezed by
-       *  the new PinnedTabDropdown button. Provider info still visible in
-       *  Settings; users typically switch there, not from the chat header. */}
-      {displayPinnedOrigin && (
-        <div ref={pinBarRef} className="relative flex flex-shrink-0 items-center gap-2 border-b border-line bg-canvas px-4 py-1.5">
-          {displayPinnedOrigin && (
-            <>
-              <button
-                ref={pinAnchorRef}
-                type="button"
-                onClick={() => setPinDropdownOpen((v) => !v)}
-                aria-label={t("chat.pinnedTabSelector")}
-                aria-expanded={pinDropdownOpen}
-                className="flex flex-1 items-center gap-2 rounded px-1 py-0.5 text-left hover:bg-field"
-              >
-                <span className="caps text-fg-3">
-                  {pinMode === "user" ? t("chat.pinnedStar") : isLocked ? t("chat.pinned") : t("chat.pin")}
-                </span>
-                <span className="flex-1 truncate font-mono text-[11px] text-fg-2">
-                  {displayPinnedOrigin}
-                </span>
-                {pinnedTabs && pinnedTabs.length > 1 ? (
-                  <span className="ml-1 rounded bg-accent-tint px-1 text-[10px] text-accent">
-                    ×{pinnedTabs.length}
-                  </span>
-                ) : null}
-                <span className="text-fg-3 text-[10px]" aria-hidden="true">▾</span>
-              </button>
-              <Popover
-                open={pinDropdownOpen && !!pinDropdownStyle}
-                style={pinDropdownStyle}
-                placement="below"
-                className="fixed z-20"
-              >
-                <PinnedTabDropdown
-                  anchorRef={pinAnchorRef}
-                  pinMode={pinMode}
-                  pinnedTabs={pinnedTabs}
-                  streaming={streaming}
-                  onToggle={(tabId, origin) => {
-                    void togglePinTab(tabId, origin);
-                  }}
-                  onClearPin={() => {
-                    void clearUserPin();
-                  }}
-                  onClose={() => setPinDropdownOpen(false)}
-                />
-              </Popover>
-            </>
-          )}
-        </div>
-      )}
+      {/* Pinned-tab display moved to the contextual TopBar sub-row
+          (usePinDisplay + PinnedTabDropdown). Chat no longer renders a pin
+          bar of its own — single-top-bar invariant. */}
 
       {/* M1-U5 — paused-task affordance. Sticky bar appears whenever
           the SW has marked this session paused (cold-start detected an
@@ -2518,33 +2288,4 @@ function PieSendButton({
       </svg>
     </button>
   );
-}
-
-function extractOrigin(url: string): string | null {
-  try {
-    const u = new URL(url);
-    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
-    if (!u.host) return null;
-    const path = u.pathname.length > 1 ? u.pathname : "";
-    return `${u.host}${path}`;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Strip the scheme from a URL.origin string (e.g. "https://docs.google.com")
- * to host-only, matching the format extractOrigin returns for the live
- * preview. Used by the locked-state PINNED display so locked vs free pins
- * render with consistent visual format. Returns null when the input does
- * not parse cleanly; the caller falls back to the raw string.
- */
-function extractHost(originUrl: string): string | null {
-  try {
-    const u = new URL(originUrl);
-    if (!u.host) return null;
-    return u.host;
-  } catch {
-    return null;
-  }
 }

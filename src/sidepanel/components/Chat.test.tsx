@@ -955,7 +955,12 @@ describe("Chat — Task 4.4 file attachments", () => {
 // ── M5 — pinMode-driven isLocked + pageChanged effect ────────────────────────
 
 describe("Chat — M5 pinMode behavior", () => {
-  it("auto mode: live-preview listeners ARE registered (chrome.tabs.onActivated)", async () => {
+  // Pin DISPLAY (live-preview listeners + label) moved to the usePinDisplay
+  // hook rendered by the contextual TopBar; Chat no longer registers those
+  // chrome.tabs listeners at all — see usePinDisplay.test.ts for that coverage.
+  // The tests below guard that the pin display does NOT leak back into Chat,
+  // and that Chat's retained pageChanged detection still works.
+  it("auto mode: Chat does NOT register live-preview listeners (moved to TopBar)", async () => {
     seedProvider("anthropic");
     const session = makeSession({
       pinMode: "auto",
@@ -973,10 +978,9 @@ describe("Chat — M5 pinMode behavior", () => {
       );
     });
 
-    // In auto mode the live-tracking effect runs even with messages,
-    // unlike old behavior (which locked on messages.length > 0).
-    expect(tabsOnActivated.addListener).toHaveBeenCalled();
-    expect(windowsOnFocusChanged.addListener).toHaveBeenCalled();
+    // Live-preview subsystem no longer lives in Chat.
+    expect(tabsOnActivated.addListener).not.toHaveBeenCalled();
+    expect(windowsOnFocusChanged.addListener).not.toHaveBeenCalled();
   });
 
   it("task mode: live-preview listeners are NOT registered (PINNED is frozen)", async () => {
