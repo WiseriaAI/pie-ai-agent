@@ -397,6 +397,49 @@ describe("local-bridge", () => {
     await expect(Promise.race([pB, timeout(500)])).resolves.toBeUndefined();
   });
 
+  it("overlapping init tears down the previous port and stale onDisconnect can't clobber the new connection", async () => {
+    const { initLocalBridge, isBridgeReady, requestListSkills } = await import("./local-bridge");
+
+    // init A: connect + successful handshake → ready on port A
+    const portA = fakePort;
+    initLocalBridge();
+    const helloA = portA.postMessage.mock.calls[0][0] as { id: string };
+    portA._emit({ id: helloA.id, ok: true, result: { protocolVersion: PROTOCOL_VERSION, capabilities: ["skill_fs"] } });
+    await Promise.resolve();
+    expect(isBridgeReady()).toBe(true);
+
+    // init B: overlapping re-init while A is still connected. connectNative
+    // returns a fresh port B.
+    const portB = makeFakePort();
+    (globalThis as any).chrome.runtime.connectNative = vi.fn(() => portB);
+    initLocalBridge();
+
+    // (a) the previous port must have been disconnected during the new init.
+    expect(portA.disconnect).toHaveBeenCalledTimes(1);
+
+    // B handshakes successfully → healthy new connection.
+    const helloB = portB.postMessage.mock.calls[0][0] as { id: string };
+    portB._emit({ id: helloB.id, ok: true, result: { protocolVersion: PROTOCOL_VERSION, capabilities: ["skill_fs"] } });
+    await Promise.resolve();
+    expect(isBridgeReady()).toBe(true);
+
+    // A pending request registered on the NEW connection.
+    const pendingReq = requestListSkills();
+    await Promise.resolve();
+
+    // (b) the stale port A's onDisconnect fires late — it must be a no-op: it
+    // must NOT clear ready, and must NOT reject the new connection's pending.
+    portA._disconnect();
+
+    expect(isBridgeReady()).toBe(true);
+
+    // The new connection's pending is still live: reply on port B resolves it.
+    const skillsReq = portB.postMessage.mock.calls.at(-1)![0] as { id: string; method: string };
+    expect(skillsReq.method).toBe("list_skills");
+    portB._emit({ id: skillsReq.id, ok: true, result: { skills: [] } });
+    await expect(pendingReq).resolves.toEqual({ skills: [] });
+  });
+
   it("maybeInitLocalBridge: bridgeSettled grabbed before permissions IPC resolves waits for handshake (cold-start race)", async () => {
     const { maybeInitLocalBridge, bridgeSettled, bridgeHasSkillFs } = await import("./local-bridge");
 
