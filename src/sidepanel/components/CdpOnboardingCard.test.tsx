@@ -31,4 +31,10 @@ describe("CdpOnboardingCard", () => {
     render(<CdpOnboardingCard onAnswer={() => {}} />);
     expect(screen.getByText(/yellow.*bar|黄条/i)).toBeTruthy();
   });
+
+  it("browser register: caps label text-accent; body2 rendered as fine-print note", () => {
+    render(<CdpOnboardingCard onAnswer={() => {}} />);
+    expect(screen.getByText("Input simulation").className).toContain("text-accent");
+    expect(screen.getByText(/yellow bar/i)).toBeTruthy();
+  });
 });
