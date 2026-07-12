@@ -3,6 +3,7 @@ import Chat from "@/sidepanel/components/Chat";
 import Settings from "@/sidepanel/components/Settings";
 import SessionDrawer from "@/sidepanel/components/SessionDrawer";
 import SkillsList from "@/sidepanel/components/SkillsList";
+import SettingsRoot from "@/sidepanel/components/settings/SettingsRoot";
 import TopBar, { type AppView, type SettingsPage } from "@/sidepanel/components/TopBar";
 import type { ThemeMode } from "@/sidepanel/theme";
 import SchedulesPanel from "@/sidepanel/components/Schedules/SchedulesPanel";
@@ -407,6 +408,14 @@ export default function App() {
         ) : view === "skills" ? (
           <div className="flex-1 overflow-y-auto px-4 py-6">
             <SkillsList onRunSkill={(id, name) => void handleRunSkill(id, name)} />
+          </div>
+        ) : view === "settings" && settingsPage === "root" ? (
+          <div className="flex-1 overflow-y-auto px-4 py-6">
+            <SettingsRoot
+              themeMode={themeMode}
+              onThemeModeChange={setThemeMode}
+              onOpenPage={(p) => setSettingsPage(p)}
+            />
           </div>
         ) : (
           <Settings
