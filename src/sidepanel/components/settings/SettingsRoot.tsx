@@ -102,31 +102,20 @@ export function helpCoords(rect: DOMRect, viewportW = window.innerWidth): { left
   return { left, width };
 }
 
-// CDP input simulation — an inline switch (no sub-page). The "?" opens a popover
-// with what enabling it means (the yellow debugger bar + DevTools conflict), so
-// the explainer costs no room until asked for.
+// CDP input simulation — an inline switch (no sub-page). The "?" reveals the
+// explainer on hover (focus too, for keyboard users): what enabling it means —
+// the yellow debugger bar + DevTools conflict. Hover-only, so the explainer
+// costs no room and no click.
 function CdpRow() {
   const t = useT();
   const [enabled, setEnabled] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
-  const helpRef = useRef<HTMLButtonElement>(null);
-  const popRef = useRef<HTMLDivElement>(null);
+  const helpRef = useRef<HTMLSpanElement>(null);
   const rect = useAnchorRect(helpRef, helpOpen);
 
   useEffect(() => {
     void isCdpInputEnabled().then((v) => setEnabled(v === true));
   }, []);
-
-  useEffect(() => {
-    if (!helpOpen) return;
-    const onDoc = (e: MouseEvent) => {
-      const target = e.target as Node;
-      // Popover is portaled out of the row — check the trigger and panel both.
-      if (!helpRef.current?.contains(target) && !popRef.current?.contains(target)) setHelpOpen(false);
-    };
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, [helpOpen]);
 
   return (
     <ControlRow
@@ -134,23 +123,28 @@ function CdpRow() {
       label={t("settings.cdpInput.title")}
       help={
         <>
-          <button
+          <span
             ref={helpRef}
-            type="button"
             data-testid="cdp-help"
+            tabIndex={0}
+            role="button"
             aria-label={t("settings.cdpInput.title")}
             aria-expanded={helpOpen}
-            onClick={() => setHelpOpen((v) => !v)}
+            onMouseEnter={() => setHelpOpen(true)}
+            onMouseLeave={() => setHelpOpen(false)}
+            onFocus={() => setHelpOpen(true)}
+            onBlur={() => setHelpOpen(false)}
             className="flex h-4 w-4 items-center justify-center text-fg-3 hover:text-fg-1"
           >
             <HelpCircle size={14} strokeWidth={1.75} />
-          </button>
+          </span>
           <Popover
             open={helpOpen && !!rect}
-            popoverRef={popRef}
-            role="dialog"
+            role="tooltip"
             style={rect ? { ...helpCoords(rect), top: rect.bottom + 6 } : undefined}
-            className="fixed z-[100] flex flex-col gap-2 rounded-card border border-line bg-surface p-3 shadow-pop"
+            // pointer-events-none: the popover sits under the cursor's path out
+            // of the trigger — letting it swallow hover would flicker it.
+            className="pointer-events-none fixed z-[100] flex flex-col gap-2 rounded-card border border-line bg-surface p-3 shadow-pop"
           >
             <p className="text-[12px] leading-[18px] font-normal text-fg-2">
               {t("settings.cdpInput.description")}

@@ -65,11 +65,20 @@ describe("SettingsRoot", () => {
     await waitFor(() => expect(setCdpInputEnabled).toHaveBeenCalledWith(true));
   });
 
-  it("CDP '?' toggles an explainer popover", async () => {
+  it("CDP '?' reveals the explainer on hover and hides it on leave", async () => {
     render(<SettingsRoot {...make()} />);
-    expect(screen.queryByRole("dialog")).toBeNull();
-    fireEvent.click(screen.getByTestId("cdp-help"));
-    await waitFor(() => expect(screen.getByRole("dialog")).toBeTruthy());
+    const help = screen.getByTestId("cdp-help");
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    fireEvent.mouseEnter(help);
+    await waitFor(() => expect(screen.getByRole("tooltip")).toBeTruthy());
+    fireEvent.mouseLeave(help);
+    await waitFor(() => expect(screen.queryByRole("tooltip")).toBeNull());
+  });
+
+  it("CDP '?' also reveals the explainer on keyboard focus", async () => {
+    render(<SettingsRoot {...make()} />);
+    fireEvent.focus(screen.getByTestId("cdp-help"));
+    await waitFor(() => expect(screen.getByRole("tooltip")).toBeTruthy());
   });
 });
 
