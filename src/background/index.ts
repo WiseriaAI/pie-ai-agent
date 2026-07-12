@@ -133,6 +133,9 @@ import { installLogCapture } from "@/lib/log-buffer";
 import {
   disconnectLocalBridge,
   isBridgeReady,
+  bridgeDaemonVersion,
+  bridgeNeedsUpgrade,
+  bridgeProtocolMismatch,
   requestListAgents,
   bridgeHasSkillFs,
   requestListGrants,
@@ -691,7 +694,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "local-bridge:status") {
     chrome.permissions
       .contains({ permissions: ["nativeMessaging"] })
-      .then((hasPermission) => sendResponse({ hasPermission, ready: isBridgeReady() }))
+      .then((hasPermission) =>
+        sendResponse({
+          hasPermission,
+          ready: isBridgeReady(),
+          daemonVersion: bridgeDaemonVersion(),
+          needsUpgrade: bridgeNeedsUpgrade(),
+          protocolMismatch: bridgeProtocolMismatch(),
+        }),
+      )
       .catch(() => sendResponse({ hasPermission: false, ready: false }));
     return true; // async response
   }

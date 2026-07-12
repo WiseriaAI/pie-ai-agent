@@ -1,12 +1,16 @@
 import { useState, useEffect, useCallback } from "react";
 import Chat from "@/sidepanel/components/Chat";
-import Settings from "@/sidepanel/components/Settings";
 import SessionDrawer from "@/sidepanel/components/SessionDrawer";
-import TopBarListButton from "@/sidepanel/components/TopBarListButton";
-import TopBarNewSessionButton from "@/sidepanel/components/TopBarNewSessionButton";
-import TopBarSettingsButton from "@/sidepanel/components/TopBarSettingsButton";
-import TopBarSchedulesButton from "@/sidepanel/components/TopBarSchedulesButton";
-import TopBarThemeButton, { type ThemeMode } from "@/sidepanel/components/TopBarThemeButton";
+import SkillsList from "@/sidepanel/components/SkillsList";
+import SearchProviderSection from "@/sidepanel/components/SearchProviderSection";
+import SettingsRoot from "@/sidepanel/components/settings/SettingsRoot";
+import ModelsPage from "@/sidepanel/components/settings/pages/ModelsPage";
+import BridgePage from "@/sidepanel/components/settings/pages/BridgePage";
+import FeedbackPage from "@/sidepanel/components/settings/pages/FeedbackPage";
+import AboutPage from "@/sidepanel/components/settings/pages/AboutPage";
+import { UiLanguagePage, AssistantLanguagePage } from "@/sidepanel/components/settings/pages/LanguagePage";
+import TopBar, { type AppView, type SettingsPage } from "@/sidepanel/components/TopBar";
+import type { ThemeMode } from "@/sidepanel/theme";
 import SchedulesPanel from "@/sidepanel/components/Schedules/SchedulesPanel";
 import { getInstance } from "@/lib/instances";
 import { resolveSelection } from "@/lib/model-selection-resolver";
@@ -20,8 +24,6 @@ import { getConfig, setConfig, removeConfig } from "@/lib/idb/config-store";
 import { DEEPLINK_KEY, DEEPLINK_MANAGED_SUBSCRIBE } from "@/lib/deeplink";
 import { useStoreChange } from "@/sidepanel/hooks/useStoreChange";
 import type { SessionIndexEntry } from "@/lib/sessions/types";
-
-type View = "agent" | "settings" | "schedules";
 
 /**
  * App — root component.
@@ -37,7 +39,11 @@ type View = "agent" | "settings" | "schedules";
  * Chat unmounts (Settings sub-view swap). Plan M1-U2 root-cause #1 fix.
  */
 export default function App() {
-  const [view, setView] = useState<View>("agent");
+  const [view, setView] = useState<AppView>("agent");
+  const [settingsPage, setSettingsPage] = useState<SettingsPage>("root");
+  // Slide direction for the settings root ↔ sub-page swap: drilling in slides
+  // from the right, going back slides from the left (page-enter-* classes).
+  const [settingsNavDir, setSettingsNavDir] = useState<"fwd" | "back">("fwd");
   const [providerLabel, setProviderLabel] = useState<string | null>(null);
   const [chatPrefill, setChatPrefill] = useState<string | undefined>(undefined);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -131,10 +137,10 @@ export default function App() {
     void refreshSessionIndex();
     void refreshPendingCount();
 
-    // firstRun → open settings
+    // firstRun → open settings root
     void (async () => {
       if (await getConfig<boolean>("firstRun")) {
-        setView("settings");
+        openSettings();
         void removeConfig("firstRun");
       }
     })();
@@ -152,7 +158,7 @@ export default function App() {
     const consume = (val: unknown) => {
       if (val !== DEEPLINK_MANAGED_SUBSCRIBE) return;
       void chrome.storage.session.remove(DEEPLINK_KEY);
-      setView("settings");
+      openSettings("models");
       setSubscribeNonce((n) => n + 1);
     };
     void chrome.storage.session
@@ -304,6 +310,24 @@ export default function App() {
     setDrawerOpen(false);
   }, [session]);
 
+  // ── Settings navigation (two-layer stack) ─────────────────────────────────
+  // openSettings enters the settings view at a given page (default root) and
+  // closes the drawer. goBack pops one level: settings sub-page → root; root /
+  // schedules / skills → chat.
+  const openSettings = useCallback((page: SettingsPage = "root") => {
+    setSettingsNavDir("fwd");
+    setSettingsPage(page);
+    setView("settings");
+    setDrawerOpen(false);
+  }, []);
+
+  const goBack = useCallback(() => {
+    if (view === "settings" && settingsPage !== "root") {
+      setSettingsNavDir("back");
+      setSettingsPage("root");
+    } else setView("agent");
+  }, [view, settingsPage]);
+
   // ── Keyboard shortcuts (panel-focused) ─────────────────────────────────────
   // Cmd/Ctrl+K → new session, Cmd/Ctrl+D → toggle the session drawer, and Esc →
   // return to chat from Settings/Schedules when idle (the drawer + Composer
@@ -323,12 +347,12 @@ export default function App() {
         return;
       }
       if (e.key === "Escape" && !e.defaultPrevented && !drawerOpen && view !== "agent") {
-        setView("agent");
+        goBack();
       }
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [handleNewSession, drawerOpen, view]);
+  }, [handleNewSession, drawerOpen, view, goBack]);
 
   // ── Session title for top bar ─────────────────────────────────────────────
   const activeSessionEntry = sessions.find((s) => s.id === session.sessionId);
@@ -339,67 +363,22 @@ export default function App() {
       className="bg-canvas text-fg-1 dot-grid flex h-screen flex-col"
       style={{ position: "relative", overflow: "hidden" }}
     >
-      {/* ── Top bar ──────────────────────────────────────────────────────── */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          padding: "8px 10px",
-          borderBottom: "1px solid var(--c-line)",
-          flexShrink: 0,
-          background: "var(--c-canvas)",
-          zIndex: 10,
-        }}
-      >
-        {/* ≡ drawer toggle with pending dot */}
-        <TopBarListButton
-          pendingCount={pendingCount}
-          isOpen={drawerOpen}
-          onClick={() => setDrawerOpen((v) => !v)}
-        />
-
-        {/* + new session */}
-        <TopBarNewSessionButton onClick={() => void handleNewSession()} />
-
-        {/* Session title — pure text, not a button */}
-        <span
-          style={{
-            fontFamily: "Inter, sans-serif",
-            fontSize: 13,
-            fontWeight: 500,
-            color: "var(--c-fg-1)",
-            flex: 1,
-            minWidth: 0,
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            userSelect: "none",
-          }}
-          title={sessionTitle}
-        >
-          {sessionTitle}
-        </span>
-
-        {/* Recording v1: REC button moved to Composer (within input field).
-            See Chat.tsx <Composer onStartRecording={...} /> + RecordingMode
-            footer Recording bar (Cancel/Finish). */}
-
-        {/* Theme toggle (light / dark / system cycle) */}
-        <TopBarThemeButton mode={themeMode} onModeChange={setThemeMode} />
-
-        {/* Schedules */}
-        <TopBarSchedulesButton
-          isActive={view === "schedules"}
-          onClick={() => setView(view === "schedules" ? "agent" : "schedules")}
-        />
-
-        {/* Settings */}
-        <TopBarSettingsButton
-          isActive={view === "settings"}
-          onClick={() => setView(view === "settings" ? "agent" : "settings")}
-        />
-      </div>
+      {/* ── Contextual single top bar (six states + pin sub-row) ──────────── */}
+      <TopBar
+        view={view}
+        settingsPage={settingsPage}
+        sessionTitle={sessionTitle}
+        pendingCount={pendingCount}
+        onToggleDrawer={() => setDrawerOpen((v) => !v)}
+        onNewSession={() => void handleNewSession()}
+        onNavigate={(v) => setView(view === v ? "agent" : v)}
+        onBack={goBack}
+        pinnedTabs={session.pinnedTabs}
+        pinMode={session.pinMode ?? null}
+        streaming={session.streaming}
+        onTogglePinTab={(tabId, origin) => void session.togglePinTab(tabId, origin)}
+        onClearUserPin={() => void session.clearUserPin()}
+      />
 
       {/* ── Main content area ─────────────────────────────────────────────── */}
       {/* key={view} forces remount on switch so .view-enter keyframe replays.
@@ -420,7 +399,7 @@ export default function App() {
         ) : view === "agent" ? (
           <Chat
             providerLabel={providerLabel}
-            onOpenSettings={() => setView("settings")}
+            onOpenSettings={() => openSettings()}
             prefillInput={chatPrefill}
             onPrefillConsumed={() => setChatPrefill(undefined)}
             session={session}
@@ -437,13 +416,41 @@ export default function App() {
             onOpenSession={(id) => void handleOpenSessionFromSchedule(id)}
             onCreateViaChat={(template) => void handleCreateScheduleViaChat(template)}
           />
-        ) : (
-          <Settings
-            onBack={() => setView("agent")}
-            onRunSkill={(id, name) => void handleRunSkill(id, name)}
-            openSubscribeNonce={subscribeNonce}
-          />
-        )}
+        ) : view === "skills" ? (
+          <div className="flex-1 overflow-y-auto px-4 py-6">
+            <SkillsList onRunSkill={(id, name) => void handleRunSkill(id, name)} />
+          </div>
+        ) : view === "settings" ? (
+          <div
+            key={settingsPage}
+            className={`${settingsNavDir === "back" ? "page-enter-back" : "page-enter-fwd"} flex-1 overflow-y-auto px-4 py-6`}
+          >
+            {settingsPage === "root" ? (
+              <SettingsRoot
+                themeMode={themeMode}
+                onThemeModeChange={setThemeMode}
+                onOpenPage={(p) => {
+                  setSettingsNavDir("fwd");
+                  setSettingsPage(p);
+                }}
+              />
+            ) : settingsPage === "models" ? (
+              <ModelsPage openSubscribeNonce={subscribeNonce} />
+            ) : settingsPage === "bridge" ? (
+              <BridgePage />
+            ) : settingsPage === "search" ? (
+              <SearchProviderSection />
+            ) : settingsPage === "uiLanguage" ? (
+              <UiLanguagePage />
+            ) : settingsPage === "assistantLanguage" ? (
+              <AssistantLanguagePage />
+            ) : settingsPage === "about" ? (
+              <AboutPage />
+            ) : (
+              <FeedbackPage />
+            )}
+          </div>
+        ) : null}
       </div>
 
       {/* ── Session drawer (overlay) ──────────────────────────────────────── */}
@@ -454,6 +461,7 @@ export default function App() {
         activeSessionId={session.sessionId}
         onSelectSession={handleSelectSession}
         onResumeSession={handleResumeSession}
+        onOpenSettings={() => openSettings()}
       />
     </div>
   );

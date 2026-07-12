@@ -1,53 +1,59 @@
 import { useT } from "@/lib/i18n";
+import {
+  HitlCardShell,
+  HitlPrimaryButton,
+  HitlSecondaryButton,
+  HitlDetailBlock,
+  HitlDetailGroup,
+} from "./hitl/HitlCardShell";
 
 interface Props {
   payload: { prompt: string; cwd: string };
   onDecision: (ok: boolean) => void;
 }
 
+const TerminalIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <rect x="3" y="4" width="18" height="16" rx="2" />
+    <path d="m7 9 3 3-3 3" />
+    <path d="M13 15h4" />
+  </svg>
+);
+
 /**
- * Authorization gate shown before the SW spawns a local `claude -p` process
- * over the local-bridge unix socket. Prompt + cwd are rendered verbatim (not
- * paraphrased) so the user sees exactly what will run and where — mirrors
- * CdpOnboardingCard / LocalFileRequestCard's warning styling.
+ * run_local_agent 授权卡（#270 迁 HitlCardShell，warning 档）。prompt + cwd
+ * 原文展示（不经转述）；与 handoff 卡的语义区分：结果会回到本对话。
  */
 export function RunLocalAgentCard({ payload, onDecision }: Props) {
   const t = useT();
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-warning-line bg-warning-tint px-3 py-2.5 text-[12px] leading-[18px] text-warning">
-      <div className="text-[13px] font-medium text-warning">
-        {t("runLocalAgent.title")}
-      </div>
-      {/* 语义副文案：与 handoff 卡的核心区分——这个的结果会回到对话 */}
-      <div className="text-[12px] leading-relaxed text-warning/70">{t("runLocalAgent.semanticsNote")}</div>
-      <div>
-        <div className="text-warning/70">{t("runLocalAgent.cwdLabel")}</div>
-        <code className="mt-1 block break-all rounded border border-warning-line/50 bg-black/5 px-2 py-1 text-warning">
-          {payload.cwd}
-        </code>
-      </div>
-      <div>
-        <div className="text-warning/70">{t("runLocalAgent.taskLabel")}</div>
-        <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded border border-warning-line/50 bg-black/5 px-2 py-1 text-warning">
-          {payload.prompt}
-        </pre>
-      </div>
-      <div className="flex gap-2">
-        <button
-          type="button"
-          onClick={() => onDecision(true)}
-          className="rounded border border-warning-line bg-warning-tint px-2.5 py-1 text-[11px] font-medium text-warning hover:bg-warning-line/30"
-        >
-          {t("runLocalAgent.allow")}
-        </button>
-        <button
-          type="button"
-          onClick={() => onDecision(false)}
-          className="rounded border border-warning-line/50 bg-transparent px-2.5 py-1 text-[11px] text-warning/70 hover:text-warning"
-        >
-          {t("runLocalAgent.deny")}
-        </button>
-      </div>
-    </div>
+    <HitlCardShell
+      register="local"
+      icon={<TerminalIcon />}
+      capsLabel={t("hitl.caps.runLocalAgent")}
+      title={t("runLocalAgent.title")}
+      description={t("runLocalAgent.semanticsNote")}
+      actions={
+        <>
+          <HitlSecondaryButton onClick={() => onDecision(false)}>
+            {t("runLocalAgent.deny")}
+          </HitlSecondaryButton>
+          <HitlPrimaryButton register="local" onClick={() => onDecision(true)}>
+            {t("runLocalAgent.allow")}
+          </HitlPrimaryButton>
+        </>
+      }
+    >
+      <HitlDetailBlock>
+        <HitlDetailGroup label={t("runLocalAgent.cwdLabel")}>
+          <span className="font-mono text-[12px] leading-[18px] text-fg-1 break-all">{payload.cwd}</span>
+        </HitlDetailGroup>
+        <HitlDetailGroup label={t("runLocalAgent.taskLabel")}>
+          <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words font-sans text-[12px] leading-[18px] text-fg-1">
+            {payload.prompt}
+          </pre>
+        </HitlDetailGroup>
+      </HitlDetailBlock>
+    </HitlCardShell>
   );
 }

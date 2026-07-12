@@ -21,7 +21,9 @@ export interface HelloRequest {
 export interface HelloResponse {
   id: string;
   ok: true;
-  result: { protocolVersion: number; capabilities: string[] };
+  // daemonVersion 加法演进（PROTOCOL_VERSION 不动，spec §6）：旧 daemon 不给此
+  // 字段 → 扩展视为版本过旧，走软升级提示。
+  result: { protocolVersion: number; capabilities: string[]; daemonVersion?: string };
 }
 
 // ── run_local_agent ──────────────────────────────────────────────────
@@ -41,7 +43,7 @@ export interface RunLocalAgentResult {
 // ── list_agents ──────────────────────────────────────────────────────
 /** daemon 静态候选表全量（含未安装项，installed 标注检测结果——settings 页渲染"未安装"态需要）。 */
 export interface ListAgentsResult {
-  agents: { id: string; label: string; installed: boolean }[];
+  agents: { id: string; label: string; installed: boolean; kind?: "app" | "terminal" }[];
 }
 
 // ── handoff_to_agent ─────────────────────────────────────────────────

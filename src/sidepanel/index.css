@@ -265,6 +265,18 @@ button {
   to   { opacity: 0; transform: scale(0.96); }
 }
 .view-enter { animation: view-enter 200ms cubic-bezier(0.32, 0.72, 0, 1) both; }
+/* Settings root ↔ sub-page directional slide (drill-in from the right, back
+   from the left). Enter-only — the outgoing page just unmounts (key swap). */
+@keyframes page-enter-fwd {
+  from { opacity: 0; transform: translateX(24px); }
+  to   { opacity: 1; transform: translateX(0);    }
+}
+@keyframes page-enter-back {
+  from { opacity: 0; transform: translateX(-24px); }
+  to   { opacity: 1; transform: translateX(0);     }
+}
+.page-enter-fwd  { animation: page-enter-fwd  200ms cubic-bezier(0.32, 0.72, 0, 1) both; }
+.page-enter-back { animation: page-enter-back 200ms cubic-bezier(0.32, 0.72, 0, 1) both; }
 .bubble-in  { animation: bubble-in  200ms cubic-bezier(0.32, 0.72, 0, 1) both; }
 .scale-in   { animation: scale-in   240ms cubic-bezier(0.32, 0.72, 0, 1) both; }
 .scale-out  { animation: scale-out  140ms cubic-bezier(0.32, 0.72, 0, 1) both; }

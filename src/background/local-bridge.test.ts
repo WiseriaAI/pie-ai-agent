@@ -552,6 +552,80 @@ describe("local-bridge", () => {
     await expect(p).resolves.toEqual({ entries });
   });
 
+  describe("compareDaemonVersions", () => {
+    it.each([
+      ["0.1.0", "0.1.0", 0],
+      ["0.1.0", "0.2.0", -1],
+      ["1.0.0", "0.9.9", 1],
+      ["0.1", "0.1.0", 0],
+      ["0.10.0", "0.9.0", 1],
+    ])("%s vs %s -> %i", async (a, b, want) => {
+      const { compareDaemonVersions } = await import("./local-bridge");
+      expect(compareDaemonVersions(a as string, b as string)).toBe(want);
+    });
+  });
+
+  describe("daemon version state", () => {
+    async function handshake(daemonVersion?: string, protocolVersion = PROTOCOL_VERSION) {
+      const mod = await import("./local-bridge");
+      mod.initLocalBridge();
+      const helloReq = fakePort.postMessage.mock.calls[0][0] as { id: string };
+      fakePort._emit({
+        id: helloReq.id, ok: true,
+        result: {
+          protocolVersion,
+          capabilities: ["run_local_agent"],
+          ...(daemonVersion !== undefined ? { daemonVersion } : {}),
+        },
+      });
+      await Promise.resolve();
+      return mod;
+    }
+
+    it("current daemon version tracked, no upgrade needed", async () => {
+      const mod = await handshake("0.1.0");
+      expect(mod.bridgeDaemonVersion()).toBe("0.1.0");
+      expect(mod.bridgeNeedsUpgrade()).toBe(false);
+      expect(mod.bridgeProtocolMismatch()).toBe(false);
+    });
+
+    it("daemonVersion below MIN → needsUpgrade", async () => {
+      const mod = await handshake("0.0.9");
+      expect(mod.bridgeDaemonVersion()).toBe("0.0.9");
+      expect(mod.bridgeNeedsUpgrade()).toBe(true);
+    });
+
+    it("old daemon without daemonVersion → treated as too old (needsUpgrade)", async () => {
+      const mod = await handshake(undefined);
+      expect(mod.bridgeDaemonVersion()).toBe(null);
+      expect(mod.bridgeNeedsUpgrade()).toBe(true);
+      expect(mod.bridgeProtocolMismatch()).toBe(false);
+    });
+
+    it("not-ready bridge never reports needsUpgrade", async () => {
+      const { initLocalBridge, bridgeNeedsUpgrade } = await import("./local-bridge");
+      initLocalBridge();
+      // hello not answered yet → not ready
+      expect(bridgeNeedsUpgrade()).toBe(false);
+    });
+
+    it("protocolVersion diff > 1 → protocolMismatch, stays not ready", async () => {
+      const mod = await handshake("0.1.0", PROTOCOL_VERSION + 5);
+      expect(mod.bridgeProtocolMismatch()).toBe(true);
+      expect(mod.isBridgeReady()).toBe(false);
+      // 不 ready 时 needsUpgrade 为 false（升级块用 protocolMismatch 走硬文案）
+      expect(mod.bridgeNeedsUpgrade()).toBe(false);
+    });
+
+    it("disconnect clears daemonVersion but keeps protocolMismatch until next handshake", async () => {
+      const mod = await handshake("0.1.0", PROTOCOL_VERSION + 5);
+      expect(mod.bridgeProtocolMismatch()).toBe(true);
+      fakePort._disconnect();
+      expect(mod.bridgeDaemonVersion()).toBe(null);
+      expect(mod.bridgeProtocolMismatch()).toBe(true); // 保留到下次握手覆盖
+    });
+  });
+
   describe("auto-reconnect", () => {
     beforeEach(() => {
       vi.useFakeTimers();

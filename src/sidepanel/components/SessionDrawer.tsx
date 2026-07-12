@@ -34,9 +34,11 @@ import {
   softDeleteSession,
 } from "@/lib/sessions/lifecycle";
 import { useStoreChange } from "@/sidepanel/hooks/useStoreChange";
+import { Settings as SettingsIcon } from "lucide-react";
 import SessionRow from "./SessionRow";
 import { useAnimatedList } from "./ui/AnimatedList";
 import { Drawer } from "./ui/Drawer";
+import { IconButton } from "./ui/IconButton";
 
 interface SessionDrawerProps {
   isOpen: boolean;
@@ -45,6 +47,7 @@ interface SessionDrawerProps {
   activeSessionId: string | null;
   onSelectSession: (id: string) => void;
   onResumeSession: (id: string) => void;
+  onOpenSettings: () => void;
 }
 
 // ── StorageIndicator ──────────────────────────────────────────────────────────
@@ -221,6 +224,7 @@ export default function SessionDrawer({
   activeSessionId,
   onSelectSession,
   onResumeSession,
+  onOpenSettings,
 }: SessionDrawerProps) {
   const t = useT();
   const sessionListRef = useAnimatedList<HTMLUListElement>();
@@ -300,19 +304,14 @@ export default function SessionDrawer({
             {t("sessions.header")}
           </span>
 
-          {/* Session count */}
-          <span
-            aria-label={t("sessions.sessionCount", { count: activeSessions.length })}
-            style={{
-              fontFamily: "'JetBrains Mono', monospace",
-              fontSize: 10,
-              fontWeight: 500,
-              color: "var(--c-fg-3)",
-              letterSpacing: "0.16em",
-            }}
-          >
-            {activeSessions.length}
-          </span>
+          {/* Settings entry — top-right (count lives in the ACTIVE divider) */}
+          <IconButton
+            data-testid="drawer-settings"
+            size="sm"
+            aria-label={t("settings.title")}
+            icon={<SettingsIcon size={17} strokeWidth={1.75} />}
+            onClick={onOpenSettings}
+          />
         </div>
 
         {/* ACTIVE section divider */}
