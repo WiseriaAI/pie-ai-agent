@@ -211,15 +211,19 @@ describe("SessionDrawer — storage indicator", () => {
 });
 
 describe("SessionDrawer — header", () => {
-  it("shows active session count in header", () => {
+  it("header settings button (top-right) fires onOpenSettings", () => {
+    render(<SessionDrawer {...BASE_PROPS} sessions={[makeEntry("s1", "active", "S1")]} />);
+    fireEvent.click(screen.getByTestId("drawer-settings"));
+    expect(BASE_PROPS.onOpenSettings).toHaveBeenCalled();
+  });
+
+  it("shows active session count in the ACTIVE divider", () => {
     const sessions = [
       makeEntry("s1", "active", "S1"),
       makeEntry("s2", "paused", "S2"),
     ];
     render(<SessionDrawer {...BASE_PROPS} sessions={sessions} />);
-    // Count "2" is displayed — find by aria-label on the count span
-    const countEl = document.querySelector("[aria-label='2 sessions']");
-    expect(countEl).toBeTruthy();
+    expect(screen.getByText(/·\s*2/)).toBeTruthy();
   });
 });
 

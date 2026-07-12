@@ -13,8 +13,22 @@ export type SettingsPage =
   | "models"
   | "bridge"
   | "search"
-  | "experimental"
+  | "cdp"
+  | "uiLanguage"
+  | "assistantLanguage"
   | "feedback";
+
+// Sub-page → top-bar title key. cdp / language pages reuse their feature keys
+// instead of minting settings.nav.* duplicates.
+const SETTINGS_PAGE_TITLE_KEY = {
+  models: "settings.nav.models",
+  bridge: "settings.nav.bridge",
+  search: "settings.nav.search",
+  cdp: "settings.cdpInput.title",
+  uiLanguage: "settings.language.uiLabel",
+  assistantLanguage: "settings.language.assistantLabel",
+  feedback: "settings.nav.feedback",
+} as const;
 
 export interface TopBarProps {
   view: AppView;
@@ -69,7 +83,7 @@ export default function TopBar({
         ? t("topbar.skills")
         : settingsPage === "root"
           ? t("settings.title")
-          : t(`settings.nav.${settingsPage}`);
+          : t(SETTINGS_PAGE_TITLE_KEY[settingsPage]);
 
   const showFnButtons = view !== "settings";
 

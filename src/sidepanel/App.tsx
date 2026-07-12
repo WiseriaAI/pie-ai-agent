@@ -6,8 +6,9 @@ import SearchProviderSection from "@/sidepanel/components/SearchProviderSection"
 import SettingsRoot from "@/sidepanel/components/settings/SettingsRoot";
 import ModelsPage from "@/sidepanel/components/settings/pages/ModelsPage";
 import BridgePage from "@/sidepanel/components/settings/pages/BridgePage";
-import ExperimentalPage from "@/sidepanel/components/settings/pages/ExperimentalPage";
+import CdpPage from "@/sidepanel/components/settings/pages/CdpPage";
 import FeedbackPage from "@/sidepanel/components/settings/pages/FeedbackPage";
+import { UiLanguagePage, AssistantLanguagePage } from "@/sidepanel/components/settings/pages/LanguagePage";
 import TopBar, { type AppView, type SettingsPage } from "@/sidepanel/components/TopBar";
 import type { ThemeMode } from "@/sidepanel/theme";
 import SchedulesPanel from "@/sidepanel/components/Schedules/SchedulesPanel";
@@ -439,8 +440,12 @@ export default function App() {
               <BridgePage />
             ) : settingsPage === "search" ? (
               <SearchProviderSection />
-            ) : settingsPage === "experimental" ? (
-              <ExperimentalPage />
+            ) : settingsPage === "cdp" ? (
+              <CdpPage />
+            ) : settingsPage === "uiLanguage" ? (
+              <UiLanguagePage />
+            ) : settingsPage === "assistantLanguage" ? (
+              <AssistantLanguagePage />
             ) : (
               <FeedbackPage />
             )}

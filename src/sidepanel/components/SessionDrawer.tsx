@@ -34,10 +34,11 @@ import {
   softDeleteSession,
 } from "@/lib/sessions/lifecycle";
 import { useStoreChange } from "@/sidepanel/hooks/useStoreChange";
-import { Settings as SettingsIcon, ChevronRight } from "lucide-react";
+import { Settings as SettingsIcon } from "lucide-react";
 import SessionRow from "./SessionRow";
 import { useAnimatedList } from "./ui/AnimatedList";
 import { Drawer } from "./ui/Drawer";
+import { IconButton } from "./ui/IconButton";
 
 interface SessionDrawerProps {
   isOpen: boolean;
@@ -303,19 +304,14 @@ export default function SessionDrawer({
             {t("sessions.header")}
           </span>
 
-          {/* Session count */}
-          <span
-            aria-label={t("sessions.sessionCount", { count: activeSessions.length })}
-            style={{
-              fontFamily: "'JetBrains Mono', monospace",
-              fontSize: 10,
-              fontWeight: 500,
-              color: "var(--c-fg-3)",
-              letterSpacing: "0.16em",
-            }}
-          >
-            {activeSessions.length}
-          </span>
+          {/* Settings entry — top-right (count lives in the ACTIVE divider) */}
+          <IconButton
+            data-testid="drawer-settings"
+            size="sm"
+            aria-label={t("settings.title")}
+            icon={<SettingsIcon size={17} strokeWidth={1.75} />}
+            onClick={onOpenSettings}
+          />
         </div>
 
         {/* ACTIVE section divider */}
@@ -442,17 +438,6 @@ export default function SessionDrawer({
             </ul>
           </div>
         )}
-
-        {/* Settings entry — footer row above the storage indicator */}
-        <button
-          type="button"
-          onClick={onOpenSettings}
-          className="flex w-full items-center gap-2.5 border-t border-line px-3.5 py-3 text-left hover:bg-field"
-        >
-          <SettingsIcon size={17} strokeWidth={1.75} className="shrink-0 text-fg-2" />
-          <span className="flex-1 text-[13px] font-medium text-fg-1">{t("settings.title")}</span>
-          <ChevronRight size={14} strokeWidth={1.75} className="shrink-0 text-fg-3" />
-        </button>
 
         {/* Storage indicator */}
         <StorageIndicator />

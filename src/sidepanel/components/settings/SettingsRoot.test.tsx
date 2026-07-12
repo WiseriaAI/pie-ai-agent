@@ -14,13 +14,6 @@ vi.mock("@/lib/search-provider", () => ({
   getSearchProviderStatus: vi.fn().mockResolvedValue({ configured: true }),
 }));
 
-vi.mock("@/sidepanel/components/LanguageSelect", () => ({
-  default: () => <div data-testid="ui-language-select" />,
-}));
-vi.mock("@/sidepanel/components/AssistantLanguageSelect", () => ({
-  default: () => <div data-testid="assistant-language-select" />,
-}));
-
 beforeEach(() => {
   (chrome.runtime as unknown as { getManifest: () => { version: string } }).getManifest = () => ({
     version: "9.9.9",
@@ -39,14 +32,23 @@ function make(over: Partial<React.ComponentProps<typeof SettingsRoot>> = {}) {
 }
 
 describe("SettingsRoot", () => {
-  it("renders five drill-down rows; row-models triggers onOpenPage('models')", () => {
+  it("renders seven drill-down rows; row-models triggers onOpenPage('models')", () => {
     const p = make();
     render(<SettingsRoot {...p} />);
-    for (const id of ["models", "bridge", "search", "experimental", "feedback"]) {
+    for (const id of ["models", "bridge", "search", "cdp", "uiLanguage", "assistantLanguage", "feedback"]) {
       expect(screen.getByTestId(`settings-row-${id}`)).toBeTruthy();
     }
     fireEvent.click(screen.getByTestId("settings-row-models"));
     expect(p.onOpenPage).toHaveBeenCalledWith("models");
+  });
+
+  it("language rows drill into their sub-pages", () => {
+    const p = make();
+    render(<SettingsRoot {...p} />);
+    fireEvent.click(screen.getByTestId("settings-row-uiLanguage"));
+    expect(p.onOpenPage).toHaveBeenCalledWith("uiLanguage");
+    fireEvent.click(screen.getByTestId("settings-row-assistantLanguage"));
+    expect(p.onOpenPage).toHaveBeenCalledWith("assistantLanguage");
   });
 
   it("models row shows a config-count badge", async () => {
@@ -67,12 +69,6 @@ describe("SettingsRoot", () => {
     expect(screen.getByTestId("theme-system")).toBeTruthy();
     fireEvent.click(screen.getByTestId("theme-light"));
     expect(p.onThemeModeChange).toHaveBeenCalledWith("light");
-  });
-
-  it("renders language selectors", () => {
-    render(<SettingsRoot {...make()} />);
-    expect(screen.getByTestId("ui-language-select")).toBeTruthy();
-    expect(screen.getByTestId("assistant-language-select")).toBeTruthy();
   });
 
   it("About footer shows the manifest version", () => {

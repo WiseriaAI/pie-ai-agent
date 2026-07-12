@@ -6,15 +6,13 @@ import {
   Contrast,
   Globe,
   MessageSquare,
-  FlaskConical,
+  MousePointerClick,
   MessageCircle,
   ChevronRight,
 } from "lucide-react";
 import { useT } from "@/lib/i18n";
 import { listInstances } from "@/lib/instances";
 import { getSearchProviderStatus, ACTIVE_SEARCH_PROVIDER } from "@/lib/search-provider";
-import LanguageSelect from "@/sidepanel/components/LanguageSelect";
-import AssistantLanguageSelect from "@/sidepanel/components/AssistantLanguageSelect";
 import type { ThemeMode } from "@/sidepanel/theme";
 import type { SettingsPage } from "@/sidepanel/components/TopBar";
 import { queryBridgeStatus, type BridgeStatus } from "./bridge-status";
@@ -191,34 +189,43 @@ export default function SettingsRoot({
 
   return (
     <div className="flex flex-col gap-5">
-      {/* Group 1 — core subsystems */}
-      <Group>
-        <NavRow
-          id="models"
-          icon={<Box {...ROW_ICON} />}
-          label={t("settings.nav.models")}
-          badge={
-            configCount != null
-              ? t("settings.nav.configCount", { count: String(configCount) })
-              : undefined
-          }
-          onClick={() => onOpenPage("models")}
-        />
-        <NavRow
-          id="bridge"
-          icon={<Plug {...ROW_ICON} />}
-          label={t("settings.nav.bridge")}
-          badge={bridgeBadge}
-          onClick={() => onOpenPage("bridge")}
-        />
-        <NavRow
-          id="search"
-          icon={<Search {...ROW_ICON} />}
-          label={t("settings.nav.search")}
-          badge={searchName ?? undefined}
-          onClick={() => onOpenPage("search")}
-        />
-      </Group>
+      {/* Group 1 — basics (core subsystems + CDP) */}
+      <div>
+        <GroupLabel>{t("settings.nav.basics")}</GroupLabel>
+        <Group>
+          <NavRow
+            id="models"
+            icon={<Box {...ROW_ICON} />}
+            label={t("settings.nav.models")}
+            badge={
+              configCount != null
+                ? t("settings.nav.configCount", { count: String(configCount) })
+                : undefined
+            }
+            onClick={() => onOpenPage("models")}
+          />
+          <NavRow
+            id="bridge"
+            icon={<Plug {...ROW_ICON} />}
+            label={t("settings.nav.bridge")}
+            badge={bridgeBadge}
+            onClick={() => onOpenPage("bridge")}
+          />
+          <NavRow
+            id="search"
+            icon={<Search {...ROW_ICON} />}
+            label={t("settings.nav.search")}
+            badge={searchName ?? undefined}
+            onClick={() => onOpenPage("search")}
+          />
+          <NavRow
+            id="cdp"
+            icon={<MousePointerClick {...ROW_ICON} />}
+            label={t("settings.cdpInput.title")}
+            onClick={() => onOpenPage("cdp")}
+          />
+        </Group>
+      </div>
 
       {/* Group 2 — preferences */}
       <div>
@@ -229,27 +236,23 @@ export default function SettingsRoot({
             label={t("settings.theme.label")}
             control={<ThemeSegmented themeMode={themeMode} onThemeModeChange={onThemeModeChange} />}
           />
-          <ControlRow
+          <NavRow
+            id="uiLanguage"
             icon={<Globe {...ROW_ICON} />}
             label={t("settings.language.uiLabel")}
-            control={<LanguageSelect />}
+            onClick={() => onOpenPage("uiLanguage")}
           />
-          <ControlRow
+          <NavRow
+            id="assistantLanguage"
             icon={<MessageSquare {...ROW_ICON} />}
             label={t("settings.language.assistantLabel")}
-            control={<AssistantLanguageSelect />}
+            onClick={() => onOpenPage("assistantLanguage")}
           />
         </Group>
       </div>
 
       {/* Group 3 — other */}
       <Group>
-        <NavRow
-          id="experimental"
-          icon={<FlaskConical {...ROW_ICON} />}
-          label={t("settings.nav.experimental")}
-          onClick={() => onOpenPage("experimental")}
-        />
         <NavRow
           id="feedback"
           icon={<MessageCircle {...ROW_ICON} />}
