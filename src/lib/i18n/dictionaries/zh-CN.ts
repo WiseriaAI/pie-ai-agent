@@ -40,10 +40,15 @@ export const zhCNDict = {
   errors: {
     connectBackgroundFailedRetry: "无法连接到后台服务，请重试",
   },
+  topbar: {
+    back: "返回",
+    skills: "技能",
+  },
   settings: {
     language: {
       sectionTitle: "语言",
       label: "界面语言",
+      uiLabel: "界面语言",
       assistantLabel: "助手语言",
       assistantFollowUi: "跟随界面语言",
       assistantDetectMessage: "根据用户消息检测",
@@ -72,6 +77,18 @@ export const zhCNDict = {
     title: "设置",
     forgetConfirm: "确认删除此配置？",
     tabs: { configs: "配置", skills: "技能", search: "搜索", general: "通用" },
+    nav: {
+      models: "模型配置",
+      bridge: "本地打通",
+      search: "搜索",
+      experimental: "实验性功能",
+      feedback: "反馈",
+      preferences: "偏好",
+      configCount: "{count} 个配置",
+      bridgeConnected: "已连接",
+      bridgeOff: "未连接",
+    },
+    theme: { label: "主题", light: "亮", dark: "暗", system: "自动" },
     about: {
       tagline: "BYOK · 本地优先 · 开源",
       website: "官方网站",

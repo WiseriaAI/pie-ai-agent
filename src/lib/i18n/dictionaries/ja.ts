@@ -40,10 +40,15 @@ export const jaDict = {
   errors: {
     connectBackgroundFailedRetry: "バックグラウンドサービスに接続できません。もう一度お試しください。",
   },
+  topbar: {
+    back: "戻る",
+    skills: "スキル",
+  },
   settings: {
     language: {
       sectionTitle: "言語",
       label: "UI 言語",
+      uiLabel: "表示言語",
       assistantLabel: "アシスタントの言語",
       assistantFollowUi: "UI 言語に合わせる",
       assistantDetectMessage: "ユーザーメッセージから検出",
@@ -73,6 +78,18 @@ export const jaDict = {
     title: "設定",
     forgetConfirm: "この設定を削除しますか？",
     tabs: { configs: "設定", skills: "スキル", search: "検索", general: "一般" },
+    nav: {
+      models: "モデル設定",
+      bridge: "ローカル連携",
+      search: "検索",
+      experimental: "実験的機能",
+      feedback: "フィードバック",
+      preferences: "環境設定",
+      configCount: "設定 {count} 件",
+      bridgeConnected: "接続済み",
+      bridgeOff: "未接続",
+    },
+    theme: { label: "テーマ", light: "ライト", dark: "ダーク", system: "自動" },
     about: {
       tagline: "BYOK · Local-first · Open source",
       website: "公式サイト",

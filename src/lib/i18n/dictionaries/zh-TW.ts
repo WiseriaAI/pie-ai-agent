@@ -40,10 +40,15 @@ export const zhTWDict = {
   errors: {
     connectBackgroundFailedRetry: "無法連線到背景服務，請重試",
   },
+  topbar: {
+    back: "返回",
+    skills: "技能",
+  },
   settings: {
     language: {
       sectionTitle: "語言",
       label: "介面語言",
+      uiLabel: "介面語言",
       assistantLabel: "助理語言",
       assistantFollowUi: "跟隨介面語言",
       assistantDetectMessage: "依使用者訊息偵測",
@@ -72,6 +77,18 @@ export const zhTWDict = {
     title: "設定",
     forgetConfirm: "確認刪除此設定檔？",
     tabs: { configs: "設定檔", skills: "技能", search: "搜尋", general: "一般" },
+    nav: {
+      models: "模型配置",
+      bridge: "本地打通",
+      search: "搜尋",
+      experimental: "實驗性功能",
+      feedback: "意見回饋",
+      preferences: "偏好",
+      configCount: "{count} 個配置",
+      bridgeConnected: "已連接",
+      bridgeOff: "未連接",
+    },
+    theme: { label: "主題", light: "亮", dark: "暗", system: "自動" },
     about: {
       tagline: "BYOK · 本機優先 · 開源",
       website: "官方網站",

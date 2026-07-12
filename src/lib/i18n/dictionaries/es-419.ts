@@ -40,10 +40,15 @@ export const es419Dict = {
   errors: {
     connectBackgroundFailedRetry: "No se puede contactar el servicio en segundo plano. Inténtalo de nuevo.",
   },
+  topbar: {
+    back: "Volver",
+    skills: "Habilidades",
+  },
   settings: {
     language: {
       sectionTitle: "Idioma",
       label: "Idioma de la interfaz",
+      uiLabel: "Idioma de la interfaz",
       assistantLabel: "Idioma del asistente",
       assistantFollowUi: "Seguir idioma de la interfaz",
       assistantDetectMessage: "Detectar desde el mensaje del usuario",
@@ -73,6 +78,18 @@ export const es419Dict = {
     title: "Configuración",
     forgetConfirm: "¿Olvidar esta configuración?",
     tabs: { configs: "Configuraciones", skills: "Habilidades", search: "Buscar", general: "General" },
+    nav: {
+      models: "Configuración de modelos",
+      bridge: "Puente local",
+      search: "Búsqueda",
+      experimental: "Funciones experimentales",
+      feedback: "Comentarios",
+      preferences: "Preferencias",
+      configCount: "{count} configuraciones",
+      bridgeConnected: "Conectado",
+      bridgeOff: "Sin conexión",
+    },
+    theme: { label: "Tema", light: "Claro", dark: "Oscuro", system: "Auto" },
     about: {
       tagline: "BYOK · Local-first · Open source",
       website: "Sitio web oficial",

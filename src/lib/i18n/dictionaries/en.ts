@@ -39,10 +39,15 @@ export const enDict = {
   errors: {
     connectBackgroundFailedRetry: "Unable to reach the background service. Please retry.",
   },
+  topbar: {
+    back: "Back",
+    skills: "Skills",
+  },
   settings: {
     language: {
       sectionTitle: "Language",
       label: "UI language",
+      uiLabel: "Interface language",
       assistantLabel: "Assistant language",
       assistantFollowUi: "Follow UI language",
       assistantDetectMessage: "Detect from user message",
@@ -72,6 +77,18 @@ export const enDict = {
     title: "Settings",
     forgetConfirm: "Forget this config?",
     tabs: { configs: "Configs", skills: "Skills", search: "Search", general: "General" },
+    nav: {
+      models: "Model Configs",
+      bridge: "Local Bridge",
+      search: "Search",
+      experimental: "Experimental",
+      feedback: "Feedback",
+      preferences: "Preferences",
+      configCount: "{count} configured",
+      bridgeConnected: "Connected",
+      bridgeOff: "Not connected",
+    },
+    theme: { label: "Theme", light: "Light", dark: "Dark", system: "Auto" },
     about: {
       tagline: "BYOK · Local-first · Open source",
       website: "Official website",

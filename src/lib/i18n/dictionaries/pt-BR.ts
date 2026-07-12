@@ -40,10 +40,15 @@ export const ptBRDict = {
   errors: {
     connectBackgroundFailedRetry: "Não foi possível acessar o serviço em segundo plano. Tente novamente.",
   },
+  topbar: {
+    back: "Voltar",
+    skills: "Habilidades",
+  },
   settings: {
     language: {
       sectionTitle: "Idioma",
       label: "Idioma da interface",
+      uiLabel: "Idioma da interface",
       assistantLabel: "Idioma do assistente",
       assistantFollowUi: "Seguir idioma da interface",
       assistantDetectMessage: "Detectar pela mensagem do usuário",
@@ -73,6 +78,18 @@ export const ptBRDict = {
     title: "Configurações",
     forgetConfirm: "Esquecer esta configuração?",
     tabs: { configs: "Configurações", skills: "Habilidades", search: "Buscar", general: "Geral" },
+    nav: {
+      models: "Configurações de modelo",
+      bridge: "Ponte local",
+      search: "Busca",
+      experimental: "Recursos experimentais",
+      feedback: "Feedback",
+      preferences: "Preferências",
+      configCount: "{count} configurações",
+      bridgeConnected: "Conectado",
+      bridgeOff: "Desconectado",
+    },
+    theme: { label: "Tema", light: "Claro", dark: "Escuro", system: "Auto" },
     about: {
       tagline: "BYOK · Local-first · Open source",
       website: "Site oficial",
