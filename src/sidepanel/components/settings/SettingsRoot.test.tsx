@@ -1,7 +1,8 @@
-import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, waitFor, act } from "@testing-library/react";
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import SettingsRoot, { helpCoords } from "./SettingsRoot";
 import { setCdpInputEnabled } from "@/lib/cdp-input-enabled";
+import type { BridgeStatus } from "./bridge-status";
 
 vi.mock("@/lib/cdp-input-enabled", () => ({
   isCdpInputEnabled: vi.fn().mockResolvedValue(false),
@@ -26,7 +27,14 @@ beforeEach(() => {
   });
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+  // The bridge test installs a sendMessage implementation; reset it so the
+  // callback-invoking stub doesn't leak into unrelated tests.
+  vi.mocked(chrome.runtime.sendMessage).mockReset();
+  vi.mocked(chrome.runtime.sendMessage).mockResolvedValue(undefined);
+});
 
 function make(over: Partial<React.ComponentProps<typeof SettingsRoot>> = {}) {
   return {
@@ -79,6 +87,33 @@ describe("SettingsRoot", () => {
     render(<SettingsRoot {...make()} />);
     fireEvent.focus(screen.getByTestId("cdp-help"));
     await waitFor(() => expect(screen.getByRole("tooltip")).toBeTruthy());
+  });
+
+  // Regression for #298: the root bridge badge polled once at mount and never
+  // updated, so a bridge that connected moments later stayed "Not connected".
+  it("bridge badge tracks a handshake that completes after mount", async () => {
+    vi.useFakeTimers();
+    let current: BridgeStatus = { hasPermission: true, ready: false };
+    vi.mocked(chrome.runtime.sendMessage).mockImplementation(((...args: unknown[]) => {
+      const cb = args.find((a) => typeof a === "function") as
+        | ((res: unknown) => void)
+        | undefined;
+      cb?.(current);
+      return undefined;
+    }) as typeof chrome.runtime.sendMessage);
+    render(<SettingsRoot {...make()} />);
+    expect(screen.getByTestId("settings-badge-bridge").textContent).toBe(
+      "Not connected",
+    );
+
+    current = { hasPermission: true, ready: true };
+    act(() => {
+      vi.advanceTimersByTime(1500);
+    });
+    expect(screen.getByTestId("settings-badge-bridge").textContent).toContain(
+      "Connected",
+    );
+    vi.useRealTimers();
   });
 });
 

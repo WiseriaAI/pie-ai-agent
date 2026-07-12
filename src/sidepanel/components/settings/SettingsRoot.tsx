@@ -21,7 +21,7 @@ import { Popover } from "@/sidepanel/components/ui/Popover";
 import { useAnchorRect } from "@/sidepanel/components/ui/useAnchorRect";
 import type { ThemeMode } from "@/sidepanel/theme";
 import type { SettingsPage } from "@/sidepanel/components/TopBar";
-import { queryBridgeStatus, type BridgeStatus } from "./bridge-status";
+import { useBridgeStatus } from "./bridge-status";
 
 const ROW_ICON = { size: 16, strokeWidth: 1.75 } as const;
 
@@ -222,7 +222,10 @@ export default function SettingsRoot({
 }: SettingsRootProps) {
   const t = useT();
   const [configCount, setConfigCount] = useState<number | null>(null);
-  const [bridge, setBridge] = useState<BridgeStatus | null>(null);
+  // Poll the bridge so the badge tracks connect/disconnect while the settings
+  // page stays open — a one-shot query at mount misses the handshake that
+  // completes moments later (issue #298).
+  const bridge = useBridgeStatus();
   const [searchConfigured, setSearchConfigured] = useState(false);
 
   useEffect(() => {
@@ -232,9 +235,6 @@ export default function SettingsRoot({
     });
     void getSearchProviderStatus(ACTIVE_SEARCH_PROVIDER).then((s) => {
       if (alive) setSearchConfigured(s.configured);
-    });
-    queryBridgeStatus((s) => {
-      if (alive) setBridge(s);
     });
     return () => {
       alive = false;
