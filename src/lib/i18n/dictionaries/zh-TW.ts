@@ -132,6 +132,9 @@ export const zhTWDict = {
       forgetConfirm: "清除已儲存的 Tavily key 嗎？下次搜尋前需要重新貼上。",
     },
   },
+  hitl: {
+    caps: { skillGrant: "SKILL 授權", runLocalAgent: "本地 AGENT", handoff: "交棒授權", localFile: "本機檔案", cdp: "輸入模擬" },
+  },
   cdpOnboarding: {
     title: "Pie 需要啟用瀏覽器輸入模擬（CDP）",
     body1: "現代網站很多按鈕和選單只對真實滑鼠事件回應。啟用後 Pie 會用 Chrome 的偵錯介面模擬真實滑鼠移動與點擊。",

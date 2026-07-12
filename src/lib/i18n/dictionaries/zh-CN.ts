@@ -132,6 +132,9 @@ export const zhCNDict = {
       forgetConfirm: "清除已保存的 Tavily key 吗?下次搜索前需要重新粘贴。",
     },
   },
+  hitl: {
+    caps: { skillGrant: "SKILL 授权", runLocalAgent: "本地 AGENT", handoff: "交棒授权", localFile: "本地文件", cdp: "输入模拟" },
+  },
   cdpOnboarding: {
     title: "Pie 需要启用浏览器输入模拟（CDP）",
     body1: "现代网站很多按钮和菜单只对真实鼠标事件响应。启用后 Pie 用 Chrome 的调试接口模拟真实鼠标移动和点击。",

@@ -133,6 +133,9 @@ export const jaDict = {
       forgetConfirm: "保存済み Tavily キーを削除しますか？再検索には貼り直しが必要です。",
     },
   },
+  hitl: {
+    caps: { skillGrant: "スキル承認", runLocalAgent: "ローカルエージェント", handoff: "ハンドオフ", localFile: "ローカルファイル", cdp: "入力シミュレーション" },
+  },
   cdpOnboarding: {
     title: "Pie はブラウザー入力シミュレーション (CDP) を有効にする必要があります",
     body1: "多くの現代的なサイトは実際のマウスイベントにのみ反応します。有効にすると、Pie は Chrome のデバッグプロトコルで実際のマウス移動とクリックをシミュレートします。",

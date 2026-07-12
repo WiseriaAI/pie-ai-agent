@@ -132,6 +132,15 @@ export const enDict = {
       forgetConfirm: "Forget the saved Tavily key? You'll need to re-paste it to search again.",
     },
   },
+  hitl: {
+    caps: {
+      skillGrant: "Skill authorization",
+      runLocalAgent: "Local agent",
+      handoff: "Hand-off",
+      localFile: "Local file",
+      cdp: "Input simulation",
+    },
+  },
   cdpOnboarding: {
     title: "Pie needs to enable browser input simulation (CDP)",
     body1: "Many modern sites only respond to real mouse events. With this enabled, Pie uses Chrome's debug protocol to simulate real mouse moves and clicks.",

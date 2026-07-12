@@ -133,6 +133,9 @@ export const es419Dict = {
       forgetConfirm: "¿Olvidar la clave guardada de Tavily? Tendrás que pegarla de nuevo para volver a buscar.",
     },
   },
+  hitl: {
+    caps: { skillGrant: "Autorización de skill", runLocalAgent: "Agente local", handoff: "Traspaso", localFile: "Archivo local", cdp: "Simulación de entrada" },
+  },
   cdpOnboarding: {
     title: "Pie necesita activar la simulación de entrada del navegador (CDP)",
     body1: "Muchos sitios modernos solo responden a eventos reales del mouse. Con esto activado, Pie usa el protocolo de depuración de Chrome para simular movimientos y clics reales del mouse.",
