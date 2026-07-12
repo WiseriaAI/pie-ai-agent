@@ -21,7 +21,9 @@ export interface HelloRequest {
 export interface HelloResponse {
   id: string;
   ok: true;
-  result: { protocolVersion: number; capabilities: string[] };
+  // daemonVersion 加法演进（PROTOCOL_VERSION 不动，spec §6）：旧 daemon 不给此
+  // 字段 → 扩展视为版本过旧，走软升级提示。
+  result: { protocolVersion: number; capabilities: string[]; daemonVersion?: string };
 }
 
 // ── run_local_agent ──────────────────────────────────────────────────
