@@ -154,7 +154,7 @@ export const es419Dict = {
   handoff: {
     title: "¿Delegar a un agente local (interactivo)?",
     semanticsNote: "La tarea pasa a tu agente local; los resultados no vuelven a esta conversación.",
-    targetLabel: "Agente local",
+    targetLabel: "Destinatario",
     contextLabel: "Contexto",
     filesLabel: "Archivos a preparar",
     allow: "Delegar",

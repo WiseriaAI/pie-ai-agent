@@ -159,7 +159,7 @@ export const enDict = {
   handoff: {
     title: "Hand off to a local agent (interactive)?",
     semanticsNote: "The task moves to your local agent; results are not returned to this conversation.",
-    targetLabel: "Local agent",
+    targetLabel: "Recipient",
     contextLabel: "Context",
     filesLabel: "Files to stage",
     allow: "Hand off",

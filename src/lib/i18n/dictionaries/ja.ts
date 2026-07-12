@@ -154,7 +154,7 @@ export const jaDict = {
   handoff: {
     title: "ローカルエージェントに引き継ぐ（対話型）？",
     semanticsNote: "タスクはローカル agent に引き継がれ、結果はこの会話には戻りません。",
-    targetLabel: "ローカルエージェント",
+    targetLabel: "宛先",
     contextLabel: "コンテキスト",
     filesLabel: "引き継ぐファイル",
     allow: "引き継ぐ",

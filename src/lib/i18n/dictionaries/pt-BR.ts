@@ -154,7 +154,7 @@ export const ptBRDict = {
   handoff: {
     title: "Repassar para um agente local (interativo)?",
     semanticsNote: "A tarefa passa para o seu agente local; os resultados não voltam para esta conversa.",
-    targetLabel: "Agente local",
+    targetLabel: "Destinatário",
     contextLabel: "Contexto",
     filesLabel: "Arquivos a preparar",
     allow: "Repassar",

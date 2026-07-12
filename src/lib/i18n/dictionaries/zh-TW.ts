@@ -153,7 +153,7 @@ export const zhTWDict = {
   handoff: {
     title: "交棒給本地 Agent（互動式）？",
     semanticsNote: "任務將移交本機 agent，結果不會返回此對話。",
-    targetLabel: "本地 Agent",
+    targetLabel: "收件人",
     contextLabel: "上下文",
     filesLabel: "隨交棒檔案",
     allow: "交棒",
