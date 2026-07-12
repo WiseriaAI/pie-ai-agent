@@ -98,6 +98,17 @@ export function initLocalBridge(): void {
   // 重叠 init 时，旧 handshake 只落定自己那个 promise，不会错序落定新的。
   let settleThis!: () => void;
   settledPromise = new Promise<void>((r) => { settleThis = r; });
+  // (a) 重叠 init：若上一条连接还挂着（SW 唤醒兜底在活着的 SW 上重入
+  // initBridgeAndMigrate 时会发生），先拆掉它，避免旧 host 进程泄漏 + 旧 port
+  // 的 stale onDisconnect 迟到触发清掉健康的新连接。port.disconnect() 不触发
+  // 自身的 onDisconnect（Chrome 语义），故这里不会误清新状态。
+  if (port) {
+    try {
+      port.disconnect();
+    } catch {
+      /* already dead */
+    }
+  }
   try {
     port = chrome.runtime.connectNative(HOST_NAME);
   } catch {
@@ -114,8 +125,16 @@ export function initLocalBridge(): void {
     scheduleReconnect();
     return;
   }
+  // (b) 每个监听器/回调闭包捕获自己那次 init 的 port（myPort），共享的模块级
+  // 状态（ready/capabilities/onDisconnect 清理、握手落定）只由「当前 port ===
+  // myPort」的那一路改。重叠 init 后旧 port 的迟到回调 port !== myPort → 自动
+  // 失效，不会清掉/污染健康的新连接。与 settledPromise「resolver 由本次 init
+  // 闭包独占」是同一模式。
+  const myPort = port;
   port.onMessage.addListener((raw: unknown) => {
     const msg = raw as BridgeResponse;
+    // 回复按 uuid 路由（pending 全局唯一键），无需 port 门控——即便旧 port 迟到
+    // 送回一条属于自己那次请求的回复，pending.get 命中的也只是它自己的 entry。
     const p = pending.get(msg.id);
     if (!p) return;
     pending.delete(msg.id);
@@ -132,6 +151,9 @@ export function initLocalBridge(): void {
   });
   port.onDisconnect.addListener(() => {
     void chrome.runtime?.lastError; // 读一下避免 Chrome 打印 "Unchecked runtime.lastError"
+    // stale 守卫：旧 port 断开时若已被新 init 换掉，这里什么都不做——绝不清掉
+    // 健康的新连接状态，也绝不 mass-reject 属于新连接的 pending。
+    if (port !== myPort) return;
     ready = false;
     port = null;
     capabilities = [];
@@ -142,6 +164,12 @@ export function initLocalBridge(): void {
   // 握手
   send("hello", { protocolVersion: PROTOCOL_VERSION })
     .then((r) => {
+      // stale 守卫：本次 init 已被后来的重叠 init 取代 → 只落定自己的 settled
+      // promise（避免悬空），不碰共享的 ready/capabilities/reconnectAttempt。
+      if (port !== myPort) {
+        settleThis();
+        return;
+      }
       const res = r as { protocolVersion: number; capabilities: string[] };
       // 兼容窗口：差 ≤1 视为兼容（spec §7）
       if (Math.abs(res.protocolVersion - PROTOCOL_VERSION) <= 1) {
@@ -152,6 +180,12 @@ export function initLocalBridge(): void {
       settleThis();
     })
     .catch(() => {
+      // stale 守卫同上：被取代的 init 不再清共享 ready、也不续排梯子（那是新
+      // 连接的职责），只落定自己的 settled promise。
+      if (port !== myPort) {
+        settleThis();
+        return;
+      }
       ready = false;
       settleThis();
       // 握手本身失败（端口建起来了但 hello 被拒/超时）同样不会经过 onDisconnect
