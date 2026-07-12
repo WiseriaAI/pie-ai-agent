@@ -275,6 +275,24 @@ button {
 }
 .drawer-down { animation: drawer-down 200ms cubic-bezier(0.32, 0.72, 0, 1) both; }
 
+/* Pie IP face (PieFace.tsx) — keyframes 直译定稿设计稿（docs/specs/
+   2026-07-11-ip-animate-sidepanel.md）。几何在组件内，全局只放 keyframes。
+   prefers-reduced-motion 由上方全局规则统一塌缩，此处不重复处理。 */
+@keyframes pie-breathe { 0%,100%{transform:scale(1)} 50%{transform:scale(1.035)} }
+@keyframes pie-tilt { 0%,100%{transform:rotate(-5deg)} 50%{transform:rotate(5deg)} }
+@keyframes pie-vibrate { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-1.6%)} 75%{transform:translateX(1.6%)} }
+@keyframes pie-hop { 0%,100%{transform:translateY(0) scale(1,1)} 14%{transform:translateY(0) scale(1.09,.9)} 44%{transform:translateY(-17%) scale(.95,1.07)} 72%{transform:translateY(0) scale(1.05,.95)} }
+@keyframes pie-listen { 0%,100%{transform:scale(1)} 50%{transform:scale(1.025)} }
+@keyframes pie-blink { 0%,91%,100%{transform:scaleY(1)} 95.5%{transform:scaleY(.1)} }
+@keyframes pie-pulse { 0%{transform:scale(.55);opacity:.5} 100%{transform:scale(2);opacity:0} }
+@keyframes pie-pop { 0%{transform:scale(.4);opacity:.55} 78%,100%{transform:scale(1.7);opacity:0} }
+@keyframes pie-dotjump { 0%,55%,100%{transform:translateY(0)} 27%{transform:translateY(-42%)} }
+@keyframes pie-thirdin { 0%{opacity:0;transform:translateX(-95%) scale(.35)} 100%{opacity:1;transform:translateX(0) scale(1)} }
+@keyframes pie-wake-in {
+  from { transform: translate(var(--pie-bx), var(--pie-by)) scale(3.33); }
+  to   { transform: translate(0, 0) scale(1); }
+}
+
 /* Respect OS-level motion reduction. Collapse all animation/transition to
    sub-frame so behavior stays correct (final state) without movement. */
 @media (prefers-reduced-motion: reduce) {
