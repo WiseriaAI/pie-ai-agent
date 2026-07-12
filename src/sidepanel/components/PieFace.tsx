@@ -167,43 +167,10 @@ export default function PieFace({ state, size, onWakeEnd }: PieFaceProps) {
     );
   }
 
+  // working 不带扫描环：设计稿代码里有 pm-spin 环，但在原型里被不透明
+  // shell 遮住从未可见——用户拍板的 working 视觉 = 眯眼 + 左右震动，
+  // 以原型可见效果为准（2026-07-12 裁定）。
   const extras: ReactElement[] = [];
-  if (state === "working") {
-    const rs = size * 0.98;
-    // 固定 −3px 直译自 ~140px 设计稿；mini 尺寸（22px 指示行）按比例缩，
-    // 弧线才能落在深色 rim 上（disc 半径 = 0.42·size，shell 半径 = 0.5·size）。
-    const r = rs / 2 - Math.max(1.5, 3 * (size / 140));
-    const C = 2 * Math.PI * r;
-    extras.push(
-      <div
-        key="ring"
-        style={{
-          position: "absolute",
-          left: "50%",
-          top: "50%",
-          width: rs,
-          height: rs,
-          marginLeft: -rs / 2,
-          marginTop: -rs / 2,
-          animation: "pie-spin 1.1s linear infinite",
-          zIndex: 1,
-        }}
-      >
-        <svg width={rs} height={rs} viewBox={`0 0 ${rs} ${rs}`}>
-          <circle
-            cx={rs / 2}
-            cy={rs / 2}
-            r={r}
-            fill="none"
-            stroke="var(--c-accent)"
-            strokeWidth={2.4}
-            strokeLinecap="round"
-            strokeDasharray={`${C * 0.26} ${C}`}
-          />
-        </svg>
-      </div>,
-    );
-  }
   if (state === "listening") {
     for (const i of [0, 1]) {
       extras.push(

@@ -284,7 +284,6 @@ button {
 @keyframes pie-hop { 0%,100%{transform:translateY(0) scale(1,1)} 14%{transform:translateY(0) scale(1.09,.9)} 44%{transform:translateY(-17%) scale(.95,1.07)} 72%{transform:translateY(0) scale(1.05,.95)} }
 @keyframes pie-listen { 0%,100%{transform:scale(1)} 50%{transform:scale(1.025)} }
 @keyframes pie-blink { 0%,91%,100%{transform:scaleY(1)} 95.5%{transform:scaleY(.1)} }
-@keyframes pie-spin { to{transform:rotate(360deg)} }
 @keyframes pie-pulse { 0%{transform:scale(.55);opacity:.5} 100%{transform:scale(2);opacity:0} }
 @keyframes pie-pop { 0%{transform:scale(.4);opacity:.55} 78%,100%{transform:scale(1.7);opacity:0} }
 @keyframes pie-dotjump { 0%,55%,100%{transform:translateY(0)} 27%{transform:translateY(-42%)} }

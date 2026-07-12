@@ -14,7 +14,7 @@ const html = (state: PieFaceState, size = 40) =>
 
 const ALL_KEYFRAMES = [
   "pie-breathe", "pie-blink", "pie-tilt", "pie-dotjump", "pie-thirdin",
-  "pie-vibrate", "pie-spin", "pie-listen", "pie-pulse", "pie-hop",
+  "pie-vibrate", "pie-listen", "pie-pulse", "pie-hop",
   "pie-pop", "pie-wake-in",
 ];
 
@@ -46,17 +46,11 @@ describe("PieFace", () => {
     expect(h).not.toContain("pie-blink");
   });
 
-  it("working: 震动 + 旋转扫描环（SVG stroke 用 accent）", () => {
+  it("working: 眯眼 + 震动，无扫描环（原型中环被 shell 遮挡从未可见，拍板以原型为准）", () => {
     const { container } = render(<PieFace state="working" size={40} />);
     const h = container.innerHTML;
     expect(h).toContain("pie-vibrate");
-    expect(h).toContain("pie-spin");
-    const circle = container.querySelector("circle")!;
-    expect(circle.getAttribute("stroke")).toBe("var(--c-accent)");
-    expect(circle.getAttribute("stroke-linecap")).toBe("round");
-    // ring 容器须在 shell 之上，否则被 shell 遮住永不可见（final review Critical）。
-    const ring = container.querySelector("svg")!.parentElement!;
-    expect(ring.style.zIndex).toBe("1");
+    expect(container.querySelector("svg")).toBeNull();
   });
 
   it("success: 弹跳 + 光环", () => {

@@ -39,7 +39,7 @@
 | 白饼（disc）/ 眼睛底色 | `#FAFBFC` 固定 | 同上 |
 | 眼睛/点（feature） | `#14181D` 固定 | 同上 |
 | shell 内描边 | `inset 0 0 0 1px rgba(255,255,255,.05)` | 直译 |
-| 扫描环 / 声波 / 完成光环 | `var(--c-accent)` | dark 下 = 设计稿 `#B8C8D6`，light 下自动石板蓝 |
+| 声波 / 完成光环 | `var(--c-accent)` | dark 下 = 设计稿 `#B8C8D6`，light 下自动石板蓝 |
 
 ### 几何（直译设计稿，`size` 为组件边长）
 
@@ -56,7 +56,7 @@
 | success（弯月眼） | `0.185d × 0.11d` | `d d 0 0`（上圆下平） | `0.17d` |
 | thinking（三点） | 每点 `0.13d` 圆 | 50% | `0.11d` |
 
-- working 外圈扫描环：直径 `size * 0.98`，SVG circle `r = 直径/2 - max(1.5, 3 * (size/140))`（固定 −3px 直译自 ~140px 设计稿，mini 尺寸如 22px 指示行需按比例内缩，弧线才能落在深色 rim 上：disc 半径 = `0.42·size`，shell 半径 = `0.5·size`），`stroke-width 2.4`，`stroke-linecap round`，`stroke-dasharray = 26% 周长`。扫描环容器 `zIndex: 1`（在 shell 之上，否则被 shell 遮住永不可见）；声波/完成光环保持默认层级（小尺度阶段被 shell 遮住属设计意图——声波从脸后发出）。
+- working **不渲染**外圈扫描环：设计稿代码里有 `pm-spin` 扫描环，但其 DOM 层级在不透明 shell 之下、半径又小于 shell（`r = 直径/2 − 3`），在原型 playground 里**从未可见**——用户拍板的 working 视觉 = 眯眼 + 左右震动。植入版以原型可见效果为准，不移植该环（2026-07-12 用户裁定；曾在 review 中当遮挡 bug 修可见过一版，已回退）。声波/完成光环保持默认层级（小尺度阶段被 shell 遮住属设计意图——声波从脸后发出）。
 - listening 声波：2 个同心圆环，直径 = d，`border: 2px solid accent`，错峰（第二个延迟半周期）。
 - success 光环：1 个圆环，直径 = d，`border: 2.4px solid accent`。
 
@@ -72,7 +72,6 @@
 | `pie-dotjump` | 0/55/100% translateY(0)；27% translateY(-42%)；1.05s ease-in-out infinite，三点依次延迟 0.15s | thinking 三点 |
 | `pie-thirdin` | from opacity 0 / translateX(-95%) scale(.35) → to 正常；0.5s EE both | thinking 第三点入场 |
 | `pie-vibrate` | 0/100% translateX(0)；25% -1.6%；75% 1.6%；0.85s ease-in-out infinite | working 身体 |
-| `pie-spin` | to rotate(360deg)；1.1s linear infinite | working 扫描环 |
 | `pie-listen` | 0/100% scale(1)；50% scale(1.025)；2.0s ease-in-out infinite | listening 身体 |
 | `pie-pulse` | from scale(.55) opacity .5 → to scale(2) opacity 0；1.9s ease-out infinite，第二环 delay 0.95s | listening 声波 |
 | `pie-hop` | 0/100% translateY(0) scale(1,1)；14% scale(1.09,.9)；44% translateY(-17%) scale(.95,1.07)；72% scale(1.05,.95)；1.15s EE infinite | success 身体 |
@@ -123,7 +122,7 @@
 
 ## 测试（vitest + happy-dom）
 
-- `PieFace.test.tsx`：每个 state 渲染出对应 `pie-*` animation 名；`static` 无 animation；working 有扫描环 / listening 有双声波 / success 有光环 / thinking 三点；`wake` 的 `onAnimationEnd` 回调触发。
+- `PieFace.test.tsx`：每个 state 渲染出对应 `pie-*` animation 名；`static` 无 animation；working 眯眼+震动（无 SVG 环）/ listening 有双声波 / success 有光环 / thinking 三点；`wake` 的 `onAnimationEnd` 回调触发。
 - Chat 层：thinking vs working derive；celebrate 置位与 2.5s 清除（fake timers）；abort/失败不 celebrate；历史 assistant 头渲染静止脸。
 - happy-dom 不真跑 CSS 动画，断言 style/animation 属性即可（仓库已有先例）。
 
