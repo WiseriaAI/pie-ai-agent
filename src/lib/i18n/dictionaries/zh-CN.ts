@@ -99,14 +99,10 @@ export const zhCNDict = {
       statusOff: "未启用。",
       statusConnected: "已连接 daemon。",
       statusEnabledNotConnected: "已启用，但未连上 daemon（daemon 未运行？运行 pie doctor 检查）。",
-      agentsTitle: "本地 Agent",
+      agentsEnabledTitle: "本地 Agent · 已启用",
+      manageAgents: "Agent 管理",
       agentNotInstalled: "未安装",
       agentEnableFailed: "无法启用——未在本机检测到安装。",
-      grantsTitle: "已授权 skill",
-      revoke: "撤销",
-      auditTitle: "最近脚本执行",
-      auditOk: "成功",
-      auditFailed: "失败",
     },
     searchProvider: {
       caps: "网页搜索",
@@ -132,6 +128,9 @@ export const zhCNDict = {
       forgetConfirm: "清除已保存的 Tavily key 吗?下次搜索前需要重新粘贴。",
     },
   },
+  hitl: {
+    caps: { skillGrant: "SKILL 授权", runLocalAgent: "本地 AGENT", handoff: "交棒授权", localFile: "本地文件", cdp: "输入模拟" },
+  },
   cdpOnboarding: {
     title: "Pie 需要启用浏览器输入模拟（CDP）",
     body1: "现代网站很多按钮和菜单只对真实鼠标事件响应。启用后 Pie 用 Chrome 的调试接口模拟真实鼠标移动和点击。",
@@ -144,27 +143,27 @@ export const zhCNDict = {
     semanticsNote: "后台无人值守运行，结果将返回此对话。",
     cwdLabel: "工作目录",
     taskLabel: "任务",
-    allow: "允许",
+    allow: "允许运行",
     deny: "拒绝",
   },
   handoff: {
     title: "交棒给本地 Agent（交互式）？",
     semanticsNote: "任务将移交本地 agent，结果不返回此对话。",
-    targetLabel: "本地 Agent",
+    targetLabel: "收件人",
     contextLabel: "上下文",
     filesLabel: "随交棒文件",
     allow: "交棒",
     deny: "取消",
   },
   skillGrant: {
-    title: "允许该 skill 在你的电脑上运行脚本？",
+    title: "{name} 请求在你的电脑上运行脚本",
     scriptsLabel: "可执行脚本",
     networkLabel: "网络访问",
     networkNone: "无——默认沙箱已断网",
     writeLabel: "工作区外额外写入路径",
     disclosure:
       "脚本将以你的本机权限在默认沙箱内运行：未列出的域名一律断网，写入仅限该 skill 的工作区与上列路径，敏感目录拒绝读取。批准后免再确认，直到该 skill 的声明发生变化。",
-    allow: "允许",
+    allow: "允许运行",
     deny: "拒绝",
   },
   chat: {
@@ -350,6 +349,7 @@ export const zhCNDict = {
     screenshotUnavailable: "[截图不可用]",
   },
   skills: {
+    grant: { granted: "脚本已授权", revoke: "撤销授权" },
     empty: {
       cta: "显示可复用工作流（skill）。底层工具按 prompt 自动 resolve。想新建?直接跟 Pie 说「帮我创建一个 skill」并说明要做的事,让 Pie 帮你写好它。",
     },

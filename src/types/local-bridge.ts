@@ -41,7 +41,7 @@ export interface RunLocalAgentResult {
 // ── list_agents ──────────────────────────────────────────────────────
 /** daemon 静态候选表全量（含未安装项，installed 标注检测结果——settings 页渲染"未安装"态需要）。 */
 export interface ListAgentsResult {
-  agents: { id: string; label: string; installed: boolean }[];
+  agents: { id: string; label: string; installed: boolean; kind?: "app" | "terminal" }[];
 }
 
 // ── handoff_to_agent ─────────────────────────────────────────────────

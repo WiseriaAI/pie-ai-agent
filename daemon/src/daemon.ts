@@ -60,7 +60,7 @@ export async function handleMessage(line: string): Promise<string> {
       try {
         const detected = new Set(detectAgents().map((a) => a.id));
         const result: ListAgentsResult = {
-          agents: AGENT_CANDIDATES.map(({ id, label }) => ({ id, label, installed: detected.has(id) })),
+          agents: AGENT_CANDIDATES.map(({ id, label, kind }) => ({ id, label, kind, installed: detected.has(id) })),
         };
         return respond({ ok: true, result });
       } catch (e) {

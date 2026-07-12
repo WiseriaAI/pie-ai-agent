@@ -39,7 +39,7 @@ import { testProviderConnection } from "@/lib/provider-test";
 import { submitFeedback } from "@/lib/managed-account";
 import { readRecentLogs } from "@/lib/log-buffer";
 import { capLogBytes } from "@/lib/log-cap";
-import type { GrantRecord, AuditEntry } from "@/types/local-bridge";
+import { AgentBrandIcon } from "./hitl/agent-brand-icons";
 
 interface Props {
   onBack: () => void;
@@ -560,7 +560,7 @@ function queryBridgeStatus(cb: (s: BridgeStatus) => void): void {
   }
 }
 
-type PanelAgent = { id: string; label: string; installed: boolean; enabled: boolean };
+type PanelAgent = { id: string; label: string; installed: boolean; enabled: boolean; kind?: "app" | "terminal" };
 
 // Settings「本地 Agent」列表 — 一次性查询，无轮询（挂载/桥就绪/开关交互后各触发一次）。
 function queryLocalAgents(cb: (agents: PanelAgent[]) => void): void {
@@ -574,40 +574,23 @@ function queryLocalAgents(cb: (agents: PanelAgent[]) => void): void {
   }
 }
 
-// Settings「本地打通」— 已授权 skill grants 一次性查询（无轮询）。
-function queryGrants(cb: (grants: GrantRecord[]) => void): void {
-  try {
-    chrome.runtime.sendMessage({ type: "local-grants:list" }, (res) => {
-      if (chrome.runtime.lastError) return;
-      if (res && Array.isArray(res.grants)) cb(res.grants as GrantRecord[]);
-    });
-  } catch {
-    /* noop */
-  }
-}
-
-// Settings「本地打通」— 最近脚本执行审计一次性查询（无轮询）。
-function queryAudit(cb: (entries: AuditEntry[]) => void): void {
-  try {
-    chrome.runtime.sendMessage({ type: "local-audit:list" }, (res) => {
-      if (chrome.runtime.lastError) return;
-      if (res && Array.isArray(res.entries)) cb(res.entries as AuditEntry[]);
-    });
-  } catch {
-    /* noop */
-  }
-}
-
 // 本地打通开关 + 实时状态。开=请求 nativeMessaging（用户手势）→ SW onAdded 连桥；
 // 关=移除权限 → SW onRemoved 断桥。挂载期每 1.5s 轮询一次状态（连接是异步的）。
+/** agent 名称/kind 拆分：有 kind 时剥掉 label 里的 "(App)"/"(Terminal)" 尾缀显示两行；
+ *  旧 daemon 无 kind → 整串 label 单行回退。 */
+function splitAgentLabel(a: PanelAgent): { name: string; sub: string | null } {
+  if (!a.kind) return { name: a.label, sub: null };
+  const name = a.label.replace(/\s*\((App|Terminal)\)\s*$/i, "");
+  const sub = a.kind === "app" ? "App" : "Terminal";
+  return { name, sub };
+}
+
 export function LocalBridgeSection() {
   const t = useT();
   const [status, setStatus] = useState<BridgeStatus | null>(null);
   const [agents, setAgents] = useState<PanelAgent[]>([]);
   const [failedId, setFailedId] = useState<string | null>(null);
-  const [grants, setGrants] = useState<GrantRecord[]>([]);
-  const [audit, setAudit] = useState<AuditEntry[]>([]);
-  const [auditOpen, setAuditOpen] = useState(false);
+  const [view, setView] = useState<"main" | "agents">("main");
 
   useEffect(() => {
     queryBridgeStatus(setStatus);
@@ -617,29 +600,11 @@ export function LocalBridgeSection() {
 
   useEffect(() => {
     if (status?.ready) queryLocalAgents(setAgents);
-    else setAgents([]);
-  }, [status?.ready]);
-
-  useEffect(() => {
-    if (status?.ready) {
-      queryGrants(setGrants);
-      queryAudit(setAudit);
-    } else {
-      setGrants([]);
-      setAudit([]);
+    else {
+      setAgents([]);
+      setView("main"); // 桥断开 → 管理子视图失去意义，强制回主视图
     }
   }, [status?.ready]);
-
-  const onRevoke = (key: string) => {
-    try {
-      chrome.runtime.sendMessage({ type: "local-grants:revoke", key }, (res) => {
-        if (chrome.runtime.lastError) return;
-        if (res?.ok) queryGrants(setGrants);
-      });
-    } catch {
-      /* noop */
-    }
-  };
 
   const enabled = status?.hasPermission ?? false;
   const onToggle = async (next: boolean) => {
@@ -674,6 +639,8 @@ export function LocalBridgeSection() {
           ? t("settings.localBridge.statusConnected")
           : t("settings.localBridge.statusEnabledNotConnected");
 
+  const enabledAgents = agents.filter((a) => a.enabled);
+
   return (
     <section className="flex flex-col gap-3">
       <div className="flex items-baseline justify-between">
@@ -682,88 +649,93 @@ export function LocalBridgeSection() {
         </span>
       </div>
       <div className="flex flex-col gap-3 rounded-card border border-line bg-surface p-3.5">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex flex-col gap-1">
-            <div className="text-[13px] font-medium text-fg-1">{t("settings.localBridge.title")}</div>
-            <div className="text-[12px] leading-relaxed text-fg-3">{t("settings.localBridge.description")}</div>
-            {statusText && (
-              <div className={`text-[12px] ${status?.ready ? "text-fg-1" : "text-fg-3"}`}>{statusText}</div>
-            )}
-          </div>
-          <Switch checked={enabled} onChange={onToggle} />
-        </div>
-        {status?.ready && agents.length > 0 && (
-          <div className="flex flex-col gap-2 border-t border-line pt-3">
-            <div className="text-[12px] font-medium text-fg-2">{t("settings.localBridge.agentsTitle")}</div>
-            {agents.map((a) => (
-              <div key={a.id} className="flex flex-col gap-1">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-[13px] text-fg-1">{a.label}</span>
-                    {!a.installed && (
-                      <span className="text-[11px] text-fg-3">{t("settings.localBridge.agentNotInstalled")}</span>
-                    )}
+        {view === "main" ? (
+          <>
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex flex-col gap-1">
+                <div className="text-[13px] font-medium text-fg-1">{t("settings.localBridge.title")}</div>
+                <div className="text-[12px] leading-relaxed text-fg-3">{t("settings.localBridge.description")}</div>
+                {statusText && (
+                  <div className="flex items-center gap-1.5">
+                    {status?.ready && <span className="h-1.5 w-1.5 rounded-full bg-success" aria-hidden />}
+                    <span className={`text-[12px] ${status?.ready ? "text-fg-1" : "text-fg-3"}`}>{statusText}</span>
                   </div>
-                  <Switch checked={a.enabled} onChange={(next) => onAgentToggle(a.id, next)} />
-                </div>
-                {failedId === a.id && (
-                  <div className="text-[11px] text-fg-3">{t("settings.localBridge.agentEnableFailed")}</div>
                 )}
               </div>
-            ))}
-          </div>
-        )}
-        {status?.ready && grants.length > 0 && (
-          <div className="flex flex-col gap-2 border-t border-line pt-3">
-            <div className="text-[12px] font-medium text-fg-2">{t("settings.localBridge.grantsTitle")}</div>
-            {grants.map((g) => (
-              <div key={g.key} className="flex items-start justify-between gap-3">
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-[13px] text-fg-1">{g.skillName}</span>
-                  <span className="text-[11px] text-fg-3">
-                    {g.envelope.runnableScripts.join(", ")}
-                    {g.envelope.allowedDomains.length > 0 && ` · ${g.envelope.allowedDomains.join(", ")}`}
-                    {g.envelope.extraWrites.length > 0 && ` · ${g.envelope.extraWrites.join(", ")}`}
-                  </span>
-                  <span className="text-[11px] text-fg-3">
-                    {new Date(g.grantedAt).toLocaleDateString()}
-                  </span>
-                </div>
+              <Switch checked={enabled} onChange={onToggle} />
+            </div>
+            {status?.ready && agents.length > 0 && (
+              <div className="flex flex-col gap-2.5 border-t border-line pt-3">
+                {enabledAgents.length > 0 && (
+                  <>
+                    <span className="caps text-fg-3">{t("settings.localBridge.agentsEnabledTitle")}</span>
+                    {enabledAgents.map((a) => {
+                      const { name, sub } = splitAgentLabel(a);
+                      return (
+                        <div key={a.id} className="flex items-center gap-2.5">
+                          <span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-chip bg-field text-fg-2">
+                            <AgentBrandIcon agentId={a.id} size={14} />
+                          </span>
+                          <span className="text-[13px] text-fg-1">{name}</span>
+                          {sub && <span className="text-[11px] text-fg-3">{sub}</span>}
+                        </div>
+                      );
+                    })}
+                  </>
+                )}
                 <button
                   type="button"
-                  onClick={() => onRevoke(g.key)}
-                  className="shrink-0 rounded border border-line px-2 py-0.5 text-[11px] text-fg-2 hover:text-fg-1"
+                  onClick={() => setView("agents")}
+                  className="flex items-center justify-center gap-1.5 rounded-lg border border-line px-2.5 py-[7px] text-[12px] font-medium text-fg-2 hover:text-fg-1"
                 >
-                  {t("settings.localBridge.revoke")}
+                  {t("settings.localBridge.manageAgents")}
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <path d="m9 6 6 6-6 6" />
+                  </svg>
                 </button>
               </div>
-            ))}
-          </div>
-        )}
-        {status?.ready && audit.length > 0 && (
-          <div className="flex flex-col gap-2 border-t border-line pt-3">
-            <button
-              type="button"
-              onClick={() => setAuditOpen((v) => !v)}
-              className="self-start text-[12px] font-medium text-fg-2 hover:text-fg-1"
-            >
-              {t("settings.localBridge.auditTitle")} {auditOpen ? "▾" : "▸"}
-            </button>
-            {auditOpen &&
-              audit.map((e, i) => (
-                <div key={`${e.ts}-${i}`} className="flex items-baseline justify-between gap-2 text-[11px]">
-                  <span className="truncate text-fg-1">
-                    {e.skillName} · {e.entry}
-                  </span>
-                  <span className="shrink-0 text-fg-3">
-                    {e.exitCode === 0 && !e.timedOut
-                      ? t("settings.localBridge.auditOk")
-                      : t("settings.localBridge.auditFailed")}
-                    {" · "}
-                    {new Date(e.ts).toLocaleString()}
-                  </span>
+            )}
+          </>
+        ) : (
+          <div className="flex flex-col gap-2.5">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                aria-label="Back"
+                onClick={() => setView("main")}
+                className="flex h-5 w-5 items-center justify-center rounded text-fg-2 hover:text-fg-1"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="m15 18-6-6 6-6" />
+                </svg>
+              </button>
+              <span className="text-[13px] font-medium text-fg-1">{t("settings.localBridge.manageAgents")}</span>
+            </div>
+            {agents.map((a) => {
+              const { name, sub } = splitAgentLabel(a);
+              const subLine = [sub, a.installed ? null : t("settings.localBridge.agentNotInstalled")]
+                .filter(Boolean)
+                .join(" · ");
+              return (
+                <div key={a.id} className="flex flex-col gap-1">
+                  <div className="flex items-center gap-2.5">
+                    <span
+                      className={`flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-chip bg-field ${a.installed ? "text-fg-2" : "text-fg-3"}`}
+                    >
+                      <AgentBrandIcon agentId={a.id} size={14} />
+                    </span>
+                    <div className="flex grow flex-col">
+                      <span className={`text-[13px] ${a.installed ? "text-fg-1" : "text-fg-2"}`}>{name}</span>
+                      {subLine && <span className="text-[11px] text-fg-3">{subLine}</span>}
+                    </div>
+                    <Switch checked={a.enabled} onChange={(next) => onAgentToggle(a.id, next)} />
+                  </div>
+                  {failedId === a.id && (
+                    <div className="text-[11px] text-fg-3">{t("settings.localBridge.agentEnableFailed")}</div>
+                  )}
                 </div>
-              ))}
+              );
+            })}
           </div>
         )}
       </div>

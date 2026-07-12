@@ -100,14 +100,10 @@ export const ptBRDict = {
       statusOff: "Não ativado.",
       statusConnected: "Conectado ao daemon.",
       statusEnabledNotConnected: "Ativado, mas sem conexão (o daemon não está em execução? execute pie doctor).",
-      agentsTitle: "Agentes locais",
+      agentsEnabledTitle: "Agentes locais · Habilitados",
+      manageAgents: "Gerenciar agentes",
       agentNotInstalled: "Não instalado",
       agentEnableFailed: "Não é possível habilitar — não detectado nesta máquina.",
-      grantsTitle: "Skills autorizadas",
-      revoke: "Revogar",
-      auditTitle: "Execuções recentes de scripts",
-      auditOk: "ok",
-      auditFailed: "falhou",
     },
     searchProvider: {
       caps: "Provedor de busca",
@@ -133,6 +129,9 @@ export const ptBRDict = {
       forgetConfirm: "Esquecer a chave Tavily salva? Você precisará colá-la novamente para pesquisar.",
     },
   },
+  hitl: {
+    caps: { skillGrant: "Autorização de skill", runLocalAgent: "Agente local", handoff: "Transferência", localFile: "Arquivo local", cdp: "Simulação de entrada" },
+  },
   cdpOnboarding: {
     title: "Pie precisa ativar a simulação de entrada do navegador (CDP)",
     body1: "Muitos sites modernos só respondem a eventos reais de mouse. Com isso ativado, Pie usa o protocolo de depuração do Chrome para simular movimentos e cliques reais do mouse.",
@@ -145,27 +144,27 @@ export const ptBRDict = {
     semanticsNote: "Executa sem supervisão em segundo plano; o resultado volta para esta conversa.",
     cwdLabel: "Diretório de trabalho",
     taskLabel: "Tarefa",
-    allow: "Permitir",
+    allow: "Permitir e executar",
     deny: "Negar",
   },
   handoff: {
     title: "Repassar para um agente local (interativo)?",
     semanticsNote: "A tarefa passa para o seu agente local; os resultados não voltam para esta conversa.",
-    targetLabel: "Agente local",
+    targetLabel: "Destinatário",
     contextLabel: "Contexto",
     filesLabel: "Arquivos a preparar",
     allow: "Repassar",
     deny: "Cancelar",
   },
   skillGrant: {
-    title: "Permitir que esta skill execute scripts no seu computador?",
+    title: "{name} solicita executar scripts no seu computador",
     scriptsLabel: "Scripts que ela pode executar",
     networkLabel: "Acesso à rede",
     networkNone: "Nenhum — a sandbox padrão bloqueia a rede",
     writeLabel: "Locais extras de escrita (fora do espaço de trabalho dela)",
     disclosure:
       "Os scripts rodam com as suas permissões de usuário dentro de uma sandbox padrão: sem rede além dos domínios listados, escrita limitada ao espaço de trabalho da skill e aos caminhos listados, e leitura bloqueada em pastas sensíveis. A aprovação vale até as declarações da skill mudarem.",
-    allow: "Permitir",
+    allow: "Permitir e executar",
     deny: "Recusar",
   },
   chat: {
@@ -351,6 +350,7 @@ export const ptBRDict = {
     screenshotUnavailable: "[Captura indisponível]",
   },
   skills: {
+    grant: { granted: "Scripts autorizados", revoke: "Revogar" },
     empty: {
       cta: "Exibe fluxos reutilizáveis (habilidades). As ferramentas subjacentes são resolvidas automaticamente a partir do prompt. Quer uma nova? Peça ao Pie para criar uma habilidade e descreva o que ela deve fazer; o Pie escreverá para você.",
     },
