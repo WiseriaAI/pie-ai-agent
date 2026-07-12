@@ -44,7 +44,9 @@ export default function PieFace({ state, size, onWakeEnd }: PieFaceProps) {
     boxShadow: "inset 0 0 0 1px rgba(255,255,255,.05)",
   };
 
-  // ── wake：图标缺口 → 双眼滑入（单次，both fill），身体同步呼吸 ──
+  // ── wake：图标缺口 → 双眼滑入（单次，both fill），身体同步呼吸。
+  //    2s delay + both fill：打开界面先定住 0% 帧（图标形态）再播 morph，
+  //    "先是熟悉的图标，然后活过来" ──
   if (state === "wake") {
     const eyeW = disc * 0.15;
     const ecy = dOff + disc * 0.45;
@@ -59,7 +61,7 @@ export default function PieFace({ state, size, onWakeEnd }: PieFaceProps) {
       transformOrigin: "center",
       ["--pie-bx" as string]: `${bx}px`,
       ["--pie-by" as string]: `${-disc * 0.366}px`,
-      animation: `pie-wake-in 1.2s ${EE} both`,
+      animation: `pie-wake-in 1.2s ${EE} 2s both`,
     });
     return (
       <div

@@ -72,6 +72,8 @@ describe("PieFace", () => {
     );
     const root = container.querySelector('[data-pie-state="wake"]')!;
     expect(container.innerHTML).toContain("pie-wake-in");
+    // 2s delay + both fill：先定住图标帧再播 morph（用户拍板的开场节奏）
+    expect(container.innerHTML).toContain("2s both");
     // 无关动画结束（如 pie-breathe）不触发
     fireEvent.animationEnd(root, { animationName: "pie-breathe" });
     expect(onWakeEnd).not.toHaveBeenCalled();

@@ -81,7 +81,7 @@
 
 ### wake（图标 → IP morph，改为播一次）
 
-设计稿的 wake 是 4.8s 无限往返（图标↔脸）；植入版改为**单次** icon→face（时长 1.2s，EE 缓动，`animation-fill-mode: both`），播完由父层切到 `idle`（监听 `onAnimationEnd`）。
+设计稿的 wake 是 4.8s 无限往返（图标↔脸）；植入版改为**单次** icon→face（时长 1.2s，EE 缓动，`animation-delay: 2s` + `animation-fill-mode: both`），播完由父层切到 `idle`（监听 `onAnimationEnd`）。delay 期间 `both` fill 定住 0% 帧＝图标形态——打开界面先看到熟悉的图标约 2s，再"活过来"（用户拍板的开场节奏）。
 
 眼睛终点（直译设计稿 wake 帧）：左右眼圆心 `size/2 ∓ 0.16d`，`cy = dOff + 0.48d`（注：设计稿 wake 眼位 48%、idle 眼位 45%，切换时 3% 的落差肉眼不可辨，实现时可统一取 45% 消除跳变）。起始位（图标缺口，两眼同源分裂）：
 
