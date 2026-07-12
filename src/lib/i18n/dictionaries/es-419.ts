@@ -148,7 +148,7 @@ export const es419Dict = {
     semanticsNote: "Se ejecuta sin supervisión en segundo plano; el resultado vuelve a esta conversación.",
     cwdLabel: "Directorio de trabajo",
     taskLabel: "Tarea",
-    allow: "Permitir",
+    allow: "Permitir y ejecutar",
     deny: "Denegar",
   },
   handoff: {
@@ -161,14 +161,14 @@ export const es419Dict = {
     deny: "Cancelar",
   },
   skillGrant: {
-    title: "¿Permitir que esta skill ejecute scripts en tu computadora?",
+    title: "{name} solicita ejecutar scripts en tu computadora",
     scriptsLabel: "Scripts que puede ejecutar",
     networkLabel: "Acceso a la red",
     networkNone: "Ninguno: el sandbox predeterminado bloquea la red",
     writeLabel: "Rutas de escritura adicionales (fuera de su espacio de trabajo)",
     disclosure:
       "Los scripts se ejecutan con tus permisos de usuario dentro de un sandbox predeterminado: sin red salvo los dominios listados, escritura limitada al espacio de trabajo de la skill y a las rutas listadas, y lectura bloqueada en carpetas sensibles. La aprobación dura hasta que cambien las declaraciones de la skill.",
-    allow: "Permitir",
+    allow: "Permitir y ejecutar",
     deny: "Rechazar",
   },
   chat: {

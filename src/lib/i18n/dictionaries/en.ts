@@ -153,7 +153,7 @@ export const enDict = {
     semanticsNote: "Runs headless in the background; the result comes back to this conversation.",
     cwdLabel: "Working directory",
     taskLabel: "Task",
-    allow: "Allow",
+    allow: "Allow & run",
     deny: "Deny",
   },
   handoff: {
@@ -166,14 +166,14 @@ export const enDict = {
     deny: "Cancel",
   },
   skillGrant: {
-    title: "Allow this skill to run scripts on your computer?",
+    title: "{name} asks to run scripts on your computer",
     scriptsLabel: "Scripts it can run",
     networkLabel: "Network access",
     networkNone: "None — network is blocked by the default sandbox",
     writeLabel: "Extra write locations (outside its workspace)",
     disclosure:
       "Scripts run with your user permissions inside a default sandbox: no network unless listed above, writes limited to the skill's workspace plus the listed paths, sensitive folders blocked from reading. Approval lasts until the skill's declarations change.",
-    allow: "Allow",
+    allow: "Allow & run",
     deny: "Deny",
   },
   chat: {

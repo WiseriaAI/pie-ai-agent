@@ -147,7 +147,7 @@ export const zhTWDict = {
     semanticsNote: "背景無人值守執行，結果將返回此對話。",
     cwdLabel: "工作目錄",
     taskLabel: "任務",
-    allow: "允許",
+    allow: "允許執行",
     deny: "拒絕",
   },
   handoff: {
@@ -160,14 +160,14 @@ export const zhTWDict = {
     deny: "取消",
   },
   skillGrant: {
-    title: "允許該 skill 在你的電腦上執行指令碼？",
+    title: "{name} 請求在你的電腦上執行腳本",
     scriptsLabel: "可執行指令碼",
     networkLabel: "網路存取",
     networkNone: "無——預設沙箱已斷網",
     writeLabel: "工作區外額外寫入路徑",
     disclosure:
       "指令碼將以你的本機權限在預設沙箱內執行：未列出的網域一律斷網，寫入僅限該 skill 的工作區與上列路徑，敏感目錄拒絕讀取。核准後免再確認，直到該 skill 的宣告發生變化。",
-    allow: "允許",
+    allow: "允許執行",
     deny: "拒絕",
   },
   chat: {

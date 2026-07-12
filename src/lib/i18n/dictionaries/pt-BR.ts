@@ -148,7 +148,7 @@ export const ptBRDict = {
     semanticsNote: "Executa sem supervisão em segundo plano; o resultado volta para esta conversa.",
     cwdLabel: "Diretório de trabalho",
     taskLabel: "Tarefa",
-    allow: "Permitir",
+    allow: "Permitir e executar",
     deny: "Negar",
   },
   handoff: {
@@ -161,14 +161,14 @@ export const ptBRDict = {
     deny: "Cancelar",
   },
   skillGrant: {
-    title: "Permitir que esta skill execute scripts no seu computador?",
+    title: "{name} solicita executar scripts no seu computador",
     scriptsLabel: "Scripts que ela pode executar",
     networkLabel: "Acesso à rede",
     networkNone: "Nenhum — a sandbox padrão bloqueia a rede",
     writeLabel: "Locais extras de escrita (fora do espaço de trabalho dela)",
     disclosure:
       "Os scripts rodam com as suas permissões de usuário dentro de uma sandbox padrão: sem rede além dos domínios listados, escrita limitada ao espaço de trabalho da skill e aos caminhos listados, e leitura bloqueada em pastas sensíveis. A aprovação vale até as declarações da skill mudarem.",
-    allow: "Permitir",
+    allow: "Permitir e executar",
     deny: "Recusar",
   },
   chat: {

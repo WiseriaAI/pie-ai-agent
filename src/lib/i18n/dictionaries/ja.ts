@@ -148,7 +148,7 @@ export const jaDict = {
     semanticsNote: "バックグラウンドで無人実行され、結果はこの会話に戻ります。",
     cwdLabel: "作業ディレクトリ",
     taskLabel: "タスク",
-    allow: "許可",
+    allow: "許可して実行",
     deny: "拒否",
   },
   handoff: {
@@ -161,14 +161,14 @@ export const jaDict = {
     deny: "キャンセル",
   },
   skillGrant: {
-    title: "このスキルにお使いのパソコンでスクリプトの実行を許可しますか？",
+    title: "{name} がスクリプトの実行を求めています",
     scriptsLabel: "実行可能なスクリプト",
     networkLabel: "ネットワークアクセス",
     networkNone: "なし——デフォルトのサンドボックスが通信を遮断します",
     writeLabel: "ワークスペース外の追加書き込み先",
     disclosure:
       "スクリプトはあなたのユーザー権限でデフォルトのサンドボックス内で実行されます。上記以外のドメインへの通信は遮断され、書き込みはこのスキルのワークスペースと記載のパスに限定され、機密フォルダの読み取りは拒否されます。承認はスキルの宣言が変わるまで有効です。",
-    allow: "許可",
+    allow: "許可して実行",
     deny: "拒否",
   },
   chat: {
