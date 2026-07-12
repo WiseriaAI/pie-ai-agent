@@ -13,19 +13,17 @@ export type SettingsPage =
   | "models"
   | "bridge"
   | "search"
-  | "cdp"
   | "uiLanguage"
   | "assistantLanguage"
   | "feedback"
   | "about";
 
-// Sub-page → top-bar title key. cdp / language pages reuse their feature keys
+// Sub-page → top-bar title key. The language pages reuse their feature keys
 // instead of minting settings.nav.* duplicates.
 const SETTINGS_PAGE_TITLE_KEY = {
   models: "settings.nav.models",
   bridge: "settings.nav.bridge",
   search: "settings.nav.search",
-  cdp: "settings.cdpInput.title",
   uiLanguage: "settings.language.uiLabel",
   assistantLanguage: "settings.language.assistantLabel",
   feedback: "settings.nav.feedback",

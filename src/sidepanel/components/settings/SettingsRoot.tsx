@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Box,
   Plug,
@@ -9,11 +9,16 @@ import {
   MousePointerClick,
   MessageCircle,
   Info,
+  HelpCircle,
   ChevronRight,
 } from "lucide-react";
 import { useT } from "@/lib/i18n";
 import { listInstances } from "@/lib/instances";
 import { getSearchProviderStatus, ACTIVE_SEARCH_PROVIDER } from "@/lib/search-provider";
+import { isCdpInputEnabled, setCdpInputEnabled } from "@/lib/cdp-input-enabled";
+import { Switch } from "@/sidepanel/components/ui/Switch";
+import { Popover } from "@/sidepanel/components/ui/Popover";
+import { useAnchorRect } from "@/sidepanel/components/ui/useAnchorRect";
 import type { ThemeMode } from "@/sidepanel/theme";
 import type { SettingsPage } from "@/sidepanel/components/TopBar";
 import { queryBridgeStatus, type BridgeStatus } from "./bridge-status";
@@ -59,14 +64,118 @@ function NavRow({
   );
 }
 
-// A non-button row (for inline controls like the language selects / theme).
-function ControlRow({ icon, label, control }: { icon: ReactNode; label: string; control: ReactNode }) {
+// A non-button row (for inline controls like the theme segmented / CDP switch).
+// `help` renders right after the label (the "?" explainer button).
+function ControlRow({
+  icon,
+  label,
+  help,
+  control,
+}: {
+  icon: ReactNode;
+  label: string;
+  help?: ReactNode;
+  control: ReactNode;
+}) {
   return (
     <div className="flex min-h-[46px] w-full items-center gap-3 border-t border-line px-3.5 first:border-t-0">
       <span className="shrink-0 text-fg-2">{icon}</span>
-      <span className="flex-1 text-[13px] font-medium text-fg-1">{label}</span>
+      <span className="flex items-center gap-1 text-[13px] font-medium text-fg-1">
+        {label}
+        {help}
+      </span>
+      <div className="flex-1" />
       <div className="shrink-0">{control}</div>
     </div>
+  );
+}
+
+const HELP_W = 280; // "?" popover width — kept in sync with the clamp below
+
+/** Left-align the "?" popover to its trigger, then clamp inside the panel — the
+ *  trigger sits far right in a ~420px side panel, so an unclamped popover runs
+ *  off the edge. Pure (viewport width passed in) so it stays unit-testable. */
+export function helpCoords(rect: DOMRect, viewportW = window.innerWidth): { left: number; width: number } {
+  const MARGIN = 8;
+  const width = Math.min(HELP_W, viewportW - 2 * MARGIN);
+  const left = Math.max(MARGIN, Math.min(rect.left - 12, viewportW - width - MARGIN));
+  return { left, width };
+}
+
+// CDP input simulation — an inline switch (no sub-page). The "?" opens a popover
+// with what enabling it means (the yellow debugger bar + DevTools conflict), so
+// the explainer costs no room until asked for.
+function CdpRow() {
+  const t = useT();
+  const [enabled, setEnabled] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const helpRef = useRef<HTMLButtonElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
+  const rect = useAnchorRect(helpRef, helpOpen);
+
+  useEffect(() => {
+    void isCdpInputEnabled().then((v) => setEnabled(v === true));
+  }, []);
+
+  useEffect(() => {
+    if (!helpOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      const target = e.target as Node;
+      // Popover is portaled out of the row — check the trigger and panel both.
+      if (!helpRef.current?.contains(target) && !popRef.current?.contains(target)) setHelpOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [helpOpen]);
+
+  return (
+    <ControlRow
+      icon={<MousePointerClick {...ROW_ICON} />}
+      label={t("settings.cdpInput.title")}
+      help={
+        <>
+          <button
+            ref={helpRef}
+            type="button"
+            data-testid="cdp-help"
+            aria-label={t("settings.cdpInput.title")}
+            aria-expanded={helpOpen}
+            onClick={() => setHelpOpen((v) => !v)}
+            className="flex h-4 w-4 items-center justify-center text-fg-3 hover:text-fg-1"
+          >
+            <HelpCircle size={14} strokeWidth={1.75} />
+          </button>
+          <Popover
+            open={helpOpen && !!rect}
+            popoverRef={popRef}
+            role="dialog"
+            style={rect ? { ...helpCoords(rect), top: rect.bottom + 6 } : undefined}
+            className="fixed z-[100] flex flex-col gap-2 rounded-card border border-line bg-surface p-3 shadow-pop"
+          >
+            <p className="text-[12px] leading-[18px] font-normal text-fg-2">
+              {t("settings.cdpInput.description")}
+            </p>
+            <div className="flex flex-col gap-1.5 rounded-chip border border-warning-line bg-warning-tint px-2.5 py-2 text-[11px] leading-[16px] text-warning">
+              <span className="font-medium">{t("settings.cdpInput.warningTitle")}</span>
+              <ul className="flex flex-col gap-1 pl-3 font-normal text-warning/90">
+                <li className="list-['—__'] pl-0">{t("settings.cdpInput.warning1")}</li>
+                <li className="list-['—__'] pl-0">{t("settings.cdpInput.warning2")}</li>
+                <li className="list-['—__'] pl-0">{t("settings.cdpInput.warning3")}</li>
+              </ul>
+            </div>
+          </Popover>
+        </>
+      }
+      control={
+        <Switch
+          checked={enabled}
+          onChange={(next) => {
+            setEnabled(next);
+            void setCdpInputEnabled(next);
+          }}
+        />
+      }
+    />
   );
 }
 
@@ -120,7 +229,7 @@ export default function SettingsRoot({
   const t = useT();
   const [configCount, setConfigCount] = useState<number | null>(null);
   const [bridge, setBridge] = useState<BridgeStatus | null>(null);
-  const [searchName, setSearchName] = useState<string | null>(null);
+  const [searchConfigured, setSearchConfigured] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -128,7 +237,7 @@ export default function SettingsRoot({
       if (alive) setConfigCount(l.length);
     });
     void getSearchProviderStatus(ACTIVE_SEARCH_PROVIDER).then((s) => {
-      if (alive) setSearchName(s.configured ? "Tavily" : null);
+      if (alive) setSearchConfigured(s.configured);
     });
     queryBridgeStatus((s) => {
       if (alive) setBridge(s);
@@ -176,15 +285,10 @@ export default function SettingsRoot({
             id="search"
             icon={<Search {...ROW_ICON} />}
             label={t("settings.nav.search")}
-            badge={searchName ?? undefined}
+            badge={searchConfigured ? t("settings.nav.configured") : undefined}
             onClick={() => onOpenPage("search")}
           />
-          <NavRow
-            id="cdp"
-            icon={<MousePointerClick {...ROW_ICON} />}
-            label={t("settings.cdpInput.title")}
-            onClick={() => onOpenPage("cdp")}
-          />
+          <CdpRow />
         </Group>
       </div>
 
@@ -212,22 +316,25 @@ export default function SettingsRoot({
         </Group>
       </div>
 
-      {/* Group 3 — other */}
-      <Group>
-        <NavRow
-          id="feedback"
-          icon={<MessageCircle {...ROW_ICON} />}
-          label={t("settings.nav.feedback")}
-          onClick={() => onOpenPage("feedback")}
-        />
-        <NavRow
-          id="about"
-          icon={<Info {...ROW_ICON} />}
-          label={t("settings.nav.about")}
-          badge={`v${chrome.runtime.getManifest().version}`}
-          onClick={() => onOpenPage("about")}
-        />
-      </Group>
+      {/* Group 3 — about & support */}
+      <div>
+        <GroupLabel>{t("settings.nav.support")}</GroupLabel>
+        <Group>
+          <NavRow
+            id="feedback"
+            icon={<MessageCircle {...ROW_ICON} />}
+            label={t("settings.nav.feedback")}
+            onClick={() => onOpenPage("feedback")}
+          />
+          <NavRow
+            id="about"
+            icon={<Info {...ROW_ICON} />}
+            label={t("settings.nav.about")}
+            badge={`v${chrome.runtime.getManifest().version}`}
+            onClick={() => onOpenPage("about")}
+          />
+        </Group>
+      </div>
     </div>
   );
 }

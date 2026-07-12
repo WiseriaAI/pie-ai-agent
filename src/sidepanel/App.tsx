@@ -6,7 +6,6 @@ import SearchProviderSection from "@/sidepanel/components/SearchProviderSection"
 import SettingsRoot from "@/sidepanel/components/settings/SettingsRoot";
 import ModelsPage from "@/sidepanel/components/settings/pages/ModelsPage";
 import BridgePage from "@/sidepanel/components/settings/pages/BridgePage";
-import CdpPage from "@/sidepanel/components/settings/pages/CdpPage";
 import FeedbackPage from "@/sidepanel/components/settings/pages/FeedbackPage";
 import AboutPage from "@/sidepanel/components/settings/pages/AboutPage";
 import { UiLanguagePage, AssistantLanguagePage } from "@/sidepanel/components/settings/pages/LanguagePage";
@@ -441,8 +440,6 @@ export default function App() {
               <BridgePage />
             ) : settingsPage === "search" ? (
               <SearchProviderSection />
-            ) : settingsPage === "cdp" ? (
-              <CdpPage />
             ) : settingsPage === "uiLanguage" ? (
               <UiLanguagePage />
             ) : settingsPage === "assistantLanguage" ? (

@@ -79,7 +79,7 @@ export const zhCNDict = {
     nav: {
       models: "模型配置",
       bridge: "本地打通",
-      search: "搜索",
+      search: "智能搜索",
       basics: "基础设置",
       feedback: "反馈",
       preferences: "偏好",
@@ -87,6 +87,8 @@ export const zhCNDict = {
       bridgeConnected: "已连接",
       bridgeOff: "未连接",
       about: "关于",
+      configured: "已配置",
+      support: "关于与支持",
     },
     theme: { label: "主题", light: "亮", dark: "暗", system: "自动" },
     about: {
@@ -102,9 +104,6 @@ export const zhCNDict = {
     cdpInput: {
       title: "浏览器输入模拟（CDP）",
       description: "hover、click 和键盘工具所需。启用后任务期间标签页会出现 Chrome 黄条提示。",
-      statusNotAsked: "尚未配置——首次使用 hover/click 时会请求确认。",
-      statusEnabled: "已启用——hover、click、键盘工具可用。",
-      statusDisabled: "已禁用——hover、click、键盘工具不可用。",
       warningTitle: "启用期间：",
       warning1: "Chrome 在活动标签页顶部显示调试黄条。",
       warning2: "所有 hover/click/键盘操作都走真实 CDP 事件；同一标签的现有 DevTools 会话会冲突。",

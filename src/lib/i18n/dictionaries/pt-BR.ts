@@ -80,7 +80,7 @@ export const ptBRDict = {
     nav: {
       models: "Configurações de modelo",
       bridge: "Ponte local",
-      search: "Busca",
+      search: "Busca inteligente",
       basics: "Configurações básicas",
       feedback: "Feedback",
       preferences: "Preferências",
@@ -88,6 +88,8 @@ export const ptBRDict = {
       bridgeConnected: "Conectado",
       bridgeOff: "Desconectado",
       about: "Sobre",
+      configured: "Configurado",
+      support: "Sobre e suporte",
     },
     theme: { label: "Tema", light: "Claro", dark: "Escuro", system: "Auto" },
     about: {
@@ -103,9 +105,6 @@ export const ptBRDict = {
     cdpInput: {
       title: "Simulação de entrada do navegador (CDP)",
       description: "Necessário para ferramentas de hover, clique e teclado. Ao ativar, o Chrome mostra a barra amarela de depuração enquanto uma tarefa é executada.",
-      statusNotAsked: "Ainda não configurado: o primeiro hover/clique pedirá consentimento.",
-      statusEnabled: "Ativado: ferramentas de hover, clique e teclado disponíveis.",
-      statusDisabled: "Desativado: ferramentas de hover, clique e teclado indisponíveis.",
       warningTitle: "Enquanto estiver ativado:",
       warning1: "O Chrome mostra uma barra amarela de depuração na aba ativa.",
       warning2: "Todas as ações de hover/clique/teclado usam eventos CDP reais; sessões existentes do Chrome DevTools na mesma aba entrarão em conflito.",

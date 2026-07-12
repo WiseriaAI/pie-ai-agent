@@ -79,7 +79,7 @@ export const enDict = {
     nav: {
       models: "Model Configs",
       bridge: "Local Bridge",
-      search: "Search",
+      search: "Smart search",
       basics: "Basics",
       feedback: "Feedback",
       preferences: "Preferences",
@@ -87,6 +87,8 @@ export const enDict = {
       bridgeConnected: "Connected",
       bridgeOff: "Not connected",
       about: "About",
+      configured: "Configured",
+      support: "About & support",
     },
     theme: { label: "Theme", light: "Light", dark: "Dark", system: "Auto" },
     about: {
@@ -102,9 +104,6 @@ export const enDict = {
     cdpInput: {
       title: "Browser input simulation (CDP)",
       description: "Required for hover, click, and keyboard tools. Enabling triggers Chrome's yellow debugger bar while a task runs.",
-      statusNotAsked: "Not yet configured — first hover/click will ask for consent.",
-      statusEnabled: "Enabled — hover, click, and keyboard tools available.",
-      statusDisabled: "Disabled — hover, click, and keyboard tools unavailable.",
       warningTitle: "While enabled:",
       warning1: "Chrome shows a yellow debugger bar on the active tab.",
       warning2: "All hover/click/keyboard actions use real CDP events; existing Chrome DevTools sessions on the same tab will conflict.",

@@ -79,7 +79,7 @@ export const zhTWDict = {
     nav: {
       models: "模型配置",
       bridge: "本地打通",
-      search: "搜尋",
+      search: "智慧搜尋",
       basics: "基礎設定",
       feedback: "意見回饋",
       preferences: "偏好",
@@ -87,6 +87,8 @@ export const zhTWDict = {
       bridgeConnected: "已連接",
       bridgeOff: "未連接",
       about: "關於",
+      configured: "已設定",
+      support: "關於與支援",
     },
     theme: { label: "主題", light: "亮", dark: "暗", system: "自動" },
     about: {
@@ -102,9 +104,6 @@ export const zhTWDict = {
     cdpInput: {
       title: "瀏覽器輸入模擬（CDP）",
       description: "hover、click 與鍵盤工具所需。啟用後任務期間分頁會出現 Chrome 黃色提示列。",
-      statusNotAsked: "尚未設定——首次使用 hover/click 時會要求確認。",
-      statusEnabled: "已啟用——hover、click、鍵盤工具可用。",
-      statusDisabled: "已停用——hover、click、鍵盤工具無法使用。",
       warningTitle: "啟用期間：",
       warning1: "Chrome 會在使用中的分頁頂部顯示偵錯黃色提示列。",
       warning2: "所有 hover/click/鍵盤操作都走真實 CDP 事件；同一分頁既有的 DevTools 工作階段會發生衝突。",

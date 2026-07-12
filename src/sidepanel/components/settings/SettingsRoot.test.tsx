@@ -1,6 +1,12 @@
 import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
-import SettingsRoot from "./SettingsRoot";
+import SettingsRoot, { helpCoords } from "./SettingsRoot";
+import { setCdpInputEnabled } from "@/lib/cdp-input-enabled";
+
+vi.mock("@/lib/cdp-input-enabled", () => ({
+  isCdpInputEnabled: vi.fn().mockResolvedValue(false),
+  setCdpInputEnabled: vi.fn().mockResolvedValue(undefined),
+}));
 
 vi.mock("@/lib/instances", () => ({
   listInstances: vi.fn().mockResolvedValue([
@@ -32,14 +38,13 @@ function make(over: Partial<React.ComponentProps<typeof SettingsRoot>> = {}) {
 }
 
 describe("SettingsRoot", () => {
-  it("renders eight drill-down rows; row-models triggers onOpenPage('models')", () => {
+  it("renders seven drill-down rows; row-models triggers onOpenPage('models')", () => {
     const p = make();
     render(<SettingsRoot {...p} />);
     for (const id of [
       "models",
       "bridge",
       "search",
-      "cdp",
       "uiLanguage",
       "assistantLanguage",
       "feedback",
@@ -49,6 +54,39 @@ describe("SettingsRoot", () => {
     }
     fireEvent.click(screen.getByTestId("settings-row-models"));
     expect(p.onOpenPage).toHaveBeenCalledWith("models");
+  });
+
+  // CDP lives inline in the root page (no sub-page): a switch + a "?" popover.
+  it("CDP row is an inline switch, not a drill-down", async () => {
+    render(<SettingsRoot {...make()} />);
+    expect(screen.queryByTestId("settings-row-cdp")).toBeNull();
+    const sw = screen.getByRole("switch");
+    fireEvent.click(sw);
+    await waitFor(() => expect(setCdpInputEnabled).toHaveBeenCalledWith(true));
+  });
+
+  it("CDP '?' toggles an explainer popover", async () => {
+    render(<SettingsRoot {...make()} />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.click(screen.getByTestId("cdp-help"));
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeTruthy());
+  });
+});
+
+describe("helpCoords", () => {
+  const rect = (left: number) => ({ left }) as DOMRect;
+
+  it("left-aligns to the trigger when there is room", () => {
+    expect(helpCoords(rect(100), 420)).toEqual({ left: 88, width: 280 });
+  });
+
+  it("clamps inside the panel when the trigger sits far right", () => {
+    // 420-wide panel: an unclamped popover at left=203 would end at 483 (off-screen).
+    expect(helpCoords(rect(215), 420)).toEqual({ left: 132, width: 280 });
+  });
+
+  it("shrinks below the min width on a very narrow panel", () => {
+    expect(helpCoords(rect(10), 200)).toEqual({ left: 8, width: 184 });
   });
 
   it("language rows drill into their sub-pages", () => {

@@ -80,7 +80,7 @@ export const jaDict = {
     nav: {
       models: "モデル設定",
       bridge: "ローカル連携",
-      search: "検索",
+      search: "スマート検索",
       basics: "基本設定",
       feedback: "フィードバック",
       preferences: "環境設定",
@@ -88,6 +88,8 @@ export const jaDict = {
       bridgeConnected: "接続済み",
       bridgeOff: "未接続",
       about: "Pie について",
+      configured: "設定済み",
+      support: "サポートと情報",
     },
     theme: { label: "テーマ", light: "ライト", dark: "ダーク", system: "自動" },
     about: {
@@ -103,9 +105,6 @@ export const jaDict = {
     cdpInput: {
       title: "ブラウザー入力シミュレーション (CDP)",
       description: "hover、クリック、キーボードツールに必要です。有効にすると、タスク実行中に Chrome の黄色いデバッグバーが表示されます。",
-      statusNotAsked: "未設定: 最初の hover/クリック時に同意を求めます。",
-      statusEnabled: "有効: hover、クリック、キーボードツールを利用できます。",
-      statusDisabled: "無効: hover、クリック、キーボードツールは利用できません。",
       warningTitle: "有効な間:",
       warning1: "Chrome はアクティブタブに黄色いデバッグバーを表示します。",
       warning2: "すべての hover/クリック/キーボード操作は実際の CDP イベントを使います。同じタブの既存 Chrome DevTools セッションとは競合します。",

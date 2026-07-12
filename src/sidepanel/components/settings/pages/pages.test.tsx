@@ -2,7 +2,6 @@
  * Settings sub-pages — post-IA-refactor smoke tests.
  *
  * Replaces the intent of the removed SettingsTabs.test.tsx:
- *   - CdpPage owns the CDP toggle (role="switch")
  *   - ModelsPage renders the "add config" affordance for an empty instance list
  *
  * Locale-robust: never reads translated strings; relies on role="switch" and
@@ -11,7 +10,6 @@
 
 import { render, screen, cleanup, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, afterEach } from "vitest";
-import CdpPage from "./CdpPage";
 import ModelsPage from "./ModelsPage";
 
 vi.mock("@/lib/cdp-input-enabled", () => ({
@@ -55,13 +53,6 @@ vi.mock("@/lib/model-router/providers/registry", () => ({
 }));
 
 afterEach(cleanup);
-
-describe("CdpPage", () => {
-  it("renders the CDP toggle switch", () => {
-    render(<CdpPage />);
-    expect(screen.getByRole("switch")).toBeTruthy();
-  });
-});
 
 describe("ModelsPage", () => {
   it("renders the new-config button for an empty instance list", async () => {

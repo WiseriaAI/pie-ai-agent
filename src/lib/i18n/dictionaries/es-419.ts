@@ -80,7 +80,7 @@ export const es419Dict = {
     nav: {
       models: "Configuración de modelos",
       bridge: "Puente local",
-      search: "Búsqueda",
+      search: "Búsqueda inteligente",
       basics: "Configuración básica",
       feedback: "Comentarios",
       preferences: "Preferencias",
@@ -88,6 +88,8 @@ export const es419Dict = {
       bridgeConnected: "Conectado",
       bridgeOff: "Sin conexión",
       about: "Acerca de",
+      configured: "Configurado",
+      support: "Acerca de y soporte",
     },
     theme: { label: "Tema", light: "Claro", dark: "Oscuro", system: "Auto" },
     about: {
@@ -103,9 +105,6 @@ export const es419Dict = {
     cdpInput: {
       title: "Simulación de entrada del navegador (CDP)",
       description: "Necesario para herramientas de hover, clic y teclado. Al activarlo, Chrome muestra la barra amarilla de depuración mientras se ejecuta una tarea.",
-      statusNotAsked: "Aún no configurado: el primer hover/clic pedirá consentimiento.",
-      statusEnabled: "Activado: las herramientas de hover, clic y teclado están disponibles.",
-      statusDisabled: "Desactivado: las herramientas de hover, clic y teclado no están disponibles.",
       warningTitle: "Mientras esté activado:",
       warning1: "Chrome muestra una barra amarilla de depuración en la pestaña activa.",
       warning2: "Todas las acciones de hover/clic/teclado usan eventos CDP reales; las sesiones existentes de Chrome DevTools en la misma pestaña tendrán conflicto.",
