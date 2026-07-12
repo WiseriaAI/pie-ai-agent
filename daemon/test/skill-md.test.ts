@@ -25,9 +25,10 @@ test("parses standard frontmatter incl. metadata.pie caps and body", () => {
   expect(p.body.trim().startsWith("# Web Fetch")).toBe(true);
 });
 
-test("no metadata.pie → empty caps", () => {
+test("no metadata.pie → empty caps + empty invalidNetwork", () => {
   const p = parseSkillMd(`---\nname: x\ndescription: y\n---\nbody\n`);
   expect(p.declaredCaps).toEqual({ network: [], write: [] });
+  expect(p.invalidNetwork).toEqual([]);
 });
 
 test("throws on missing required fields", () => {
@@ -90,5 +91,37 @@ describe("parseSkillMd network normalization", () => {
       "body",
     ].join("\n");
     expect(parseSkillMd(md).declaredCaps.network).toEqual(["api.example.com", "plain.example.org"]);
+  });
+
+  test("surfaces dropped raw entries via invalidNetwork (安全语义不变：仍不进 network)", () => {
+    const md = [
+      "---",
+      "name: net-skill",
+      "description: d",
+      "metadata:",
+      "  pie:",
+      '    network: ["api.example.com", "not a domain!", "例え.テスト", "good.org"]',
+      "---",
+      "body",
+    ].join("\n");
+    const p = parseSkillMd(md);
+    // 合法项照常归一化进 network，非法项一个都不进（宁可断网不放行错误值）
+    expect(p.declaredCaps.network).toEqual(["api.example.com", "good.org"]);
+    // 但被丢弃的原始条目原样留在 invalidNetwork（作者信号）
+    expect(p.invalidNetwork).toEqual(["not a domain!", "例え.テスト"]);
+  });
+
+  test("all-valid network → invalidNetwork empty", () => {
+    const md = [
+      "---",
+      "name: net-skill",
+      "description: d",
+      "metadata:",
+      "  pie:",
+      "    network: [api.example.com, example.com]",
+      "---",
+      "body",
+    ].join("\n");
+    expect(parseSkillMd(md).invalidNetwork).toEqual([]);
   });
 });

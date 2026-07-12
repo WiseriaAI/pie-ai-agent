@@ -399,6 +399,7 @@ export const es419Dict = {
     },
     authorTag: { builtIn: "INTEGRADA", agent: "AGENTE", user: "USUARIO" },
     sourceTag: { agents: "~/.agents" },
+    invalidNetwork: "{count} dominio(s) de red no válido(s) ignorado(s)",
     agentsImport: {
       title: "Se encontraron {count} skills locales",
       body: "Provienen de ~/.agents/skills (directorio compartido entre agentes). Elige cuáles puede usar Pie; puedes cambiarlo en esta lista cuando quieras.",

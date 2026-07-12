@@ -399,6 +399,7 @@ export const ptBRDict = {
     },
     authorTag: { builtIn: "INTEGRADO", agent: "AGENTE", user: "USUÁRIO" },
     sourceTag: { agents: "~/.agents" },
+    invalidNetwork: "{count} domínio(s) de rede inválido(s) ignorado(s)",
     agentsImport: {
       title: "Encontramos {count} skills locais",
       body: "Elas vêm de ~/.agents/skills (diretório compartilhado entre agentes). Escolha quais o Pie pode usar — você pode mudar isso nesta lista a qualquer momento.",

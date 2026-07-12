@@ -88,6 +88,10 @@ export interface SkillSummary {
   /** 来源根：主根 ~/.pie/skills = "pie"，只读副根 ~/.agents/skills = "agents"。
    *  optional 加法字段：旧 daemon 不给 → 扩展按 "pie" 处理（无 badge）。 */
   source?: "pie" | "agents";
+  /** metadata.pie.network 里解析不出合法域名、被安全丢弃的原始声明（作者信号）。
+   *  安全语义不变：这些条目不进 declaredCaps.network，只用来在面板出「N 个域名无效已忽略」
+   *  badge。optional 加法字段：旧 daemon 不给 / 全合法时省略（PROTOCOL_VERSION 不动）。 */
+  invalidNetwork?: string[];
 }
 export interface ListSkillsResult {
   skills: SkillSummary[];

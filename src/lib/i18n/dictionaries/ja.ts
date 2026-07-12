@@ -399,6 +399,7 @@ export const jaDict = {
     },
     authorTag: { builtIn: "組み込み", agent: "エージェント", user: "ユーザー" },
     sourceTag: { agents: "~/.agents" },
+    invalidNetwork: "無効なネットワークドメイン {count} 件を無視しました",
     agentsImport: {
       title: "ローカルスキルを {count} 件検出しました",
       body: "~/.agents/skills（エージェント間共有ディレクトリ）にあるスキルです。Pie で使うものを選んでください。後からこのリストでいつでも変更できます。",

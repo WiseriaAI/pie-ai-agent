@@ -211,6 +211,31 @@ describe("SkillsList", () => {
     expect(written).not.toContain("Do the thing.");
   });
 
+  it("renders an invalid-network warning badge for a disk entry carrying invalidNetwork", async () => {
+    vi.mocked(listSkillEntries).mockResolvedValue({
+      ok: true,
+      skills: [{ ...DISK_ENTRY, invalidNetwork: ["not a domain!", "例え.テスト"] }],
+    });
+
+    render(<SkillsList onRunSkill={vi.fn()} />);
+    await screen.findByRole("switch", { name: "Disable Disk Skill" });
+
+    // count 插值到 badge 文案
+    const badge = screen.getByText(/2 invalid network domain/i);
+    expect(badge).toBeTruthy();
+    // 被丢弃的原始条目挂在 title 上供作者排查
+    expect(badge.getAttribute("title")).toBe("not a domain!, 例え.テスト");
+  });
+
+  it("no badge when a skill has no invalidNetwork", async () => {
+    vi.mocked(listSkillEntries).mockResolvedValue({ ok: true, skills: [DISK_ENTRY] });
+
+    render(<SkillsList onRunSkill={vi.fn()} />);
+    await screen.findByRole("switch", { name: "Disable Disk Skill" });
+
+    expect(screen.queryByText(/invalid network domain/i)).toBeNull();
+  });
+
   it("a listSkillEntries RPC failure renders an empty list instead of throwing", async () => {
     vi.mocked(listSkillEntries).mockResolvedValue({ ok: false, error: "daemon unreachable" });
 
