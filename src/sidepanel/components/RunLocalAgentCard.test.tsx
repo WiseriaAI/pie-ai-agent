@@ -26,4 +26,12 @@ describe("RunLocalAgentCard", () => {
     fireEvent.click(screen.getByRole("button", { name: /deny|拒绝/i }));
     expect(onDecision).toHaveBeenCalledWith(false);
   });
+
+  it("warning register: caps label styled text-warning; no tool name in the card", () => {
+    const { container } = render(
+      <RunLocalAgentCard payload={{ prompt: "do x", cwd: "/tmp/w" }} onDecision={() => {}} />,
+    );
+    expect(screen.getByText("Local agent").className).toContain("text-warning");
+    expect(container.textContent).not.toContain("run_local_agent");
+  });
 });

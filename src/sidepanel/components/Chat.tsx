@@ -94,13 +94,7 @@ import MarkdownContent, { CopyIcon } from "./Markdown";
 import { copyRichText } from "./copy-rich-text";
 import SkillSlashPopover from "./SkillSlashPopover";
 import { PendingInstructionList, type PendingItem } from "./PendingInstructionList";
-import { CdpOnboardingCard } from "./CdpOnboardingCard";
-import { LocalFileRequestCard } from "./LocalFileRequestCard";
-import { RunLocalAgentCard } from "./RunLocalAgentCard";
-import { HandoffCard } from "./HandoffCard";
-import { SkillGrantCard } from "./SkillGrantCard";
-import { ScheduleDraftCard } from "./ScheduleDraftCard";
-import { AnimatePresence } from "./ui/motion";
+import { HitlInlineCards } from "./hitl/HitlInlineCards";
 import { usePanelRequest } from "../hooks/usePanelRequest";
 import { useFileAccessPrompt } from "../hooks/useFileAccessPrompt";
 import { FileAccessCard } from "./FileAccessCard";
@@ -409,7 +403,7 @@ export default function Chat({
     if (!atBottomRef.current) return;
     const c = scrollContainerRef.current;
     if (c) c.scrollTop = c.scrollHeight;
-  }, [messages, streamingText]);
+  }, [messages, streamingText, panelRequest?.requestId]);
 
   const handleMessagesScroll = () => {
     const c = scrollContainerRef.current;
@@ -1172,24 +1166,15 @@ After the skill completes, briefly summarize what was created (the user will see
                 window, so a static preamble bubble alone would look frozen.
                 Sits at the tail so there's a single place to confirm "still
                 working" — also covers the gaps between tool calls. */}
-            {streaming && panelRequest?.kind !== "schedule-model" && (
+            {streaming && !panelRequest && (
               <WorkingIndicator thinking={!!streamingThinking && !streamingText} />
             )}
-            <AnimatePresence>
-              {panelRequest?.kind === "schedule-model" && (
-                <ScheduleDraftCard
-                  key={panelRequest.requestId}
-                  payload={panelRequest.payload as import("@/lib/agent/tools/schedule-meta").ScheduleDraftPayload}
-                  instances={instances}
-                  onSubmit={(instanceId, model) =>
-                    respondPanel(panelRequest.requestId, { ok: true, data: { instanceId, model } })
-                  }
-                  onCancel={() =>
-                    respondPanel(panelRequest.requestId, { ok: false, reason: "cancelled by user" })
-                  }
-                />
-              )}
-            </AnimatePresence>
+            <HitlInlineCards
+              request={panelRequest}
+              respond={respondPanel}
+              instances={instances}
+              onChooseLocalFile={() => localFileRequestInputRef.current?.click()}
+            />
 
             {error && (
               <div className="rounded-lg border border-warning-line bg-warning-tint px-3 py-2 text-[12px] text-warning">
@@ -1425,41 +1410,6 @@ After the skill completes, briefly summarize what was created (the user will see
         </div>
       )}
 
-      {panelRequest?.kind === "cdp-consent" && (
-        <CdpOnboardingCard
-          onAnswer={(enabled) => respondPanel(panelRequest.requestId, { ok: true, data: enabled })}
-        />
-      )}
-      {panelRequest?.kind === "local-file" && (
-        <LocalFileRequestCard
-          onChoose={() => localFileRequestInputRef.current?.click()}
-          onCancel={() => respondPanel(panelRequest.requestId, { ok: false, reason: "cancelled by user" })}
-        />
-      )}
-      {panelRequest?.kind === "run-local-agent" && (
-        <RunLocalAgentCard
-          payload={panelRequest.payload as { prompt: string; cwd: string }}
-          onDecision={(ok) => respondPanel(panelRequest.requestId, { ok: true, data: ok })}
-        />
-      )}
-      {panelRequest?.kind === "handoff-to-agent" && (
-        <HandoffCard
-          payload={
-            panelRequest.payload as {
-              context: string;
-              fileCount: number;
-              agents: { id: string; label: string }[];
-            }
-          }
-          onDecision={(target) => respondPanel(panelRequest.requestId, { ok: true, data: target })}
-        />
-      )}
-      {panelRequest?.kind === "skill-grant" && (
-        <SkillGrantCard
-          payload={panelRequest.payload as import("@/lib/agent/tools/skill-script").SkillGrantRequest}
-          onDecision={(approved) => respondPanel(panelRequest.requestId, { ok: true, data: approved })}
-        />
-      )}
       {showFileAccess && (
         <FileAccessCard onDismiss={dismissFileAccess} />
       )}

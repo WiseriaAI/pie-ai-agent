@@ -2,7 +2,13 @@
 // and the Bridge sub-page (LocalBridgeSection). Extracted from Settings.tsx so
 // the root badge can read bridge state without pulling in the whole section.
 
-export type BridgeStatus = { hasPermission: boolean; ready: boolean };
+export type BridgeStatus = {
+  hasPermission: boolean;
+  ready: boolean;
+  daemonVersion?: string | null;
+  needsUpgrade?: boolean;
+  protocolMismatch?: boolean;
+};
 
 // Ask the SW for live bridge status (nativeMessaging granted + connected to the
 // daemon). Silently returns nothing when the SW is asleep / unresponsive — the
