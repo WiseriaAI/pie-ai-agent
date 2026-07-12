@@ -62,7 +62,12 @@ export function useCelebrate({
   useEffect(() => {
     clearTimer();
     setCelebrating(false);
-  }, [sessionId]);
+    // 防御性同步：切会话瞬间 prevStreamingRef 可能还留着旧会话的
+    // streaming=true，若这个 effect 与上面的边沿 effect 的声明顺序被
+    // 调换，会在新会话首次渲染时产生一次假的 true→false 边沿（幻影庆祝）。
+    // 这里不依赖 effect 声明顺序，主动把 ref 同步到当前值。
+    prevStreamingRef.current = streaming;
+  }, [sessionId]); // eslint-disable-line react-hooks/exhaustive-deps -- streaming read intentionally, not a trigger
   useEffect(() => clearTimer, []);
 
   return celebrating;

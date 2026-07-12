@@ -56,7 +56,7 @@
 | success（弯月眼） | `0.185d × 0.11d` | `d d 0 0`（上圆下平） | `0.17d` |
 | thinking（三点） | 每点 `0.13d` 圆 | 50% | `0.11d` |
 
-- working 外圈扫描环：直径 `size * 0.98`，SVG circle `r = 直径/2 - 3`，`stroke-width 2.4`，`stroke-linecap round`，`stroke-dasharray = 26% 周长`。
+- working 外圈扫描环：直径 `size * 0.98`，SVG circle `r = 直径/2 - max(1.5, 3 * (size/140))`（固定 −3px 直译自 ~140px 设计稿，mini 尺寸如 22px 指示行需按比例内缩，弧线才能落在深色 rim 上：disc 半径 = `0.42·size`，shell 半径 = `0.5·size`），`stroke-width 2.4`，`stroke-linecap round`，`stroke-dasharray = 26% 周长`。扫描环容器 `zIndex: 1`（在 shell 之上，否则被 shell 遮住永不可见）；声波/完成光环保持默认层级（小尺度阶段被 shell 遮住属设计意图——声波从脸后发出）。
 - listening 声波：2 个同心圆环，直径 = d，`border: 2px solid accent`，错峰（第二个延迟半周期）。
 - success 光环：1 个圆环，直径 = d，`border: 2.4px solid accent`。
 

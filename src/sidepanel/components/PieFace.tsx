@@ -63,7 +63,7 @@ export default function PieFace({ state, size, onWakeEnd }: PieFaceProps) {
     });
     return (
       <div
-        style={{ position: "relative", width: size, height: size }}
+        style={{ position: "relative", width: size, height: size, flexShrink: 0 }}
         data-pie-state="wake"
         aria-hidden="true"
         onAnimationEnd={(e) => {
@@ -164,7 +164,9 @@ export default function PieFace({ state, size, onWakeEnd }: PieFaceProps) {
   const extras: ReactElement[] = [];
   if (state === "working") {
     const rs = size * 0.98;
-    const r = rs / 2 - 3;
+    // 固定 −3px 直译自 ~140px 设计稿；mini 尺寸（22px 指示行）按比例缩，
+    // 弧线才能落在深色 rim 上（disc 半径 = 0.42·size，shell 半径 = 0.5·size）。
+    const r = rs / 2 - Math.max(1.5, 3 * (size / 140));
     const C = 2 * Math.PI * r;
     extras.push(
       <div
@@ -178,6 +180,7 @@ export default function PieFace({ state, size, onWakeEnd }: PieFaceProps) {
           marginLeft: -rs / 2,
           marginTop: -rs / 2,
           animation: "pie-spin 1.1s linear infinite",
+          zIndex: 1,
         }}
       >
         <svg width={rs} height={rs} viewBox={`0 0 ${rs} ${rs}`}>
@@ -239,7 +242,7 @@ export default function PieFace({ state, size, onWakeEnd }: PieFaceProps) {
 
   return (
     <div
-      style={{ position: "relative", width: size, height: size }}
+      style={{ position: "relative", width: size, height: size, flexShrink: 0 }}
       data-pie-state={state}
       aria-hidden="true"
     >

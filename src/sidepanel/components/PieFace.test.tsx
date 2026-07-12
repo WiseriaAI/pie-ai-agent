@@ -54,6 +54,9 @@ describe("PieFace", () => {
     const circle = container.querySelector("circle")!;
     expect(circle.getAttribute("stroke")).toBe("var(--c-accent)");
     expect(circle.getAttribute("stroke-linecap")).toBe("round");
+    // ring 容器须在 shell 之上，否则被 shell 遮住永不可见（final review Critical）。
+    const ring = container.querySelector("svg")!.parentElement!;
+    expect(ring.style.zIndex).toBe("1");
   });
 
   it("success: 弹跳 + 光环", () => {

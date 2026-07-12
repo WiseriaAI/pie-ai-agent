@@ -91,4 +91,10 @@ describe("useCelebrate", () => {
     rerender({ streaming: false, error: null, messages: [assistantMsg], sessionId: "s2" });
     expect(result.current).toBe(false);
   });
+
+  it("切会话产生的 true→false 假边沿 → 不庆祝", () => {
+    const { result, rerender } = setup({ streaming: true });
+    rerender({ streaming: false, error: null, messages: [assistantMsg], sessionId: "s2" });
+    expect(result.current).toBe(false);
+  });
 });

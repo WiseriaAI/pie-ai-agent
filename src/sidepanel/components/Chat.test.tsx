@@ -1356,6 +1356,24 @@ describe("WorkingIndicator Pie face", () => {
     expect(await screen.findByText("WORKING")).toBeTruthy();
     expect(document.querySelector('[data-pie-state="working"]')).toBeTruthy();
   });
+
+  it("thinking 与正文同时非空 → WORKING（过渡态）", async () => {
+    seedProvider("anthropic");
+    render(
+      <Chat
+        session={makeSession({
+          streaming: true,
+          streamingThinking: "hmm",
+          streamingText: "Hello",
+        })}
+        onOpenSettings={() => {}}
+        providerLabel={null}
+      />,
+    );
+    expect(await screen.findByText("WORKING")).toBeTruthy();
+    expect(document.querySelector('[data-pie-state="working"]')).toBeTruthy();
+    expect(document.querySelector('[data-pie-state="thinking"]')).toBeNull();
+  });
 });
 
 describe("celebrate on completion", () => {
@@ -1397,6 +1415,50 @@ describe("celebrate on completion", () => {
       expect(
         document.querySelectorAll('[data-pie-state="static"]').length,
       ).toBeGreaterThan(0);
+      act(() => {
+        vi.advanceTimersByTime(2500);
+      });
+      expect(document.querySelector('[data-pie-state="success"]')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("纯 chat 完成（无 agent-summary，末尾 assistant）也庆祝", async () => {
+    seedProvider("anthropic");
+    vi.useFakeTimers();
+    try {
+      const { rerender } = render(
+        <Chat
+          session={makeSession({
+            streaming: true,
+            messages: [{ role: "user", content: "hi" }],
+          })}
+          onOpenSettings={() => {}}
+          providerLabel={null}
+        />,
+      );
+      // checkConfig() runs async (awaits listInstances/getSessionMeta/
+      // resolveSelection/getInstance) — flush the microtask queue so
+      // hasConfig settles before we render on the done-messages props.
+      await act(async () => {});
+      rerender(
+        <Chat
+          session={makeSession({
+            streaming: false,
+            messages: [
+              { role: "user", content: "hi" },
+              { role: "assistant", content: "answer" },
+            ],
+          })}
+          onOpenSettings={() => {}}
+          providerLabel={null}
+        />,
+      );
+      await act(async () => {});
+      expect(
+        document.querySelectorAll('[data-pie-state="success"]').length,
+      ).toBe(1);
       act(() => {
         vi.advanceTimersByTime(2500);
       });
