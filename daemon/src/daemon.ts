@@ -9,7 +9,7 @@ import { decodeNdjsonLines } from "./framing";
 import { log } from "./log";
 import { readSkillFile, writeSkill, listSkillsMerged, resolveSkillRoot, deleteSkillGuarded } from "./skill-store";
 import { runSkillScript } from "./skill-exec";
-import { listGrants, revokeGrant } from "./grants";
+import { listGrants, revokeGrant, sweepGrants } from "./grants";
 import { readAuditTail } from "./audit";
 import type {
   ReadSkillFileParams, RunSkillScriptParams, WriteSkillParams, DeleteSkillParams, RevokeGrantParams,
@@ -212,6 +212,7 @@ export function makeBackpressureWriter(rawWrite: (bytes: Uint8Array) => number):
 
 export async function startDaemon(): Promise<void> {
   if (!existsSync(paths.pieDir)) mkdirSync(paths.pieDir, { recursive: true });
+  sweepGrants(); // 一次性幂等清扫 2b 旧格式死记录，保持授权账本干净
   if (existsSync(paths.socketPath)) unlinkSync(paths.socketPath); // 清残留
   Bun.listen<{ carry: string; writer: BackpressureWriter }>({
     unix: paths.socketPath,
