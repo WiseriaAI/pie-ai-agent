@@ -175,16 +175,51 @@ export function processSocketChunk(
   return { carry: nextCarry, pending };
 }
 
+// socket.write 在内核缓冲满时只写入部分字节（真机案例：32 个 ~/.agents skill
+// 的 list_skills 响应 >8KB，首个 8192B 块之外的余量被丢弃，客户端永远等不到
+// 完整行）。写出器缓存余量、drain 回调续写；响应含多字节 UTF-8（skill 中文
+// 描述），余量必须按字节切，故内部一律 Uint8Array。有积压时新响应只排队，
+// 保证单条响应的字节连续性。
+export interface BackpressureWriter {
+  write(out: string): void;
+  drain(): void;
+  pendingBytes(): number;
+}
+
+export function makeBackpressureWriter(rawWrite: (bytes: Uint8Array) => number): BackpressureWriter {
+  const enc = new TextEncoder();
+  const outbox: Uint8Array[] = [];
+  function flush(): void {
+    while (outbox.length > 0) {
+      const head = outbox[0]!;
+      const n = rawWrite(head);
+      if (n < head.length) {
+        outbox[0] = head.subarray(Math.max(n, 0));
+        return; // 缓冲又满了，等下一次 drain
+      }
+      outbox.shift();
+    }
+  }
+  return {
+    write(out: string) {
+      outbox.push(enc.encode(out));
+      if (outbox.length === 1) flush();
+    },
+    drain: flush,
+    pendingBytes: () => outbox.reduce((a, b) => a + b.length, 0),
+  };
+}
+
 export async function startDaemon(): Promise<void> {
   if (!existsSync(paths.pieDir)) mkdirSync(paths.pieDir, { recursive: true });
   if (existsSync(paths.socketPath)) unlinkSync(paths.socketPath); // 清残留
-  Bun.listen<{ carry: string }>({
+  Bun.listen<{ carry: string; writer: BackpressureWriter }>({
     unix: paths.socketPath,
     socket: {
       open(socket) {
         // 每个连接独立的 carry：Bun 的 per-socket data 绑定，多个 host 连接
         // （理论上）互不干扰各自的半行缓冲。
-        socket.data = { carry: "" };
+        socket.data = { carry: "", writer: makeBackpressureWriter((bytes) => socket.write(bytes)) };
         log("info", "client.connect");
       },
       close() {
@@ -192,10 +227,13 @@ export async function startDaemon(): Promise<void> {
       },
       data(socket, data) {
         const { carry, pending } = processSocketChunk(socket.data.carry, data.toString(), (out) =>
-          socket.write(out),
+          socket.data.writer.write(out),
         );
         socket.data.carry = carry;
         pending.catch((err) => log("error", "socket.error", { err: String(err) }));
+      },
+      drain(socket) {
+        socket.data.writer.drain();
       },
     },
   });
