@@ -1,5 +1,6 @@
 import { unlinkSync, existsSync, mkdirSync, chmodSync } from "fs";
 import { PROTOCOL_VERSION, BRIDGE_CAPABILITIES } from "../../src/types/local-bridge";
+import { DAEMON_VERSION } from "./version";
 import type { BridgeResponse, RunLocalAgentParams, HandoffParams, ListAgentsResult } from "../../src/types/local-bridge";
 import { paths } from "./paths";
 import { runLocalAgent } from "./run-local-agent"; // Task 4
@@ -9,7 +10,7 @@ import { decodeNdjsonLines } from "./framing";
 import { log } from "./log";
 import { readSkillFile, writeSkill, listSkillsMerged, resolveSkillRoot, deleteSkillGuarded } from "./skill-store";
 import { runSkillScript } from "./skill-exec";
-import { listGrants, revokeGrant } from "./grants";
+import { listGrants, revokeGrant, sweepGrants } from "./grants";
 import { readAuditTail } from "./audit";
 import type {
   ReadSkillFileParams, RunSkillScriptParams, WriteSkillParams, DeleteSkillParams, RevokeGrantParams,
@@ -34,7 +35,7 @@ export async function handleMessage(line: string): Promise<string> {
     case "hello":
       return respond({
         ok: true,
-        result: { protocolVersion: PROTOCOL_VERSION, capabilities: [...BRIDGE_CAPABILITIES] },
+        result: { protocolVersion: PROTOCOL_VERSION, capabilities: [...BRIDGE_CAPABILITIES], daemonVersion: DAEMON_VERSION },
       });
     case "run_local_agent": {
       try {
@@ -60,7 +61,7 @@ export async function handleMessage(line: string): Promise<string> {
       try {
         const detected = new Set(detectAgents().map((a) => a.id));
         const result: ListAgentsResult = {
-          agents: AGENT_CANDIDATES.map(({ id, label }) => ({ id, label, installed: detected.has(id) })),
+          agents: AGENT_CANDIDATES.map(({ id, label, kind }) => ({ id, label, kind, installed: detected.has(id) })),
         };
         return respond({ ok: true, result });
       } catch (e) {
@@ -220,6 +221,7 @@ export function makeBackpressureWriter(rawWrite: (bytes: Uint8Array) => number):
 
 export async function startDaemon(): Promise<void> {
   if (!existsSync(paths.pieDir)) mkdirSync(paths.pieDir, { recursive: true });
+  sweepGrants(); // 一次性幂等清扫 2b 旧格式死记录，保持授权账本干净
   if (existsSync(paths.socketPath)) unlinkSync(paths.socketPath); // 清残留
   Bun.listen<{ carry: string; writer: BackpressureWriter }>({
     unix: paths.socketPath,

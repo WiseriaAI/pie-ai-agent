@@ -1,5 +1,13 @@
 import { useState } from "react";
 import { useT } from "@/lib/i18n";
+import {
+  HitlCardShell,
+  HitlPrimaryButton,
+  HitlSecondaryButton,
+  HitlDetailBlock,
+  HitlDetailGroup,
+} from "./hitl/HitlCardShell";
+import { AgentBrandIcon } from "./hitl/agent-brand-icons";
 
 interface AgentOption {
   id: string;
@@ -10,66 +18,81 @@ interface Props {
   onDecision: (target: string | null) => void;
 }
 
+const HandoffIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <path d="M4 20v-7a4 4 0 0 1 4-4h12" />
+    <path d="m15 4 5 5-5 5" />
+  </svg>
+);
+
 /**
- * Authorization gate shown before the SW hands a task OFF to a local interactive
- * agent session. The user picks the recipient here (the LLM cannot — recipient
- * choice and authorization are one step). Context is rendered verbatim so the
- * user sees exactly what will be written to context.md.
+ * 交棒授权卡（#270 迁 HitlCardShell，warning 档）：用户在此选收件人（LLM 不能选
+ * ——收件人选择与授权是同一步）。context 原文渲染，让用户看到将写入 context.md
+ * 的内容。与 run_local_agent 卡的语义区分：任务移交出去，结果不回来。
  */
 export function HandoffCard({ payload, onDecision }: Props) {
   const t = useT();
   const [selected, setSelected] = useState(payload.agents[0]?.id ?? "");
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-warning-line bg-warning-tint px-3 py-2.5 text-[12px] leading-[18px] text-warning">
-      <div className="text-[13px] font-medium text-warning">{t("handoff.title")}</div>
-      {/* 语义副文案：与 run_local_agent 卡的核心区分——任务移交出去，结果不回来 */}
-      <div className="text-[12px] leading-relaxed text-warning/70">{t("handoff.semanticsNote")}</div>
-      <div>
-        <div className="text-warning/70">{t("handoff.targetLabel")}</div>
-        <div className="mt-1 flex flex-col gap-1">
-          {payload.agents.map((a) => (
+    <HitlCardShell
+      register="local"
+      icon={<HandoffIcon />}
+      capsLabel={t("hitl.caps.handoff")}
+      title={t("handoff.title")}
+      description={t("handoff.semanticsNote")}
+      actions={
+        <>
+          <HitlSecondaryButton onClick={() => onDecision(null)}>
+            {t("handoff.deny")}
+          </HitlSecondaryButton>
+          <HitlPrimaryButton register="local" onClick={() => onDecision(selected)}>
+            {t("handoff.allow")}
+          </HitlPrimaryButton>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-1.5">
+        <span className="caps text-fg-3">{t("handoff.targetLabel")}</span>
+        {payload.agents.map((a) => {
+          const isSel = a.id === selected;
+          return (
             <label
               key={a.id}
-              className="flex cursor-pointer items-center gap-2 rounded border border-warning-line/50 bg-black/5 px-2 py-1 text-warning"
+              className={`flex cursor-pointer items-center gap-2.5 rounded-lg border px-2.5 py-2 ${
+                isSel ? "border-accent-line bg-accent-tint" : "border-line"
+              }`}
             >
               <input
                 type="radio"
                 name="handoff-target"
-                checked={selected === a.id}
+                className="sr-only"
+                checked={isSel}
                 onChange={() => setSelected(a.id)}
               />
-              <span>{a.label}</span>
+              <AgentBrandIcon agentId={a.id} size={16} />
+              <span className={`text-[13px] ${isSel ? "text-fg-1" : "text-fg-2"}`}>{a.label}</span>
+              <span
+                aria-hidden
+                className={`ml-auto h-3.5 w-3.5 shrink-0 rounded-full border ${
+                  isSel ? "border-[4px] border-accent" : "border-[1.5px] border-[var(--c-fg-4)]"
+                }`}
+              />
             </label>
-          ))}
-        </div>
+          );
+        })}
       </div>
-      <div>
-        <div className="text-warning/70">{t("handoff.contextLabel")}</div>
-        <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded border border-warning-line/50 bg-black/5 px-2 py-1 text-warning">
-          {payload.context}
-        </pre>
-      </div>
-      {payload.fileCount > 0 && (
-        <div className="text-warning/70">
-          {t("handoff.filesLabel")}: {payload.fileCount}
-        </div>
-      )}
-      <div className="flex gap-2">
-        <button
-          type="button"
-          onClick={() => onDecision(selected)}
-          className="rounded border border-warning-line bg-warning-tint px-2.5 py-1 text-[11px] font-medium text-warning hover:bg-warning-line/30"
-        >
-          {t("handoff.allow")}
-        </button>
-        <button
-          type="button"
-          onClick={() => onDecision(null)}
-          className="rounded border border-warning-line/50 bg-transparent px-2.5 py-1 text-[11px] text-warning/70 hover:text-warning"
-        >
-          {t("handoff.deny")}
-        </button>
-      </div>
-    </div>
+      <HitlDetailBlock>
+        <HitlDetailGroup label={t("handoff.contextLabel")}>
+          <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-[17px] text-fg-2">
+            {payload.context}
+          </pre>
+        </HitlDetailGroup>
+        {payload.fileCount > 0 && (
+          <span className="text-[11px] text-fg-3">
+            {t("handoff.filesLabel")}: {payload.fileCount}
+          </span>
+        )}
+      </HitlDetailBlock>
+    </HitlCardShell>
   );
 }

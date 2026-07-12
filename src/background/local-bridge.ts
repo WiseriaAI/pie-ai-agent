@@ -29,6 +29,36 @@ const HOST_NAME = "ai.wiseria.pie";
 let port: chrome.runtime.Port | null = null;
 let ready = false;
 let capabilities: string[] = [];
+
+// ── 版本握手（spec §6）──────────────────────────────────────────────
+// 扩展内置最低 daemon 版本；daemonVersion < MIN = 软升级提示（功能按 capability
+// 降级继续用）。旧 daemon 不带 daemonVersion → daemonVersion=null → 视为过旧。
+export const MIN_DAEMON_VERSION = "0.1.0";
+let daemonVersion: string | null = null;
+let protocolMismatch = false;
+
+/** 简单三段 semver 比较，够用（daemon 版本我们自己发，无 prerelease）。 */
+export function compareDaemonVersions(a: string, b: string): number {
+  const pa = a.split(".").map(Number);
+  const pb = b.split(".").map(Number);
+  for (let i = 0; i < 3; i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d) return d < 0 ? -1 : 1;
+  }
+  return 0;
+}
+
+export function bridgeDaemonVersion(): string | null {
+  return daemonVersion;
+}
+/** 连上但版本过旧（含旧 daemon 不带 daemonVersion 的情况）。软提示：功能按 capability 降级继续用。 */
+export function bridgeNeedsUpgrade(): boolean {
+  return ready && (daemonVersion === null || compareDaemonVersions(daemonVersion, MIN_DAEMON_VERSION) < 0);
+}
+/** PROTOCOL_VERSION 差 >1 = 硬不兼容（沿用现有 ±1 兼容窗口判定）。 */
+export function bridgeProtocolMismatch(): boolean {
+  return protocolMismatch;
+}
 const pending = new Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
 
 // 握手落定 promise：从未 init 过 → 已 resolve；initLocalBridge() 换上新的 pending
@@ -98,6 +128,17 @@ export function initLocalBridge(): void {
   // 重叠 init 时，旧 handshake 只落定自己那个 promise，不会错序落定新的。
   let settleThis!: () => void;
   settledPromise = new Promise<void>((r) => { settleThis = r; });
+  // (a) 重叠 init：若上一条连接还挂着（SW 唤醒兜底在活着的 SW 上重入
+  // initBridgeAndMigrate 时会发生），先拆掉它，避免旧 host 进程泄漏 + 旧 port
+  // 的 stale onDisconnect 迟到触发清掉健康的新连接。port.disconnect() 不触发
+  // 自身的 onDisconnect（Chrome 语义），故这里不会误清新状态。
+  if (port) {
+    try {
+      port.disconnect();
+    } catch {
+      /* already dead */
+    }
+  }
   try {
     port = chrome.runtime.connectNative(HOST_NAME);
   } catch {
@@ -106,6 +147,7 @@ export function initLocalBridge(): void {
     port = null;
     ready = false;
     capabilities = [];
+    daemonVersion = null;
     pending.clear();
     settleThis();
     // 重连尝试本身失败（daemon 仍在重启中，端口都没建起来）→ onDisconnect 永远
@@ -114,8 +156,16 @@ export function initLocalBridge(): void {
     scheduleReconnect();
     return;
   }
+  // (b) 每个监听器/回调闭包捕获自己那次 init 的 port（myPort），共享的模块级
+  // 状态（ready/capabilities/onDisconnect 清理、握手落定）只由「当前 port ===
+  // myPort」的那一路改。重叠 init 后旧 port 的迟到回调 port !== myPort → 自动
+  // 失效，不会清掉/污染健康的新连接。与 settledPromise「resolver 由本次 init
+  // 闭包独占」是同一模式。
+  const myPort = port;
   port.onMessage.addListener((raw: unknown) => {
     const msg = raw as BridgeResponse;
+    // 回复按 uuid 路由（pending 全局唯一键），无需 port 门控——即便旧 port 迟到
+    // 送回一条属于自己那次请求的回复，pending.get 命中的也只是它自己的 entry。
     const p = pending.get(msg.id);
     if (!p) return;
     pending.delete(msg.id);
@@ -132,9 +182,13 @@ export function initLocalBridge(): void {
   });
   port.onDisconnect.addListener(() => {
     void chrome.runtime?.lastError; // 读一下避免 Chrome 打印 "Unchecked runtime.lastError"
+    // stale 守卫：旧 port 断开时若已被新 init 换掉，这里什么都不做——绝不清掉
+    // 健康的新连接状态，也绝不 mass-reject 属于新连接的 pending。
+    if (port !== myPort) return;
     ready = false;
     port = null;
     capabilities = [];
+    daemonVersion = null; // protocolMismatch 保留到下次握手覆盖（断连间隙仍显示硬不兼容提示）
     for (const p of pending.values()) p.reject(new Error("bridge disconnected"));
     pending.clear();
     scheduleReconnect();
@@ -142,16 +196,31 @@ export function initLocalBridge(): void {
   // 握手
   send("hello", { protocolVersion: PROTOCOL_VERSION })
     .then((r) => {
-      const res = r as { protocolVersion: number; capabilities: string[] };
-      // 兼容窗口：差 ≤1 视为兼容（spec §7）
-      if (Math.abs(res.protocolVersion - PROTOCOL_VERSION) <= 1) {
+      // stale 守卫：本次 init 已被后来的重叠 init 取代 → 只落定自己的 settled
+      // promise（避免悬空），不碰共享的 ready/capabilities/reconnectAttempt/
+      // protocolMismatch。
+      if (port !== myPort) {
+        settleThis();
+        return;
+      }
+      const res = r as { protocolVersion: number; capabilities: string[]; daemonVersion?: string };
+      // 兼容窗口：差 ≤1 视为兼容（spec §7）；差 >1 = 硬不兼容
+      protocolMismatch = Math.abs(res.protocolVersion - PROTOCOL_VERSION) > 1;
+      if (!protocolMismatch) {
         capabilities = res.capabilities;
+        daemonVersion = res.daemonVersion ?? null;
         ready = true;
         reconnectAttempt = 0;
       }
       settleThis();
     })
     .catch(() => {
+      // stale 守卫同上：被取代的 init 不再清共享 ready、也不续排梯子（那是新
+      // 连接的职责），只落定自己的 settled promise。
+      if (port !== myPort) {
+        settleThis();
+        return;
+      }
       ready = false;
       settleThis();
       // 握手本身失败（端口建起来了但 hello 被拒/超时）同样不会经过 onDisconnect
@@ -170,7 +239,9 @@ export async function requestHandoff(params: HandoffParams): Promise<HandoffResu
   return r as HandoffResult;
 }
 
-export async function requestListAgents(): Promise<{ id: string; label: string; installed: boolean }[]> {
+export async function requestListAgents(): Promise<
+  { id: string; label: string; installed: boolean; kind?: "app" | "terminal" }[]
+> {
   // 旧 daemon（无 list_agents capability）降级为单项 legacy 列表：id "claude"
   // 是旧 wire 值，installed 视为 true（维持旧 daemon 可 handoff 的语义）。
   if (!capabilities.includes("list_agents")) {
@@ -260,6 +331,7 @@ export function disconnectLocalBridge(): void {
   port = null;
   ready = false;
   capabilities = [];
+  daemonVersion = null;
   for (const p of pending.values()) p.reject(new Error("bridge disabled"));
   pending.clear();
   // 落定级联：disconnect reject 掉 pending 的 hello → 其 .catch 调自己的 settleThis

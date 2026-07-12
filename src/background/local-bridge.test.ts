@@ -397,6 +397,49 @@ describe("local-bridge", () => {
     await expect(Promise.race([pB, timeout(500)])).resolves.toBeUndefined();
   });
 
+  it("overlapping init tears down the previous port and stale onDisconnect can't clobber the new connection", async () => {
+    const { initLocalBridge, isBridgeReady, requestListSkills } = await import("./local-bridge");
+
+    // init A: connect + successful handshake → ready on port A
+    const portA = fakePort;
+    initLocalBridge();
+    const helloA = portA.postMessage.mock.calls[0][0] as { id: string };
+    portA._emit({ id: helloA.id, ok: true, result: { protocolVersion: PROTOCOL_VERSION, capabilities: ["skill_fs"] } });
+    await Promise.resolve();
+    expect(isBridgeReady()).toBe(true);
+
+    // init B: overlapping re-init while A is still connected. connectNative
+    // returns a fresh port B.
+    const portB = makeFakePort();
+    (globalThis as any).chrome.runtime.connectNative = vi.fn(() => portB);
+    initLocalBridge();
+
+    // (a) the previous port must have been disconnected during the new init.
+    expect(portA.disconnect).toHaveBeenCalledTimes(1);
+
+    // B handshakes successfully → healthy new connection.
+    const helloB = portB.postMessage.mock.calls[0][0] as { id: string };
+    portB._emit({ id: helloB.id, ok: true, result: { protocolVersion: PROTOCOL_VERSION, capabilities: ["skill_fs"] } });
+    await Promise.resolve();
+    expect(isBridgeReady()).toBe(true);
+
+    // A pending request registered on the NEW connection.
+    const pendingReq = requestListSkills();
+    await Promise.resolve();
+
+    // (b) the stale port A's onDisconnect fires late — it must be a no-op: it
+    // must NOT clear ready, and must NOT reject the new connection's pending.
+    portA._disconnect();
+
+    expect(isBridgeReady()).toBe(true);
+
+    // The new connection's pending is still live: reply on port B resolves it.
+    const skillsReq = portB.postMessage.mock.calls.at(-1)![0] as { id: string; method: string };
+    expect(skillsReq.method).toBe("list_skills");
+    portB._emit({ id: skillsReq.id, ok: true, result: { skills: [] } });
+    await expect(pendingReq).resolves.toEqual({ skills: [] });
+  });
+
   it("maybeInitLocalBridge: bridgeSettled grabbed before permissions IPC resolves waits for handshake (cold-start race)", async () => {
     const { maybeInitLocalBridge, bridgeSettled, bridgeHasSkillFs } = await import("./local-bridge");
 
@@ -507,6 +550,80 @@ describe("local-bridge", () => {
     ];
     fakePort._emit({ id: req.id, ok: true, result: { entries } });
     await expect(p).resolves.toEqual({ entries });
+  });
+
+  describe("compareDaemonVersions", () => {
+    it.each([
+      ["0.1.0", "0.1.0", 0],
+      ["0.1.0", "0.2.0", -1],
+      ["1.0.0", "0.9.9", 1],
+      ["0.1", "0.1.0", 0],
+      ["0.10.0", "0.9.0", 1],
+    ])("%s vs %s -> %i", async (a, b, want) => {
+      const { compareDaemonVersions } = await import("./local-bridge");
+      expect(compareDaemonVersions(a as string, b as string)).toBe(want);
+    });
+  });
+
+  describe("daemon version state", () => {
+    async function handshake(daemonVersion?: string, protocolVersion = PROTOCOL_VERSION) {
+      const mod = await import("./local-bridge");
+      mod.initLocalBridge();
+      const helloReq = fakePort.postMessage.mock.calls[0][0] as { id: string };
+      fakePort._emit({
+        id: helloReq.id, ok: true,
+        result: {
+          protocolVersion,
+          capabilities: ["run_local_agent"],
+          ...(daemonVersion !== undefined ? { daemonVersion } : {}),
+        },
+      });
+      await Promise.resolve();
+      return mod;
+    }
+
+    it("current daemon version tracked, no upgrade needed", async () => {
+      const mod = await handshake("0.1.0");
+      expect(mod.bridgeDaemonVersion()).toBe("0.1.0");
+      expect(mod.bridgeNeedsUpgrade()).toBe(false);
+      expect(mod.bridgeProtocolMismatch()).toBe(false);
+    });
+
+    it("daemonVersion below MIN → needsUpgrade", async () => {
+      const mod = await handshake("0.0.9");
+      expect(mod.bridgeDaemonVersion()).toBe("0.0.9");
+      expect(mod.bridgeNeedsUpgrade()).toBe(true);
+    });
+
+    it("old daemon without daemonVersion → treated as too old (needsUpgrade)", async () => {
+      const mod = await handshake(undefined);
+      expect(mod.bridgeDaemonVersion()).toBe(null);
+      expect(mod.bridgeNeedsUpgrade()).toBe(true);
+      expect(mod.bridgeProtocolMismatch()).toBe(false);
+    });
+
+    it("not-ready bridge never reports needsUpgrade", async () => {
+      const { initLocalBridge, bridgeNeedsUpgrade } = await import("./local-bridge");
+      initLocalBridge();
+      // hello not answered yet → not ready
+      expect(bridgeNeedsUpgrade()).toBe(false);
+    });
+
+    it("protocolVersion diff > 1 → protocolMismatch, stays not ready", async () => {
+      const mod = await handshake("0.1.0", PROTOCOL_VERSION + 5);
+      expect(mod.bridgeProtocolMismatch()).toBe(true);
+      expect(mod.isBridgeReady()).toBe(false);
+      // 不 ready 时 needsUpgrade 为 false（升级块用 protocolMismatch 走硬文案）
+      expect(mod.bridgeNeedsUpgrade()).toBe(false);
+    });
+
+    it("disconnect clears daemonVersion but keeps protocolMismatch until next handshake", async () => {
+      const mod = await handshake("0.1.0", PROTOCOL_VERSION + 5);
+      expect(mod.bridgeProtocolMismatch()).toBe(true);
+      fakePort._disconnect();
+      expect(mod.bridgeDaemonVersion()).toBe(null);
+      expect(mod.bridgeProtocolMismatch()).toBe(true); // 保留到下次握手覆盖
+    });
   });
 
   describe("auto-reconnect", () => {
