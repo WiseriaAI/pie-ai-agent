@@ -42,6 +42,7 @@ const BASE_PROPS = {
   activeSessionId: null as string | null,
   onSelectSession: vi.fn(),
   onResumeSession: vi.fn(),
+  onOpenSettings: vi.fn(),
 };
 
 beforeEach(() => {
