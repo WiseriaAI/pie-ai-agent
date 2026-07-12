@@ -20,7 +20,7 @@ BYOK (Bring Your Own Key) Chrome Extension — 用户插入自己的 API key 获
 - `src/lib/pdf/` — PDF tab detection (`isPdfTab`) + page-range parser (`parsePageRange`)
 - `src/offscreen/` — Offscreen document hosting LiteParse v2 WASM (`pdf-parser.html` + `pdf-parser.ts`), in-memory cache, message dispatch；同时内嵌 skill 脚本 sandbox iframe（`skill-sandbox.html` + `sandbox-host.ts`，manifest `sandbox` 页，5s 超时 + 256KB 输出上限）
 - `src/background/offscreen-manager.ts` — Lazy offscreen lifecycle + SW↔offscreen request/response bridge
-- `src/lib/skills/` — Skill framework: SkillPackage (frontmatter + virtual file tree) stored in IndexedDB (skill-store), SKILL.md frontmatter parser, builtin packages, getEnabledSkillPackages; skills are accessed via use_skill/read_skill_file mediation tools + a system-prompt catalog and are NOT tools themselves. skills 可捆绑纯计算脚本（`capabilities.scripts`，string 简写 / JSON flow 对象形，归一化在 `script-decl.ts`），经 `run_skill_script` 在 MV3 sandbox iframe（offscreen 内嵌，`skill-sandbox.html`）执行；只有声明过的 entry 可执行，LLM 不能注入代码。**daemon 连接且声明 `skill_fs` 时磁盘为唯一真源**（`~/.pie/skills/<name>/`，对齐 Anthropic Agent Skills；`SkillSource` 双后端 + builtin 只读层，mode 判定 `bridgeHasSkillFs()`，panel 走 `skills-action` RPC 单路径）；磁盘 skill 脚本经 daemon srt（@anthropic-ai/sandbox-runtime）默认沙箱执行（写限 workspace/默认断网/敏感读拒），首跑弹信封授权卡（panel-request `skill-grant`，daemon 权威 `SkillAuthPayload`，批准带 `approvedEnvelopeHash` 重调堵 TOCTOU，`grantApproved` 不进 JSON schema——LLM 不能自批）；grant 按能力信封记 daemon 独占 `~/.pie/grants.json`（信封变才重弹），设置页「本地打通」可列出/撤销 + 查最近执行（`list_audit`）。IDB/MV3-sandbox 路径 = daemon-off 回退。
+- `src/lib/skills/` — Skill framework: SkillPackage (frontmatter + virtual file tree) stored in IndexedDB (skill-store), SKILL.md frontmatter parser, builtin packages, getEnabledSkillPackages; skills are accessed via use_skill/read_skill_file mediation tools + a system-prompt catalog and are NOT tools themselves. skills 可捆绑纯计算脚本（`capabilities.scripts`，string 简写 / JSON flow 对象形，归一化在 `script-decl.ts`），经 `run_skill_script` 在 MV3 sandbox iframe（offscreen 内嵌，`skill-sandbox.html`）执行；只有声明过的 entry 可执行，LLM 不能注入代码。**daemon 连接且声明 `skill_fs` 时磁盘为唯一真源**（`~/.pie/skills/<name>/`，对齐 Anthropic Agent Skills；`SkillSource` 双后端 + builtin 只读层，mode 判定 `bridgeHasSkillFs()`，panel 走 `skills-action` RPC 单路径）；双根：`~/.agents/skills` 为只读副根（跨 agent 通用目录），daemon skill-store 层合并、主根遮蔽同名、写恒落主根（CoW）、副根删除报 `read_only`；副根 skill 默认关（`filterEnabled` 按 `source` 收窄磁盘默认开），首连经 SkillsList 导入向导多选启用（`agents_import_prompted` 标记）；磁盘 skill 脚本经 daemon srt（@anthropic-ai/sandbox-runtime）默认沙箱执行（写限 workspace/默认断网/敏感读拒），首跑弹信封授权卡（panel-request `skill-grant`，daemon 权威 `SkillAuthPayload`，批准带 `approvedEnvelopeHash` 重调堵 TOCTOU，`grantApproved` 不进 JSON schema——LLM 不能自批）；grant 按能力信封记 daemon 独占 `~/.pie/grants.json`（信封变才重弹），设置页「本地打通」可列出/撤销 + 查最近执行（`list_audit`）。IDB/MV3-sandbox 路径 = daemon-off 回退。
 - `src/lib/sessions/` — Multi-session persistence: state-machine, lifecycle (archive/delete), pinned-tab-registry, title
 - `src/lib/crypto.ts` — AES-GCM encryption helper（与 `src/lib/instances.ts` 配合存 instance API key）
 - `src/lib/instances.ts` — Multi-instance CRUD; `instance_${uuid}` + `instances_index` + `active_instance_id`
@@ -99,6 +99,7 @@ Workflow 内置 invariant（任一失败则 CI fail，不会上传）：
 ## Docs Map
 
 - `docs/ROADMAP.md` — 已交付 phases + backlog（single source of truth）
+- `docs/agents/auto-acceptance.md` — 自动化真机验收操作文档（Playwright + scratch daemon 全链路跑 `need-human-test` 清单；流程/配方坑/验收标准/报告格式；参考脚本 `eval/acceptance/`）
 - `docs/solutions/` — 落地后的 invariant trace docs（per phase / per milestone）
 - `docs/specs/` — superpowers `brainstorming` skill 产出（design / requirements / spec），含 Phase 1–3 历史 brainstorm 合并归档
 - `docs/plans/` — superpowers `planning` skill 产出（实施 plan），含 Phase 1–3 历史 plan 合并归档
@@ -162,7 +163,7 @@ Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agent
        └ need-confirm → 人打 confirmed 拍板 → Step1 routine 补方案 → ready-for-implement
 ```
 
-人在这条链上的人工闸有两处：`need-confirm` 处拍板（打 `confirmed`）、与 PR 的真机验收（`need-human-test` → 打 `human-approved`）；其余交给云端。
+人在这条链上的人工闸有两处：`need-confirm` 处拍板（打 `confirmed`）、与 PR 的真机验收（`need-human-test` → 打 `human-approved`）；其余交给云端。真机验收可先跑自动化预检吃掉大部分清单项（见 `docs/agents/auto-acceptance.md`），人只看报告 + 抽查报告列出的结构性盲区（品牌 Chrome 差异 / 权限弹框流等）。
 
 **默认路径**：不开 brainstorm/grill/plan 仪式。把需求写成 issue（或让分诊 routine 接住），让云端 Loop 实现。本地 session 多做的是「把工作落成清晰的 issue」与「review/merge PR」，**不是亲自实现**。
 

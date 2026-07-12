@@ -116,6 +116,7 @@ function makeSession(overrides?: Partial<UseSession>): UseSession {
     messages: [] as DisplayMessage[],
     streaming: false,
     streamingText: "",
+    streamingThinking: "",
     error: null,
     toast: null,
     sendMessage: vi.fn(),
@@ -1157,13 +1158,13 @@ describe("EmptyState centered greeting", () => {
     render(<Chat session={session} onOpenSettings={() => {}} providerLabel={null} />);
 
     const greetings = [
-      "Hey, what are we looking at today?",
-      "So, what's the plan?",
-      "I'm here — what's up?",
-      "What can I do for you today?",
-      "Hey there — where to?",
-      "Got something on your mind?",
-      "Anything fun on this page?",
+      "Hi, I'm Pie — what are we looking at today?",
+      "Pie's awake. Ready when you are.",
+      "I'm here — anything you need me to do?",
+      "Just opened my eyes. Show me this page?",
+      "Got a task? I'm all warmed up.",
+      "Something on your mind? Tell me about it.",
+      "Anything fun on this page? I'd love a look.",
     ];
     await waitFor(() => {
       const found = greetings.some((g) => screen.queryByText(g) !== null);
@@ -1181,6 +1182,30 @@ describe("EmptyState centered greeting", () => {
     expect(screen.queryByText("就绪")).toBeNull();
     expect(screen.queryByText("SUGGESTED")).toBeNull();
     expect(screen.queryByText("推荐")).toBeNull();
+  });
+
+  it("空态挂载播 wake，右眼（最后落定）animationend 后转 idle", async () => {
+    render(
+      <Chat session={makeSession()} onOpenSettings={() => {}} providerLabel={null} />,
+    );
+    await waitFor(() => {
+      expect(document.querySelector('[data-pie-state="wake"]')).toBeTruthy();
+    });
+    const rightEye = document.querySelector('[data-pie-eye="right"]')!;
+    fireEvent.animationEnd(rightEye, { animationName: "pie-wake-in" });
+    expect(document.querySelector('[data-pie-state="idle"]')).toBeTruthy();
+  });
+
+  it("composer 输入非空时切 listening，清空后回 idle（不重播 wake）", async () => {
+    render(
+      <Chat session={makeSession()} onOpenSettings={() => {}} providerLabel={null} />,
+    );
+    // composer 的 textarea 是页面唯一 textbox（附件 input 非 textbox role）
+    const textarea = await screen.findByRole("textbox");
+    fireEvent.change(textarea, { target: { value: "hi" } });
+    expect(document.querySelector('[data-pie-state="listening"]')).toBeTruthy();
+    fireEvent.change(textarea, { target: { value: "" } });
+    expect(document.querySelector('[data-pie-state="idle"]')).toBeTruthy();
   });
 });
 
@@ -1294,5 +1319,152 @@ describe("Chat — Esc-to-terminate keyboard shortcut", () => {
     });
     expect(abort).not.toHaveBeenCalled();
     expect(screen.queryByTitle(/Press Esc again to stop/i)).toBeNull();
+  });
+});
+
+describe("WorkingIndicator Pie face", () => {
+  it("thinking 流期间显示 THINKING + thinking 态脸", async () => {
+    seedProvider("anthropic");
+    render(
+      <Chat
+        session={makeSession({
+          streaming: true,
+          streamingThinking: "hmm",
+          streamingText: "",
+        })}
+        onOpenSettings={() => {}}
+        providerLabel={null}
+      />,
+    );
+    expect(await screen.findByText("THINKING")).toBeTruthy();
+    expect(document.querySelector('[data-pie-state="thinking"]')).toBeTruthy();
+  });
+
+  it("正文流出后切换 WORKING + working 态脸", async () => {
+    seedProvider("anthropic");
+    render(
+      <Chat
+        session={makeSession({
+          streaming: true,
+          streamingThinking: "",
+          streamingText: "Hello",
+        })}
+        onOpenSettings={() => {}}
+        providerLabel={null}
+      />,
+    );
+    expect(await screen.findByText("WORKING")).toBeTruthy();
+    expect(document.querySelector('[data-pie-state="working"]')).toBeTruthy();
+  });
+
+  it("thinking 与正文同时非空 → WORKING（过渡态）", async () => {
+    seedProvider("anthropic");
+    render(
+      <Chat
+        session={makeSession({
+          streaming: true,
+          streamingThinking: "hmm",
+          streamingText: "Hello",
+        })}
+        onOpenSettings={() => {}}
+        providerLabel={null}
+      />,
+    );
+    expect(await screen.findByText("WORKING")).toBeTruthy();
+    expect(document.querySelector('[data-pie-state="working"]')).toBeTruthy();
+    expect(document.querySelector('[data-pie-state="thinking"]')).toBeNull();
+  });
+});
+
+describe("celebrate on completion", () => {
+  it("任务成功收尾后最后一行播 success，2.5s 后归静止", async () => {
+    seedProvider("anthropic");
+    vi.useFakeTimers();
+    try {
+      const doneMessages: DisplayMessage[] = [
+        { role: "user", content: "do it" },
+        { role: "assistant", content: "first reply" },
+        { role: "agent-summary", success: true, summary: "done", stepCount: 2 },
+      ];
+      const { rerender } = render(
+        <Chat
+          session={makeSession({
+            streaming: true,
+            messages: [{ role: "user", content: "do it" }],
+          })}
+          onOpenSettings={() => {}}
+          providerLabel={null}
+        />,
+      );
+      // checkConfig() runs async (awaits listInstances/getSessionMeta/
+      // resolveSelection/getInstance) — flush the microtask queue so
+      // hasConfig settles before we render on the done-messages props.
+      await act(async () => {});
+      rerender(
+        <Chat
+          session={makeSession({ streaming: false, messages: doneMessages })}
+          onOpenSettings={() => {}}
+          providerLabel={null}
+        />,
+      );
+      await act(async () => {});
+      // 只有最后一行（agent-summary）庆祝；上面的 assistant 行保持 static
+      expect(
+        document.querySelectorAll('[data-pie-state="success"]').length,
+      ).toBe(1);
+      expect(
+        document.querySelectorAll('[data-pie-state="static"]').length,
+      ).toBeGreaterThan(0);
+      act(() => {
+        vi.advanceTimersByTime(2500);
+      });
+      expect(document.querySelector('[data-pie-state="success"]')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("纯 chat 完成（无 agent-summary，末尾 assistant）也庆祝", async () => {
+    seedProvider("anthropic");
+    vi.useFakeTimers();
+    try {
+      const { rerender } = render(
+        <Chat
+          session={makeSession({
+            streaming: true,
+            messages: [{ role: "user", content: "hi" }],
+          })}
+          onOpenSettings={() => {}}
+          providerLabel={null}
+        />,
+      );
+      // checkConfig() runs async (awaits listInstances/getSessionMeta/
+      // resolveSelection/getInstance) — flush the microtask queue so
+      // hasConfig settles before we render on the done-messages props.
+      await act(async () => {});
+      rerender(
+        <Chat
+          session={makeSession({
+            streaming: false,
+            messages: [
+              { role: "user", content: "hi" },
+              { role: "assistant", content: "answer" },
+            ],
+          })}
+          onOpenSettings={() => {}}
+          providerLabel={null}
+        />,
+      );
+      await act(async () => {});
+      expect(
+        document.querySelectorAll('[data-pie-state="success"]').length,
+      ).toBe(1);
+      act(() => {
+        vi.advanceTimersByTime(2500);
+      });
+      expect(document.querySelector('[data-pie-state="success"]')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

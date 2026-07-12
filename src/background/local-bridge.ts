@@ -204,7 +204,9 @@ export async function requestHandoff(params: HandoffParams): Promise<HandoffResu
   return r as HandoffResult;
 }
 
-export async function requestListAgents(): Promise<{ id: string; label: string; installed: boolean }[]> {
+export async function requestListAgents(): Promise<
+  { id: string; label: string; installed: boolean; kind?: "app" | "terminal" }[]
+> {
   // 旧 daemon（无 list_agents capability）降级为单项 legacy 列表：id "claude"
   // 是旧 wire 值，installed 视为 true（维持旧 daemon 可 handoff 的语义）。
   if (!capabilities.includes("list_agents")) {

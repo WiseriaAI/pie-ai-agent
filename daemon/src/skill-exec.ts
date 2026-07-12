@@ -3,7 +3,8 @@ import { join } from "path";
 import { homedir } from "os";
 import { paths } from "./paths";
 import { log } from "./log";
-import { assertSkillName, listSkills } from "./skill-store";
+import { assertSkillName, listSkills, resolveSkillRoot, defaultRoots } from "./skill-store";
+import type { SkillRoots } from "./skill-store";
 import { hasGrant, putGrant, grantKey, canonicalEnvelope, envelopeHash } from "./grants";
 import { appendAudit } from "./audit";
 import { realSkillSandbox } from "./skill-sandbox";
@@ -13,7 +14,9 @@ import type { GrantEnvelope, RunSkillScriptParams, RunSkillScriptResult, SkillAu
 export interface SkillExecDeps {
   sandbox?: SkillSandbox;
   now?: () => number;
+  /** 单根别名（既有测试用）：等价 roots={primary: skillsRoot}，不带默认副根 */
   skillsRoot?: string;
+  roots?: SkillRoots;
   grantsPath?: string;
   auditPath?: string;
 }
@@ -47,13 +50,15 @@ export async function runSkillScript(
   deps: SkillExecDeps = {},
 ): Promise<RunSkillScriptResult> {
   const now = deps.now ?? Date.now;
-  const skillsRoot = deps.skillsRoot ?? paths.skillsDir;
+  const roots: SkillRoots = deps.roots ?? (deps.skillsRoot ? { primary: deps.skillsRoot } : defaultRoots);
   const grantsPath = deps.grantsPath ?? paths.grantsPath;
   const auditPath = deps.auditPath ?? paths.auditPath;
   const sandbox = deps.sandbox ?? realSkillSandbox;
 
   const name = assertSkillName(params.name);
-  const summary = listSkills(skillsRoot).find((s) => s.name === name);
+  const located = resolveSkillRoot(name, roots);
+  if (!located) throw Object.assign(new Error(`unknown skill: ${name}`), { code: "unknown_skill" });
+  const summary = listSkills(located.root).find((s) => s.name === name);
   if (!summary) throw Object.assign(new Error(`unknown skill: ${name}`), { code: "unknown_skill" });
   if (!summary.runnableScripts.includes(params.entry)) {
     throw Object.assign(new Error(`entry not in scripts/: ${JSON.stringify(params.entry)}`), { code: "unknown_entry" });
@@ -83,7 +88,7 @@ export async function runSkillScript(
     putGrant({ key: grantKey(name, envelope), skillName: name, envelope, grantedAt: now() }, grantsPath);
   }
 
-  const skillDir = join(skillsRoot, name);
+  const skillDir = join(located.root, name);
   const workspace = join(skillDir, "workspace");
   mkdirSync(workspace, { recursive: true });
 

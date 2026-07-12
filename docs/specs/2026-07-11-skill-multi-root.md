@@ -54,6 +54,8 @@ daemon 连接且声明 `skill_fs` 时，磁盘是 skill 唯一真源，但目前
 
 定位 skill 目录改走 `resolveSkillRoot`；其余不动：grant 按 `name + envelopeHash` 记账（与来源根无关）、信封来自 SKILL.md 声明 + `scripts/` 列表、srt workspace = 该 skill 自己的目录、audit 照记。副根脚本首跑照弹信封授权卡。
 
+副根 skill 执行时 `workspace/` 运行产物目录同样创建在该 skill 目录内（与主根一致）；这不修改任何既有文件，且 `workspace`/`.runs` 本就被 files 清单与可执行集排除。
+
 ### daemon.ts
 
 `delete_skill` case 的错误映射补 `read_only`（与现有 `needs_authorization` 同模式：`code` 进错误信封）。
@@ -76,7 +78,7 @@ daemon 连接且声明 `skill_fs` 时，磁盘是 skill 唯一真源，但目前
   - 形态：skills 列表顶部一次性「发现 N 个本地 skill」卡 → 展开多选（默认全不勾 + 全选按钮）→ 确认把勾选项以 plain id 写入 `enabled_skills` 并落 `agents_import_prompted` 标记
   - **关闭卡同样落标记**（用户选择了「以后手动开」），之后新增的副根 skill 走列表手动开关
   - 纯面板本地状态，**不是** HITL panel-request（无 agent loop 挂起）
-- `enabled_skills` 语义零改动：非内置默认关（`src/lib/skills/index.ts` 现有判定），勾选 = plain id 加入名单，手动关 = `!id`。
+- `enabled_skills` marker 语义（plain id=开、`!id`=关）零改动；**默认规则改一条**：daemon 模式的启用过滤在 `src/lib/skills/source.ts` 的 `filterEnabled`（非 `index.ts`——那是 IDB 路径），现行「磁盘 skill 默认开」收窄为仅主根（`source !== "agents"`）；副根 skill 无 marker 时默认关。
 - i18n：六字典（en / zh-CN / zh-TW / ja / es-419 / pt-BR）补 key——badge 文案、向导标题/正文/按钮（确认/全选/关闭）、`read_only` 错误文案。键 parity 由 typecheck 强制。
 
 ## 7. 错误处理与边界

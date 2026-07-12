@@ -135,3 +135,55 @@ export function deleteSkill(name: string, root: string = paths.skillsDir): boole
   rmSync(dir, { recursive: true, force: true });
   return true;
 }
+
+// ---- 多根（spec docs/specs/2026-07-11-skill-multi-root.md）----
+// 主根 ~/.pie/skills 读写；副根 ~/.agents/skills 只读（跨 agent 通用目录）。
+// 合并/遮蔽/只读判定全部收在这一层，listSkills/deleteSkill 保持单根原语。
+
+export interface SkillRoots {
+  primary: string;
+  /** 只读副根；缺省 = 单根行为（测试传 {primary} 即隔离真实 ~/.agents） */
+  secondary?: string;
+}
+
+export const defaultRoots: SkillRoots = {
+  primary: paths.skillsDir,
+  secondary: paths.agentsSkillsDir,
+};
+
+/** 主根优先定位 skill 所在根；SKILL.md 存在才算（与 listSkills 判据一致）。 */
+export function resolveSkillRoot(
+  name: string,
+  roots: SkillRoots = defaultRoots,
+): { root: string; source: "pie" | "agents" } | null {
+  const n = assertSkillName(name);
+  if (existsSync(join(roots.primary, n, "SKILL.md"))) return { root: roots.primary, source: "pie" };
+  if (roots.secondary && existsSync(join(roots.secondary, n, "SKILL.md"))) {
+    return { root: roots.secondary, source: "agents" };
+  }
+  return null;
+}
+
+/** 两根合并；同名主根遮蔽（被遮蔽的副根版本不出现）。 */
+export function listSkillsMerged(roots: SkillRoots = defaultRoots): SkillSummary[] {
+  const primary = listSkills(roots.primary).map((s) => ({ ...s, source: "pie" as const }));
+  if (!roots.secondary) return primary;
+  const shadowed = new Set(primary.map((s) => s.name));
+  const secondary = listSkills(roots.secondary)
+    .filter((s) => !shadowed.has(s.name))
+    .map((s) => ({ ...s, source: "agents" as const }));
+  return [...primary, ...secondary];
+}
+
+/** 删除 = 只删主根副本（CoW 的逆操作：删遮蔽副本 → 副根版本重新露出）。
+ *  skill 只存在于副根 → read_only（message 带真身路径，告诉用户去哪删）。 */
+export function deleteSkillGuarded(name: string, roots: SkillRoots = defaultRoots): boolean {
+  const r = resolveSkillRoot(name, roots);
+  if (r?.source === "agents") {
+    throw Object.assign(
+      new Error(`read-only skill (lives in ${join(r.root, assertSkillName(name))}); delete it there if intended`),
+      { code: "read_only" },
+    );
+  }
+  return deleteSkill(name, roots.primary);
+}

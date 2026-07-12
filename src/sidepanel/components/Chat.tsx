@@ -36,7 +36,9 @@ import { QuoteChip } from "./QuoteChip";
 import { escapeWrapperAttribute } from "@/lib/agent/untrusted-wrappers";
 import type { Quote, TextQuote, ElementQuote } from "@/types";
 import ModelPicker from "./ModelPicker";
+import PieFace from "./PieFace";
 import ThinkingSection from "./ThinkingSection";
+import { useCelebrate } from "@/sidepanel/hooks/useCelebrate";
 import { useT } from "@/lib/i18n";
 import { useStoreChange } from "@/sidepanel/hooks/useStoreChange";
 import {
@@ -95,13 +97,7 @@ import MarkdownContent, { CopyIcon } from "./Markdown";
 import { copyRichText } from "./copy-rich-text";
 import SkillSlashPopover from "./SkillSlashPopover";
 import { PendingInstructionList, type PendingItem } from "./PendingInstructionList";
-import { CdpOnboardingCard } from "./CdpOnboardingCard";
-import { LocalFileRequestCard } from "./LocalFileRequestCard";
-import { RunLocalAgentCard } from "./RunLocalAgentCard";
-import { HandoffCard } from "./HandoffCard";
-import { SkillGrantCard } from "./SkillGrantCard";
-import { ScheduleDraftCard } from "./ScheduleDraftCard";
-import { AnimatePresence } from "./ui/motion";
+import { HitlInlineCards } from "./hitl/HitlInlineCards";
 import { usePanelRequest } from "../hooks/usePanelRequest";
 import { useFileAccessPrompt } from "../hooks/useFileAccessPrompt";
 import { FileAccessCard } from "./FileAccessCard";
@@ -432,7 +428,7 @@ export default function Chat({
     if (!atBottomRef.current) return;
     const c = scrollContainerRef.current;
     if (c) c.scrollTop = c.scrollHeight;
-  }, [messages, streamingText]);
+  }, [messages, streamingText, panelRequest?.requestId]);
 
   const handleMessagesScroll = () => {
     const c = scrollContainerRef.current;
@@ -856,6 +852,20 @@ export default function Chat({
   // here, ABOVE all early returns, so hooks order stays stable across renders
   // (React error #310 happened when this was below `if (hasConfig === null)`).
   const segments = useMemo(() => buildSegments(visibleMessages), [visibleMessages]);
+
+  // Pie IP — 完成庆祝只落在最后一条 agent 行（assistant 或 agent-summary）。
+  const celebrating = useCelebrate({ streaming, error, messages, sessionId });
+  const lastAgentRowIndex = (() => {
+    for (let i = segments.length - 1; i >= 0; i--) {
+      const seg = segments[i]!;
+      if (
+        seg.kind === "msg" &&
+        (seg.msg.role === "assistant" || seg.msg.role === "agent-summary")
+      )
+        return i;
+    }
+    return -1;
+  })();
 
   // Issue #245 — rewind/edit-resend. `msg` is a live object reference from the
   // `messages` array (visibleMessages preserves those references), so indexOf
@@ -1282,14 +1292,14 @@ After the skill completes, briefly summarize what was created (the user will see
         className="flex-1 overflow-y-auto"
       >
         {messages.length === 0 && !streaming && !pageChanged ? (
-          <EmptyState />
+          <EmptyState listening={input.length > 0} />
         ) : (
           <div className="flex flex-col gap-[18px] px-4 py-5">
             {pageChanged && (
               <PageChangedBanner onNewTask={handleNewTask} />
             )}
 
-            {segments.map((seg) => {
+            {segments.map((seg, segIndex) => {
               // M5 motion: bubble-in for content rows, scale-in for
               // session-confirm cards. Wrappers carry the animation class
               // so message components stay layout-agnostic.
@@ -1316,6 +1326,7 @@ After the skill completes, briefly summarize what was created (the user will see
                   <div key={firstIndex} className="bubble-in">
                     <MessageBubble
                       message={msg}
+                      celebrating={celebrating && segIndex === lastAgentRowIndex}
                       {...(msg.role === "user" && !streaming
                         ? {
                             onRewind: (editedContent?: string) =>
@@ -1333,6 +1344,7 @@ After the skill completes, briefly summarize what was created (the user will see
                       success={msg.success}
                       summary={msg.summary}
                       stepCount={msg.stepCount}
+                      celebrating={celebrating && segIndex === lastAgentRowIndex}
                     />
                   </div>
                 );
@@ -1384,22 +1396,15 @@ After the skill completes, briefly summarize what was created (the user will see
                 window, so a static preamble bubble alone would look frozen.
                 Sits at the tail so there's a single place to confirm "still
                 working" — also covers the gaps between tool calls. */}
-            {streaming && panelRequest?.kind !== "schedule-model" && <WorkingIndicator />}
-            <AnimatePresence>
-              {panelRequest?.kind === "schedule-model" && (
-                <ScheduleDraftCard
-                  key={panelRequest.requestId}
-                  payload={panelRequest.payload as import("@/lib/agent/tools/schedule-meta").ScheduleDraftPayload}
-                  instances={instances}
-                  onSubmit={(instanceId, model) =>
-                    respondPanel(panelRequest.requestId, { ok: true, data: { instanceId, model } })
-                  }
-                  onCancel={() =>
-                    respondPanel(panelRequest.requestId, { ok: false, reason: "cancelled by user" })
-                  }
-                />
-              )}
-            </AnimatePresence>
+            {streaming && !panelRequest && (
+              <WorkingIndicator thinking={!!streamingThinking && !streamingText} />
+            )}
+            <HitlInlineCards
+              request={panelRequest}
+              respond={respondPanel}
+              instances={instances}
+              onChooseLocalFile={() => localFileRequestInputRef.current?.click()}
+            />
 
             {error && (
               <div className="rounded-lg border border-warning-line bg-warning-tint px-3 py-2 text-[12px] text-warning">
@@ -1635,41 +1640,6 @@ After the skill completes, briefly summarize what was created (the user will see
         </div>
       )}
 
-      {panelRequest?.kind === "cdp-consent" && (
-        <CdpOnboardingCard
-          onAnswer={(enabled) => respondPanel(panelRequest.requestId, { ok: true, data: enabled })}
-        />
-      )}
-      {panelRequest?.kind === "local-file" && (
-        <LocalFileRequestCard
-          onChoose={() => localFileRequestInputRef.current?.click()}
-          onCancel={() => respondPanel(panelRequest.requestId, { ok: false, reason: "cancelled by user" })}
-        />
-      )}
-      {panelRequest?.kind === "run-local-agent" && (
-        <RunLocalAgentCard
-          payload={panelRequest.payload as { prompt: string; cwd: string }}
-          onDecision={(ok) => respondPanel(panelRequest.requestId, { ok: true, data: ok })}
-        />
-      )}
-      {panelRequest?.kind === "handoff-to-agent" && (
-        <HandoffCard
-          payload={
-            panelRequest.payload as {
-              context: string;
-              fileCount: number;
-              agents: { id: string; label: string }[];
-            }
-          }
-          onDecision={(target) => respondPanel(panelRequest.requestId, { ok: true, data: target })}
-        />
-      )}
-      {panelRequest?.kind === "skill-grant" && (
-        <SkillGrantCard
-          payload={panelRequest.payload as import("@/lib/agent/tools/skill-script").SkillGrantRequest}
-          onDecision={(approved) => respondPanel(panelRequest.requestId, { ok: true, data: approved })}
-        />
-      )}
       {showFileAccess && (
         <FileAccessCard onDismiss={dismissFileAccess} />
       )}
@@ -1738,8 +1708,13 @@ After the skill completes, briefly summarize what was created (the user will see
 }
 
 
-function EmptyState() {
+function EmptyState({ listening }: { listening: boolean }) {
   const t = useT();
+  // wake 是单次开场 morph；播完（或用户直接开始输入）即视为已唤醒。
+  const [awake, setAwake] = useState(false);
+  useEffect(() => {
+    if (listening) setAwake(true);
+  }, [listening]);
   const greetingKey = useMemo(() => {
     const keys = [
       "greeting1",
@@ -1753,9 +1728,15 @@ function EmptyState() {
     return keys[Math.floor(Math.random() * keys.length)];
   }, []);
   const greeting = t(`chat.${greetingKey}`);
+  const face = listening ? "listening" : awake ? "idle" : "wake";
   return (
     <div className="flex min-h-full flex-col items-center justify-center gap-3 px-6 text-center">
       <div className="flex max-w-[280px] flex-col items-center gap-3">
+        {/* scale-in 入场（240ms 焦点拉近）→ 定格图标帧 2s（wake 的
+            animation-delay）→ 睁眼 morph：进入 → 停顿 → 活过来 */}
+        <div className="mb-2 scale-in">
+          <PieFace state={face} size={140} onWakeEnd={() => setAwake(true)} />
+        </div>
         <h1 className="text-[24px] font-semibold leading-8 tracking-[-0.015em] text-fg-1">
           {greeting}
         </h1>
@@ -1786,11 +1767,14 @@ function MessageBubble({
   message,
   thinkingStreaming = false,
   streaming = false,
+  celebrating = false,
   onRewind,
 }: {
   message: Extract<DisplayMessage, { role: "user" | "assistant" }>;
   thinkingStreaming?: boolean;
   streaming?: boolean;
+  /** Pie IP 完成庆祝 —— Chat 只对最后一条 agent 行传 true。 */
+  celebrating?: boolean;
   /** Issue #245 — present only on idle user bubbles. Called with the edited
    *  text (or undefined to resend as-is) to rewind history and resend. */
   onRewind?: (editedContent?: string) => void;
@@ -1973,7 +1957,7 @@ function MessageBubble({
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex items-center gap-2">
-        <div className="h-1 w-1 rounded-full bg-accent" />
+        <PieFace state={celebrating ? "success" : "static"} size={16} />
         <span className="caps text-fg-2">{t("chat.agent")}</span>
       </div>
       {(message.thinking || thinkingStreaming) && (
@@ -2029,7 +2013,7 @@ function MessageBubble({
   );
 }
 
-function WorkingIndicator() {
+function WorkingIndicator({ thinking }: { thinking: boolean }) {
   const t = useT();
   return (
     <div
@@ -2038,11 +2022,10 @@ function WorkingIndicator() {
       aria-label={t("chat.agentWorking")}
       className="flex items-center gap-2 px-1 py-0.5"
     >
-      <span className="relative flex h-2 w-2 items-center justify-center">
-        <span className="absolute inset-0 animate-ping rounded-full bg-accent opacity-50" />
-        <span className="relative h-1.5 w-1.5 rounded-full bg-accent" />
+      <PieFace state={thinking ? "thinking" : "working"} size={22} />
+      <span className="caps text-fg-3">
+        {thinking ? t("chat.thinking") : t("chat.working")}
       </span>
-      <span className="caps text-fg-3">{t("chat.working")}</span>
     </div>
   );
 }
