@@ -136,6 +136,7 @@ import {
   bridgeDaemonVersion,
   bridgeNeedsUpgrade,
   bridgeProtocolMismatch,
+  bridgeInstallState,
   requestListAgents,
   bridgeHasSkillFs,
   requestListGrants,
@@ -701,9 +702,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           daemonVersion: bridgeDaemonVersion(),
           needsUpgrade: bridgeNeedsUpgrade(),
           protocolMismatch: bridgeProtocolMismatch(),
+          installState: bridgeInstallState(),
         }),
       )
       .catch(() => sendResponse({ hasPermission: false, ready: false }));
+    return true; // async response
+  }
+
+  // Settings 安装卡「重新检测」— 立即重连（重置 userDisabled + 重新握手），与既有
+  // 退避梯子共存无冲突。initBridgeAndMigrate 复用 permission-toggle 路径的同一入口。
+  if (message?.type === "local-bridge:reconnect") {
+    void initBridgeAndMigrate().then(() => sendResponse({ ok: true }));
     return true; // async response
   }
 

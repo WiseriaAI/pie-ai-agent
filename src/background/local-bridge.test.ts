@@ -626,6 +626,76 @@ describe("local-bridge", () => {
     });
   });
 
+  describe("classifyDisconnect", () => {
+    it.each([
+      ["Specified native messaging host not found.", "not_installed"],
+      ["Access to the specified native messaging host is forbidden.", "not_installed"],
+      ["Error when communicating with the native messaging host.", "installed_not_running"],
+      [undefined, "installed_not_running"],
+    ])("%s -> %s", async (msg, want) => {
+      const { classifyDisconnect } = await import("./local-bridge");
+      expect(classifyDisconnect(msg as string | undefined)).toBe(want);
+    });
+  });
+
+  describe("installState", () => {
+    async function handshake(daemonVersion = "0.1.0") {
+      const mod = await import("./local-bridge");
+      mod.initLocalBridge();
+      const helloReq = fakePort.postMessage.mock.calls[0][0] as { id: string };
+      fakePort._emit({
+        id: helloReq.id, ok: true,
+        result: { protocolVersion: PROTOCOL_VERSION, capabilities: ["run_local_agent"], daemonVersion },
+      });
+      await Promise.resolve();
+      return mod;
+    }
+
+    it("starts unknown before any connection", async () => {
+      const { bridgeInstallState } = await import("./local-bridge");
+      expect(bridgeInstallState()).toBe("unknown");
+    });
+
+    it("connected after successful handshake", async () => {
+      const mod = await handshake();
+      expect(mod.bridgeInstallState()).toBe("connected");
+    });
+
+    it("not_installed when disconnect lastError says host not found", async () => {
+      const mod = await handshake();
+      (globalThis as any).chrome.runtime.lastError = {
+        message: "Specified native messaging host not found.",
+      };
+      fakePort._disconnect();
+      expect(mod.bridgeInstallState()).toBe("not_installed");
+    });
+
+    it("installed_not_running when disconnect lastError is a communication error", async () => {
+      const mod = await handshake();
+      (globalThis as any).chrome.runtime.lastError = {
+        message: "Error when communicating with the native messaging host.",
+      };
+      fakePort._disconnect();
+      expect(mod.bridgeInstallState()).toBe("installed_not_running");
+    });
+
+    it("not_installed when connectNative throws", async () => {
+      const mod = await import("./local-bridge");
+      (globalThis as any).chrome.runtime.connectNative = vi.fn(() => {
+        throw new Error("no native messaging permission");
+      });
+      mod.initLocalBridge();
+      expect(mod.bridgeInstallState()).toBe("not_installed");
+    });
+
+    it("unknown after user disables the bridge", async () => {
+      const mod = await handshake();
+      expect(mod.bridgeInstallState()).toBe("connected");
+      mod.disconnectLocalBridge();
+      expect(mod.bridgeInstallState()).toBe("unknown");
+    });
+  });
+
   describe("auto-reconnect", () => {
     beforeEach(() => {
       vi.useFakeTimers();

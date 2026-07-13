@@ -59,6 +59,24 @@ export function bridgeNeedsUpgrade(): boolean {
 export function bridgeProtocolMismatch(): boolean {
   return protocolMismatch;
 }
+
+// ── 安装引导漏斗（spec §7）────────────────────────────────────────────
+// 设置页安装卡片状态机的判定源。connected = 桥通；not_installed = host manifest
+// 不存在（或 EXT_ID 不匹配，用户同样需重装）；installed_not_running = host 在但
+// daemon 未跑；unknown = 从未连过 / 用户关掉开关（沿用旧文案，向后兼容）。
+export type BridgeInstallState = "connected" | "not_installed" | "installed_not_running" | "unknown";
+let installState: BridgeInstallState = "unknown";
+
+/** Chrome onDisconnect lastError 文案分类。not found = 未装 host manifest；
+ *  forbidden = manifest 在但 EXT_ID 不匹配（对用户同样呈现为「重新安装」）。 */
+export function classifyDisconnect(message: string | undefined): "not_installed" | "installed_not_running" {
+  if (!message) return "installed_not_running";
+  return /not found|forbidden/i.test(message) ? "not_installed" : "installed_not_running";
+}
+
+export function bridgeInstallState(): BridgeInstallState {
+  return installState;
+}
 const pending = new Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
 
 // 握手落定 promise：从未 init 过 → 已 resolve；initLocalBridge() 换上新的 pending
@@ -148,6 +166,7 @@ export function initLocalBridge(): void {
     ready = false;
     capabilities = [];
     daemonVersion = null;
+    installState = "not_installed"; // connectNative throw = host manifest/权限缺失
     pending.clear();
     settleThis();
     // 重连尝试本身失败（daemon 仍在重启中，端口都没建起来）→ onDisconnect 永远
@@ -181,10 +200,12 @@ export function initLocalBridge(): void {
     }
   });
   port.onDisconnect.addListener(() => {
-    void chrome.runtime?.lastError; // 读一下避免 Chrome 打印 "Unchecked runtime.lastError"
+    // 读一下避免 Chrome 打印 "Unchecked runtime.lastError"，同时拿来分类安装态。
+    const lastErr = chrome.runtime?.lastError?.message;
     // stale 守卫：旧 port 断开时若已被新 init 换掉，这里什么都不做——绝不清掉
     // 健康的新连接状态，也绝不 mass-reject 属于新连接的 pending。
     if (port !== myPort) return;
+    installState = classifyDisconnect(lastErr);
     ready = false;
     port = null;
     capabilities = [];
@@ -210,6 +231,7 @@ export function initLocalBridge(): void {
         capabilities = res.capabilities;
         daemonVersion = res.daemonVersion ?? null;
         ready = true;
+        installState = "connected";
         reconnectAttempt = 0;
       }
       settleThis();
@@ -332,6 +354,7 @@ export function disconnectLocalBridge(): void {
   ready = false;
   capabilities = [];
   daemonVersion = null;
+  installState = "unknown"; // 用户主动关闭 → 回到「未启用」的中性态（沿用旧文案）
   for (const p of pending.values()) p.reject(new Error("bridge disabled"));
   pending.clear();
   // 落定级联：disconnect reject 掉 pending 的 hello → 其 .catch 调自己的 settleThis
