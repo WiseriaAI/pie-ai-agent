@@ -60,7 +60,6 @@ import {
 } from "../scratchpad/service";
 import { queryScratchpad as svcQueryScratchpad } from "../scratchpad/sql-bridge";
 import { getEnabledSkillEntries, getActiveSkillSource } from "@/background/skill-source";
-import { sendToOffscreen } from "@/background/offscreen-manager";
 import { isFilePdfUrl, isPdfTab } from "../pdf/detect";
 import { groupsForEnv, selectTools, growActiveGroups, type EnvSignals } from "./disclosure";
 import { buildLoadToolsTool } from "./tools/disclosure";
@@ -1902,8 +1901,6 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // run_skill_script 需要 sessionId（skill-grant 授权卡走 panel-request）——
       // 与 mouse/keyboard 同模式 per-run 装配，不进 BUILT_IN_TOOLS 静态表。
       const runSkillScriptTool = buildRunSkillScriptTool({
-        runInSandbox: (code, input) =>
-          sendToOffscreen<string>({ type: "skill:run_script", code, input }),
         getSource: getActiveSkillSource,
         runOnDaemon: requestRunSkillScript,
         requestGrant: (p) => requestFromPanel(sessionId, "skill-grant", p),

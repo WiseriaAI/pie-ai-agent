@@ -7,7 +7,6 @@ import type { SkillPackage } from "./package-types";
 import { listPackages, getPackage, putPackage, deletePackage } from "./skill-store";
 import { BUILT_IN_SKILL_PACKAGES } from "./builtin";
 import { parseSkillMarkdown } from "./frontmatter";
-import { parseScriptDecls } from "./script-decl";
 
 export interface SkillEntry {
   id: string;
@@ -48,7 +47,10 @@ function pkgToEntry(p: SkillPackage, origin: "builtin" | "idb"): SkillEntry {
     builtIn: p.builtIn,
     origin,
     files: Object.keys(p.files),
-    runnableScripts: parseScriptDecls(p.frontmatter.capabilities?.scripts).map((d) => d.entry),
+    // idb / builtin skill 无可执行脚本：没有任何写入口能往 idb 包塞 .js 文件，
+    // builtin frontmatter 也不再带脚本声明。磁盘 skill 的 runnableScripts 来自
+    // daemon summary（DaemonSkillSource），不走这里。
+    runnableScripts: [],
     createdAt: p.createdAt,
     author: typeof p.frontmatter.author === "string" ? p.frontmatter.author : undefined,
   };

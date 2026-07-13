@@ -37,8 +37,8 @@ describe("BUILT_IN_SKILL_PACKAGES", () => {
   });
 
   it("没有 builtin 残留 capabilities 死配置", () => {
+    // capabilities frontmatter 已删（issue #303）；builtin SKILL.md 不得再带该块。
     for (const p of BUILT_IN_SKILL_PACKAGES) {
-      expect(p.frontmatter.capabilities).toBeUndefined();
       expect(p.files["SKILL.md"]).not.toContain("capabilities:");
     }
   });

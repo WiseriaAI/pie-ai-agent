@@ -164,26 +164,4 @@ describe("offscreen pdf-parser dispatch", () => {
     await handleMessage({ type: "pdf:parse_bytes", base64, cacheKey: "k1" }, state as never, deps as never);
     expect(deps.parseBytes).toHaveBeenCalledTimes(1);
   });
-
-  it("skill:run_script 走 deps.runSandboxScript，缺省时报 sandbox_unavailable", async () => {
-    const state = createState();
-    const base: ParserDeps = {
-      parseBytes: async () => {
-        throw new Error("unused");
-      },
-      fetchImpl: fetch,
-    };
-    const noSandbox = await handleMessage(
-      { type: "skill:run_script", code: "c", input: 1 },
-      state,
-      base,
-    );
-    expect(noSandbox).toEqual({ ok: false, error: "sandbox_unavailable" });
-    const withSandbox = await handleMessage(
-      { type: "skill:run_script", code: "c", input: 1 },
-      state,
-      { ...base, runSandboxScript: async (code, input) => JSON.stringify({ code, input }) },
-    );
-    expect(withSandbox).toEqual({ ok: true, result: '{"code":"c","input":1}' });
-  });
 });

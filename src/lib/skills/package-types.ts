@@ -1,6 +1,6 @@
 import type { SkillAuthor } from "./types";
 
-/** SKILL.md frontmatter。scripts/hosts 在 SP-0+SP-1 仅解析、不消费(SP-2/SP-3 用)。 */
+/** SKILL.md frontmatter。 */
 export interface SkillFrontmatter {
   name: string;
   description: string;
@@ -8,13 +8,6 @@ export interface SkillFrontmatter {
   author?: SkillAuthor;
   /** 可选、纯文档、不强制、不模板化。每项形如 "fields: 哪些字段要抽取"。 */
   inputs?: string[];
-  capabilities?: {
-    tools?: string[];
-    /** 脚本声明。string 简写=纯计算；JSON flow 对象形=特权。归一化见 script-decl.ts。 */
-    scripts?: string[];
-    /** @deprecated spec §4.4：hosts 白名单折进 per-script network，仅解析不消费。 */
-    hosts?: string[];
-  };
 }
 
 /**

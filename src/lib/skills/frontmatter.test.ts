@@ -11,8 +11,6 @@ describe("parseSkillMarkdown", () => {
       "inputs:",
       "  - fields: 哪些字段",
       "  - format: json 或 csv",
-      "capabilities:",
-      "  tools: [read_page, click]",
       "---",
       "",
       "Extract the fields the user asked for.",
@@ -23,25 +21,54 @@ describe("parseSkillMarkdown", () => {
     expect(frontmatter.description).toBe("抽取页面字段");
     expect(frontmatter.version).toBe("1.0.0");
     expect(frontmatter.inputs).toEqual(["fields: 哪些字段", "format: json 或 csv"]);
-    expect(frontmatter.capabilities?.tools).toEqual(["read_page", "click"]);
     expect(body.trim()).toBe("Extract the fields the user asked for.");
   });
 
-  it("解析 capabilities 下的块状列表", () => {
+  it("老 idb 包带完整 capabilities 嵌套块 → name/description/正文 仍正确解析（残留字段无害）", () => {
+    // capabilities frontmatter 已删（issue #303），但历史 idb 包的 SKILL.md 里仍可能
+    // 带这个嵌套块。解析器不能因此崩，也不能把 capabilities 下的列表项误挂到必填字段上。
     const md = [
       "---",
-      "name: Block List",
-      "description: 块状列表能力",
+      "name: Legacy Skill",
+      "description: 带老 capabilities 块",
+      "version: 2.1.0",
       "capabilities:",
       "  tools:",
       "    - read_page",
       "    - click",
+      "  scripts:",
+      "    - scripts/dedupe.js",
+      "  hosts:",
+      "    - api.example.com",
+      "inputs:",
+      "  - fields: 哪些字段",
+      "---",
+      "",
+      "Body after capabilities.",
+    ].join("\n");
+
+    const { frontmatter, body } = parseSkillMarkdown(md);
+    expect(frontmatter.name).toBe("Legacy Skill");
+    expect(frontmatter.description).toBe("带老 capabilities 块");
+    expect(frontmatter.version).toBe("2.1.0");
+    expect(frontmatter.inputs).toEqual(["fields: 哪些字段"]);
+    expect(body.trim()).toBe("Body after capabilities.");
+  });
+
+  it("capabilities 内联数组形（tools: [a, b]）→ 仍不影响必填字段", () => {
+    const md = [
+      "---",
+      "name: Inline Caps",
+      "description: 内联能力数组",
+      "capabilities:",
+      "  tools: [read_page, click]",
       "---",
       "body",
     ].join("\n");
 
     const { frontmatter } = parseSkillMarkdown(md);
-    expect(frontmatter.capabilities?.tools).toEqual(["read_page", "click"]);
+    expect(frontmatter.name).toBe("Inline Caps");
+    expect(frontmatter.description).toBe("内联能力数组");
   });
 
   it("处理 CRLF 行尾", () => {
