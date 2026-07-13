@@ -64,6 +64,18 @@ export function LocalBridgeSection() {
     queryBridgeStatus(setStatus);
   };
 
+  // 安装卡「重新检测」：让 SW 立即重连（重置退避 + 重新握手），随后立即再查一次状态。
+  const onRecheck = () => {
+    try {
+      chrome.runtime.sendMessage({ type: "local-bridge:reconnect" }, () => {
+        if (chrome.runtime.lastError) return;
+        queryBridgeStatus(setStatus);
+      });
+    } catch {
+      /* noop */
+    }
+  };
+
   const onAgentToggle = (id: string, next: boolean) => {
     setFailedId(null);
     try {
@@ -77,6 +89,18 @@ export function LocalBridgeSection() {
     }
   };
 
+  // protocolMismatch 是 not-ready 状态（见 local-bridge.ts 握手），不能被 ready 门住；
+  // 只有软升级（needsUpgrade）要求已连上（ready）。
+  const showUpgrade = !!status?.protocolMismatch || (!!status?.ready && !!status.needsUpgrade);
+
+  // 安装引导漏斗（Slice 4）：开关开、未连、且不是升级态时，按 SW 分类的 installState
+  // 呈现——未安装 → 安装卡；已装未连 → doctor 引导。unknown / undefined（旧 SW）落回
+  // 现有「未连接」文案（向后兼容）。
+  const installState = status?.installState;
+  const notReadyEnabled = enabled && status != null && !status.ready && !showUpgrade;
+  const showInstallCard = notReadyEnabled && installState === "not_installed";
+  const showDoctorHint = notReadyEnabled && installState === "installed_not_running";
+
   const statusText =
     status == null
       ? ""
@@ -89,11 +113,10 @@ export function LocalBridgeSection() {
             // 互斥），单独给强状态文案，别让它落到普通「未连接」。
             status.protocolMismatch
             ? t("settings.localBridge.statusIncompatible")
-            : t("settings.localBridge.statusEnabledNotConnected");
-
-  // protocolMismatch 是 not-ready 状态（见 local-bridge.ts 握手），不能被 ready 门住；
-  // 只有软升级（needsUpgrade）要求已连上（ready）。
-  const showUpgrade = !!status?.protocolMismatch || (!!status?.ready && !!status.needsUpgrade);
+            : // 未装/已装未连由下方专用卡片承载文案，状态行留空避免重复。
+              showInstallCard || showDoctorHint
+              ? ""
+              : t("settings.localBridge.statusEnabledNotConnected");
 
   const enabledAgents = agents.filter((a) => a.enabled);
 
@@ -135,6 +158,41 @@ export function LocalBridgeSection() {
                 >
                   {t("settings.localBridge.downloadUpdate")}
                 </a>
+              </div>
+            )}
+            {showInstallCard && (
+              <div className="flex flex-col gap-2 border-t border-line pt-3">
+                <div className="text-[13px] font-medium text-fg-1">{t("settings.localBridge.installTitle")}</div>
+                <div className="text-[12px] leading-relaxed text-fg-2">{t("settings.localBridge.installBody")}</div>
+                <div className="flex items-center gap-2">
+                  <a
+                    href={PKG_URL}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="self-start rounded border border-line px-2 py-0.5 text-[11px] text-fg-2 hover:text-fg-1"
+                  >
+                    {t("settings.localBridge.installDownload")}
+                  </a>
+                  <button
+                    type="button"
+                    onClick={onRecheck}
+                    className="self-start rounded border border-line px-2 py-0.5 text-[11px] text-fg-2 hover:text-fg-1"
+                  >
+                    {t("settings.localBridge.recheck")}
+                  </button>
+                </div>
+              </div>
+            )}
+            {showDoctorHint && (
+              <div className="flex flex-col gap-2 border-t border-line pt-3">
+                <div className="text-[12px] leading-relaxed text-fg-2">{t("settings.localBridge.doctorHint")}</div>
+                <button
+                  type="button"
+                  onClick={onRecheck}
+                  className="self-start rounded border border-line px-2 py-0.5 text-[11px] text-fg-2 hover:text-fg-1"
+                >
+                  {t("settings.localBridge.recheck")}
+                </button>
               </div>
             )}
             {status?.ready && agents.length > 0 && (
