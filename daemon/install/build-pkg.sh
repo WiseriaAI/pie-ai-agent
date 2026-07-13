@@ -1,28 +1,31 @@
 #!/bin/bash
-# daemon/install/build-pkg.sh — 编译二进制 + 组 .pkg。用法: build-pkg.sh <EXT_ID> [VERSION]
+# daemon/install/build-pkg.sh — 组 .pkg。用法: build-pkg.sh <EXT_ID> [VERSION] [BIN]
+# BIN 缺省 = 本机编译 dist/pie（开发路径，unsigned）；给定 = 使用外部（已签名）二进制。
+# 产物 pkg 本身不签名——签名/公证在 release-pkg.sh（CI）层做。
 set -euo pipefail
 EXT_ID="${1:?need extension id}"
-VERSION="${2:-0.0.1}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+VERSION="${2:-$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$ROOT/package.json")}"
+BIN="${3:-}"
 
-# 1) 编译单二进制
-( cd "$ROOT" && bun build ./src/cli.ts --compile --outfile dist/pie )
+if [ -z "$BIN" ]; then
+  ( cd "$ROOT" && bun build ./src/cli.ts --compile --outfile dist/pie )
+  BIN="$ROOT/dist/pie"
+fi
 
-# 2) payload 目录
 STAGE="$(mktemp -d)"
 mkdir -p "$STAGE/usr/local/bin"
-cp "$ROOT/dist/pie" "$STAGE/usr/local/bin/pie"
+cp "$BIN" "$STAGE/usr/local/bin/pie"
 chmod +x "$STAGE/usr/local/bin/pie"
 
-# 3) 注入 EXT_ID 到 host template（postinstall 用到的那份随 scripts 走）
 SCRIPTS="$(mktemp -d)"
 cp "$ROOT/install/postinstall.sh" "$SCRIPTS/postinstall"
 chmod +x "$SCRIPTS/postinstall"
 sed "s|__EXT_ID__|$EXT_ID|g" "$ROOT/install/ai.wiseria.pie.host.template.json" > "$SCRIPTS/ai.wiseria.pie.host.template.json"
 cp "$ROOT/install/ai.wiseria.pie.plist.template" "$SCRIPTS/"
 
-# 4) 组 pkg（签名/公证：证书就位后加 --sign "Developer ID Installer: ..." + notarytool）
+mkdir -p "$ROOT/dist"
 pkgbuild --root "$STAGE" --scripts "$SCRIPTS" \
   --identifier ai.wiseria.pie --version "$VERSION" \
-  "$ROOT/dist/pie-$VERSION.pkg"
-echo "built dist/pie-$VERSION.pkg (unsigned — sign+notarize before distribution)"
+  "$ROOT/dist/pie-link-$VERSION.pkg"
+echo "built dist/pie-link-$VERSION.pkg (unsigned)"
