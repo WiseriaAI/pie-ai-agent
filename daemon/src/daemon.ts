@@ -12,6 +12,7 @@ import { readSkillFile, writeSkill, listSkillsMerged, resolveSkillRoot, deleteSk
 import { runSkillScript } from "./skill-exec";
 import { listGrants, revokeGrant, sweepGrants } from "./grants";
 import { readAuditTail } from "./audit";
+import { getStatus, markExtensionSocket, dropSocket } from "./status";
 import type {
   ReadSkillFileParams, RunSkillScriptParams, WriteSkillParams, DeleteSkillParams, RevokeGrantParams,
   ListAuditParams, ListAuditResult,
@@ -157,6 +158,14 @@ export async function handleMessage(line: string): Promise<string> {
         return respond({ ok: false, error: { code: "list_audit_failed", message: String(e) } });
       }
     }
+    case "status": {
+      try {
+        return respond({ ok: true, result: getStatus() });
+      } catch (e) {
+        log("error", "status.failed", { id, error: String(e) });
+        return respond({ ok: false, error: { code: "status_failed", message: String(e) } });
+      }
+    }
     default:
       log("warn", "request.unknown_method", { id, method: String(msg.method) });
       return respond({ ok: false, error: { code: "unknown_method", message: String(msg.method) } });
@@ -176,12 +185,21 @@ export function processSocketChunk(
   carry: string,
   chunk: string,
   write: (out: string) => void,
-): { carry: string; pending: Promise<void> } {
+): { carry: string; pending: Promise<void>; sawHello: boolean } {
   const { lines, carry: nextCarry } = decodeNdjsonLines(carry, chunk);
+  // 扩展 host 连接会发 hello，顶栏 app 不发 → 发过 hello 的 socket 记为扩展连接。
+  // 双 parse 只在含 hello 的这一次 chunk 发生，代价可忽略。
+  const sawHello = lines.some((l) => {
+    try {
+      return (JSON.parse(l) as { method?: string }).method === "hello";
+    } catch {
+      return false;
+    }
+  });
   const pending = Promise.all(lines.map((line) => handleMessage(line).then((out) => write(out + "\n")))).then(
     () => undefined,
   );
-  return { carry: nextCarry, pending };
+  return { carry: nextCarry, pending, sawHello };
 }
 
 // socket.write 在内核缓冲满时只写入部分字节（真机案例：32 个 ~/.agents skill
@@ -232,13 +250,15 @@ export async function startDaemon(): Promise<void> {
         socket.data = { carry: "", writer: makeBackpressureWriter((bytes) => socket.write(bytes)) };
         log("info", "client.connect");
       },
-      close() {
+      close(socket) {
+        dropSocket(socket);
         log("info", "client.disconnect");
       },
       data(socket, data) {
-        const { carry, pending } = processSocketChunk(socket.data.carry, data.toString(), (out) =>
+        const { carry, pending, sawHello } = processSocketChunk(socket.data.carry, data.toString(), (out) =>
           socket.data.writer.write(out),
         );
+        if (sawHello) markExtensionSocket(socket);
         socket.data.carry = carry;
         pending.catch((err) => log("error", "socket.error", { err: String(err) }));
       },
