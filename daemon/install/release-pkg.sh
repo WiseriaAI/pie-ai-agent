@@ -27,8 +27,14 @@ codesign --force --options runtime --timestamp \
   --sign "$APP_ID" "$ROOT/dist/pie-universal"
 codesign --verify --strict "$ROOT/dist/pie-universal"
 
+# 2.5) 顶栏 app：构建 + 签名（hardened runtime，无需 JIT entitlements）
+"$ROOT/menubar/build-app.sh" "$ROOT/dist" "$VERSION"
+codesign --force --deep --options runtime --timestamp \
+  --sign "$APP_ID" "$ROOT/dist/Pie Link.app"
+codesign --verify --strict "$ROOT/dist/Pie Link.app"
+
 # 3) 组 pkg（unsigned）→ productsign
-"$ROOT/install/build-pkg.sh" "$EXT_ID" "$VERSION" "$ROOT/dist/pie-universal"
+"$ROOT/install/build-pkg.sh" "$EXT_ID" "$VERSION" "$ROOT/dist/pie-universal" "$ROOT/dist/Pie Link.app"
 mv "$ROOT/dist/pie-link-$VERSION.pkg" "$ROOT/dist/pie-link-$VERSION-unsigned.pkg"
 productsign --sign "$INST_ID" \
   "$ROOT/dist/pie-link-$VERSION-unsigned.pkg" "$ROOT/dist/pie-link-$VERSION.pkg"
