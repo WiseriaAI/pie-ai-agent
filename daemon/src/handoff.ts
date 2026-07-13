@@ -3,17 +3,25 @@ import { join } from "path";
 import type { HandoffParams, HandoffResult } from "../../src/types/local-bridge";
 import type { SpawnFn } from "./spawn";
 import { realSpawn } from "./spawn";
-import type { AgentCandidate } from "./agents";
+import type { DetectedAgent } from "./agents";
 import { detectAgents } from "./agents";
 import { paths } from "./paths";
 import { log } from "./log";
 
 /** 我们在 handoff 目录里写死的文件名——用户传的文件不许撞它们。 */
-const RESERVED = new Set(["context.md", "start.command", "claude.md"]);
+const RESERVED = new Set(["context.md", "start.command", "claude.md", "agents.md"]);
 
-/** app 模式的约定注入：Cowork 没有 prompt 参数面，靠目录内 CLAUDE.md 引导。 */
-const CLAUDE_MD_CONVENTION =
-  "Read context.md in this directory for the handed-off context, then continue the task.\n";
+/** 交棒引导语：terminal 直接注入 argv，app 写进 convention 文件。 */
+const HANDOFF_PROMPT =
+  "Read context.md in this directory for the handed-off context, then continue the task.";
+
+/**
+ * 单引号包裹 + 转义内部单引号。路径来自 which / 文件系统，可能含空格
+ * （/Users/na me/.local/bin/claude）——裸拼进 exec 会被拆成两个参数。
+ */
+function shq(s: string): string {
+  return `'${s.replace(/'/g, `'\\''`)}'`;
+}
 
 /**
  * do script 注入串的前导牺牲空格数。zsh 启动期的 stdin 消费者（omz 升级提示
@@ -50,7 +58,7 @@ export async function runHandoff(
     ensureDir?: (dir: string) => void;
     writeFile?: (path: string, content: string, mode?: number) => void;
     now?: () => string;
-    detect?: () => AgentCandidate[];
+    detect?: () => DetectedAgent[];
   },
 ): Promise<HandoffResult> {
   const spawn = opts?.spawn ?? realSpawn;
@@ -79,13 +87,13 @@ export async function runHandoff(
   }
 
   if (agent.kind === "app") {
-    // app 直开（真机已验证）：`open -a Claude <dir>` → Cowork 会话根在该目录。
-    // 无 prompt 注入面 → 目录内 CLAUDE.md 约定引导；人到场发一句即开跑。
-    // 无 shell、无 TCC，launch 比 Terminal 稳，但不自动开跑（mode 回传给扩展，
-    // observation 明示用户需发一句话启动）。
-    writeFile(join(dir, "CLAUDE.md"), CLAUDE_MD_CONVENTION);
+    // app 直开：`open -a <bundle 路径> <dir>` → 会话根在该目录。无 prompt 注入面
+    // → 目录内的约定文件引导（Claude 系读 CLAUDE.md，Codex/Cursor 读 AGENTS.md）。
+    // 人到场发一句即开跑（mode 回传给扩展，observation 明示需发一句）。
+    // 无 shell、无 TCC，launch 比 Terminal 稳，但不自动开跑。
+    writeFile(join(dir, agent.convention ?? "AGENTS.md"), `${HANDOFF_PROMPT}\n`);
     log("info", "handoff.open_app", { dir, target: agent.id, files: (params.files ?? []).length });
-    const r = await spawn("open", ["-a", agent.appName!, dir], dir);
+    const r = await spawn("open", ["-a", agent.path, dir], dir);
     if (r.exitCode !== 0) {
       throw new Error(
         `failed to open ${agent.label} (open exit ${r.exitCode}): ${(r.stderr ?? "").trim().slice(0, 300)} — ` +
@@ -104,10 +112,11 @@ export async function runHandoff(
   // 恰好兼容 bash 双引号语义（两者其实不等价：JSON 的 \n / \uXXXX 转义与 bash
   // 双引号转义规则不同）——这里安全性来自 dir 本身不含双引号/反引号/`$`
   // 等元字符，JSON.stringify 只是顺手拿来加一层引号。
+  const args = (agent.argv ?? ["{prompt}"]).map((a) => a.replace("{prompt}", HANDOFF_PROMPT));
   const script =
     `#!/bin/bash\n` +
     `cd ${JSON.stringify(dir)} || exit 1\n` +
-    `exec ${agent.bin} "Read context.md in this directory for the handed-off context, then continue the task."\n`;
+    `exec ${shq(agent.path)} ${args.map(shq).join(" ")}\n`;
   const scriptPath = join(dir, "start.command");
   writeFile(scriptPath, script, 0o755);
   log("info", "handoff.open", { dir, target: agent.id, files: (params.files ?? []).length });
