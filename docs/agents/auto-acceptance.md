@@ -50,6 +50,7 @@
 - **HITL 卡（skill-grant / CDP / 文件访问）headless 走不通**：daemon 授权无 panel 时 fail-closed。必须开着 sidepanel 页（`chrome-extension://<id>/src/sidepanel/index.html` 当 tab 开）、从 composer 发任务、Playwright 点卡上按钮（如 `Allow`）。纯工具调用项（无 HITL）可走 `__pieEval.startTask` + `waitForDone` + `getTrace` headless。
 - **齿轮按钮 aria 随视图翻转**（`Open settings` / `Close settings`），chat 空态 CTA 撞名 `Open Settings`——用 exact 大小写匹配。
 - **sidepanel 以 tab 打开 ≈ 真 side panel**，但排版差异属人工盲区，viewport 建议 420×900。
+- **`PIE_ACCEPT_BASE` 必须短**：daemon 的 unix socket 落 `<BASE>/home/.pie/daemon.sock`，受 macOS `sun_path` 104 字节上限；agent scratchpad 那种 100+ 字符的路径会让 daemon 直接 `Failed to listen`（表现为桥永远连不上、误判成回归）。用 `/tmp/pie<PR>` 一类短路径。
 
 ## 验收标准
 
@@ -58,6 +59,7 @@
 - fixture 含真实规模档（≥30 skill）且该档跑过 list/滚动路径，否则报告必须标注「未验证真实规模」。
 - 结构性盲区（本文件分工表的「人工」行）**不得标 PASS**，在报告「留人工」区显式列出。
 - 断言失败先甄别「设计 vs 回归」：对照 clean main 跑同断言（main 也如此 = 现状/设计，不是本 PR 回归）。
+- **状态跟随类清单项（UI 该跟着某个后台状态变）别只断言终态**：终态断言在「UI 本来就卡在那个值」时会假通过。改为双流采样——真值（SW RPC）与表现（DOM 文本）同时轮询，断言**跟随延迟**（表现滞后真值 ≤ 轮询周期），并全程不 reload / 不离开该页，排除「重挂载才更新」。同一脚本跑 clean main **必须 FAIL**，否则说明断言根本没测到东西。样本：`pilot-299-functional.mjs`（设置根页桥 badge）。
 
 ## 报告格式
 
