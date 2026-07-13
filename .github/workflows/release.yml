@@ -92,3 +92,63 @@ jobs:
           gh release upload "${{ steps.tag.outputs.ref }}" \
             "pie-${{ steps.tag.outputs.version }}.zip" \
             --clobber
+
+  build-daemon-pkg:
+    runs-on: macos-14
+    steps:
+      - name: Resolve tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          echo "ref=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.tag.outputs.ref }}
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Daemon tests
+        run: cd daemon && bun install --frozen-lockfile && bun test
+
+      - name: Read daemon version
+        id: dv
+        run: echo "version=$(jq -r .version daemon/package.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Import signing certs into temp keychain
+        env:
+          APPLE_CERT_P12: ${{ secrets.APPLE_CERT_P12 }}
+          APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/build.keychain-db"
+          security create-keychain -p ci "$KEYCHAIN"
+          security default-keychain -s "$KEYCHAIN"
+          security unlock-keychain -p ci "$KEYCHAIN"
+          echo "$APPLE_CERT_P12" | base64 -d > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" \
+            -P "$APPLE_CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/productsign
+          security set-key-partition-list -S apple-tool:,apple: -s -k ci "$KEYCHAIN"
+          rm "$RUNNER_TEMP/cert.p12"
+
+      - name: Build, sign, notarize
+        env:
+          APPLE_NOTARY_KEY: ${{ secrets.APPLE_NOTARY_KEY }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_KEY_ISSUER: ${{ secrets.APPLE_NOTARY_KEY_ISSUER }}
+        run: daemon/install/release-pkg.sh gpccjhdgjkmalnepmeclooflliiocfed "${{ steps.dv.outputs.version }}"
+
+      - name: Upload assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cp "daemon/dist/pie-link-${{ steps.dv.outputs.version }}.pkg" pie-link.pkg
+          gh release upload "${{ steps.tag.outputs.ref }}" \
+            "daemon/dist/pie-link-${{ steps.dv.outputs.version }}.pkg" \
+            pie-link.pkg \
+            --clobber
