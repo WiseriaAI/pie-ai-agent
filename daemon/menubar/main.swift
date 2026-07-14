@@ -3,6 +3,22 @@ import AppKit
 
 let socketPath = (NSHomeDirectory() as NSString).appendingPathComponent(".pie/daemon.sock")
 
+/// Pie 品牌 mark（被咬一口的派）template 版。比例对齐 public/icons/icon-128.svg
+/// （派 r44、咬口 r22、咬口心距派心 48，右上 45°）。咬口跨越派边缘，须用
+/// blend .clear 挖真透明（evenOdd 会在派外留月牙）。isTemplate 跟随菜单栏明暗。
+func pieTemplateIcon() -> NSImage {
+    let img = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { _ in
+        guard let cg = NSGraphicsContext.current?.cgContext else { return false }
+        cg.setFillColor(NSColor.black.cgColor)
+        cg.fillEllipse(in: CGRect(x: 2, y: 2, width: 14, height: 14)) // 派 r7 心(9,9)
+        cg.setBlendMode(.clear)
+        cg.fillEllipse(in: CGRect(x: 10.9, y: 10.9, width: 7, height: 7)) // 咬口 r3.5 心(14.4,14.4)
+        return true
+    }
+    img.isTemplate = true
+    return img
+}
+
 /// 一问一答：连 unix socket，发一行 JSON 请求，读一行 JSON 响应（1s 超时）。
 func queryDaemon(_ method: String, _ params: [String: Any] = [:]) -> [String: Any]? {
     let fd = socket(AF_UNIX, SOCK_STREAM, 0)
@@ -53,8 +69,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationDidFinishLaunching(_: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        statusItem.button?.image = NSImage(
-            systemSymbolName: "circle.hexagongrid.fill", accessibilityDescription: "Pie Link")
+        statusItem.button?.image = pieTemplateIcon()
+        statusItem.button?.image?.accessibilityDescription = "Pie Link"
         let menu = NSMenu()
         menu.delegate = self
         statusItem.menu = menu
@@ -97,7 +113,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         menu.addItem(.separator())
         menu.addItem(item("诊断（pie doctor）", #selector(runDoctor)))
-        menu.addItem(item("退出", #selector(NSApplication.terminate(_:))))
+        // 退出：target 必须留 nil 走 responder chain 到 NSApp——AppDelegate 不响应
+        // terminate(_:)，设 target=self 会被 autoenablesItems 校验禁用（真机验收抓到的 bug）
+        menu.addItem(NSMenuItem(title: "退出", action: #selector(NSApplication.terminate(_:)), keyEquivalent: ""))
     }
 
     @objc func runDoctor() {
