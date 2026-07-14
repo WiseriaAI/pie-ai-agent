@@ -17,7 +17,11 @@ function harness() {
       return { stdout: "", exitCode: 0 };
     },
     now: () => "2026-07-07",
-    detect: () => [...AGENT_CANDIDATES], // 默认三条全"已装"
+    detect: () =>
+      AGENT_CANDIDATES.map((c) => ({
+        ...c,
+        path: c.kind === "app" ? c.appPaths![0] : `/Users/x/.local/bin/${c.bin}`,
+      })), // 默认全"已装"，带出绝对路径
   };
   return { writes, dirs, spawns, opts };
 }
@@ -36,7 +40,8 @@ test("creates dated dir, writes context.md, launches via osascript do script (pa
   // start.command 可执行、内容 cd 进目录并拉起交互式 claude（不带 skip-permissions）
   const cmd = h.writes.find((w) => w.path.endsWith("start.command"));
   expect(cmd?.mode).toBe(0o755);
-  expect(cmd?.content).toContain("exec claude");
+  expect(cmd?.content).toContain("exec '/Users/x/.local/bin/claude'");
+  expect(cmd?.content).not.toContain("exec claude "); // 裸命令名 = 依赖运行时 PATH = 真机上会 not found
   expect(cmd?.content).not.toContain("--dangerously-skip-permissions");
   // 用 osascript do script 唤起（不是 `open`——那条路径把脚本路径当键盘输入喂给
   // 交互式 zsh，zsh 启动期 stdin 消费者会吞首字符；见 handoff.ts LAUNCH_PAD 注释）
@@ -119,7 +124,7 @@ test("app mode: writes CLAUDE.md convention, opens Claude app on the dir, no sta
   expect(h.writes.some((w) => w.path.endsWith("start.command"))).toBe(false);
   expect(h.spawns).toHaveLength(1);
   expect(h.spawns[0].cmd).toBe("open");
-  expect(h.spawns[0].args).toEqual(["-a", "Claude", r.dir]);
+  expect(h.spawns[0].args).toEqual(["-a", "/Applications/Claude.app", r.dir]);
 });
 
 test("codex terminal mode: start.command execs codex (bin from static table, not wire)", async () => {
@@ -127,8 +132,8 @@ test("codex terminal mode: start.command execs codex (bin from static table, not
   const r = await runHandoff({ target: "codex-terminal", context: "x" }, h.opts);
   expect(r.mode).toBe("terminal");
   const cmd = h.writes.find((w) => w.path.endsWith("start.command"));
-  expect(cmd?.content).toContain("exec codex ");
-  expect(cmd?.content).not.toContain("exec claude ");
+  expect(cmd?.content).toContain("exec '/Users/x/.local/bin/codex'");
+  expect(cmd?.content).not.toContain("/claude'");
 });
 
 test("target not in the freshly-detected set is rejected before any side effect", async () => {
@@ -146,7 +151,7 @@ test("legacy wire target 'claude' aliases to claude-terminal", async () => {
   const r = await runHandoff({ target: "claude", context: "x" }, h.opts);
   expect(r.mode).toBe("terminal");
   const cmd = h.writes.find((w) => w.path.endsWith("start.command"));
-  expect(cmd?.content).toContain("exec claude ");
+  expect(cmd?.content).toContain("exec '/Users/x/.local/bin/claude'");
 });
 
 test("safeFileName rejects CLAUDE.md case-insensitively (app-mode reserved file)", () => {
@@ -163,4 +168,60 @@ test("open failure in app mode throws with the dir as manual fallback", async ()
   await expect(runHandoff({ target: "claude-app", context: "x" }, h.opts)).rejects.toThrow(
     /failed to open[\s\S]*pie-handoffs/,
   );
+});
+
+test("start.command 里绝对路径带空格也安全（shell quote）", async () => {
+  const h = harness();
+  h.opts.detect = () => [{
+    id: "claude-terminal" as const, label: "Claude Code (Terminal)", kind: "terminal" as const,
+    bin: "claude", argv: ["{prompt}"], path: "/Users/na me/.local/bin/claude",
+  }];
+  await runHandoff({ target: "claude-terminal", context: "x" }, h.opts);
+  const cmd = h.writes.find((w) => w.path.endsWith("start.command"));
+  expect(cmd?.content).toContain("exec '/Users/na me/.local/bin/claude'");
+});
+
+test("argv 模板：位置参数形态（claude）", async () => {
+  const h = harness();
+  await runHandoff({ target: "claude-terminal", context: "x" }, h.opts);
+  const cmd = h.writes.find((w) => w.path.endsWith("start.command"));
+  expect(cmd?.content).toContain(
+    `exec '/Users/x/.local/bin/claude' 'Read context.md in this directory for the handed-off context, then continue the task.'`,
+  );
+});
+
+test("argv 模板：flag 形态（opencode --prompt）", async () => {
+  const h = harness();
+  h.opts.detect = () => [{
+    id: "opencode-terminal" as const, label: "OpenCode (Terminal)", kind: "terminal" as const,
+    bin: "opencode", argv: ["--prompt", "{prompt}"], path: "/Users/x/.opencode/bin/opencode",
+  }];
+  await runHandoff({ target: "opencode-terminal", context: "x" }, h.opts);
+  const cmd = h.writes.find((w) => w.path.endsWith("start.command"));
+  expect(cmd?.content).toContain(
+    `exec '/Users/x/.opencode/bin/opencode' '--prompt' 'Read context.md in this directory for the handed-off context, then continue the task.'`,
+  );
+});
+
+test("app 模式按 convention 写引导文件：Claude → CLAUDE.md", async () => {
+  const h = harness();
+  const r = await runHandoff({ target: "claude-app", context: "x" }, h.opts);
+  expect(r.mode).toBe("app");
+  const guide = h.writes.find((w) => w.path.endsWith("CLAUDE.md"));
+  expect(guide?.content).toContain("Read context.md");
+  expect(h.writes.find((w) => w.path.endsWith("AGENTS.md"))).toBeUndefined();
+  expect(h.spawns[0]).toMatchObject({ cmd: "open", args: ["-a", "/Applications/Claude.app", r.dir] });
+});
+
+test("app 模式按 convention 写引导文件：Codex → AGENTS.md", async () => {
+  const h = harness();
+  const r = await runHandoff({ target: "codex-app", context: "x" }, h.opts);
+  const guide = h.writes.find((w) => w.path.endsWith("AGENTS.md"));
+  expect(guide?.content).toContain("Read context.md");
+  expect(h.writes.find((w) => w.path.endsWith("CLAUDE.md"))).toBeUndefined();
+});
+
+test("RESERVED 挡掉 agents.md（大小写不敏感）", () => {
+  expect(() => safeFileName("AGENTS.md")).toThrow();
+  expect(() => safeFileName("agents.md")).toThrow();
 });

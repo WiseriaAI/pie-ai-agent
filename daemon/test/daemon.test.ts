@@ -111,7 +111,12 @@ test("list_agents returns ALL candidates with installed flag (shape only — det
   expect(out.result.agents.map((a: { id: string }) => a.id)).toEqual([
     "claude-app",
     "claude-terminal",
+    "codex-app",
     "codex-terminal",
+    "cursor-app",
+    "cursor-terminal",
+    "opencode-terminal",
+    "pi-terminal",
   ]);
   for (const a of out.result.agents) {
     expect(typeof a.label).toBe("string");

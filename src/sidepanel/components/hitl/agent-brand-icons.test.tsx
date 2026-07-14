@@ -37,4 +37,23 @@ describe("AgentBrandIcon", () => {
     const { container } = render(<AgentBrandIcon agentId="claude-app" size={16} />);
     expect(container.querySelector("svg")!.getAttribute("width")).toBe("16");
   });
+
+  it("按 id 前缀选对品牌（app / terminal 两形态共用一个 mark，#269 新增三家）", () => {
+    expect(svgOf("cursor-app").getAttribute("data-brand")).toBe("cursor");
+    expect(svgOf("cursor-terminal").getAttribute("data-brand")).toBe("cursor");
+    expect(svgOf("opencode-terminal").getAttribute("data-brand")).toBe("opencode");
+    expect(svgOf("pi-terminal").getAttribute("data-brand")).toBe("pi");
+  });
+
+  it("Pi 的 P 形靠 evenodd 挖洞，丢了就变实心块", () => {
+    const svg = svgOf("pi-terminal");
+    expect(svg.querySelector('path[fill-rule="evenodd"]')).not.toBeNull();
+  });
+
+  it("OpenCode 内块在外框之前（外框靠 nonzero 挖空）", () => {
+    const paths = svgOf("opencode-terminal").querySelectorAll("path");
+    expect(paths).toHaveLength(2);
+    expect(paths[0].getAttribute("fill")).toBe("#CFCECD"); // 内块先画
+    expect(paths[1].getAttribute("fill")).toBe("currentColor"); // 外框后画
+  });
 });
