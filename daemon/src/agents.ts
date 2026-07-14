@@ -57,6 +57,10 @@ export const AGENT_CANDIDATES: readonly AgentCandidate[] = [
   // CLI 是 cursor-agent —— /Applications/Cursor.app 里的 `cursor` 是 IDE 启动器，不是 agent。
   { id: "cursor-app", label: "Cursor (App)", kind: "app",
     appPaths: ["/Applications/Cursor.app"], convention: "AGENTS.md" },
+  // 不加 --trust：help 说它能跳工作区信任提示，但真机实测「--trust can only be used
+  // with --print/headless mode」，交互式 TUI 直接报错退出。claude/codex 也无同粒度
+  // flag（codex 只有全跳审批+沙箱的 dangerously-bypass，不能替用户开）——三家统一保持
+  // 首次进目录一次 y 确认，那是 agent 自身的安全机制。
   { id: "cursor-terminal", label: "Cursor (Terminal)", kind: "terminal", bin: "cursor-agent",
     argv: ["{prompt}"], binPaths: ["~/.local/bin/cursor-agent"] },
 

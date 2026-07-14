@@ -49,6 +49,7 @@ test("opencode 走 --prompt flag，其余 terminal 走位置参数", () => {
   const byId = Object.fromEntries(AGENT_CANDIDATES.map((c) => [c.id, c]));
   expect(byId["opencode-terminal"].argv).toEqual(["--prompt", "{prompt}"]);
   expect(byId["claude-terminal"].argv).toEqual(["{prompt}"]);
+  // 不带 --trust：真机实测交互式 TUI 下报 "--trust can only be used with --print/headless mode"
   expect(byId["cursor-terminal"].argv).toEqual(["{prompt}"]);
   expect(byId["pi-terminal"].argv).toEqual(["{prompt}"]);
   expect(byId["cursor-terminal"].bin).toBe("cursor-agent"); // 注意：不是 "cursor"（那是 IDE 启动器）
