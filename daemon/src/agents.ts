@@ -50,7 +50,11 @@ export const AGENT_CANDIDATES: readonly AgentCandidate[] = [
   // Codex.app（万一 OpenAI 再拆回来），回落 ChatGPT.app。显示名合并成 "Codex / ChatGPT"。
   { id: "codex-app", label: "Codex / ChatGPT (App)", kind: "app",
     appPaths: ["/Applications/Codex.app", "/Applications/ChatGPT.app"], convention: "AGENTS.md" },
-  { id: "codex-terminal", label: "Codex (Terminal)", kind: "terminal", bin: "codex", argv: ["{prompt}"] },
+  // --dangerously-bypass-approvals-and-sandbox：产品拍板（2026-07-14 验收）——交棒要
+  // 「到手即跑」，目录确认会卡住每一次 handoff（目录每次新建，信任记忆无效）。代价是
+  // 交棒后的 codex 会话无审批、无沙箱，风险由用户在交棒动作本身承担。
+  { id: "codex-terminal", label: "Codex (Terminal)", kind: "terminal", bin: "codex",
+    argv: ["--dangerously-bypass-approvals-and-sandbox", "{prompt}"] },
 
   // Cursor 是 IDE：app 形态打开的是一个只有 context.md + AGENTS.md 的工作区，
   // 用户 ⌘L 发一句话让 agent 接手（已知取舍，见 spec §6）。

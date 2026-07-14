@@ -49,6 +49,8 @@ test("opencode 走 --prompt flag，其余 terminal 走位置参数", () => {
   const byId = Object.fromEntries(AGENT_CANDIDATES.map((c) => [c.id, c]));
   expect(byId["opencode-terminal"].argv).toEqual(["--prompt", "{prompt}"]);
   expect(byId["claude-terminal"].argv).toEqual(["{prompt}"]);
+  // 产品拍板（2026-07-14 验收）：交棒到手即跑，代价 = 该 codex 会话无审批无沙箱
+  expect(byId["codex-terminal"].argv).toEqual(["--dangerously-bypass-approvals-and-sandbox", "{prompt}"]);
   // 不带 --trust：真机实测交互式 TUI 下报 "--trust can only be used with --print/headless mode"
   expect(byId["cursor-terminal"].argv).toEqual(["{prompt}"]);
   expect(byId["pi-terminal"].argv).toEqual(["{prompt}"]);
