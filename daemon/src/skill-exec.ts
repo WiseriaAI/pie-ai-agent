@@ -7,6 +7,7 @@ import { assertSkillName, listSkills, resolveSkillRoot, defaultRoots } from "./s
 import type { SkillRoots } from "./skill-store";
 import { hasGrant, putGrant, grantKey, canonicalEnvelope, envelopeHash } from "./grants";
 import { appendAudit } from "./audit";
+import { beginSkillRun, endSkillRun } from "./status";
 import { realSkillSandbox } from "./skill-sandbox";
 import type { SkillSandbox } from "./skill-sandbox";
 import type { GrantEnvelope, RunSkillScriptParams, RunSkillScriptResult, SkillAuthPayload } from "../../src/types/local-bridge";
@@ -102,7 +103,14 @@ export async function runSkillScript(
 
   const startedAt = now();
   log("info", "skill.run", { name, entry: params.entry });
-  const res = await sandbox.run(argv, skillDir, env, settings);
+  // 活跃执行注册表：顶栏 app 的 status RPC 据此显示「正在运行的 skill」。
+  const runId = beginSkillRun(name, params.entry);
+  let res;
+  try {
+    res = await sandbox.run(argv, skillDir, env, settings);
+  } finally {
+    endSkillRun(runId);
+  }
 
   appendAudit(
     { ts: now(), skillName: name, entry: params.entry, envelope, exitCode: res.exitCode, timedOut: res.timedOut, truncated: res.truncated, ms: now() - startedAt },

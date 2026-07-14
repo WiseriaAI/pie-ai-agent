@@ -197,6 +197,15 @@ export interface ListAuditResult {
   entries: AuditEntry[];
 }
 
+// ── status（顶栏 app / 诊断用）────────────────────────────────────────
+export interface StatusResult {
+  version: string;
+  uptimeSec: number;
+  /** 有活跃的扩展 host 连接（发过 hello 的 socket） */
+  extensionConnected: boolean;
+  runningSkills: { name: string; startedAt: number }[];
+}
+
 // ── 通用信封 ──────────────────────────────────────────────────────────
 export interface BridgeRequest {
   id: string;
@@ -212,7 +221,8 @@ export interface BridgeRequest {
     | "delete_skill"
     | "list_grants"
     | "revoke_grant"
-    | "list_audit";
+    | "list_audit"
+    | "status";
   params: unknown;
 }
 export type BridgeResponse =
