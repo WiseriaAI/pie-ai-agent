@@ -125,6 +125,13 @@ export const enDict = {
       upgradeAvailable: "A newer Pie Link is available. Download and reinstall to upgrade.",
       upgradeRequired: "Pie Link is incompatible with this extension. Upgrade it before the local bridge can be used.",
       downloadUpdate: "Download update",
+      installTitle: "Install Pie Link",
+      installBody:
+        "The local bridge needs Pie Link installed on this computer. Download the installer, double-click to finish, and it will connect automatically.",
+      installDownload: "Download Pie Link (.pkg)",
+      doctorHint:
+        "Pie Link is installed but not connected. Open a terminal and run `pie doctor` for diagnostics, or click Check again.",
+      recheck: "Check again",
     },
     searchProvider: {
       caps: "Search provider",

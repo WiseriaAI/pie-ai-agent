@@ -174,3 +174,83 @@ describe("LocalBridgeSection — daemon version handshake (Slice 3)", () => {
     expect(screen.queryByText(/not connected/i)).toBeNull();
   });
 });
+
+describe("LocalBridgeSection — install funnel (Slice 4)", () => {
+  it("shows the install card with download link + recheck button when not_installed", async () => {
+    mockSendMessage({
+      "local-bridge:status": () => ({
+        hasPermission: true,
+        ready: false,
+        installState: "not_installed",
+      }),
+      "local-agents:list": () => ({ agents: [] }),
+    });
+
+    render(<LocalBridgeSection />);
+    const link = await screen.findByRole("link", { name: /download|下载/i });
+    expect(link.getAttribute("href")).toBe(
+      "https://github.com/WiseriaAI/pie-ai-agent/releases/latest/download/pie-link.pkg",
+    );
+    expect(screen.getByRole("button", { name: /check again|重新检测/i })).toBeTruthy();
+  });
+
+  it("shows the doctor hint when installed_not_running", async () => {
+    mockSendMessage({
+      "local-bridge:status": () => ({
+        hasPermission: true,
+        ready: false,
+        installState: "installed_not_running",
+      }),
+      "local-agents:list": () => ({ agents: [] }),
+    });
+
+    render(<LocalBridgeSection />);
+    expect(await screen.findByText(/pie doctor/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: /check again|重新检测/i })).toBeTruthy();
+    // 未装态的下载链接不出现在这个分支
+    expect(screen.queryByRole("link", { name: /download|下载/i })).toBeNull();
+  });
+
+  it("recheck button sends local-bridge:reconnect then re-queries status", async () => {
+    const seen = mockSendMessage({
+      "local-bridge:status": () => ({
+        hasPermission: true,
+        ready: false,
+        installState: "not_installed",
+      }),
+      "local-bridge:reconnect": () => ({ ok: true }),
+      "local-agents:list": () => ({ agents: [] }),
+    });
+
+    render(<LocalBridgeSection />);
+    fireEvent.click(await screen.findByRole("button", { name: /check again|重新检测/i }));
+    await waitFor(() => expect(seen).toContain("local-bridge:reconnect"));
+  });
+
+  it("falls back to the legacy not-connected text when installState is unknown", async () => {
+    mockSendMessage({
+      "local-bridge:status": () => ({
+        hasPermission: true,
+        ready: false,
+        installState: "unknown",
+      }),
+      "local-agents:list": () => ({ agents: [] }),
+    });
+
+    render(<LocalBridgeSection />);
+    expect(await screen.findByText(/not connected/i)).toBeTruthy();
+    // unknown 分支不给安装卡
+    expect(screen.queryByRole("link", { name: /download|下载/i })).toBeNull();
+  });
+
+  it("falls back to the legacy not-connected text when SW omits installState (old SW)", async () => {
+    mockSendMessage({
+      "local-bridge:status": () => ({ hasPermission: true, ready: false }),
+      "local-agents:list": () => ({ agents: [] }),
+    });
+
+    render(<LocalBridgeSection />);
+    expect(await screen.findByText(/not connected/i)).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /download|下载/i })).toBeNull();
+  });
+});

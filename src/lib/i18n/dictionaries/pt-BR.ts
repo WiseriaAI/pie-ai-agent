@@ -126,6 +126,13 @@ export const ptBRDict = {
       upgradeAvailable: "Há uma versão mais recente do Pie Link disponível. Baixe e reinstale para atualizar.",
       upgradeRequired: "O Pie Link é incompatível com esta extensão. Atualize-o para poder usar a ponte local.",
       downloadUpdate: "Baixar atualização",
+      installTitle: "Instalar o Pie Link",
+      installBody:
+        "A ponte local precisa do Pie Link instalado neste computador. Baixe o instalador, dê dois cliques para concluir e ele conectará automaticamente.",
+      installDownload: "Baixar Pie Link (.pkg)",
+      doctorHint:
+        "O Pie Link está instalado, mas não conectado. Abra um terminal e execute `pie doctor` para ver o diagnóstico, ou clique em Verificar novamente.",
+      recheck: "Verificar novamente",
     },
     searchProvider: {
       caps: "Provedor de busca",

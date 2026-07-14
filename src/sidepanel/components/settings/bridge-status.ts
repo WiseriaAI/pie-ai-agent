@@ -10,6 +10,9 @@ export type BridgeStatus = {
   daemonVersion?: string | null;
   needsUpgrade?: boolean;
   protocolMismatch?: boolean;
+  // 安装引导漏斗（Slice 4）：SW 分类的安装态。旧 SW 不回此字段 → undefined → 卡片
+  // 沿用旧的「未连接」文案（向后兼容）。
+  installState?: "connected" | "not_installed" | "installed_not_running" | "unknown";
 };
 
 // Ask the SW for live bridge status (nativeMessaging granted + connected to the
