@@ -55,7 +55,6 @@ export default defineConfig(({ mode }) => {
       rollupOptions: {
         input: {
           "offscreen-pdf-parser": path.resolve(__dirname, "src/offscreen/pdf-parser.html"),
-          "skill-sandbox": path.resolve(__dirname, "src/offscreen/skill-sandbox.html"),
         },
       },
     },
