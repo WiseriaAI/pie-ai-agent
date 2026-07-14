@@ -76,7 +76,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem.menu = menu
     }
 
-    // 点开菜单才查 daemon（status + list_audit 各一次）
+    // 点开菜单才查 daemon（status 一次）。正在运行/最近执行 skill 不进菜单
+    // （不可交互的列表在菜单里是噪音）——留给后续独立日志页面，数据源
+    // status.runningSkills / list_audit 保持可用。
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
         let status = queryDaemon("status")
@@ -85,28 +87,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(disabled("Pie Link v\(ver) · 运行中"))
             let ext = s["extensionConnected"] as? Bool ?? false
             menu.addItem(disabled(ext ? "浏览器扩展：已连接" : "浏览器扩展：未连接"))
-            menu.addItem(.separator())
-            let running = s["runningSkills"] as? [[String: Any]] ?? []
-            menu.addItem(disabled("正在运行的 skill"))
-            if running.isEmpty {
-                menu.addItem(indented("无"))
-            } else {
-                for r in running { menu.addItem(indented(r["name"] as? String ?? "?")) }
-            }
-            menu.addItem(.separator())
-            menu.addItem(disabled("最近执行"))
-            let audit = queryDaemon("list_audit", ["limit": 5])
-            let entries = audit?["entries"] as? [[String: Any]] ?? []
-            if entries.isEmpty {
-                menu.addItem(indented("无"))
-            } else {
-                for e in entries {
-                    let name = e["skillName"] as? String ?? "?"
-                    let entry = e["entry"] as? String ?? "?"
-                    let okRun = (e["exitCode"] as? Int ?? 1) == 0 && !(e["timedOut"] as? Bool ?? false)
-                    menu.addItem(indented("\(okRun ? "✓" : "✗") \(name) · \(entry)"))
-                }
-            }
         } else {
             menu.addItem(disabled("Pie Link · 未运行"))
             menu.addItem(indented("守护进程未响应，可尝试重新登录或运行 pie doctor"))
