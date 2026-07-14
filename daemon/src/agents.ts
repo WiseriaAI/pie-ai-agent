@@ -1,4 +1,5 @@
 import { existsSync } from "fs";
+import { homedir } from "os";
 
 /**
  * 静态候选表 = 唯一 launch 权威：spawn 的命令 / app 路径只住在这里，绝不来自 wire 或
@@ -26,6 +27,12 @@ export interface AgentCandidate {
   bin?: string;
   /** terminal：argv 模板，"{prompt}" 占位。位置参数 vs flag 的差异只是数据。 */
   argv?: string[];
+  /**
+   * terminal：官方安装器的知名落点（"~" 开头，detect 时展开）。PATH 探测 miss 才回落——
+   * 常规安装完全可能不进 login shell PATH（真机实证：opencode 装在 ~/.opencode/bin 而
+   * rc 没配 PATH），不能要求用户自己配。PATH 命中永远优先（用户自装位置说了算）。
+   */
+  binPaths?: string[];
   /** app：按优先级探，命中第一个存在的；spawn 用命中的绝对路径。 */
   appPaths?: string[];
   /** app：目录内的约定引导文件名（app 无 prompt 注入面，靠它引导）。 */
@@ -35,7 +42,8 @@ export interface AgentCandidate {
 export const AGENT_CANDIDATES: readonly AgentCandidate[] = [
   { id: "claude-app", label: "Claude Code (App)", kind: "app",
     appPaths: ["/Applications/Claude.app"], convention: "CLAUDE.md" },
-  { id: "claude-terminal", label: "Claude Code (Terminal)", kind: "terminal", bin: "claude", argv: ["{prompt}"] },
+  { id: "claude-terminal", label: "Claude Code (Terminal)", kind: "terminal", bin: "claude",
+    argv: ["{prompt}"], binPaths: ["~/.local/bin/claude"] },
 
   // Codex 与 ChatGPT app 已合并为同一 bundle（com.openai.codex——本机
   // /Applications/ChatGPT.app 的 bundle id 实测就是它，没有独立的 Codex.app）。优先
@@ -49,11 +57,12 @@ export const AGENT_CANDIDATES: readonly AgentCandidate[] = [
   // CLI 是 cursor-agent —— /Applications/Cursor.app 里的 `cursor` 是 IDE 启动器，不是 agent。
   { id: "cursor-app", label: "Cursor (App)", kind: "app",
     appPaths: ["/Applications/Cursor.app"], convention: "AGENTS.md" },
-  { id: "cursor-terminal", label: "Cursor (Terminal)", kind: "terminal", bin: "cursor-agent", argv: ["{prompt}"] },
+  { id: "cursor-terminal", label: "Cursor (Terminal)", kind: "terminal", bin: "cursor-agent",
+    argv: ["{prompt}"], binPaths: ["~/.local/bin/cursor-agent"] },
 
   // opencode 的交互式 TUI 用 --prompt 带初始 prompt（真机验证：自动发送，不是预填输入框）。
   { id: "opencode-terminal", label: "OpenCode (Terminal)", kind: "terminal", bin: "opencode",
-    argv: ["--prompt", "{prompt}"] },
+    argv: ["--prompt", "{prompt}"], binPaths: ["~/.opencode/bin/opencode"] },
 
   // pi（badlogic/pi-mono coding agent）：位置参数，`pi "<prompt>"`。
   { id: "pi-terminal", label: "Pi (Terminal)", kind: "terminal", bin: "pi", argv: ["{prompt}"] },
@@ -114,7 +123,11 @@ export function detectAgents(opts?: DetectOpts): DetectedAgent[] {
   const out: DetectedAgent[] = [];
   for (const c of AGENT_CANDIDATES) {
     const path =
-      c.kind === "app" ? (c.appPaths!.find((p) => exists(p)) ?? null) : which(c.bin!);
+      c.kind === "app"
+        ? (c.appPaths!.find((p) => exists(p)) ?? null)
+        : (which(c.bin!) ??
+          c.binPaths?.map((p) => p.replace(/^~/, homedir())).find((p) => exists(p)) ??
+          null);
     if (path) out.push({ ...c, path });
   }
   return out;

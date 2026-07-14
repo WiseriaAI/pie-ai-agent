@@ -1,4 +1,5 @@
 import { test, expect } from "bun:test";
+import { homedir } from "os";
 import { AGENT_CANDIDATES, detectAgents, parseShellPath } from "../src/agents";
 
 test("parseShellPath: takes the last line (rc 噪音在前面)", () => {
@@ -83,4 +84,22 @@ test("两个 app 路径都在时，取表里排第一的", () => {
     exists: (p) => p === "/Applications/Codex.app" || p === "/Applications/ChatGPT.app",
   });
   expect(detected.find((a) => a.id === "codex-app")?.path).toBe("/Applications/Codex.app");
+});
+
+test("terminal 候选 PATH 找不到时回落 binPaths 知名安装路径（常规安装但 rc 没配 PATH）", () => {
+  const home = homedir();
+  const detected = detectAgents({
+    which: () => null,
+    exists: (p) => p === `${home}/.opencode/bin/opencode`,
+  });
+  const oc = detected.find((a) => a.id === "opencode-terminal");
+  expect(oc?.path).toBe(`${home}/.opencode/bin/opencode`);
+});
+
+test("PATH 命中优先于 binPaths 回落（用户自装位置说了算）", () => {
+  const detected = detectAgents({
+    which: (bin) => (bin === "opencode" ? "/custom/bin/opencode" : null),
+    exists: () => true,
+  });
+  expect(detected.find((a) => a.id === "opencode-terminal")?.path).toBe("/custom/bin/opencode");
 });
