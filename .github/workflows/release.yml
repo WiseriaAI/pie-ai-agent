@@ -152,3 +152,9 @@ jobs:
             "daemon/dist/pie-link-${{ steps.dv.outputs.version }}.pkg" \
             pie-link.pkg \
             --clobber
+
+      - name: Verify pkg asset reachable
+        run: |
+          sleep 5
+          curl -fsSIL -o /dev/null --retry 3 --retry-delay 5 --retry-all-errors \
+            "https://github.com/${{ github.repository }}/releases/download/${{ steps.tag.outputs.ref }}/pie-link.pkg"
