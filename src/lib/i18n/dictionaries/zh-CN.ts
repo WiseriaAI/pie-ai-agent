@@ -166,7 +166,7 @@ export const zhCNDict = {
     decline: "不启用",
   },
   runLocalAgent: {
-    title: "运行本地 Agent（claude -p）？",
+    title: "运行本地 Agent（无头）？",
     semanticsNote: "后台无人值守运行，结果将返回此对话。",
     cwdLabel: "工作目录",
     taskLabel: "任务",

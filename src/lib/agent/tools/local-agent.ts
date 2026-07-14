@@ -13,8 +13,9 @@ export function buildRunLocalAgentTool(deps: RunLocalAgentToolDeps): Tool {
   return {
     name: "run_local_agent",
     description:
-      "DELEGATE a bounded, non-interactive sub-task to the user's local Claude Code agent " +
-      "(claude -p, headless) and get its final output back — the conversation continues with the " +
+      "DELEGATE a bounded, non-interactive sub-task to the user's local headless coding agent " +
+      "(the daemon picks whichever is installed — Claude Code, Codex, Cursor, OpenCode, or Pi) and " +
+      "get its final output back — the conversation continues with the " +
       "result. Use for work that needs a full local coding/analysis agent with filesystem + shell " +
       "— e.g. run an analysis over exported files, generate code, summarize a repo. The call " +
       "BLOCKS until the local agent finishes. Decision rule vs handoff_to_agent: use " +
@@ -52,9 +53,13 @@ export function buildRunLocalAgentTool(deps: RunLocalAgentToolDeps): Tool {
       // daemon 输出是 untrusted（被读网页的 LLM 驱动）——先 escape 掉输出里任何伪造
       // 的 wrapper 标签，再包进 <untrusted_local_agent_output>，防突破边界。
       const safe = escapeUntrustedWrappers(result.output);
+      // 后端名是 daemon 权威（候选表内枚举，非页面来源）→ trusted 前缀，告诉 LLM 本次
+      // 实际跑的是哪个本地 agent（旧 daemon 不回 backend → 缺省不显示）。
+      const via = result.backend ? `(ran via ${result.backend.label})\n` : "";
       return {
         success: ok,
         observation:
+          via +
           `<untrusted_local_agent_output>\n${safe}\n</untrusted_local_agent_output>` +
           (ok ? "" : `\n(local agent exited ${result.exitCode})`),
         ...(ok ? {} : { error: `local agent exited ${result.exitCode}` }),

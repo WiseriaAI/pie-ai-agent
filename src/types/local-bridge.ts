@@ -38,6 +38,12 @@ export interface RunLocalAgentResult {
   exitCode: number;
   /** daemon 实际使用的 cwd（回填给卡片/audit） */
   cwd: string;
+  /**
+   * daemon 实际选中的 headless 后端（按候选表顺序取第一个「已装且有 headlessArgv」者）。
+   * 加法演进（PROTOCOL_VERSION 不动）：observation 据此告诉 LLM 本次跑的是哪个本地 agent。
+   * 旧 daemon 不回此字段 → optional，消费方缺省不显示后端名。
+   */
+  backend?: { id: string; label: string };
 }
 
 // ── list_agents ──────────────────────────────────────────────────────
