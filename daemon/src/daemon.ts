@@ -8,14 +8,14 @@ import { runHandoff } from "./handoff";
 import { detectAgents, AGENT_CANDIDATES } from "./agents";
 import { decodeNdjsonLines } from "./framing";
 import { log } from "./log";
-import { readSkillFile, writeSkill, listSkillsMerged, resolveSkillRoot, deleteSkillGuarded } from "./skill-store";
+import { readSkillFile, writeSkill, listSkillsMerged, resolveSkillRoot, deleteSkillGuarded, readSessionFile, deleteSessionWorkspace, sweepSessions } from "./skill-store";
 import { runSkillScript } from "./skill-exec";
 import { listGrants, revokeGrant, sweepGrants } from "./grants";
 import { readAuditTail } from "./audit";
 import { getStatus, markExtensionSocket, dropSocket } from "./status";
 import type {
   ReadSkillFileParams, RunSkillScriptParams, WriteSkillParams, DeleteSkillParams, RevokeGrantParams,
-  ListAuditParams, ListAuditResult,
+  ListAuditParams, ListAuditResult, ReadSessionFileParams, DeleteSessionWorkspaceParams,
 } from "../../src/types/local-bridge";
 
 export async function handleMessage(line: string): Promise<string> {
@@ -111,6 +111,25 @@ export async function handleMessage(line: string): Promise<string> {
           ok: false,
           error: { code, message: String(e), ...(data !== undefined ? { data } : {}) },
         });
+      }
+    }
+    case "read_session_file": {
+      try {
+        const p = msg.params as ReadSessionFileParams;
+        const content = readSessionFile(p.sessionId, p.path);
+        return respond({ ok: true, result: { content } });
+      } catch (e) {
+        log("error", "read_session_file.failed", { id, error: String(e) });
+        return respond({ ok: false, error: { code: "read_session_file_failed", message: String(e) } });
+      }
+    }
+    case "delete_session_workspace": {
+      try {
+        const p = msg.params as DeleteSessionWorkspaceParams;
+        return respond({ ok: true, result: { deleted: deleteSessionWorkspace(p.sessionId) } });
+      } catch (e) {
+        log("error", "delete_session_workspace.failed", { id, error: String(e) });
+        return respond({ ok: false, error: { code: "delete_session_workspace_failed", message: String(e) } });
       }
     }
     case "write_skill": {
@@ -240,6 +259,13 @@ export function makeBackpressureWriter(rawWrite: (bytes: Uint8Array) => number):
 export async function startDaemon(): Promise<void> {
   if (!existsSync(paths.pieDir)) mkdirSync(paths.pieDir, { recursive: true });
   sweepGrants(); // 一次性幂等清扫 2b 旧格式死记录，保持授权账本干净
+  // 启动 GC：清超 30 天的孤儿 session workspace（桥断/卸载遗留）。best-effort，不阻塞启动。
+  try {
+    const swept = sweepSessions();
+    if (swept > 0) log("info", "sessions.gc", { removed: swept });
+  } catch (e) {
+    log("warn", "sessions.gc_failed", { error: String(e) });
+  }
   if (existsSync(paths.socketPath)) unlinkSync(paths.socketPath); // 清残留
   Bun.listen<{ carry: string; writer: BackpressureWriter }>({
     unix: paths.socketPath,

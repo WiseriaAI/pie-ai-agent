@@ -179,7 +179,7 @@ describe("local-bridge", () => {
     });
     await Promise.resolve();
 
-    const p = requestRunSkillScript({ name: "demo", entry: "fetch.ts" });
+    const p = requestRunSkillScript({ name: "demo", entry: "fetch.ts", sessionId: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee" });
     const req = fakePort.postMessage.mock.calls[1][0] as { id: string; method: string };
     expect(req.method).toBe("run_skill_script");
     fakePort._emit({
@@ -199,7 +199,7 @@ describe("local-bridge", () => {
     });
     await Promise.resolve();
 
-    const p = requestRunSkillScript({ name: "demo", entry: "fetch.ts" });
+    const p = requestRunSkillScript({ name: "demo", entry: "fetch.ts", sessionId: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee" });
     const req = fakePort.postMessage.mock.calls[1][0] as { id: string; method: string };
     fakePort._emit({
       id: req.id, ok: false,
@@ -225,7 +225,7 @@ describe("local-bridge", () => {
       envelopeHash: "abc123",
     };
 
-    const p = requestRunSkillScript({ name: "s", entry: "e.ts" });
+    const p = requestRunSkillScript({ name: "s", entry: "e.ts", sessionId: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee" });
     const req = fakePort.postMessage.mock.calls[1][0] as { id: string; method: string };
     fakePort._emit({
       id: req.id, ok: false,
@@ -246,7 +246,7 @@ describe("local-bridge", () => {
     });
     await Promise.resolve();
 
-    const p = requestRunSkillScript({ name: "s", entry: "e.ts" });
+    const p = requestRunSkillScript({ name: "s", entry: "e.ts", sessionId: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee" });
     const req = fakePort.postMessage.mock.calls[1][0] as { id: string; method: string };
     fakePort._emit({
       id: req.id, ok: false,

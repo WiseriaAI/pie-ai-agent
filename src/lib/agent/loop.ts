@@ -43,6 +43,7 @@ import {
   requestHandoff,
   requestListAgents,
   requestRunSkillScript,
+  requestReadSessionFile,
 } from "@/background/local-bridge";
 import { filterUsableAgents, getEnabledLocalAgents } from "@/lib/local-agents-prefs";
 import { buildRunLocalAgentTool } from "./tools/local-agent";
@@ -50,7 +51,7 @@ import { buildHandoffTool } from "./tools/handoff";
 import { buildReadLocalFileTool, buildRequestLocalFileTool, buildOutputFileTool } from "./tools/files";
 import { buildScratchpadTools } from "./tools/scratchpad";
 import { createExtractRecordsTool } from "./tools/page-atlas";
-import { buildRunSkillScriptTool } from "./tools/skill-script";
+import { buildRunSkillScriptTool, buildReadSkillOutputTool } from "./tools/skill-script";
 import {
   saveRecords as svcSaveRecords,
   updateNotes as svcUpdateNotes,
@@ -1905,6 +1906,10 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         runOnDaemon: requestRunSkillScript,
         requestGrant: (p) => requestFromPanel(sessionId, "skill-grant", p),
       });
+      // #296 — read_skill_output：读回脚本写进 session workspace 的产物（走 daemon）。
+      const readSkillOutputTool = buildReadSkillOutputTool({
+        readOutput: requestReadSessionFile,
+      });
       // Slice 0 local bridge gate: daemon absent → tool not registered at all,
       // so the LLM can never see/hallucinate `run_local_agent`. This is a
       // hard existence gate, not a progressive-disclosure group.
@@ -1937,6 +1942,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         readLocalFileTool, requestLocalFileTool, outputFileTool, ...scratchpadTools,
         extractRecordsTool,
         runSkillScriptTool,
+        readSkillOutputTool,
         loadToolsTool,
         ...localBridgeTools, // Slice 0 — run_local_agent (bridge-gated)
       ];
@@ -2413,6 +2419,8 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         try {
           result = await tool.handler(tc.args, {
             tabId: pinnedTabId,
+            // #296 — session 维度产物隔离：run_skill_script / read_skill_output 透传给 daemon。
+            sessionId,
             confirmedTabTargets: undefined,
             currentInstanceId: ctx.instanceId,
             currentModel: ctx.modelConfig.model,

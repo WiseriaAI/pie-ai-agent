@@ -39,3 +39,16 @@ test("list_audit clamps out-of-range limit to 200", async () => {
   expect(out.ok).toBe(true);
   expect(Array.isArray(out.result.entries)).toBe(true);
 });
+
+test("read_session_file with a bad session id → ok:false (not a hang)", async () => {
+  const out = JSON.parse(await handleMessage(JSON.stringify({ id: "7", method: "read_session_file", params: { sessionId: "../evil", path: "x" } })));
+  expect(out.ok).toBe(false);
+  expect(out.error.code).toBe("read_session_file_failed");
+});
+
+test("delete_session_workspace on absent session → ok:true deleted:false (idempotent)", async () => {
+  // 一个几乎不可能存在的合法 uuid → 删不存在的 → deleted:false，不抛
+  const out = JSON.parse(await handleMessage(JSON.stringify({ id: "8", method: "delete_session_workspace", params: { sessionId: "00000000-0000-4000-8000-000000000000" } })));
+  expect(out.ok).toBe(true);
+  expect(out.result.deleted).toBe(false);
+});
