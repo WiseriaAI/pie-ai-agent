@@ -83,7 +83,7 @@ test("no claude installed: falls back to the next headless backend (codex)", asy
     },
   );
   expect(seen!.cmd).toBe("/abs/codex");
-  expect(seen!.args).toEqual(["exec", "do a thing"]);
+  expect(seen!.args).toEqual(["exec", "--skip-git-repo-check", "--sandbox", "workspace-write", "do a thing"]);
   expect(r.output).toBe("codex reply");
   expect(r.backend!.id).toBe("codex-terminal");
 });
@@ -94,7 +94,7 @@ test("substitutes {prompt} into the backend's headless argv as a single raw arg"
     seenArgs = args;
     return { stdout: "", exitCode: 0 };
   };
-  // pi headlessArgv = ["-p", "--approve", "{prompt}"]
+  // pi headlessArgv = ["-p", "{prompt}"]
   await runLocalAgent(
     { target: "claude", prompt: "prompt with spaces & 'quotes'" },
     {
@@ -104,7 +104,7 @@ test("substitutes {prompt} into the backend's headless argv as a single raw arg"
     },
   );
   // 原始 prompt 作为单一 argv 元素（不过 shell，无需引号转义）
-  expect(seenArgs).toEqual(["-p", "--approve", "prompt with spaces & 'quotes'"]);
+  expect(seenArgs).toEqual(["-p", "prompt with spaces & 'quotes'"]);
 });
 
 test("app-only candidates are ignored (no headlessArgv) — falls through to a terminal backend", async () => {

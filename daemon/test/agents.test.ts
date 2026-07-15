@@ -56,10 +56,10 @@ test("app 候选没有 headlessArgv（app 无 CLI，不能作 headless 后端）
 test("各家 headless 契约（已查实的命令 + 跳权限 flag）", () => {
   const byId = Object.fromEntries(AGENT_CANDIDATES.map((c) => [c.id, c]));
   expect(byId["claude-terminal"].headlessArgv).toEqual(["-p", "--dangerously-skip-permissions", "{prompt}"]);
-  expect(byId["codex-terminal"].headlessArgv).toEqual(["exec", "{prompt}"]);
+  expect(byId["codex-terminal"].headlessArgv).toEqual(["exec", "--skip-git-repo-check", "--sandbox", "workspace-write", "{prompt}"]);
   expect(byId["cursor-terminal"].headlessArgv).toEqual(["-p", "--force", "{prompt}"]);
   expect(byId["opencode-terminal"].headlessArgv).toEqual(["run", "--auto", "{prompt}"]);
-  expect(byId["pi-terminal"].headlessArgv).toEqual(["-p", "--approve", "{prompt}"]);
+  expect(byId["pi-terminal"].headlessArgv).toEqual(["-p", "{prompt}"]);
 });
 
 test("app 候选必须有 convention（无 prompt 注入面，只能靠引导文件）", () => {
