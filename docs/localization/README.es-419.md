@@ -60,6 +60,10 @@ los 11 proveedores, o suscríbete a Pie y olvídate de la configuración.
   arme la Skill por ti.
 - **Programa tareas.** Haz que Pie ejecute una tarea automáticamente — a diario,
   cada semana o cada pocas horas — incluso en segundo plano mientras no estás.
+- **Conecta tu computadora (Pie Link).** Instala el complemento opcional
+  [Pie Link](https://www.pie.chat/link) para que Pie use Skills locales, ejecute
+  scripts locales y delegue tareas a herramientas locales de programación con IA
+  como Claude Code, Codex y Cursor.
 
 ## Conectar un modelo
 

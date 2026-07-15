@@ -62,6 +62,10 @@ dos 11 provedores, ou assine o Pie e pule toda a configuração.
 - **Rode tarefas no horário marcado.** Faça o Pie executar uma tarefa
   automaticamente — diariamente, semanalmente ou a cada poucas horas — até em
   segundo plano enquanto você está fora.
+- **Conecte seu computador (Pie Link).** Instale o complemento opcional
+  [Pie Link](https://www.pie.chat/link) para que o Pie use Skills locais, execute
+  scripts locais e delegue tarefas a ferramentas locais de programação com IA
+  como Claude Code, Codex e Cursor.
 
 ## Conectar um modelo
 

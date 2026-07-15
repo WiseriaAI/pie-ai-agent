@@ -128,8 +128,8 @@ export const jaDict = {
       downloadUpdate: "更新をダウンロード",
       installTitle: "Pie Link をインストール",
       installBody:
-        "ローカル連携にはこのパソコンに Pie Link のインストールが必要です。インストーラーをダウンロードし、ダブルクリックして完了すると自動的に接続されます。",
-      installDownload: "Pie Link (.pkg) をダウンロード",
+        "ローカル連携にはこのパソコンに Pie Link のインストールが必要です。Pie Link の紹介ページで内容を確認してインストーラーを入手し、ダブルクリックで完了すると自動的に接続されます。",
+      installDownload: "Pie Link について確認してインストール",
       doctorHint:
         "Pie Link はインストール済みですが接続されていません。メニューバーの Pie アイコン →「診断」をクリックするか、再確認をクリックしてください。",
       recheck: "再確認",

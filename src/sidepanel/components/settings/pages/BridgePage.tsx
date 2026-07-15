@@ -4,8 +4,10 @@ import { Switch } from "../../ui/Switch";
 import { AgentBrandIcon } from "../../hitl/agent-brand-icons";
 import { queryBridgeStatus, type BridgeStatus } from "../bridge-status";
 
-// Pie Link 安装包稳定 URL（release latest）——升级卡下载按钮 + Slice 4 安装卡共用。
+// Pie Link 安装包稳定 URL（release latest）——升级卡下载按钮直链（升级用户已知 Pie Link 是什么，直链摩擦最小）。
 const PKG_URL = "https://github.com/WiseriaAI/pie-ai-agent/releases/latest/download/pie-link.pkg";
+// 官网 Pie Link 介绍页（介绍 + 下载 + 卸载说明）——首次安装卡跳这里，给首装用户上下文。
+const LINK_URL = "https://www.pie.chat/link";
 
 type PanelAgent = { id: string; label: string; installed: boolean; enabled: boolean; kind?: "app" | "terminal" };
 
@@ -166,7 +168,7 @@ export function LocalBridgeSection() {
                 <div className="text-[12px] leading-relaxed text-fg-2">{t("settings.localBridge.installBody")}</div>
                 <div className="flex items-center gap-2">
                   <a
-                    href={PKG_URL}
+                    href={LINK_URL}
                     target="_blank"
                     rel="noreferrer"
                     className="self-start rounded border border-line px-2 py-0.5 text-[11px] text-fg-2 hover:text-fg-1"

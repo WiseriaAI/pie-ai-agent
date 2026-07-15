@@ -127,8 +127,8 @@ export const enDict = {
       downloadUpdate: "Download update",
       installTitle: "Install Pie Link",
       installBody:
-        "The local bridge needs Pie Link installed on this computer. Download the installer, double-click to finish, and it will connect automatically.",
-      installDownload: "Download Pie Link (.pkg)",
+        "The local bridge needs Pie Link installed on this computer. Learn what it does and get the installer from the Pie Link page — double-click to finish and it connects automatically.",
+      installDownload: "Learn about & install Pie Link",
       doctorHint:
         "Pie Link is installed but not connected. Click the Pie icon in the menu bar → Diagnostics, or click Check again.",
       recheck: "Check again",
