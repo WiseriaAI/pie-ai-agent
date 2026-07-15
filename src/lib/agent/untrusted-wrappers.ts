@@ -58,6 +58,7 @@ export const UNTRUSTED_WRAPPER_TAGS = [
   "untrusted_editor_content",
   "untrusted_scratchpad_preview",
   "untrusted_local_agent_output",
+  "untrusted_skill_output_list",
 ] as const;
 
 // Zero-width / invisible chars that an attacker might hide inside a tag literal.

@@ -19,6 +19,15 @@ export interface ConfirmedTabTarget {
 
 export interface ToolHandlerContext {
   tabId: number;
+  /**
+   * #296 — 当前会话 id（源自 AgentLoopContext.sessionId）。run_skill_script /
+   * read_skill_output 透传给 daemon，产物按 session 隔离在
+   * ~/.pie/sessions/<sessionId>/workspace/。是 session sandbox 的一部分。
+   * optional 因大量测试造 ctx 时不带它；生产唯一构造点（loop.ts）总注入。
+   * 两个消费它的 tool（run_skill_script / read_skill_output）在缺失时 fail-closed
+   * 报错——daemon 侧 assertSessionId 是最终 uuid 校验。
+   */
+  sessionId?: string;
   confirmedTabTargets?: Map<number, ConfirmedTabTarget>;
   /**
    * M5 — current session's pin mode. Frozen at chat-start (SW dispatcher

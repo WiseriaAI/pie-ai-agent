@@ -1,7 +1,7 @@
-import { mkdirSync } from "fs";
-import { join } from "path";
+import { mkdirSync, readdirSync, statSync } from "fs";
+import { join, relative } from "path";
 import { homedir } from "os";
-import { paths } from "./paths";
+import { paths, sessionWorkspace } from "./paths";
 import { log } from "./log";
 import { assertSkillName, listSkills, resolveSkillRoot, defaultRoots } from "./skill-store";
 import type { SkillRoots } from "./skill-store";
@@ -18,8 +18,55 @@ export interface SkillExecDeps {
   /** 单根别名（既有测试用）：等价 roots={primary: skillsRoot}，不带默认副根 */
   skillsRoot?: string;
   roots?: SkillRoots;
+  /** session workspace 根覆盖（测试隔离真实 ~/.pie/sessions） */
+  sessionsDir?: string;
   grantsPath?: string;
   auditPath?: string;
+}
+
+/** 本次产物清单上限：脚本可能生成上千分片，无上限会撑爆 observation。 */
+const OUTPUTS_CAP = 50;
+
+/** run 后递归扫 workspace，收 mtime >= startedAt 的文件（本次产物），path 相对 workspace 根。
+ *  封顶 OUTPUTS_CAP，超出置 truncated。workspace 不存在（脚本没写任何文件）→ 空。 */
+export function scanOutputs(
+  workspace: string,
+  startedAt: number,
+): { outputs: { path: string; bytes: number }[]; truncated: boolean } {
+  const outputs: { path: string; bytes: number }[] = [];
+  let truncated = false;
+  const walk = (dir: string): void => {
+    if (truncated) return;
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return; // workspace 不存在或不可读
+    }
+    for (const e of entries) {
+      if (truncated) return;
+      const abs = join(dir, e.name);
+      if (e.isDirectory()) {
+        walk(abs);
+      } else if (e.isFile()) {
+        let st;
+        try {
+          st = statSync(abs);
+        } catch {
+          continue;
+        }
+        if (st.mtimeMs >= startedAt) {
+          if (outputs.length >= OUTPUTS_CAP) {
+            truncated = true;
+            return;
+          }
+          outputs.push({ path: relative(workspace, abs), bytes: st.size });
+        }
+      }
+    }
+  };
+  walk(workspace);
+  return { outputs, truncated };
 }
 
 export function expandTilde(p: string): string {
@@ -54,6 +101,7 @@ export async function runSkillScript(
   const roots: SkillRoots = deps.roots ?? (deps.skillsRoot ? { primary: deps.skillsRoot } : defaultRoots);
   const grantsPath = deps.grantsPath ?? paths.grantsPath;
   const auditPath = deps.auditPath ?? paths.auditPath;
+  const sessionsDir = deps.sessionsDir ?? paths.sessionsDir;
   const sandbox = deps.sandbox ?? realSkillSandbox;
 
   const name = assertSkillName(params.name);
@@ -90,7 +138,9 @@ export async function runSkillScript(
   }
 
   const skillDir = join(located.root, name);
-  const workspace = join(skillDir, "workspace");
+  // 产物区按 session 隔离，且搬出 skill 目录——脚本进程永不写入任何 skill 目录（主根或
+  // 只读副根）。这里是「副根污染」bug（旧 mkdir skillDir/workspace）的修复点。
+  const workspace = sessionWorkspace(params.sessionId, sessionsDir);
   mkdirSync(workspace, { recursive: true });
 
   const settings = {
@@ -99,7 +149,8 @@ export async function runSkillScript(
     denyRead: baselineDenyRead(),
   };
   const argv = [...interpreterFor(params.entry), join(skillDir, "scripts", params.entry), ...(params.args ?? [])];
-  const env = { BUN_BE_BUN: "1" };
+  // cwd = workspace（可写区），skillDir 通过 PIE_SKILL_DIR 供脚本读自身资源。
+  const env = { BUN_BE_BUN: "1", PIE_SKILL_DIR: skillDir, PIE_WORKSPACE: workspace };
 
   const startedAt = now();
   log("info", "skill.run", { name, entry: params.entry });
@@ -107,7 +158,7 @@ export async function runSkillScript(
   const runId = beginSkillRun(name, params.entry);
   let res;
   try {
-    res = await sandbox.run(argv, skillDir, env, settings);
+    res = await sandbox.run(argv, workspace, env, settings);
   } finally {
     endSkillRun(runId);
   }
@@ -121,5 +172,11 @@ export async function runSkillScript(
   if (res.exitCode !== 0) {
     throw Object.assign(new Error(`skill script exited ${res.exitCode}: ${res.stderr.trim().slice(-2000)}`), { code: "script_error" });
   }
-  return { output: res.stdout, truncated: res.truncated || undefined };
+  // 本次产物 = workspace 里 mtime >= startedAt 的文件（daemon 扫盘得出运行时事实，
+  // 不靠脚本自觉 print 清单）。
+  const { outputs, truncated: outputsTruncated } = scanOutputs(workspace, startedAt);
+  const result: RunSkillScriptResult = { output: res.stdout, truncated: res.truncated || undefined };
+  if (outputs.length > 0) result.outputs = outputs;
+  if (outputsTruncated) result.outputsTruncated = true;
+  return result;
 }

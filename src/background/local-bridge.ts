@@ -12,6 +12,10 @@ import {
   type ReadSkillFileResult,
   type RunSkillScriptParams,
   type RunSkillScriptResult,
+  type ReadSessionFileParams,
+  type ReadSessionFileResult,
+  type DeleteSessionWorkspaceParams,
+  type DeleteSessionWorkspaceResult,
   type WriteSkillParams,
   type WriteSkillResult,
   type DeleteSkillParams,
@@ -293,6 +297,16 @@ export async function requestRunSkillScript(p: RunSkillScriptParams): Promise<Ru
     }
     return { ok: false, needsAuth: false, error: e instanceof Error ? e.message : String(e) };
   }
+}
+/** 读回 session workspace 内产物（read_skill_output tool → 此 RPC）。 */
+export async function requestReadSessionFile(p: ReadSessionFileParams): Promise<ReadSessionFileResult> {
+  return (await send("read_session_file", p)) as ReadSessionFileResult;
+}
+/** 硬删 / 归档 session 时清 workspace（幂等；桥断时静默失败由调用方 .catch 吞）。 */
+export async function requestDeleteSessionWorkspace(
+  p: DeleteSessionWorkspaceParams,
+): Promise<DeleteSessionWorkspaceResult> {
+  return (await send("delete_session_workspace", p)) as DeleteSessionWorkspaceResult;
 }
 export async function requestWriteSkill(p: WriteSkillParams): Promise<WriteSkillResult> {
   return (await send("write_skill", p)) as WriteSkillResult;

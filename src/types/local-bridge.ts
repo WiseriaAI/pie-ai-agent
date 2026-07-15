@@ -112,6 +112,9 @@ export interface RunSkillScriptParams {
   entry: string;
   /** CLI 风格参数 */
   args?: string[];
+  /** 调用会话 id（不可信输入，daemon 侧 assertSessionId 做 uuid 形状校验防路径穿越）。
+   *  脚本 cwd = ~/.pie/sessions/<sessionId>/workspace/，产物按 session 隔离。 */
+  sessionId: string;
   /** 用户在授权卡批准后置 true；缺省首跑 ungranted skill 会回 needs_authorization */
   grantApproved?: boolean;
   /** 授权卡批准的信封 hash（grantApproved=true 时必带）；daemon 校验它等于
@@ -123,6 +126,29 @@ export interface RunSkillScriptResult {
   /** 脚本 stdout，调用方包 <untrusted_skill_content> */
   output: string;
   truncated?: boolean;
+  /** 本次运行写进 session workspace 的产物（mtime >= startedAt），path 相对 workspace 根。
+   *  optional 加法字段：无产物时省略（PROTOCOL_VERSION 不动，旧 daemon 不给 → 扩展不列清单）。 */
+  outputs?: { path: string; bytes: number }[];
+  /** outputs 超过封顶（50）被截断 */
+  outputsTruncated?: boolean;
+}
+
+/** read_session_file：读回本 session workspace 内的产物（safeRelPath 锁在 workspace 内）。 */
+export interface ReadSessionFileParams {
+  sessionId: string;
+  /** session workspace 内相对路径（如 "out.csv"） */
+  path: string;
+}
+export interface ReadSessionFileResult {
+  content: string;
+}
+
+/** delete_session_workspace：硬删 session / 归档时清 workspace（幂等）。 */
+export interface DeleteSessionWorkspaceParams {
+  sessionId: string;
+}
+export interface DeleteSessionWorkspaceResult {
+  deleted: boolean;
 }
 
 export interface WriteSkillFile {
@@ -217,6 +243,8 @@ export interface BridgeRequest {
     | "list_skills"
     | "read_skill_file"
     | "run_skill_script"
+    | "read_session_file"
+    | "delete_session_workspace"
     | "write_skill"
     | "delete_skill"
     | "list_grants"

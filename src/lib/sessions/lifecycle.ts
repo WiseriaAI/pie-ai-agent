@@ -42,6 +42,7 @@ import {
 import { getSessionRecord } from "@/lib/idb/sessions-store";
 import { deleteSessionArtifacts } from "@/lib/files/output-store";
 import { deleteScratchpad } from "../scratchpad/store";
+import { deleteSessionWorkspaceRpc } from "./workspace-cleanup";
 
 // Re-export INDEX_KEY usage via the private helper we expose
 // (see storage.ts for readIndexRaw export added in M2-U4)
@@ -118,6 +119,9 @@ export async function archiveSession(
   // is tied to the live session). Best-effort: a failure here must not block
   // the archive itself.
   await deleteSessionArtifacts(id).catch(() => {});
+  // #296 — skill-script products in ~/.pie/sessions/<id>/workspace are tied to
+  // the live task like output_file artifacts. Best-effort (helper never rejects).
+  void deleteSessionWorkspaceRpc(id);
   // NOTE (intentional asymmetry): the scratchpad is NOT deleted on archive.
   // Unlike output_file artifacts (tied to the live task), the scratchpad is
   // tied to the SESSION lifecycle — unarchiving must be able to resume on the
@@ -207,6 +211,9 @@ export async function hardDeleteSession(id: string): Promise<void> {
   // skipped the archive step). Best-effort.
   await deleteSessionArtifacts(id).catch(() => {});
   await deleteScratchpad(id).catch(() => {});
+  // #296 — reclaim the daemon-side skill-script workspace. Best-effort; the
+  // daemon's 30-day GC covers the bridge-down case.
+  void deleteSessionWorkspaceRpc(id);
 }
 
 // ── hardDeleteExpired ─────────────────────────────────────────────────────────

@@ -68,6 +68,7 @@ import { handleScheduleAction } from "@/lib/schedules/action-handler";
 import { SCHEDULE_ACTION_MESSAGE, type ScheduleActionMessage } from "@/lib/schedules/panel-actions";
 import { handleSkillsAction } from "./skills-action-handler";
 import { SKILLS_ACTION_MESSAGE, type SkillsActionMessage } from "@/lib/skills/panel-actions";
+import { DELETE_SESSION_WORKSPACE_MESSAGE, type DeleteSessionWorkspaceMessage } from "@/lib/sessions/workspace-cleanup";
 import {
   handleExternalDetach,
   detachAllSessions,
@@ -142,6 +143,7 @@ import {
   requestListGrants,
   requestRevokeGrant,
   requestListAudit,
+  requestDeleteSessionWorkspace,
   setBridgeReconnectAction,
 } from "./local-bridge";
 import { getEnabledLocalAgents, setEnabledLocalAgents, applyToggle, isAgentUsable } from "@/lib/local-agents-prefs";
@@ -804,6 +806,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const m = message as SkillsActionMessage;
     handleSkillsAction(m)
       .then(sendResponse)
+      .catch((e) => sendResponse({ ok: false, error: String(e) }));
+    return true; // async response
+  }
+
+  // #296 — panel routes session-workspace cleanup here (daemon port is SW-only).
+  // Best-effort: a bridge-down / daemon-absent reject just resolves { ok:false };
+  // the daemon's 30-day GC reclaims any orphaned workspace.
+  if (message?.type === DELETE_SESSION_WORKSPACE_MESSAGE) {
+    const sid = (message as DeleteSessionWorkspaceMessage).sessionId;
+    requestDeleteSessionWorkspace({ sessionId: sid })
+      .then((r) => sendResponse({ ok: true, ...r }))
       .catch((e) => sendResponse({ ok: false, error: String(e) }));
     return true; // async response
   }

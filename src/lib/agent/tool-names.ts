@@ -47,6 +47,7 @@ const SKILL_MEDIATION_TOOL_NAMES = [
   "use_skill",
   "read_skill_file",
   "run_skill_script",
+  "read_skill_output",
 ] as const;
 
 // The progressive-disclosure mediator tool. Always core.
@@ -237,6 +238,8 @@ export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
   // run_skill_script — write：与 run_local_agent 同理由——执行 skill 包代码，
   // Slice 2b 起特权路径可产生本地副作用，诚实分类；无 tab 目标故 R7 锁不触发。
   run_skill_script: "write",
+  // read_skill_output — read：读回 session workspace 里的脚本产物，纯文本产出，无副作用。
+  read_skill_output: "read",
   // Phase 3 cross-tab tools
   list_tabs: "read",
   activate_tab: "read",
@@ -369,7 +372,7 @@ export const TOOL_GROUPS: Readonly<Record<string, DisclosureGroup>> = {
   // env-lit
   capture_visible_tab: "screenshot", capture_fullpage_tab: "screenshot",
   use_skill: "skill-mediation", read_skill_file: "skill-mediation",
-  run_skill_script: "skill-mediation",
+  run_skill_script: "skill-mediation", read_skill_output: "skill-mediation",
   read_pdf: "pdf", search_pdf: "pdf", get_pdf_outline: "pdf",
   read_local_file: "local-file", request_local_file: "local-file",
   // lazy

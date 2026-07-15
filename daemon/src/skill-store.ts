@@ -1,6 +1,6 @@
-import { existsSync, readFileSync, readdirSync, lstatSync, realpathSync, mkdirSync, writeFileSync, rmSync } from "fs";
+import { existsSync, readFileSync, readdirSync, lstatSync, realpathSync, mkdirSync, writeFileSync, rmSync, statSync } from "fs";
 import { join, resolve, relative, isAbsolute, sep, dirname } from "path";
-import { paths } from "./paths";
+import { paths, sessionWorkspace, assertSessionId } from "./paths";
 import { parseSkillMd } from "./skill-md";
 import type { SkillSummary, WriteSkillFile } from "../../src/types/local-bridge";
 
@@ -190,4 +190,61 @@ export function deleteSkillGuarded(name: string, roots: SkillRoots = defaultRoot
     );
   }
   return deleteSkill(name, roots.primary);
+}
+
+// ---- session workspace 产物读/删/GC（spec docs/specs/2026-07-13-skill-script-io-contract.md）----
+// 脚本产物住在 ~/.pie/sessions/<sid>/workspace/（按 session 隔离，不在 skill 目录）。
+// read_session_file 通过 safeRelPath 锁死在 workspace 内（I2：跨 session/穿越 throw）。
+
+/** 读 session workspace 内产物；safeRelPath 锁在该 session 的 workspace 内。 */
+export function readSessionFile(
+  sessionId: string,
+  rel: string,
+  sessionsDir: string = paths.sessionsDir,
+): string {
+  const ws = sessionWorkspace(sessionId, sessionsDir); // 内含 assertSessionId
+  return readFileSync(safeRelPath(ws, rel), "utf8");
+}
+
+/** 删整个 session 目录（workspace 的父）；幂等（不存在 → false）。 */
+export function deleteSessionWorkspace(
+  sessionId: string,
+  sessionsDir: string = paths.sessionsDir,
+): boolean {
+  const dir = join(sessionsDir, assertSessionId(sessionId));
+  if (!existsSync(dir)) return false;
+  rmSync(dir, { recursive: true, force: true });
+  return true;
+}
+
+const SESSION_GC_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 天，对齐扩展侧过期
+
+/** 启动 GC：删 mtime 超 maxAgeMs 的孤儿 session 目录（桥断/卸载遗留）。best-effort。 */
+export function sweepSessions(
+  now: number = Date.now(),
+  maxAgeMs: number = SESSION_GC_MAX_AGE_MS,
+  sessionsDir: string = paths.sessionsDir,
+): number {
+  if (!existsSync(sessionsDir)) return 0;
+  let entries;
+  try {
+    entries = readdirSync(sessionsDir, { withFileTypes: true });
+  } catch {
+    return 0;
+  }
+  let removed = 0;
+  for (const e of entries) {
+    if (!e.isDirectory()) continue;
+    const dir = join(sessionsDir, e.name);
+    try {
+      const st = statSync(dir);
+      if (now - st.mtimeMs > maxAgeMs) {
+        rmSync(dir, { recursive: true, force: true });
+        removed++;
+      }
+    } catch {
+      // 单个目录 stat/删除失败不阻断整轮 GC
+    }
+  }
+  return removed;
 }
