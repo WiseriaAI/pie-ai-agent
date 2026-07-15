@@ -112,12 +112,12 @@ export const jaDict = {
     },
     localBridge: {
       sectionTitle: "ローカル連携",
-      title: "ローカル daemon ブリッジ",
+      title: "Pie Link ローカル接続",
       description:
-        "ローカルの pie daemon に接続し、run_local_agent がタスクをローカルの Claude Code に引き継げるようにします。daemon のインストールが必要です。",
+        "このコンピューターの Pie Link に接続すると、エージェントはローカルの skill を使ったり、ローカルスクリプトを実行したり、タスクをローカルの AI コーディングツール（Claude Code、Codex、Cursor など）に引き継いだりできます。Pie Link のインストールが必要です。",
       statusOff: "未有効。",
-      statusConnected: "daemon に接続済み。",
-      statusEnabledNotConnected: "有効ですが未接続です（daemon が起動していない？ pie doctor を実行）。",
+      statusConnected: "Pie Link に接続済み。",
+      statusEnabledNotConnected: "有効ですが未接続です。メニューバーの Pie アイコンをクリックして状態を確認してください。",
       agentsEnabledTitle: "ローカルエージェント · 有効",
       manageAgents: "エージェント管理",
       agentNotInstalled: "未インストール",
@@ -131,7 +131,7 @@ export const jaDict = {
         "ローカル連携にはこのパソコンに Pie Link のインストールが必要です。インストーラーをダウンロードし、ダブルクリックして完了すると自動的に接続されます。",
       installDownload: "Pie Link (.pkg) をダウンロード",
       doctorHint:
-        "Pie Link はインストール済みですが接続されていません。ターミナルで `pie doctor` を実行して診断するか、再確認をクリックしてください。",
+        "Pie Link はインストール済みですが接続されていません。メニューバーの Pie アイコン →「診断」をクリックするか、再確認をクリックしてください。",
       recheck: "再確認",
     },
     searchProvider: {

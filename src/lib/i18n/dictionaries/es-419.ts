@@ -112,12 +112,12 @@ export const es419Dict = {
     },
     localBridge: {
       sectionTitle: "Integración local",
-      title: "Puente al daemon local",
+      title: "Conexión local con Pie Link",
       description:
-        "Conéctate al daemon pie local para que run_local_agent delegue tareas a Claude Code local. Requiere el daemon instalado.",
+        "Conéctate a Pie Link en esta computadora para que el agente pueda usar skills locales, ejecutar scripts locales y delegar tareas a herramientas locales de programación con IA (Claude Code, Codex, Cursor y más). Requiere Pie Link instalado.",
       statusOff: "No habilitado.",
-      statusConnected: "Conectado al daemon.",
-      statusEnabledNotConnected: "Habilitado, pero sin conexión (¿el daemon no está en ejecución? ejecuta pie doctor).",
+      statusConnected: "Conectado a Pie Link.",
+      statusEnabledNotConnected: "Habilitado, pero sin conexión. Haz clic en el ícono de Pie en la barra de menú para ver su estado.",
       agentsEnabledTitle: "Agentes locales · Habilitados",
       manageAgents: "Gestionar agentes",
       agentNotInstalled: "No instalado",
@@ -131,7 +131,7 @@ export const es419Dict = {
         "El puente local necesita Pie Link instalado en esta computadora. Descarga el instalador, haz doble clic para terminar y se conectará automáticamente.",
       installDownload: "Descargar Pie Link (.pkg)",
       doctorHint:
-        "Pie Link está instalado pero no conectado. Abre una terminal y ejecuta `pie doctor` para ver el diagnóstico, o pulsa Volver a comprobar.",
+        "Pie Link está instalado pero no conectado. Haz clic en el ícono de Pie en la barra de menú → Diagnóstico, o pulsa Volver a comprobar.",
       recheck: "Volver a comprobar",
     },
     searchProvider: {

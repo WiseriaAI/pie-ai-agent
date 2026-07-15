@@ -112,12 +112,12 @@ export const ptBRDict = {
     },
     localBridge: {
       sectionTitle: "Integração local",
-      title: "Ponte para o daemon local",
+      title: "Conexão local com o Pie Link",
       description:
-        "Conecte-se ao daemon pie local para que run_local_agent repasse tarefas ao Claude Code local. Requer o daemon instalado.",
+        "Conecte-se ao Pie Link neste computador para que o agente possa usar skills locais, executar scripts locais e repassar tarefas a ferramentas locais de programação com IA (Claude Code, Codex, Cursor e outras). Requer o Pie Link instalado.",
       statusOff: "Não ativado.",
-      statusConnected: "Conectado ao daemon.",
-      statusEnabledNotConnected: "Ativado, mas sem conexão (o daemon não está em execução? execute pie doctor).",
+      statusConnected: "Conectado ao Pie Link.",
+      statusEnabledNotConnected: "Ativado, mas sem conexão. Clique no ícone do Pie na barra de menus para ver o status.",
       agentsEnabledTitle: "Agentes locais · Habilitados",
       manageAgents: "Gerenciar agentes",
       agentNotInstalled: "Não instalado",
@@ -131,7 +131,7 @@ export const ptBRDict = {
         "A ponte local precisa do Pie Link instalado neste computador. Baixe o instalador, dê dois cliques para concluir e ele conectará automaticamente.",
       installDownload: "Baixar Pie Link (.pkg)",
       doctorHint:
-        "O Pie Link está instalado, mas não conectado. Abra um terminal e execute `pie doctor` para ver o diagnóstico, ou clique em Verificar novamente.",
+        "O Pie Link está instalado, mas não conectado. Clique no ícone do Pie na barra de menus → Diagnóstico, ou clique em Verificar novamente.",
       recheck: "Verificar novamente",
     },
     searchProvider: {
