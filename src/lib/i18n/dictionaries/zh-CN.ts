@@ -111,12 +111,12 @@ export const zhCNDict = {
     },
     localBridge: {
       sectionTitle: "本地打通",
-      title: "本地 daemon 桥",
+      title: "Pie Link 本地连接",
       description:
-        "连接本地 pie daemon，让 run_local_agent 把任务接力给本地 Claude Code。需先安装 daemon。",
+        "连接这台电脑上的 Pie Link 后，agent 可以使用本机 skill、运行本地脚本、把任务交给本地 AI 编程工具（Claude Code、Codex、Cursor 等）。需先安装 Pie Link。",
       statusOff: "未启用。",
-      statusConnected: "已连接 daemon。",
-      statusEnabledNotConnected: "已启用，但未连上 daemon（daemon 未运行？运行 pie doctor 检查）。",
+      statusConnected: "已连接 Pie Link。",
+      statusEnabledNotConnected: "已启用，但未连接。点按菜单栏的 Pie 图标查看状态。",
       agentsEnabledTitle: "本地 Agent · 已启用",
       manageAgents: "Agent 管理",
       agentNotInstalled: "未安装",
@@ -128,7 +128,7 @@ export const zhCNDict = {
       installTitle: "安装 Pie Link",
       installBody: "本地打通需要在这台电脑上安装 Pie Link。下载安装包，双击完成安装，之后会自动连接。",
       installDownload: "下载 Pie Link (.pkg)",
-      doctorHint: "Pie Link 已安装但未连接。打开终端运行 `pie doctor` 查看诊断，或点击重新检测。",
+      doctorHint: "Pie Link 已安装但未连接。点按菜单栏的 Pie 图标 → 诊断，或点击重新检测。",
       recheck: "重新检测",
     },
     searchProvider: {

@@ -205,7 +205,7 @@ describe("LocalBridgeSection — install funnel (Slice 4)", () => {
     });
 
     render(<LocalBridgeSection />);
-    expect(await screen.findByText(/pie doctor/)).toBeTruthy();
+    expect(await screen.findByText(/Diagnostics|诊断/)).toBeTruthy();
     expect(screen.getByRole("button", { name: /check again|重新检测/i })).toBeTruthy();
     // 未装态的下载链接不出现在这个分支
     expect(screen.queryByRole("link", { name: /download|下载/i })).toBeNull();

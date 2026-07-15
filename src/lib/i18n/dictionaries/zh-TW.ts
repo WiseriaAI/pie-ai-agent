@@ -111,12 +111,12 @@ export const zhTWDict = {
     },
     localBridge: {
       sectionTitle: "本機打通",
-      title: "本機 daemon 橋接",
+      title: "Pie Link 本機連接",
       description:
-        "連接本機 pie daemon，讓 run_local_agent 把任務接力給本機 Claude Code。需先安裝 daemon。",
+        "連接這台電腦上的 Pie Link 後，agent 可以使用本機 skill、執行本地腳本、把任務交給本地 AI 編程工具（Claude Code、Codex、Cursor 等）。需先安裝 Pie Link。",
       statusOff: "未啟用。",
-      statusConnected: "已連接 daemon。",
-      statusEnabledNotConnected: "已啟用，但未連上 daemon（daemon 未執行？執行 pie doctor 檢查）。",
+      statusConnected: "已連接 Pie Link。",
+      statusEnabledNotConnected: "已啟用，但未連接。點按選單列的 Pie 圖示查看狀態。",
       agentsEnabledTitle: "本機 Agent · 已啟用",
       manageAgents: "Agent 管理",
       agentNotInstalled: "未安裝",
@@ -128,7 +128,7 @@ export const zhTWDict = {
       installTitle: "安裝 Pie Link",
       installBody: "本地打通需要在這台電腦上安裝 Pie Link。下載安裝包，雙擊完成安裝，之後會自動連接。",
       installDownload: "下載 Pie Link (.pkg)",
-      doctorHint: "Pie Link 已安裝但未連接。開啟終端機執行 `pie doctor` 查看診斷，或點擊重新檢測。",
+      doctorHint: "Pie Link 已安裝但未連接。點按選單列的 Pie 圖示 → 診斷，或點擊重新檢測。",
       recheck: "重新檢測",
     },
     searchProvider: {

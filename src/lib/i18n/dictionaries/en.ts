@@ -111,12 +111,12 @@ export const enDict = {
     },
     localBridge: {
       sectionTitle: "Local integration",
-      title: "Local daemon bridge",
+      title: "Pie Link connection",
       description:
-        "Connect to the local pie daemon so run_local_agent can hand tasks off to local Claude Code. Requires the daemon to be installed.",
+        "Connect to Pie Link on this computer so the agent can use local skills, run local scripts, and hand tasks off to local AI coding tools (Claude Code, Codex, Cursor, and more). Requires Pie Link installed.",
       statusOff: "Not enabled.",
-      statusConnected: "Connected to daemon.",
-      statusEnabledNotConnected: "Enabled, but not connected (daemon not running? run pie doctor).",
+      statusConnected: "Connected to Pie Link.",
+      statusEnabledNotConnected: "Enabled, but not connected. Click the Pie icon in the menu bar to check its status.",
       agentsEnabledTitle: "Local agents · Enabled",
       manageAgents: "Manage agents",
       agentNotInstalled: "Not installed",
@@ -130,7 +130,7 @@ export const enDict = {
         "The local bridge needs Pie Link installed on this computer. Download the installer, double-click to finish, and it will connect automatically.",
       installDownload: "Download Pie Link (.pkg)",
       doctorHint:
-        "Pie Link is installed but not connected. Open a terminal and run `pie doctor` for diagnostics, or click Check again.",
+        "Pie Link is installed but not connected. Click the Pie icon in the menu bar → Diagnostics, or click Check again.",
       recheck: "Check again",
     },
     searchProvider: {
