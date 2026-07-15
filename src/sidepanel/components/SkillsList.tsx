@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import type { SkillEntry } from "@/lib/skills/source";
 import { filterEnabled, stripFrontmatter } from "@/lib/skills/source";
 import { getEnabledSkillIds, setSkillEnabled, generateUserSkillId } from "@/lib/skills";
@@ -9,7 +9,15 @@ import {
   deleteSkillRpc,
 } from "@/lib/skills/panel-actions";
 import { buildSkillMd, patchSkillMd, isSingleLineSafe } from "@/lib/skills/skill-md";
+import {
+  buildImportPlan,
+  IMPORT_MAX_FILES,
+  IMPORT_MAX_TOTAL_BYTES,
+  type ImportPlan,
+  type ImportRawFile,
+} from "@/lib/skills/import-skill";
 import { queryGrants, revokeGrant } from "@/lib/local-grants";
+import { useBridgeStatus } from "./settings/bridge-status";
 import type { GrantRecord } from "@/types/local-bridge";
 import { getConfig, setConfig } from "@/lib/idb/config-store";
 import { useT } from "@/lib/i18n";
@@ -76,6 +84,41 @@ function normalizeSlug(name: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
+// --- External skill folder import (browser adapters) ---
+
+const IMPORT_BINARY_SCAN = 8192;
+
+/** A NUL byte in the leading bytes is a reliable "this is binary" signal;
+ *  binary files are skipped from the write (SkillWriteFile.content is text). */
+function detectBinary(bytes: Uint8Array): boolean {
+  const n = Math.min(bytes.length, IMPORT_BINARY_SCAN);
+  for (let i = 0; i < n; i++) if (bytes[i] === 0) return true;
+  return false;
+}
+
+function relPathOf(f: File): string {
+  const rel = (f as File & { webkitRelativePath?: string }).webkitRelativePath;
+  return rel && rel.length > 0 ? rel : f.name;
+}
+
+/** Decode a webkitdirectory FileList into ImportRawFile[] for buildImportPlan.
+ *  A grossly oversized selection is short-circuited WITHOUT decoding contents —
+ *  buildImportPlan still returns the coded cap error from the sizes alone. */
+async function readFolderFiles(fileList: FileList): Promise<ImportRawFile[]> {
+  const arr = Array.from(fileList);
+  const totalBytes = arr.reduce((n, f) => n + f.size, 0);
+  if (arr.length > IMPORT_MAX_FILES || totalBytes > IMPORT_MAX_TOTAL_BYTES) {
+    return arr.map((f) => ({ relPath: relPathOf(f), size: f.size, content: null }));
+  }
+  const out: ImportRawFile[] = [];
+  for (const f of arr) {
+    const bytes = new Uint8Array(await f.arrayBuffer());
+    const content = detectBinary(bytes) ? null : new TextDecoder().decode(bytes);
+    out.push({ relPath: relPathOf(f), size: f.size, content });
+  }
+  return out;
+}
+
 export default function SkillsList({ onRunSkill }: SkillsListProps) {
   const t = useT();
   const [skills, setSkills] = useState<SkillEntry[]>([]);
@@ -94,6 +137,15 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
   const [grants, setGrants] = useState<Map<string, GrantRecord>>(new Map());
   // 首连导入向导：null=标记加载中（不闪卡），false=未提示过，true=已提示
   const [importPrompted, setImportPrompted] = useState<boolean | null>(null);
+  // 外部 skill 文件夹导入（#321）：选好待确认的 plan / 报错 / 成功提示 / 写入中。
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [importPlan, setImportPlan] = useState<ImportPlan | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importNotice, setImportNotice] = useState<string | null>(null);
+  const [importBusy, setImportBusy] = useState(false);
+  // scripts 提示的 daemon 变体：桥 ready → 脚本可执行；否则提示需连接 Pie Link。
+  const bridge = useBridgeStatus();
+  const daemonReady = bridge?.ready === true;
 
   useEffect(() => {
     void loadSkills();
@@ -256,6 +308,83 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
     setImportPrompted(true);
   }
 
+  // Map a buildImportPlan error code → localized message (some carry `detail`).
+  function importErrorMessage(code: string, detail?: string): string {
+    switch (code) {
+      case "empty":
+        return t("skills.import.errors.empty");
+      case "too-many-files":
+        return t("skills.import.errors.tooManyFiles");
+      case "too-large":
+        return t("skills.import.errors.tooLarge");
+      case "multiple-roots":
+        return t("skills.import.errors.multipleRoots");
+      case "invalid-id":
+        return t("skills.import.errors.invalidId", { detail: detail ?? "" });
+      case "unsafe-path":
+        return t("skills.import.errors.unsafePath", { detail: detail ?? "" });
+      case "missing-skill-md":
+        return t("skills.import.errors.missingSkillMd");
+      case "invalid-frontmatter":
+        return t("skills.import.errors.invalidFrontmatter", { detail: detail ?? "" });
+      default:
+        return code;
+    }
+  }
+
+  async function handleImportFiles(fileList: FileList | null) {
+    setImportError(null);
+    setImportNotice(null);
+    setImportPlan(null);
+    if (!fileList || fileList.length === 0) return;
+    const raw = await readFolderFiles(fileList);
+    const res = buildImportPlan(raw);
+    if (!res.ok) {
+      setImportError(importErrorMessage(res.error, res.detail));
+      return;
+    }
+    setImportPlan(res.plan);
+  }
+
+  function cancelImport() {
+    setImportPlan(null);
+    setImportError(null);
+    setImportBusy(false);
+  }
+
+  async function handleImportConfirmWrite(plan: ImportPlan) {
+    setImportBusy(true);
+    setImportError(null);
+    const overwrite = skills.some((s) => s.id === plan.id);
+    try {
+      // Overwrite = delete-then-write: write is a merge upsert, so writing over
+      // an existing package would leave stale files from the old version behind.
+      // On a builtin-shadowing id, delete harmlessly returns deleted:false.
+      if (overwrite) await deleteSkillRpc(plan.id);
+      const res = await writeSkillRpc(plan.id, plan.files);
+      if (!res.ok) {
+        setImportError(t("skills.import.errors.writeFailed", { detail: res.error }));
+        setImportBusy(false);
+        return;
+      }
+      // Explicit enable marker — a deliberate import is intent to use it, and
+      // this aligns the IDB backend (user skills default OFF) with the disk
+      // backend (which defaults ON anyway).
+      await setSkillEnabled(plan.id, true);
+      await loadSkills();
+      setImportPlan(null);
+      setImportBusy(false);
+      setImportNotice(t("skills.import.success", { name: plan.name }));
+    } catch (e) {
+      setImportError(
+        t("skills.import.errors.writeFailed", {
+          detail: e instanceof Error ? e.message : String(e),
+        }),
+      );
+      setImportBusy(false);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-7">
       {/* Concept hint — Skill 与底层 tool 的区别。Phase 3+ 用户经常误以为
@@ -264,6 +393,55 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
       <div className="rounded-[10px] border border-line bg-surface px-3 py-2.5 text-[12px] leading-[18px] text-fg-2">
         {t("skills.empty.cta")}
       </div>
+
+      {/* Import an external skill folder (#321). Hidden webkitdirectory input;
+          the ref callback sets the attribute (not in the JSX types). */}
+      <div className="flex justify-end">
+        <input
+          ref={(el) => {
+            fileInputRef.current = el;
+            if (el) {
+              el.setAttribute("webkitdirectory", "");
+              el.setAttribute("directory", "");
+            }
+          }}
+          type="file"
+          className="hidden"
+          onChange={(e) => {
+            void handleImportFiles(e.target.files);
+            e.target.value = ""; // allow re-selecting the same folder
+          }}
+        />
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          className="rounded-[10px] border border-line bg-transparent px-2.5 py-1 text-[11px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
+        >
+          {t("skills.import.button")}
+        </button>
+      </div>
+
+      {importError && (
+        <div className="rounded-[10px] border border-warning-line bg-warning-tint px-3 py-2 text-[12px] leading-[18px] text-warning">
+          {importError}
+        </div>
+      )}
+
+      {importNotice && (
+        <div className="rounded-[10px] border border-line bg-surface px-3 py-2 text-[12px] leading-[18px] text-fg-2">
+          {importNotice}
+        </div>
+      )}
+
+      {importPlan && (
+        <ImportConfirmCard
+          plan={importPlan}
+          overwrite={skills.some((s) => s.id === importPlan.id)}
+          daemonReady={daemonReady}
+          busy={importBusy}
+          onCancel={cancelImport}
+          onConfirm={() => void handleImportConfirmWrite(importPlan)}
+        />
+      )}
 
       {importPrompted === false && agentsSkills.length > 0 && (
         <AgentsImportCard
@@ -372,6 +550,106 @@ function AgentsImportCard({
           className="rounded-[10px] bg-fg-1 px-3 py-1.5 text-[11px] font-medium text-canvas hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {t("skills.agentsImport.confirm")}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function ImportConfirmCard({
+  plan,
+  overwrite,
+  daemonReady,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  plan: ImportPlan;
+  overwrite: boolean;
+  daemonReady: boolean;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const t = useT();
+  return (
+    <section className="flex flex-col gap-3 rounded-[14px] border border-line bg-surface p-3.5">
+      <div className="flex items-baseline justify-between">
+        <span className="text-[15px] font-semibold tracking-[-0.005em] text-fg-1">
+          {t("skills.import.title")}
+        </span>
+        <button
+          onClick={onCancel}
+          disabled={busy}
+          className="rounded-[10px] border border-line bg-transparent px-2.5 py-1 text-[11px] text-fg-2 hover:text-fg-1 disabled:opacity-50"
+        >
+          {t("common.cancel")}
+        </button>
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <span className="font-mono text-[12px] text-accent">{plan.name}</span>
+        <span className="text-[12px] leading-[18px] text-fg-2">{plan.description}</span>
+      </div>
+
+      <div className="flex items-baseline gap-2">
+        <span className="text-[11px] text-fg-3">{t("skills.import.folderLabel")}</span>
+        <code className="font-mono text-[11px] text-fg-2">{plan.id}</code>
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <span className="text-[11px] text-fg-3">
+          {t("skills.import.filesLabel")} ({plan.files.length})
+        </span>
+        <div className="flex max-h-40 flex-col overflow-y-auto rounded-[10px] border border-line">
+          {plan.files.map((f) => (
+            <code
+              key={f.path}
+              className="border-t border-line px-3 py-1.5 font-mono text-[11px] text-fg-2 first:border-t-0"
+            >
+              {f.path}
+            </code>
+          ))}
+        </div>
+      </div>
+
+      {plan.skippedBinary.length > 0 && (
+        <p className="text-[11px] leading-[16px] text-fg-3">
+          {t("skills.import.skippedBinary", { count: plan.skippedBinary.length })}
+        </p>
+      )}
+
+      {plan.hasScripts && (
+        <div className="rounded-[10px] border border-line bg-surface-deep px-3 py-2 text-[11px] leading-[16px] text-fg-2">
+          {t("skills.import.scriptsWarning")}
+          {!daemonReady && <> {t("skills.import.scriptsNeedDaemon")}</>}
+        </div>
+      )}
+
+      {overwrite && (
+        <div className="rounded-[10px] border border-warning-line bg-warning-tint px-3 py-2 text-[11px] leading-[16px] text-warning">
+          {t("skills.import.overwriteWarning", { id: plan.id })}
+        </div>
+      )}
+
+      <div className="flex justify-end gap-2">
+        <button
+          onClick={onCancel}
+          disabled={busy}
+          className="rounded-[10px] border border-line bg-transparent px-3 py-1.5 text-[11px] text-fg-2 hover:text-fg-1 disabled:opacity-50"
+        >
+          {t("common.cancel")}
+        </button>
+        <button
+          onClick={onConfirm}
+          disabled={busy}
+          className="rounded-[10px] bg-fg-1 px-3 py-1.5 text-[11px] font-medium text-canvas hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {busy
+            ? t("skills.import.importing")
+            : overwrite
+              ? t("skills.import.confirmOverwrite")
+              : t("skills.import.confirm")}
         </button>
       </div>
     </section>

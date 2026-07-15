@@ -414,6 +414,34 @@ export const ptBRDict = {
       confirm: "Habilitar selecionadas",
       dismiss: "Agora não",
     },
+    import: {
+      button: "Importar pasta",
+      title: "Importar skill",
+      folderLabel: "Pasta",
+      filesLabel: "Arquivos",
+      skippedBinary: "{count} arquivo(s) binário(s) ignorado(s) (somente texto)",
+      scriptsWarning:
+        "Esta skill inclui scripts/ — eles são executados apenas após você aprovar o cartão de autorização na primeira vez.",
+      scriptsNeedDaemon:
+        "Os scripts só rodam quando o Pie Link estiver conectado. A importação funciona agora; a execução aguarda a conexão.",
+      overwriteWarning: "Já existe uma skill chamada “{id}”. Importar irá sobrescrevê-la.",
+      confirm: "Importar",
+      confirmOverwrite: "Sobrescrever e importar",
+      importing: "Importando…",
+      success: "“{name}” importada",
+      errors: {
+        empty: "A pasta selecionada está vazia.",
+        tooManyFiles: "Arquivos demais — selecione uma única pasta de skill.",
+        tooLarge: "Pasta grande demais — selecione uma única pasta de skill.",
+        multipleRoots: "Selecione exatamente uma pasta de skill.",
+        invalidId:
+          "O nome de pasta “{detail}” não é um id de skill válido (apenas minúsculas, dígitos e hifens).",
+        unsafePath: "Caminho de arquivo inseguro na pasta: {detail}",
+        missingSkillMd: "Nenhum SKILL.md encontrado na raiz da pasta.",
+        invalidFrontmatter: "O frontmatter do SKILL.md é inválido: {detail}",
+        writeFailed: "Falha na importação: {detail}",
+      },
+    },
     toggleAria: { enable: "Ativar {name}", disable: "Desativar {name}" },
   },
   skillSlashPopover: {

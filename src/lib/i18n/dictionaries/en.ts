@@ -419,6 +419,34 @@ export const enDict = {
       confirm: "Enable selected",
       dismiss: "Not now",
     },
+    import: {
+      button: "Import folder",
+      title: "Import skill",
+      folderLabel: "Folder",
+      filesLabel: "Files",
+      skippedBinary: "{count} binary file(s) skipped (text only)",
+      scriptsWarning:
+        "This skill bundles scripts/ — they run only after you approve the authorization card the first time.",
+      scriptsNeedDaemon:
+        "Scripts can run only once Pie Link is connected. Import works now; execution waits for the connection.",
+      overwriteWarning: "A skill named “{id}” already exists. Importing will overwrite it.",
+      confirm: "Import",
+      confirmOverwrite: "Overwrite & import",
+      importing: "Importing…",
+      success: "Imported “{name}”",
+      errors: {
+        empty: "The selected folder is empty.",
+        tooManyFiles: "Too many files — select a single skill folder.",
+        tooLarge: "Folder too large — select a single skill folder.",
+        multipleRoots: "Select exactly one skill folder.",
+        invalidId:
+          "Folder name “{detail}” is not a valid skill id (lowercase letters, digits and hyphens only).",
+        unsafePath: "Unsafe file path in the folder: {detail}",
+        missingSkillMd: "No SKILL.md found at the folder root.",
+        invalidFrontmatter: "SKILL.md frontmatter is invalid: {detail}",
+        writeFailed: "Import failed: {detail}",
+      },
+    },
     toggleAria: { enable: "Enable {name}", disable: "Disable {name}" },
   },
   skillSlashPopover: {

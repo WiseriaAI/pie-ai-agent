@@ -414,6 +414,34 @@ export const es419Dict = {
       confirm: "Habilitar seleccionados",
       dismiss: "Ahora no",
     },
+    import: {
+      button: "Importar carpeta",
+      title: "Importar skill",
+      folderLabel: "Carpeta",
+      filesLabel: "Archivos",
+      skippedBinary: "Se omitieron {count} archivo(s) binario(s) (solo texto)",
+      scriptsWarning:
+        "Este skill incluye scripts/: se ejecutan solo tras aprobar la tarjeta de autorización la primera vez.",
+      scriptsNeedDaemon:
+        "Los scripts solo se ejecutan cuando Pie Link está conectado. La importación funciona ahora; la ejecución espera la conexión.",
+      overwriteWarning: "Ya existe un skill llamado «{id}». Al importar se sobrescribirá.",
+      confirm: "Importar",
+      confirmOverwrite: "Sobrescribir e importar",
+      importing: "Importando…",
+      success: "Se importó «{name}»",
+      errors: {
+        empty: "La carpeta seleccionada está vacía.",
+        tooManyFiles: "Demasiados archivos: selecciona una sola carpeta de skill.",
+        tooLarge: "Carpeta demasiado grande: selecciona una sola carpeta de skill.",
+        multipleRoots: "Selecciona exactamente una carpeta de skill.",
+        invalidId:
+          "El nombre de carpeta «{detail}» no es un id de skill válido (solo minúsculas, dígitos y guiones).",
+        unsafePath: "Ruta de archivo no segura en la carpeta: {detail}",
+        missingSkillMd: "No se encontró SKILL.md en la raíz de la carpeta.",
+        invalidFrontmatter: "El frontmatter de SKILL.md no es válido: {detail}",
+        writeFailed: "Error al importar: {detail}",
+      },
+    },
     toggleAria: { enable: "Activar {name}", disable: "Desactivar {name}" },
   },
   skillSlashPopover: {

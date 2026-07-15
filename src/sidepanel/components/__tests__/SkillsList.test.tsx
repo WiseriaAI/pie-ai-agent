@@ -27,6 +27,15 @@ vi.mock("@/lib/skills/panel-actions", () => ({
   deleteSkillRpc: vi.fn(),
 }));
 
+// queryGrants/revokeGrant hit chrome.runtime.sendMessage's callback form,
+// which the test-setup mock never invokes (the promise would hang). Stub them
+// so loadSkills() fully resolves — needed by the import tests that assert on
+// post-loadSkills state (success notice). Harmless for the pre-existing tests.
+vi.mock("@/lib/local-grants", () => ({
+  queryGrants: vi.fn().mockResolvedValue([]),
+  revokeGrant: vi.fn().mockResolvedValue(true),
+}));
+
 // Partial mock — only override the enabled-marker functions; leave
 // generateUserSkillId etc. as the real (pure, crypto.randomUUID-based) impl.
 vi.mock("@/lib/skills/storage", async (importOriginal) => {
@@ -244,5 +253,112 @@ describe("SkillsList", () => {
     await waitFor(() => {
       expect(screen.queryByRole("switch")).toBeNull();
     });
+  });
+});
+
+// --- External skill folder import (#321) ---
+
+const VALID_MD = "---\nname: Imported Skill\ndescription: A folder import\n---\nDo the thing.";
+
+function makeFile(relPath: string, content: string): File {
+  const name = relPath.split("/").pop() as string;
+  const f = new File([content], name, { type: "text/plain" });
+  Object.defineProperty(f, "webkitRelativePath", { value: relPath });
+  return f;
+}
+
+function selectFolder(container: HTMLElement, files: File[]) {
+  const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+  Object.defineProperty(input, "files", { value: files, configurable: true });
+  fireEvent.change(input);
+}
+
+describe("SkillsList — folder import", () => {
+  beforeEach(() => {
+    vi.mocked(listSkillEntries).mockReset().mockResolvedValue({ ok: true, skills: [] });
+    vi.mocked(writeSkillRpc).mockReset().mockResolvedValue({ ok: true });
+    vi.mocked(deleteSkillRpc).mockReset().mockResolvedValue({ ok: true, deleted: true });
+    vi.mocked(getEnabledSkillIds).mockReset().mockResolvedValue([]);
+    vi.mocked(setSkillEnabled).mockReset().mockResolvedValue(undefined);
+  });
+
+  it("imports a valid folder: writes files + enables the skill + shows a success notice", async () => {
+    const { container } = render(<SkillsList onRunSkill={vi.fn()} />);
+    await waitFor(() => expect(listSkillEntries).toHaveBeenCalled());
+
+    selectFolder(container, [
+      makeFile("my-skill/SKILL.md", VALID_MD),
+      makeFile("my-skill/reference/notes.md", "notes"),
+    ]);
+
+    // Confirm card renders with parsed metadata.
+    await screen.findByText("Imported Skill");
+    expect(screen.getByText("A folder import")).toBeTruthy();
+    expect(screen.getByText("reference/notes.md")).toBeTruthy();
+
+    fireEvent.click(screen.getByText("Import"));
+
+    await waitFor(() => {
+      expect(writeSkillRpc).toHaveBeenCalledWith("my-skill", [
+        { path: "SKILL.md", content: VALID_MD },
+        { path: "reference/notes.md", content: "notes" },
+      ]);
+      expect(setSkillEnabled).toHaveBeenCalledWith("my-skill", true);
+    });
+    // No overwrite path on a fresh id.
+    expect(deleteSkillRpc).not.toHaveBeenCalled();
+    await screen.findByText(/Imported .Imported Skill./);
+  });
+
+  it("rejects a folder with no SKILL.md and surfaces an error (no confirm card, no write)", async () => {
+    const { container } = render(<SkillsList onRunSkill={vi.fn()} />);
+    await waitFor(() => expect(listSkillEntries).toHaveBeenCalled());
+
+    selectFolder(container, [makeFile("my-skill/readme.md", "just a readme")]);
+
+    await screen.findByText(/No SKILL.md found/);
+    expect(screen.queryByText("Import")).toBeNull();
+    expect(writeSkillRpc).not.toHaveBeenCalled();
+  });
+
+  it("same-id import shows an overwrite warning and does delete-then-write", async () => {
+    const existing: SkillEntry = {
+      id: "my-skill",
+      name: "Old",
+      description: "old one",
+      builtIn: false,
+      origin: "idb",
+      files: ["SKILL.md"],
+      runnableScripts: [],
+      createdAt: 1,
+    };
+    vi.mocked(listSkillEntries).mockResolvedValue({ ok: true, skills: [existing] });
+
+    const { container } = render(<SkillsList onRunSkill={vi.fn()} />);
+    await screen.findByRole("switch", { name: "Enable Old" });
+
+    selectFolder(container, [makeFile("my-skill/SKILL.md", VALID_MD)]);
+
+    await screen.findByText(/already exists/);
+    fireEvent.click(screen.getByText("Overwrite & import"));
+
+    await waitFor(() => {
+      expect(deleteSkillRpc).toHaveBeenCalledWith("my-skill");
+      expect(writeSkillRpc).toHaveBeenCalledWith("my-skill", [
+        { path: "SKILL.md", content: VALID_MD },
+      ]);
+    });
+  });
+
+  it("shows the scripts authorization hint when the folder bundles scripts/", async () => {
+    const { container } = render(<SkillsList onRunSkill={vi.fn()} />);
+    await waitFor(() => expect(listSkillEntries).toHaveBeenCalled());
+
+    selectFolder(container, [
+      makeFile("my-skill/SKILL.md", VALID_MD),
+      makeFile("my-skill/scripts/run.py", "print(1)"),
+    ]);
+
+    await screen.findByText(/authorization card/);
   });
 });
