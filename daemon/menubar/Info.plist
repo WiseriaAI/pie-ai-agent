@@ -5,6 +5,7 @@
   <key>CFBundleIdentifier</key><string>ai.wiseria.pie.menubar</string>
   <key>CFBundleName</key><string>Pie Link</string>
   <key>CFBundleExecutable</key><string>Pie Link</string>
+  <key>CFBundleIconFile</key><string>PieLink</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>__VERSION__</string>
   <key>LSUIElement</key><true/>
