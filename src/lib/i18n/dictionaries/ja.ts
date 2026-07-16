@@ -414,6 +414,34 @@ export const jaDict = {
       confirm: "選択を有効化",
       dismiss: "あとで",
     },
+    import: {
+      button: "フォルダを取り込む",
+      title: "スキルを取り込む",
+      folderLabel: "フォルダ",
+      filesLabel: "ファイル",
+      skippedBinary: "バイナリファイル {count} 件をスキップしました（テキストのみ対応）",
+      scriptsWarning:
+        "このスキルには scripts/ が含まれます。初回実行時に承認カードで確認してから実行されます。",
+      scriptsNeedDaemon:
+        "スクリプトは Pie Link 接続後にのみ実行できます。取り込みは今できます。実行は接続を待ちます。",
+      overwriteWarning: "「{id}」という名前のスキルが既に存在します。取り込むと上書きされます。",
+      confirm: "取り込む",
+      confirmOverwrite: "上書きして取り込む",
+      importing: "取り込み中…",
+      success: "「{name}」を取り込みました",
+      errors: {
+        empty: "選択したフォルダは空です。",
+        tooManyFiles: "ファイルが多すぎます。単一のスキルフォルダを選択してください。",
+        tooLarge: "フォルダが大きすぎます。単一のスキルフォルダを選択してください。",
+        multipleRoots: "スキルフォルダを 1 つだけ選択してください。",
+        invalidId:
+          "フォルダ名「{detail}」は有効なスキル ID ではありません（英小文字・数字・ハイフンのみ）。",
+        unsafePath: "フォルダ内に安全でないファイルパスがあります：{detail}",
+        missingSkillMd: "フォルダのルートに SKILL.md が見つかりません。",
+        invalidFrontmatter: "SKILL.md のフロントマターが無効です：{detail}",
+        writeFailed: "取り込みに失敗しました：{detail}",
+      },
+    },
     toggleAria: { enable: "{name} を有効化", disable: "{name} を無効化" },
   },
   skillSlashPopover: {
