@@ -169,7 +169,8 @@ export const es419Dict = {
     decline: "Ahora no",
   },
   runLocalAgent: {
-    title: "¿Ejecutar un agente local (claude -p)?",
+    title: "¿Ejecutar un agente local (headless)?",
+    backendLabel: "Backend",
     semanticsNote: "Se ejecuta sin supervisión en segundo plano; el resultado vuelve a esta conversación.",
     cwdLabel: "Directorio de trabajo",
     taskLabel: "Tarea",

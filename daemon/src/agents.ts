@@ -28,6 +28,13 @@ export interface AgentCandidate {
   /** terminal：argv 模板，"{prompt}" 占位。位置参数 vs flag 的差异只是数据。 */
   argv?: string[];
   /**
+   * terminal：headless（非交互，一次性跑完回传 stdout）的 argv 模板，"{prompt}" 占位。
+   * 与交互式 `argv` 同构但形态不同——headless 无人可批工具调用，故各家在此带上「跳权限/
+   * 自动放行」flag（用户已在 run_local_agent 授权卡上批过 prompt+cwd，那张卡就是闸）。
+   * 只有声明了 headlessArgv 的候选才可作为 run_local_agent 后端；app 形态无此字段（无 CLI）。
+   */
+  headlessArgv?: string[];
+  /**
    * terminal：官方安装器的知名落点（"~" 开头，detect 时展开）。PATH 探测 miss 才回落——
    * 常规安装完全可能不进 login shell PATH（真机实证：opencode 装在 ~/.opencode/bin 而
    * rc 没配 PATH），不能要求用户自己配。PATH 命中永远优先（用户自装位置说了算）。
@@ -43,7 +50,10 @@ export const AGENT_CANDIDATES: readonly AgentCandidate[] = [
   { id: "claude-app", label: "Claude Code (App)", kind: "app",
     appPaths: ["/Applications/Claude.app"], convention: "CLAUDE.md" },
   { id: "claude-terminal", label: "Claude Code (Terminal)", kind: "terminal", bin: "claude",
-    argv: ["{prompt}"], binPaths: ["~/.local/bin/claude"] },
+    argv: ["{prompt}"], binPaths: ["~/.local/bin/claude"],
+    // headless: `claude -p "<prompt>"`；--dangerously-skip-permissions 让 headless claude
+    // 不因无人审批而卡在写操作上。
+    headlessArgv: ["-p", "--dangerously-skip-permissions", "{prompt}"] },
 
   // Codex 与 ChatGPT app 已合并为同一 bundle（com.openai.codex——本机
   // /Applications/ChatGPT.app 的 bundle id 实测就是它，没有独立的 Codex.app）。优先
@@ -54,7 +64,13 @@ export const AGENT_CANDIDATES: readonly AgentCandidate[] = [
   // 「到手即跑」，目录确认会卡住每一次 handoff（目录每次新建，信任记忆无效）。代价是
   // 交棒后的 codex 会话无审批、无沙箱，风险由用户在交棒动作本身承担。
   { id: "codex-terminal", label: "Codex (Terminal)", kind: "terminal", bin: "codex",
-    argv: ["--dangerously-bypass-approvals-and-sandbox", "{prompt}"] },
+    argv: ["--dangerously-bypass-approvals-and-sandbox", "{prompt}"],
+    // headless: `codex exec "<prompt>"`（exec 子命令 = 非交互一次性跑）。真机实证两处必须显式带上：
+    // 1. --skip-git-repo-check：run_local_agent 的默认 workspace（~/.pie/handoffs/<slug>）是全新
+    //    非 git 目录，缺此 flag codex 直接 `Not inside a trusted directory` exit 1。
+    // 2. --sandbox workspace-write：exec 出厂默认沙箱是 read-only（无 ~/.codex/config.toml 覆盖时），
+    //    agent 会因 "workspace is mounted read-only" 写不了文件；显式开 workspace-write 才可写 cwd。
+    headlessArgv: ["exec", "--skip-git-repo-check", "--sandbox", "workspace-write", "{prompt}"] },
 
   // Cursor 是 IDE：app 形态打开的是一个只有 context.md + AGENTS.md 的工作区，
   // 用户 ⌘L 发一句话让 agent 接手（已知取舍，见 spec §6）。
@@ -66,14 +82,22 @@ export const AGENT_CANDIDATES: readonly AgentCandidate[] = [
   // flag（codex 只有全跳审批+沙箱的 dangerously-bypass，不能替用户开）——三家统一保持
   // 首次进目录一次 y 确认，那是 agent 自身的安全机制。
   { id: "cursor-terminal", label: "Cursor (Terminal)", kind: "terminal", bin: "cursor-agent",
-    argv: ["{prompt}"], binPaths: ["~/.local/bin/cursor-agent"] },
+    argv: ["{prompt}"], binPaths: ["~/.local/bin/cursor-agent"],
+    // headless: `cursor-agent -p "<prompt>"`；--force 跳过工具审批（headless 无人可批）。
+    headlessArgv: ["-p", "--force", "{prompt}"] },
 
   // opencode 的交互式 TUI 用 --prompt 带初始 prompt（真机验证：自动发送，不是预填输入框）。
   { id: "opencode-terminal", label: "OpenCode (Terminal)", kind: "terminal", bin: "opencode",
-    argv: ["--prompt", "{prompt}"], binPaths: ["~/.opencode/bin/opencode"] },
+    argv: ["--prompt", "{prompt}"], binPaths: ["~/.opencode/bin/opencode"],
+    // headless: `opencode run "<prompt>"`；--auto 自动放行工具调用（headless 无人可批）。
+    headlessArgv: ["run", "--auto", "{prompt}"] },
 
   // pi（badlogic/pi-mono coding agent）：位置参数，`pi "<prompt>"`。
-  { id: "pi-terminal", label: "Pi (Terminal)", kind: "terminal", bin: "pi", argv: ["{prompt}"] },
+  { id: "pi-terminal", label: "Pi (Terminal)", kind: "terminal", bin: "pi", argv: ["{prompt}"],
+    // headless: `pi -p "<prompt>"`。-p（非交互）模式本就没有工具审批门控，工具直跑，无需任何跳权限
+    // flag。不带 --approve：那个 flag 的真实语义是「信任项目本地文件（AGENTS.md 等）for this run」，
+    // 不是自动放行工具调用；Pie 新建的 workspace 也不该默认 trust 本地文件。
+    headlessArgv: ["-p", "{prompt}"] },
 ];
 
 /**

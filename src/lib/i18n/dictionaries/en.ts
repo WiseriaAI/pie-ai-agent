@@ -174,7 +174,8 @@ export const enDict = {
     decline: "Not now",
   },
   runLocalAgent: {
-    title: "Run a local agent (claude -p)?",
+    title: "Run a local agent (headless)?",
+    backendLabel: "Backend",
     semanticsNote: "Runs headless in the background; the result comes back to this conversation.",
     cwdLabel: "Working directory",
     taskLabel: "Task",

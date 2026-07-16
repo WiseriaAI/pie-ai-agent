@@ -166,7 +166,8 @@ export const zhTWDict = {
     decline: "不啟用",
   },
   runLocalAgent: {
-    title: "執行本地 Agent（claude -p）？",
+    title: "執行本地 Agent（無頭）？",
+    backendLabel: "後端",
     semanticsNote: "背景無人值守執行，結果將返回此對話。",
     cwdLabel: "工作目錄",
     taskLabel: "任務",

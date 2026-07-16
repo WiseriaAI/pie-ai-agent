@@ -28,7 +28,14 @@ export interface HelloResponse {
 
 // ── run_local_agent ──────────────────────────────────────────────────
 export interface RunLocalAgentParams {
-  target: "claude"; // Slice 0 只 claude；codex 后续 slice
+  /**
+   * 用户在 RunLocalAgentCard 上选的 headless 后端 agent id（**非 LLM 传入**，与
+   * HandoffParams.target 同语义——被 untrusted 页面驱动的 LLM 不能诱导选后端）。
+   * 缺省 = daemon 按候选表顺序取第一个「已装且有 headlessArgv」者（旧扩展/未选时不变）。
+   * daemon 运行时校验它 ∈ 本次检测到的「已装 headless」集，非法值回描述性错误（不静默回落）。
+   * 加法演进（PROTOCOL_VERSION 不动）：旧 Slice-0 扩展传 "claude" 是 claude-terminal 的 alias。
+   */
+  target?: string;
   prompt: string;
   /** 缺省 = daemon 建的临时 workspace ~/pie-handoffs/<slug>/ */
   cwd?: string;
@@ -38,12 +45,28 @@ export interface RunLocalAgentResult {
   exitCode: number;
   /** daemon 实际使用的 cwd（回填给卡片/audit） */
   cwd: string;
+  /**
+   * daemon 实际选中的 headless 后端（按候选表顺序取第一个「已装且有 headlessArgv」者）。
+   * 加法演进（PROTOCOL_VERSION 不动）：observation 据此告诉 LLM 本次跑的是哪个本地 agent。
+   * 旧 daemon 不回此字段 → optional，消费方缺省不显示后端名。
+   */
+  backend?: { id: string; label: string };
 }
 
 // ── list_agents ──────────────────────────────────────────────────────
 /** daemon 静态候选表全量（含未安装项，installed 标注检测结果——settings 页渲染"未安装"态需要）。 */
 export interface ListAgentsResult {
-  agents: { id: string; label: string; installed: boolean; kind?: "app" | "terminal" }[];
+  agents: {
+    id: string;
+    label: string;
+    installed: boolean;
+    kind?: "app" | "terminal";
+    /**
+     * 该 agent 可作 run_local_agent 的 headless 后端（声明了 headlessArgv）。app 形态恒 false。
+     * 加法演进（PROTOCOL_VERSION 不动）：旧 daemon 不给此字段 → 消费方回落 kind === "terminal" 代理。
+     */
+    headless?: boolean;
+  }[];
 }
 
 // ── handoff_to_agent ─────────────────────────────────────────────────

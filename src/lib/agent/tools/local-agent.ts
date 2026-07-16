@@ -4,17 +4,29 @@ import type { RunLocalAgentResult } from "@/types/local-bridge";
 import { escapeUntrustedWrappers } from "../untrusted-wrappers";
 
 export interface RunLocalAgentToolDeps {
-  run: (p: { target: "claude"; prompt: string; cwd?: string }) => Promise<RunLocalAgentResult>;
-  /** HITL 授权卡：展示 prompt + cwd 原文，返回是否放行。 */
-  requestConsent: (p: { prompt: string; cwd: string }) => Promise<boolean>;
+  run: (p: { target?: string; prompt: string; cwd?: string }) => Promise<RunLocalAgentResult>;
+  /** 桥：已装且可作 headless 后端的本地 agent（用户在授权卡上选后端）。 */
+  listBackends: () => Promise<{ id: string; label: string }[]>;
+  /**
+   * HITL 授权卡：用户选后端 + 授权一步完成（展示 prompt + cwd 原文）。返回用户选中的
+   * 后端 id，null = 拒绝。target 不由 LLM 传——被 untrusted 页面驱动的 LLM 无法诱导选后端
+   * （与 handoff_to_agent 同）。
+   */
+  requestConsent: (p: {
+    prompt: string;
+    cwd: string;
+    agents: { id: string; label: string }[];
+  }) => Promise<string | null>;
 }
 
 export function buildRunLocalAgentTool(deps: RunLocalAgentToolDeps): Tool {
   return {
     name: "run_local_agent",
     description:
-      "DELEGATE a bounded, non-interactive sub-task to the user's local Claude Code agent " +
-      "(claude -p, headless) and get its final output back — the conversation continues with the " +
+      "DELEGATE a bounded, non-interactive sub-task to the user's local headless coding agent " +
+      "(Claude Code, Codex, Cursor, OpenCode, or Pi — the USER picks which one on the authorization " +
+      "card; you do NOT choose the backend) and " +
+      "get its final output back — the conversation continues with the " +
       "result. Use for work that needs a full local coding/analysis agent with filesystem + shell " +
       "— e.g. run an analysis over exported files, generate code, summarize a repo. The call " +
       "BLOCKS until the local agent finishes. Decision rule vs handoff_to_agent: use " +
@@ -43,18 +55,33 @@ export function buildRunLocalAgentTool(deps: RunLocalAgentToolDeps): Tool {
         return { success: false, error: "run_local_agent: `prompt` is required (non-empty string)." };
       }
       const cwd = typeof a.cwd === "string" ? a.cwd : undefined;
-      const granted = await deps.requestConsent({ prompt: a.prompt, cwd: cwd ?? "(temp workspace)" });
-      if (!granted) {
+      // 已装 headless 后端；一个都没有时明确报错（daemon 也会兜底，但这里先短路避免弹空卡）。
+      const agents = await deps.listBackends();
+      if (agents.length === 0) {
+        return {
+          success: false,
+          error:
+            "run_local_agent: no local headless agent detected on this machine " +
+            "(looked for the claude / codex / cursor-agent / opencode / pi CLIs).",
+        };
+      }
+      // 用户在卡上选后端 + 授权一步完成；null = 拒绝。target 是用户选的，不进 LLM tool schema。
+      const target = await deps.requestConsent({ prompt: a.prompt, cwd: cwd ?? "(temp workspace)", agents });
+      if (target == null) {
         return { success: false, error: "User declined to run the local agent." };
       }
-      const result = await deps.run({ target: "claude", prompt: a.prompt, cwd });
+      const result = await deps.run({ target, prompt: a.prompt, cwd });
       const ok = result.exitCode === 0;
       // daemon 输出是 untrusted（被读网页的 LLM 驱动）——先 escape 掉输出里任何伪造
       // 的 wrapper 标签，再包进 <untrusted_local_agent_output>，防突破边界。
       const safe = escapeUntrustedWrappers(result.output);
+      // 后端名是 daemon 权威（候选表内枚举，非页面来源）→ trusted 前缀，告诉 LLM 本次
+      // 实际跑的是哪个本地 agent（旧 daemon 不回 backend → 缺省不显示）。
+      const via = result.backend ? `(ran via ${result.backend.label})\n` : "";
       return {
         success: ok,
         observation:
+          via +
           `<untrusted_local_agent_output>\n${safe}\n</untrusted_local_agent_output>` +
           (ok ? "" : `\n(local agent exited ${result.exitCode})`),
         ...(ok ? {} : { error: `local agent exited ${result.exitCode}` }),

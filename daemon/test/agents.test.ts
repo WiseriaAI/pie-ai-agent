@@ -39,6 +39,29 @@ test("terminal 候选的 argv 必须含 {prompt} 占位（否则交棒开不了�
   }
 });
 
+test("每条 terminal 候选都有 headlessArgv 且含 {prompt}（run_local_agent 多后端前提）", () => {
+  for (const c of AGENT_CANDIDATES) {
+    if (c.kind !== "terminal") continue;
+    expect(c.headlessArgv?.length).toBeGreaterThan(0);
+    expect(c.headlessArgv?.some((a) => a.includes("{prompt}"))).toBe(true);
+  }
+});
+
+test("app 候选没有 headlessArgv（app 无 CLI，不能作 headless 后端）", () => {
+  for (const c of AGENT_CANDIDATES) {
+    if (c.kind === "app") expect(c.headlessArgv).toBeUndefined();
+  }
+});
+
+test("各家 headless 契约（已查实的命令 + 跳权限 flag）", () => {
+  const byId = Object.fromEntries(AGENT_CANDIDATES.map((c) => [c.id, c]));
+  expect(byId["claude-terminal"].headlessArgv).toEqual(["-p", "--dangerously-skip-permissions", "{prompt}"]);
+  expect(byId["codex-terminal"].headlessArgv).toEqual(["exec", "--skip-git-repo-check", "--sandbox", "workspace-write", "{prompt}"]);
+  expect(byId["cursor-terminal"].headlessArgv).toEqual(["-p", "--force", "{prompt}"]);
+  expect(byId["opencode-terminal"].headlessArgv).toEqual(["run", "--auto", "{prompt}"]);
+  expect(byId["pi-terminal"].headlessArgv).toEqual(["-p", "{prompt}"]);
+});
+
 test("app 候选必须有 convention（无 prompt 注入面，只能靠引导文件）", () => {
   for (const c of AGENT_CANDIDATES) {
     if (c.kind === "app") expect(c.convention).toBeDefined();

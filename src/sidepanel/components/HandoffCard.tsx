@@ -7,7 +7,7 @@ import {
   HitlDetailBlock,
   HitlDetailGroup,
 } from "./hitl/HitlCardShell";
-import { AgentBrandIcon } from "./hitl/agent-brand-icons";
+import { AgentSelect } from "./hitl/AgentSelect";
 
 interface AgentOption {
   id: string;
@@ -51,36 +51,12 @@ export function HandoffCard({ payload, onDecision }: Props) {
         </>
       }
     >
-      <div className="flex flex-col gap-1.5">
-        <span className="caps text-fg-3">{t("handoff.targetLabel")}</span>
-        {payload.agents.map((a) => {
-          const isSel = a.id === selected;
-          return (
-            <label
-              key={a.id}
-              className={`flex cursor-pointer items-center gap-2.5 rounded-lg border px-2.5 py-2 ${
-                isSel ? "border-accent-line bg-accent-tint" : "border-line"
-              }`}
-            >
-              <input
-                type="radio"
-                name="handoff-target"
-                className="sr-only"
-                checked={isSel}
-                onChange={() => setSelected(a.id)}
-              />
-              <AgentBrandIcon agentId={a.id} size={16} />
-              <span className={`text-[13px] ${isSel ? "text-fg-1" : "text-fg-2"}`}>{a.label}</span>
-              <span
-                aria-hidden
-                className={`ml-auto h-3.5 w-3.5 shrink-0 rounded-full border ${
-                  isSel ? "border-[4px] border-accent" : "border-[1.5px] border-[var(--c-fg-4)]"
-                }`}
-              />
-            </label>
-          );
-        })}
-      </div>
+      <AgentSelect
+        label={t("handoff.targetLabel")}
+        agents={payload.agents}
+        selected={selected}
+        onSelect={setSelected}
+      />
       <HitlDetailBlock>
         <HitlDetailGroup label={t("handoff.contextLabel")}>
           <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-[17px] text-fg-2">

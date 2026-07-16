@@ -45,8 +45,14 @@ export function HitlInlineCards({ request, respond, instances, onChooseLocalFile
       {request?.kind === "run-local-agent" && (
         <RunLocalAgentCard
           key={request.requestId}
-          payload={request.payload as { prompt: string; cwd: string }}
-          onDecision={(ok) => respond(request.requestId, { ok: true, data: ok })}
+          payload={
+            request.payload as {
+              prompt: string;
+              cwd: string;
+              agents: { id: string; label: string }[];
+            }
+          }
+          onDecision={(target) => respond(request.requestId, { ok: true, data: target })}
         />
       )}
       {request?.kind === "handoff-to-agent" && (

@@ -16,7 +16,10 @@ export interface PanelRequestMap {
   "cdp-consent": { req: Record<string, never>; res: boolean };
   "local-file": { req: Record<string, never>; res: LocalFileResult };
   "schedule-model": { req: ScheduleDraftPayload; res: ScheduleModelSelection };
-  "run-local-agent": { req: { prompt: string; cwd: string }; res: boolean };
+  "run-local-agent": {
+    req: { prompt: string; cwd: string; agents: { id: string; label: string }[] };
+    res: string | null; // 用户选中的后端 agent id；null = 拒绝
+  };
   "handoff-to-agent": {
     req: { context: string; fileCount: number; agents: { id: string; label: string }[] };
     res: string | null; // 用户选中的 agent id；null = 拒绝

@@ -122,7 +122,18 @@ test("list_agents returns ALL candidates with installed flag (shape only — det
     expect(typeof a.label).toBe("string");
     expect(typeof a.installed).toBe("boolean");
     expect(["app", "terminal"]).toContain(a.kind); // #270: wire 加法字段
+    expect(typeof a.headless).toBe("boolean"); // #307: run_local_agent 后端可选性
   }
+  // headless 恰为「terminal 候选」（app 无 CLI）——run_local_agent 卡片据此选后端。
+  const byId = Object.fromEntries(
+    out.result.agents.map((a: { id: string; headless: boolean }) => [a.id, a.headless]),
+  );
+  expect(byId["claude-terminal"]).toBe(true);
+  expect(byId["opencode-terminal"]).toBe(true);
+  expect(byId["pi-terminal"]).toBe(true);
+  expect(byId["claude-app"]).toBe(false);
+  expect(byId["codex-app"]).toBe(false);
+  expect(byId["cursor-app"]).toBe(false);
 });
 
 // ── makeBackpressureWriter ──────────────────────────────────────────────────

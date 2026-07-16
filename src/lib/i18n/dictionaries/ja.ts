@@ -169,7 +169,8 @@ export const jaDict = {
     decline: "今はしない",
   },
   runLocalAgent: {
-    title: "ローカルエージェント (claude -p) を実行しますか？",
+    title: "ローカルエージェント（ヘッドレス）を実行しますか？",
+    backendLabel: "バックエンド",
     semanticsNote: "バックグラウンドで無人実行され、結果はこの会話に戻ります。",
     cwdLabel: "作業ディレクトリ",
     taskLabel: "タスク",
