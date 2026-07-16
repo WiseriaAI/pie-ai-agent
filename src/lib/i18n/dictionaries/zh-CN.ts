@@ -167,6 +167,7 @@ export const zhCNDict = {
   },
   runLocalAgent: {
     title: "运行本地 Agent（无头）？",
+    backendLabel: "后端",
     semanticsNote: "后台无人值守运行，结果将返回此对话。",
     cwdLabel: "工作目录",
     taskLabel: "任务",

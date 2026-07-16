@@ -98,12 +98,16 @@ describe("panel-request", () => {
     expect(() => handlePanelResponse("nope", { ok: true, data: true })).not.toThrow();
   });
 
-  it("run-local-agent kind resolves boolean via handlePanelResponse", async () => {
+  it("run-local-agent kind resolves the picked backend id via handlePanelResponse", async () => {
     const port = fakePort();
     registerPanelPort("S1", port);
-    const p = requestFromPanel<"run-local-agent">("S1", "run-local-agent", { prompt: "hi", cwd: "/tmp" });
+    const p = requestFromPanel<"run-local-agent">("S1", "run-local-agent", {
+      prompt: "hi",
+      cwd: "/tmp",
+      agents: [{ id: "claude-terminal", label: "Claude Code (Terminal)" }],
+    });
     const sent = port.sent.at(-1)!;
-    handlePanelResponse(sent.requestId, { ok: true, data: true });
-    await expect(p).resolves.toBe(true);
+    handlePanelResponse(sent.requestId, { ok: true, data: "claude-terminal" });
+    await expect(p).resolves.toBe("claude-terminal");
   });
 });

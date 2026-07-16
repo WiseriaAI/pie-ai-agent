@@ -62,7 +62,14 @@ export async function handleMessage(line: string): Promise<string> {
       try {
         const detected = new Set(detectAgents().map((a) => a.id));
         const result: ListAgentsResult = {
-          agents: AGENT_CANDIDATES.map(({ id, label, kind }) => ({ id, label, kind, installed: detected.has(id) })),
+          agents: AGENT_CANDIDATES.map(({ id, label, kind, headlessArgv }) => ({
+            id,
+            label,
+            kind,
+            installed: detected.has(id),
+            // run_local_agent 卡片据此只列可作 headless 后端者；与 daemon 校验闸同一真源。
+            headless: !!headlessArgv?.length,
+          })),
         };
         return respond({ ok: true, result });
       } catch (e) {

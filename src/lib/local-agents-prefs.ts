@@ -30,6 +30,15 @@ export function filterUsableAgents<T extends { id: string; installed: boolean }>
   return detected.filter((a) => isAgentUsable(a, enabled));
 }
 
+/** run_local_agent 卡片可选后端 = 已安装 ∩ 已启用 ∩ 可作 headless 后端。
+ *  daemon 权威的 `headless` 字段是唯一判据；旧 daemon 不给此字段 → 回落 kind === "terminal" 代理
+ *  （候选表里 terminal ⟺ 有 headlessArgv）。daemon 侧还会再校验一次 target，卡片列表只是 UI 预筛。 */
+export function filterHeadlessBackends<
+  T extends { id: string; installed: boolean; kind?: "app" | "terminal"; headless?: boolean },
+>(detected: T[], enabled: string[] | null): T[] {
+  return detected.filter((a) => isAgentUsable(a, enabled) && (a.headless ?? a.kind === "terminal"));
+}
+
 /** 开关决策纯函数：启用时现检测把关——未安装启用不了；null 偏好先物化为「当前已安装全启用」。 */
 export function applyToggle(
   detected: { id: string; installed: boolean }[],

@@ -29,17 +29,46 @@ describe("HitlInlineCards", () => {
     expect(respond).toHaveBeenCalledWith("r1", { ok: true, data: true });
   });
 
-  it("run-local-agent kind resolves ok:true data:false on deny", () => {
+  it("run-local-agent kind resolves ok:true data:null on deny", () => {
     const respond = vi.fn();
     render(
       <HitlInlineCards
-        request={{ requestId: "r2", kind: "run-local-agent", payload: { prompt: "p", cwd: "/w" } }}
+        request={{
+          requestId: "r2",
+          kind: "run-local-agent",
+          payload: { prompt: "p", cwd: "/w", agents: [{ id: "claude-terminal", label: "Claude Code (Terminal)" }] },
+        }}
         respond={respond}
         {...base}
       />,
     );
     fireEvent.click(screen.getByText("Deny"));
-    expect(respond).toHaveBeenCalledWith("r2", { ok: true, data: false });
+    expect(respond).toHaveBeenCalledWith("r2", { ok: true, data: null });
+  });
+
+  it("run-local-agent kind resolves with the picked backend id on allow", () => {
+    const respond = vi.fn();
+    render(
+      <HitlInlineCards
+        request={{
+          requestId: "r2b",
+          kind: "run-local-agent",
+          payload: {
+            prompt: "p",
+            cwd: "/w",
+            agents: [
+              { id: "claude-terminal", label: "Claude Code (Terminal)" },
+              { id: "codex-terminal", label: "Codex (Terminal)" },
+            ],
+          },
+        }}
+        respond={respond}
+        {...base}
+      />,
+    );
+    fireEvent.click(screen.getByText("Codex (Terminal)"));
+    fireEvent.click(screen.getByText("Allow & run"));
+    expect(respond).toHaveBeenCalledWith("r2b", { ok: true, data: "codex-terminal" });
   });
 
   it("handoff kind resolves with the picked agent id", () => {

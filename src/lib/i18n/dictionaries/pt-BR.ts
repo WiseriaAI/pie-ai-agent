@@ -170,6 +170,7 @@ export const ptBRDict = {
   },
   runLocalAgent: {
     title: "Executar um agente local (headless)?",
+    backendLabel: "Backend",
     semanticsNote: "Executa sem supervisão em segundo plano; o resultado volta para esta conversa.",
     cwdLabel: "Diretório de trabalho",
     taskLabel: "Tarefa",

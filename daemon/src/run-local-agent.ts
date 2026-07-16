@@ -27,6 +27,28 @@ function slugify(prompt: string): string {
 /** 候选表里可作 headless 后端（声明了 headlessArgv）的 bin 名，仅用于「一个都没装」的报错提示。 */
 const HEADLESS_BINS = AGENT_CANDIDATES.filter((c) => c.headlessArgv?.length).map((c) => c.bin);
 
+/** 旧 Slice-0 扩展在 wire 上传的裸 "claude" = claude-terminal 的 alias（与 HandoffParams 同）。 */
+const LEGACY_TARGET_ALIAS: Record<string, string> = { claude: "claude-terminal" };
+
+/**
+ * 从「已装且有 headlessArgv」的后端里挑出本次要跑的那个：
+ * - target 缺省 → 候选表顺序第一个（旧行为，claude-terminal 在最前）。
+ * - target 指定 → 校验它 ∈ 该集合（"claude" 走 legacy alias），非法值抛描述性错误（不静默回落）。
+ * target 是用户在授权卡上选的（daemon 权威校验），不是 LLM 参数。
+ */
+function pickBackend(headless: DetectedAgent[], target: string | undefined): DetectedAgent {
+  if (target == null || target === "") return headless[0];
+  const wanted = LEGACY_TARGET_ALIAS[target] ?? target;
+  const found = headless.find((a) => a.id === wanted);
+  if (!found) {
+    throw new Error(
+      `run_local_agent: requested backend "${target}" is not an installed headless agent. ` +
+        `Available: ${headless.map((a) => a.id).join(", ")}`,
+    );
+  }
+  return found;
+}
+
 export async function runLocalAgent(
   params: RunLocalAgentParams,
   opts?: { spawn?: SpawnFn; ensureDir?: (dir: string) => void; detect?: () => DetectedAgent[] },
@@ -34,16 +56,17 @@ export async function runLocalAgent(
   const spawn = opts?.spawn ?? realSpawn;
   const ensureDir = opts?.ensureDir ?? realEnsureDir;
   const detect = opts?.detect ?? detectAgents;
-  // 后端选择 = 按候选表顺序取第一个「已装且有 headlessArgv」者（detectAgents 保表顺序，
-  // claude-terminal 在最前 → 装了 claude 时行为与旧硬编码一致）。不再写死 "claude"：
-  // 只装了 Cursor/Codex/OpenCode/Pi 的用户照样能用。spawn 用检测到的绝对路径（裸命令名
-  // 在 launchd 裸 PATH 下会 not found）。
-  const backend = detect().find((a) => a.headlessArgv?.length);
-  if (!backend) {
+  // 可作 headless 后端者 = 已装且有 headlessArgv（detectAgents 保表顺序，claude-terminal 在最前）。
+  // 只装了 Cursor/Codex/OpenCode/Pi 的用户照样能用。spawn 用检测到的绝对路径（裸命令名在
+  // launchd 裸 PATH 下会 not found）。
+  const headless = detect().filter((a) => a.headlessArgv?.length);
+  if (headless.length === 0) {
     throw new Error(
       `run_local_agent: no local headless agent detected. Install one of: ${HEADLESS_BINS.join(", ")}`,
     );
   }
+  // 用户在授权卡上选的后端（缺省 = 表顺序第一）。daemon 权威校验，非法值抛错不静默回落。
+  const backend = pickBackend(headless, params.target);
   let cwd = params.cwd;
   if (!cwd) {
     cwd = join(paths.handoffsDir, slugify(params.prompt));

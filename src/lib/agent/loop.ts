@@ -44,7 +44,7 @@ import {
   requestListAgents,
   requestRunSkillScript,
 } from "@/background/local-bridge";
-import { filterUsableAgents, getEnabledLocalAgents } from "@/lib/local-agents-prefs";
+import { filterUsableAgents, filterHeadlessBackends, getEnabledLocalAgents } from "@/lib/local-agents-prefs";
 import { buildRunLocalAgentTool } from "./tools/local-agent";
 import { buildHandoffTool } from "./tools/handoff";
 import { buildReadLocalFileTool, buildRequestLocalFileTool, buildOutputFileTool } from "./tools/files";
@@ -1912,8 +1912,17 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         ? [
             buildRunLocalAgentTool({
               run: (p) => requestLocalAgent(p),
+              listBackends: async () => {
+                const detected = await requestListAgents();
+                const usable = filterHeadlessBackends(detected, await getEnabledLocalAgents());
+                return usable.map(({ id, label }) => ({ id, label }));
+              },
               requestConsent: (p) =>
-                requestFromPanel(sessionId, "run-local-agent", { prompt: p.prompt, cwd: p.cwd }),
+                requestFromPanel(sessionId, "run-local-agent", {
+                  prompt: p.prompt,
+                  cwd: p.cwd,
+                  agents: p.agents,
+                }),
             }),
             // hand-off 门禁在 daemon 声明的能力上（spec §7 能力交集降级）：新扩展对旧
             // daemon（Slice 0，不报 handoff_to_agent）时不装配此工具，静默降级。

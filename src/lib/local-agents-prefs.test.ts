@@ -3,6 +3,7 @@ import { _resetForTests } from "@/lib/idb/db";
 import {
   isAgentUsable,
   filterUsableAgents,
+  filterHeadlessBackends,
   applyToggle,
   getEnabledLocalAgents,
   setEnabledLocalAgents,
@@ -35,6 +36,31 @@ describe("filterUsableAgents", () => {
   });
   it("not-installed never usable even if listed in prefs", () => {
     expect(filterUsableAgents(DETECTED, ["claude-terminal"])).toEqual([]);
+  });
+});
+
+describe("filterHeadlessBackends (run_local_agent 卡片后端预筛)", () => {
+  const HEADLESS_DETECTED = [
+    { id: "claude-app", label: "Claude Code (App)", installed: true, kind: "app" as const, headless: false },
+    { id: "claude-terminal", label: "Claude Code (Terminal)", installed: true, kind: "terminal" as const, headless: true },
+    { id: "codex-terminal", label: "Codex (Terminal)", installed: false, kind: "terminal" as const, headless: true },
+  ];
+
+  it("keeps only installed ∩ enabled ∩ headless (app forms excluded)", () => {
+    // claude-app installed 但 headless:false → 排除；codex-terminal headless 但未装 → 排除
+    expect(filterHeadlessBackends(HEADLESS_DETECTED, null).map((a) => a.id)).toEqual(["claude-terminal"]);
+  });
+
+  it("respects enable prefs", () => {
+    expect(filterHeadlessBackends(HEADLESS_DETECTED, ["claude-app"])).toEqual([]);
+  });
+
+  it("falls back to kind === terminal when daemon omits headless flag (old daemon)", () => {
+    const oldDaemon = [
+      { id: "claude-app", label: "Claude Code (App)", installed: true, kind: "app" as const },
+      { id: "pi-terminal", label: "Pi (Terminal)", installed: true, kind: "terminal" as const },
+    ];
+    expect(filterHeadlessBackends(oldDaemon, null).map((a) => a.id)).toEqual(["pi-terminal"]);
   });
 });
 

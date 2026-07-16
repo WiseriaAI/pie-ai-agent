@@ -68,14 +68,14 @@ test("picks first candidate in table order when several are installed (claude wi
   expect(r.backend!.id).toBe("claude-terminal");
 });
 
-test("no claude installed: falls back to the next headless backend (codex)", async () => {
+test("no target + no claude installed: defaults to the next headless backend in table order (codex)", async () => {
   let seen: { cmd: string; args: string[] } | null = null;
   const fakeSpawn = async (cmd: string, args: string[]) => {
     seen = { cmd, args };
     return { stdout: "codex reply", exitCode: 0 };
   };
   const r = await runLocalAgent(
-    { target: "claude", prompt: "do a thing" },
+    { prompt: "do a thing" }, // target 缺省 → 表顺序第一个已装 headless
     {
       spawn: fakeSpawn,
       ensureDir: () => {},
@@ -88,6 +88,81 @@ test("no claude installed: falls back to the next headless backend (codex)", asy
   expect(r.backend!.id).toBe("codex-terminal");
 });
 
+test("explicit target picks that backend even when it is not first in table order", async () => {
+  let seenCmd = "";
+  const fakeSpawn = async (cmd: string) => {
+    seenCmd = cmd;
+    return { stdout: "codex reply", exitCode: 0 };
+  };
+  const r = await runLocalAgent(
+    // 用户在卡上选了 codex，尽管 claude 也装着且排在前面
+    { target: "codex-terminal", prompt: "x" },
+    {
+      spawn: fakeSpawn,
+      ensureDir: () => {},
+      detect: () => [
+        detected("claude-terminal", "/abs/claude"),
+        detected("codex-terminal", "/abs/codex"),
+      ],
+    },
+  );
+  expect(seenCmd).toBe("/abs/codex");
+  expect(r.backend!.id).toBe("codex-terminal");
+});
+
+test("legacy wire value 'claude' aliases to claude-terminal", async () => {
+  let seenCmd = "";
+  const fakeSpawn = async (cmd: string) => {
+    seenCmd = cmd;
+    return { stdout: "ok", exitCode: 0 };
+  };
+  const r = await runLocalAgent(
+    { target: "claude", prompt: "x" }, // 旧 Slice-0 扩展传的裸 "claude"
+    {
+      spawn: fakeSpawn,
+      ensureDir: () => {},
+      detect: () => [detected("claude-terminal", "/abs/claude")],
+    },
+  );
+  expect(seenCmd).toBe("/abs/claude");
+  expect(r.backend!.id).toBe("claude-terminal");
+});
+
+test("explicit target not among installed headless backends → descriptive error (no silent fallback)", async () => {
+  const fakeSpawn = async () => {
+    throw new Error("spawn must not run for an invalid target");
+  };
+  await expect(
+    runLocalAgent(
+      { target: "codex-terminal", prompt: "x" }, // 只装了 claude，却选了 codex
+      {
+        spawn: fakeSpawn,
+        ensureDir: () => {},
+        detect: () => [detected("claude-terminal", "/abs/claude")],
+      },
+    ),
+  ).rejects.toThrow(/requested backend "codex-terminal" is not an installed headless agent/);
+});
+
+test("explicit target pointing at an app form (no headlessArgv) → descriptive error", async () => {
+  const fakeSpawn = async () => {
+    throw new Error("spawn must not run for an app target");
+  };
+  await expect(
+    runLocalAgent(
+      { target: "claude-app", prompt: "x" },
+      {
+        spawn: fakeSpawn,
+        ensureDir: () => {},
+        detect: () => [
+          detected("claude-app", "/Applications/Claude.app"),
+          detected("codex-terminal", "/abs/codex"),
+        ],
+      },
+    ),
+  ).rejects.toThrow(/is not an installed headless agent/);
+});
+
 test("substitutes {prompt} into the backend's headless argv as a single raw arg", async () => {
   let seenArgs: string[] = [];
   const fakeSpawn = async (_cmd: string, args: string[]) => {
@@ -96,7 +171,7 @@ test("substitutes {prompt} into the backend's headless argv as a single raw arg"
   };
   // pi headlessArgv = ["-p", "{prompt}"]
   await runLocalAgent(
-    { target: "claude", prompt: "prompt with spaces & 'quotes'" },
+    { target: "pi-terminal", prompt: "prompt with spaces & 'quotes'" },
     {
       spawn: fakeSpawn,
       ensureDir: () => {},
@@ -107,14 +182,14 @@ test("substitutes {prompt} into the backend's headless argv as a single raw arg"
   expect(seenArgs).toEqual(["-p", "prompt with spaces & 'quotes'"]);
 });
 
-test("app-only candidates are ignored (no headlessArgv) — falls through to a terminal backend", async () => {
+test("app-only candidates are ignored (no headlessArgv) — default falls through to a terminal backend", async () => {
   let seenCmd = "";
   const fakeSpawn = async (cmd: string) => {
     seenCmd = cmd;
     return { stdout: "ok", exitCode: 0 };
   };
   const r = await runLocalAgent(
-    { target: "claude", prompt: "x" },
+    { prompt: "x" }, // target 缺省
     {
       spawn: fakeSpawn,
       ensureDir: () => {},
