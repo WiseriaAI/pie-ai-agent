@@ -176,7 +176,7 @@ describe("LocalBridgeSection — daemon version handshake (Slice 3)", () => {
 });
 
 describe("LocalBridgeSection — install funnel (Slice 4)", () => {
-  it("shows the install card with download link + recheck button when not_installed", async () => {
+  it("shows the install card linking to the pie.chat/link intro page + recheck button when not_installed", async () => {
     mockSendMessage({
       "local-bridge:status": () => ({
         hasPermission: true,
@@ -187,10 +187,10 @@ describe("LocalBridgeSection — install funnel (Slice 4)", () => {
     });
 
     render(<LocalBridgeSection />);
-    const link = await screen.findByRole("link", { name: /download|下载/i });
-    expect(link.getAttribute("href")).toBe(
-      "https://github.com/WiseriaAI/pie-ai-agent/releases/latest/download/pie-link.pkg",
-    );
+    // 安装卡按钮跳官网介绍页（含介绍 + 下载），不再是 .pkg 直链。
+    const link = await screen.findByRole("link", { name: /install pie link|了解并安装|安裝 pie link|インストール|instalar pie link/i });
+    expect(link.getAttribute("href")).toBe("https://www.pie.chat/link");
+    expect(link.getAttribute("target")).toBe("_blank");
     expect(screen.getByRole("button", { name: /check again|重新检测/i })).toBeTruthy();
   });
 

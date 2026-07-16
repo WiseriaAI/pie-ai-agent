@@ -128,8 +128,8 @@ export const es419Dict = {
       downloadUpdate: "Descargar actualización",
       installTitle: "Instalar Pie Link",
       installBody:
-        "El puente local necesita Pie Link instalado en esta computadora. Descarga el instalador, haz doble clic para terminar y se conectará automáticamente.",
-      installDownload: "Descargar Pie Link (.pkg)",
+        "El puente local necesita Pie Link instalado en esta computadora. Conoce qué hace y obtén el instalador desde la página de Pie Link: haz doble clic para terminar y se conectará automáticamente.",
+      installDownload: "Conocer e instalar Pie Link",
       doctorHint:
         "Pie Link está instalado pero no conectado. Haz clic en el ícono de Pie en la barra de menú → Diagnóstico, o pulsa Volver a comprobar.",
       recheck: "Volver a comprobar",

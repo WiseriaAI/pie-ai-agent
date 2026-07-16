@@ -51,6 +51,9 @@ Pie 是一个会**动手用**浏览器、而不只是陪你聊天的 AI 助手�
   或者你只演示一遍、让 Pie 替你把 Skill 做出来。
 - **定时跑任务。** 让 Pie 自动执行某个任务 —— 每天、每周、或每隔几小时 ——
   哪怕你不在、它也能在后台跑。
+- **连接你的电脑（Pie Link）。** 安装可选的
+  [Pie Link](https://www.pie.chat/link) 伴侣程序，让 Pie 使用本地 Skill、运行本地
+  脚本，并把任务交给 Claude Code、Codex、Cursor 等本地 AI 编程工具。
 
 ## 接入模型
 

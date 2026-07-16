@@ -60,6 +60,10 @@ or subscribe to Pie and skip the setup.
   the Skill for you.
 - **Run tasks on a schedule.** Have Pie run a task automatically — daily,
   weekly, or every few hours — even in the background while you're away.
+- **Connect to your computer (Pie Link).** Install the optional
+  [Pie Link](https://www.pie.chat/link) companion to let Pie use local Skills,
+  run local scripts, and hand tasks off to local AI coding tools like Claude
+  Code, Codex, and Cursor.
 
 ## Connect a model
 

@@ -128,8 +128,8 @@ export const ptBRDict = {
       downloadUpdate: "Baixar atualização",
       installTitle: "Instalar o Pie Link",
       installBody:
-        "A ponte local precisa do Pie Link instalado neste computador. Baixe o instalador, dê dois cliques para concluir e ele conectará automaticamente.",
-      installDownload: "Baixar Pie Link (.pkg)",
+        "A ponte local precisa do Pie Link instalado neste computador. Saiba o que ele faz e obtenha o instalador na página do Pie Link: dê dois cliques para concluir e ele conectará automaticamente.",
+      installDownload: "Conhecer e instalar o Pie Link",
       doctorHint:
         "O Pie Link está instalado, mas não conectado. Clique no ícone do Pie na barra de menus → Diagnóstico, ou clique em Verificar novamente.",
       recheck: "Verificar novamente",
