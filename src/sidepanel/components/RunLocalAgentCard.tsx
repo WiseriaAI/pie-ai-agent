@@ -8,6 +8,7 @@ import {
   HitlDetailGroup,
 } from "./hitl/HitlCardShell";
 import { AgentBrandIcon } from "./hitl/agent-brand-icons";
+import { DropdownPanel } from "./ui/DropdownPanel";
 
 interface AgentOption {
   id: string;
@@ -36,6 +37,8 @@ export function RunLocalAgentCard({ payload, onDecision }: Props) {
   const t = useT();
   const agents = payload.agents ?? [];
   const [selected, setSelected] = useState(agents[0]?.id ?? "");
+  const [open, setOpen] = useState(false);
+  const selectedAgent = agents.find((a) => a.id === selected);
   return (
     <HitlCardShell
       register="local"
@@ -57,33 +60,46 @@ export function RunLocalAgentCard({ payload, onDecision }: Props) {
       {agents.length > 1 ? (
         <div className="flex flex-col gap-1.5">
           <span className="caps text-fg-3">{t("runLocalAgent.backendLabel")}</span>
-          {agents.map((a) => {
-            const isSel = a.id === selected;
-            return (
-              <label
-                key={a.id}
-                className={`flex cursor-pointer items-center gap-2.5 rounded-lg border px-2.5 py-2 ${
-                  isSel ? "border-accent-line bg-accent-tint" : "border-line"
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="run-local-agent-backend"
-                  className="sr-only"
-                  checked={isSel}
-                  onChange={() => setSelected(a.id)}
-                />
-                <AgentBrandIcon agentId={a.id} size={16} />
-                <span className={`text-[13px] ${isSel ? "text-fg-1" : "text-fg-2"}`}>{a.label}</span>
-                <span
-                  aria-hidden
-                  className={`ml-auto h-3.5 w-3.5 shrink-0 rounded-full border ${
-                    isSel ? "border-[4px] border-accent" : "border-[1.5px] border-[var(--c-fg-4)]"
+          <button
+            type="button"
+            aria-haspopup="listbox"
+            aria-expanded={open}
+            onClick={() => setOpen(!open)}
+            className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg border border-line bg-field px-2.5 py-2 text-left"
+          >
+            <AgentBrandIcon agentId={selected} size={16} />
+            <span className="text-[13px] text-fg-1">{selectedAgent?.label}</span>
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true" className="ml-auto shrink-0 text-fg-3" style={{ transform: open ? "rotate(180deg)" : "none" }}>
+              <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+          <DropdownPanel
+            open={open}
+            role="listbox"
+            className="flex max-h-[220px] flex-col overflow-y-auto rounded-lg border border-line bg-surface"
+          >
+            {agents.map((a) => {
+              const isSel = a.id === selected;
+              return (
+                <button
+                  key={a.id}
+                  type="button"
+                  role="option"
+                  aria-selected={isSel}
+                  onClick={() => {
+                    setSelected(a.id);
+                    setOpen(false);
+                  }}
+                  className={`flex w-full cursor-pointer items-center gap-2.5 px-2.5 py-2 text-left text-[13px] hover:bg-field ${
+                    isSel ? "bg-accent-tint text-fg-1" : "text-fg-2"
                   }`}
-                />
-              </label>
-            );
-          })}
+                >
+                  <AgentBrandIcon agentId={a.id} size={16} />
+                  <span>{a.label}</span>
+                </button>
+              );
+            })}
+          </DropdownPanel>
         </div>
       ) : (
         agents.length === 1 && (

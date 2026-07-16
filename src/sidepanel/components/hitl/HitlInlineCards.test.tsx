@@ -66,7 +66,9 @@ describe("HitlInlineCards", () => {
         {...base}
       />,
     );
-    fireEvent.click(screen.getByText("Codex (Terminal)"));
+    // 展开后端下拉（触发器显示默认选中）→ 选 Codex
+    fireEvent.click(screen.getByRole("button", { name: /Claude Code/ }));
+    fireEvent.click(screen.getByRole("option", { name: /Codex/ }));
     fireEvent.click(screen.getByText("Allow & run"));
     expect(respond).toHaveBeenCalledWith("r2b", { ok: true, data: "codex-terminal" });
   });
