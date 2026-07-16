@@ -67,17 +67,8 @@ enum L10n {
             "ja": "診断（pie doctor）", "es-419": "Diagnóstico (pie doctor)", "pt-BR": "Diagnóstico (pie doctor)",
         ],
         "quit": [
-            "en": "Quit Menu Bar Icon", "zh-CN": "退出顶栏图标", "zh-TW": "結束選單列圖示",
-            "ja": "メニューバーアイコンを終了", "es-419": "Salir del ícono de la barra de menús",
-            "pt-BR": "Sair do ícone da barra de menus",
-        ],
-        "quitHint": [
-            "en": "Pie Link keeps running in the background · reopen from Applications",
-            "zh-CN": "Pie Link 服务在后台继续运行 · 可从「应用程序」重新打开",
-            "zh-TW": "Pie Link 服務在背景繼續運行 · 可從「應用程式」重新開啟",
-            "ja": "Pie Link サービスはバックグラウンドで動作し続けます · 「アプリケーション」から再度開けます",
-            "es-419": "El servicio de Pie Link sigue activo en segundo plano · vuelve a abrirlo desde Aplicaciones",
-            "pt-BR": "O serviço do Pie Link continua em segundo plano · reabra em Aplicativos",
+            "en": "Quit Pie Link", "zh-CN": "退出 Pie Link", "zh-TW": "結束 Pie Link",
+            "ja": "Pie Link を終了", "es-419": "Salir de Pie Link", "pt-BR": "Sair do Pie Link",
         ],
         // 活动窗口
         "activityTitle": [
@@ -212,6 +203,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var statusItem: NSStatusItem!
 
     func applicationDidFinishLaunching(_: Notification) {
+        ensureDaemonRunning()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem.button?.image = pieTemplateIcon()
         statusItem.button?.image?.accessibilityDescription = "Pie Link"
@@ -239,13 +231,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(item(L10n.t("activityMenu"), #selector(openActivity)))
         menu.addItem(item(L10n.t("diagnose"), #selector(runDoctor)))
         menu.addItem(.separator())
-        // 退出：target 必须留 nil 走 responder chain 到 NSApp——AppDelegate 不响应
-        // terminate(_:)，设 target=self 会被 autoenablesItems 校验禁用（真机验收抓到的 bug）。
-        // 措辞明确「只退出顶栏图标」——Pie Link 后台服务由 launchd KeepAlive 续命。
-        menu.addItem(NSMenuItem(title: L10n.t("quit"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: ""))
-        // 退出后重开引导：不可交互副文案（disabled → 不进 autoenablesItems 校验），
-        // 告诉用户后台服务仍在跑、可从「应用程序」重开。
-        menu.addItem(indented(L10n.t("quitHint")))
+        // 退出 = 图标和后台服务一起停（Docker Desktop 模型）：先 bootout daemon
+        // （直接杀进程会被 launchd KeepAlive 拉活），再退自身。重开 app 时
+        // applicationDidFinishLaunching 反向 bootstrap daemon 回来。
+        // 自定义 selector 实现在 AppDelegate 上，target=self 可过 autoenablesItems 校验
+        //（历史坑仅针对 NSApplication.terminate(_:)——AppDelegate 不响应它）。
+        menu.addItem(item(L10n.t("quit"), #selector(quitPieLink)))
+    }
+
+    @objc func quitPieLink() {
+        _ = Self.launchctl(["bootout", "gui/\(getuid())/ai.wiseria.pie"])
+        NSApp.terminate(nil)
+    }
+
+    /// Launchpad 重开 app 时把 daemon 一并拉起。已在跑时 bootstrap 报错，忽略即幂等。
+    private func ensureDaemonRunning() {
+        let plist = (NSHomeDirectory() as NSString)
+            .appendingPathComponent("Library/LaunchAgents/ai.wiseria.pie.plist")
+        guard FileManager.default.fileExists(atPath: plist) else { return }
+        _ = Self.launchctl(["bootstrap", "gui/\(getuid())", plist])
+    }
+
+    private static func launchctl(_ args: [String]) -> Bool {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+        p.arguments = args
+        do {
+            try p.run()
+            p.waitUntilExit()
+            return p.terminationStatus == 0
+        } catch { return false }
     }
 
     // 独立活动窗口：懒建单例，避免重复开窗。accessory app 需显式 activate 才前置。
