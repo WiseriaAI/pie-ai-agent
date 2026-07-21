@@ -133,6 +133,16 @@ export const jaDict = {
       doctorHint:
         "Pie Link はインストール済みですが接続されていません。メニューバーの Pie アイコン →「診断」をクリックするか、再確認をクリックしてください。",
       recheck: "再確認",
+      troubleshootTitle: "すでにインストール済みですか？",
+      troubleshootBody:
+        "Pie Link がインストール済みで動作中なのに接続できない場合は、次の順に試してください：",
+      troubleshootStep1:
+        "メニューバーに Pie アイコンがあるか確認してください。ない場合はまず Pie Link を起動してください。",
+      troubleshootStep2:
+        "拡張機能を再起動します。サイドパネルが閉じるので、その後ツールバーから開き直してください。",
+      troubleshootRestartExtension: "拡張機能を再起動",
+      troubleshootStep3:
+        "まだ接続できませんか？ Chrome を完全に終了し（⌘Q。ウィンドウを閉じるだけでは不十分）、開き直してください。",
     },
     searchProvider: {
       caps: "検索プロバイダー",

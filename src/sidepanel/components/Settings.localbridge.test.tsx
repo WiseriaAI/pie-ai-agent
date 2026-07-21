@@ -254,3 +254,84 @@ describe("LocalBridgeSection — install funnel (Slice 4)", () => {
     expect(screen.queryByRole("link", { name: /download|下载/i })).toBeNull();
   });
 });
+
+describe("LocalBridgeSection — first-connect troubleshooting (#328)", () => {
+  it("shows the troubleshoot block after failures cross the threshold", async () => {
+    mockSendMessage({
+      "local-bridge:status": () => ({
+        hasPermission: true,
+        ready: false,
+        installState: "not_installed",
+        failedAttempts: 6,
+      }),
+      "local-agents:list": () => ({ agents: [] }),
+    });
+
+    render(<LocalBridgeSection />);
+    expect(await screen.findByText(/already installed\?/i)).toBeTruthy();
+    // Both the install card AND the "already installed?" block appear together —
+    // that's the exact confusion the issue targets.
+    expect(screen.getByRole("link", { name: /install pie link/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /restart extension/i })).toBeTruthy();
+    // ⌘Q full-quit guidance is present as the last resort.
+    expect(screen.getByText(/⌘Q/)).toBeTruthy();
+  });
+
+  it("does not show the troubleshoot block below the failure threshold", async () => {
+    mockSendMessage({
+      "local-bridge:status": () => ({
+        hasPermission: true,
+        ready: false,
+        installState: "not_installed",
+        failedAttempts: 2,
+      }),
+      "local-agents:list": () => ({ agents: [] }),
+    });
+
+    render(<LocalBridgeSection />);
+    await screen.findByRole("link", { name: /install pie link/i });
+    expect(screen.queryByText(/already installed\?/i)).toBeNull();
+  });
+
+  it("does not show the troubleshoot block when SW omits failedAttempts (old SW)", async () => {
+    mockSendMessage({
+      "local-bridge:status": () => ({
+        hasPermission: true,
+        ready: false,
+        installState: "not_installed",
+      }),
+      "local-agents:list": () => ({ agents: [] }),
+    });
+
+    render(<LocalBridgeSection />);
+    await screen.findByRole("link", { name: /install pie link/i });
+    expect(screen.queryByText(/already installed\?/i)).toBeNull();
+  });
+
+  it("does not show the troubleshoot block once the bridge is connected", async () => {
+    mockSendMessage({
+      "local-bridge:status": () => ({ hasPermission: true, ready: true, failedAttempts: 9 }),
+      "local-agents:list": () => ({ agents: [] }),
+    });
+
+    render(<LocalBridgeSection />);
+    await screen.findByText(/connected to pie link/i);
+    expect(screen.queryByText(/already installed\?/i)).toBeNull();
+  });
+
+  it("restart-extension button calls chrome.runtime.reload", async () => {
+    mockSendMessage({
+      "local-bridge:status": () => ({
+        hasPermission: true,
+        ready: false,
+        installState: "installed_not_running",
+        failedAttempts: 8,
+      }),
+      "local-agents:list": () => ({ agents: [] }),
+    });
+
+    render(<LocalBridgeSection />);
+    fireEvent.click(await screen.findByRole("button", { name: /restart extension/i }));
+    expect(chromeMock.runtime.reload).toHaveBeenCalled();
+  });
+});

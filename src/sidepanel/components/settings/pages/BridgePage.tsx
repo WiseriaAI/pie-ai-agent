@@ -9,6 +9,10 @@ const PKG_URL = "https://github.com/WiseriaAI/pie-ai-agent/releases/latest/downl
 // 官网 Pie Link 介绍页（介绍 + 下载 + 卸载说明）——首次安装卡跳这里，给首装用户上下文。
 const LINK_URL = "https://www.pie.chat/link";
 
+// 首连排障引导（#328）：连续失败超过此阈值才追加「已经安装了？」排障块。5 次 ≈ 退避
+// 梯子前五档约 1 分钟——首次配置的头一分钟不打扰，用户装完 pkg 回来时必然可见。
+const TROUBLESHOOT_THRESHOLD = 5;
+
 type PanelAgent = { id: string; label: string; installed: boolean; enabled: boolean; kind?: "app" | "terminal" };
 
 // Settings「本地 Agent」列表 — 一次性查询，无轮询（挂载/桥就绪/开关交互后各触发一次）。
@@ -78,6 +82,16 @@ export function LocalBridgeSection() {
     }
   };
 
+  // 排障引导「重启扩展」：直接 chrome.runtime.reload()，替用户做掉 chrome://extensions
+  // 手动刷新那步。会关闭侧栏（文案已提示需重新打开）。
+  const onRestartExtension = () => {
+    try {
+      chrome.runtime.reload();
+    } catch {
+      /* noop */
+    }
+  };
+
   const onAgentToggle = (id: string, next: boolean) => {
     setFailedId(null);
     try {
@@ -102,6 +116,9 @@ export function LocalBridgeSection() {
   const notReadyEnabled = enabled && status != null && !status.ready && !showUpgrade;
   const showInstallCard = notReadyEnabled && installState === "not_installed";
   const showDoctorHint = notReadyEnabled && installState === "installed_not_running";
+  // 首连排障块（#328）：开关开、未连、非升级态、且连续失败超阈值时，在安装卡/doctor 卡
+  // 下追加。覆盖「装了、跑了、Chrome 就是连不上」这条既有卡片没覆盖的失败叙事。
+  const showTroubleshoot = notReadyEnabled && (status?.failedAttempts ?? 0) >= TROUBLESHOOT_THRESHOLD;
 
   const statusText =
     status == null
@@ -195,6 +212,30 @@ export function LocalBridgeSection() {
                 >
                   {t("settings.localBridge.recheck")}
                 </button>
+              </div>
+            )}
+            {showTroubleshoot && (
+              <div className="flex flex-col gap-2 border-t border-line pt-3">
+                <div className="text-[13px] font-medium text-fg-1">
+                  {t("settings.localBridge.troubleshootTitle")}
+                </div>
+                <div className="text-[12px] leading-relaxed text-fg-2">
+                  {t("settings.localBridge.troubleshootBody")}
+                </div>
+                <ol className="flex flex-col gap-2 text-[12px] leading-relaxed text-fg-2">
+                  <li>{t("settings.localBridge.troubleshootStep1")}</li>
+                  <li className="flex flex-col items-start gap-1.5">
+                    <span>{t("settings.localBridge.troubleshootStep2")}</span>
+                    <button
+                      type="button"
+                      onClick={onRestartExtension}
+                      className="rounded border border-line px-2 py-0.5 text-[11px] text-fg-2 hover:text-fg-1"
+                    >
+                      {t("settings.localBridge.troubleshootRestartExtension")}
+                    </button>
+                  </li>
+                  <li>{t("settings.localBridge.troubleshootStep3")}</li>
+                </ol>
               </div>
             )}
             {status?.ready && agents.length > 0 && (

@@ -188,6 +188,7 @@ const runtime = {
   connect: vi.fn(defaultConnect),
   getPlatformInfo: vi.fn().mockResolvedValue({ os: "mac" }),
   getURL: vi.fn((p: string) => `chrome-extension://test/${p}`),
+  reload: vi.fn(),
   sendMessage: vi.fn().mockResolvedValue(undefined),
   onStartup: { addListener: vi.fn() },
   onInstalled: { addListener: vi.fn() },
@@ -380,6 +381,7 @@ beforeEach(() => {
   runtime.connect.mockReset();
   runtime.connect.mockImplementation(defaultConnect);
   runtime.sendMessage.mockClear();
+  runtime.reload.mockClear();
   // SW 连接服务单例：每个测试隔离。
   __resetSwPort();
   tabs.__activeTab = null;
