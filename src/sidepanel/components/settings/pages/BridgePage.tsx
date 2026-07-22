@@ -9,9 +9,11 @@ const PKG_URL = "https://github.com/WiseriaAI/pie-ai-agent/releases/latest/downl
 // 官网 Pie Link 介绍页（介绍 + 下载 + 卸载说明）——首次安装卡跳这里，给首装用户上下文。
 const LINK_URL = "https://www.pie.chat/link";
 
-// 首连排障引导（#328）：连续失败超过此阈值才追加「已经安装了？」排障块。5 次 ≈ 退避
-// 梯子前五档约 1 分钟——首次配置的头一分钟不打扰，用户装完 pkg 回来时必然可见。
-const TROUBLESHOOT_THRESHOLD = 5;
+// 首连排障引导（#328）：连续失败超过此阈值就追加「首次安装需要重启」排障块。人工拍板
+// （见 PR #329 review）把阈值从 5 降到 1——首次连接失败即提示，不再等退避梯子跑 ~1 分钟。
+// 该块只在「开关开着 && 没连上」时出现，首次失败即提示不算打扰。SW 侧的失败计数 /
+// lastDisconnectError 留存 / console.warn 证据链保留不动（钉根因仍需要）。
+const TROUBLESHOOT_THRESHOLD = 1;
 
 type PanelAgent = { id: string; label: string; installed: boolean; enabled: boolean; kind?: "app" | "terminal" };
 
@@ -116,8 +118,9 @@ export function LocalBridgeSection() {
   const notReadyEnabled = enabled && status != null && !status.ready && !showUpgrade;
   const showInstallCard = notReadyEnabled && installState === "not_installed";
   const showDoctorHint = notReadyEnabled && installState === "installed_not_running";
-  // 首连排障块（#328）：开关开、未连、非升级态、且连续失败超阈值时，在安装卡/doctor 卡
-  // 下追加。覆盖「装了、跑了、Chrome 就是连不上」这条既有卡片没覆盖的失败叙事。
+  // 首连排障块（#328）：开关开、未连、非升级态、且已有连接失败时，在安装卡/doctor 卡下
+  // 追加。直给「首次安装需要重启扩展」引导——覆盖「装了、跑了、Chrome 就是连不上」这条
+  // 既有卡片没覆盖的失败叙事。旧 SW 不回 failedAttempts → ?? 0 → 不出现（向后兼容）。
   const showTroubleshoot = notReadyEnabled && (status?.failedAttempts ?? 0) >= TROUBLESHOOT_THRESHOLD;
 
   const statusText =
@@ -222,20 +225,16 @@ export function LocalBridgeSection() {
                 <div className="text-[12px] leading-relaxed text-fg-2">
                   {t("settings.localBridge.troubleshootBody")}
                 </div>
-                <ol className="flex flex-col gap-2 text-[12px] leading-relaxed text-fg-2">
-                  <li>{t("settings.localBridge.troubleshootStep1")}</li>
-                  <li className="flex flex-col items-start gap-1.5">
-                    <span>{t("settings.localBridge.troubleshootStep2")}</span>
-                    <button
-                      type="button"
-                      onClick={onRestartExtension}
-                      className="rounded border border-line px-2 py-0.5 text-[11px] text-fg-2 hover:text-fg-1"
-                    >
-                      {t("settings.localBridge.troubleshootRestartExtension")}
-                    </button>
-                  </li>
-                  <li>{t("settings.localBridge.troubleshootStep3")}</li>
-                </ol>
+                <button
+                  type="button"
+                  onClick={onRestartExtension}
+                  className="self-start rounded border border-line px-2 py-0.5 text-[11px] text-fg-2 hover:text-fg-1"
+                >
+                  {t("settings.localBridge.troubleshootRestartExtension")}
+                </button>
+                <div className="text-[12px] leading-relaxed text-fg-3">
+                  {t("settings.localBridge.troubleshootFallback")}
+                </div>
               </div>
             )}
             {status?.ready && agents.length > 0 && (

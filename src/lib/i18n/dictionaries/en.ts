@@ -132,16 +132,12 @@ export const enDict = {
       doctorHint:
         "Pie Link is installed but not connected. Click the Pie icon in the menu bar → Diagnostics, or click Check again.",
       recheck: "Check again",
-      troubleshootTitle: "Already installed?",
+      troubleshootTitle: "Just installed Pie Link?",
       troubleshootBody:
-        "If Pie Link is installed and running but still won't connect, try these in order:",
-      troubleshootStep1:
-        "Check the menu bar for the Pie icon. If it isn't there, start Pie Link first.",
-      troubleshootStep2:
-        "Restart the extension. This closes the side panel — reopen it from the toolbar afterward.",
+        "A fresh install often needs the extension restarted before it can connect. Restart it now — this closes the side panel, so reopen it from the toolbar afterward.",
       troubleshootRestartExtension: "Restart extension",
-      troubleshootStep3:
-        "Still not connecting? Fully quit Chrome (⌘Q — not just closing the window) and reopen it.",
+      troubleshootFallback:
+        "Still not connecting? Make sure the Pie icon is in the menu bar, then fully quit Chrome (⌘Q — not just closing the window) and reopen it.",
     },
     searchProvider: {
       caps: "Search provider",

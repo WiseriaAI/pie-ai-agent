@@ -133,16 +133,12 @@ export const ptBRDict = {
       doctorHint:
         "O Pie Link está instalado, mas não conectado. Clique no ícone do Pie na barra de menus → Diagnóstico, ou clique em Verificar novamente.",
       recheck: "Verificar novamente",
-      troubleshootTitle: "Já instalou?",
+      troubleshootTitle: "Acabou de instalar o Pie Link?",
       troubleshootBody:
-        "Se o Pie Link está instalado e em execução, mas ainda não conecta, tente isto na ordem:",
-      troubleshootStep1:
-        "Procure o ícone do Pie na barra de menus. Se não estiver lá, inicie o Pie Link primeiro.",
-      troubleshootStep2:
-        "Reinicie a extensão. Isso fecha o painel lateral — reabra-o pela barra de ferramentas depois.",
+        "Uma instalação nova costuma precisar que a extensão seja reiniciada antes de conectar. Reinicie agora — isso fecha o painel lateral, então reabra-o pela barra de ferramentas depois.",
       troubleshootRestartExtension: "Reiniciar extensão",
-      troubleshootStep3:
-        "Ainda não conecta? Encerre o Chrome por completo (⌘Q — não apenas feche a janela) e abra novamente.",
+      troubleshootFallback:
+        "Ainda não conecta? Confirme que o ícone do Pie está na barra de menus e encerre o Chrome por completo (⌘Q — não apenas feche a janela) e abra novamente.",
     },
     searchProvider: {
       caps: "Provedor de busca",

@@ -256,41 +256,43 @@ describe("LocalBridgeSection — install funnel (Slice 4)", () => {
 });
 
 describe("LocalBridgeSection — first-connect troubleshooting (#328)", () => {
-  it("shows the troubleshoot block after failures cross the threshold", async () => {
+  it("shows the troubleshoot block on the first connection failure", async () => {
+    // 人工拍板（PR #329 review）：阈值降到 1，首次失败即提示，不再等退避梯子。
     mockSendMessage({
       "local-bridge:status": () => ({
         hasPermission: true,
         ready: false,
         installState: "not_installed",
-        failedAttempts: 6,
+        failedAttempts: 1,
       }),
       "local-agents:list": () => ({ agents: [] }),
     });
 
     render(<LocalBridgeSection />);
-    expect(await screen.findByText(/already installed\?/i)).toBeTruthy();
-    // Both the install card AND the "already installed?" block appear together —
+    expect(await screen.findByText(/just installed pie link\?/i)).toBeTruthy();
+    // Both the install card AND the "just installed?" block appear together —
     // that's the exact confusion the issue targets.
     expect(screen.getByRole("link", { name: /install pie link/i })).toBeTruthy();
+    // Restart-the-extension is the primary, most-effective action, surfaced up front.
     expect(screen.getByRole("button", { name: /restart extension/i })).toBeTruthy();
-    // ⌘Q full-quit guidance is present as the last resort.
+    // ⌘Q full-quit guidance is present as the fallback.
     expect(screen.getByText(/⌘Q/)).toBeTruthy();
   });
 
-  it("does not show the troubleshoot block below the failure threshold", async () => {
+  it("does not show the troubleshoot block before any failure (failedAttempts 0)", async () => {
     mockSendMessage({
       "local-bridge:status": () => ({
         hasPermission: true,
         ready: false,
         installState: "not_installed",
-        failedAttempts: 2,
+        failedAttempts: 0,
       }),
       "local-agents:list": () => ({ agents: [] }),
     });
 
     render(<LocalBridgeSection />);
     await screen.findByRole("link", { name: /install pie link/i });
-    expect(screen.queryByText(/already installed\?/i)).toBeNull();
+    expect(screen.queryByText(/just installed pie link\?/i)).toBeNull();
   });
 
   it("does not show the troubleshoot block when SW omits failedAttempts (old SW)", async () => {
@@ -305,7 +307,7 @@ describe("LocalBridgeSection — first-connect troubleshooting (#328)", () => {
 
     render(<LocalBridgeSection />);
     await screen.findByRole("link", { name: /install pie link/i });
-    expect(screen.queryByText(/already installed\?/i)).toBeNull();
+    expect(screen.queryByText(/just installed pie link\?/i)).toBeNull();
   });
 
   it("does not show the troubleshoot block once the bridge is connected", async () => {
@@ -316,7 +318,7 @@ describe("LocalBridgeSection — first-connect troubleshooting (#328)", () => {
 
     render(<LocalBridgeSection />);
     await screen.findByText(/connected to pie link/i);
-    expect(screen.queryByText(/already installed\?/i)).toBeNull();
+    expect(screen.queryByText(/just installed pie link\?/i)).toBeNull();
   });
 
   it("restart-extension button calls chrome.runtime.reload", async () => {
