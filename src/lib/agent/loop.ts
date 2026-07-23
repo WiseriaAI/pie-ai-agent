@@ -1457,6 +1457,11 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // Task 7 — drives the <available_tools_catalog> block: lists only the
       // loadable groups NOT already in the seed.
       activeToolGroups,
+      // #330 — bridge connection state (snapshotted at task start, stable per
+      // task). When off, injects the Pie Link capability-discovery block so the
+      // model can guide the user to install/enable Pie Link for local-machine
+      // requests instead of hallucinating or flatly refusing.
+      isBridgeReady(),
     ),
   };
 
@@ -1905,6 +1910,8 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         getSource: getActiveSkillSource,
         runOnDaemon: requestRunSkillScript,
         requestGrant: (p) => requestFromPanel(sessionId, "skill-grant", p),
+        // #330 — daemon-off 时 declares-no-scripts 报错追加 Pie Link 开启引导。
+        isBridgeReady,
       });
       // #296 — read_skill_output：读回脚本写进 session workspace 的产物（走 daemon）。
       const readSkillOutputTool = buildReadSkillOutputTool({

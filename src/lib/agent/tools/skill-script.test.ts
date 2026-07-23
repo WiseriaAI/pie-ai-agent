@@ -63,8 +63,11 @@ function makeTool(overrides: Partial<SkillScriptDeps> = {}) {
   const getSource = overrides.getSource ?? (() => fakeSource([idbEntry()]));
   const runOnDaemon = overrides.runOnDaemon ?? defaultRunOnDaemon;
   const requestGrant = overrides.requestGrant ?? defaultRequestGrant;
+  // 缺省视作桥已连接（daemon-on），保持既有报错文案；#330 的 daemon-off 引导用例
+  // 显式传 isBridgeReady: () => false。
+  const isBridgeReady = overrides.isBridgeReady ?? (() => true);
   return {
-    tool: buildRunSkillScriptTool({ getSource, runOnDaemon, requestGrant }),
+    tool: buildRunSkillScriptTool({ getSource, runOnDaemon, requestGrant, isBridgeReady }),
     runOnDaemon,
     requestGrant,
   };
@@ -82,6 +85,25 @@ describe("run_skill_script — 非 disk 来源无脚本", () => {
     expect(r.success).toBe(false);
     expect(r.error).toBe("Skill csv-utils declares no scripts.");
     expect(runOnDaemon).not.toHaveBeenCalled();
+  });
+
+  it("#330 daemon-off → declares-no-scripts 报错追加 Pie Link 开启引导", async () => {
+    const { tool } = makeTool({
+      getSource: () => fakeSource([idbEntry()]),
+      isBridgeReady: () => false,
+    });
+    const r = await tool.handler({ skillId: "csv-utils", entry: "scripts/dedupe.js" }, ctx);
+    expect(r.success).toBe(false);
+    expect(r.error).toContain("Skill csv-utils declares no scripts.");
+    expect(r.error).toContain("Pie Link");
+    expect(r.error).toContain("https://pie.chat/link");
+  });
+
+  it("#330 daemon-on (缺省) → 报错不含 Pie Link 引导（builtin/idb 本就无脚本）", async () => {
+    const { tool } = makeTool({ getSource: () => fakeSource([idbEntry()]) });
+    const r = await tool.handler({ skillId: "csv-utils", entry: "scripts/dedupe.js" }, ctx);
+    expect(r.error).toBe("Skill csv-utils declares no scripts.");
+    expect(r.error).not.toContain("Pie Link");
   });
 
   it("未知 skill / 缺参 → 报错", async () => {

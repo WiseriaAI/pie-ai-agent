@@ -302,6 +302,35 @@ Do not translate tool names, tool arguments, URLs, code, selectors, or quoted pa
 }
 
 /**
+ * #330 — Pie Link capability-discovery block (daemon-off only).
+ *
+ * When the local daemon bridge is NOT connected, `run_local_agent` /
+ * `handoff_to_agent` are hard-gated out of the tool set (see loop.ts) and
+ * `run_skill_script` can only report "no scripts" — so the model has zero
+ * knowledge that local-machine capabilities exist at all. Without this block it
+ * either hallucinates that it can run local commands or flatly refuses, never
+ * pointing the user at the one thing that would unlock it: installing Pie Link
+ * and turning on "Local integration".
+ *
+ * This block gives the model a short, trusted, user-relayable pointer. It is
+ * injected ONLY when `bridgeReady` is false; when the bridge is connected the
+ * local tools carry their own descriptions, so no off-guidance is added.
+ *
+ * Cache note: the bridge state is snapshotted at task start and is stable for
+ * the whole task, so this block is byte-identical across every turn — it lives
+ * in the system tail alongside the other per-task-stable blocks and never
+ * introduces per-iteration variation.
+ */
+export function buildPieLinkGuidanceBlock(bridgeReady: boolean): string {
+  if (bridgeReady) return "";
+  return `\n\n## Local Machine Capabilities (Pie Link)
+
+Pie can also drive **local command-line tools on the user's machine** — running a local CLI coding agent (e.g. Claude Code) and executing a skill's bundled scripts (e.g. a downloader like yt-dlp) — but only through **Pie Link**, a companion the user installs and enables via **Local integration** in the extension's Settings. That bridge is **not connected right now**, so these local capabilities are unavailable for this task and their tools are not loaded.
+
+When the user asks you to run something on their machine (call a local agent, run a skill script, use a local CLI), do not claim you can do it and do not just say you can't — tell them it needs **Pie Link**: they can enable **Local integration** in Settings, or learn more at https://pie.chat/link .`;
+}
+
+/**
  * Builds the STATIC agent system prompt. Contains NO task and NO page data —
  * it is byte-identical across all turns of a conversation (and across
  * conversations sharing the same pinnedTabs/skillCatalog), so the Anthropic
@@ -326,6 +355,11 @@ Do not translate tool names, tool arguments, URLs, code, selectors, or quoted pa
  *   per-group usage guidance (PDF / Scratchpad / skill-authoring / ...) now
  *   arrives on activation. Defaults to {"core"} so existing call sites keep
  *   working. The catalog must stay byte-identical for a given set (#175 cache).
+ * @param bridgeReady #330 — local daemon bridge connection state, snapshotted at
+ *   task start (stable per task). When false, appends the Pie Link
+ *   capability-discovery block so the model can point the user at installing /
+ *   enabling Pie Link instead of hallucinating or flatly refusing local-machine
+ *   requests. Defaults to true (bridge connected → no off-guidance).
  */
 export function buildAgentSystemPrompt(
   hasKeyboardTools = false,
@@ -335,6 +369,7 @@ export function buildAgentSystemPrompt(
   skillCatalog: SkillCatalogEntry[] = [],
   responseLanguage?: Locale | "auto-detect-user-message",
   startActiveGroups: ReadonlySet<string> = new Set(["core"]),
+  bridgeReady = true,
 ): string {
   const keyboardGuidance = hasKeyboardTools ? KEYBOARD_SIM_GUIDANCE : "";
   const editorGuidance = hasKeyboardTools ? EDITOR_TOOLS_GUIDANCE : "";
@@ -347,8 +382,9 @@ export function buildAgentSystemPrompt(
   const responseLanguageBlock = buildResponseLanguageBlock(responseLanguage);
   const activeGuidance = buildActiveGuidanceBlock(startActiveGroups);
   const catalogBlock = buildToolCatalogBlock(startActiveGroups);
+  const pieLinkGuidance = buildPieLinkGuidanceBlock(bridgeReady);
   return (
-    `${STATIC_AGENT_SYSTEM_PROMPT}${READ_PAGE_GUIDANCE}${FRAME_AWARENESS_GUIDANCE}${keyboardGuidance}${editorGuidance}${skillCatalogBlock}${tabGuidance}${SEARCH_TOOL_GUIDANCE}${pinnedContext}${responseLanguageBlock}${activeGuidance}${catalogBlock}\n\n${R15_IMAGE_UNTRUSTED}`
+    `${STATIC_AGENT_SYSTEM_PROMPT}${READ_PAGE_GUIDANCE}${FRAME_AWARENESS_GUIDANCE}${keyboardGuidance}${editorGuidance}${skillCatalogBlock}${tabGuidance}${SEARCH_TOOL_GUIDANCE}${pinnedContext}${responseLanguageBlock}${activeGuidance}${catalogBlock}${pieLinkGuidance}\n\n${R15_IMAGE_UNTRUSTED}`
   );
 }
 

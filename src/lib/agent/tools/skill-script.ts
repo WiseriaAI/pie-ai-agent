@@ -27,6 +27,13 @@ export interface SkillScriptDeps {
   runOnDaemon: (p: RunSkillScriptParams) => Promise<RunSkillScriptOutcome>;
   /** HITL 授权卡：展示信封原文，用户批/拒。panel 不在（headless/已关）时 reject。 */
   requestGrant: (p: SkillGrantRequest) => Promise<boolean>;
+  /**
+   * #330 — 本地桥连接状态。daemon-off 时磁盘 skill 根本没加载（脚本执行链路断），
+   * 「declares no scripts」报错要追加一句开启 Pie Link 的引导，把「本就无脚本」与
+   * 「脚本要经 Pie Link 才可执行」两种语义分开。桥连接时（daemon-on）builtin/idb
+   * 确实无脚本，不加引导。缺省视作已连接（back-compat）。
+   */
+  isBridgeReady?: () => boolean;
 }
 
 function isStringArray(x: unknown): x is string[] {
@@ -129,7 +136,16 @@ export function buildRunSkillScriptTool(deps: SkillScriptDeps): Tool {
       if (!skillEntry) return { success: false, error: `Unknown skill: ${a.skillId}` };
 
       if (skillEntry.origin !== "disk") {
-        return { success: false, error: `Skill ${a.skillId} declares no scripts.` };
+        // #330 — daemon-off 时磁盘 skill（唯一有可执行脚本的来源）根本没加载，
+        // 单说「declares no scripts」会误导；追加开启 Pie Link 的引导。
+        const bridgeReady = deps.isBridgeReady ? deps.isBridgeReady() : true;
+        const base = `Skill ${a.skillId} declares no scripts.`;
+        return {
+          success: false,
+          error: bridgeReady
+            ? base
+            : `${base} Running local skill scripts requires Pie Link — the user can install it and enable "Local integration" in Settings (https://pie.chat/link).`,
+        };
       }
 
       // 磁盘可执行集是 scripts/ 目录下的裸文件名（daemon readdirSync 语义），但
