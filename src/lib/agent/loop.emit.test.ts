@@ -127,7 +127,7 @@ vi.mock("@/background/skill-source", () => ({
     delete: vi.fn(async () => false),
   })),
 }));
-vi.mock("../pdf/detect", () => ({ isFilePdfUrl: vi.fn(() => false), isPdfTab: vi.fn(() => false) }));
+vi.mock("../pdf/detect", () => ({ isFilePdfUrl: vi.fn(() => false), isPdfTab: vi.fn(() => false), isPdfTabAsync: vi.fn(async () => false) }));
 vi.mock("../../background/cdp-session", () => ({
   acquireCdpSession: vi.fn(async () => null),
 }));

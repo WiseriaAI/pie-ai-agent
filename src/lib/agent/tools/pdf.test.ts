@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { readPdfTool } from "./pdf";
 import * as offscreen from "@/background/offscreen-manager";
 
@@ -18,11 +18,38 @@ describe("read_pdf tool", () => {
     g.chrome.extension ??= { isAllowedFileSchemeAccess: vi.fn() };
   });
 
+  // The global setup.ts chrome mock has no `scripting`; a test that adds one
+  // for the contentType probe must not leak it into later not_a_pdf tests
+  // (which rely on the probe throwing → fail-closed false).
+  afterEach(() => {
+    delete (globalThis as unknown as { chrome: Record<string, unknown> }).chrome
+      .scripting;
+  });
+
   it("errors not_a_pdf for non-pdf tab", async () => {
     mockTab("https://example.com/index.html");
     const r = await readPdfTool.handler({}, ctx);
     expect(r.success).toBe(false);
     expect(r.error).toMatch(/not_a_pdf/);
+  });
+
+  it("resolves a suffixless PDF (contentType probe) and returns pages", async () => {
+    // arxiv.org/pdf/xxx has no .pdf suffix; the contentType probe catches it (#332).
+    mockTab("https://arxiv.org/pdf/2407.13943");
+    const g = globalThis as unknown as { chrome: Record<string, unknown> };
+    g.chrome.scripting = {
+      executeScript: vi.fn().mockResolvedValue([{ result: "application/pdf" }]),
+    };
+    vi.spyOn(offscreen, "sendToOffscreen")
+      .mockResolvedValueOnce({ title: null, total_pages: 1, outline: [] } as unknown)
+      .mockResolvedValueOnce({
+        pages: [{ page: 1, text: "Suffixless PDF body." }],
+        total_pages: 1,
+      } as unknown);
+
+    const r = await readPdfTool.handler({ page_range: "1" }, ctx);
+    expect(r.success).toBe(true);
+    expect(r.observation).toContain("Suffixless PDF body.");
   });
 
   it("errors file_access_denied for file:// without permission", async () => {

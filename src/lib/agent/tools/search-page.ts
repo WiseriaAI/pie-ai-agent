@@ -3,7 +3,7 @@ import type { ActionResult } from "../../dom-actions/types";
 import { probePageInjected, type ProbeResult, type SearchMatch } from "../../dom-actions/probe-core";
 import { escapeWrapperAttribute, escapeUntrustedWrappers } from "../untrusted-wrappers";
 import { isRestrictedSchemeForGrouping } from "./tabs";
-import { isPdfTab } from "@/lib/pdf/detect";
+import { isPdfTabAsync } from "@/lib/pdf/detect";
 import { executeScriptAllFrames, type AllFramesInjectionOutcome } from "../inject-all-frames";
 
 const DEFAULT_MAX = 10;
@@ -102,7 +102,7 @@ export const searchPageTool: Tool = {
     } catch {
       return { success: false, error: "Tab not found" };
     }
-    if (isPdfTab(tab)) {
+    if (await isPdfTabAsync(a.tabId, tab.url)) {
       return { success: false, error: "pdf_tab: This tab is a PDF. Use search_pdf instead." };
     }
     if (!tab.url || isRestrictedSchemeForGrouping(tab.url)) {
