@@ -138,6 +138,8 @@ import {
   bridgeNeedsUpgrade,
   bridgeProtocolMismatch,
   bridgeInstallState,
+  bridgeFailedAttempts,
+  bridgeLastDisconnectError,
   requestListAgents,
   bridgeHasSkillFs,
   requestListGrants,
@@ -705,6 +707,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           needsUpgrade: bridgeNeedsUpgrade(),
           protocolMismatch: bridgeProtocolMismatch(),
           installState: bridgeInstallState(),
+          failedAttempts: bridgeFailedAttempts(),
+          lastDisconnectError: bridgeLastDisconnectError(),
         }),
       )
       .catch(() => sendResponse({ hasPermission: false, ready: false }));

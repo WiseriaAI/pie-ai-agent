@@ -81,6 +81,31 @@ export function classifyDisconnect(message: string | undefined): "not_installed"
 export function bridgeInstallState(): BridgeInstallState {
   return installState;
 }
+
+// ── 首连排障引导（issue #328）─────────────────────────────────────────
+// 连续失败计数（握手成功清零）+ 最近一次连接失败的原文；随 local-bridge:status
+// 回给 panel。panel 据此在连续失败超阈值后追加「已经安装了？」排障块——覆盖
+// 「装了、跑了、Chrome 就是连不上」这条既有卡片没覆盖的失败叙事。每次失败
+// console.warn 原文，SW 控制台可查，为真机钉根因留证据。
+let consecutiveFailures = 0;
+let lastDisconnectError: string | null = null;
+
+/** 记一次连接失败：计数 +1、留存原文、console.warn 供 SW 控制台钉根因。 */
+function recordConnectFailure(message: string | undefined): void {
+  consecutiveFailures++;
+  lastDisconnectError = message ?? null;
+  console.warn(
+    `[local-bridge] connect attempt failed (#${consecutiveFailures}): ${message ?? "(no error detail)"}`,
+  );
+}
+
+export function bridgeFailedAttempts(): number {
+  return consecutiveFailures;
+}
+export function bridgeLastDisconnectError(): string | null {
+  return lastDisconnectError;
+}
+
 const pending = new Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
 
 // 握手落定 promise：从未 init 过 → 已 resolve；initLocalBridge() 换上新的 pending
@@ -124,6 +149,8 @@ export function __resetBridgeReconnectState(): void {
   reconnectAttempt = 0;
   userDisabled = false;
   reconnectAction = null;
+  consecutiveFailures = 0;
+  lastDisconnectError = null;
 }
 
 function scheduleReconnect(): void {
@@ -163,7 +190,7 @@ export function initLocalBridge(): void {
   }
   try {
     port = chrome.runtime.connectNative(HOST_NAME);
-  } catch {
+  } catch (e) {
     // 未装 daemon / 无 nativeMessaging 权限 → 静默降级；清掉任何残留状态，
     // 避免失败的重新 init 留下上一次连接的 stale ready/capabilities/pending。
     port = null;
@@ -172,6 +199,7 @@ export function initLocalBridge(): void {
     daemonVersion = null;
     installState = "not_installed"; // connectNative throw = host manifest/权限缺失
     pending.clear();
+    recordConnectFailure(e instanceof Error ? e.message : undefined);
     settleThis();
     // 重连尝试本身失败（daemon 仍在重启中，端口都没建起来）→ onDisconnect 永远
     // 不会触发，若不在这里续排就等于梯子死掉；scheduleReconnect 自带
@@ -214,6 +242,9 @@ export function initLocalBridge(): void {
     port = null;
     capabilities = [];
     daemonVersion = null; // protocolMismatch 保留到下次握手覆盖（断连间隙仍显示硬不兼容提示）
+    // 记连续失败原文。断开会 mass-reject pending 的 hello → 其 .catch 也会跑，但那时
+    // port 已置 null（!== myPort）→ .catch 早返回不重复计数，避免同一次失败双计。
+    recordConnectFailure(lastErr);
     for (const p of pending.values()) p.reject(new Error("bridge disconnected"));
     pending.clear();
     scheduleReconnect();
@@ -228,6 +259,10 @@ export function initLocalBridge(): void {
         settleThis();
         return;
       }
+      // 拿到 hello 回复 = 连通性正常 → 清连续失败计数（含 protocolMismatch：桥虽不 ready
+      // 但已连上 daemon，不该再对用户喊「装了连不上」）。
+      consecutiveFailures = 0;
+      lastDisconnectError = null;
       const res = r as { protocolVersion: number; capabilities: string[]; daemonVersion?: string };
       // 兼容窗口：差 ≤1 视为兼容（spec §7）；差 >1 = 硬不兼容
       protocolMismatch = Math.abs(res.protocolVersion - PROTOCOL_VERSION) > 1;
@@ -240,7 +275,7 @@ export function initLocalBridge(): void {
       }
       settleThis();
     })
-    .catch(() => {
+    .catch((e) => {
       // stale 守卫同上：被取代的 init 不再清共享 ready、也不续排梯子（那是新
       // 连接的职责），只落定自己的 settled promise。
       if (port !== myPort) {
@@ -248,6 +283,8 @@ export function initLocalBridge(): void {
         return;
       }
       ready = false;
+      // 握手失败（端口建起来了但 hello 被拒/超时）不经过 onDisconnect → 在这里计数。
+      recordConnectFailure(e instanceof Error ? e.message : undefined);
       settleThis();
       // 握手本身失败（端口建起来了但 hello 被拒/超时）同样不会经过 onDisconnect
       // —— 同上，必须在这里主动续排梯子，否则 daemon 恢复后桥永远连不回去。
@@ -357,6 +394,9 @@ export function disconnectLocalBridge(): void {
     reconnectTimer = null;
   }
   reconnectAttempt = 0;
+  // 用户主动关闭 → 排障计数归零，下次开启从干净状态重新起算。
+  consecutiveFailures = 0;
+  lastDisconnectError = null;
   if (port) {
     try {
       port.disconnect();

@@ -130,6 +130,12 @@ export const zhTWDict = {
       installDownload: "了解並安裝 Pie Link",
       doctorHint: "Pie Link 已安裝但未連接。點按選單列的 Pie 圖示 → 診斷，或點擊重新檢測。",
       recheck: "重新檢測",
+      troubleshootTitle: "剛裝好 Pie Link？",
+      troubleshootBody:
+        "首次安裝通常需要重啟擴充功能才能連上。現在就重啟——這會關閉側欄，之後請從工具列重新開啟。",
+      troubleshootRestartExtension: "重啟擴充功能",
+      troubleshootFallback:
+        "還是連不上？確認選單列有 Pie 圖示，然後完全結束 Chrome（⌘Q，不是關閉視窗）再重新開啟。",
     },
     searchProvider: {
       caps: "網頁搜尋",

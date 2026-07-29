@@ -696,6 +696,104 @@ describe("local-bridge", () => {
     });
   });
 
+  describe("connect failure tracking (#328)", () => {
+    it("connectNative throw records a failed attempt with the error message", async () => {
+      (globalThis as any).chrome.runtime.connectNative = vi.fn(() => {
+        throw new Error("host manifest not found");
+      });
+      const { initLocalBridge, bridgeFailedAttempts, bridgeLastDisconnectError } =
+        await import("./local-bridge");
+      initLocalBridge();
+      expect(bridgeFailedAttempts()).toBe(1);
+      expect(bridgeLastDisconnectError()).toBe("host manifest not found");
+    });
+
+    it("onDisconnect records a failed attempt with the lastError message", async () => {
+      const { initLocalBridge, bridgeFailedAttempts, bridgeLastDisconnectError } =
+        await import("./local-bridge");
+      initLocalBridge();
+      (globalThis as any).chrome.runtime.lastError = {
+        message: "Error when communicating with the native messaging host.",
+      };
+      fakePort._disconnect();
+      expect(bridgeFailedAttempts()).toBe(1);
+      expect(bridgeLastDisconnectError()).toBe(
+        "Error when communicating with the native messaging host.",
+      );
+    });
+
+    it("a disconnect with a pending hello counts once, not twice", async () => {
+      // Disconnect mass-rejects the pending hello → its .catch() also runs, but
+      // port is already null (!== myPort) so it must early-return without a
+      // second recordConnectFailure. Guards against double-counting one failure.
+      const { initLocalBridge, bridgeFailedAttempts } = await import("./local-bridge");
+      initLocalBridge();
+      fakePort._disconnect();
+      await Promise.resolve();
+      expect(bridgeFailedAttempts()).toBe(1);
+    });
+
+    it("handshake rejection (port alive) records a failed attempt", async () => {
+      const { initLocalBridge, bridgeFailedAttempts, bridgeLastDisconnectError } =
+        await import("./local-bridge");
+      initLocalBridge();
+      const helloReq = fakePort.postMessage.mock.calls[0][0] as { id: string };
+      fakePort._emit({
+        id: helloReq.id, ok: false,
+        error: { code: "incompatible", message: "protocol mismatch" },
+      });
+      // Rejection propagates through .then().catch() — two microtask hops.
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(bridgeFailedAttempts()).toBe(1);
+      expect(bridgeLastDisconnectError()).toBe("protocol mismatch");
+    });
+
+    it("successful handshake resets the failure counter and last error", async () => {
+      const { initLocalBridge, bridgeFailedAttempts, bridgeLastDisconnectError } =
+        await import("./local-bridge");
+      initLocalBridge();
+      (globalThis as any).chrome.runtime.lastError = { message: "boom" };
+      fakePort._disconnect();
+      expect(bridgeFailedAttempts()).toBe(1);
+
+      // Re-init + successful handshake clears the counter and stored error.
+      initLocalBridge();
+      const helloReq = fakePort.postMessage.mock.calls.at(-1)![0] as { id: string };
+      fakePort._emit({
+        id: helloReq.id, ok: true,
+        result: { protocolVersion: PROTOCOL_VERSION, capabilities: [] },
+      });
+      await Promise.resolve();
+      expect(bridgeFailedAttempts()).toBe(0);
+      expect(bridgeLastDisconnectError()).toBe(null);
+    });
+
+    it("failures accumulate across successive attempts", async () => {
+      const { initLocalBridge, bridgeFailedAttempts } = await import("./local-bridge");
+      initLocalBridge();
+      fakePort._disconnect();
+      expect(bridgeFailedAttempts()).toBe(1);
+      initLocalBridge();
+      fakePort._disconnect();
+      expect(bridgeFailedAttempts()).toBe(2);
+      initLocalBridge();
+      fakePort._disconnect();
+      expect(bridgeFailedAttempts()).toBe(3);
+    });
+
+    it("disconnectLocalBridge (user off) resets the failure counter", async () => {
+      const { initLocalBridge, disconnectLocalBridge, bridgeFailedAttempts, bridgeLastDisconnectError } =
+        await import("./local-bridge");
+      initLocalBridge();
+      fakePort._disconnect();
+      expect(bridgeFailedAttempts()).toBe(1);
+      disconnectLocalBridge();
+      expect(bridgeFailedAttempts()).toBe(0);
+      expect(bridgeLastDisconnectError()).toBe(null);
+    });
+  });
+
   describe("auto-reconnect", () => {
     beforeEach(() => {
       vi.useFakeTimers();

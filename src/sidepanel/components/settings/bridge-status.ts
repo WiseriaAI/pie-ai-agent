@@ -13,6 +13,10 @@ export type BridgeStatus = {
   // 安装引导漏斗（Slice 4）：SW 分类的安装态。旧 SW 不回此字段 → undefined → 卡片
   // 沿用旧的「未连接」文案（向后兼容）。
   installState?: "connected" | "not_installed" | "installed_not_running" | "unknown";
+  // 首连排障引导（#328）：连续失败次数（握手成功清零）+ 最近一次失败原文。旧 SW 不回
+  // → undefined → 排障块不出现（向后兼容）。
+  failedAttempts?: number;
+  lastDisconnectError?: string | null;
 };
 
 // Ask the SW for live bridge status (nativeMessaging granted + connected to the
