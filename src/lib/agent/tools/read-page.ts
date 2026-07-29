@@ -3,7 +3,7 @@ import type { ActionResult } from "../../dom-actions/types";
 import { probePageInjected, type ProbeResult } from "../../dom-actions/probe-core";
 import { escapeWrapperAttribute, escapeUntrustedWrappers } from "../untrusted-wrappers";
 import { isRestrictedSchemeForGrouping } from "./tabs";
-import { isPdfTab } from "@/lib/pdf/detect";
+import { isPdfTabAsync } from "@/lib/pdf/detect";
 import { pageAtlasStore, parseOrigin, type PageAtlasState } from "./page-atlas";
 import { renderPageAtlas } from "./page-atlas/render";
 import { executeScriptAllFrames, type AllFramesInjectionOutcome } from "../inject-all-frames";
@@ -233,7 +233,7 @@ export const readPageTool: Tool = {
     } catch {
       return { success: false, error: "Tab not found" };
     }
-    if (isPdfTab(tab)) {
+    if (await isPdfTabAsync(a.tabId, tab.url)) {
       return {
         success: false,
         error:

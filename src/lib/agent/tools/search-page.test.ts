@@ -46,6 +46,14 @@ describe("search_page tool", () => {
     });
   }
 
+  // The first executeScript is isPdfTabAsync's contentType probe (target
+  // { tabId }, no args); the search injection is the one carrying `args`.
+  function searchInjectCall(): any {
+    const calls = (chrome.scripting.executeScript as any).mock.calls;
+    const found = calls.find((c: any) => c[0]?.args);
+    return found?.[0];
+  }
+
   it("成功 — observation 含 search_page + untrusted_page_match + frame_id + pie_idx", async () => {
     stubChrome({
       inject: [
@@ -106,7 +114,7 @@ describe("search_page tool", () => {
       {} as any,
     );
     expect(r.success).toBe(true);
-    const call = (chrome.scripting.executeScript as any).mock.calls[0][0];
+    const call = searchInjectCall();
     expect(call.args[0].queries).toEqual(["a", "b"]);
   });
 
@@ -142,7 +150,7 @@ describe("search_page tool", () => {
     expect(r.observation).toContain('placeholder="Message"');
     expect(r.observation).toContain('type="text"');
     expect(r.observation).toContain('contenteditable="true"');
-    const call = (chrome.scripting.executeScript as any).mock.calls[0][0];
+    const call = searchInjectCall();
     expect(call.args[0]).toEqual({
       op: "search",
       queries: ["textbox"],
@@ -163,6 +171,26 @@ describe("search_page tool", () => {
 
   it("PDF tab → pdf_tab 错误", async () => {
     stubChrome({ tab: { id: 7, url: "https://x.com/file.pdf", discarded: false } });
+    const r = await searchPageTool.handler({ tabId: 7, query: "x" }, {} as any);
+    expect(r.success).toBe(false);
+    expect(r.error).toMatch(/pdf_tab|PDF/i);
+  });
+
+  it("suffixless PDF tab (contentType probe) → pdf_tab 错误", async () => {
+    // arxiv.org/pdf/xxx has no .pdf suffix; contentType probe reports it (#332).
+    vi.stubGlobal("chrome", {
+      tabs: {
+        get: vi.fn().mockResolvedValue({
+          id: 7,
+          url: "https://arxiv.org/pdf/2407.13943",
+          discarded: false,
+        }),
+      },
+      scripting: {
+        executeScript: vi.fn().mockResolvedValue([{ result: "application/pdf" }]),
+      },
+      webNavigation: { getAllFrames: vi.fn().mockResolvedValue([]) },
+    });
     const r = await searchPageTool.handler({ tabId: 7, query: "x" }, {} as any);
     expect(r.success).toBe(false);
     expect(r.error).toMatch(/pdf_tab|PDF/i);
@@ -257,7 +285,7 @@ describe("search_page tool", () => {
     });
     const r = await searchPageTool.handler({ tabId: 7, query: "x" }, {} as any);
     expect(r.observation).toContain('search_by="text"');
-    const call = (chrome.scripting.executeScript as any).mock.calls[0][0];
+    const call = searchInjectCall();
     expect(call.args[0].searchBy).toBe("text");
   });
 

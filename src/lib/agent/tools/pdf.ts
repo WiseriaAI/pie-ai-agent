@@ -1,7 +1,7 @@
 import type { Tool, ToolHandlerContext } from "../types";
 import type { ActionResult } from "@/lib/dom-actions/types";
 import { sendToOffscreen } from "@/background/offscreen-manager";
-import { isPdfTab } from "@/lib/pdf/detect";
+import { isPdfTabAsync } from "@/lib/pdf/detect";
 import { parsePageRange } from "@/lib/pdf/page-range";
 import { escapeUntrustedWrappers, escapeWrapperAttribute } from "../untrusted-wrappers";
 
@@ -25,7 +25,7 @@ async function resolveActivePdfTab(
   } catch {
     return { ok: false, error: "tab_missing: pinned tab no longer exists" };
   }
-  if (!isPdfTab(tab)) {
+  if (!(await isPdfTabAsync(tabId, tab.url))) {
     return {
       ok: false,
       error: `not_a_pdf: tab url=${tab.url ?? "<unknown>"} does not look like a PDF`,

@@ -114,9 +114,13 @@ describe("read_page tool", () => {
     expect(result.observation).toContain('frame_id="0"');
     expect(result.observation).toContain('<untrusted_page_content frame_id="0">');
     expect(result.observation).toContain('<h1>Hi</h1>');
-    const calls = (executeScript as any).mock.calls;
-    expect(calls.length).toBe(1);
-    expect(calls[0][0].func).toBe(probePageInjected);
+    // The first executeScript is isPdfTabAsync's contentType probe; the page
+    // injection (probePageInjected) is what this test asserts on.
+    const pageCalls = (executeScript as any).mock.calls.filter(
+      (c: any) => c[0].func === probePageInjected,
+    );
+    expect(pageCalls.length).toBe(1);
+    expect(pageCalls[0][0].func).toBe(probePageInjected);
   });
 
   it("default auto mode returns compact page_atlas instead of full page HTML", async () => {
@@ -146,7 +150,10 @@ describe("read_page tool", () => {
     expect(result.observation).toContain("<page_atlas");
     expect(result.observation).not.toContain("<frame_map>");
     expect(result.observation).not.toContain("<interactive_index");
-    expect((executeScript as any).mock.calls[0][0].args).toEqual([{ op: "atlas" }]);
+    const atlasInject = (executeScript as any).mock.calls.find(
+      (c: any) => c[0].func === probePageInjected,
+    );
+    expect(atlasInject[0].args).toEqual([{ op: "atlas" }]);
   });
 
   it("mode=atlas returns compact page_atlas and stores target ids", async () => {
@@ -183,11 +190,13 @@ describe("read_page tool", () => {
     expect(stored?.targets.map((target) => target.id)).toContain("collection_c1");
     expect(stored?.targets[0]?.frameId).toBe(0);
     expect(stored?.controls[0]?.frameId).toBe(0);
-    const calls = (executeScript as any).mock.calls;
-    expect(calls.length).toBe(1);
-    expect(calls[0][0].func).toBe(probePageInjected);
-    expect(calls[0][0].target).toEqual({ tabId: 7, frameIds: [0] });
-    expect(calls[0][0].args).toEqual([{ op: "atlas" }]);
+    const pageCalls = (executeScript as any).mock.calls.filter(
+      (c: any) => c[0].func === probePageInjected,
+    );
+    expect(pageCalls.length).toBe(1);
+    expect(pageCalls[0][0].func).toBe(probePageInjected);
+    expect(pageCalls[0][0].target).toEqual({ tabId: 7, frameIds: [0] });
+    expect(pageCalls[0][0].args).toEqual([{ op: "atlas" }]);
   });
 
   it("mode=atlas namespaces non-top-frame target and control ids", async () => {
@@ -803,5 +812,28 @@ describe("read_page tool", () => {
     // Make sure we never reached executeScript
     expect(executeScript).not.toHaveBeenCalled();
     expect(tabsGet).toHaveBeenCalledWith(42);
+  });
+
+  it("returns pdf_tab error for a suffixless PDF URL via contentType probe", async () => {
+    // arxiv.org/pdf/xxx has no .pdf suffix but renders in Chrome's PDF viewer,
+    // whose shell document reports contentType application/pdf (#332).
+    const executeScript = vi.fn().mockResolvedValue([{ result: "application/pdf" }]);
+    vi.stubGlobal("chrome", {
+      tabs: {
+        get: vi.fn().mockResolvedValue({
+          id: 42,
+          url: "https://arxiv.org/pdf/2407.13943",
+        } as chrome.tabs.Tab),
+      },
+      scripting: { executeScript },
+    });
+
+    const r = await readPageTool.handler({ tabId: 42 }, {} as never);
+    expect(r.success).toBe(false);
+    expect(r.error).toMatch(/pdf_tab/);
+    expect(r.error).toMatch(/read_pdf/);
+    // Only the contentType probe ran — never the page snapshot injection.
+    expect(executeScript).toHaveBeenCalledOnce();
+    expect(executeScript.mock.calls[0][0].func).toBeInstanceOf(Function);
   });
 });

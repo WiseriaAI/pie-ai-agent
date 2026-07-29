@@ -61,7 +61,7 @@ import {
 } from "../scratchpad/service";
 import { queryScratchpad as svcQueryScratchpad } from "../scratchpad/sql-bridge";
 import { getEnabledSkillEntries, getActiveSkillSource } from "@/background/skill-source";
-import { isFilePdfUrl, isPdfTab } from "../pdf/detect";
+import { isFilePdfUrl, isPdfTabAsync } from "../pdf/detect";
 import { groupsForEnv, selectTools, growActiveGroups, type EnvSignals } from "./disclosure";
 import { buildLoadToolsTool } from "./tools/disclosure";
 // isRestrictedUrl is owned by the shared util (src/lib/url/restricted.ts).
@@ -1700,10 +1700,23 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // un-lights a group).
       {
         const tabUrl = currentUrl ?? "";
+        // pdf signal is sticky (env detection never un-lights a group). Once
+        // the "pdf" group is lit, short-circuit — skip the per-step contentType
+        // probe (it only needs to succeed once). A suffixless PDF (e.g.
+        // arxiv.org/pdf/xxx) is caught by isPdfTabAsync's contentType probe,
+        // which the pure-URL heuristic misses. No injectable target (page-less
+        // sentinel / placeholder URL) → isPdfTabAsync skips the probe, so no
+        // spurious signal.
+        const isPdf =
+          activeToolGroups.has("pdf") ||
+          (await isPdfTabAsync(
+            pinnedTabId === NO_PAGE_SENTINEL ? undefined : pinnedTabId,
+            tabUrl,
+          ));
         const env: EnvSignals = {
           vision: modelConfig.vision === true,
           hasSkills: skillCatalog.length > 0,
-          isPdf: isPdfTab({ url: tabUrl }) || activeToolGroups.has("pdf"),
+          isPdf,
           isFile: tabUrl.startsWith("file://") || activeToolGroups.has("local-file"),
         };
         const { notice } = growActiveGroups(activeToolGroups, announcedGroups, env);

@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { isFilePdfUrl, isPdfTab, tabUrlForCacheKey } from "./detect";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { isFilePdfUrl, isPdfTab, isPdfTabAsync, tabUrlForCacheKey } from "./detect";
 
 describe("isPdfTab", () => {
   function tab(url: string): Pick<chrome.tabs.Tab, "url"> {
@@ -83,5 +83,66 @@ describe("tabUrlForCacheKey", () => {
     expect(tabUrlForCacheKey("https://example.com/a.pdf#page=5")).toBe(
       "https://example.com/a.pdf#page=5",
     );
+  });
+});
+
+describe("isPdfTabAsync", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function stubScripting(impl: (opts: unknown) => Promise<unknown>) {
+    const executeScript = vi.fn(impl);
+    vi.stubGlobal("chrome", { scripting: { executeScript } });
+    return executeScript;
+  }
+
+  it("returns true from the URL heuristic without probing (short-circuit)", async () => {
+    const executeScript = stubScripting(async () => {
+      throw new Error("should not be called");
+    });
+    expect(await isPdfTabAsync(7, "https://example.com/a.pdf")).toBe(true);
+    expect(executeScript).not.toHaveBeenCalled();
+  });
+
+  it("returns true for a suffixless URL whose contentType is application/pdf", async () => {
+    const executeScript = stubScripting(async () => [
+      { result: "application/pdf" },
+    ]);
+    expect(await isPdfTabAsync(7, "https://arxiv.org/pdf/2407.13943")).toBe(true);
+    expect(executeScript).toHaveBeenCalledOnce();
+    // Probes the tab's main document, not a specific frame.
+    expect(executeScript.mock.calls[0][0]).toMatchObject({ target: { tabId: 7 } });
+  });
+
+  it("returns false for a normal HTML page (contentType text/html)", async () => {
+    stubScripting(async () => [{ result: "text/html" }]);
+    expect(await isPdfTabAsync(7, "https://example.com/index.html")).toBe(false);
+  });
+
+  it("returns false (fail-closed) when executeScript throws", async () => {
+    stubScripting(async () => {
+      throw new Error("cannot access chrome:// scheme");
+    });
+    expect(await isPdfTabAsync(7, "https://example.com/")).toBe(false);
+  });
+
+  it("returns false (fail-closed) when the injection result is empty", async () => {
+    stubScripting(async () => []);
+    expect(await isPdfTabAsync(7, "https://example.com/")).toBe(false);
+  });
+
+  it("skips the probe when there is no valid tabId (sentinel / undefined)", async () => {
+    const executeScript = stubScripting(async () => [
+      { result: "application/pdf" },
+    ]);
+    expect(await isPdfTabAsync(-1, "https://example.com/")).toBe(false);
+    expect(await isPdfTabAsync(undefined, "https://example.com/")).toBe(false);
+    expect(await isPdfTabAsync(null, "https://example.com/")).toBe(false);
+    expect(executeScript).not.toHaveBeenCalled();
+  });
+
+  it("still returns true from the URL heuristic even without a tabId", async () => {
+    expect(await isPdfTabAsync(undefined, "file:///Users/me/paper.pdf")).toBe(true);
   });
 });
