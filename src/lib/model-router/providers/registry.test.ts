@@ -61,8 +61,8 @@ describe("ProviderMeta schema", () => {
 });
 
 describe("ModelMeta capability flags (per-model)", () => {
-  it("claude-opus-4-7 has vision + tools", () => {
-    const m = getModelMeta("anthropic", "claude-opus-4-7")!;
+  it("claude-opus-5 has vision + tools", () => {
+    const m = getModelMeta("anthropic", "claude-opus-5")!;
     expect(m.vision).toBe(true);
     expect(m.tools).toBe(true);
     expect(m.maxContextTokens).toBeGreaterThan(100_000);
@@ -78,9 +78,9 @@ describe("ModelMeta capability flags (per-model)", () => {
     expect(getModelMeta("zhipu", "glm-4.6v")?.vision).toBe(true);
   });
 
-  it("Bailian qwen-max does NOT have vision; qwen-vl-max does", () => {
-    expect(getModelMeta("bailian", "qwen-max")?.vision).toBe(false);
-    expect(getModelMeta("bailian", "qwen-vl-max")?.vision).toBe(true);
+  it("Bailian qwen3.7-max does NOT have vision; qwen3.7-plus does", () => {
+    expect(getModelMeta("bailian", "qwen3.7-max")?.vision).toBe(false);
+    expect(getModelMeta("bailian", "qwen3.7-plus")?.vision).toBe(true);
   });
 
   it("getModelMeta returns undefined for unknown model", () => {
@@ -91,9 +91,10 @@ describe("ModelMeta capability flags (per-model)", () => {
     expect(getModelMeta("openai", "gpt-4o")?.tools).toBe(true);
   });
 
-  it("o3 has vision: true; o3-mini has vision: false (text-only)", () => {
-    expect(getModelMeta("openai", "o3")?.vision).toBe(true);
-    expect(getModelMeta("openai", "o3-mini")?.vision).toBe(false);
+  it("superseded OpenAI lines are no longer registered (o3 / gpt-5.4)", () => {
+    expect(getModelMeta("openai", "o3")).toBeUndefined();
+    expect(getModelMeta("openai", "o3-mini")).toBeUndefined();
+    expect(getModelMeta("openai", "gpt-5.4")).toBeUndefined();
   });
 
   it("gpt-5.5 flagship is registered with vision + tools + 1.05M context", () => {
@@ -103,10 +104,12 @@ describe("ModelMeta capability flags (per-model)", () => {
     expect(m.maxContextTokens).toBe(1_050_000);
   });
 
-  it("gpt-5.4 series is registered (mini/nano at 400K, flagship at 1.05M)", () => {
-    expect(getModelMeta("openai", "gpt-5.4")?.maxContextTokens).toBe(1_050_000);
-    expect(getModelMeta("openai", "gpt-5.4-mini")?.maxContextTokens).toBe(400_000);
-    expect(getModelMeta("openai", "gpt-5.4-nano")?.vision).toBe(true);
+  it("gpt-5.6 series is registered (sol/terra/luna, all 1.05M + vision)", () => {
+    for (const id of ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]) {
+      const m = getModelMeta("openai", id)!;
+      expect(m.maxContextTokens).toBe(1_050_000);
+      expect(m.vision).toBe(true);
+    }
   });
 
   it("OpenAI does NOT expose realtime / image / TTS models", () => {
@@ -137,16 +140,18 @@ describe("ModelMeta capability flags (per-model)", () => {
     expect(getModelMeta("deepseek", "deepseek-v4-flash")?.maxContextTokens).toBe(1_000_000);
   });
 
-  it("MiMo model capability flags — pro is text-only, v2.5 has vision, omni has vision", () => {
+  it("MiMo v2.5 series is multimodal at 1M; retired v2 series is gone", () => {
     expect(getModelMeta("mimo", "mimo-v2.5-pro")?.tools).toBe(true);
-    expect(getModelMeta("mimo", "mimo-v2.5-pro")?.vision).toBe(false);
+    expect(getModelMeta("mimo", "mimo-v2.5-pro")?.vision).toBe(true);
     expect(getModelMeta("mimo", "mimo-v2.5-pro")?.maxContextTokens).toBe(1_000_000);
 
     expect(getModelMeta("mimo", "mimo-v2.5")?.vision).toBe(true);
     expect(getModelMeta("mimo", "mimo-v2.5")?.maxContextTokens).toBe(1_000_000);
 
-    expect(getModelMeta("mimo", "mimo-v2-omni")?.vision).toBe(true);
-    expect(getModelMeta("mimo", "mimo-v2-omni")?.maxContextTokens).toBe(256_000);
+    // 2026-06-30 官方下线
+    expect(getModelMeta("mimo", "mimo-v2-pro")).toBeUndefined();
+    expect(getModelMeta("mimo", "mimo-v2-omni")).toBeUndefined();
+    expect(getModelMeta("mimo", "mimo-v2-flash")).toBeUndefined();
   });
 
   it("StepFun model capability flags — 3.7-flash is multimodal, 3.5-flash is text-only", () => {
@@ -177,11 +182,11 @@ describe("ModelMeta capability flags (per-model)", () => {
 
 describe("resolveModelVision — model-level vision lookup with OpenRouter fallback", () => {
   it("registry hit returns the model's vision flag (true)", () => {
-    expect(resolveModelVision("anthropic", "claude-opus-4-7")).toBe(true);
+    expect(resolveModelVision("anthropic", "claude-opus-5")).toBe(true);
   });
 
   it("registry hit returns the model's vision flag (false)", () => {
-    expect(resolveModelVision("openai", "o3-mini")).toBe(false);
+    expect(resolveModelVision("bailian", "qwen3.7-max")).toBe(false);
   });
 
   it("OpenRouter (registry empty) falls back to instance.fetchedModels — vision-capable", () => {
@@ -298,8 +303,8 @@ describe("Moonshot (Kimi) — dual-region registration", () => {
 
 describe("maxOutputTokens (anthropic-wire, sourced from provider docs)", () => {
   const cases: Array<[string, string, number]> = [
-    ["anthropic", "claude-opus-4-7", 128_000],
-    ["anthropic", "claude-sonnet-4-6", 64_000],
+    ["anthropic", "claude-opus-5", 128_000],
+    ["anthropic", "claude-sonnet-5", 128_000],
     ["anthropic", "claude-haiku-4-5-20251001", 64_000],
     ["deepseek", "deepseek-v4-flash", 384_000],
     ["deepseek", "deepseek-v4-pro", 384_000],
@@ -307,7 +312,7 @@ describe("maxOutputTokens (anthropic-wire, sourced from provider docs)", () => {
     ["minimax", "MiniMax-M2.7", 204_800],
     ["minimax", "MiniMax-M2", 204_800],
     ["mimo", "mimo-v2.5-pro", 131_072],
-    ["mimo", "mimo-v2-flash", 65_536],
+    ["mimo", "mimo-v2.5", 131_072],
   ];
   it.each(cases)("%s/%s → %d", (provider, model, expected) => {
     expect(getModelMeta(provider as never, model)?.maxOutputTokens).toBe(expected);

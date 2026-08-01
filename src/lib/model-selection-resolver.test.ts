@@ -18,8 +18,8 @@ beforeEach(async () => {
 describe("resolveSelection", () => {
   it("prefers session's own instanceId + model", async () => {
     const id = await createInstance({ provider: "anthropic", nickname: "A", apiKey: "k" });
-    const sel = await resolveSelection({ instanceId: id, model: "claude-opus-4-7" });
-    expect(sel).toEqual({ instanceId: id, model: "claude-opus-4-7" });
+    const sel = await resolveSelection({ instanceId: id, model: "claude-opus-5" });
+    expect(sel).toEqual({ instanceId: id, model: "claude-opus-5" });
   });
 
   it("falls back to last_model_selection when session has none", async () => {
@@ -32,7 +32,7 @@ describe("resolveSelection", () => {
   it("falls back to first instance's first registry model", async () => {
     const id = await createInstance({ provider: "anthropic", nickname: "A", apiKey: "k" });
     const sel = await resolveSelection({});
-    expect(sel).toEqual({ instanceId: id, model: "claude-opus-4-7" });
+    expect(sel).toEqual({ instanceId: id, model: "claude-opus-5" });
   });
 
   it("returns null when no instances configured", async () => {
@@ -42,7 +42,7 @@ describe("resolveSelection", () => {
   it("session instanceId but no model → backfills via firstModelForProvider", async () => {
     const id = await createInstance({ provider: "anthropic", nickname: "A", apiKey: "k" });
     const sel = await resolveSelection({ instanceId: id });
-    expect(sel).toEqual({ instanceId: id, model: "claude-opus-4-7" });
+    expect(sel).toEqual({ instanceId: id, model: "claude-opus-5" });
   });
 
   it("ignores a stale (deleted) session instanceId and falls back to last", async () => {

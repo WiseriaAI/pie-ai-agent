@@ -76,6 +76,8 @@ export interface ProviderMeta {
 // (api.moonshot.ai) and China (api.moonshot.cn) registry entries so the two
 // stay in lockstep. kimi-k2.x are multimodal; moonshot-v1-* are text fallbacks.
 const MOONSHOT_MODELS: ModelMeta[] = [
+  { id: "kimi-k3", vision: true, tools: true, maxContextTokens: 1_048_576 },
+  { id: "kimi-k2.7-code", vision: false, tools: true, maxContextTokens: 256_000 },
   { id: "kimi-k2.6", vision: true, tools: true, maxContextTokens: 256_000 },
   { id: "kimi-k2.5", vision: true, tools: true, maxContextTokens: 256_000 },
   { id: "moonshot-v1-128k", vision: false, tools: true, maxContextTokens: 128_000 },
@@ -120,9 +122,13 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     iconAsset: "provider-icons/anthropic.svg",
     defaultBaseUrl: "https://api.anthropic.com",
     placeholder: "sk-ant-...",
+    // Claude 5 family（1M 上下文 / 128K 输出）。注：Opus 5 / Fable 5 / Sonnet 5 拒收
+    // temperature / top_p / budget_tokens —— anthropic-sdk-core 本就不发这些参数，无需适配。
     models: [
-      { id: "claude-opus-4-7", vision: true, tools: true, maxContextTokens: 200_000, maxOutputTokens: 128_000 },
-      { id: "claude-sonnet-4-6", vision: true, tools: true, maxContextTokens: 200_000, maxOutputTokens: 64_000 },
+      { id: "claude-opus-5", vision: true, tools: true, maxContextTokens: 1_000_000, maxOutputTokens: 128_000 },
+      { id: "claude-fable-5", vision: true, tools: true, maxContextTokens: 1_000_000, maxOutputTokens: 128_000 },
+      { id: "claude-sonnet-5", vision: true, tools: true, maxContextTokens: 1_000_000, maxOutputTokens: 128_000 },
+      { id: "claude-opus-4-8", vision: true, tools: true, maxContextTokens: 1_000_000, maxOutputTokens: 128_000 },
       { id: "claude-haiku-4-5-20251001", displayName: "claude-haiku-4-5", vision: true, tools: true, maxContextTokens: 200_000, maxOutputTokens: 64_000 },
     ],
   },
@@ -136,19 +142,17 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     // runs over the chat-completions streaming path and requires tool calling,
     // so only text/vision chat models are listed — image-gen (gpt-image-2),
     // realtime audio/voice (gpt-realtime-*), and TTS/ASR (gpt-4o-mini-tts) are
-    // out of scope. Deprecated lines (gpt-3.5-turbo, gpt-4/4-turbo,
-    // gpt-4.1-nano, *-search-preview, *-deep-research) are intentionally
-    // omitted. The gpt-5.x flagships take Text+Image input.
+    // out of scope. Superseded lines (gpt-5.4-*, o3/o3-mini, gpt-4/4-turbo,
+    // gpt-3.5-turbo, *-search-preview, *-deep-research) are intentionally
+    // omitted —手填自定义 model id 仍可用。gpt-5.x 全系 Text+Image 输入。
     // maxContextTokens = input window.
     models: [
+      { id: "gpt-5.6-sol", vision: true, tools: true, maxContextTokens: 1_050_000 },
+      { id: "gpt-5.6-terra", vision: true, tools: true, maxContextTokens: 1_050_000 },
+      { id: "gpt-5.6-luna", vision: true, tools: true, maxContextTokens: 1_050_000 },
       { id: "gpt-5.5", vision: true, tools: true, maxContextTokens: 1_050_000 },
-      { id: "gpt-5.4", vision: true, tools: true, maxContextTokens: 1_050_000 },
-      { id: "gpt-5.4-mini", vision: true, tools: true, maxContextTokens: 400_000 },
-      { id: "gpt-5.4-nano", vision: true, tools: true, maxContextTokens: 400_000 },
       { id: "gpt-4o", vision: true, tools: true, maxContextTokens: 128_000 },
       { id: "gpt-4o-mini", vision: true, tools: true, maxContextTokens: 128_000 },
-      { id: "o3-mini", vision: false, tools: true, maxContextTokens: 200_000 },
-      { id: "o3", vision: true, tools: true, maxContextTokens: 200_000 },
     ],
   },
   {
@@ -193,6 +197,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     // GLM-4.5-Flash are intentionally omitted. maxContextTokens = input window.
     models: [
       // Text
+      { id: "glm-5.2", vision: false, tools: true, maxContextTokens: 1_000_000 },
       { id: "glm-5.1", vision: false, tools: true, maxContextTokens: 200_000 },
       { id: "glm-5", vision: false, tools: true, maxContextTokens: 200_000 },
       { id: "glm-5-turbo", vision: false, tools: true, maxContextTokens: 200_000 },
@@ -227,10 +232,11 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     iconAsset: "provider-icons/bailian.svg",
     defaultBaseUrl: "https://dashscope.aliyuncs.com/compatible-mode",
     placeholder: "sk-...",
+    // Qwen3.7 全系 1M 上下文；plus 是多模态（读图/读屏），max/flash fail-closed 记 false。
     models: [
-      { id: "qwen-max", vision: false, tools: true, maxContextTokens: 32_000 },
-      { id: "qwen-vl-max", vision: true, tools: true, maxContextTokens: 32_000 },
-      { id: "qwen-plus", vision: false, tools: true, maxContextTokens: 128_000 },
+      { id: "qwen3.7-max", vision: false, tools: true, maxContextTokens: 1_000_000 },
+      { id: "qwen3.7-plus", vision: true, tools: true, maxContextTokens: 1_000_000 },
+      { id: "qwen3.7-flash", vision: false, tools: true, maxContextTokens: 1_000_000 },
     ],
   },
   {
@@ -240,7 +246,9 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     defaultBaseUrl: "https://generativelanguage.googleapis.com",
     placeholder: "AIza...",
     models: [
-      { id: "gemini-2.0-flash", vision: true, tools: true, maxContextTokens: 1_000_000 },
+      { id: "gemini-3.6-flash", vision: true, tools: true, maxContextTokens: 1_000_000 },
+      { id: "gemini-3.5-flash", vision: true, tools: true, maxContextTokens: 1_000_000 },
+      { id: "gemini-3.5-flash-lite", vision: true, tools: true, maxContextTokens: 1_000_000 },
       { id: "gemini-2.5-pro", vision: true, tools: true, maxContextTokens: 1_000_000 },
     ],
   },
@@ -261,12 +269,10 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     iconAsset: "provider-icons/mimo.svg",
     defaultBaseUrl: "https://token-plan-cn.xiaomimimo.com",
     placeholder: "tp-...",
+    // mimo-v2 系列（v2-pro / v2-omni / v2-flash）2026-06-30 官方下线，已移除。
     models: [
-      { id: "mimo-v2.5-pro", vision: false, tools: true, maxContextTokens: 1_000_000, maxOutputTokens: 131_072 },
-      { id: "mimo-v2.5",     vision: true,  tools: true, maxContextTokens: 1_000_000, maxOutputTokens: 131_072 },
-      { id: "mimo-v2-pro",   vision: false, tools: true, maxContextTokens: 1_000_000, maxOutputTokens: 131_072 },
-      { id: "mimo-v2-omni",  vision: true,  tools: true, maxContextTokens: 256_000,   maxOutputTokens: 131_072 },
-      { id: "mimo-v2-flash", vision: false, tools: true, maxContextTokens: 256_000,   maxOutputTokens: 65_536 },
+      { id: "mimo-v2.5-pro", vision: true, tools: true, maxContextTokens: 1_000_000, maxOutputTokens: 131_072 },
+      { id: "mimo-v2.5",     vision: true, tools: true, maxContextTokens: 1_000_000, maxOutputTokens: 131_072 },
     ],
     // 注意：mimo 的 defaultBaseUrl 本就是 Token Plan（订阅）端点 —— 保持不动，
     // 存量 instance（tp- key）零破坏；按量（sk- key）才是 variant。
