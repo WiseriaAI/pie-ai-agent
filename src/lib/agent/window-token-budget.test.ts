@@ -56,7 +56,7 @@ describe("U5 — applyTokenBudget", () => {
       // ~1000 chars total, 0% CJK → divisor 4 → ~250 tokens
       // Anthropic threshold = 200_000 × 0.8 = 160_000 tokens — far below
       const history = buildChatHistory(5, 20, 0); // 5 rounds × 2 × 20 = 200 chars
-      const result = await applyTokenBudget(history, "anthropic", "claude-opus-4-7");
+      const result = await applyTokenBudget(history, "anthropic", "claude-haiku-4-5-20251001");
       expect(result).toEqual(history);
     });
   });
@@ -72,7 +72,7 @@ describe("U5 — applyTokenBudget", () => {
       const history = buildChatHistory(50, 7_000, 0);
       const original = history.length;
 
-      const result = await applyTokenBudget(history, "anthropic", "claude-opus-4-7");
+      const result = await applyTokenBudget(history, "anthropic", "claude-haiku-4-5-20251001");
 
       // Must have dropped some messages
       expect(result.length).toBeLessThan(original);
@@ -309,7 +309,7 @@ describe("Issue #76: maxContextTokens must come from per-model ModelMeta", () =>
     expect(estimateTokens(history)).toBeGreaterThan(32_000 * 0.8);
     expect(estimateTokens(history)).toBeLessThan(200_000 * 0.8);
 
-    const result = await applyTokenBudget(history, "anthropic", "claude-opus-4-7");
+    const result = await applyTokenBudget(history, "anthropic", "claude-haiku-4-5-20251001");
 
     // No drop expected when provider-aware lookup works.
     expect(result).toEqual(history);

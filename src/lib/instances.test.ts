@@ -113,7 +113,7 @@ describe("instances CRUD", () => {
 describe("firstModelForProvider", () => {
   it("returns registry[0] for a provider with no customModels", async () => {
     const id = await createInstance({ provider: "anthropic", nickname: "A", apiKey: "k" });
-    expect(await firstModelForProvider("anthropic", id)).toBe("claude-opus-4-7");
+    expect(await firstModelForProvider("anthropic", id)).toBe("claude-opus-5");
   });
 
   it("prefers instance.customModels[0] when present", async () => {
@@ -135,7 +135,7 @@ describe("resolveActiveInstanceModelConfig", () => {
     const cfg = await resolveActiveInstanceModelConfig();
     expect(cfg).toMatchObject({
       provider: "anthropic",
-      model: "claude-opus-4-7",
+      model: "claude-opus-5",
       apiKey: "sk-test",
       baseUrl: "https://api.anthropic.com",
     });
@@ -147,13 +147,13 @@ describe("resolveActiveInstanceModelConfig", () => {
 describe("resolveModelConfig — vision per model (#35 / #39)", () => {
   it("registry vision-capable model: vision === true", async () => {
     const id = await createInstance({ provider: "anthropic", nickname: "A", apiKey: "k" });
-    const cfg = await resolveModelConfig(id, "claude-opus-4-7");
+    const cfg = await resolveModelConfig(id, "claude-opus-5");
     expect(cfg!.vision).toBe(true);
   });
 
   it("registry text-only model: vision === false (guard correctly fires)", async () => {
-    const id = await createInstance({ provider: "openai", nickname: "O", apiKey: "k" });
-    const cfg = await resolveModelConfig(id, "o3-mini");
+    const id = await createInstance({ provider: "bailian", nickname: "B", apiKey: "k" });
+    const cfg = await resolveModelConfig(id, "qwen3.7-max");
     expect(cfg!.vision).toBe(false);
   });
 
@@ -287,9 +287,9 @@ describe("endpoint variants", () => {
 
   it("resolveModelConfig: payg variant overrides baseUrl + model meta (union lookup)", async () => {
     const id = await createInstance({ provider: "moonshot", nickname: "K", apiKey: "k", endpointVariant: "payg" });
-    const cfg = await resolveModelConfig(id, "kimi-k2.6");
+    const cfg = await resolveModelConfig(id, "kimi-k3");
     expect(cfg!.baseUrl).toBe("https://api.moonshot.ai"); // pay-as-you-go endpoint
-    expect(cfg!.vision).toBe(true); // kimi-k2.6 lives in the payg variant pool, vision:true
+    expect(cfg!.vision).toBe(true); // kimi-k3 lives in the payg variant pool, vision:true
   });
 
   it("resolveModelConfig: dangling variant id falls back to the default (Plan) baseUrl", async () => {
@@ -299,9 +299,9 @@ describe("endpoint variants", () => {
   });
 
   it("firstModelForProvider prefers the variant pool over the registry list", async () => {
-    // payg variant → its own pool head (kimi-k2.6)
+    // payg variant → its own pool head (kimi-k3)
     const id = await createInstance({ provider: "moonshot", nickname: "K", apiKey: "k", endpointVariant: "payg" });
-    expect(await firstModelForProvider("moonshot", id)).toBe("kimi-k2.6");
+    expect(await firstModelForProvider("moonshot", id)).toBe("kimi-k3");
     // 无 variant 的 instance 取默认（Plan）registry[0] = kimi-for-coding
     await updateInstance(id, { endpointVariant: null });
     expect(await firstModelForProvider("moonshot", id)).toBe("kimi-for-coding");
@@ -319,7 +319,7 @@ describe("endpoint variants", () => {
   it("firstModelForProvider: variantOverride string resolves that variant regardless of stored field", async () => {
     // 存量 instance 无 variant（默认 Plan），表单里选了 payg（尚未保存）
     const id = await createInstance({ provider: "moonshot", nickname: "K", apiKey: "k" });
-    expect(await firstModelForProvider("moonshot", id, "payg")).toBe("kimi-k2.6");
+    expect(await firstModelForProvider("moonshot", id, "payg")).toBe("kimi-k3");
   });
 
   it("updateInstance: empty string also clears (same hygiene as create's conditional spread)", async () => {
@@ -330,7 +330,7 @@ describe("endpoint variants", () => {
 
   it("firstModelForProvider without instanceId picks the provider's instance and honours its variant", async () => {
     await createInstance({ provider: "moonshot", nickname: "K", apiKey: "k", endpointVariant: "payg" });
-    expect(await firstModelForProvider("moonshot")).toBe("kimi-k2.6");
+    expect(await firstModelForProvider("moonshot")).toBe("kimi-k3");
   });
 
   it("resolveModelConfig: custom provider with dangling endpointVariant falls back to cp.baseUrl", async () => {

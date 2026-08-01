@@ -36,7 +36,7 @@ describe("ScheduleDraftCard", () => {
     // Provider row
     fireEvent.click(screen.getByText("Anthropic"));
     // Pick a model from the registry
-    fireEvent.click(screen.getByText("claude-opus-4-7"));
+    fireEvent.click(screen.getByText("claude-opus-5"));
 
     // Now Create should be enabled
     const createBtn2 = screen.getByRole("button", { name: /create schedule/i });
@@ -54,7 +54,7 @@ describe("ScheduleDraftCard", () => {
     const pickerTrigger = screen.getAllByRole("button")[0]!;
     fireEvent.click(pickerTrigger);
     fireEvent.click(screen.getByText("Anthropic"));
-    fireEvent.click(screen.getByText("claude-opus-4-7"));
+    fireEvent.click(screen.getByText("claude-opus-5"));
 
     // Click Create
     fireEvent.click(screen.getByRole("button", { name: /create schedule/i }));
@@ -68,7 +68,7 @@ describe("ScheduleDraftCard", () => {
 
     // Advance past the 1000ms dwell
     vi.advanceTimersByTime(1000);
-    expect(onSubmit).toHaveBeenCalledWith("a", "claude-opus-4-7");
+    expect(onSubmit).toHaveBeenCalledWith("a", "claude-opus-5");
 
     vi.useRealTimers();
   });

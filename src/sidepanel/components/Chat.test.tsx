@@ -75,13 +75,13 @@ vi.mock("@/lib/instances", () => ({
   getActiveInstance: vi.fn().mockResolvedValue("inst-1"),
   getInstance: vi.fn().mockResolvedValue({ id: "inst-1", provider: "anthropic", nickname: "My Anthropic", apiKey: "sk-test", createdAt: 0 }),
   updateInstance: vi.fn().mockResolvedValue(undefined),
-  firstModelForProvider: vi.fn().mockResolvedValue("claude-opus-4-7"),
+  firstModelForProvider: vi.fn().mockResolvedValue("claude-opus-5"),
 }));
 
 // resolveSelection drives the composer chip + vision checks; stub it so tests
 // don't depend on the real instance/last-selection resolution chain.
 vi.mock("@/lib/model-selection-resolver", () => ({
-  resolveSelection: vi.fn().mockResolvedValue({ instanceId: "inst-1", model: "claude-opus-4-7" }),
+  resolveSelection: vi.fn().mockResolvedValue({ instanceId: "inst-1", model: "claude-opus-5" }),
 }));
 
 // Composer's openrouter lazy fetch — never hit the network in tests.
@@ -138,7 +138,7 @@ function makeSession(overrides?: Partial<UseSession>): UseSession {
 // Default models per provider that have known capability flags in the registry.
 // These must match real entries in PROVIDER_REGISTRY so getModelMeta resolves.
 const PROVIDER_DEFAULT_MODELS: Record<string, string> = {
-  anthropic: "claude-opus-4-7",   // vision: true
+  anthropic: "claude-opus-5",   // vision: true
   openai: "gpt-4o",               // vision: true
   minimax: "MiniMax-Text-01",     // vision: false
   openrouter: "gpt-4o",           // not in registry → treated as no-vision (fallback)
@@ -1137,7 +1137,7 @@ describe("Chat — ModelPicker chip fallback (new session no pin)", () => {
     };
     vi.mocked(listInstances).mockResolvedValue([inst] as import("@/lib/instances").DecryptedInstance[]);
     vi.mocked(getInstance).mockResolvedValue(inst as import("@/lib/instances").DecryptedInstance);
-    vi.mocked(resolveSelection).mockResolvedValue({ instanceId: "active-1", model: "claude-opus-4-7" });
+    vi.mocked(resolveSelection).mockResolvedValue({ instanceId: "active-1", model: "claude-opus-5" });
 
     await act(async () => {
       render(
@@ -1150,7 +1150,7 @@ describe("Chat — ModelPicker chip fallback (new session no pin)", () => {
     });
 
     // ModelPicker chip shows the provider name + short model (not an empty state).
-    expect(await screen.findByText(/Anthropic · opus-4-7/)).toBeTruthy();
+    expect(await screen.findByText(/Anthropic · opus-5/)).toBeTruthy();
   });
 });
 
