@@ -36,7 +36,9 @@ const SCRATCHPAD_GUIDANCE =
   "incrementally with save_scratchpad(collection, records, dedupeKey?), keep a " +
   "running update_scratchpad_notes(notes), page back with read_scratchpad, and clean/dedupe " +
   "with query_scratchpad(from, sql, into?). A <scratchpad_overview> is injected " +
-  "every turn — treat it as your source of truth. Export with output_file.";
+  "every turn — treat it as your source of truth. Export with " +
+  'output_file({filename: "rows.csv", collection}) — it serializes the collection ' +
+  "itself; never read rows back and retype them into `content`.";
 
 const SCHEDULE_GUIDANCE =
   "Schedule tools: create_schedule / update_schedule / delete_schedule / " +
