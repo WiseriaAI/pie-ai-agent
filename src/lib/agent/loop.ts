@@ -57,6 +57,7 @@ import {
   updateNotes as svcUpdateNotes,
   readScratchpadRecords as svcReadRecords,
   clearScratchpadCollections as svcClearScratchpad,
+  getCollection as svcGetCollection,
   getOverview as svcGetOverview,
 } from "../scratchpad/service";
 import { queryScratchpad as svcQueryScratchpad } from "../scratchpad/sql-bridge";
@@ -1892,6 +1893,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       const outputFileTool = buildOutputFileTool({
         sessionId,
         store: (a) => putArtifact(a),
+        readCollection: (name) => svcGetCollection(sessionId, name),
       });
       const scratchpadTools = buildScratchpadTools({
         saveRecords: (collection, records, opts) => svcSaveRecords(sessionId, collection, records, opts),

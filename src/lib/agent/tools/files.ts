@@ -7,8 +7,9 @@ import { classifyFile, MAX_FILE_BYTES } from "@/lib/file-read/classify";
 import { arrayBufferToBase64 } from "@/lib/files/base64";
 import { escapeUntrustedWrappers } from "../untrusted-wrappers";
 import { buildLocalFileWrapper } from "@/lib/files/inject";
+import { toCsv } from "@/lib/scratchpad/serialize";
 
-interface OutputArgs { filename?: string; content?: string; mime?: string; }
+interface OutputArgs { filename?: string; content?: string; mime?: string; collection?: string; }
 
 // Allowlist of text-family MIME types. A hallucinating LLM could otherwise
 // pass e.g. text/html; the eventual download builds a data: URL from this mime
@@ -21,6 +22,12 @@ const MAX_CONTENT_BYTES = 5 * 1024 * 1024;
 export interface OutputFileDeps {
   sessionId: string;
   store: (a: FileArtifact) => void | Promise<void>;
+  /** Reads a scratchpad collection so `collection` can be serialized straight
+   *  to a file — the rows never pass through the LLM. Omitted in contexts with
+   *  no scratchpad (the arg then errors out). */
+  readCollection?: (
+    name: string,
+  ) => Promise<{ records: Array<Record<string, unknown>>; fields?: string[] } | { error: string }>;
 }
 
 /**
@@ -37,8 +44,11 @@ export function buildOutputFileTool(deps: OutputFileDeps): Tool {
     description:
       `Produce a text file (report, code, markdown, CSV, JSON) and present it to the user as a downloadable card in the side panel — the user picks whether and where to save it.
 
+Pass EITHER \`content\` (text you wrote) OR \`collection\` (a scratchpad collection, serialized directly to the file — never read the rows back and retype them into \`content\`; that is slow and loses data).
+
 USE WHEN:
 - You've generated substantial text the user will want to keep or open elsewhere (a report, a code file, exported data).
+- You're exporting scraped rows — pass \`collection\` with a .csv (or .json) filename.
 - The output is too long or too file-shaped to sit inline in the chat.
 
 **DO NOT USE WHEN:**
@@ -48,25 +58,47 @@ USE WHEN:
     parameters: {
       type: "object",
       properties: {
-        filename: { type: "string", description: 'Relative file name, e.g. "report.md" or "notes/summary.md". Always presented under pie/.' },
-        content: { type: "string", description: "The text content of the file." },
-        mime: { type: "string", description: 'MIME type. Default "text/plain".' },
+        filename: { type: "string", description: 'Relative file name, e.g. "report.md" or "products.csv". Always presented under pie/.' },
+        content: { type: "string", description: "The text content of the file. Omit when using `collection`." },
+        collection: { type: "string", description: "Scratchpad collection to export instead of `content`. Serialized as CSV, or JSON when filename ends in .json." },
+        mime: { type: "string", description: 'MIME type. Defaults to "text/plain", or the format\'s type when exporting a collection.' },
       },
-      required: ["filename", "content"],
+      required: ["filename"],
       additionalProperties: false,
     },
     handler: async (args: unknown, _ctx: ToolHandlerContext): Promise<ActionResult> => {
       const a = (args ?? {}) as OutputArgs;
-      if (typeof a.content !== "string") return { success: false, error: "content is required (string)" };
+      const rawFilename = typeof a.filename === "string" ? a.filename : "";
+      const collection = typeof a.collection === "string" ? a.collection.trim() : "";
+
+      let content: string;
+      let defaultMime = "text/plain";
+      let exportNote = "";
+      if (collection) {
+        if (!deps.readCollection) return { success: false, error: "collection export is unavailable here; pass `content` instead" };
+        const col = await deps.readCollection(collection);
+        if ("error" in col) return { success: false, error: col.error };
+        if (col.records.length === 0) return { success: false, error: `collection "${collection}" is empty — nothing to export` };
+        const asJson = /\.json$/i.test(rawFilename);
+        content = asJson ? JSON.stringify(col.records, null, 2) : toCsv(col.records, col.fields);
+        defaultMime = asJson ? "application/json" : "text/csv";
+        exportNote = `Exported ${col.records.length} row(s) from collection "${collection}". `;
+      } else {
+        if (typeof a.content !== "string") return { success: false, error: "content is required (string) unless you pass `collection`" };
+        content = a.content;
+      }
+
       // Cap on actual UTF-8 byte size (not UTF-16 code-unit count) so the 5MB
       // limit is byte-accurate for multibyte content; byteLength is reused below.
-      const byteLength = new Blob([a.content]).size;
-      if (byteLength > MAX_CONTENT_BYTES) return { success: false, error: `content_too_large: max ${MAX_CONTENT_BYTES / 1024 / 1024}MB` };
-      const rawFilename = typeof a.filename === "string" ? a.filename : "";
+      const byteLength = new Blob([content]).size;
+      if (byteLength > MAX_CONTENT_BYTES) {
+        const hint = collection ? " — narrow the collection first with query_scratchpad (e.g. fewer columns or a filtered SELECT ... INTO) and export that" : "";
+        return { success: false, error: `content_too_large: max ${MAX_CONTENT_BYTES / 1024 / 1024}MB${hint}` };
+      }
       const filename = sanitizeDownloadName(rawFilename);
-      const mime = typeof a.mime === "string" && SAFE_MIME.test(a.mime) ? a.mime : "text/plain";
+      const mime = typeof a.mime === "string" && SAFE_MIME.test(a.mime) ? a.mime : defaultMime;
       const id = crypto.randomUUID();
-      await deps.store({ id, sessionId: deps.sessionId, filename, mime, content: a.content, byteLength, addedAt: Date.now() });
+      await deps.store({ id, sessionId: deps.sessionId, filename, mime, content, byteLength, addedAt: Date.now() });
       const renameNote =
         filename === "pie/untitled.txt" && rawFilename !== "pie/untitled.txt"
           ? " (filename was sanitized to untitled.txt)"
@@ -74,6 +106,7 @@ USE WHEN:
       return {
         success: true,
         observation:
+          exportNote +
           `Presented "${filename}" to the user as a downloadable card in the side panel. ` +
           `The user will choose whether to download it and where to save it. ` +
           `Do not assume it has been saved.${renameNote}`,

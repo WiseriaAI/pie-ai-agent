@@ -117,7 +117,8 @@ USE WHEN:
 
 **DO NOT USE WHEN:**
 - The overview already shows the counts + recent rows you need — don't re-read.
-- You want to dedupe/aggregate/reshape the data — use query_scratchpad (keeps it out of context).`,
+- You want to dedupe/aggregate/reshape the data — use query_scratchpad (keeps it out of context).
+- You're exporting the collection to a file — pass output_file({filename, collection}); never page through rows to retype them into a file.`,
     parameters: {
       type: "object",
       properties: {
@@ -181,7 +182,7 @@ USE WHEN:
 USE WHEN:
 - You need to dedupe, filter, aggregate, sort, or reshape saved rows — especially large collections.
 - You want the transform done without pulling all the data back into context.
-- You'll export the cleaned result: write it with \`into\`, then export with output_file.
+- You'll export the cleaned result: write it with \`into\`, then export it with output_file({filename, collection: into}) — no transcription.
 
 **DO NOT USE WHEN:**
 - You just want to read a few rows as-is — use read_scratchpad.

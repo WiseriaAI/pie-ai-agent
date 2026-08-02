@@ -38,7 +38,7 @@ export async function saveRecords(
   const result = appendRecords(pad, collection, records, opts);
   if (estimateBytes(result.pad) > MAX_SCRATCHPAD_BYTES) {
     return {
-      error: `scratchpad capacity exceeded (${MAX_SCRATCHPAD_BYTES / 1024 / 1024}MB/session). Clean up with query_scratchpad or clear_scratchpad, or export then clear.`,
+      error: `scratchpad capacity exceeded (${MAX_SCRATCHPAD_BYTES / 1024 / 1024}MB/session). Clean up with query_scratchpad or clear_scratchpad, or export with output_file({filename, collection}) then clear.`,
     };
   }
   await writeScratchpad(result.pad);
@@ -65,6 +65,21 @@ export async function clearScratchpadCollections(
 ): Promise<void> {
   const pad = await readScratchpad(sessionId);
   await writeScratchpad(clearScratchpad(pad, collection));
+}
+
+/** Whole collection, unpaginated — for direct-to-file export (output_file's
+ *  `collection` arg). Rows go straight to the serializer, never into context. */
+export async function getCollection(
+  sessionId: string,
+  collection: string,
+): Promise<{ records: Array<Record<string, unknown>>; fields?: string[] } | { error: string }> {
+  const pad = await readScratchpad(sessionId);
+  const col = pad.collections[collection];
+  if (!col) {
+    const names = Object.keys(pad.collections);
+    return { error: `unknown collection "${collection}". Available: ${names.length ? names.join(", ") : "(none)"}` };
+  }
+  return { records: col.records, fields: col.fields };
 }
 
 export async function getOverview(sessionId: string): Promise<string> {
