@@ -1472,3 +1472,25 @@ describe("celebrate on completion", () => {
     }
   });
 });
+
+describe("Chat — 单任务只起一次 AGENT 表头", () => {
+  it("一轮里多条 assistant 行只渲染一个表头，新的 user 提问重新起头", async () => {
+    seedProvider("anthropic");
+    const messages: DisplayMessage[] = [
+      { role: "user", content: "抓这几页" },
+      { role: "assistant", content: "第 2 页已就绪" },
+      { role: "assistant", content: "第 3 页已就绪" },
+      { role: "user", content: "再来一遍" },
+      { role: "assistant", content: "好的" },
+    ];
+    render(
+      <Chat
+        providerLabel="Anthropic"
+        onOpenSettings={vi.fn()}
+        session={makeSession({ messages })}
+      />,
+    );
+    await screen.findByRole("button", { name: /more tools/i });
+    expect(screen.getAllByText("AGENT").length).toBe(2);
+  });
+});

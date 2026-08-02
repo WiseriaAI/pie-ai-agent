@@ -673,6 +673,23 @@ export default function Chat({
   // (React error #310 happened when this was below `if (hasConfig === null)`).
   const segments = useMemo(() => buildSegments(visibleMessages), [visibleMessages]);
 
+  // 「AGENT」表头每个任务只出现一次：一次 user 发问后的第一条 assistant 行带表头，
+  // 同一轮里后续 loop 产出的 assistant 行直接接着流下去，不再一段段起头。
+  const agentHeader = useMemo(() => {
+    const indexes = new Set<number>();
+    let shown = false;
+    segments.forEach((seg, i) => {
+      if (seg.kind !== "msg") return;
+      if (seg.msg.role === "user") shown = false;
+      else if (seg.msg.role === "assistant" && !shown) {
+        indexes.add(i);
+        shown = true;
+      }
+    });
+    // 流式气泡跟在 segments 末尾，沿用同一个「本轮是否已起过头」状态。
+    return { indexes, streaming: !shown };
+  }, [segments]);
+
   // Pie IP — 完成庆祝只落在最后一条 agent 行（assistant 或 agent-summary）。
   const celebrating = useCelebrate({ streaming, error, messages, sessionId });
   const lastAgentRowIndex = (() => {
@@ -1096,6 +1113,7 @@ After the skill completes, briefly summarize what was created (the user will see
                   <div key={firstIndex} className="bubble-in">
                     <MessageBubble
                       message={msg}
+                      showHeader={agentHeader.indexes.has(segIndex)}
                       celebrating={celebrating && segIndex === lastAgentRowIndex}
                       {...(msg.role === "user" && !streaming
                         ? {
@@ -1155,6 +1173,7 @@ After the skill completes, briefly summarize what was created (the user will see
             {streaming && (streamingText || streamingThinking) && (
               <MessageBubble
                 message={{ role: "assistant", content: streamingText, thinking: streamingThinking }}
+                showHeader={agentHeader.streaming}
                 thinkingStreaming={!!streamingThinking}
                 streaming
               />
@@ -1538,9 +1557,13 @@ function MessageBubble({
   thinkingStreaming = false,
   streaming = false,
   celebrating = false,
+  showHeader = true,
   onRewind,
 }: {
   message: Extract<DisplayMessage, { role: "user" | "assistant" }>;
+  /** Only the first agent row of a task run carries the "AGENT" header; the
+   *  rest of the run flows on without re-announcing itself. */
+  showHeader?: boolean;
   thinkingStreaming?: boolean;
   streaming?: boolean;
   /** Pie IP 完成庆祝 —— Chat 只对最后一条 agent 行传 true。 */
@@ -1726,10 +1749,12 @@ function MessageBubble({
   }
   return (
     <div className="flex flex-col gap-1.5">
-      <div className="flex items-center gap-2">
-        <PieFace state={celebrating ? "success" : "static"} size={16} />
-        <span className="caps text-fg-2">{t("chat.agent")}</span>
-      </div>
+      {showHeader && (
+        <div className="flex items-center gap-2">
+          <PieFace state={celebrating ? "success" : "static"} size={16} />
+          <span className="caps text-fg-2">{t("chat.agent")}</span>
+        </div>
+      )}
       {(message.thinking || thinkingStreaming) && (
         <ThinkingSection thinking={message.thinking ?? ""} streaming={thinkingStreaming} />
       )}
