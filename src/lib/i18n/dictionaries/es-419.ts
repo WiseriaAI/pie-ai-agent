@@ -90,6 +90,18 @@ export const es419Dict = {
       about: "Acerca de",
       configured: "Configurado",
       support: "Acerca de y soporte",
+      customRules: "Reglas personalizadas",
+    },
+    customRules: {
+      description:
+        "Una instrucción permanente que se agrega al prompt de sistema de cada tarea, como un CLAUDE.md personal. Úsala para preferencias que siempre quieras, como un estilo de respuesta fijo, un tono o el modo de lectura predeterminado. Déjala vacía para desactivarla.",
+      placeholder:
+        "p. ej. Responde siempre en viñetas concisas y cita la URL de la fuente.",
+      charCount: "{count}/{max}",
+      save: "Guardar",
+      saved: "Guardado",
+      safetyNote:
+        "Solo se aplica a tareas nuevas. Las reglas no pueden anular los límites de seguridad: el contenido de página no confiable y el texto dentro de imágenes nunca se obedecen, y las autorizaciones de herramientas siguen ocurriendo en el panel.",
     },
     theme: { label: "Tema", light: "Claro", dark: "Oscuro", system: "Auto" },
     about: {

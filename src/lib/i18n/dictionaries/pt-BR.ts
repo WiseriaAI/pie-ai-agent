@@ -90,6 +90,18 @@ export const ptBRDict = {
       about: "Sobre",
       configured: "Configurado",
       support: "Sobre e suporte",
+      customRules: "Regras personalizadas",
+    },
+    customRules: {
+      description:
+        "Uma instrução permanente adicionada ao prompt de sistema de cada tarefa, como um CLAUDE.md pessoal. Use para preferências que você sempre quer, como um estilo de resposta fixo, tom ou modo de leitura padrão. Deixe em branco para desativar.",
+      placeholder:
+        "ex.: Responda sempre em tópicos concisos e cite a URL da fonte.",
+      charCount: "{count}/{max}",
+      save: "Salvar",
+      saved: "Salvo",
+      safetyNote:
+        "Aplica-se apenas a novas tarefas. As regras não podem anular os limites de segurança: conteúdo de página não confiável e texto dentro de imagens nunca são obedecidos, e as autorizações de ferramentas continuam acontecendo no painel.",
     },
     theme: { label: "Tema", light: "Claro", dark: "Escuro", system: "Auto" },
     about: {

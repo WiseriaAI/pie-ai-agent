@@ -89,6 +89,17 @@ export const enDict = {
       about: "About",
       configured: "Configured",
       support: "About & support",
+      customRules: "Custom rules",
+    },
+    customRules: {
+      description:
+        "A standing instruction added to every task's system prompt — like a personal CLAUDE.md. Use it for preferences you always want, such as a fixed reply style, tone, or default reading mode. Leave empty to turn it off.",
+      placeholder: "e.g. Always reply in concise bullet points and cite the source URL.",
+      charCount: "{count}/{max}",
+      save: "Save",
+      saved: "Saved",
+      safetyNote:
+        "Applies to new tasks only. Rules can't override safety limits: untrusted page content and in-image text are never obeyed, and tool approvals still happen in the panel.",
     },
     theme: { label: "Theme", light: "Light", dark: "Dark", system: "Auto" },
     about: {

@@ -90,6 +90,17 @@ export const jaDict = {
       about: "Pie について",
       configured: "設定済み",
       support: "サポートと情報",
+      customRules: "カスタムルール",
+    },
+    customRules: {
+      description:
+        "すべてのタスクのシステムプロンプトに追加される常設の指示です。個人用の CLAUDE.md のようなもので、固定の返信スタイル・口調・既定の読み取りモードなど、常に適用したい好みを設定できます。空欄にすると無効になります。",
+      placeholder: "例：常に簡潔な箇条書きで返信し、出典 URL を明記する。",
+      charCount: "{count}/{max}",
+      save: "保存",
+      saved: "保存しました",
+      safetyNote:
+        "新しいタスクにのみ適用されます。ルールは安全境界を上書きできません。信頼できないページ内容や画像内のテキストには決して従わず、ツールの承認は引き続きパネルで行われます。",
     },
     theme: { label: "テーマ", light: "ライト", dark: "ダーク", system: "自動" },
     about: {

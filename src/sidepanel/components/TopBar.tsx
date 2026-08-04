@@ -15,6 +15,7 @@ export type SettingsPage =
   | "search"
   | "uiLanguage"
   | "assistantLanguage"
+  | "customRules"
   | "feedback"
   | "about";
 
@@ -26,6 +27,7 @@ const SETTINGS_PAGE_TITLE_KEY = {
   search: "settings.nav.search",
   uiLanguage: "settings.language.uiLabel",
   assistantLanguage: "settings.language.assistantLabel",
+  customRules: "settings.nav.customRules",
   feedback: "settings.nav.feedback",
   about: "settings.nav.about",
 } as const;
