@@ -126,11 +126,57 @@ describe("useSession — sendMessage / streaming", () => {
       type: "chat-start",
       messages: [{ role: "user", content: "hello" }],
       sessionId: result.current.sessionId,
+      // Issue #353 — panel-computed fallback title carried on the payload.
+      fallbackTitle: "hello",
     });
     expect(result.current.streaming).toBe(true);
     expect(result.current.messages).toEqual([
       { role: "user", content: "hello" },
     ]);
+  });
+
+  it("issue #353 — chat-start carries the panel-derived fallbackTitle from the display text", async () => {
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    // A long first message so we can also assert the 40-char truncation the
+    // fallback derivation applies (must match deriveTitleFromMessages exactly).
+    const longMsg =
+      "帮我把这个非常长的第一条消息生成一个会话标题用于测试超过四十个字符的截断行为是否正确工作";
+    act(() => {
+      result.current.sendMessage({ content: longMsg });
+    });
+
+    const port = chromeMock.runtime.__ports[0]!;
+    const chatStartCall = port.postMessage.mock.calls.find(
+      (c) => (c[0] as { type: string }).type === "chat-start",
+    );
+    expect(chatStartCall).toBeDefined();
+    const payload = chatStartCall![0] as { fallbackTitle?: string };
+    // deriveTitleFromMessages caps at 40 chars + ellipsis.
+    expect(payload.fallbackTitle).toBe(longMsg.slice(0, 40).trimEnd() + "…");
+  });
+
+  it("issue #353 — fallbackTitle is derived from the DISPLAY text, not the slash-expanded wire prompt", async () => {
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    act(() => {
+      result.current.sendMessage({
+        content: "/extract",
+        expandedForLLM: "Please extract structured data from this page",
+      });
+    });
+
+    const port = chromeMock.runtime.__ports[0]!;
+    const chatStartCall = port.postMessage.mock.calls.find(
+      (c) => (c[0] as { type: string }).type === "chat-start",
+    );
+    const payload = chatStartCall![0] as { fallbackTitle?: string };
+    // The fallback title must match what persistSessionMessages writes to disk
+    // (deriveTitleFromMessages over the DISPLAY messages), i.e. the slash form,
+    // NOT the expanded wire prompt — otherwise the SW equality race-guard breaks.
+    expect(payload.fallbackTitle).toBe("/extract");
   });
 
   it("uses expandedForLLM in the wire history but keeps the typed text in display", async () => {

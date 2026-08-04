@@ -147,12 +147,60 @@ describe("generateTitle", () => {
 // These live here since they test a pure function that can be unit-tested
 // without the full background runtime context.
 
-import { maybeUpgradeFallbackTitle } from "./title-generator";
+import { maybeUpgradeFallbackTitle, resolveTitleSentinel } from "./title-generator";
 import {
   createSession,
   getSessionMeta,
   setSessionMeta,
 } from "./storage";
+
+// ------ resolveTitleSentinel (issue #353 — race-free sentinel resolution) ------
+// The title-trigger race-guard used to depend ONLY on reading the fallback
+// title back from disk. Because the panel's persistMessages IDB write is
+// fire-and-forget and can land AFTER the SW receives chat-start, the disk read
+// often returned undefined → title generation was silently skipped. The fix
+// carries the panel-computed fallback title on the chat-start payload and only
+// falls back to the disk sentinel for backward compat with older panels.
+describe("resolveTitleSentinel (issue #353)", () => {
+  it("prefers the payload fallback title without ever reading disk", async () => {
+    const readDisk = vi.fn(async () => undefined as string | undefined);
+    const result = await resolveTitleSentinel("帮我整理飞书任务", readDisk);
+    expect(result).toBe("帮我整理飞书任务");
+    // Critical: the race window is eliminated because we never depend on the
+    // async disk write having landed.
+    expect(readDisk).not.toHaveBeenCalled();
+  });
+
+  it("uses the payload fallback even when the disk sentinel has not landed yet", async () => {
+    // Simulates the exact race: disk write still pending → disk returns undefined,
+    // but the payload carries the authoritative fallback string.
+    const readDisk = vi.fn(async () => undefined as string | undefined);
+    const result = await resolveTitleSentinel("Tidy tasks", readDisk);
+    expect(result).toBe("Tidy tasks");
+    expect(readDisk).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the disk sentinel when payload fallback is undefined (older panel)", async () => {
+    const readDisk = vi.fn(async () => "盘上标题" as string | undefined);
+    const result = await resolveTitleSentinel(undefined, readDisk);
+    expect(result).toBe("盘上标题");
+    expect(readDisk).toHaveBeenCalledOnce();
+  });
+
+  it("falls back to the disk sentinel when payload fallback is empty string", async () => {
+    const readDisk = vi.fn(async () => "盘上标题" as string | undefined);
+    const result = await resolveTitleSentinel("", readDisk);
+    expect(result).toBe("盘上标题");
+    expect(readDisk).toHaveBeenCalledOnce();
+  });
+
+  it("returns undefined when neither payload nor disk has a sentinel", async () => {
+    const readDisk = vi.fn(async () => undefined as string | undefined);
+    const result = await resolveTitleSentinel(undefined, readDisk);
+    expect(result).toBeUndefined();
+    expect(readDisk).toHaveBeenCalledOnce();
+  });
+});
 
 describe("maybeUpgradeFallbackTitle (race guard — Scenario 7)", () => {
   // Scenario 7: User changed title between LLM fire and LLM return

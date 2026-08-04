@@ -19,6 +19,7 @@ import {
   persistSessionMessages,
   updateLastAccessed,
 } from "@/lib/sessions/storage";
+import { deriveTitleFromMessages } from "@/lib/sessions/title";
 import { buildRewindAgentTombstone } from "./rewind";
 import { hardDeleteSession } from "@/lib/sessions/lifecycle";
 import { useStoreChange } from "@/sidepanel/hooks/useStoreChange";
@@ -574,10 +575,21 @@ export function useSession(): UseSession {
       // Fire-and-forget; failures are non-fatal.
       void persistMessagesById(id, updated);
 
+      // Issue #353 — carry the fallback title on the chat-start payload so the
+      // SW's M2-U3 title-generation race-guard no longer depends on the
+      // fire-and-forget persistMessages IDB write above having landed. Computed
+      // from the SAME `updated` array and the SAME deriveTitleFromMessages used
+      // by persistSessionMessages, so the string matches the on-disk sentinel
+      // exactly (equality race-guard semantics preserved; slash-skill expanded
+      // prompts are auto-handled because we derive from the display messages,
+      // not the SW-facing expanded chatMessages).
+      const fallbackTitle = deriveTitleFromMessages(updated);
+
       const sent = swPort.send(id, {
         type: "chat-start",
         messages: chatMessages,
         sessionId: id,
+        ...(fallbackTitle !== undefined ? { fallbackTitle } : {}),
       });
       if (!sent) {
         // SW 连续两次拒收（罕见：连重连后的新 port 也立刻死）→ 撤回
