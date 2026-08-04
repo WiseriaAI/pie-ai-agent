@@ -93,7 +93,7 @@ export const enDict = {
     },
     customRules: {
       description:
-        "A standing instruction added to every task's system prompt — like a personal CLAUDE.md. Use it for preferences you always want, such as a fixed reply style, tone, or default reading mode. Leave empty to turn it off.",
+        "Want Pie to follow your own rules? Write them here — for example, how to address you, what tone to use, or habits to keep. Leave empty to turn it off.",
       placeholder: "e.g. Always reply in concise bullet points and cite the source URL.",
       charCount: "{count}/{max}",
       save: "Save",

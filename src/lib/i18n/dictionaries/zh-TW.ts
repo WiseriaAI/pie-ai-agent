@@ -93,7 +93,7 @@ export const zhTWDict = {
     },
     customRules: {
       description:
-        "一段會拼進每個任務 system prompt 的常駐指令，類似個人版 CLAUDE.md。適合放你始終想要的偏好，例如固定的回覆風格、語氣或預設閱讀模式。留空即關閉。",
+        "想給 Pie 加上你的專屬規則？寫在這裡，比如：希望怎麼稱呼你、用什麼語氣、做事的習慣……留空即關閉。",
       placeholder: "例如：始終用簡潔的重點回覆，並附上來源網址。",
       charCount: "{count}/{max}",
       save: "儲存",

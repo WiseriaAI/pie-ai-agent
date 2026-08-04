@@ -94,7 +94,7 @@ export const es419Dict = {
     },
     customRules: {
       description:
-        "Una instrucción permanente que se agrega al prompt de sistema de cada tarea, como un CLAUDE.md personal. Úsala para preferencias que siempre quieras, como un estilo de respuesta fijo, un tono o el modo de lectura predeterminado. Déjala vacía para desactivarla.",
+        "¿Quieres que Pie siga tus propias reglas? Escríbelas aquí: cómo llamarte, qué tono usar o hábitos que deba mantener… Déjala vacía para desactivarla.",
       placeholder:
         "p. ej. Responde siempre en viñetas concisas y cita la URL de la fuente.",
       charCount: "{count}/{max}",

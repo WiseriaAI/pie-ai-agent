@@ -94,7 +94,7 @@ export const ptBRDict = {
     },
     customRules: {
       description:
-        "Uma instrução permanente adicionada ao prompt de sistema de cada tarefa, como um CLAUDE.md pessoal. Use para preferências que você sempre quer, como um estilo de resposta fixo, tom ou modo de leitura padrão. Deixe em branco para desativar.",
+        "Quer que o Pie siga suas próprias regras? Escreva aqui: como chamar você, que tom usar ou hábitos a manter… Deixe em branco para desativar.",
       placeholder:
         "ex.: Responda sempre em tópicos concisos e cite a URL da fonte.",
       charCount: "{count}/{max}",
