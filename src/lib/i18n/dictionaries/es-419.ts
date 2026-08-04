@@ -94,7 +94,7 @@ export const es419Dict = {
     },
     customRules: {
       description:
-        "¿Quieres que Pie siga tus propias reglas? Escríbelas aquí: cómo llamarte, qué tono usar o hábitos que deba mantener… Déjala vacía para desactivarla.",
+        "¿Quieres que Pie siga tus propias reglas? Escríbelas aquí: cómo llamarte, qué tono usar o hábitos que deba mantener…",
       placeholder:
         "p. ej. Responde siempre en viñetas concisas y cita la URL de la fuente.",
       charCount: "{count}/{max}",

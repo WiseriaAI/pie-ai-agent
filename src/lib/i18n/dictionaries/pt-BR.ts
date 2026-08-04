@@ -94,7 +94,7 @@ export const ptBRDict = {
     },
     customRules: {
       description:
-        "Quer que o Pie siga suas próprias regras? Escreva aqui: como chamar você, que tom usar ou hábitos a manter… Deixe em branco para desativar.",
+        "Quer que o Pie siga suas próprias regras? Escreva aqui: como chamar você, que tom usar ou hábitos a manter…",
       placeholder:
         "ex.: Responda sempre em tópicos concisos e cite a URL da fonte.",
       charCount: "{count}/{max}",

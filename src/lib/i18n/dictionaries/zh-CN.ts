@@ -93,7 +93,7 @@ export const zhCNDict = {
     },
     customRules: {
       description:
-        "想给 Pie 加上你的专属规则？写在这里，比如：希望怎么称呼你、用什么语气、做事的习惯……留空即关闭。",
+        "想给 Pie 加上你的专属规则？写在这里，比如：希望怎么称呼你、用什么语气、做事的习惯……",
       placeholder: "例如：始终用简洁的要点回复，并附上来源网址。",
       charCount: "{count}/{max}",
       save: "保存",

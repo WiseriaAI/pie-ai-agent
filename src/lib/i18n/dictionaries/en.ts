@@ -93,7 +93,7 @@ export const enDict = {
     },
     customRules: {
       description:
-        "Want Pie to follow your own rules? Write them here — for example, how to address you, what tone to use, or habits to keep. Leave empty to turn it off.",
+        "Want Pie to follow your own rules? Write them here — for example, how to address you, what tone to use, or habits to keep.",
       placeholder: "e.g. Always reply in concise bullet points and cite the source URL.",
       charCount: "{count}/{max}",
       save: "Save",

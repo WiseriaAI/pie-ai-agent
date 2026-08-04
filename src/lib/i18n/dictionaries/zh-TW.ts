@@ -93,7 +93,7 @@ export const zhTWDict = {
     },
     customRules: {
       description:
-        "想給 Pie 加上你的專屬規則？寫在這裡，比如：希望怎麼稱呼你、用什麼語氣、做事的習慣……留空即關閉。",
+        "想給 Pie 加上你的專屬規則？寫在這裡，比如：希望怎麼稱呼你、用什麼語氣、做事的習慣……",
       placeholder: "例如：始終用簡潔的重點回覆，並附上來源網址。",
       charCount: "{count}/{max}",
       save: "儲存",
