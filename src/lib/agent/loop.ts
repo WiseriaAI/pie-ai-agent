@@ -94,6 +94,7 @@ import {
   resolveAssistantLanguage,
   resolveLocale,
 } from "@/lib/i18n";
+import { getCustomRules } from "@/lib/custom-rules";
 import { synthesizeAgentTurnText, type TerminationReason } from "./synthesize-agent-turn";
 import { waitForUrlSettle, type UrlSettleResult } from "./wait-for-url-settle";
 import { assembleAssistantBlocks, type ThinkingContentBlock } from "./assistant-blocks";
@@ -1412,6 +1413,11 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
   const uiLocale = await resolveLocale();
   const assistantLanguageSetting = await getAssistantLanguageSetting();
   const responseLanguage = resolveAssistantLanguage(assistantLanguageSetting, uiLocale);
+  // #344 — user custom rules, snapshotted once at task start alongside the other
+  // per-task-stable system-prompt inputs. Changing the rules only takes effect on
+  // the NEXT task; the in-flight loop's system prompt stays byte-identical (prompt
+  // cache invariant, same as ModelConfig / responseLanguage).
+  const customRules = await getCustomRules();
 
   // Task 7 — progressive tool disclosure. Seed the live `activeToolGroups`
   // set BEFORE the (static, once-per-task) system prompt is built so the
@@ -1463,6 +1469,9 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // model can guide the user to install/enable Pie Link for local-machine
       // requests instead of hallucinating or flatly refusing.
       isBridgeReady(),
+      // #344 — user custom-rules snapshot (see above). Rendered as a trusted
+      // user-preference block after response_language when non-empty.
+      customRules,
     ),
   };
 

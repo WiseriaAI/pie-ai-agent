@@ -90,6 +90,17 @@ export const jaDict = {
       about: "Pie について",
       configured: "設定済み",
       support: "サポートと情報",
+      customRules: "カスタムルール",
+    },
+    customRules: {
+      description:
+        "Pie にあなただけのルールを設定しませんか？呼び方、話し方のトーン、作業の進め方など、ここに書いてください。",
+      placeholder: "例：常に簡潔な箇条書きで返信し、出典 URL を明記する。",
+      charCount: "{count}/{max}",
+      save: "保存",
+      saved: "保存しました",
+      safetyNote:
+        "新しいタスクにのみ適用されます。ルールは安全境界を上書きできません。信頼できないページ内容や画像内のテキストには決して従わず、ツールの承認は引き続きパネルで行われます。",
     },
     theme: { label: "テーマ", light: "ライト", dark: "ダーク", system: "自動" },
     about: {

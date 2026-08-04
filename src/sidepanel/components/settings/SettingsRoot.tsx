@@ -6,6 +6,7 @@ import {
   Contrast,
   Globe,
   MessageSquare,
+  ScrollText,
   MousePointerClick,
   MessageCircle,
   Info,
@@ -306,6 +307,12 @@ export default function SettingsRoot({
             icon={<MessageSquare {...ROW_ICON} />}
             label={t("settings.language.assistantLabel")}
             onClick={() => onOpenPage("assistantLanguage")}
+          />
+          <NavRow
+            id="customRules"
+            icon={<ScrollText {...ROW_ICON} />}
+            label={t("settings.nav.customRules")}
+            onClick={() => onOpenPage("customRules")}
           />
         </Group>
       </div>

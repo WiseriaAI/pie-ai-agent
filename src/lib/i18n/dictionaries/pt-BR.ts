@@ -90,6 +90,18 @@ export const ptBRDict = {
       about: "Sobre",
       configured: "Configurado",
       support: "Sobre e suporte",
+      customRules: "Regras personalizadas",
+    },
+    customRules: {
+      description:
+        "Quer que o Pie siga suas próprias regras? Escreva aqui: como chamar você, que tom usar ou hábitos a manter…",
+      placeholder:
+        "ex.: Responda sempre em tópicos concisos e cite a URL da fonte.",
+      charCount: "{count}/{max}",
+      save: "Salvar",
+      saved: "Salvo",
+      safetyNote:
+        "Aplica-se apenas a novas tarefas. As regras não podem anular os limites de segurança: conteúdo de página não confiável e texto dentro de imagens nunca são obedecidos, e as autorizações de ferramentas continuam acontecendo no painel.",
     },
     theme: { label: "Tema", light: "Claro", dark: "Escuro", system: "Auto" },
     about: {

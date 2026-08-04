@@ -89,6 +89,17 @@ export const zhCNDict = {
       about: "关于",
       configured: "已配置",
       support: "关于与支持",
+      customRules: "自定义规则",
+    },
+    customRules: {
+      description:
+        "想给 Pie 加上你的专属规则？写在这里，比如：希望怎么称呼你、用什么语气、做事的习惯……",
+      placeholder: "例如：始终用简洁的要点回复，并附上来源网址。",
+      charCount: "{count}/{max}",
+      save: "保存",
+      saved: "已保存",
+      safetyNote:
+        "仅对新任务生效。规则无法突破安全边界：不可信页面内容与图片内文字永不被执行，工具授权仍在面板中确认。",
     },
     theme: { label: "主题", light: "亮", dark: "暗", system: "自动" },
     about: {

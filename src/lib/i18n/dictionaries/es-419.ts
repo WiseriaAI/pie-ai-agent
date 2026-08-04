@@ -90,6 +90,18 @@ export const es419Dict = {
       about: "Acerca de",
       configured: "Configurado",
       support: "Acerca de y soporte",
+      customRules: "Reglas personalizadas",
+    },
+    customRules: {
+      description:
+        "¿Quieres que Pie siga tus propias reglas? Escríbelas aquí: cómo llamarte, qué tono usar o hábitos que deba mantener…",
+      placeholder:
+        "p. ej. Responde siempre en viñetas concisas y cita la URL de la fuente.",
+      charCount: "{count}/{max}",
+      save: "Guardar",
+      saved: "Guardado",
+      safetyNote:
+        "Solo se aplica a tareas nuevas. Las reglas no pueden anular los límites de seguridad: el contenido de página no confiable y el texto dentro de imágenes nunca se obedecen, y las autorizaciones de herramientas siguen ocurriendo en el panel.",
     },
     theme: { label: "Tema", light: "Claro", dark: "Oscuro", system: "Auto" },
     about: {
