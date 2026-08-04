@@ -14,6 +14,8 @@
  */
 
 import { escapeUntrustedWrappers } from "@/lib/agent/untrusted-wrappers";
+import { LANGUAGE_LABELS, titleLengthHint, titleMaxLen } from "@/lib/i18n";
+import type { Locale } from "@/lib/i18n";
 import { updateSessionMeta } from "./storage";
 
 /**
@@ -36,26 +38,40 @@ export type CallChat = (
 ) => Promise<string>;
 
 /**
- * Generates a short LLM title (5-10 chars Chinese) for a session.
+ * Generates a short LLM title for a session in the target language.
+ *
+ * Issue #343 — the title language now follows `targetLang` instead of being
+ * hard-coded to Chinese. The length hint and post-sanitize truncation cap are
+ * locale-aware (CJK: 5-10 字 / 30-char cap; Latin: 3-6 words / 48-char cap).
+ * The R29 sanitize chain (escape in/out + emoji strip + truncation) is
+ * unchanged — only the prompt copy and the length parameters vary by locale.
  *
  * @param firstMessage - The user's first message (raw, untrusted).
  * @param callChat     - DI: injected function to call the LLM.
- * @returns Sanitized title string (≤ 30 chars, no emoji, no wrapper tags).
+ * @param targetLang   - Locale the title should be written in.
+ * @returns Sanitized title string (≤ locale cap, no emoji, no wrapper tags).
  * @throws if LLM fails or returns empty/whitespace (caller should fallback
  *         to deriveTitleFromMessages result already in storage).
  */
 export async function generateTitle(
   firstMessage: string,
   callChat: CallChat,
+  targetLang: Locale,
 ): Promise<string> {
   // Escape any wrapper-tag injection in the user's message before wrapping.
   const escapedInput = escapeUntrustedWrappers(firstMessage);
 
+  const languageLabel = LANGUAGE_LABELS[targetLang];
+  const lengthHint = titleLengthHint(targetLang);
+  const systemPrompt =
+    `You are a session title generator. The input is a user message. ` +
+    `Output a concise title written in ${languageLabel}, ${lengthHint}, ` +
+    `with no punctuation. Output only the title itself, nothing else.`;
+
   const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
     {
       role: "system",
-      content:
-        "你是会话标题生成器。输入是用户消息，输出 5-10 字中文短标题，不带标点。只输出标题本身，不要有任何其他内容。",
+      content: systemPrompt,
     },
     {
       role: "user",
@@ -70,8 +86,8 @@ export async function generateTitle(
   const escaped = escapeUntrustedWrappers(raw);
   // 2. Strip emoji
   const noEmoji = escaped.replace(EMOJI_RE, "");
-  // 3. Truncate to max 30 chars
-  const truncated = noEmoji.slice(0, 30);
+  // 3. Truncate to the locale-aware cap (CJK 30 / Latin 48)
+  const truncated = noEmoji.slice(0, titleMaxLen(targetLang));
   // 4. Trim whitespace
   const result = truncated.trim();
 

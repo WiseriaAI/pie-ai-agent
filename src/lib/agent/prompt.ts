@@ -1,4 +1,5 @@
 import { buildToolCatalogBlock, buildActiveGuidanceBlock } from "./disclosure";
+import { LANGUAGE_LABELS } from "@/lib/i18n";
 import type { Locale } from "@/lib/i18n";
 
 /**
@@ -281,21 +282,12 @@ export function buildSkillCatalogBlock(entries: SkillCatalogEntry[]): string {
   return `\n\nAvailable skills (reusable playbooks). When the user's request matches one, call use_skill({skillId}) to load its instructions, then carry out the task with the regular tools as directed. Skills take no business parameters — infer needed inputs from context. If a loaded skill lists reference files, fetch them with read_skill_file.\n${lines}`;
 }
 
-const RESPONSE_LANGUAGE_LABELS: Record<Locale, string> = {
-  en: "English (en)",
-  "zh-CN": "Simplified Chinese (zh-CN)",
-  "zh-TW": "Traditional Chinese (zh-TW)",
-  "es-419": "Latin American Spanish (es-419)",
-  ja: "Japanese (ja)",
-  "pt-BR": "Brazilian Portuguese (pt-BR)",
-};
-
 export function buildResponseLanguageBlock(
   responseLanguage: Locale | "auto-detect-user-message" | undefined,
 ): string {
   if (!responseLanguage || responseLanguage === "auto-detect-user-message") return "";
   return `\n\n<response_language>
-Default assistant response language: ${RESPONSE_LANGUAGE_LABELS[responseLanguage]}.
+Default assistant response language: ${LANGUAGE_LABELS[responseLanguage]}.
 If the user's latest message explicitly asks for another language, follow the user's request.
 Do not translate tool names, tool arguments, URLs, code, selectors, or quoted page content unless asked.
 </response_language>`;

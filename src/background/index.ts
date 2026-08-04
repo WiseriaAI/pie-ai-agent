@@ -93,6 +93,11 @@ import { captureActivePinnedTab } from "@/lib/sessions/capture-active-pinned";
 import { chat } from "@/lib/model-router";
 import { generateTitle, maybeUpgradeFallbackTitle } from "@/lib/sessions/title-generator";
 import {
+  getAssistantLanguageSetting,
+  resolveAssistantLanguage,
+  resolveLocale,
+} from "@/lib/i18n";
+import {
   evictAllOnSWStartup,
   evictByInFlightSet,
 } from "./image-cache";
@@ -1380,7 +1385,19 @@ async function handleChatStream(
           msgs: Array<{ role: "system" | "user" | "assistant"; content: string }>,
         ) => chat(chatModelConfig, msgs as ChatMessage[]).then((r) => r.content);
 
-        generateTitle(firstUserContent, callChat)
+        // Issue #343 — generate the title in the assistant's response language
+        // (falling back to the UI locale). "auto-detect-user-message" has no
+        // conversation context to detect from at title time, so it also falls
+        // back to the UI locale.
+        const uiLocale = await resolveLocale();
+        const resolvedLang = resolveAssistantLanguage(
+          await getAssistantLanguageSetting(),
+          uiLocale,
+        );
+        const titleLang =
+          resolvedLang === "auto-detect-user-message" ? uiLocale : resolvedLang;
+
+        generateTitle(firstUserContent, callChat, titleLang)
           .then((llmTitle) =>
             maybeUpgradeFallbackTitle(sessionId, expectedFallback, llmTitle),
           )
