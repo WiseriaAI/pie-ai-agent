@@ -1,11 +1,16 @@
 /**
  * Recording v1 — RecordedAction[] → promptTemplate + parameters JSON Schema +
- * allowedTools。所有用户可见步骤模板字符串集中在 STEP_TEMPLATES（决议 3：i18n
- * 切换只动这一处）。
+ * allowedTools。
+ *
+ * The promptTemplate is a **fixed English scaffold** (issue #342), NOT localized:
+ * it is a one-shot generated artifact baked into the skill + an instruction to the
+ * replay LLM, which reads any language fine. Fixing it to English makes it universal
+ * across replay providers and removes the "which UI locale was active at save time"
+ * branch. Only page-verbatim `name` / `value` are carried through as-is.
  */
 
 import { escapeUntrustedWrappers } from "@/lib/agent/untrusted-wrappers";
-import type { RecordedAction, TabRegistry } from "./types";
+import type { RecordedAction, RecordedTarget, TargetKindKey, RegionKey, TabRegistry } from "./types";
 
 export class PromptTooLargeError extends Error {
   constructor(public actualBytes: number, public maxBytes: number) {
@@ -18,23 +23,68 @@ const PROMPT_TEMPLATE_MAX_BYTES = 8 * 1024;
 
 const STEP_TEMPLATES = {
   header:
-    "你是回放一段用户已演示过的网页操作流程。请按以下步骤逐步执行，每步先 snapshot 页面，再用 click / type / scroll / open_url / press_key / hover 工具操作匹配到的元素（按 Enter 或快捷键用 press_key；菜单需悬停展开时用 hover）。完成后调用 done；遇到无法继续的情况调用 fail。\n\n",
-  click: (n: number, label: string) => `第 ${n} 步：点击${label}。`,
-  type: (n: number, label: string, valueExpr: string) =>
-    `第 ${n} 步：在${label}中输入 ${valueExpr}。`,
-  select: (n: number, label: string, valueExpr: string) =>
-    `第 ${n} 步：在${label}中选择 ${valueExpr}。`,
-  scroll: (n: number, label: string, deltaPx: string | undefined) =>
+    "You are replaying a web workflow the user already demonstrated. Follow each step in order: first snapshot the page, then use the click / type / scroll / open_url / press_key / hover tools to operate the matched element (use press_key for Enter or shortcuts; use hover when a menu needs to be expanded). Call done when finished; call fail if you cannot continue.\n\n",
+  click: (n: number, target: string) => `Step ${n}: click ${target}.`,
+  check: (n: number, target: string) => `Step ${n}: check ${target}.`,
+  uncheck: (n: number, target: string) => `Step ${n}: uncheck ${target}.`,
+  type: (n: number, target: string, valueExpr: string) =>
+    `Step ${n}: type ${valueExpr} into ${target}.`,
+  select: (n: number, target: string, valueExpr: string) =>
+    `Step ${n}: select ${valueExpr} in ${target}.`,
+  scroll: (n: number, direction: "down" | "up", deltaPx: string | undefined) =>
     deltaPx
-      ? `第 ${n} 步：${label}约 ${deltaPx}px。`
-      : `第 ${n} 步：${label}到下一屏。`,
-  submit: (n: number, label: string) => `第 ${n} 步：提交${label}所属的表单。`,
-  navigate: (n: number, url: string) => `第 ${n} 步：导航到 ${url}。`,
-  keypress: (n: number, key: string) => `第 ${n} 步：按 ${key} 键。`,
+      ? `Step ${n}: scroll ${direction} about ${deltaPx}px.`
+      : `Step ${n}: scroll ${direction} to the next screen.`,
+  submit: (n: number, target: string) => `Step ${n}: submit the form containing ${target}.`,
+  navigate: (n: number, url: string) => `Step ${n}: navigate to ${url}.`,
+  keypress: (n: number, key: string) => `Step ${n}: press the ${key} key.`,
   spawnTab: (origin: string) =>
-    `— 上一步的点击会打开一个新标签页，切换到它继续（目标站点：${origin}）。`,
-  switchTab: (origin: string) => `— 切回 ${origin} 的标签页继续。`,
+    `— The previous click opens a new tab; switch to it and continue (target site: ${origin}).`,
+  switchTab: (origin: string) => `— Switch back to the ${origin} tab and continue.`,
 } as const;
+
+// Fixed English kind/region words for the replay scaffold. Language-neutral by
+// design (issue #342) — the panel renderer localizes separately via i18n dicts.
+const KIND_EN: Record<TargetKindKey, string> = {
+  button: "button", link: "link", tab: "tab", checkbox: "checkbox",
+  radio: "radio", switch: "switch", menuitem: "menu item", option: "option",
+  input: "input", textarea: "text area", dropdown: "dropdown",
+  summary: "disclosure", element: "element", editor: "editor",
+};
+const REGION_EN: Record<RegionKey, string> = {
+  main: "main", nav: "nav", header: "header", footer: "footer",
+  aside: "sidebar", other: "other",
+};
+
+function ordinal(n: number): string {
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${n}th`;
+  switch (n % 10) {
+    case 1: return `${n}st`;
+    case 2: return `${n}nd`;
+    case 3: return `${n}rd`;
+    default: return `${n}th`;
+  }
+}
+
+/** Compose the English target phrase (e.g. `the button "Submit"`) from structure codes. */
+function describeTargetEn(target: RecordedTarget | undefined): string {
+  if (!target) return "the element";
+  const kind = KIND_EN[target.kindKey] ?? "element";
+  if (target.editorEngine) {
+    return `the ${escapeUntrustedWrappers(target.editorEngine)} editor`;
+  }
+  if (target.name) {
+    const name = escapeUntrustedWrappers(target.name);
+    // Bracket forms like (placeholder='..') / (name='..') read fine unquoted.
+    return name.startsWith("(") ? `the ${kind} ${name}` : `the ${kind} "${name}"`;
+  }
+  if (target.nth != null) {
+    const region = REGION_EN[target.regionKey ?? "other"] ?? "other";
+    return `the ${ordinal(target.nth)} ${kind} in the ${region} region`;
+  }
+  return `the ${kind}`;
+}
 
 const ACTION_TO_TOOL: Record<RecordedAction["type"], string | null> = {
   click: "click",
@@ -105,7 +155,7 @@ export function serialize(
       seenRefs.add(ref);
       prevRef = ref;
     }
-    const safeLabel = escapeUntrustedWrappers(action.label);
+    const targetExpr = describeTargetEn(action.target);
     const tool = ACTION_TO_TOOL[action.type];
     if (tool) tools.add(tool);
 
@@ -114,26 +164,26 @@ export function serialize(
       case "click":
         line =
           action.checked === undefined
-            ? STEP_TEMPLATES.click(stepN, safeLabel)
+            ? STEP_TEMPLATES.click(stepN, targetExpr)
             : action.checked
-              ? `第 ${stepN} 步：勾选${safeLabel}。`
-              : `第 ${stepN} 步：取消勾选${safeLabel}。`;
+              ? STEP_TEMPLATES.check(stepN, targetExpr)
+              : STEP_TEMPLATES.uncheck(stepN, targetExpr);
         break;
       case "submit":
-        line = STEP_TEMPLATES.submit(stepN, safeLabel);
+        line = STEP_TEMPLATES.submit(stepN, targetExpr);
         break;
       case "type": {
         const valueExpr = renderValueExpr(action, params);
-        line = STEP_TEMPLATES.type(stepN, safeLabel, valueExpr);
+        line = STEP_TEMPLATES.type(stepN, targetExpr, valueExpr);
         break;
       }
       case "select": {
         const valueExpr = renderValueExpr(action, params);
-        line = STEP_TEMPLATES.select(stepN, safeLabel, valueExpr);
+        line = STEP_TEMPLATES.select(stepN, targetExpr, valueExpr);
         break;
       }
       case "scroll":
-        line = STEP_TEMPLATES.scroll(stepN, safeLabel, action.value);
+        line = STEP_TEMPLATES.scroll(stepN, action.direction ?? "down", action.value);
         break;
       case "navigate":
         line = STEP_TEMPLATES.navigate(stepN, escapeUntrustedWrappers(action.url));
@@ -147,10 +197,10 @@ export function serialize(
       line += ` [hint: ${escapeUntrustedWrappers(action.selectorHint)}]`;
     }
     if (action.unstable) {
-      line += " [可能不稳定]";
+      line += " [possibly unstable]";
     }
     if (action.fromPopup) {
-      line += "（该项在弹出菜单/下拉中，回放前可能需先悬停或点击其触发器展开）";
+      line += " (This item is in a popup menu/dropdown; you may need to hover or click its trigger to reveal it first.)";
     }
     lines.push(line);
   });

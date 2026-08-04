@@ -90,6 +90,18 @@ export const ptBRDict = {
       about: "Sobre",
       configured: "Configurado",
       support: "Sobre e suporte",
+      customRules: "Regras personalizadas",
+    },
+    customRules: {
+      description:
+        "Quer que o Pie siga suas próprias regras? Escreva aqui: como chamar você, que tom usar ou hábitos a manter…",
+      placeholder:
+        "ex.: Responda sempre em tópicos concisos e cite a URL da fonte.",
+      charCount: "{count}/{max}",
+      save: "Salvar",
+      saved: "Salvo",
+      safetyNote:
+        "Aplica-se apenas a novas tarefas. As regras não podem anular os limites de segurança: conteúdo de página não confiável e texto dentro de imagens nunca são obedecidos, e as autorizações de ferramentas continuam acontecendo no painel.",
     },
     theme: { label: "Tema", light: "Claro", dark: "Escuro", system: "Auto" },
     about: {
@@ -533,6 +545,18 @@ export const ptBRDict = {
     typeLabels: { click: "CLIQUE", type: "DIGITAR", select: "SELECIONAR", scroll: "ROLAR", nav: "NAVEGAR", submit: "ENVIAR", keypress: "Tecla" },
     metaRedacted: "OCULTO",
     metaUnstable: "INSTÁVEL",
+    kind: {
+      button: "botão", link: "link", tab: "aba", checkbox: "caixa de seleção",
+      radio: "botão de opção", switch: "interruptor", menuitem: "item de menu", option: "opção",
+      input: "campo", textarea: "área de texto", dropdown: "menu suspenso",
+      summary: "expansor", element: "elemento", editor: "editor",
+    },
+    region: {
+      main: "principal", nav: "navegação", header: "cabeçalho", footer: "rodapé",
+      aside: "lateral", other: "outra",
+    },
+    checkedOn: "marcado",
+    checkedOff: "desmarcado",
   },
   customProvider: {
     name: "NOME",

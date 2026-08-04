@@ -1,7 +1,8 @@
 /**
  * Capture integration test — runs in happy-dom (vite.config.ts test.environment).
  * 验证注入函数在真实 DOM 树上能正确捕获 click / input / submit 事件并构造
- * CapturedActionPayload。
+ * CapturedActionPayload。issue #342 起 payload 携带**结构化 target**（kindKey /
+ * name / nth / regionKey / editorEngine）而非烤死的自然语言 label；断言据此改写。
  *
  * 注：注入函数是 self-contained 的（无外部 import / 无闭包），但在测试里我们直接
  * 调用它（不走 chrome.scripting.executeScript），mock 掉 chrome.runtime.sendMessage。
@@ -9,7 +10,6 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { installCaptureListener } from "./capture";
-import { detectSensitive } from "./redact";
 import type { CapturedActionPayload } from "./types";
 import { UNTRUSTED_WRAPPER_TAGS } from "@/lib/agent/untrusted-wrappers";
 
@@ -35,7 +35,7 @@ describe("capture.installCaptureListener", () => {
     vi.useRealTimers();
   });
 
-  it("captures button click with aria-label as label", () => {
+  it("captures button click with aria-label as structured target", () => {
     document.body.innerHTML = `<main><button aria-label="Submit form">Submit</button></main>`;
     uninstall = installCaptureListener();
     const btn = document.querySelector("button")!;
@@ -44,8 +44,7 @@ describe("capture.installCaptureListener", () => {
     expect(captured).toHaveLength(1);
     expect(captured[0]!.type).toBe("recording-action");
     expect(captured[0]!.payload.type).toBe("click");
-    expect(captured[0]!.payload.label).toContain("Submit form");
-    expect(captured[0]!.payload.region).toBe("main");
+    expect(captured[0]!.payload.target).toEqual({ kindKey: "button", name: "Submit form" });
     uninstall();
   });
 
@@ -91,6 +90,7 @@ describe("capture.installCaptureListener", () => {
     expect(captured).toHaveLength(1);
     expect(captured[0]!.payload.type).toBe("select");
     expect(captured[0]!.payload.value).toBe("us");
+    expect(captured[0]!.payload.target?.kindKey).toBe("dropdown");
     uninstall();
   });
 
@@ -131,10 +131,8 @@ describe("capture.installCaptureListener", () => {
     expect(captured).toHaveLength(0);
   });
 
-  it("PARITY: capture.ts inline label matches selector.describeElement on same element", async () => {
-    const { describeElement } = await import("./selector");
+  it("STRUCTURE: emits language-neutral codes + verbatim page text (no natural language)", () => {
     vi.useFakeTimers();
-
     document.body.innerHTML = `
       <main>
         <button aria-label="Submit form" data-testid="submit-btn">Submit</button>
@@ -159,70 +157,40 @@ describe("capture.installCaptureListener", () => {
     onclickDiv.click();
 
     expect(captured.length).toBeGreaterThanOrEqual(4);
-    const elements = [btn, emailInput, pwd, onclickDiv];
-    elements.forEach((el, idx) => {
-      const captureLabel = captured[idx]!.payload.label;
-      const captureHint = captured[idx]!.payload.selectorHint;
-      const captureUnstable = captured[idx]!.payload.unstable;
-      const region: string = el.closest("main") ? "main" : "other";
-      // Mirror capture.ts's getRegion + querySelectorAll logic for nth fallback.
-      const regionRoot =
-        region === "main" ? document.querySelector("main") :
-        region === "nav" ? document.querySelector("nav") :
-        region === "header" ? document.querySelector("header") :
-        region === "footer" ? document.querySelector("footer") :
-        region === "aside" ? document.querySelector("aside") :
-        document.body;
-      const sibs = Array.from(regionRoot?.querySelectorAll(el.tagName.toLowerCase()) ?? []);
-      const regionSiblingIndex = sibs.indexOf(el);
-      const regionSiblingCount = sibs.length;
-      const ref = describeElement({
-        tag: el.tagName.toLowerCase(),
-        role: el.getAttribute("role") ?? undefined,
-        ariaLabel: el.getAttribute("aria-label") ?? undefined,
-        text: (el as HTMLElement).innerText ?? "",
-        placeholder: (el as HTMLInputElement).placeholder || undefined,
-        name: (el as HTMLInputElement).name || undefined,
-        id: el.id || undefined,
-        dataTestId: el.getAttribute("data-testid") ?? undefined,
-        autocomplete: (el as HTMLInputElement).autocomplete || undefined,
-        region,
-        regionSiblingIndex,
-        regionSiblingCount,
-        isSensitive: (el as HTMLInputElement).type === "password",
-      });
-      expect(captureLabel).toBe(ref.label);
-      expect(captureHint).toBe(ref.selectorHint);
-      expect(Boolean(captureUnstable)).toBe(ref.unstable);
 
-      // I1: assert redact parity vs Unit 1's canonical detectSensitive.
-      // capture.ts duplicates the redact logic for self-containment; without
-      // this, a future widening of redact.ts could drift unnoticed.
-      const inputEl = el as HTMLInputElement;
-      // Resolve associated <label for=id> text the same way capture.ts does.
-      let labelText = "";
-      if (inputEl.id) {
-        const lbl = document.querySelector<HTMLLabelElement>(`label[for="${inputEl.id}"]`);
-        if (lbl?.textContent) labelText = lbl.textContent;
-      }
-      const refRedact = detectSensitive({
-        type: inputEl.type,
-        autocomplete: inputEl.autocomplete,
-        ariaLabel: el.getAttribute("aria-label") ?? undefined,
-        name: inputEl.name || undefined,
-        placeholder: inputEl.placeholder || undefined,
-        labelText: labelText || undefined,
-      });
-      expect(Boolean(captured[idx]!.payload.redacted)).toBe(refRedact.redacted);
-      expect(captured[idx]!.payload.placeholderName).toBe(refRedact.placeholderName);
+    // 1) aria-label + strong data-testid selector, kind from <button>.
+    expect(captured[0]!.payload.target).toEqual({ kindKey: "button", name: "Submit form" });
+    expect(captured[0]!.payload.selectorHint).toBe('[data-testid="submit-btn"]');
+    expect(captured[0]!.payload.unstable).toBeFalsy();
+
+    // 2) placeholder bracket form (language-neutral), name-attr selector.
+    expect(captured[1]!.payload.target).toEqual({
+      kindKey: "input",
+      name: "(placeholder='you@example.com')",
     });
+    expect(captured[1]!.payload.selectorHint).toBe('input[name="email"]');
+
+    // 3) sensitive password with no textual identifier → nth-in-region fallback.
+    //    No selectorHint (sensitive), redacted, and target carries structured
+    //    nth + regionKey codes (never a natural-language phrase).
+    const pwdPayload = captured[2]!.payload;
+    expect(pwdPayload.redacted).toBe(true);
+    expect(pwdPayload.placeholderName).toBe("password");
+    expect(pwdPayload.selectorHint).toBeUndefined();
+    expect(pwdPayload.target?.kindKey).toBe("input");
+    expect(pwdPayload.target?.name).toBeUndefined();
+    expect(typeof pwdPayload.target?.nth).toBe("number");
+    expect(pwdPayload.target?.regionKey).toBe("main");
+    expect(pwdPayload.unstable).toBe(true);
+
+    // 4) generic <div onclick> with aria-label → kind falls back to "element".
+    expect(captured[3]!.payload.target).toEqual({ kindKey: "element", name: "Open card" });
     uninstall();
   });
 
-  it("PARITY: role=checkbox label matches describeElement (deferred capture)", async () => {
-    const { describeElement } = await import("./selector");
+  it("captures role=checkbox toggle with structured target (deferred aria-checked read)", () => {
     vi.useFakeTimers();
-    // sole div in <nav> → non-ambiguous
+    // sole div in <nav> → nth fallback not triggered (aria-label present)
     document.body.innerHTML = `<nav><div role="checkbox" aria-checked="false" aria-label="夜间模式">●</div></nav>`;
     const box = document.querySelector('[role="checkbox"]') as HTMLElement;
     box.addEventListener("click", () => box.setAttribute("aria-checked", "true"));
@@ -231,30 +199,14 @@ describe("capture.installCaptureListener", () => {
     vi.advanceTimersByTime(0);
 
     const rec = captured.find((c) => c.payload.type === "click")!;
-    const ref = describeElement({
-      tag: "div",
-      role: "checkbox",
-      ariaLabel: "夜间模式",
-      text: (box as HTMLElement).innerText ?? "",
-      placeholder: undefined,
-      name: undefined,
-      id: undefined,
-      dataTestId: undefined,
-      autocomplete: undefined,
-      region: "nav",
-      regionSiblingIndex: 0,
-      regionSiblingCount: 1,
-      isSensitive: false,
-    });
-    expect(rec.payload.label).toBe(ref.label);
+    expect(rec.payload.target).toEqual({ kindKey: "checkbox", name: "夜间模式" });
+    expect(rec.payload.checked).toBe(true);
     vi.useRealTimers();
     uninstall();
   });
 
-  it("PARITY: contenteditable label matches describeElement (debounced capture)", async () => {
-    const { describeElement } = await import("./selector");
+  it("captures contenteditable typing with structured target (debounced)", () => {
     vi.useFakeTimers();
-    // sole div in <aside> → non-ambiguous
     document.body.innerHTML = `<aside><div contenteditable="true" aria-label="评论">draft</div></aside>`;
     const ed = document.querySelector('[contenteditable="true"]') as HTMLElement;
     uninstall = installCaptureListener();
@@ -263,22 +215,8 @@ describe("capture.installCaptureListener", () => {
     vi.advanceTimersByTime(500);
 
     const rec = captured.find((c) => c.payload.type === "type")!;
-    const ref = describeElement({
-      tag: "div",
-      role: undefined,
-      ariaLabel: "评论",
-      text: (ed as HTMLElement).innerText ?? "",
-      placeholder: undefined,
-      name: undefined,
-      id: undefined,
-      dataTestId: undefined,
-      autocomplete: undefined,
-      region: "aside",
-      regionSiblingIndex: 0,
-      regionSiblingCount: 1,
-      isSensitive: false,
-    });
-    expect(rec.payload.label).toBe(ref.label);
+    // contenteditable <div> has no role → kind falls back to "element".
+    expect(rec.payload.target).toEqual({ kindKey: "element", name: "评论" });
     vi.useRealTimers();
     uninstall();
   });
@@ -292,7 +230,7 @@ describe("capture.installCaptureListener", () => {
 
     expect(captured).toHaveLength(1);
     expect(captured[0]!.payload.type).toBe("click");
-    expect(captured[0]!.payload.label).toContain("Open card");
+    expect(captured[0]!.payload.target?.name).toBe("Open card");
     uninstall();
   });
 
@@ -302,7 +240,7 @@ describe("capture.installCaptureListener", () => {
     (document.querySelector('[role="button"]') as HTMLElement).click();
 
     expect(captured).toHaveLength(1);
-    expect(captured[0]!.payload.label).toContain("Play");
+    expect(captured[0]!.payload.target).toEqual({ kindKey: "button", name: "Play" });
     uninstall();
   });
 
@@ -347,7 +285,7 @@ describe("capture.installCaptureListener", () => {
     const clicks = captured.filter((c) => c.payload.type === "click");
     expect(clicks).toHaveLength(1);
     expect(clicks[0]!.payload.checked).toBe(true);
-    expect(clicks[0]!.payload.label).toContain("夜间模式");
+    expect(clicks[0]!.payload.target?.name).toBe("夜间模式");
     vi.useRealTimers();
     uninstall();
   });
@@ -367,12 +305,12 @@ describe("capture.installCaptureListener", () => {
     const types = captured.filter((c) => c.payload.type === "type");
     expect(types).toHaveLength(1);
     expect(types[0]!.payload.value).toBe("你好世界");
-    expect(types[0]!.payload.label).toContain("评论");
+    expect(types[0]!.payload.target?.name).toBe("评论");
     vi.useRealTimers();
     uninstall();
   });
 
-  it("captures Enter as a keypress", () => {
+  it("captures Enter as a keypress (no target)", () => {
     document.body.innerHTML = `<main><input type="search" name="q"></main>`;
     uninstall = installCaptureListener();
     const input = document.querySelector("input")!;
@@ -381,6 +319,7 @@ describe("capture.installCaptureListener", () => {
     const keys = captured.filter((c) => c.payload.type === "keypress");
     expect(keys).toHaveLength(1);
     expect(keys[0]!.payload.value).toBe("Enter");
+    expect(keys[0]!.payload.target).toBeUndefined();
     uninstall();
   });
 
@@ -394,6 +333,24 @@ describe("capture.installCaptureListener", () => {
     const keys = captured.filter((c) => c.payload.type === "keypress");
     expect(keys).toHaveLength(1);
     expect(keys[0]!.payload.value).toBe("Cmd+B");
+    uninstall();
+  });
+
+  it("captures scroll with a language-neutral direction code (not a Chinese phrase)", () => {
+    vi.useFakeTimers();
+    document.body.innerHTML = `<main style="height:4000px"><p>tall</p></main>`;
+    uninstall = installCaptureListener();
+    // jsdom/happy-dom doesn't move scrollY on its own; drive it directly.
+    Object.defineProperty(window, "scrollY", { value: 800, configurable: true });
+    window.dispatchEvent(new Event("scroll"));
+    vi.advanceTimersByTime(500);
+
+    const scrolls = captured.filter((c) => c.payload.type === "scroll");
+    expect(scrolls).toHaveLength(1);
+    expect(scrolls[0]!.payload.direction).toBe("down");
+    expect(scrolls[0]!.payload.value).toBe("800");
+    expect((scrolls[0]!.payload as { label?: string }).label).toBeUndefined();
+    vi.useRealTimers();
     uninstall();
   });
 
@@ -421,6 +378,7 @@ describe("capture.installCaptureListener", () => {
     const clicks = captured.filter((c) => c.payload.type === "click");
     expect(clicks).toHaveLength(1);
     expect(clicks[0]!.payload.fromPopup).toBe(true);
+    expect(clicks[0]!.payload.target?.kindKey).toBe("menuitem");
     uninstall();
   });
 
@@ -442,7 +400,7 @@ describe("capture.installCaptureListener", () => {
     line.click();
 
     expect(captured).toHaveLength(1);
-    expect(captured[0]!.payload.label).toBe("Monaco 编辑器");
+    expect(captured[0]!.payload.target).toEqual({ kindKey: "editor", editorEngine: "Monaco" });
     expect(captured[0]!.payload.unstable).toBeFalsy();
     uninstall();
   });
@@ -461,9 +419,9 @@ describe("capture.installCaptureListener", () => {
     expect(captured).toHaveLength(1);
     expect(captured[0]!.payload.type).toBe("click");
     // old code: glyph.closest(INTERACTIVE_SELECTOR) can't cross the shadow
-    // boundary → interactive=null → captures the glyph itself (label "元素 'x'"),
-    // NOT the button. New code finds the <button> via composedPath.
-    expect(captured[0]!.payload.label).toContain("Save");
+    // boundary → captures the glyph itself (kind "element"); new code finds the
+    // <button> via composedPath → name "Save", kind "button".
+    expect(captured[0]!.payload.target).toEqual({ kindKey: "button", name: "Save" });
     uninstall();
   });
 
@@ -482,7 +440,7 @@ describe("capture.installCaptureListener", () => {
     const types = captured.filter((c) => c.payload.type === "type");
     expect(types).toHaveLength(1);
     expect(types[0]!.payload.value).toBe("Berlin");
-    expect(types[0]!.payload.label).toMatch(/City|city/);
+    expect(types[0]!.payload.target?.name).toMatch(/City|city/);
     uninstall();
   });
 
@@ -536,15 +494,16 @@ describe("capture.installCaptureListener", () => {
     uninstall();
   });
 
-  // ── Security: wrapper-tag neutralization in captured labels ──
+  // ── Security: wrapper-tag neutralization in captured target names ──
   // Tags NOT in capture's old 6-tag list must also be filtered. A page-injected
   // wrapper tag in an element's aria-label/innerText is a prompt-injection escape
-  // surface; capture.ts must neutralize the full 17-tag master table.
+  // surface; capture.ts must neutralize the full master table before it lands in
+  // target.name.
   //
   // Each sub-test is isolated: localCapture + teardown track their own state so
   // a failing assertion does not leave stale listeners for subsequent tests.
 
-  describe("SECURITY: full wrapper-table escaping in labels", () => {
+  describe("SECURITY: full wrapper-table escaping in target names", () => {
     let teardown: () => void;
     let localCapture: Array<{ type: string; payload: CapturedActionPayload }>;
 
@@ -573,8 +532,8 @@ describe("capture.installCaptureListener", () => {
 
       const clicks = localCapture.filter((c) => c.payload.type === "click");
       expect(clicks).toHaveLength(1);
-      expect(clicks[0]!.payload.label).toContain("[filtered]");
-      expect(clicks[0]!.payload.label).not.toContain("untrusted_editor_content");
+      expect(clicks[0]!.payload.target?.name).toContain("[filtered]");
+      expect(clicks[0]!.payload.target?.name).not.toContain("untrusted_editor_content");
     });
 
     it("filters untrusted_pdf_page in aria-label (was missing from old 6-tag list)", () => {
@@ -586,8 +545,8 @@ describe("capture.installCaptureListener", () => {
 
       const clicks = localCapture.filter((c) => c.payload.type === "click");
       expect(clicks).toHaveLength(1);
-      expect(clicks[0]!.payload.label).toContain("[filtered]");
-      expect(clicks[0]!.payload.label).not.toContain("untrusted_pdf_page");
+      expect(clicks[0]!.payload.target?.name).toContain("[filtered]");
+      expect(clicks[0]!.payload.target?.name).not.toContain("untrusted_pdf_page");
     });
 
     it("filters untrusted_page_match in aria-label (was missing from old 6-tag list)", () => {
@@ -599,8 +558,8 @@ describe("capture.installCaptureListener", () => {
 
       const clicks = localCapture.filter((c) => c.payload.type === "click");
       expect(clicks).toHaveLength(1);
-      expect(clicks[0]!.payload.label).toContain("[filtered]");
-      expect(clicks[0]!.payload.label).not.toContain("untrusted_page_match");
+      expect(clicks[0]!.payload.target?.name).toContain("[filtered]");
+      expect(clicks[0]!.payload.target?.name).not.toContain("untrusted_page_match");
     });
 
     it("filters untrusted_local_file in aria-label (was missing from old 6-tag list)", () => {
@@ -612,17 +571,14 @@ describe("capture.installCaptureListener", () => {
 
       const clicks = localCapture.filter((c) => c.payload.type === "click");
       expect(clicks).toHaveLength(1);
-      expect(clicks[0]!.payload.label).toContain("[filtered]");
-      expect(clicks[0]!.payload.label).not.toContain("untrusted_local_file");
+      expect(clicks[0]!.payload.target?.name).toContain("[filtered]");
+      expect(clicks[0]!.payload.target?.name).not.toContain("untrusted_local_file");
     });
 
-    it("filters all 17 master tags — no tag in WRAPPER_TAGS_LIST escapes label sanitization", () => {
+    it("filters all master tags — no tag in UNTRUSTED_WRAPPER_TAGS escapes name sanitization", () => {
       // Exhaustive check: every tag must be neutralized by capture's WRAPPER_TAGS_RE.
       // This acts as a runtime snapshot of the full table, complementing the source-text
       // lock-step test in untrusted-wrappers.test.ts.
-      // Task 11 Part E: replaced hardcoded array with live import so future tag
-      // additions to UNTRUSTED_WRAPPER_TAGS are automatically covered here.
-
       for (const tag of UNTRUSTED_WRAPPER_TAGS) {
         // Reset state for each tag
         localCapture = [];
@@ -637,8 +593,8 @@ describe("capture.installCaptureListener", () => {
 
         const clicks = localCapture.filter((c) => c.payload.type === "click");
         expect(clicks).toHaveLength(1);
-        expect(clicks[0]!.payload.label, `tag "${tag}" must be filtered in label`).not.toContain(tag);
-        expect(clicks[0]!.payload.label, `tag "${tag}" must produce [filtered] in label`).toContain("[filtered]");
+        expect(clicks[0]!.payload.target?.name, `tag "${tag}" must be filtered in name`).not.toContain(tag);
+        expect(clicks[0]!.payload.target?.name, `tag "${tag}" must produce [filtered] in name`).toContain("[filtered]");
       }
     });
   });

@@ -120,8 +120,15 @@ export function escapeUntrustedWrappers(text: string): string {
  * NOTE: kept SEPARATE from UNTRUSTED_WRAPPER_TAGS on purpose — that list feeds
  * the dual-list invariant (page-snapshot.ts WRAPPER_TAGS_LIST) and many
  * untrusted-only scanners; user_task is trusted and must not pollute it.
+ *
+ * #344 — `user_custom_rules` wraps the user's configured standing rules inside
+ * the STATIC system prompt (buildCustomRulesBlock). Registering it here does two
+ * things: (a) the rules text itself is run through escapeTrustedWrappers before
+ * embedding, so it cannot forge a `</user_custom_rules>` close and inject
+ * "system text" after the block; (b) the page-content path already escapes
+ * trusted wrapper tags, so untrusted page data can never fabricate this block.
  */
-export const TRUSTED_WRAPPER_TAGS = ["user_task"] as const;
+export const TRUSTED_WRAPPER_TAGS = ["user_task", "user_custom_rules"] as const;
 
 const TRUSTED_TAG_ALT = TRUSTED_WRAPPER_TAGS.join("|");
 

@@ -90,6 +90,18 @@ export const es419Dict = {
       about: "Acerca de",
       configured: "Configurado",
       support: "Acerca de y soporte",
+      customRules: "Reglas personalizadas",
+    },
+    customRules: {
+      description:
+        "¿Quieres que Pie siga tus propias reglas? Escríbelas aquí: cómo llamarte, qué tono usar o hábitos que deba mantener…",
+      placeholder:
+        "p. ej. Responde siempre en viñetas concisas y cita la URL de la fuente.",
+      charCount: "{count}/{max}",
+      save: "Guardar",
+      saved: "Guardado",
+      safetyNote:
+        "Solo se aplica a tareas nuevas. Las reglas no pueden anular los límites de seguridad: el contenido de página no confiable y el texto dentro de imágenes nunca se obedecen, y las autorizaciones de herramientas siguen ocurriendo en el panel.",
     },
     theme: { label: "Tema", light: "Claro", dark: "Oscuro", system: "Auto" },
     about: {
@@ -533,6 +545,18 @@ export const es419Dict = {
     typeLabels: { click: "CLIC", type: "ESCRIBIR", select: "SELECCIONAR", scroll: "DESPLAZAR", nav: "NAVEGAR", submit: "ENVIAR", keypress: "Tecla" },
     metaRedacted: "OCULTO",
     metaUnstable: "INESTABLE",
+    kind: {
+      button: "botón", link: "enlace", tab: "pestaña", checkbox: "casilla",
+      radio: "botón de opción", switch: "interruptor", menuitem: "elemento de menú", option: "opción",
+      input: "campo", textarea: "área de texto", dropdown: "menú desplegable",
+      summary: "plegable", element: "elemento", editor: "editor",
+    },
+    region: {
+      main: "principal", nav: "navegación", header: "encabezado", footer: "pie",
+      aside: "lateral", other: "otra",
+    },
+    checkedOn: "marcado",
+    checkedOff: "desmarcado",
   },
   customProvider: {
     name: "NOMBRE",

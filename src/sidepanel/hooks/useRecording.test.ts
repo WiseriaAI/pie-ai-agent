@@ -43,7 +43,7 @@ describe("useRecording", () => {
   it("recording-action-broadcast appends action", () => {
     const { result } = renderHook(() => useRecording({ sessionId: "S1" }));
     act(() => captured({ type: "recording-started", sessionId: "S1", tabId: 1, origin: "x", startedAt: 0 }));
-    const action: RecordedAction = { type: "click", label: "X", url: "u", region: "main", timestamp: 1 };
+    const action: RecordedAction = { type: "click", target: { kindKey: "button", name: "X" }, url: "u", timestamp: 1 };
     act(() => captured({ type: "recording-action-broadcast", sessionId: "S1", action }));
     expect(result.current.actions).toEqual([action]);
   });

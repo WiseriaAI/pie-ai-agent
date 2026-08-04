@@ -16,17 +16,15 @@
  *     是 composed，故 shadow 内表单输入也能录到；change 非 composed 则不行）
  *   - editor 宿主（Monaco/CodeMirror/TinyMCE）经 EDITOR_SELECTOR 识别（inline + parity）
  *
- * **buildLabelFor parity invariant** — wording must match selector.ts's
- * describeElement output character-for-character so the parity test passes
- * AND so users see the same label whether the action came through capture
- * (recording-time) or describeElement (a future re-serialize path). Notably:
- *   - nth-in-region fallback uses `${regionCn} 第 N 个${kind}` (with SPACE, no 区)
- *   - placeholder fallback uses `${kind} (placeholder='...')`
- *   - name fallback uses `${kind} (name='...')`
- *   - aria-label / text uses `${kind} '...'`
+ * **structured-target invariant (issue #342)** — capture emits ONLY language-neutral
+ * structure codes (kindKey / regionKey / nth) plus verbatim page text (name/value).
+ * No natural-language word tables live here; all wording is composed later — in the
+ * panel renderer (RecordingMode.tsx, follows UI locale) and the replay serializer
+ * (serialize.ts, fixed English scaffold). The `(placeholder='...')` / `(name='...')`
+ * bracket forms in `name` are language-neutral and kept verbatim.
  */
 
-import type { CapturedActionPayload } from "./types";
+import type { CapturedActionPayload, RecordedTarget } from "./types";
 
 export function installCaptureListener(): () => void {
   // Idempotent install: if a previous capture is already attached to this
@@ -144,29 +142,30 @@ export function installCaptureListener(): () => void {
     return { redacted: false };
   }
 
-  function elementKindCn(el: HTMLElement): string {
+  // role/tag → language-neutral kindKey code (rendered/serialized later via dicts).
+  function elementKindKey(el: HTMLElement): string {
     const role = (el.getAttribute("role") || "").toLowerCase();
-    const map: Record<string, string> = {
-      button: "按钮",
-      link: "链接",
-      tab: "标签页",
-      checkbox: "复选框",
-      radio: "单选框",
-      switch: "开关",
-      menuitem: "菜单项",
-      option: "下拉选项",
+    const roleMap: Record<string, string> = {
+      button: "button",
+      link: "link",
+      tab: "tab",
+      checkbox: "checkbox",
+      radio: "radio",
+      switch: "switch",
+      menuitem: "menuitem",
+      option: "option",
     };
-    if (role && map[role]) return map[role]!;
+    if (role && roleMap[role]) return roleMap[role]!;
     const tag = el.tagName.toLowerCase();
     const tagMap: Record<string, string> = {
-      a: "链接",
-      button: "按钮",
-      input: "输入框",
-      textarea: "文本框",
-      select: "下拉框",
-      summary: "折叠标签",
+      a: "link",
+      button: "button",
+      input: "input",
+      textarea: "textarea",
+      select: "dropdown",
+      summary: "summary",
     };
-    return tagMap[tag] ?? "元素";
+    return tagMap[tag] ?? "element";
   }
 
   // VERBATIM copy of EDITOR_SELECTOR / EDITOR_ENGINE_MAP from
@@ -191,14 +190,17 @@ export function installCaptureListener(): () => void {
     return "editor";
   }
 
-  function buildLabelFor(el: HTMLElement): {
-    label: string;
+  // Build the structured target (kindKey / name / nth / regionKey / editorEngine).
+  // Emits ONLY structure codes + verbatim page text — no natural-language wording
+  // (that is composed later in RecordingMode.tsx / serialize.ts, per issue #342).
+  function buildTargetFor(el: HTMLElement): {
+    target: RecordedTarget;
     selectorHint?: string;
     unstable: boolean;
   } {
     const editorEngine = editorEngineOf(el);
     if (editorEngine) {
-      return { label: `${editorEngine} 编辑器`, unstable: false };
+      return { target: { kindKey: "editor", editorEngine }, unstable: false };
     }
     const aria = sanitizeText((el.getAttribute("aria-label") || "").trim(), 80);
     const text = sanitizeText((el as HTMLElement).innerText?.trim() ?? "", 80);
@@ -208,15 +210,17 @@ export function installCaptureListener(): () => void {
     const id = inputEl.id?.trim();
     const dataTestId = el.getAttribute("data-testid")?.trim();
     const isSensitive = detectSensitiveInline(el).redacted;
-    const kind = elementKindCn(el);
+    const kindKey = elementKindKey(el) as RecordedTarget["kindKey"];
 
-    let primary = "";
+    const target: RecordedTarget = { kindKey };
     let unstable = false;
-    if (aria) primary = aria;
-    else if (text) primary = text;
-    else if (placeholder) primary = `(placeholder='${placeholder}')`;
-    else if (name) primary = `(name='${name}')`;
+    if (aria) target.name = aria;
+    else if (text) target.name = text;
+    // `(placeholder='..')` / `(name='..')` bracket forms are language-neutral — kept verbatim.
+    else if (placeholder) target.name = `(placeholder='${placeholder}')`;
+    else if (name) target.name = `(name='${name}')`;
     else {
+      // nth-in-region fallback — no textual identifier; carry structured nth + regionKey.
       const region = getRegion(el);
       const regionRoot =
         region === "main" ? document.querySelector("main") :
@@ -228,22 +232,9 @@ export function installCaptureListener(): () => void {
       const sibs = Array.from(
         regionRoot?.querySelectorAll(el.tagName.toLowerCase()) ?? [],
       );
-      const idx = sibs.indexOf(el) + 1;
-      primary = `nth:${idx}`;
+      target.nth = sibs.indexOf(el) + 1;
+      target.regionKey = region as RecordedTarget["regionKey"];
       unstable = true;
-    }
-
-    let label: string;
-    if (primary.startsWith("(")) {
-      label = `${kind} ${primary}`;
-    } else if (primary.startsWith("nth:")) {
-      // PARITY with selector.ts: `${regionCn} 第 N 个${kind}` (Unit 2 polish form).
-      const region = getRegion(el);
-      const regionCn = region === "other" ? "页面" : region;
-      const idx = primary.slice(4);
-      label = `${regionCn} 第 ${idx} 个${kind}`;
-    } else {
-      label = `${kind} '${primary}'`;
     }
 
     let selectorHint: string | undefined;
@@ -253,12 +244,11 @@ export function installCaptureListener(): () => void {
       } else if (id && !/password|secret|token|api|auth|pwd/i.test(id)) {
         selectorHint = `#${id.replace(/['"\\\n]/g, "\\$&")}`;
       } else if (name && !/password|secret|token|api|auth|pwd/i.test(name)) {
-        // PARITY with selector.ts (Unit 2 polish): double-quoted attribute value.
         selectorHint = `${el.tagName.toLowerCase()}[name="${name.replace(/['"\\\n]/g, "\\$&")}"]`;
       }
     }
 
-    return selectorHint !== undefined ? { label, selectorHint, unstable } : { label, unstable };
+    return selectorHint !== undefined ? { target, selectorHint, unstable } : { target, unstable };
   }
 
   function send(payload: CapturedActionPayload) {
@@ -323,22 +313,20 @@ export function installCaptureListener(): () => void {
     // 翻转，capture-phase 此刻读到的是旧值，延迟到下一 tick 再读 aria-checked。
     const role = (el.getAttribute("role") || "").toLowerCase();
     if (role === "checkbox" || role === "radio" || role === "switch") {
-      const meta = buildLabelFor(el);
-      const region = getRegion(el);
+      const meta = buildTargetFor(el);
       setTimeout(() => {
         send({
           type: "click",
-          label: meta.label,
+          target: meta.target,
           ...(meta.selectorHint ? { selectorHint: meta.selectorHint } : {}),
           checked: el.getAttribute("aria-checked") === "true",
           url: location.href,
-          region,
           ...(meta.unstable ? { unstable: meta.unstable } : {}),
         });
       }, 0);
       return;
     }
-    const { label, selectorHint, unstable } = buildLabelFor(el);
+    const { target: tgt, selectorHint, unstable } = buildTargetFor(el);
     // 落在弹出菜单/下拉里的项（role=menu/listbox/menuitem/option…）：回放时这些项
     // 往往要先悬停/点击触发器才能露出来。打个 fromPopup 标记，serialize 据此提示 LLM。
     let fromPopup = false;
@@ -360,10 +348,9 @@ export function installCaptureListener(): () => void {
     }
     send({
       type: "click",
-      label,
+      target: tgt,
       ...(selectorHint ? { selectorHint } : {}),
       url: location.href,
-      region: getRegion(el),
       ...(unstable ? { unstable } : {}),
       ...(fromPopup ? { fromPopup: true } : {}),
     });
@@ -379,18 +366,17 @@ export function installCaptureListener(): () => void {
     if (!target) return;
     const tag = target.tagName.toLowerCase();
     const inputEl = target as HTMLInputElement;
-    const { label, selectorHint, unstable } = buildLabelFor(target);
+    const { target: tgt, selectorHint, unstable } = buildTargetFor(target);
 
     // 原生 checkbox/radio：记成 click + 最终 checked 态（onClick 已跳过它们）。
     const inputTypeChange = inputEl.type?.toLowerCase?.();
     if (tag === "input" && (inputTypeChange === "checkbox" || inputTypeChange === "radio")) {
       send({
         type: "click",
-        label,
+        target: tgt,
         ...(selectorHint ? { selectorHint } : {}),
         checked: inputEl.checked,
         url: location.href,
-        region: getRegion(target),
         ...(unstable ? { unstable } : {}),
       });
       return;
@@ -399,11 +385,10 @@ export function installCaptureListener(): () => void {
     if (tag === "select") {
       send({
         type: "select",
-        label,
+        target: tgt,
         ...(selectorHint ? { selectorHint } : {}),
         value: inputEl.value,
         url: location.href,
-        region: getRegion(target),
         ...(unstable ? { unstable } : {}),
       });
       return;
@@ -413,13 +398,12 @@ export function installCaptureListener(): () => void {
   const onSubmit = (e: Event) => {
     const form = e.target as HTMLElement | null;
     if (!form) return;
-    const { label, selectorHint, unstable } = buildLabelFor(form);
+    const { target, selectorHint, unstable } = buildTargetFor(form);
     send({
       type: "submit",
-      label,
+      target,
       ...(selectorHint ? { selectorHint } : {}),
       url: location.href,
-      region: getRegion(form),
       ...(unstable ? { unstable } : {}),
     });
   };
@@ -427,9 +411,9 @@ export function installCaptureListener(): () => void {
   // Scroll capture — fires on user scroll on document (also catches programmatic
   // scroll triggered by user-typed Enter on a search box etc.). Debounced 500ms
   // because scroll fires every pixel — we only want one action per "scroll
-  // gesture". Records the final scrollY position; replay reuses the existing
-  // scroll tool which scrolls by amount, so the LLM derives the right call from
-  // the natural-language label "向下滚动 / 向上滚动".
+  // gesture". Records a language-neutral `direction` code ("down"/"up") + |delta|
+  // px in value; wording ("scroll down" / "↓") is composed later in the renderer
+  // and serializer.
   let scrollTimer: ReturnType<typeof setTimeout> | null = null;
   let lastEmittedScrollY = window.scrollY;
   const onScroll = () => {
@@ -443,13 +427,11 @@ export function installCaptureListener(): () => void {
         scrollTimer = null;
         return;
       }
-      const direction = delta > 0 ? "向下滚动" : "向上滚动";
       send({
         type: "scroll",
-        label: direction,
+        direction: delta > 0 ? "down" : "up",
         value: String(Math.abs(Math.round(delta))),
         url: location.href,
-        region: "other",
       });
       lastEmittedScrollY = currentY;
       scrollTimer = null;
@@ -472,15 +454,14 @@ export function installCaptureListener(): () => void {
         ? (host as HTMLInputElement).value
         : host.innerText ?? host.textContent ?? "";
     const value = sens.redacted ? sens.placeholderName! : sanitizeText(raw, 200);
-    const { label, selectorHint, unstable } = buildLabelFor(host);
+    const { target, selectorHint, unstable } = buildTargetFor(host);
     send({
       type: "type",
-      label,
+      target,
       ...(selectorHint ? { selectorHint } : {}),
       value,
       ...(sens.redacted ? { redacted: true, placeholderName: sens.placeholderName } : {}),
       url: location.href,
-      region: getRegion(host),
       ...(unstable ? { unstable } : {}),
     });
   };
@@ -532,10 +513,8 @@ export function installCaptureListener(): () => void {
     // 组合键对 distill/回放 LLM 是提示性上下文，非可直接执行的步骤。
     send({
       type: "keypress",
-      label: "",
       value: parts.join("+"),
       url: location.href,
-      region: "other",
     });
   };
 

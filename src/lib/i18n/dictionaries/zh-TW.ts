@@ -89,6 +89,17 @@ export const zhTWDict = {
       about: "關於",
       configured: "已設定",
       support: "關於與支援",
+      customRules: "自訂規則",
+    },
+    customRules: {
+      description:
+        "想給 Pie 加上你的專屬規則？寫在這裡，比如：希望怎麼稱呼你、用什麼語氣、做事的習慣……",
+      placeholder: "例如：始終用簡潔的重點回覆，並附上來源網址。",
+      charCount: "{count}/{max}",
+      save: "儲存",
+      saved: "已儲存",
+      safetyNote:
+        "僅對新任務生效。規則無法突破安全邊界：不可信頁面內容與圖片內文字永不被執行，工具授權仍在面板中確認。",
     },
     theme: { label: "主題", light: "亮", dark: "暗", system: "自動" },
     about: {
@@ -535,6 +546,18 @@ export const zhTWDict = {
     },
     metaRedacted: "已遮蔽",
     metaUnstable: "不穩定",
+    kind: {
+      button: "按鈕", link: "連結", tab: "分頁", checkbox: "核取方塊",
+      radio: "單選按鈕", switch: "開關", menuitem: "選單項", option: "下拉選項",
+      input: "輸入框", textarea: "文字框", dropdown: "下拉選單",
+      summary: "摺疊標籤", element: "元素", editor: "編輯器",
+    },
+    region: {
+      main: "主區", nav: "導覽區", header: "頁首", footer: "頁尾",
+      aside: "側欄", other: "其他",
+    },
+    checkedOn: "勾選",
+    checkedOff: "取消勾選",
   },
   customProvider: {
     name: "名稱",

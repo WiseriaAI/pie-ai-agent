@@ -89,6 +89,17 @@ export const zhCNDict = {
       about: "关于",
       configured: "已配置",
       support: "关于与支持",
+      customRules: "自定义规则",
+    },
+    customRules: {
+      description:
+        "想给 Pie 加上你的专属规则？写在这里，比如：希望怎么称呼你、用什么语气、做事的习惯……",
+      placeholder: "例如：始终用简洁的要点回复，并附上来源网址。",
+      charCount: "{count}/{max}",
+      save: "保存",
+      saved: "已保存",
+      safetyNote:
+        "仅对新任务生效。规则无法突破安全边界：不可信页面内容与图片内文字永不被执行，工具授权仍在面板中确认。",
     },
     theme: { label: "主题", light: "亮", dark: "暗", system: "自动" },
     about: {
@@ -535,6 +546,18 @@ export const zhCNDict = {
     },
     metaRedacted: "已脱敏",
     metaUnstable: "不稳定",
+    kind: {
+      button: "按钮", link: "链接", tab: "标签页", checkbox: "复选框",
+      radio: "单选框", switch: "开关", menuitem: "菜单项", option: "下拉选项",
+      input: "输入框", textarea: "文本框", dropdown: "下拉框",
+      summary: "折叠标签", element: "元素", editor: "编辑器",
+    },
+    region: {
+      main: "主区", nav: "导航区", header: "页头", footer: "页脚",
+      aside: "侧栏", other: "其他",
+    },
+    checkedOn: "勾选",
+    checkedOff: "取消勾选",
   },
   customProvider: {
     name: "名称",

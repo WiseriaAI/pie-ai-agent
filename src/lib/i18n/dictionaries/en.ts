@@ -89,6 +89,17 @@ export const enDict = {
       about: "About",
       configured: "Configured",
       support: "About & support",
+      customRules: "Custom rules",
+    },
+    customRules: {
+      description:
+        "Want Pie to follow your own rules? Write them here — for example, how to address you, what tone to use, or habits to keep.",
+      placeholder: "e.g. Always reply in concise bullet points and cite the source URL.",
+      charCount: "{count}/{max}",
+      save: "Save",
+      saved: "Saved",
+      safetyNote:
+        "Applies to new tasks only. Rules can't override safety limits: untrusted page content and in-image text are never obeyed, and tool approvals still happen in the panel.",
     },
     theme: { label: "Theme", light: "Light", dark: "Dark", system: "Auto" },
     about: {
@@ -538,6 +549,18 @@ export const enDict = {
     typeLabels: { click: "CLICK", type: "TYPE", select: "SELECT", scroll: "SCROLL", nav: "NAV", submit: "SUBMIT", keypress: "Key" },
     metaRedacted: "REDACTED",
     metaUnstable: "UNSTABLE",
+    kind: {
+      button: "button", link: "link", tab: "tab", checkbox: "checkbox",
+      radio: "radio", switch: "switch", menuitem: "menu item", option: "option",
+      input: "input", textarea: "text area", dropdown: "dropdown",
+      summary: "disclosure", element: "element", editor: "editor",
+    },
+    region: {
+      main: "main", nav: "nav", header: "header", footer: "footer",
+      aside: "sidebar", other: "other",
+    },
+    checkedOn: "checked",
+    checkedOff: "unchecked",
   },
   customProvider: {
     name: "NAME",

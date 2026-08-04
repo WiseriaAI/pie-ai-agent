@@ -9,6 +9,7 @@ import BridgePage from "@/sidepanel/components/settings/pages/BridgePage";
 import FeedbackPage from "@/sidepanel/components/settings/pages/FeedbackPage";
 import AboutPage from "@/sidepanel/components/settings/pages/AboutPage";
 import { UiLanguagePage, AssistantLanguagePage } from "@/sidepanel/components/settings/pages/LanguagePage";
+import CustomRulesPage from "@/sidepanel/components/settings/pages/CustomRulesPage";
 import TopBar, { type AppView, type SettingsPage } from "@/sidepanel/components/TopBar";
 import type { ThemeMode } from "@/sidepanel/theme";
 import SchedulesPanel from "@/sidepanel/components/Schedules/SchedulesPanel";
@@ -444,6 +445,8 @@ export default function App() {
               <UiLanguagePage />
             ) : settingsPage === "assistantLanguage" ? (
               <AssistantLanguagePage />
+            ) : settingsPage === "customRules" ? (
+              <CustomRulesPage />
             ) : settingsPage === "about" ? (
               <AboutPage />
             ) : (
