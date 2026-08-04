@@ -356,9 +356,7 @@ export async function handleRecordingNavCommitted(
 
   const action: RecordedAction = {
     type: "navigate",
-    label: "navigate",
     url: details.url,
-    region: "other",
     timestamp: nextActionId(),
   };
   sess.actions.push(action);
@@ -386,9 +384,7 @@ export async function handleRecordingHistoryStateUpdated(
 
   const action: RecordedAction = {
     type: "navigate",
-    label: "navigate (SPA)",
     url: details.url,
-    region: "other",
     timestamp: nextActionId(),
   };
   sess.actions.push(action);

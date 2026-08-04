@@ -533,6 +533,18 @@ export const es419Dict = {
     typeLabels: { click: "CLIC", type: "ESCRIBIR", select: "SELECCIONAR", scroll: "DESPLAZAR", nav: "NAVEGAR", submit: "ENVIAR", keypress: "Tecla" },
     metaRedacted: "OCULTO",
     metaUnstable: "INESTABLE",
+    kind: {
+      button: "botón", link: "enlace", tab: "pestaña", checkbox: "casilla",
+      radio: "botón de opción", switch: "interruptor", menuitem: "elemento de menú", option: "opción",
+      input: "campo", textarea: "área de texto", dropdown: "menú desplegable",
+      summary: "plegable", element: "elemento", editor: "editor",
+    },
+    region: {
+      main: "principal", nav: "navegación", header: "encabezado", footer: "pie",
+      aside: "lateral", other: "otra",
+    },
+    checkedOn: "marcado",
+    checkedOff: "desmarcado",
   },
   customProvider: {
     name: "NOMBRE",

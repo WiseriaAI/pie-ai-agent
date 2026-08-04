@@ -535,6 +535,18 @@ export const zhTWDict = {
     },
     metaRedacted: "已遮蔽",
     metaUnstable: "不穩定",
+    kind: {
+      button: "按鈕", link: "連結", tab: "分頁", checkbox: "核取方塊",
+      radio: "單選按鈕", switch: "開關", menuitem: "選單項", option: "下拉選項",
+      input: "輸入框", textarea: "文字框", dropdown: "下拉選單",
+      summary: "摺疊標籤", element: "元素", editor: "編輯器",
+    },
+    region: {
+      main: "主區", nav: "導覽區", header: "頁首", footer: "頁尾",
+      aside: "側欄", other: "其他",
+    },
+    checkedOn: "勾選",
+    checkedOff: "取消勾選",
   },
   customProvider: {
     name: "名稱",

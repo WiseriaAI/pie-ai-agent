@@ -13,6 +13,32 @@ export type RecordedActionType =
   | "submit"
   | "keypress";
 
+/** 目标元素的种类码（语言中立枚举）。渲染/序列化时经字典查词，不烤进采集数据。 */
+export type TargetKindKey =
+  | "button" | "link" | "tab" | "checkbox" | "radio" | "switch"
+  | "menuitem" | "option" | "input" | "textarea" | "dropdown"
+  | "summary" | "element" | "editor";
+
+/** 元素所在区域码（语言中立枚举）。 */
+export type RegionKey = "main" | "nav" | "header" | "footer" | "aside" | "other";
+
+/**
+ * 结构化目标描述 —— 取代旧的烤进采集数据的自然语言 label。**只含结构码 + 页面
+ * 原文**（name/value 是页面文本，已 sanitize；kindKey/regionKey 是枚举码）。任何
+ * 自然语言词（"按钮" / "第 3 个" / "导航区"）都在渲染层（RecordingMode.tsx，随 UI
+ * locale）与序列化层（serialize.ts，固定英文 scaffold）组装，不在此。
+ */
+export interface RecordedTarget {
+  kindKey: TargetKindKey;
+  /** aria/text/(placeholder='..')/(name='..') 主标识，已 sanitize；括号形态语言中立、保留。 */
+  name?: string;
+  /** 无 name 时的兜底序号（1-based），与 regionKey 联用。 */
+  nth?: number;
+  regionKey?: RegionKey;
+  /** kindKey==="editor" 时的引擎名："Monaco" | "CodeMirror" | "TinyMCE" | "editor"。 */
+  editorEngine?: string;
+}
+
 /**
  * 一条用户操作记录。capture 在用户每次操作时构造，发回 SW。所有字段都已经过
  * sanitize（控制字符已剥；wrapper 标签已 escape；redacted 时 value 已替换为
@@ -20,9 +46,9 @@ export type RecordedActionType =
  */
 export interface RecordedAction {
   type: RecordedActionType;
-  /** 主标签：人类可读 element 描述。serialize.ts 据此构造步骤句子。
-   *  例："按钮 'Submit'" / "输入框 'Email 邮箱'" / "导航区第 3 个链接"。 */
-  label: string;
+  /** 结构化目标（click/type/select/submit 带；navigate/keypress/scroll 无）。
+   *  serialize.ts / RecordingMode.tsx 据此在各自语言层组装步骤描述。 */
+  target?: RecordedTarget;
   /** 可选 CSS selector hint。仅当存在强标识（data-testid / id / name）时附加；
    *  弱标识或敏感字段不附加。供 LLM 在 promptTemplate 里作为 fallback 使用。 */
   selectorHint?: string;
@@ -34,11 +60,10 @@ export interface RecordedAction {
   placeholderName?: string;
   /** action 时所在 URL（origin tracking）。 */
   url: string;
-  /** capture phase 算出来的 element 所在 region：'main' / 'nav' / 'header' / 'footer' /
-   *  'aside' / 'other'。serialize 用于歧义消解。 */
-  region: string;
+  /** scroll 方向码（语言中立）。仅 type==="scroll" 时出现；value 存 |delta| px。 */
+  direction?: "down" | "up";
   /** 该 action 是否被 selector 算法标记为不稳定（fallback 到 nth-of-type）。
-   *  serialize 在该 step 的 promptTemplate 加 [可能不稳定] 警告。 */
+   *  serialize 在该 step 的 promptTemplate 加 [possibly unstable] 警告。 */
   unstable?: boolean;
   /** checkbox/radio/switch 勾选后的最终状态。仅 type==="click" 且目标是可勾选
    *  元素时出现；serialize 据此渲染「勾选/取消勾选」。 */
@@ -93,13 +118,13 @@ export interface RecordingSession {
  */
 export interface CapturedActionPayload {
   type: RecordedActionType;
-  label: string;
+  target?: RecordedTarget;
   selectorHint?: string;
   value?: string;
   redacted?: boolean;
   placeholderName?: string;
   url: string;
-  region: string;
+  direction?: "down" | "up";
   unstable?: boolean;
   checked?: boolean;
   fromPopup?: boolean;

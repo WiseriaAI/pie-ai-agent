@@ -538,6 +538,18 @@ export const enDict = {
     typeLabels: { click: "CLICK", type: "TYPE", select: "SELECT", scroll: "SCROLL", nav: "NAV", submit: "SUBMIT", keypress: "Key" },
     metaRedacted: "REDACTED",
     metaUnstable: "UNSTABLE",
+    kind: {
+      button: "button", link: "link", tab: "tab", checkbox: "checkbox",
+      radio: "radio", switch: "switch", menuitem: "menu item", option: "option",
+      input: "input", textarea: "text area", dropdown: "dropdown",
+      summary: "disclosure", element: "element", editor: "editor",
+    },
+    region: {
+      main: "main", nav: "nav", header: "header", footer: "footer",
+      aside: "sidebar", other: "other",
+    },
+    checkedOn: "checked",
+    checkedOff: "unchecked",
   },
   customProvider: {
     name: "NAME",
