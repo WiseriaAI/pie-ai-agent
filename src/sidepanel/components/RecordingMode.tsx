@@ -396,68 +396,103 @@ function SequenceRow({ index, action }: { index: number; action: RecordedAction 
   );
 }
 
+/**
+ * Renders the row content as **【action】content** (issue #342): a language-neutral
+ * kind word (fg-2) + the page-verbatim name (fg-1), or an nth/region fallback, plus
+ * optional checked-state and typed/selected value. All wording is composed here at
+ * render time from the structured `target`, so it follows the current UI locale and
+ * a language switch re-renders old rows too.
+ */
 function SequenceLabel({ action }: { action: RecordedAction }) {
-  const baseStyle: CSSProperties = {
+  const t = useT();
+  const mono = "'JetBrains Mono', monospace";
+  const sans = "Inter, sans-serif";
+  // ponytail: full text, no row truncation — wrap long names/urls/values instead of ellipsis
+  const wrapText: CSSProperties = { whiteSpace: "normal", overflowWrap: "anywhere", minWidth: 0 };
+  const base: CSSProperties = {
     flex: 1,
     minWidth: 0,
     display: "flex",
     flexWrap: "wrap",
-    alignItems: "flex-start",
+    alignItems: "baseline",
     gap: 6,
-    fontFamily: "Inter, sans-serif",
-    fontSize: 13,
-    lineHeight: "18px",
-    color: "var(--c-fg-1)",
   };
-  // ponytail: full text, no row truncation — wrap long labels/urls/values instead of ellipsis
-  const wrapText: CSSProperties = { whiteSpace: "normal", overflowWrap: "anywhere", minWidth: 0 };
+  const kindStyle: CSSProperties = { fontFamily: sans, fontSize: 12, color: "var(--c-fg-2)", flexShrink: 0 };
+  const nameStyle: CSSProperties = { fontFamily: sans, fontSize: 13, lineHeight: "18px", color: "var(--c-fg-1)", ...wrapText };
+  const monoValueStyle: CSSProperties = { fontFamily: mono, fontSize: 12, color: "var(--c-fg-2)", ...wrapText };
+  const arrowStyle: CSSProperties = { fontFamily: sans, fontSize: 13, color: "var(--c-fg-3)", flexShrink: 0 };
+
   if (action.type === "navigate") {
     return (
-      <span style={baseStyle}>
-        <span style={{ color: "var(--c-fg-3)" }}>→</span>
-        <span
-          style={{
-            fontFamily: "'JetBrains Mono', monospace",
-            fontSize: 12,
-            color: "var(--c-fg-2)",
-            ...wrapText,
-          }}
-        >
-          {action.url}
-        </span>
+      <span style={base}>
+        <span style={arrowStyle}>→</span>
+        <span style={monoValueStyle}>{action.url}</span>
       </span>
     );
   }
-  if ((action.type === "type" || action.type === "select") && action.value !== undefined) {
+
+  if (action.type === "scroll") {
     return (
-      <span style={baseStyle}>
-        <span style={{ ...wrapText }}>
-          {action.label}
-        </span>
-        <span style={{ color: "var(--c-fg-3)", flexShrink: 0 }}>→</span>
-        <span
-          style={{
-            fontFamily: "'JetBrains Mono', monospace",
-            fontSize: 12,
-            color: action.redacted ? "var(--c-warning)" : "var(--c-fg-2)",
-            flex: 1,
-            ...wrapText,
-          }}
-        >
-          {action.redacted ? `{{${action.placeholderName}}}` : action.value}
+      <span style={base}>
+        <span style={monoValueStyle}>
+          {action.direction === "up" ? "↑" : "↓"} ≈ {action.value}px
         </span>
       </span>
     );
   }
+
+  if (action.type === "keypress") {
+    return (
+      <span style={base}>
+        <span style={monoValueStyle}>{action.value}</span>
+      </span>
+    );
+  }
+
+  // click / type / select / submit —— kind word + name (or nth fallback) + optional value/state
+  const tg = action.target;
   return (
-    <span
-      style={{
-        ...baseStyle,
-        ...wrapText,
-        display: "block",
-      }}
-    >
-      {action.label}
+    <span style={base}>
+      {tg && <span style={kindStyle}>{t(`recording.kind.${tg.kindKey}`)}</span>}
+      {tg?.editorEngine ? (
+        <span style={nameStyle}>{tg.editorEngine}</span>
+      ) : tg?.name ? (
+        <span style={nameStyle}>{tg.name}</span>
+      ) : tg?.nth != null ? (
+        <>
+          <span style={{ fontFamily: mono, fontSize: 12, color: "var(--c-fg-1)" }}>#{tg.nth}</span>
+          {tg.regionKey && (
+            <span style={{ fontFamily: sans, fontSize: 12, color: "var(--c-fg-3)" }}>
+              · {t(`recording.region.${tg.regionKey}`)}
+            </span>
+          )}
+        </>
+      ) : null}
+      {action.checked !== undefined && (
+        <span
+          style={{
+            fontFamily: mono,
+            fontSize: 12,
+            color: action.checked ? "var(--c-success)" : "var(--c-fg-3)",
+          }}
+        >
+          {action.checked ? `✓ ${t("recording.checkedOn")}` : `✗ ${t("recording.checkedOff")}`}
+        </span>
+      )}
+      {(action.type === "type" || action.type === "select") && action.value !== undefined && (
+        <>
+          <span style={arrowStyle}>→</span>
+          <span
+            style={{
+              ...monoValueStyle,
+              color: action.redacted ? "var(--c-warning)" : "var(--c-fg-2)",
+              flex: 1,
+            }}
+          >
+            {action.redacted ? `{{${action.placeholderName}}}` : action.value}
+          </span>
+        </>
+      )}
     </span>
   );
 }

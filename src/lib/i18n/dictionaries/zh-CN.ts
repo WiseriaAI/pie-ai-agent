@@ -535,6 +535,18 @@ export const zhCNDict = {
     },
     metaRedacted: "已脱敏",
     metaUnstable: "不稳定",
+    kind: {
+      button: "按钮", link: "链接", tab: "标签页", checkbox: "复选框",
+      radio: "单选框", switch: "开关", menuitem: "菜单项", option: "下拉选项",
+      input: "输入框", textarea: "文本框", dropdown: "下拉框",
+      summary: "折叠标签", element: "元素", editor: "编辑器",
+    },
+    region: {
+      main: "主区", nav: "导航区", header: "页头", footer: "页脚",
+      aside: "侧栏", other: "其他",
+    },
+    checkedOn: "勾选",
+    checkedOff: "取消勾选",
   },
   customProvider: {
     name: "名称",

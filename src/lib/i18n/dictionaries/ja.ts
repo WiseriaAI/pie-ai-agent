@@ -533,6 +533,18 @@ export const jaDict = {
     typeLabels: { click: "クリック", type: "入力", select: "選択", scroll: "スクロール", nav: "移動", submit: "送信", keypress: "キー" },
     metaRedacted: "伏せ字",
     metaUnstable: "不安定",
+    kind: {
+      button: "ボタン", link: "リンク", tab: "タブ", checkbox: "チェックボックス",
+      radio: "ラジオボタン", switch: "スイッチ", menuitem: "メニュー項目", option: "選択肢",
+      input: "入力欄", textarea: "テキストエリア", dropdown: "ドロップダウン",
+      summary: "折りたたみ", element: "要素", editor: "エディタ",
+    },
+    region: {
+      main: "メイン", nav: "ナビ", header: "ヘッダー", footer: "フッター",
+      aside: "サイド", other: "その他",
+    },
+    checkedOn: "チェック",
+    checkedOff: "チェック解除",
   },
   customProvider: {
     name: "名前",

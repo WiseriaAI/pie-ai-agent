@@ -98,9 +98,8 @@ describe("recording-orchestrator", () => {
     port.postMessage.mockClear();
     const payload: CapturedActionPayload = {
       type: "click",
-      label: "按钮 'X'",
+      target: { kindKey: "button", name: "X" },
       url: "https://example.com",
-      region: "main",
     };
     handleRecordingAction(
       { tab: { id: 1 } } as chrome.runtime.MessageSender,
@@ -121,7 +120,7 @@ describe("recording-orchestrator", () => {
     const portCount = port.postMessage.mock.calls.length;
     handleRecordingAction(
       { tab: { id: 999 } } as chrome.runtime.MessageSender,
-      { type: "recording-action", payload: { type: "click", label: "X", url: "https://other.com", region: "main" } },
+      { type: "recording-action", payload: { type: "click", target: { kindKey: "button", name: "X" }, url: "https://other.com" } },
       port as unknown as chrome.runtime.Port,
     );
     expect(recordingState.get("S4")?.actions ?? []).toHaveLength(0);
@@ -140,7 +139,7 @@ describe("recording-orchestrator", () => {
       { tab: { id: 1 } } as chrome.runtime.MessageSender,
       {
         type: "recording-action",
-        payload: { type: "click", label: "按钮 'X'", url: "u", region: "main" },
+        payload: { type: "click", target: { kindKey: "button", name: "X" }, url: "u" },
       },
       port as unknown as chrome.runtime.Port,
     );
@@ -156,7 +155,7 @@ describe("recording-orchestrator", () => {
       expect.objectContaining({
         type: "recording-finished",
         sessionId: "S5",
-        serializedTrace: expect.stringContaining("第 1 步：点击按钮 'X'"),
+        serializedTrace: expect.stringContaining('Step 1: click the button "X".'),
         stepCount: 1,
       }),
     );
@@ -189,13 +188,13 @@ describe("recording-orchestrator", () => {
       sessionId: "S6",
     });
     // Feed 50 long actions via SW path so sess.actions grows beyond 8KB serialized.
-    const longLabel = "x".repeat(500);
+    const longName = "x".repeat(500);
     for (let i = 0; i < 50; i++) {
       handleRecordingAction(
         { tab: { id: 1 } } as chrome.runtime.MessageSender,
         {
           type: "recording-action",
-          payload: { type: "click", label: longLabel, url: "u", region: "main" },
+          payload: { type: "click", target: { kindKey: "button", name: longName }, url: "u" },
         },
         port as unknown as chrome.runtime.Port,
       );

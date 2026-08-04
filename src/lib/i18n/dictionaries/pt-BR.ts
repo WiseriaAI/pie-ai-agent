@@ -533,6 +533,18 @@ export const ptBRDict = {
     typeLabels: { click: "CLIQUE", type: "DIGITAR", select: "SELECIONAR", scroll: "ROLAR", nav: "NAVEGAR", submit: "ENVIAR", keypress: "Tecla" },
     metaRedacted: "OCULTO",
     metaUnstable: "INSTÁVEL",
+    kind: {
+      button: "botão", link: "link", tab: "aba", checkbox: "caixa de seleção",
+      radio: "botão de opção", switch: "interruptor", menuitem: "item de menu", option: "opção",
+      input: "campo", textarea: "área de texto", dropdown: "menu suspenso",
+      summary: "expansor", element: "elemento", editor: "editor",
+    },
+    region: {
+      main: "principal", nav: "navegação", header: "cabeçalho", footer: "rodapé",
+      aside: "lateral", other: "outra",
+    },
+    checkedOn: "marcado",
+    checkedOff: "desmarcado",
   },
   customProvider: {
     name: "NOME",
