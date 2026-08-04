@@ -25,3 +25,9 @@ export {
   setAssistantLanguageSetting,
 } from "./assistant-language";
 export { providerDisplayName } from "./provider-display-name";
+export {
+  LANGUAGE_LABELS,
+  isCjkLocale,
+  titleLengthHint,
+  titleMaxLen,
+} from "./language-labels";
