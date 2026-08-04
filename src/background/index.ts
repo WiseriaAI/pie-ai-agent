@@ -150,6 +150,8 @@ import {
 } from "./local-bridge";
 import { getEnabledLocalAgents, setEnabledLocalAgents, applyToggle, isAgentUsable } from "@/lib/local-agents-prefs";
 import { initBridgeAndMigrate } from "./skill-migration";
+import { shouldOpenChangelog, buildChangelogUrl } from "@/lib/update-changelog";
+import { resolveLocale } from "@/lib/i18n/locale-resolver";
 
 // Install log capture at module top level
 installLogCapture("sw");
@@ -393,10 +395,36 @@ const scheduleStartupReady: Promise<void> = recoveryReady
     console.warn("[sw] schedule startup (orphan-cleanup + reconcile) failed:", e);
   }) as Promise<void>;
 
+// Issue #351 — open the website changelog tab after a minor/major update.
+// `shouldOpenChangelog` gates on the (major, minor) tuple strictly increasing;
+// patch-only / equal / downgrade / unparseable previousVersion all no-op. The
+// changelog URL is localized to the current UI locale. Never throws.
+async function maybeOpenChangelogOnUpdate(
+  previousVersion: string | undefined,
+): Promise<void> {
+  const currentVersion = chrome.runtime.getManifest().version;
+  if (!previousVersion || !shouldOpenChangelog(previousVersion, currentVersion)) {
+    return;
+  }
+  try {
+    const locale = await resolveLocale();
+    const url = buildChangelogUrl(locale, previousVersion, currentVersion);
+    await chrome.tabs.create({ url });
+  } catch (e) {
+    console.warn("[sw] failed to open changelog tab on update:", e);
+  }
+}
+
 // First install handler
 chrome.runtime.onInstalled.addListener((details) => {
   if (details.reason === "install") {
     void setConfig("firstRun", true);
+  }
+  // Issue #351 — after a minor/major auto-update, open the website changelog
+  // tab so the user sees what changed. Patch bumps (and downgrades / no-op
+  // reinstalls / missing previousVersion) stay silent. Fire-and-forget.
+  if (details.reason === "update") {
+    void maybeOpenChangelogOnUpdate(details.previousVersion);
   }
   // Belt-and-suspenders: also chain recovery for install events.
   // recoveryReady deduplicates via 30s guard.
