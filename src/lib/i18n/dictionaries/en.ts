@@ -396,6 +396,12 @@ export const enDict = {
   agentSummary: {
     doneSteps: "DONE",
     failedAtStep: "FAILED",
+    abort: {
+      userCancelledDebug: "You cancelled the debugging authorization.",
+      keyboardDisabled: "Keyboard simulation was turned off in Settings.",
+      tabClosed: "The tab was closed.",
+      stopped: "Task stopped.",
+    },
   },
   quoteChip: {
     removeQuote: "Remove quote",

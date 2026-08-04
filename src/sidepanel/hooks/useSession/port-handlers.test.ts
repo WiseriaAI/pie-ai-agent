@@ -250,6 +250,54 @@ describe("agent-done-task", () => {
       { role: "agent-summary", success: false, summary: "任务已取消", stepCount: 2 },
     ]);
   });
+
+  it("forwards summaryKey (#354) onto the agent-summary row when present", () => {
+    const deps = makeDeps();
+    deps.slotsRef.current.set("s1", { ...EMPTY_SLOT, streaming: true, streamFinished: false });
+    const { handleMessage } = createPortHandlers(deps);
+    handleMessage({
+      type: "agent-done-task",
+      sessionId: "s1",
+      success: false,
+      summary: "Task stopped.",
+      summaryKey: "agentSummary.abort.stopped",
+      stepCount: 2,
+    } as PortMessageToPanel);
+    const slot = deps.slotsRef.current.get("s1")!;
+    expect(slot.messages).toEqual([
+      {
+        role: "agent-summary",
+        success: false,
+        summary: "Task stopped.",
+        summaryKey: "agentSummary.abort.stopped",
+        stepCount: 2,
+      },
+    ]);
+    expect(deps.persistMessages).toHaveBeenCalledWith("s1", [
+      {
+        role: "agent-summary",
+        success: false,
+        summary: "Task stopped.",
+        summaryKey: "agentSummary.abort.stopped",
+        stepCount: 2,
+      },
+    ]);
+  });
+
+  it("omits summaryKey on the row when the wire message has none (LLM summary)", () => {
+    const deps = makeDeps();
+    deps.slotsRef.current.set("s1", { ...EMPTY_SLOT, streaming: true, streamFinished: false });
+    const { handleMessage } = createPortHandlers(deps);
+    handleMessage({
+      type: "agent-done-task",
+      sessionId: "s1",
+      success: true,
+      summary: "Found the price: $42",
+      stepCount: 3,
+    } as PortMessageToPanel);
+    const [row] = deps.slotsRef.current.get("s1")!.messages;
+    expect(row).not.toHaveProperty("summaryKey");
+  });
 });
 
 describe("session-confirm-request", () => {

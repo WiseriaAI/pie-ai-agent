@@ -391,6 +391,12 @@ export const jaDict = {
   agentSummary: {
     doneSteps: "完了",
     failedAtStep: "失敗",
+    abort: {
+      userCancelledDebug: "デバッグの許可がキャンセルされました",
+      keyboardDisabled: "設定でキーボード操作が無効化されました",
+      tabClosed: "タブが閉じられました",
+      stopped: "タスクを停止しました",
+    },
   },
   quoteChip: {
     removeQuote: "引用を削除",
