@@ -1,6 +1,70 @@
-import { describe, it, expect } from "vitest";
-import { _toWireMessagesForTest } from "./openai";
-import type { AgentMessage } from "../types";
+import { describe, it, expect, vi } from "vitest";
+import { streamChat, _toWireMessagesForTest } from "./openai";
+import type { ModelConfig } from "@/lib/model-router";
+import type { AgentMessage, ToolDefinition } from "../types";
+
+function mockSseResponse(lines: string[]) {
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      const enc = new TextEncoder();
+      for (const l of lines) controller.enqueue(enc.encode(l + "\n\n"));
+      controller.close();
+    },
+  });
+  return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
+}
+
+async function captureRequestBody(config: ModelConfig, tools?: ToolDefinition[]) {
+  const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    mockSseResponse(['data: {"choices":[{"delta":{"content":"hi"}}]}', "data: [DONE]"]),
+  );
+  try {
+    for await (const _ of streamChat(config, [{ role: "user", content: "hi" }], undefined, tools)) {
+      void _;
+    }
+    const init = fetchMock.mock.calls[0]![1] as RequestInit;
+    return JSON.parse(init.body as string) as Record<string, unknown>;
+  } finally {
+    fetchMock.mockRestore();
+  }
+}
+
+const TOOLS: ToolDefinition[] = [
+  { name: "read_page", description: "read", parameters: { type: "object", properties: {} } },
+];
+
+// gpt-5.x reasoning 系在 /v1/chat/completions 拒收 max_tokens、且 tools 与
+// reasoning_effort≠none 互斥（gpt-5.6 起 enforce）。gpt-4o 两个字段都认。
+describe("openai request-body quirks", () => {
+  const base: Omit<ModelConfig, "model"> = {
+    provider: "openai",
+    apiKey: "k",
+    baseUrl: "https://api.openai.com",
+  };
+
+  it("maxTokens is sent as max_completion_tokens, never max_tokens", async () => {
+    const body = await captureRequestBody({ ...base, model: "gpt-5.6-sol", maxTokens: 16 });
+    expect(body.max_completion_tokens).toBe(16);
+    expect(body).not.toHaveProperty("max_tokens");
+  });
+
+  it("gpt-5.6 family with tools sets reasoning_effort none", async () => {
+    const body = await captureRequestBody({ ...base, model: "gpt-5.6-sol" }, TOOLS);
+    expect(body.reasoning_effort).toBe("none");
+  });
+
+  it("gpt-5.6 without tools leaves reasoning_effort unset", async () => {
+    const body = await captureRequestBody({ ...base, model: "gpt-5.6-luna" });
+    expect(body).not.toHaveProperty("reasoning_effort");
+  });
+
+  it("non-5.6 models with tools leave reasoning_effort unset", async () => {
+    for (const model of ["gpt-5.5", "gpt-4o"]) {
+      const body = await captureRequestBody({ ...base, model }, TOOLS);
+      expect(body).not.toHaveProperty("reasoning_effort");
+    }
+  });
+});
 
 describe("openai toWireMessages — image", () => {
   it("user message with [image, text] becomes single wire msg with content array", () => {

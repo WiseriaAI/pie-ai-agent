@@ -38,6 +38,8 @@ export interface OpenAICompatHooks {
   customHeaders?: (config: ModelConfig) => Record<string, string>;
   /** Replaces the default `Authorization: Bearer ${apiKey}`. */
   authHeaders?: (config: ModelConfig) => Record<string, string>;
+  /** Mutates the assembled request body just before fetch (provider wire quirks). */
+  transformRequestBody?: (body: Record<string, unknown>, config: ModelConfig) => void;
 }
 
 interface OpenAIWireMessage {
@@ -139,6 +141,7 @@ export async function* streamChatOpenAICompat(
     }));
     requestBody.tool_choice = "auto";
   }
+  hooks?.transformRequestBody?.(requestBody, config);
 
   const auth = hooks?.authHeaders?.(config) ?? { authorization: `Bearer ${config.apiKey}` };
   const headers: Record<string, string> = {

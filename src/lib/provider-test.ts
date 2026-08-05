@@ -44,7 +44,9 @@ export async function testProviderConnection(
           model: input.model,
           apiKey: input.apiKey,
           baseUrl: input.baseUrl,
-          maxTokens: 1,
+          // 16 而非 1：reasoning 模型的思考 token 也计入 max_completion_tokens，
+          // 预算太小连空响应都可能变异常；探针只看「能否成功返回」不看内容。
+          maxTokens: 16,
         },
         [{ role: "user", content: "Hi" }],
         controller.signal,
