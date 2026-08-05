@@ -273,9 +273,11 @@ export async function startDaemon(): Promise<void> {
   } catch (e) {
     log("warn", "sessions.gc_failed", { error: String(e) });
   }
-  if (existsSync(paths.socketPath)) unlinkSync(paths.socketPath); // 清残留
+  // socket 文件残留清理仅对 unix domain socket 有意义；Windows named pipe 无磁盘文件
+  // （占用即 listen 抛 EADDRINUSE → 进程退出 = 单实例「占用即退出」，对齐 mac socket 语义）。
+  if (!paths.isPipe && existsSync(paths.ipcPath)) unlinkSync(paths.ipcPath); // 清残留
   Bun.listen<{ carry: string; writer: BackpressureWriter }>({
-    unix: paths.socketPath,
+    unix: paths.ipcPath,
     socket: {
       open(socket) {
         // 每个连接独立的 carry：Bun 的 per-socket data 绑定，多个 host 连接
@@ -300,7 +302,9 @@ export async function startDaemon(): Promise<void> {
       },
     },
   });
-  chmodSync(paths.socketPath, 0o600); // 用户级信任边界
-  log("info", "daemon.listening", { socket: paths.socketPath });
+  // chmod 收敛到用户级信任边界仅适用于 socket 文件；named pipe 的 ACL 由创建者默认收敛，
+  // 且路径不在文件系统命名空间，chmodSync 会 ENOENT——Windows 下跳过。
+  if (!paths.isPipe) chmodSync(paths.ipcPath, 0o600); // 用户级信任边界
+  log("info", "daemon.listening", { socket: paths.ipcPath });
   await new Promise(() => {}); // 常驻
 }

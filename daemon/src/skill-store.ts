@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, readdirSync, lstatSync, realpathSync, mkdirSync, writeFileSync, rmSync, statSync } from "fs";
-import { join, resolve, relative, isAbsolute, sep, dirname } from "path";
+import { join, resolve, relative, isAbsolute, sep, dirname, posix } from "path";
 import { paths, sessionWorkspace, assertSessionId } from "./paths";
 import { parseSkillMd } from "./skill-md";
 import type { SkillSummary, WriteSkillFile } from "../../src/types/local-bridge";
@@ -14,8 +14,40 @@ export function assertSkillName(name: string): string {
   return name;
 }
 
+/**
+ * 跨平台（且平台无关）的 rel 字符串守卫：在任何运行平台上都拒绝 Windows 语义的越权尝试，
+ * 使 workspace/skill 锁定不变量在 win32 上同样成立（且可在 mac 上用 win32 攻击串直测）。
+ * 拒绝：空串、反斜杠（win32 分隔符 / UNC / 遍历向量）、盘符前缀（`C:\` 绝对 + `C:foo` 盘相对）、
+ * POSIX 绝对（前导 `/`）、以及任一 `..` 段（父级遍历）。
+ * 合法 rel（`SKILL.md`、`scripts/foo.py`、`out.csv`）在两平台均放行。
+ */
+export function assertSafeRel(rel: string): string {
+  if (typeof rel !== "string" || rel === "") {
+    throw new Error(`unsafe path: ${JSON.stringify(rel)}`);
+  }
+  if (rel.includes("\\")) {
+    // 反斜杠：win32 目录分隔符、UNC 前缀 `\\server\share`、`..\..` 遍历——一律拒。
+    // mac 上反斜杠虽是合法文件名字符，但我们不支持它，拒绝换取跨平台锁定一致。
+    throw new Error(`unsafe path (backslash): ${JSON.stringify(rel)}`);
+  }
+  if (/^[a-zA-Z]:/.test(rel)) {
+    // 盘符：`C:\Windows`（绝对）与 `C:foo`（盘相对，win32 解析歧义/可逃逸）皆拒。
+    throw new Error(`unsafe path (drive letter): ${JSON.stringify(rel)}`);
+  }
+  if (posix.isAbsolute(rel)) {
+    throw new Error(`unsafe path (absolute): ${JSON.stringify(rel)}`);
+  }
+  if (rel.split("/").some((seg) => seg === "..")) {
+    throw new Error(`unsafe path (traversal): ${JSON.stringify(rel)}`);
+  }
+  return rel;
+}
+
 /** 把 skill 目录内相对路径解析成绝对路径，越出目录即 throw。 */
 export function safeRelPath(skillDir: string, rel: string): string {
+  // 先过平台无关的字符串守卫（反斜杠/盘符/UNC/绝对/遍历），再落到本平台 path 解析。
+  // native path（win32 on Windows）的 resolve/relative 是纵深防御，字符串守卫是第一道闸。
+  assertSafeRel(rel);
   // 规范化根（skillDir 调用时一定存在）后再判定，杜绝根本身经 symlink 逃逸。
   const realRoot = realpathSync(skillDir);
   const abs = resolve(realRoot, rel);

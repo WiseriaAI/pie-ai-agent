@@ -8,8 +8,14 @@ export async function doctor(
   listSkills: () => SkillSummary[] = listSkillsMerged,
 ): Promise<{ ok: boolean; lines: string[] }> {
   const lines: string[] = [];
-  const socketExists = existsSync(paths.socketPath);
-  lines.push(`socket ${paths.socketPath}: ${socketExists ? "present" : "absent (daemon not running?)"}`);
+  // named pipe 不在文件系统命名空间，existsSync 无法反映 daemon 是否在跑——只报地址、
+  // 不做在场判定；ok 在 pipe 平台不把 IPC 在场性算进去（避免误报「未运行」）。
+  const ipcPresent = paths.isPipe ? null : existsSync(paths.ipcPath);
+  if (paths.isPipe) {
+    lines.push(`pipe ${paths.ipcPath}: (existence not fs-checkable on Windows)`);
+  } else {
+    lines.push(`socket ${paths.ipcPath}: ${ipcPresent ? "present" : "absent (daemon not running?)"}`);
+  }
   const claude = Bun.which("claude");
   lines.push(`claude CLI: ${claude ?? "NOT FOUND on PATH"}`);
 
@@ -27,6 +33,7 @@ export async function doctor(
     }
   }
 
-  const ok = socketExists && claude != null;
+  // pipe 平台无法 fs 判在场（ipcPresent=null）→ 不拿它压 ok，只看 claude CLI。
+  const ok = (ipcPresent ?? true) && claude != null;
   return { ok, lines };
 }
