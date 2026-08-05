@@ -388,6 +388,12 @@ export const zhCNDict = {
   agentSummary: {
     doneSteps: "完成",
     failedAtStep: "失败",
+    abort: {
+      userCancelledDebug: "用户取消了调试授权",
+      keyboardDisabled: "用户在 Settings 关闭了键盘模拟",
+      tabClosed: "标签页已关闭",
+      stopped: "任务已取消",
+    },
   },
   quoteChip: {
     removeQuote: "移除引用",

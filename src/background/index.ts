@@ -1453,7 +1453,9 @@ async function handleChatStream(
     if (messages.length === 0) {
       port.postMessage({
         type: "chat-error",
-        error: "对话历史为空，请重新发送",
+        // TODO(#354): SW-side chat-error, English fallback (wire-bug guard,
+        // effectively never shown in normal use).
+        error: "Conversation history is empty — please send again.",
         sessionId,
       });
       return;

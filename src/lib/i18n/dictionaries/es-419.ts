@@ -392,6 +392,12 @@ export const es419Dict = {
   agentSummary: {
     doneSteps: "LISTO",
     failedAtStep: "FALLÓ",
+    abort: {
+      userCancelledDebug: "Cancelaste la autorización de depuración.",
+      keyboardDisabled: "La simulación de teclado se desactivó en Configuración.",
+      tabClosed: "La pestaña se cerró.",
+      stopped: "Tarea detenida.",
+    },
   },
   quoteChip: {
     removeQuote: "Quitar cita",

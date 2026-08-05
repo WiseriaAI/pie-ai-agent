@@ -388,6 +388,12 @@ export const zhTWDict = {
   agentSummary: {
     doneSteps: "完成",
     failedAtStep: "失敗",
+    abort: {
+      userCancelledDebug: "使用者取消了偵錯授權",
+      keyboardDisabled: "使用者在 Settings 關閉了鍵盤模擬",
+      tabClosed: "分頁已關閉",
+      stopped: "任務已取消",
+    },
   },
   quoteChip: {
     removeQuote: "移除引用",

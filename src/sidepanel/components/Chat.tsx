@@ -1131,6 +1131,7 @@ After the skill completes, briefly summarize what was created (the user will see
                     <AgentSummary
                       success={msg.success}
                       summary={msg.summary}
+                      summaryKey={msg.summaryKey}
                       stepCount={msg.stepCount}
                       celebrating={celebrating && segIndex === lastAgentRowIndex}
                     />

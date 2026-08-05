@@ -73,6 +73,7 @@ import {
   acquireCdpSession,
   type CdpSession,
 } from "../../background/cdp-session";
+import { abortSummaryForReason } from "./abort-summary";
 import type {
   AgentStepMessage,
   AgentDoneTaskMessage,
@@ -2165,10 +2166,14 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       if (completion === "truncated-empty") {
         // 思考/输出在产出任何可用内容前就触顶——与 LLM-stream-error 同路失败，
         // 不走 chat-done（否则 loop 会假装任务完成）。
+        // TODO(#354): chat-error text is emitted from the SW and can't ride the
+        // panel-side i18n dict easily — English fallback until a keyed
+        // chat-error path exists.
         const msg =
-          "模型在产出任何回复前就触达输出 token 上限（stop_reason=length），" +
-          "通常是长推理吃光了输出预算。请在该 instance 调高最大输出（maxTokens），" +
-          "或简化任务后重试。";
+          "The model hit the output token limit before producing any reply " +
+          "(stop_reason=length) — usually long reasoning consuming the output " +
+          "budget. Raise the max output (maxTokens) for this instance, or " +
+          "simplify the task and retry.";
         emit(withSession({ type: "chat-error", error: msg }, sessionId));
         await emitDone({
           type: "agent-done-task",
@@ -2182,7 +2187,9 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         // 部分答案已流式发出但不完整——追加可见提示，再走正常 pure-text 收尾。
         emit(
           withSession(
-            { type: "chat-chunk", text: "\n\n⚠️ [回复被输出 token 上限截断，未必完整。可在该 instance 调高最大输出后重试。]" },
+            // TODO(#354): appended into streamed assistant text — hard to key;
+            // English fallback.
+            { type: "chat-chunk", text: "\n\n⚠️ [Reply truncated at the output token limit and may be incomplete. Raise the max output for this instance and retry.]" },
             sessionId,
           ),
         );
@@ -2634,25 +2641,15 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // TypeScript 6 narrows cdpSession to never in this finally block due to control-flow
       // analysis of the inner async closure assignment; cast through unknown to recover type.
       const reason = (cdpSession as CdpSession | null)?.detachedReason ?? null;
-      let summary: string;
-      switch (reason) {
-        case "user-cancelled-via-yellow-bar":
-          summary = "用户取消了调试授权";
-          break;
-        case "kill-switch":
-          summary = "用户在 Settings 关闭了键盘模拟";
-          break;
-        case "tab-closed":
-          summary = "标签页已关闭";
-          break;
-        default:
-          summary = "任务已取消";
-          break;
-      }
+      // #354 — carry a structured i18n key so the panel translates the abort
+      // summary at render time (language-follows); `summary` is the English
+      // fallback persisted for non-UI consumers.
+      const { summary, summaryKey } = abortSummaryForReason(reason);
       await emitDone({
         type: "agent-done-task",
         success: false,
         summary,
+        summaryKey,
         stepCount: lastStepIndex,
       }, "abort");
     }

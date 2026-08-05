@@ -271,6 +271,11 @@ export type DisplayMessage =
       role: "agent-summary";
       success: boolean;
       summary: string;
+      /** #354 — optional i18n dict key for system-generated abort summaries.
+       *  When set, the panel renders `t(summaryKey)` (language-follows) instead
+       *  of the raw `summary`; absent for LLM-produced completion summaries and
+       *  for pre-#354 persisted rows (which fall back to `summary`). */
+      summaryKey?: string;
       stepCount: number;
     }
   | {
@@ -351,6 +356,12 @@ export interface AgentDoneTaskMessage {
   type: "agent-done-task";
   success: boolean;
   summary: string;
+  /** #354 — optional i18n dict key (`agentSummary.abort.*`) set only on
+   *  system-generated abort summaries. When present the panel renders it via
+   *  `t()` at display time so the text follows later UI-language switches;
+   *  `summary` stays as an English fallback. LLM-produced completion summaries
+   *  omit it (they are already in the user's language). */
+  summaryKey?: string;
   stepCount: number;
   /** M2-U2 — session routing. See ChatChunkMessage.sessionId. */
   sessionId: string;

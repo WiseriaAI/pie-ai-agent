@@ -198,6 +198,9 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
           role: "agent-summary",
           success: msg.success,
           summary: msg.summary,
+          // #354 — forward the optional i18n key so the panel translates
+          // system abort summaries at render time (undefined for LLM summaries).
+          ...(msg.summaryKey ? { summaryKey: msg.summaryKey } : {}),
           stepCount: msg.stepCount,
         },
       ];

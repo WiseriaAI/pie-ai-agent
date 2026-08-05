@@ -392,6 +392,12 @@ export const ptBRDict = {
   agentSummary: {
     doneSteps: "CONCLUÍDO",
     failedAtStep: "FALHOU",
+    abort: {
+      userCancelledDebug: "Você cancelou a autorização de depuração.",
+      keyboardDisabled: "A simulação de teclado foi desativada nas Configurações.",
+      tabClosed: "A aba foi fechada.",
+      stopped: "Tarefa interrompida.",
+    },
   },
   quoteChip: {
     removeQuote: "Remover citação",
