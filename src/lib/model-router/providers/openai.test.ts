@@ -1,120 +1,227 @@
 import { describe, it, expect, vi } from "vitest";
-import { streamChat, _toWireMessagesForTest } from "./openai";
+import { streamChat, _toInputItemsForTest } from "./openai";
 import type { ModelConfig } from "@/lib/model-router";
-import type { AgentMessage, ToolDefinition } from "../types";
+import type { AgentMessage, StreamEvent, ToolDefinition } from "../types";
 
-function mockSseResponse(lines: string[]) {
+// ── mock SSE：Responses API 的 typed event 流（event: 行 + data: 行）──
+function mockResponsesSse(events: Array<Record<string, unknown>>) {
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
       const enc = new TextEncoder();
-      for (const l of lines) controller.enqueue(enc.encode(l + "\n\n"));
+      for (const e of events) controller.enqueue(enc.encode(`event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`));
       controller.close();
     },
   });
   return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
 }
 
-async function captureRequestBody(config: ModelConfig, tools?: ToolDefinition[]) {
-  const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-    mockSseResponse(['data: {"choices":[{"delta":{"content":"hi"}}]}', "data: [DONE]"]),
-  );
-  try {
-    for await (const _ of streamChat(config, [{ role: "user", content: "hi" }], undefined, tools)) {
-      void _;
-    }
-    const init = fetchMock.mock.calls[0]![1] as RequestInit;
-    return JSON.parse(init.body as string) as Record<string, unknown>;
-  } finally {
-    fetchMock.mockRestore();
-  }
-}
+const BASE: Omit<ModelConfig, "model"> = {
+  provider: "openai",
+  apiKey: "k",
+  baseUrl: "https://api.openai.com",
+};
 
 const TOOLS: ToolDefinition[] = [
   { name: "read_page", description: "read", parameters: { type: "object", properties: {} } },
 ];
 
-// gpt-5.x reasoning 系在 /v1/chat/completions 拒收 max_tokens、且 tools 与
-// reasoning_effort≠none 互斥（gpt-5.6 起 enforce）。gpt-4o 两个字段都认。
-describe("openai request-body quirks", () => {
-  const base: Omit<ModelConfig, "model"> = {
-    provider: "openai",
-    apiKey: "k",
-    baseUrl: "https://api.openai.com",
-  };
+const COMPLETED = {
+  type: "response.completed",
+  response: { status: "completed", usage: { input_tokens: 7, output_tokens: 3 } },
+};
 
-  it("maxTokens is sent as max_completion_tokens, never max_tokens", async () => {
-    const body = await captureRequestBody({ ...base, model: "gpt-5.6-sol", maxTokens: 16 });
-    expect(body.max_completion_tokens).toBe(16);
+async function run(config: ModelConfig, events: Array<Record<string, unknown>>, tools?: ToolDefinition[]) {
+  const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(mockResponsesSse(events));
+  try {
+    const out: StreamEvent[] = [];
+    for await (const ev of streamChat(config, [{ role: "user", content: "hi" }], undefined, tools)) out.push(ev);
+    const [url, init] = fetchMock.mock.calls[0]! as [string, RequestInit];
+    return { out, url, body: JSON.parse(init.body as string) as Record<string, unknown> };
+  } finally {
+    fetchMock.mockRestore();
+  }
+}
+
+describe("openai /v1/responses request shape", () => {
+  it("posts to {baseUrl}/v1/responses with store:false and stream:true", async () => {
+    const { url, body } = await run({ ...BASE, model: "gpt-5.6-sol" }, [COMPLETED]);
+    expect(url).toBe("https://api.openai.com/v1/responses");
+    expect(body.store).toBe(false);
+    expect(body.stream).toBe(true);
+    expect(body.model).toBe("gpt-5.6-sol");
+  });
+
+  it("maxTokens maps to max_output_tokens (never max_tokens)", async () => {
+    const { body } = await run({ ...BASE, model: "gpt-5.6-sol", maxTokens: 16 }, [COMPLETED]);
+    expect(body.max_output_tokens).toBe(16);
     expect(body).not.toHaveProperty("max_tokens");
+    expect(body).not.toHaveProperty("max_completion_tokens");
   });
 
-  it("gpt-5.6 family with tools sets reasoning_effort none", async () => {
-    const body = await captureRequestBody({ ...base, model: "gpt-5.6-sol" }, TOOLS);
-    expect(body.reasoning_effort).toBe("none");
+  it("omits max_output_tokens when maxTokens unset", async () => {
+    const { body } = await run({ ...BASE, model: "gpt-5.6-sol" }, [COMPLETED]);
+    expect(body).not.toHaveProperty("max_output_tokens");
   });
 
-  it("gpt-5.6 without tools leaves reasoning_effort unset", async () => {
-    const body = await captureRequestBody({ ...base, model: "gpt-5.6-luna" });
+  it("tools use the flat Responses shape with tool_choice auto", async () => {
+    const { body } = await run({ ...BASE, model: "gpt-5.6-sol" }, [COMPLETED], TOOLS);
+    expect(body.tools).toEqual([
+      { type: "function", name: "read_page", description: "read", parameters: { type: "object", properties: {} } },
+    ]);
+    expect(body.tool_choice).toBe("auto");
+    // chat-completions 时代的 hotfix 字段不得再出现
     expect(body).not.toHaveProperty("reasoning_effort");
-  });
-
-  it("non-5.6 models with tools leave reasoning_effort unset", async () => {
-    for (const model of ["gpt-5.5", "gpt-4o"]) {
-      const body = await captureRequestBody({ ...base, model }, TOOLS);
-      expect(body).not.toHaveProperty("reasoning_effort");
-    }
   });
 });
 
-describe("openai toWireMessages — image", () => {
-  it("user message with [image, text] becomes single wire msg with content array", () => {
-    const msgs: AgentMessage[] = [
+describe("openai toInputItems", () => {
+  it("system / user / assistant strings become typed message items", () => {
+    const items = _toInputItemsForTest([
+      { role: "system", content: "sys" },
+      { role: "user", content: "hello" },
+      { role: "assistant", content: "hi there" },
+    ]);
+    expect(items).toEqual([
+      { role: "system", content: [{ type: "input_text", text: "sys" }] },
+      { role: "user", content: [{ type: "input_text", text: "hello" }] },
+      { role: "assistant", content: [{ type: "output_text", text: "hi there" }] },
+    ]);
+  });
+
+  it("assistant [text, tool_use] becomes assistant message + function_call items", () => {
+    const items = _toInputItemsForTest([
+      {
+        role: "assistant",
+        content: [
+          { type: "text", text: "let me check" },
+          { type: "tool_use", id: "call_1", name: "read_page", input: { mode: "auto" } },
+        ],
+      },
+    ]);
+    expect(items).toEqual([
+      { role: "assistant", content: [{ type: "output_text", text: "let me check" }] },
+      { type: "function_call", call_id: "call_1", name: "read_page", arguments: '{"mode":"auto"}' },
+    ]);
+  });
+
+  it("user [tool_result, text] becomes function_call_output + user message", () => {
+    const items = _toInputItemsForTest([
       {
         role: "user",
         content: [
-          {
-            type: "image",
-            source: { type: "base64", mediaType: "image/jpeg", data: "AAAA" },
-          },
+          { type: "tool_result", toolUseId: "call_1", content: "result text" },
+          { type: "text", text: "follow-up" },
+        ],
+      },
+    ]);
+    expect(items).toEqual([
+      { type: "function_call_output", call_id: "call_1", output: "result text" },
+      { role: "user", content: [{ type: "input_text", text: "follow-up" }] },
+    ]);
+  });
+
+  it("user [image, text] becomes one message with input_image + input_text parts", () => {
+    const items = _toInputItemsForTest([
+      {
+        role: "user",
+        content: [
+          { type: "image", source: { type: "base64", mediaType: "image/jpeg", data: "AAAA" } },
           { type: "text", text: "what is this?" },
         ],
       },
-    ];
-    const wire = _toWireMessagesForTest(msgs);
-    expect(wire).toHaveLength(1);
-    expect(wire[0].role).toBe("user");
-    const content = wire[0].content as Array<{ type: string }>;
-    expect(Array.isArray(content)).toBe(true);
-    expect(content).toHaveLength(2);
-    expect(content[0]).toEqual({
-      type: "image_url",
-      image_url: { url: "data:image/jpeg;base64,AAAA" },
-    });
-    expect(content[1]).toEqual({ type: "text", text: "what is this?" });
-  });
-
-  it("user message with [tool_result, text] still splits into tool + user msgs (unchanged behavior)", () => {
-    const msgs: AgentMessage[] = [
+    ] as AgentMessage[]);
+    expect(items).toEqual([
       {
         role: "user",
         content: [
-          { type: "tool_result", toolUseId: "tu1", content: "result text" },
-          { type: "text", text: "follow-up text" },
+          { type: "input_image", image_url: "data:image/jpeg;base64,AAAA" },
+          { type: "input_text", text: "what is this?" },
         ],
       },
-    ];
-    const wire = _toWireMessagesForTest(msgs);
-    expect(wire).toHaveLength(2);
-    expect(wire[0].role).toBe("tool");
-    expect(wire[0].tool_call_id).toBe("tu1");
-    expect(wire[0].content).toBe("result text");
-    expect(wire[1].role).toBe("user");
-    expect(wire[1].content).toBe("follow-up text");
+    ]);
   });
 });
 
-// NOTE: The old "openai supportsVision wiring" describe block was checking
-// ProviderMeta.type and ProviderMeta.supportsVision, both removed in Task 1
-// (registry schema upgrade). The dispatch is now id-keyed via streamChatByProvider
-// in providers/index.ts; vision is per-model via getModelMeta. Those paths are
-// covered in registry.test.ts. Removed here to avoid false failures.
+describe("openai /v1/responses stream mapping", () => {
+  it("output_text deltas + completed → text-delta events + done(end) with usage", async () => {
+    const { out } = await run({ ...BASE, model: "gpt-5.6-sol" }, [
+      { type: "response.output_text.delta", item_id: "msg_1", delta: "hel" },
+      { type: "response.output_text.delta", item_id: "msg_1", delta: "lo" },
+      COMPLETED,
+    ]);
+    expect(out).toEqual([
+      { type: "text-delta", text: "hel" },
+      { type: "text-delta", text: "lo" },
+      { type: "done", stopReason: "end", usage: { inputTokens: 7, outputTokens: 3 } },
+    ]);
+  });
+
+  it("function_call item flow → tool-call start/delta/end + done(tool_calls)", async () => {
+    const { out } = await run({ ...BASE, model: "gpt-5.6-sol" }, [
+      {
+        type: "response.output_item.added",
+        item: { type: "function_call", id: "fc_1", call_id: "call_9", name: "read_page", arguments: "" },
+      },
+      { type: "response.function_call_arguments.delta", item_id: "fc_1", delta: '{"mode":' },
+      { type: "response.function_call_arguments.delta", item_id: "fc_1", delta: '"auto"}' },
+      {
+        type: "response.output_item.done",
+        item: { type: "function_call", id: "fc_1", call_id: "call_9", name: "read_page", arguments: '{"mode":"auto"}' },
+      },
+      COMPLETED,
+    ], TOOLS);
+    expect(out).toEqual([
+      { type: "tool-call-start", id: "call_9", index: 0, name: "read_page" },
+      { type: "tool-call-delta", index: 0, argsDelta: '{"mode":' },
+      { type: "tool-call-delta", index: 0, argsDelta: '"auto"}' },
+      { type: "tool-call-end", index: 0 },
+      { type: "done", stopReason: "tool_calls", usage: { inputTokens: 7, outputTokens: 3 } },
+    ]);
+  });
+
+  it("incomplete(max_output_tokens) → done(length)", async () => {
+    const { out } = await run({ ...BASE, model: "gpt-5.6-sol" }, [
+      { type: "response.output_text.delta", item_id: "m", delta: "par" },
+      {
+        type: "response.incomplete",
+        response: { status: "incomplete", incomplete_details: { reason: "max_output_tokens" }, usage: { input_tokens: 7, output_tokens: 3 } },
+      },
+    ]);
+    expect(out[out.length - 1]).toEqual({
+      type: "done",
+      stopReason: "length",
+      usage: { inputTokens: 7, outputTokens: 3 },
+    });
+  });
+
+  it("response.failed → error event", async () => {
+    const { out } = await run({ ...BASE, model: "gpt-5.6-sol" }, [
+      { type: "response.failed", response: { status: "failed", error: { code: "server_error", message: "boom" } } },
+    ]);
+    expect(out).toEqual([{ type: "error", error: expect.stringContaining("boom"), kind: "http" }]);
+  });
+
+  it("non-200 http status → error event with status and body", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response('{"error":{"message":"bad"}}', { status: 400 }),
+    );
+    try {
+      const out: StreamEvent[] = [];
+      for await (const ev of streamChat({ ...BASE, model: "gpt-5.6-sol" }, [{ role: "user", content: "hi" }])) out.push(ev);
+      expect(out).toEqual([{ type: "error", error: expect.stringContaining("(400)"), kind: "http" }]);
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
+  it("401 → auth-kind error", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("nope", { status: 401 }));
+    try {
+      const out: StreamEvent[] = [];
+      for await (const ev of streamChat({ ...BASE, model: "gpt-5.6-sol" }, [{ role: "user", content: "hi" }])) out.push(ev);
+      expect(out).toEqual([{ type: "error", error: expect.stringContaining("API key"), kind: "auth" }]);
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+});

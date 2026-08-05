@@ -3,12 +3,14 @@
 //
 // 断言核心：真实 Chromium + 真实扩展（SW loop / panel probe 两条 fetch 路径），
 // ctx.route 拦截 api.openai.com（需 PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS=1
-// 才能拦到 SW 发起的请求，PR#349 配方），假 key + mock SSE，对**出站请求体**做确定性断言：
-//   S1 chat（gpt-5.6-sol + tools）→ body.reasoning_effort === "none" 且无 max_tokens
-//   S2 chat（gpt-4o + tools）→ body 无 reasoning_effort（回归护栏）
-//   S3 设置页 Test 按钮（gpt-5.6-sol 探针）→ max_completion_tokens===16 且无 max_tokens，
-//      UI 不出现 "Test failed"
-// 同一脚本跑 main 的 dist 做对照：S1/S3 必须 FAIL，证明断言灵敏度（非环境巧合）。
+// 才能拦到 SW 发起的请求，PR#349 配方），假 key + mock Responses SSE，
+// 对**出站请求体**做确定性断言（openai provider 已整体迁 /v1/responses）：
+//   S1 chat（gpt-5.6-sol + tools）→ URL=/v1/responses，flat tools + store:false，
+//      无 reasoning_effort / max_tokens
+//   S2 chat（gpt-4o + tools）→ 同走 /v1/responses（全 provider 迁移护栏）
+//   S3 设置页 Test 按钮探针 → /v1/responses + max_output_tokens:16，UI 无 "Test failed"
+// 同一脚本跑 main 的 dist 做对照：三项必须 FAIL（main 还在打 chat/completions），
+// 证明断言灵敏度（非环境巧合）。
 import { chromium } from 'playwright';
 import fs from 'node:fs';
 
@@ -33,12 +35,15 @@ async function snap(page, name) {
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// ── mock SSE：纯文本回复 + stop（loop 视纯文本为终止；探针只要 200 即成功）──
-const SSE = [
-  'data: {"choices":[{"delta":{"content":"done"}}]}',
-  'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1}}',
-  'data: [DONE]',
-].join('\n\n') + '\n\n';
+// ── mock SSE：Responses API typed events，纯文本回复 + completed（loop 视纯文本为
+// 终止；探针只要 200 即成功）。老 wire（chat/completions）收到这套事件会当没
+// 讲完 → 兜底 done，仍能跑完不悬死。──
+const SSE_EVENTS = [
+  { type: 'response.output_text.delta', item_id: 'msg_1', delta: 'done' },
+  { type: 'response.completed', response: { status: 'completed', usage: { input_tokens: 1, output_tokens: 1 } } },
+];
+const SSE = SSE_EVENTS.map((e) => `event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`).join('')
+  + 'data: [DONE]\n\n'; // 老 wire 对照跑需要 [DONE] 才收尾
 
 const captures = []; // {url, body} 按到达序
 const ctx = await chromium.launchPersistentContext(`${BASE}/profile-${TAG}`, {
@@ -93,41 +98,41 @@ async function runTask(scenario) {
     (opts) => globalThis.__pieEval.waitForDone(opts),
     { sessionId, timeoutMs: 30000 },
   );
-  const hit = captures.slice(from).find((c) => c.url.includes('/chat/completions') && c.body);
-  if (!hit) { record(scenario, 'ERROR', '未捕获到 chat/completions 请求（SW 拦截失效？）'); return null; }
-  return hit.body;
+  const hit = captures.slice(from).find((c) => c.body);
+  if (!hit) { record(scenario, 'ERROR', '未捕获到出站请求（SW 拦截失效？）'); return null; }
+  return hit;
 }
 
-// ── S1: chat loop @ gpt-5.6-sol —— tools 存在 + reasoning_effort none + 无 max_tokens ──
+const isResponsesWire = (hit) =>
+  hit.url.endsWith('/v1/responses') && Array.isArray(hit.body.input) && hit.body.store === false;
+
+// ── S1: chat loop @ gpt-5.6-sol —— /v1/responses + flat tools，无 reasoning_effort/max_tokens ──
 await seed('gpt-5.6-sol');
 {
-  const body = await runTask('S1 chat gpt-5.6-sol');
-  if (body) {
-    const toolsOk = Array.isArray(body.tools) && body.tools.length > 0;
-    const effortOk = body.reasoning_effort === 'none';
-    const noMaxTokens = !('max_tokens' in body);
-    if (toolsOk && effortOk && noMaxTokens)
-      record('S1 chat gpt-5.6-sol: tools+reasoning_effort none 且无 max_tokens', 'PASS',
-        `tools=${body.tools.length} reasoning_effort=${body.reasoning_effort}`);
+  const hit = await runTask('S1 chat gpt-5.6-sol');
+  if (hit) {
+    const toolsOk = Array.isArray(hit.body.tools) && hit.body.tools.length > 0 && typeof hit.body.tools[0].name === 'string';
+    const clean = !('reasoning_effort' in hit.body) && !('max_tokens' in hit.body);
+    if (isResponsesWire(hit) && toolsOk && clean)
+      record('S1 chat gpt-5.6-sol: /v1/responses + flat tools + store:false', 'PASS',
+        `url=${hit.url} tools=${hit.body.tools.length}`);
     else
-      record('S1 chat gpt-5.6-sol: tools+reasoning_effort none 且无 max_tokens', 'FAIL',
-        `tools=${toolsOk} reasoning_effort=${JSON.stringify(body.reasoning_effort)} max_tokens=${JSON.stringify(body.max_tokens)}`);
+      record('S1 chat gpt-5.6-sol: /v1/responses + flat tools + store:false', 'FAIL',
+        `url=${hit.url} store=${JSON.stringify(hit.body.store)} tools0=${JSON.stringify(hit.body.tools?.[0])?.slice(0, 80)} reasoning_effort=${JSON.stringify(hit.body.reasoning_effort)}`);
   }
 }
 
-// ── S2: chat loop @ gpt-4o —— 不得带 reasoning_effort（回归护栏）──
+// ── S2: chat loop @ gpt-4o —— 整个 openai provider 同走 /v1/responses（迁移护栏）──
 await seed('gpt-4o');
 {
-  const body = await runTask('S2 chat gpt-4o');
-  if (body) {
-    if (!('reasoning_effort' in body))
-      record('S2 chat gpt-4o: 无 reasoning_effort', 'PASS', `model=${body.model}`);
-    else
-      record('S2 chat gpt-4o: 无 reasoning_effort', 'FAIL', `reasoning_effort=${JSON.stringify(body.reasoning_effort)}`);
+  const hit = await runTask('S2 chat gpt-4o');
+  if (hit) {
+    if (isResponsesWire(hit)) record('S2 chat gpt-4o: 同走 /v1/responses', 'PASS', `url=${hit.url}`);
+    else record('S2 chat gpt-4o: 同走 /v1/responses', 'FAIL', `url=${hit.url}`);
   }
 }
 
-// ── S3: 设置页 → Models → OpenAI 实例 → Test 按钮（真实 UI 探针路径，panel fetch）──
+// ── S3: 设置页 → Model Configs → OpenAI 实例 → Test（真实 UI 探针路径，panel fetch）──
 await seed('gpt-5.6-sol'); // Test 探针取 registry 首模型 = gpt-5.6-sol
 const page = await ctx.newPage();
 page.setDefaultTimeout(15000);
@@ -144,14 +149,15 @@ try {
   await page.getByRole('button', { name: 'Test', exact: true }).click();
   await sleep(2500);
   await snap(page, 'after-test');
-  const hit = captures.slice(from).find((c) => c.url.includes('/chat/completions') && c.body);
+  const hit = captures.slice(from).find((c) => c.body);
   const failedVisible = await page.getByText(/Test failed/).count();
   if (!hit) record('S3 Test 探针', 'ERROR', '未捕获探针请求');
   else {
-    const ok = hit.body.max_completion_tokens === 16 && !('max_tokens' in hit.body) && failedVisible === 0;
-    record('S3 Test 探针: max_completion_tokens=16 且无 max_tokens 且 UI 无 Test failed',
+    const ok = isResponsesWire(hit) && hit.body.max_output_tokens === 16
+      && !('max_tokens' in hit.body) && failedVisible === 0;
+    record('S3 Test 探针: /v1/responses + max_output_tokens=16 且 UI 无 Test failed',
       ok ? 'PASS' : 'FAIL',
-      `max_completion_tokens=${JSON.stringify(hit.body.max_completion_tokens)} max_tokens=${JSON.stringify(hit.body.max_tokens)} model=${hit.body.model} failedVisible=${failedVisible}`);
+      `url=${hit.url} max_output_tokens=${JSON.stringify(hit.body.max_output_tokens)} max_tokens=${JSON.stringify(hit.body.max_tokens)} model=${hit.body.model} failedVisible=${failedVisible}`);
   }
 } catch (e) {
   await snap(page, 'error');
