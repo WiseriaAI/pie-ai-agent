@@ -99,6 +99,39 @@ export async function generateTitle(
 }
 
 /**
+ * Issue #353 — resolves the "expected fallback" sentinel used by the title
+ * race-guard, preferring the panel-computed value carried on the chat-start
+ * payload over a disk read.
+ *
+ * Background: the fallback title (deriveTitleFromMessages of the first user
+ * message) is the sentinel that maybeUpgradeFallbackTitle compares against
+ * before letting the LLM title overwrite it. The SW used to read this sentinel
+ * back from disk via getSessionMeta. But the panel writes it with a
+ * fire-and-forget IDB write that is NOT guaranteed to land before the SW
+ * receives chat-start, so the disk read frequently returned undefined and the
+ * whole title-generation branch was silently skipped (~30-50% miss under load).
+ *
+ * The panel now computes the fallback with the SAME deriveTitleFromMessages
+ * over the SAME `updated` message array it persists, and ships the string on
+ * the chat-start payload. When present we use it directly — no disk dependency,
+ * no race. The `readDiskSentinel` fallback is only invoked when the payload
+ * value is missing/empty (older panel builds), preserving backward compat.
+ *
+ * @param payloadFallback   - Fallback title carried on the chat-start message.
+ * @param readDiskSentinel  - Lazy disk read; only called when payload is empty.
+ * @returns The sentinel string, or undefined when neither source has one.
+ */
+export async function resolveTitleSentinel(
+  payloadFallback: string | undefined,
+  readDiskSentinel: () => Promise<string | undefined>,
+): Promise<string | undefined> {
+  if (payloadFallback !== undefined && payloadFallback !== "") {
+    return payloadFallback;
+  }
+  return readDiskSentinel();
+}
+
+/**
  * Race-guard: atomically upgrades the session title only if it still matches
  * the expected fallback string. Protects against user manually changing the
  * title between LLM fire and LLM return.

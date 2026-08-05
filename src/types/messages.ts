@@ -44,6 +44,18 @@ export interface ChatStartMessage {
    * payload.
    */
   sessionId: string;
+  /**
+   * Issue #353 — fallback title (deriveTitleFromMessages of the first user
+   * message) computed by the panel from the SAME `updated` message array it
+   * persists. Carried here so the SW's M2-U3 title-generation race-guard no
+   * longer has to read the sentinel back from disk — the panel's fire-and-forget
+   * persistMessages IDB write is not guaranteed to land before the SW receives
+   * chat-start, which silently skipped title generation (~30-50% miss under
+   * load). Optional / additive: absent from older panel builds, in which case
+   * the SW falls back to the disk sentinel read. Only meaningful on the first
+   * user message (the only case the SW triggers title generation).
+   */
+  fallbackTitle?: string;
 }
 
 export interface ChatAbortMessage {

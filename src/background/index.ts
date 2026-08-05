@@ -91,7 +91,7 @@ import { getCrossSessionPinnedTabIds } from "@/lib/sessions/pinned-tab-registry"
 import { getEffectivePinMode, getPrimaryPin } from "@/lib/sessions/pin-state";
 import { captureActivePinnedTab } from "@/lib/sessions/capture-active-pinned";
 import { chat } from "@/lib/model-router";
-import { generateTitle, maybeUpgradeFallbackTitle } from "@/lib/sessions/title-generator";
+import { generateTitle, maybeUpgradeFallbackTitle, resolveTitleSentinel } from "@/lib/sessions/title-generator";
 import {
   getAssistantLanguageSetting,
   resolveAssistantLanguage,
@@ -156,7 +156,6 @@ import {
 import { getEnabledLocalAgents, setEnabledLocalAgents, applyToggle, isAgentUsable } from "@/lib/local-agents-prefs";
 import { initBridgeAndMigrate } from "./skill-migration";
 import { shouldOpenChangelog, buildChangelogUrl } from "@/lib/update-changelog";
-import { resolveLocale } from "@/lib/i18n/locale-resolver";
 
 // Install log capture at module top level
 installLogCapture("sw");
@@ -1363,6 +1362,7 @@ async function handleChatStream(
   abortController: AbortController,
   inFlightSessionIds: Set<string>,
   keepAlive: KeepAlive,
+  fallbackTitle?: string,
 ) {
   const signal = abortController.signal;
   try {
@@ -1397,17 +1397,26 @@ async function handleChatStream(
 
     // M2-U3 — LLM async title generation (R29).
     // Trigger only on the first user message (messages.length === 1 and role=user).
-    // The race-guard sentinel is whatever title the panel wrote at chat-start
-    // (panel's persistMessages fires before postMessage('chat-start'), so by the
-    // time SW awaits getSessionMeta the fallback string is on disk). Reading
-    // from storage avoids recomputing the fallback in SW with a different
-    // `messages` payload — slash skills, for example, ship the EXPANDED prompt
-    // to SW, so a SW-side deriveTitleFromMessages would produce a different
-    // string than the panel's, breaking the equality race-guard forever.
+    //
+    // The race-guard sentinel is the fallback title the panel derived from the
+    // first user message. Issue #353: the panel's persistMessages IDB write is
+    // fire-and-forget and NOT guaranteed to land before the SW receives
+    // chat-start, so reading the sentinel back from disk here often returned
+    // undefined → title generation was silently skipped (~30-50% miss under
+    // load). The panel now ships the fallback string on the chat-start payload
+    // (computed with the SAME deriveTitleFromMessages over the SAME `updated`
+    // array it persists, so it matches the on-disk value exactly). We prefer
+    // that payload value and only fall back to the disk read for older panels.
+    // Deriving panel-side also sidesteps the slash-skill trap: slash skills ship
+    // the EXPANDED prompt to the SW, so a SW-side deriveTitleFromMessages would
+    // produce a different string than the panel's, breaking the equality
+    // race-guard forever — the panel's authoritative value avoids that.
     if (messages.length === 1 && messages[0]?.role === "user") {
       const firstUserContent = messages[0].content;
-      const sentinelMeta = await getSessionMeta(sessionId);
-      const expectedFallback = sentinelMeta?.title;
+      const expectedFallback = await resolveTitleSentinel(
+        fallbackTitle,
+        async () => (await getSessionMeta(sessionId))?.title,
+      );
       if (expectedFallback !== undefined && expectedFallback !== "") {
         const callChat = (
           msgs: Array<{ role: "system" | "user" | "assistant"; content: string }>,
@@ -1751,6 +1760,7 @@ chrome.runtime.onConnect.addListener((port) => {
         abortRotation.current,
         inFlightSessionIds,
         keepAlive,
+        message.fallbackTitle,
       );
     } else if (message.type === "chat-abort") {
       abortRotation.current.abort();
