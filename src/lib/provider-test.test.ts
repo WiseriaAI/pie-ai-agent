@@ -26,7 +26,7 @@ describe("testProviderConnection", () => {
         model: "gpt-test",
         apiKey: "sk-test",
         baseUrl: "https://proxy.test/v1",
-        maxTokens: 1,
+        maxTokens: 16,
       }),
       [{ role: "user", content: "Hi" }],
       expect.any(AbortSignal),

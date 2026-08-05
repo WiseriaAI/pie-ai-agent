@@ -44,7 +44,10 @@ export async function testProviderConnection(
           model: input.model,
           apiKey: input.apiKey,
           baseUrl: input.baseUrl,
-          maxTokens: 1,
+          // 16 而非 1：reasoning 模型的思考 token 也计入输出预算（OpenAI
+          // Responses 的 max_output_tokens 最小值即 16）；探针只看「能否成功
+          // 返回」不看内容。
+          maxTokens: 16,
         },
         [{ role: "user", content: "Hi" }],
         controller.signal,
