@@ -1,6 +1,7 @@
 import type { Socket } from "bun";
 import { encodeFrame, decodeFrames, decodeNdjsonLines } from "./framing";
 import { paths } from "./paths";
+import { connectWithBootstrap } from "./daemon-launcher";
 
 // host 由 Chrome spawn；stdin=Chrome→host，stdout=host→Chrome。
 // 每条帧 → daemon socket（ndjson）→ 回复 → 重新加帧写 stdout。
@@ -51,14 +52,20 @@ export async function connectHostSocket(
 }
 
 export async function runHost(): Promise<void> {
-  const conn = await connectHostSocket(
-    paths.ipcPath,
-    (frame) => Bun.write(Bun.stdout, frame),
-    (reason) => {
-      console.error(`host: ${reason}; exiting so the extension can reconnect`);
-      process.exit(1);
-    },
-  );
+  const connectOnce = (): Promise<Socket> =>
+    connectHostSocket(
+      paths.ipcPath,
+      (frame) => Bun.write(Bun.stdout, frame),
+      (reason) => {
+        console.error(`host: ${reason}; exiting so the extension can reconnect`);
+        process.exit(1);
+      },
+    );
+
+  // Windows 无 launchd KeepAlive：host 连不上 daemon（首连或崩溃后）就自己把 daemon
+  // 拉起来再按退避梯子重连（spec §4.4）。mac/linux 保持原有「连一次，失败即抛→退出」
+  // 语义不变——launchd 负责崩溃自愈，host 不越俎代庖多拉一个 daemon。
+  const conn = paths.isPipe ? await connectWithBootstrap({ connect: connectOnce }) : await connectOnce();
 
   let buf = new Uint8Array(0);
   for await (const chunk of Bun.stdin.stream()) {

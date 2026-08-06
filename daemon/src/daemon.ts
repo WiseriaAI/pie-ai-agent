@@ -13,6 +13,7 @@ import { runSkillScript } from "./skill-exec";
 import { listGrants, revokeGrant, sweepGrants } from "./grants";
 import { readAuditTail } from "./audit";
 import { getStatus, markExtensionSocket, dropSocket } from "./status";
+import { isAddrInUseError } from "./daemon-launcher";
 import type {
   ReadSkillFileParams, RunSkillScriptParams, WriteSkillParams, DeleteSkillParams, RevokeGrantParams,
   ListAuditParams, ListAuditResult, ReadSessionFileParams, DeleteSessionWorkspaceParams,
@@ -276,32 +277,42 @@ export async function startDaemon(): Promise<void> {
   // socket 文件残留清理仅对 unix domain socket 有意义；Windows named pipe 无磁盘文件
   // （占用即 listen 抛 EADDRINUSE → 进程退出 = 单实例「占用即退出」，对齐 mac socket 语义）。
   if (!paths.isPipe && existsSync(paths.ipcPath)) unlinkSync(paths.ipcPath); // 清残留
-  Bun.listen<{ carry: string; writer: BackpressureWriter }>({
-    unix: paths.ipcPath,
-    socket: {
-      open(socket) {
-        // 每个连接独立的 carry：Bun 的 per-socket data 绑定，多个 host 连接
-        // （理论上）互不干扰各自的半行缓冲。
-        socket.data = { carry: "", writer: makeBackpressureWriter((bytes) => socket.write(bytes)) };
-        log("info", "client.connect");
+  try {
+    Bun.listen<{ carry: string; writer: BackpressureWriter }>({
+      unix: paths.ipcPath,
+      socket: {
+        open(socket) {
+          // 每个连接独立的 carry：Bun 的 per-socket data 绑定，多个 host 连接
+          // （理论上）互不干扰各自的半行缓冲。
+          socket.data = { carry: "", writer: makeBackpressureWriter((bytes) => socket.write(bytes)) };
+          log("info", "client.connect");
+        },
+        close(socket) {
+          dropSocket(socket);
+          log("info", "client.disconnect");
+        },
+        data(socket, data) {
+          const { carry, pending, sawHello } = processSocketChunk(socket.data.carry, data.toString(), (out) =>
+            socket.data.writer.write(out),
+          );
+          if (sawHello) markExtensionSocket(socket);
+          socket.data.carry = carry;
+          pending.catch((err) => log("error", "socket.error", { err: String(err) }));
+        },
+        drain(socket) {
+          socket.data.writer.drain();
+        },
       },
-      close(socket) {
-        dropSocket(socket);
-        log("info", "client.disconnect");
-      },
-      data(socket, data) {
-        const { carry, pending, sawHello } = processSocketChunk(socket.data.carry, data.toString(), (out) =>
-          socket.data.writer.write(out),
-        );
-        if (sawHello) markExtensionSocket(socket);
-        socket.data.carry = carry;
-        pending.catch((err) => log("error", "socket.error", { err: String(err) }));
-      },
-      drain(socket) {
-        socket.data.writer.drain();
-      },
-    },
-  });
+    });
+  } catch (e) {
+    // 单实例互斥：pipe/socket 已被在跑的 daemon 占用（Windows named pipe 冲突 =
+    // EADDRINUSE）→ 干净退出，把地盘让给现有实例，别抛栈污染日志。
+    if (isAddrInUseError(e)) {
+      log("info", "daemon.already_running", { ipc: paths.ipcPath });
+      return;
+    }
+    throw e;
+  }
   // chmod 收敛到用户级信任边界仅适用于 socket 文件；named pipe 的 ACL 由创建者默认收敛，
   // 且路径不在文件系统命名空间，chmodSync 会 ENOENT——Windows 下跳过。
   if (!paths.isPipe) chmodSync(paths.ipcPath, 0o600); // 用户级信任边界
