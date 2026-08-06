@@ -24,6 +24,12 @@
   </p>
 </div>
 
+https://github.com/user-attachments/assets/87d3744c-a69b-4c65-9d27-56ba2ca459ba
+
+<p align="center">
+  Also on <a href="https://www.youtube.com/watch?v=vSev4Z9E5bY">YouTube</a>
+</p>
+
 ---
 
 ## What is Pie

@@ -24,6 +24,13 @@
   </p>
 </div>
 
+https://github.com/user-attachments/assets/4b3f2b1c-7ba1-4624-884f-bcd073d517db
+
+<p align="center">
+  也可以在 <a href="https://www.bilibili.com/video/BV1WYMR6mEgp/">嗶哩嗶哩</a> 觀看 ·
+  <a href="https://www.youtube.com/watch?v=vSev4Z9E5bY">YouTube（英文版）</a>
+</p>
+
 ---
 
 ## Pie 是什麼
