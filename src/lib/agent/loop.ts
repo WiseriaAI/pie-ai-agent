@@ -2084,6 +2084,8 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           if (event.usage && event.usage.inputTokens > 0) {
             lastStepUsage = event.usage;
           }
+        } else if (event.type === "ratelimit-wait") {
+          emit(withSession({ type: "chat-ratelimit-wait", resumeAt: event.resumeAt }, sessionId));
         } else if (event.type === "error") {
           emit(withSession({ type: "chat-error", error: event.error, kind: event.kind }, sessionId));
           await emitDone({

@@ -360,6 +360,7 @@ export default function NewConfigWizard(props: Props) {
         <InstanceForm
           key={provider}
           hideProviderField
+          unpadded
           mode="create"
           provider={provider}
           initialNickname={metaName}

@@ -175,6 +175,15 @@ export interface ChatErrorMessage {
   sessionId: string;
 }
 
+/** SW → Panel：streamChat 撞到用户自设 RPM 上限，正在排队等待。panel 显示
+ *  黄铜色倒计时（WorkingIndicator 等待变体），收到任一真实进展消息即清除。 */
+export interface ChatRatelimitWaitMessage {
+  type: "chat-ratelimit-wait";
+  /** 预计恢复时刻（epoch ms）。waiter 竞争下实际可能更晚，panel 钳 ≥0 显示。 */
+  resumeAt: number;
+  sessionId: string;
+}
+
 /**
  * Issue #59 — SW → Panel: emitted after each agent step whose stream produced
  * a real `done.usage`. Panel mirrors into `slot.usage` for ring rendering.
@@ -620,4 +629,5 @@ export type PortMessageToPanel =
   | ChatInstructionRejectedMessage    // Issue #34
   | NeedsFileAccessMessage            // local file access card
   | FileOutputMessage                 // output_file download card
-  | FileOutputResultMessage;          // output_file download result
+  | FileOutputResultMessage           // output_file download result
+  | ChatRatelimitWaitMessage;         // Provider RPM 限流排队等待

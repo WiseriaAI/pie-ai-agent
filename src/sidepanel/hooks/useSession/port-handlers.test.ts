@@ -556,6 +556,46 @@ describe("file-output", () => {
   });
 });
 
+describe("chat-ratelimit-wait（RPM 限流等待）", () => {
+  it("设置 ratelimitResumeAt", () => {
+    const deps = makeDeps();
+    const { handleMessage } = createPortHandlers(deps);
+    handleMessage({ type: "chat-ratelimit-wait", resumeAt: 999, sessionId: "s1" } as PortMessageToPanel);
+    expect(deps.slotsRef.current.get("s1")?.ratelimitResumeAt).toBe(999);
+  });
+
+  it("chat-chunk / thinking-chunk / agent-step / chat-error / chat-done 均清除", () => {
+    const deps = makeDeps();
+    const { handleMessage } = createPortHandlers(deps);
+    const clearers: PortMessageToPanel[] = [
+      { type: "chat-chunk", text: "x", sessionId: "s1" } as PortMessageToPanel,
+      { type: "thinking-chunk", text: "x", sessionId: "s1" } as PortMessageToPanel,
+      { type: "chat-done", sessionId: "s1" } as PortMessageToPanel,
+      { type: "chat-error", error: "e", sessionId: "s1" } as PortMessageToPanel,
+      {
+        type: "agent-step",
+        sessionId: "s1",
+        stepIndex: 0,
+        tool: "click",
+        args: {},
+        status: "pending",
+      } as PortMessageToPanel,
+      {
+        type: "agent-done-task",
+        sessionId: "s1",
+        success: true,
+        summary: "ok",
+        stepCount: 1,
+      } as PortMessageToPanel,
+    ];
+    for (const msg of clearers) {
+      handleMessage({ type: "chat-ratelimit-wait", resumeAt: 999, sessionId: "s1" } as PortMessageToPanel);
+      handleMessage(msg);
+      expect(deps.slotsRef.current.get("s1")?.ratelimitResumeAt).toBeNull();
+    }
+  });
+});
+
 describe("file-output-result", () => {
   beforeEach(() => {
     _clearPendingForTests();

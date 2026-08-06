@@ -88,15 +88,23 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
 
     const id = msg.sessionId;
 
+    if (msg.type === "chat-ratelimit-wait") {
+      patchSlot(id, { ratelimitResumeAt: msg.resumeAt });
+      return;
+    }
+
     if (msg.type === "chat-chunk") {
       patchSlot(id, (prev) => {
         const accumulated = prev.accumulated + msg.text;
-        return { accumulated, streamingText: accumulated };
+        return { accumulated, streamingText: accumulated, ratelimitResumeAt: null };
       });
       return;
     }
     if (msg.type === "thinking-chunk") {
-      patchSlot(id, (prev) => ({ streamingThinking: prev.streamingThinking + msg.text }));
+      patchSlot(id, (prev) => ({
+        streamingThinking: prev.streamingThinking + msg.text,
+        ratelimitResumeAt: null,
+      }));
       return;
     }
     if (msg.type === "chat-done") {
@@ -112,6 +120,7 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
         streamingText: "",
         streaming: false,
         streamFinished: true,
+        ratelimitResumeAt: null,
       });
       void persistMessages(id, next);
       return;
@@ -132,6 +141,7 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
         streamingText: "",
         streaming: false,
         streamFinished: true,
+        ratelimitResumeAt: null,
       });
       void persistMessages(id, next);
       return;
@@ -177,6 +187,7 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
 
       patchSlot(id, {
         messages: nextMessages,
+        ratelimitResumeAt: null,
         ...(flushed ? { accumulated: "", streamingText: "", streamingThinking: "" } : {}),
       });
       return;
@@ -211,6 +222,7 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
         streamingText: "",
         streaming: false,
         streamFinished: true,
+        ratelimitResumeAt: null,
       });
       void persistMessages(id, next);
       return;

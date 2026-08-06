@@ -81,9 +81,10 @@ export default function ModelsPage({ openSubscribeNonce }: { openSubscribeNonce?
   }
 
   async function handleSaveEdit(id: string, payload: InstanceFormPayload) {
-    const patch: { apiKey?: string; endpointVariant: string | null } = {
+    const patch: { apiKey?: string; endpointVariant: string | null; rpmLimit: number | null } = {
       // undefined = 用户选了默认端点 → null 显式清除存储字段
       endpointVariant: payload.endpointVariant ?? null,
+      rpmLimit: payload.rpmLimit ?? null,
     };
     // Only re-encrypt the key if the user actually typed a new one.
     // An empty apiKey means "keep existing" — do NOT pass it to updateInstance.
@@ -221,6 +222,7 @@ export default function ModelsPage({ openSubscribeNonce }: { openSubscribeNonce?
                   provider={inst.provider}
                   initialNickname={inst.nickname}
                   initialEndpointVariant={inst.endpointVariant}
+                  initialRpmLimit={inst.rpmLimit}
                   initialCustomModels={mergedCustomModels}
                   customModelMetas={providerMetas[inst.provider] ?? {}}
                   fetchedModels={inst.fetchedModels}

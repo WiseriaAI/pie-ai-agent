@@ -129,6 +129,9 @@ export interface UseSession {
   streaming: boolean;
   streamingText: string;
   streamingThinking: string;
+  /** Provider RPM 限流：streamChat 正在排队等待时的预计恢复时刻（epoch ms）。
+   *  null = 未在限流等待。WorkingIndicator 据此切换为倒计时变体。 */
+  ratelimitResumeAt: number | null;
   error: string | null;
   /** 最近一次 chat-error 的机读分类（见 ErrorKind）。null = 无/未分类。
    *  驱动 Chat 错误气泡下的 managed CTA（budget→管理订阅 / auth→重登提示）。 */
@@ -528,6 +531,7 @@ export function useSession(): UseSession {
         streamingThinking: "",
         error: null,
         errorKind: null,
+        ratelimitResumeAt: null,
       });
 
       // Build the LLM-facing chat history (text-only, slash-expanded).
@@ -1038,6 +1042,7 @@ export function useSession(): UseSession {
     streaming: active.streaming,
     streamingText: active.streamingText,
     streamingThinking: active.streamingThinking,
+    ratelimitResumeAt: active.ratelimitResumeAt,
     error: active.error,
     errorKind: active.errorKind,
     toast: active.toast,

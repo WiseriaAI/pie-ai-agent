@@ -376,3 +376,27 @@ describe("instances managed multi-model", () => {
     expect(cfg?.model).toBe("default");
   });
 });
+
+describe("rpmLimit（RPM 限流配置）", () => {
+  it("createInstance 带 rpmLimit → resolveModelConfig 透出 rpmLimit + rateKey", async () => {
+    const id = await createInstance({ provider: "anthropic", nickname: "A", apiKey: "k", rpmLimit: 30 });
+    const cfg = await resolveModelConfig(id, "claude-opus-5");
+    expect(cfg?.rpmLimit).toBe(30);
+    expect(cfg?.rateKey).toBe(id);
+  });
+
+  it("未配 rpmLimit → config 无 rpmLimit 字段，rateKey 仍在", async () => {
+    const id = await createInstance({ provider: "anthropic", nickname: "A", apiKey: "k" });
+    const cfg = await resolveModelConfig(id, "claude-opus-5");
+    expect(cfg?.rpmLimit).toBeUndefined();
+    expect(cfg?.rateKey).toBe(id);
+  });
+
+  it("updateInstance 设置与清除（null）", async () => {
+    const id = await createInstance({ provider: "anthropic", nickname: "A", apiKey: "k" });
+    await updateInstance(id, { rpmLimit: 10 });
+    expect((await getInstance(id))?.rpmLimit).toBe(10);
+    await updateInstance(id, { rpmLimit: null });
+    expect((await getInstance(id))?.rpmLimit).toBeUndefined();
+  });
+});

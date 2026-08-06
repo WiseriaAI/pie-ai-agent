@@ -2,6 +2,7 @@
 
 import { dispatchStreamChat } from "./providers";
 import { resolveProviderMeta } from "./providers/registry";
+import { peekWait, acquire } from "./rate-limiter";
 import type { Attachment } from "@/lib/images";
 
 export type { StreamEvent, ErrorKind, AgentMessage, ContentBlock, TextBlock, ToolUseBlock, ToolResultBlock, ImageBlock, ToolDefinition } from "./types";
@@ -54,6 +55,10 @@ export interface ModelConfig {
    * custom OpenRouter ids aren't silently locked out.
    */
   vision?: boolean;
+  /** 用户自设的每分钟请求上限（instance 维度）。undefined = 不限。 */
+  rpmLimit?: number;
+  /** 限流计数 key，resolveModelConfig 填 instanceId；缺省回落 apiKey。 */
+  rateKey?: string;
 }
 
 // Panel↔SW wire protocol message — content stays string (Phase 1 wire invariant);
@@ -121,6 +126,18 @@ export async function* streamChat(
     ...config,
     baseUrl: config.baseUrl || meta.defaultBaseUrl,
   };
+
+  // RPM rate limit gate
+  if (config.rpmLimit && config.rpmLimit > 0) {
+    const key = config.rateKey ?? config.apiKey;
+    const resumeAt = peekWait(key, config.rpmLimit);
+    if (resumeAt !== null) yield { type: "ratelimit-wait", resumeAt };
+    try {
+      await acquire(key, config.rpmLimit, signal);
+    } catch {
+      return; // 等待中被 abort —— 静默终止，loop 走既有 abort 收尾
+    }
+  }
 
   yield* dispatchStreamChat(config)(resolvedConfig, messages, signal, tools);
 }

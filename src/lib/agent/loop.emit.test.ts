@@ -9,7 +9,7 @@
  * The tests import AgentEmit and AgentLoopContext to exercise the public types
  * in addition to runtime behaviour.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { AgentEmit } from "./loop";
 
 // ---------------------------------------------------------------------------
@@ -355,5 +355,48 @@ describe("runAgentLoop — maxSteps hard cap (Task 5.3)", () => {
     // Should end with chat-done (pure-text mock path), not agent-done-task(failed)
     const chatDone = emitted.find((m) => (m as { type: string }).type === "chat-done");
     expect(chatDone).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Provider RPM 限流 Task 4 — ratelimit-wait 转发
+// ---------------------------------------------------------------------------
+describe("ratelimit-wait 转发（RPM 限流）", () => {
+  beforeEach(() => vi.clearAllMocks());
+  // 本 describe 内的用例用 mockImplementation 覆写了 streamChat 的默认实现；
+  // vi.clearAllMocks() 只清调用记录、不还原实现,覆写会漏到后续追加的用例里。
+  // 收尾把 streamChat 恢复成文件顶部 vi.mock 声明的默认 generator。
+  afterEach(async () => {
+    const { streamChat } = await import("../model-router");
+    vi.mocked(streamChat).mockImplementation(async function* () {
+      yield { type: "text-delta", text: "Hello world" };
+      yield { type: "done", stopReason: "end" };
+    });
+  });
+
+  it("streamChat 产 ratelimit-wait → loop emit chat-ratelimit-wait（带 sessionId/resumeAt）", async () => {
+    const { runAgentLoop } = await import("./loop");
+    const { streamChat } = await import("../model-router");
+    vi.mocked(streamChat).mockImplementation(async function* () {
+      yield { type: "ratelimit-wait", resumeAt: 1234567 } as const;
+      yield { type: "text-delta", text: "Hello" } as const;
+      yield { type: "done", stopReason: "end" } as const;
+    });
+    const emitted: Array<{ type: string; resumeAt?: number; sessionId?: string }> = [];
+    const emit: AgentEmit = (msg) => { emitted.push(msg as (typeof emitted)[number]); };
+    const controller = new AbortController();
+    await runAgentLoop({
+      emit,
+      task: "t",
+      modelConfig: { provider: "openai", model: "gpt-4o", apiKey: "sk", vision: false },
+      signal: controller.signal,
+      sessionId: "s-rl",
+      pinnedTabs: [{ tabId: 1, origin: "https://example.com" }],
+      initialFocusTabId: 1,
+    });
+    const rl = emitted.find((m) => m.type === "chat-ratelimit-wait");
+    expect(rl).toBeDefined();
+    expect(rl!.resumeAt).toBe(1234567);
+    expect(rl!.sessionId).toBe("s-rl");
   });
 });

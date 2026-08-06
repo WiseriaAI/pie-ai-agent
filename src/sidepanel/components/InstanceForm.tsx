@@ -15,6 +15,8 @@ export interface InstanceFormPayload {
   customModels: string[];
   /** EndpointVariant.id；undefined = 默认端点。 */
   endpointVariant?: string;
+  /** 每分钟请求上限；undefined = 不限。 */
+  rpmLimit?: number;
 }
 
 /** Render-prop API exposed when the parent wants to compose a custom action footer
@@ -36,6 +38,7 @@ interface Props {
   initialNickname: string;
   initialCustomModels?: string[];
   initialEndpointVariant?: string;
+  initialRpmLimit?: number;
   fetchedModels?: ModelMeta[];
   fetchedAt?: number;
   isFetching?: boolean;
@@ -61,6 +64,10 @@ interface Props {
   /** When true, hides the built-in read-only provider field.
    *  Used by NewConfigWizard where provider is managed by ProviderDropdown above. */
   hideProviderField?: boolean;
+  /** When true, drops the built-in px/py padding around the form fields.
+   *  Used by NewConfigWizard whose container already pads — the default
+   *  padding is for the Settings edit card (ModelsPage) host. */
+  unpadded?: boolean;
 }
 
 export default function InstanceForm(props: Props) {
@@ -111,6 +118,11 @@ export default function InstanceForm(props: Props) {
   const [endpointVariant, setEndpointVariant] = useState<string | undefined>(() =>
     meta && resolveEndpointVariant(meta, props.initialEndpointVariant) ? props.initialEndpointVariant : undefined,
   );
+  const [rpmText, setRpmText] = useState(props.initialRpmLimit != null ? String(props.initialRpmLimit) : "");
+  const parsedRpm = (() => {
+    const n = parseInt(rpmText.trim(), 10);
+    return Number.isFinite(n) && n > 0 ? n : undefined;
+  })();
   const variants = meta?.endpointVariants ?? [];
   const selectedVariant = meta ? resolveEndpointVariant(meta, endpointVariant) : undefined;
 
@@ -122,7 +134,7 @@ export default function InstanceForm(props: Props) {
   const testing = props.testing === true;
   const testStatus = props.testStatus ?? "idle";
 
-  const payload: InstanceFormPayload = { nickname: props.initialNickname, apiKey, customModels, endpointVariant };
+  const payload: InstanceFormPayload = { nickname: props.initialNickname, apiKey, customModels, endpointVariant, rpmLimit: parsedRpm };
 
   // Managed provider: skip the BYOK form entirely — show account panel instead.
   if (props.provider === "managed") {
@@ -155,7 +167,7 @@ export default function InstanceForm(props: Props) {
 
   return (
     <div className="flex flex-col">
-      <div className="flex flex-col gap-3 px-3.5 py-3.5">
+      <div className={props.unpadded ? "flex flex-col gap-3" : "flex flex-col gap-3 px-3.5 py-3.5"}>
       {!props.hideProviderField && (
         <Field label={t("instanceForm.provider")}>
           {metaLoading && isCustomProvider ? (
@@ -242,6 +254,21 @@ export default function InstanceForm(props: Props) {
             )}
           </div>
         )}
+      </Field>
+
+      <Field label={t("instanceForm.rpmLimit")} hint="RPM">
+        <div className="flex flex-col gap-1.5">
+          <input
+            aria-label={t("instanceForm.rpmLimit")}
+            type="text"
+            inputMode="numeric"
+            value={rpmText}
+            onChange={(e) => setRpmText(e.target.value)}
+            placeholder={t("instanceForm.rpmLimitPlaceholder")}
+            className="min-w-0 rounded-[10px] bg-field border border-line focus:border-accent-line px-3 py-2.5 text-[13px] text-fg-1"
+          />
+          <div className="text-[11px] leading-relaxed text-fg-3">{t("instanceForm.rpmLimitDesc")}</div>
+        </div>
       </Field>
 
       <FieldDiv label={t("instanceForm.models")}>
