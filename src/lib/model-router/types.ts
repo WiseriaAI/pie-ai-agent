@@ -64,4 +64,5 @@ export type StreamEvent =
       stopReason?: "end" | "tool_calls" | "length";
       usage?: { inputTokens: number; outputTokens: number };
     }
+  | { type: "ratelimit-wait"; resumeAt: number }
   | { type: "error"; error: string; kind?: ErrorKind };
