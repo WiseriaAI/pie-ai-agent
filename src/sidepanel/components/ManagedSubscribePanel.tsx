@@ -34,6 +34,11 @@ interface Props {
   deps?: ManagedSubscribeDeps;
   /** Poll interval in ms. Default 4000. Inject a smaller value in tests. */
   pollIntervalMs?: number;
+  /**
+   * 已登录但无生效订阅时预置会话，跳过 Google 登录直接进订阅引导。
+   * 供 ManagedAccountPanel 在 plan=none（含兑换/订阅到期回落）时复用本面板。
+   */
+  initialSession?: LoginResult;
 }
 
 /** Max number of polls before giving up (~5 min at 4s interval). */
@@ -43,6 +48,7 @@ export default function ManagedSubscribePanel({
   onCreated,
   deps,
   pollIntervalMs = 4000,
+  initialSession,
 }: Props) {
   const { t, locale } = useI18n();
   const login = deps?.login ?? (() => startManagedLogin());
@@ -52,7 +58,7 @@ export default function ManagedSubscribePanel({
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState<"month" | "year">("year");
   const [err, setErr] = useState<string | null>(null);
-  const [session, setSession] = useState<LoginResult | null>(null);
+  const [session, setSession] = useState<LoginResult | null>(initialSession ?? null);
   const [polling, setPolling] = useState(false);
 
   // Refs for cleanup without stale closures

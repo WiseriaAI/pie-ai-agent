@@ -54,13 +54,33 @@ describe("ManagedAccountPanel", () => {
     await waitFor(() => expect(portal).toHaveBeenCalledWith("sk-v"));
   });
 
-  it("none：No active subscription + Subscribe → checkout", async () => {
+  it("none（后端未下发 pricing）：No active subscription + Subscribe → 月付 checkout", async () => {
     const checkout = vi.fn(async () => {});
     const ent: Entitlement = { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [] };
     render(<ManagedAccountPanel apiKey="sk-v" deps={{ refresh: vi.fn(async () => ent), checkout }} />);
     expect(await screen.findByText(/No active subscription/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /^subscribe$/i }));
-    await waitFor(() => expect(checkout).toHaveBeenCalledWith("sk-v"));
+    await waitFor(() => expect(checkout).toHaveBeenCalledWith("sk-v", "month"));
+  });
+
+  // 兑换/订阅到期后后端回落 plan=none：这里必须给出与首次登录同款的订阅引导
+  // （月/年选择 + 兑换码），而不是停在一个只能干瞪眼的「未订阅」死界面。
+  it("到期回落 none：显示月/年选择 + 兑换码入口，可直接下单年付", async () => {
+    const checkout = vi.fn(async () => {});
+    const ent: Entitlement = {
+      plan: "none", email: "u@x.com", subscription: null, quota: null, models: [],
+      pricing: {
+        currency: "usd",
+        monthly: { amount: 599 },
+        annual: { amount: 5990, perMonthAmount: 499, savePercent: 17 },
+      },
+    };
+    render(<ManagedAccountPanel apiKey="sk-v" deps={{ refresh: vi.fn(async () => ent), checkout }} />);
+    expect(await screen.findByRole("radio", { name: /monthly/i })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: /yearly/i })).toBeTruthy();
+    expect(screen.getByText(/have a redemption code/i)).toBeTruthy(); // 到期后仍能再兑换（折叠入口）
+    fireEvent.click(screen.getByRole("button", { name: /subscribe yearly/i }));
+    await waitFor(() => expect(checkout).toHaveBeenCalledWith("sk-v", "year"));
   });
 
   it("redemption 来源：隐藏'管理订阅'、显示兑换有效期、显示兑换输入框", async () => {
