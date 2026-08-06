@@ -101,17 +101,17 @@ Workflow 内置 invariant（任一失败则 CI fail，不会上传）：
 - `docs/ROADMAP.md` — 已交付 phases + backlog（single source of truth）
 - `docs/agents/auto-acceptance.md` — 自动化真机验收操作文档（Playwright + scratch daemon 全链路跑 `need-human-test` 清单；流程/配方坑/验收标准/报告格式；参考脚本 `eval/acceptance/`）
 - `docs/solutions/` — 落地后的 invariant trace docs（per phase / per milestone）
-- `docs/specs/` — superpowers `brainstorming` skill 产出（design / requirements / spec），含 Phase 1–3 历史 brainstorm 合并归档
-- `docs/plans/` — superpowers `planning` skill 产出（实施 plan），含 Phase 1–3 历史 plan 合并归档
+- `docs/specs/` — 设计 / 需求 / spec 文档，含 Phase 1–3 历史 brainstorm 合并归档
+- `docs/plans/` — 实施 plan，含 Phase 1–3 历史 plan 合并归档
 - `docs/release-notes/` — 用户可见 changelog
 - `docs/localization/` — 本地化资产：README 多语言翻译（`README.<locale>.md`，如 `README.zh-CN.md` / `README.zh-TW.md` / `README.es-419.md` / `README.ja.md` / `README.pt-BR.md`）+ glossary / launch-pack / qa-checklist。**根目录只留英文 `README.md`**（GitHub 仓库首页只认根 README）；翻译版全部住这里。各翻译版顶部语言切换器互链：英文指 `../../README.md`，同目录兄弟用裸 `README.<locale>.md`，根目录文件（PRIVACY/CHANGELOG/LICENSE）用 `../../`，`docs/` 下文件用 `../`。新增一门语言 = 在此加一份 `README.<locale>.md` + 同步所有切换器（含根 README）
 - `docs/design.md` — 早期 Phase 0–3 设计构想（历史档案）
 - `docs/archive/index.html` — 项目档案知识库（单文件，vanilla JS / 零依赖）；编辑 `archiveData` 数组 → push 到 main → `.github/workflows/deploy-archive-pages.yml` 自动部署到 https://wiseriaai.github.io/pie-ai-agent/ ；Pages source = GitHub Actions，仅上传 `docs/archive/`，其他 docs/ 不进 Pages
 
-### Convention：superpowers brainstorm / plan 输出位置
+### Convention：spec / plan 输出位置
 
-- `brainstorming` skill 产出（design doc / requirements / spec）→ `docs/specs/<YYYY-MM-DD>-<slug>.md`
-- `planning` skill 产出（实施 plan）→ `docs/plans/<YYYY-MM-DD>-<slug>.md`
+- 设计 doc / 需求 / spec → `docs/specs/<YYYY-MM-DD>-<slug>.md`
+- 实施 plan → `docs/plans/<YYYY-MM-DD>-<slug>.md`
 - 不再使用 `docs/superpowers/` 子目录或 `docs/brainstorms/`（已合并迁出）
 - 历史与新产出在同一目录共存；按文件名日期前缀排序即可区分新旧
 
@@ -134,19 +134,13 @@ Issues live as GitHub issues in `WiseriaAI/pie-ai-agent`, managed via the `gh` C
 
 Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
 
-### Skill 路由（Matt Pocock skills × superpowers 消歧）
+### Skill 使用约定
 
-两套 skill 触发器高度重叠，但方法论同源、不矛盾；冲突只在「触发竞争 + 双倍仪式」。按下表分工：
+**superpowers 整套暂时停用**（`.claude/settings.json` 里 plugin 已置 false）。TDD / 调试 / brainstorm / 写 skill 一律按常规做法直接做，不套流程仪式，也不要主动去调同名 skill。
 
-**重叠区一律走 superpowers**（SessionStart 的 `using-superpowers` hook 已默认锁定它，且 Matt Pocock 同名 skill 方法论与之一致）：
-- TDD → `superpowers:test-driven-development`（**不**用 Matt Pocock `tdd`）
-- 调试 / bug / 测试失败 → `superpowers:systematic-debugging`（**不**用 `diagnose`）
-- 写 / 改 skill → `superpowers:writing-skills`（**不**用 `write-a-skill` / `skill-creator`）
-- 发散探索需求 → `superpowers:brainstorming`
-
-**Matt Pocock 只用 superpowers 没有的独占能力**：`grill-with-docs`（质询收敛 + 维护 `CONTEXT.md`/ADR）、`improve-codebase-architecture`、`prototype`。
-
-`triage` 与 `to-issues` 这两个 Matt Pocock skill **不再用**：分诊已固化进云端 routine（见上方 Triage labels）；建 issue 按我们自己的 Issue 规范手工走，不走 skill。下面那条 spec-driven 链路是**重点项目才用的 opt-in 流程**，不是默认 —— 详见「开发范式」。
+- 重点项目要产出 spec 时**我会明确说「用 grilling」**，没说就别开。
+- 分诊已固化进云端 routine（见上方 Triage labels）；建 issue 按 Issue 规范手工走，不走 `triage` / `to-issues`。
+- 其余 skill（`prototype` 等）按需人工点名调用。
 
 ### 开发范式（2026-06 起：云端 Loop 为主，实验期）
 
@@ -167,13 +161,12 @@ Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agent
 
 **默认路径**：不开 brainstorm/grill/plan 仪式。把需求写成 issue（或让分诊 routine 接住），让云端 Loop 实现。本地 session 多做的是「把工作落成清晰的 issue」与「review/merge PR」，**不是亲自实现**。
 
-**重点项目才人为发起设计（opt-in 链，下面这条仅用于重大、含真实不确定性的项目）**：
+**重点项目才人为发起设计（opt-in 链，仅当我明确说要走时才走）**：
 文档三层 **spec**(`docs/specs/`) → **issue**(GitHub) → **plan**(`docs/plans/`)；不单出 PRD（spec 即「设计＋需求」权威源）。
-1. `superpowers:brainstorming` — 产出 spec → `docs/specs/<date>-<slug>.md`
-2. `grill-with-docs` — 压测 spec，锐化出的术语/决策写进 `CONTEXT.md` 与 `docs/adr/`（可打回 1）
-3. `prototype`（**可选**）— 仅当含状态机/数据模型/UI 方向这类不确定性时才造抛弃式原型，发现回流改 spec
-4. **落 issue（按 Issue 规范，不走 `to-issues` skill）** — 把定稿 spec 拆成 tracer-bullet 垂直切片，用 `gh` 手工建 issue（只写 what + 验收标准），照 Triage labels 打分类/分级。**设计已定，issue 直接打 `ready-for-implement`**：跳过 `need-design` / `need-confirm`（那两阶段是给未经设计的新需求分诊用的，不再过云端 routine）。实现 plan（`superpowers:writing-plans` → `docs/plans/`）按需写，作为 issue 的实现参考。
-5. **交棒云端 Loop 实现** —— 链路到此为止，本地不接着一把梭：Loop 取 `ready-for-implement` → `agent-handling` → PR → 人 review/merge。
-   - 确需本地亲自实现时才走 `superpowers:subagent-driven-development`（每 task TDD）→ `verification-before-completion`（`pnpm test`/`typecheck`/`build` 拿证据）→ `requesting-code-review` → `gh issue close`；收尾走 PR（main 受保护，`gh`，先 `gh auth switch --user WiseriaAI`，`superpowers:finishing-a-development-branch`）。⚠️ subagent cwd 不随 worktree 切换，派活 prompt 须强制 `cd <worktree 绝对路径>`。
+1. `grilling` — 质询收敛需求与方案，产出 spec → `docs/specs/<date>-<slug>.md`；锐化出的术语/决策写进 `CONTEXT.md` 与 `docs/adr/`
+2. `prototype`（**可选**）— 仅当含状态机/数据模型/UI 方向这类不确定性时才造抛弃式原型，发现回流改 spec
+3. **落 issue（按 Issue 规范，不走 skill）** — 把定稿 spec 拆成 tracer-bullet 垂直切片，用 `gh` 手工建 issue（只写 what + 验收标准），照 Triage labels 打分类/分级。**设计已定，issue 直接打 `ready-for-implement`**：跳过 `need-design` / `need-confirm`（那两阶段是给未经设计的新需求分诊用的，不再过云端 routine）。实现 plan（→ `docs/plans/`）按需写，作为 issue 的实现参考。
+4. **交棒云端 Loop 实现** —— 链路到此为止，本地不接着一把梭：Loop 取 `ready-for-implement` → `agent-handling` → PR → 人 review/merge。
+   - 确需本地亲自实现时：逐 task TDD 实现 → 跑 `pnpm test` / `pnpm typecheck` / `pnpm build` 拿到证据再宣称完成 → `gh issue close`；收尾走 PR（main 受保护，`gh`，先 `gh auth switch --user WiseriaAI`）。⚠️ subagent cwd 不随 worktree 切换，派活 prompt 须强制 `cd <worktree 绝对路径>`。
 
 **判据**：拿不准是不是「重点项目」→ 默认当轻量任务，落 issue 交云端。仪式是例外，不是 happy path。
