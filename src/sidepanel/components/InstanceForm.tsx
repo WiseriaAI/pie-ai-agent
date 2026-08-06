@@ -64,6 +64,10 @@ interface Props {
   /** When true, hides the built-in read-only provider field.
    *  Used by NewConfigWizard where provider is managed by ProviderDropdown above. */
   hideProviderField?: boolean;
+  /** When true, drops the built-in px/py padding around the form fields.
+   *  Used by NewConfigWizard whose container already pads — the default
+   *  padding is for the Settings edit card (ModelsPage) host. */
+  unpadded?: boolean;
 }
 
 export default function InstanceForm(props: Props) {
@@ -163,7 +167,7 @@ export default function InstanceForm(props: Props) {
 
   return (
     <div className="flex flex-col">
-      <div className="flex flex-col gap-3 px-3.5 py-3.5">
+      <div className={props.unpadded ? "flex flex-col gap-3" : "flex flex-col gap-3 px-3.5 py-3.5"}>
       {!props.hideProviderField && (
         <Field label={t("instanceForm.provider")}>
           {metaLoading && isCustomProvider ? (
