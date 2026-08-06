@@ -209,9 +209,19 @@ export class FeedbackError extends Error {
   }
 }
 
-/** 提交度内反馈。有 apiKey 则带 Bearer（关联用户），否则匿名。失败抛 FeedbackError。 */
+/** 提交度内反馈。有 apiKey 则带 Bearer（关联用户），否则匿名。失败抛 FeedbackError。
+ *  `transcript` 只由 Chat 的 "Report problem" 抽屉带上（会话正文，用户显式发起）；
+ *  设置页的通用反馈不带。 */
 export async function submitFeedback(
-  input: { message: string; env: FeedbackEnv; logs?: string; apiKey?: string },
+  input: {
+    message: string;
+    env: FeedbackEnv;
+    logs?: string;
+    apiKey?: string;
+    transcript?: string;
+    sessionId?: string;
+    messageIndex?: number;
+  },
   deps: ManagedAccountDeps = {},
 ): Promise<void> {
   const fetchFn = deps.fetchFn ?? fetch;
@@ -221,6 +231,9 @@ export async function submitFeedback(
     message: input.message,
     env: input.env,
     ...(input.logs ? { logs: input.logs } : {}),
+    ...(input.transcript ? { transcript: input.transcript } : {}),
+    ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+    ...(input.messageIndex !== undefined ? { messageIndex: input.messageIndex } : {}),
   });
   const resp = await fetchFn(`${ACCOUNT_BASE}/feedback`, { method: "POST", headers, body });
   if (!resp.ok) {
