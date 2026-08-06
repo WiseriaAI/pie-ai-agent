@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { mkdtempSync, mkdirSync, writeFileSync } from "fs";
+import { mkdtempSync, mkdirSync, writeFileSync, realpathSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { assertSafeRel, safeRelPath } from "../src/skill-store";
@@ -47,7 +47,9 @@ test("assertSafeRel rejects empty / non-string", () => {
 });
 
 test("safeRelPath enforces the win32 string guard before native resolution", () => {
-  const root = mkdtempSync(join(tmpdir(), "pie-guard-"));
+  // realpath 规范化：macOS tmpdir 经 /var → /private/var symlink，而 safeRelPath 内部
+  // realpathSync(skillDir) 会返回规范化根，期望值须同样规范化，否则 mac 上必红。
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "pie-guard-")));
   mkdirSync(join(root, "scripts"), { recursive: true });
   writeFileSync(join(root, "scripts", "run.py"), "print(1)");
   // 合法：解析到根内
