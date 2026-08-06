@@ -34,6 +34,18 @@ function isUserToolResultTurn(msg: AgentMessage): boolean {
  *           recent `maxSteps` (assistant tool_use + user tool_result) pairs
  *           are kept, plus any trailing messages after the last complete pair.
  *
+ * `slideBatch` adds hysteresis to the cut: the window is NOT re-cut every
+ * time the backlog grows by one pair. While the pair count stays within
+ * `maxSteps + slideBatch` everything is kept; only when it exceeds that band
+ * is the window cut back to exactly `maxSteps` pairs. Rationale: every cut
+ * changes the first react message on the wire, which breaks the provider
+ * prefix cache (OpenAI / Moonshot / DeepSeek auto-caching) for the ENTIRE
+ * react segment — the bulk of tokens on page-operation tasks. Sliding in
+ * batches reduces the cache bust from "every step" to "every slideBatch
+ * steps". Default 0 preserves the original slide-every-step behavior.
+ * The rule is a pure function of the pair count, so it is deterministic
+ * across SW restarts / resumes.
+ *
  * When no assistant ContentBlock[] turn exists (e.g. pure-chat history with
  * no in-flight ReAct pairs) the entire messages array is the head and is
  * returned unchanged.
@@ -60,6 +72,7 @@ export function findReactStartIdx(messages: AgentMessage[]): number {
 export function applySlidingWindow(
   messages: AgentMessage[],
   maxSteps: number = 12,
+  slideBatch: number = 0,
 ): AgentMessage[] {
   // Find the first assistant message whose content is a ContentBlock[] array —
   // this is the ReAct loop start index.
@@ -92,7 +105,11 @@ export function applySlidingWindow(
     return messages;
   }
 
-  // Keep only the most recent maxSteps pairs
+  // Keep only the most recent maxSteps pairs — but only once the backlog
+  // has outgrown the hysteresis band (see the docblock above); inside the
+  // band, keep everything so the wire prefix stays byte-stable.
+  if (pairStarts.length <= maxSteps + slideBatch) return messages;
+
   const keptPairStarts = pairStarts.slice(-maxSteps);
   const earliestIdx = keptPairStarts[0];
 

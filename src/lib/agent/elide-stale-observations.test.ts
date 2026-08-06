@@ -232,3 +232,213 @@ describe("elideStaleObservations", () => {
     expect(out[1]).toEqual({ role: "user", content: "plain string task" });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Pull-mode (Phase 3): read_page snapshots ride tool_result blocks. These are
+// the heavy carriers on page-operation tasks and the whole reason the react
+// segment used to grow unboundedly.
+// ---------------------------------------------------------------------------
+
+/** Mirrors read-page.ts observation shape (interactive mode): cheap header,
+ *  frame_map, then the bulky interactive index + frame content blocks. */
+function readPageResult(url: string, elementCount: number): string {
+  const elements = Array.from(
+    { length: elementCount },
+    (_, i) =>
+      `  <interactive_element frame_id="0" pie_idx="${i}" tag="button" role="button">btn ${i}</interactive_element>`,
+  ).join("\n");
+  return [
+    `Current URL: ${url}`,
+    `Page title: Title ${url}`,
+    "",
+    "<frame_map>",
+    `  frame_id="0" url="${url}"`,
+    "</frame_map>",
+    "",
+    `<interactive_index mode="interactive" total="${elementCount}">`,
+    elements,
+    "</interactive_index>",
+    "",
+    `<untrusted_page_content frame_id="0" frame_url="${url}">`,
+    "<div>page body</div>",
+    "</untrusted_page_content>",
+  ].join("\n");
+}
+
+/** Atlas mode: no interactive index; bulk starts at the first frame block. */
+function readPageAtlasResult(url: string): string {
+  return [
+    `Current URL: ${url}`,
+    `Page title: Title ${url}`,
+    "",
+    "<frame_map>",
+    `  frame_id="0" url="${url}"`,
+    "</frame_map>",
+    "",
+    `<untrusted_page_content frame_id="0" mode="atlas">`,
+    "<page_atlas>…</page_atlas>",
+    "</untrusted_page_content>",
+  ].join("\n");
+}
+
+function userToolResultOnly(id: string, content: string): AgentMessage {
+  return {
+    role: "user",
+    content: [{ type: "tool_result", toolUseId: id, content }] as ContentBlock[],
+  };
+}
+
+describe("elideStaleObservations — read_page tool_result elision (pull mode)", () => {
+  it("elides a stale read_page tool_result: header + frame_map kept, index and frames gone", () => {
+    const history: AgentMessage[] = [
+      { role: "system", content: "sys" },
+      userTask("do the thing", obs("https://a", 5)),
+      assistantToolUse("t1"),
+      userToolResultOnly("t1", readPageResult("https://b", 50)),
+      assistantToolUse("t2"),
+      userToolResult("t2", obs("https://c", 5)),
+    ];
+    const out = elideStaleObservations(history);
+
+    const stale = out[3].content as ContentBlock[];
+    const tr = stale[0] as Extract<ContentBlock, { type: "tool_result" }>;
+    expect(tr.type).toBe("tool_result");
+    expect(tr.toolUseId).toBe("t1"); // pairing preserved
+    expect(tr.content).toContain("Current URL: https://b"); // header kept
+    expect(tr.content).toContain("<frame_map>"); // frame_map kept
+    expect(tr.content).toContain(STALE_OBSERVATION_MARKER);
+    expect(tr.content).not.toContain("<interactive_index"); // bulky index gone
+    expect(tr.content).not.toContain("<untrusted_page_content"); // frame payload gone
+    expect(tr.content).not.toContain("btn 0");
+
+    // The most recent user turn keeps its full content, by reference.
+    expect(out[5]).toBe(history[5]);
+  });
+
+  it("elides atlas-mode results (cut at the first frame block when no index exists)", () => {
+    const history: AgentMessage[] = [
+      { role: "system", content: "sys" },
+      userTask("t", obs("https://a", 5)),
+      assistantToolUse("t1"),
+      userToolResultOnly("t1", readPageAtlasResult("https://b")),
+      assistantToolUse("t2"),
+      userToolResult("t2", obs("https://c", 5)),
+    ];
+    const out = elideStaleObservations(history);
+    const tr = (out[3].content as ContentBlock[])[0] as Extract<ContentBlock, { type: "tool_result" }>;
+    expect(tr.content).toContain("Current URL: https://b");
+    expect(tr.content).toContain(STALE_OBSERVATION_MARKER);
+    expect(tr.content).not.toContain("<untrusted_page_content");
+    expect(tr.content).not.toContain("<page_atlas>");
+  });
+
+  it("elides every snapshot tool_result in a stale multi-result turn", () => {
+    const history: AgentMessage[] = [
+      { role: "system", content: "sys" },
+      userTask("t", obs("https://a", 5)),
+      assistantToolUse("t1"),
+      {
+        role: "user",
+        content: [
+          { type: "tool_result", toolUseId: "t1a", content: readPageResult("https://b1", 20) },
+          { type: "tool_result", toolUseId: "t1b", content: readPageAtlasResult("https://b2") },
+        ] as ContentBlock[],
+      },
+      assistantToolUse("t2"),
+      userToolResult("t2", obs("https://c", 5)),
+    ];
+    const out = elideStaleObservations(history);
+    const stale = out[3].content as ContentBlock[];
+    for (const b of stale) {
+      const tr = b as Extract<ContentBlock, { type: "tool_result" }>;
+      expect(tr.content).toContain(STALE_OBSERVATION_MARKER);
+      expect(tr.content).not.toContain("<untrusted_page_content");
+    }
+    expect((stale[0] as { toolUseId: string }).toolUseId).toBe("t1a");
+    expect((stale[1] as { toolUseId: string }).toolUseId).toBe("t1b");
+  });
+
+  it("leaves non-snapshot tool results (read_struct / click / …) untouched", () => {
+    const structResult = "<untrusted_struct_records>[{\"price\": 42}]</untrusted_struct_records>";
+    const history: AgentMessage[] = [
+      { role: "system", content: "sys" },
+      userTask("t", obs("https://a", 5)),
+      assistantToolUse("t1"),
+      userToolResultOnly("t1", structResult),
+      assistantToolUse("t2"),
+      userToolResult("t2", obs("https://c", 5)),
+    ];
+    const out = elideStaleObservations(history);
+    // Nothing elidable in the middle turn → same message object returned.
+    expect(out[3]).toBe(history[3]);
+  });
+
+  it("produces a bare marker when the payload starts directly with the frame block", () => {
+    const history: AgentMessage[] = [
+      { role: "system", content: "sys" },
+      userTask("t", obs("https://a", 5)),
+      assistantToolUse("t1"),
+      userToolResultOnly("t1", "<untrusted_page_content>fares…</untrusted_page_content>"),
+      assistantToolUse("t2"),
+      userToolResult("t2", obs("https://c", 5)),
+    ];
+    const out = elideStaleObservations(history);
+    const tr = (out[3].content as ContentBlock[])[0] as Extract<ContentBlock, { type: "tool_result" }>;
+    expect(tr.content).toBe(STALE_OBSERVATION_MARKER);
+  });
+
+  it("keeps the most recent user turn's snapshot tool_result full", () => {
+    const history: AgentMessage[] = [
+      { role: "system", content: "sys" },
+      userTask("t", obs("https://a", 5)),
+      assistantToolUse("t1"),
+      userToolResultOnly("t1", readPageResult("https://b", 30)),
+    ];
+    const out = elideStaleObservations(history);
+    expect(out[3]).toBe(history[3]);
+  });
+
+  it("is idempotent across the tool_result path", () => {
+    const history: AgentMessage[] = [
+      { role: "system", content: "sys" },
+      userTask("t", obs("https://a", 5)),
+      assistantToolUse("t1"),
+      userToolResultOnly("t1", readPageResult("https://b", 30)),
+      assistantToolUse("t2"),
+      userToolResult("t2", obs("https://c", 5)),
+    ];
+    const once = elideStaleObservations(history);
+    const twice = elideStaleObservations(once);
+    expect(twice).toEqual(once);
+  });
+
+  // Cache-stability invariant: a block elided at step N must stay
+  // byte-identical at step N+1 (only the previous last user turn flips
+  // full → marker). Simulated by appending one more react pair.
+  it("is monotone: elided stale turns stay byte-identical as history grows", () => {
+    const base: AgentMessage[] = [
+      { role: "system", content: "sys" },
+      userTask("t", obs("https://a", 5)),
+      assistantToolUse("t1"),
+      userToolResultOnly("t1", readPageResult("https://b", 30)),
+      assistantToolUse("t2"),
+      userToolResult("t2", obs("https://c", 5)),
+    ];
+    const stepN = elideStaleObservations(base);
+    const grown: AgentMessage[] = [
+      ...base,
+      assistantToolUse("t3"),
+      userToolResult("t3", obs("https://d", 5)),
+    ];
+    const stepN1 = elideStaleObservations(grown);
+    // Every message before the previous last user turn is byte-identical.
+    for (let i = 0; i < base.length - 1; i++) {
+      expect(stepN1[i]).toEqual(stepN[i]);
+    }
+    // The previous last user turn has now flipped to elided.
+    const flipped = stepN1[base.length - 1].content as ContentBlock[];
+    const flippedObs = (flipped[1] as { text: string }).text;
+    expect(flippedObs).toContain(STALE_OBSERVATION_MARKER);
+    expect(flippedObs).not.toContain("<untrusted_page_content");
+  });
+});

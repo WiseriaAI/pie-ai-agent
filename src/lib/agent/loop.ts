@@ -120,6 +120,11 @@ const BUDGET_NUDGE_INTERVAL = 20;
 
 /** #58 — react 段 sliding-window 放宽后的兜底上限。正常由 token 阈值先触发 compaction。 */
 const REACT_BIG_CAP = 60;
+/** 滞后滑动批量:react 对数超过 REACT_BIG_CAP + REACT_SLIDE_BATCH 才一次性砍回
+ *  REACT_BIG_CAP。每步砍头会换掉 react 段第一条消息,让 provider 前缀缓存
+ *  (OpenAI / Moonshot / DeepSeek 自动缓存)对整个 react 段失效——长程页面操作
+ *  任务里那是 token 大头。批量滑动把缓存失效从「每步一次」降为「每 ~20 步一次」。 */
+const REACT_SLIDE_BATCH = 20;
 /** #58 — provider 元数据缺失时的回退上下文窗口(与 window-token-budget 一致)。 */
 const COMPACTION_FALLBACK_MAX_TOKENS = 32_000;
 
@@ -1812,17 +1817,21 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // 在 wire-time 整形之前:超 provider token 阈值时把最旧步骤摘成合成对,保住早期发现。
       await compactReactWindow(history, compactionMaxTokens, compactionSummarizer, signal);
 
-      // Apply sliding window（react cap 放宽为 BIG_CAP，react 段长度主要由 compaction 控制）
-      const windowedHistorySlid = applySlidingWindow(history, REACT_BIG_CAP);
+      // Apply sliding window（react cap 放宽为 BIG_CAP + 滞后批量滑动，
+      // react 段长度主要由 compaction 与 stale-snapshot elision 控制；
+      // 滞后避免每步砍头打穿 provider 前缀缓存）
+      const windowedHistorySlid = applySlidingWindow(history, REACT_BIG_CAP, REACT_SLIDE_BATCH);
 
-      // #61(c) — stale-snapshot elision. Replace the bulky interactive-element
-      // list of every observation EXCEPT the most recent with a short marker
-      // (semantic header kept). Runs on the windowed COPY only — at-rest
-      // history.agentMessages stay RAW (R28 v2). Placed BEFORE applyTokenBudget
-      // so the budget sees the post-elision (true) size and rarely needs to
-      // drop head pairs (#61 注意/联动). Elision is unconditional, so order vs
-      // budget does not change the final content sent to the LLM — only the
-      // budget's drop decision becomes more accurate.
+      // #61(c) — stale-snapshot elision. Replace the bulky part of every stale
+      // page snapshot EXCEPT the most recent with a short marker (semantic
+      // header kept): the observation text block AND read_page tool_result
+      // payloads (interactive_index / untrusted_page_content). Runs on the
+      // windowed COPY only — at-rest history.agentMessages stay RAW (R28 v2).
+      // Placed BEFORE applyTokenBudget so the budget sees the post-elision
+      // (true) size and rarely needs to drop head pairs (#61 注意/联动).
+      // Elision is unconditional and monotone, so order vs budget does not
+      // change the final content sent to the LLM — only the budget's drop
+      // decision becomes more accurate.
       const windowedHistoryElided = elideStaleObservations(windowedHistorySlid);
 
       // U5 — Token budget guard: drop oldest head pairs if estimated token

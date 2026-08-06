@@ -429,3 +429,54 @@ describe("findReactStartIdx", () => {
     expect(findReactStartIdx(messages)).toBe(2);
   });
 });
+
+// ---------------------------------------------------------------------------
+// slideBatch hysteresis — cut back to maxSteps only once the backlog outgrows
+// maxSteps + slideBatch, so the wire prefix stays byte-stable between slides
+// (provider prefix-cache friendliness).
+// ---------------------------------------------------------------------------
+
+describe("applySlidingWindow — slideBatch hysteresis", () => {
+  it("within the band (pairs <= maxSteps + slideBatch): nothing is cut", () => {
+    const input = [sys(), userStr("task"), ...makePairs(15)];
+    // maxSteps 12, batch 3 → band is 15; 15 pairs are kept in full.
+    const result = applySlidingWindow(input, 12, 3);
+    expect(result).toBe(input);
+  });
+
+  it("one pair past the band: cut back to exactly maxSteps", () => {
+    const input = [sys(), userStr("task"), ...makePairs(16)];
+    const result = applySlidingWindow(input, 12, 3);
+    expect(result).toHaveLength(2 + 12 * 2);
+    // The kept pairs are the MOST RECENT 12 (last 24 messages of the input).
+    expect(result[2]).toBe(input[input.length - 24]);
+    assertNoAdjacentSameRole(result);
+  });
+
+  it("default slideBatch=0 preserves the original slide-every-step behavior", () => {
+    const input = [sys(), userStr("task"), ...makePairs(13)];
+    const result = applySlidingWindow(input, 12);
+    expect(result).toHaveLength(2 + 12 * 2);
+  });
+
+  it("after a cut, regrowth within the band does not cut again (prefix-stable)", () => {
+    // Deterministic as a pure function of pair count: a history that was cut
+    // at 81 pairs (band 60+20) and then grew back to 80 pairs is returned
+    // unchanged — the cut point does not move every step.
+    const grown = [sys(), userStr("task"), ...makePairs(80)];
+    const result = applySlidingWindow(grown, 60, 20);
+    expect(result).toBe(grown);
+    // 81 pairs exceeds the band → cut to 60.
+    const over = [sys(), userStr("task"), ...makePairs(81)];
+    expect(applySlidingWindow(over, 60, 20)).toHaveLength(2 + 60 * 2);
+  });
+
+  it("truncation with slideBatch keeps the splice-point alternating invariant", () => {
+    const input = [sys(), userStr("task"), ...makePairs(20)];
+    const result = applySlidingWindow(input, 10, 5);
+    expect(result).toHaveLength(2 + 10 * 2);
+    expect(result[1].role).toBe("user");
+    expect(result[2].role).toBe("assistant");
+    assertNoAdjacentSameRole(result);
+  });
+});
