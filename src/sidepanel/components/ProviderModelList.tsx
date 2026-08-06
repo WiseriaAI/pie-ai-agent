@@ -49,9 +49,9 @@ export default function ProviderModelList(props: Props) {
   const isLazy = registry.length === 0;
 
   return (
-    <div className="flex flex-col overflow-hidden rounded-[10px] bg-field">
+    <div className="flex flex-col gap-1.5">
       {isLazy && props.onRefresh && (
-        <div className="flex items-center justify-between border-b border-line px-3 py-1.5 text-[10px] text-fg-3">
+        <div className="flex items-center justify-between px-1 text-[10px] text-fg-3">
           <span className="font-mono">
             {props.fetchedAt ? new Date(props.fetchedAt).toLocaleString(locale) : t("modelDropdown.notFetched")}
           </span>
@@ -62,7 +62,7 @@ export default function ProviderModelList(props: Props) {
       )}
 
       {builtin.map((m) => (
-        <div key={m.id} className="flex items-center gap-2 px-3 py-2">
+        <div key={m.id} className="flex items-center gap-1.5 rounded-[10px] border border-line px-3 py-2">
           <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-fg-2">{m.id}</span>
           {m.vision && <Chip>{t("modelDropdown.vision")}</Chip>}
           {m.tools && <Chip>{t("modelDropdown.tools")}</Chip>}
@@ -70,14 +70,14 @@ export default function ProviderModelList(props: Props) {
       ))}
 
       {custom.length > 0 && (
-        <div className="border-y border-line bg-canvas px-3 py-1 font-mono text-[9px] uppercase tracking-[0.1em] text-fg-3">
+        <div className="px-0.5 pt-1 font-mono text-[9px] uppercase tracking-[0.1em] text-fg-3">
           {t("modelDropdown.custom")}
         </div>
       )}
       {custom.map((id) => {
         const cm = props.customModelMetas?.[id];
         return (
-          <div key={id} className="flex items-center gap-2 px-3 py-2">
+          <div key={id} className="flex items-center gap-1.5 rounded-[10px] border border-line px-3 py-2">
             <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-fg-1">{id}</span>
             {cm?.vision && <Chip>{t("modelDropdown.vision")}</Chip>}
             <span
@@ -112,7 +112,7 @@ export default function ProviderModelList(props: Props) {
       {props.onAddCustom && (
         <button
           onClick={() => setEditing({})}
-          className="border-t border-line px-3 py-2 text-left text-[11px] text-accent hover:bg-surface"
+          className="flex items-center justify-center gap-1.5 rounded-[10px] border-[1.5px] border-dashed border-line px-3 py-2 text-[11px] text-accent hover:border-accent-line"
         >
           {t("modelDropdown.addCustomModel")}
         </button>
@@ -142,5 +142,5 @@ export default function ProviderModelList(props: Props) {
 }
 
 function Chip({ children }: { children: React.ReactNode }) {
-  return <span className="rounded-full bg-accent-tint px-2 py-0.5 font-mono text-[10px] text-fg-2">{children}</span>;
+  return <span className="shrink-0 rounded-[4px] border border-line px-[5px] py-px font-mono text-[9px] text-fg-3">{children}</span>;
 }
