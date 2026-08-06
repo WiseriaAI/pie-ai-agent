@@ -326,3 +326,62 @@ describe("endpoint variant switch", () => {
     expect(onSave.mock.calls[0]![0].endpointVariant).toBeUndefined();
   });
 });
+
+describe("rpmLimit 字段", () => {
+  const noop = () => {};
+
+  it("输入 30 → onSave payload.rpmLimit=30", () => {
+    const onSave = vi.fn();
+    render(
+      <InstanceForm
+        mode="create"
+        provider="anthropic"
+        initialNickname="Anthropic"
+        onSave={onSave}
+        onTest={noop}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText(/requests per minute/i), { target: { value: "30" } });
+    const apiKeyInput = screen.getAllByLabelText(/api key/i).find(
+      (el) => el.tagName === "INPUT",
+    )!;
+    fireEvent.change(apiKeyInput, { target: { value: "sk-x" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Save$/i }));
+    expect(onSave.mock.calls[0]![0].rpmLimit).toBe(30);
+  });
+
+  it("留空 / 非法输入 → payload.rpmLimit undefined", () => {
+    const onSave = vi.fn();
+    render(
+      <InstanceForm
+        mode="create"
+        provider="anthropic"
+        initialNickname="Anthropic"
+        onSave={onSave}
+        onTest={noop}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText(/requests per minute/i), { target: { value: "abc" } });
+    const apiKeyInput = screen.getAllByLabelText(/api key/i).find(
+      (el) => el.tagName === "INPUT",
+    )!;
+    fireEvent.change(apiKeyInput, { target: { value: "sk-x" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Save$/i }));
+    expect(onSave.mock.calls[0]![0].rpmLimit).toBeUndefined();
+  });
+
+  it("edit 模式 initialRpmLimit 回显", () => {
+    render(
+      <InstanceForm
+        mode="edit"
+        provider="anthropic"
+        initialNickname="Anthropic"
+        initialRpmLimit={15}
+        existingApiKey="sk-old"
+        onSave={noop}
+        onTest={noop}
+      />,
+    );
+    expect(screen.getByDisplayValue("15")).toBeTruthy();
+  });
+});
