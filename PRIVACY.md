@@ -1,6 +1,6 @@
 # Pie — Privacy Policy
 
-Last updated: 2026-06-19
+Last updated: 2026-08-07
 Extension version: 1.1.0
 Contact: xiewkevo66@gmail.com
 
@@ -17,6 +17,39 @@ analytics, telemetry, or track you.
 - We don't read `chrome.history`, sync your data across devices, or sell or
   share your data with third parties for their own purposes.
 - We don't track you across sites.
+- We never send your conversations anywhere on our own initiative. The one
+  path that transmits a conversation to Pie is **Report a problem**, and it
+  only ever runs when you click Send on it — see below.
+
+## Reporting a problem (you choose, every time)
+
+Each agent reply has a **Report a problem** button. It is the only feature
+that sends conversation content to Pie's servers, and it is entirely opt-in:
+nothing is sent unless you open it and click Send, every single time. There
+is no background reporting, no crash uploader, and no sampling.
+
+When you do send a report, it includes:
+
+- your description of the problem (optional),
+- the conversation it was sent from — your messages, the agent's replies, the
+  tools it called with their arguments, and the results those tools returned.
+  **Tool results include content read from the pages the agent visited**, so
+  if the agent read a page with personal or confidential information on it,
+  that text can be part of the report,
+- the same environment details as any other feedback (extension version,
+  browser user-agent, active provider, UI language),
+- your account email, if you are signed in to the optional subscription.
+
+Screenshots are not included — images are reduced to a `[image 800x600]`
+placeholder. The report is capped at roughly 150 KB; longer conversations are
+trimmed from the beginning.
+
+The drawer states this before you send. If a conversation touched something
+you would rather not share, don't report from it — send feedback from
+Settings instead, which never attaches conversation content.
+
+Reports are stored by Pie and used only to diagnose the problem you reported.
+Contact us to have one deleted.
 
 ## What stays on your device
 
@@ -80,10 +113,11 @@ data passes through Pie's own service:
   the content of your prompts or the model's responses — the gateway only
   passes them through.**
 
-So the only data Pie's service stores for a subscriber is your email,
-subscription status, and a quota usage count — never the contents of your
-chats. Stripe's handling of payment data is governed by
-<https://stripe.com/privacy>; Google sign-in by
+So the data Pie's service stores for a subscriber is your email, subscription
+status, and a quota usage count. Chat content is never retained from ordinary
+use — the only way a conversation reaches Pie's storage is if you explicitly
+send it via **Report a problem** (see above). Stripe's handling of payment
+data is governed by <https://stripe.com/privacy>; Google sign-in by
 <https://policies.google.com/privacy>.
 
 ## Permissions, and why each one is needed
@@ -138,9 +172,12 @@ subscription state described above.
 
 - **BYOK users:** Pie collects, transmits, and stores no personal data on
   Pie-operated servers — all your data is on your own device, under your direct
-  control, and is erased by uninstalling the extension.
-- **Subscribers:** the only personal data Pie holds is your email and
-  subscription/usage state. Contact us to access, correct, or delete it.
+  control, and is erased by uninstalling the extension. The single exception is
+  a problem report you choose to send (see "Reporting a problem"); contact us
+  to have one deleted.
+- **Subscribers:** the personal data Pie holds is your email and
+  subscription/usage state, plus any problem reports you chose to send.
+  Contact us to access, correct, or delete it.
 - For data sent to third-party model providers (using your own key) or to
   Stripe (for billing), contact those parties directly to exercise data-subject
   rights against them.

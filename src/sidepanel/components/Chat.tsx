@@ -96,6 +96,7 @@ import SkillSlashPopover from "./SkillSlashPopover";
 import { PendingInstructionList, type PendingItem } from "./PendingInstructionList";
 import { HitlInlineCards } from "./hitl/HitlInlineCards";
 import { usePanelRequest } from "../hooks/usePanelRequest";
+import { ReportProblemDrawer } from "./ReportProblemDrawer";
 import { useFileAccessPrompt } from "../hooks/useFileAccessPrompt";
 import { FileAccessCard } from "./FileAccessCard";
 import { FileOutputCard } from "./FileOutputCard";
@@ -192,6 +193,9 @@ export default function Chat({
   } = session;
   const [input, setInput] = useState("");
   const [hasConfig, setHasConfig] = useState<boolean | null>(null);
+  // Index into `messages` of the assistant reply the user clicked "Report
+  // problem" on; null = drawer closed.
+  const [reportIndex, setReportIndex] = useState<number | null>(null);
   // M5 — page-changed banner: navigation on a pinned tab during a 'task'-mode
   // in-flight task. The pin DISPLAY subsystem now lives in the TopBar sub-row
   // (usePinDisplay hook); Chat only keeps the pageChanged detection below.
@@ -1122,6 +1126,9 @@ After the skill completes, briefly summarize what was created (the user will see
                               handleRewind(rewindMsg, editedContent),
                           }
                         : {})}
+                      {...(msg.role === "assistant" && !streaming
+                        ? { onReport: () => setReportIndex(firstIndex) }
+                        : {})}
                     />
                   </div>
                 );
@@ -1497,6 +1504,13 @@ After the skill completes, briefly summarize what was created (the user will see
         pendingItems={pendingItems}
         onCancelPending={cancelPendingInstruction}
       />
+      <ReportProblemDrawer
+        open={reportIndex !== null}
+        onClose={() => setReportIndex(null)}
+        messages={messages}
+        messageIndex={reportIndex}
+        sessionId={sessionId}
+      />
     </div>
   );
 }
@@ -1564,6 +1578,7 @@ function MessageBubble({
   celebrating = false,
   showHeader = true,
   onRewind,
+  onReport,
 }: {
   message: Extract<DisplayMessage, { role: "user" | "assistant" }>;
   /** Only the first agent row of a task run carries the "AGENT" header; the
@@ -1576,6 +1591,9 @@ function MessageBubble({
   /** Issue #245 — present only on idle user bubbles. Called with the edited
    *  text (or undefined to resend as-is) to rewind history and resend. */
   onRewind?: (editedContent?: string) => void;
+  /** Present only on idle assistant bubbles — opens the report drawer for
+   *  this message. */
+  onReport?: () => void;
 }) {
   const t = useT();
   // Ref to the rendered (styled) reply node so the copy button can lift its
@@ -1807,9 +1825,41 @@ function MessageBubble({
           >
             <MarkdownContent content={message.content} />
           </div>
+          {/* Report problem — same hover-to-reveal affordance as the copy
+              button above, but below the reply so it reads as "something was
+              wrong with this answer". Hidden while streaming: an incomplete
+              reply isn't a reportable one. */}
+          {!streaming && onReport && (
+            <button
+              type="button"
+              onClick={onReport}
+              aria-label={t("chat.report.action")}
+              title={t("chat.report.action")}
+              className="mt-1 flex items-center gap-1 rounded p-1 text-fg-3 opacity-0 transition-opacity duration-200 hover:text-fg-1 focus-visible:opacity-100 group-hover:opacity-100"
+            >
+              <ReportIcon />
+            </button>
+          )}
         </div>
       )}
     </div>
+  );
+}
+
+/** Speech bubble with an exclamation — "something's wrong with this reply". */
+function ReportIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9.9 9.9 0 0 1-4.2-.9L3 20.5l1.5-4.2A8.4 8.4 0 0 1 3 11.5a8.4 8.4 0 0 1 9-8.4 8.4 8.4 0 0 1 9 8.4Z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path d="M12 7.8v4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      <circle cx="12" cy="14.8" r="0.9" fill="currentColor" />
+    </svg>
   );
 }
 

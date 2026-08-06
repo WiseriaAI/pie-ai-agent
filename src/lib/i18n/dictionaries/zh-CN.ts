@@ -286,6 +286,18 @@ export const zhCNDict = {
     copyCode: "复制",
     copyMessage: "复制",
     copied: "已复制",
+    report: {
+      action: "回报这条回复的问题",
+      title: "回报问题",
+      hint: "告诉我们哪里出了问题。本次会话会一并附上，便于我们定位原因。",
+      placeholder: "遇到了什么问题？（选填）",
+      privacy:
+        "将发送本次会话——你的消息、Agent 的工具调用及其结果，包含它读取过的页面内容——到 Pie 服务器用于排查问题。",
+      send: "发送回报",
+      sending: "发送中…",
+      sent: "已收到，谢谢！",
+      error: "发送失败，请重试。",
+    },
     composerPlaceholder: "告诉 Agent 做什么，或输入 / 选择技能…",
     cancelRunningTask: "取消运行中的任务",
     cancelConfirm: "再按一次 Esc 终止",

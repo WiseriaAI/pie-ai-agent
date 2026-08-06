@@ -290,6 +290,18 @@ export const es419Dict = {
     copyCode: "Copiar",
     copyMessage: "Copiar",
     copied: "Copiado",
+    report: {
+      action: "Informar un problema con esta respuesta",
+      title: "Informar un problema",
+      hint: "Cuéntanos qué salió mal. Se adjunta esta conversación para poder rastrearlo.",
+      placeholder: "¿Qué salió mal? (opcional)",
+      privacy:
+        "Envía esta conversación — tus mensajes, las llamadas a herramientas del agente y sus resultados, incluido el contenido leído de las páginas visitadas — a los servidores de Pie para depuración.",
+      send: "Enviar informe",
+      sending: "Enviando…",
+      sent: "¡Gracias! Informe enviado.",
+      error: "No se pudo enviar. Inténtalo de nuevo.",
+    },
     composerPlaceholder: "Dile al agente qué hacer, o escribe / para habilidades…",
     cancelRunningTask: "Cancelar tarea en ejecución",
     cancelConfirm: "Presiona Esc otra vez para detener",

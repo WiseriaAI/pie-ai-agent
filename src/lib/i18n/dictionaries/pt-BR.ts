@@ -290,6 +290,18 @@ export const ptBRDict = {
     copyCode: "Copiar",
     copyMessage: "Copiar",
     copied: "Copiado",
+    report: {
+      action: "Relatar um problema com esta resposta",
+      title: "Relatar um problema",
+      hint: "Conte o que deu errado. Esta conversa vai anexada para podermos rastrear.",
+      placeholder: "O que deu errado? (opcional)",
+      privacy:
+        "Envia esta conversa — suas mensagens, as chamadas de ferramentas do agente e seus resultados, incluindo o conteúdo lido das páginas visitadas — aos servidores da Pie para depuração.",
+      send: "Enviar relato",
+      sending: "Enviando…",
+      sent: "Obrigado! Relato enviado.",
+      error: "Não foi possível enviar. Tente novamente.",
+    },
     composerPlaceholder: "Diga ao agente o que fazer, ou digite / para habilidades…",
     cancelRunningTask: "Cancelar tarefa em execução",
     cancelConfirm: "Pressione Esc de novo para parar",
