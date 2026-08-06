@@ -709,6 +709,19 @@ export default function Chat({
     return -1;
   })();
 
+  // The report button hangs off the LAST assistant row only. One per agent
+  // loop iteration would wedge a gap between consecutive reply bubbles, and
+  // the report ships the whole conversation anyway — one entry point is
+  // enough. Deliberately not `lastAgentRowIndex`: that can land on an
+  // agent-summary row, which would leave the reply itself without an entry.
+  const lastAssistantSegIndex = (() => {
+    for (let i = segments.length - 1; i >= 0; i--) {
+      const seg = segments[i]!;
+      if (seg.kind === "msg" && seg.msg.role === "assistant") return i;
+    }
+    return -1;
+  })();
+
   // Issue #245 — rewind/edit-resend. `msg` is a live object reference from the
   // `messages` array (visibleMessages preserves those references), so indexOf
   // recovers its true position even though the render maps `visibleMessages`.
@@ -1126,7 +1139,9 @@ After the skill completes, briefly summarize what was created (the user will see
                               handleRewind(rewindMsg, editedContent),
                           }
                         : {})}
-                      {...(msg.role === "assistant" && !streaming
+                      {...(msg.role === "assistant" &&
+                      !streaming &&
+                      segIndex === lastAssistantSegIndex
                         ? { onReport: () => setReportIndex(firstIndex) }
                         : {})}
                     />
