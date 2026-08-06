@@ -30,5 +30,6 @@ export function getStatus(): StatusResult {
     uptimeSec: Math.floor((Date.now() - startedAtMs) / 1000),
     extensionConnected: extSockets.size > 0,
     runningSkills: [...running.values()].map((r) => ({ name: r.name, startedAt: r.startedAt })),
+    pid: process.pid,
   };
 }
