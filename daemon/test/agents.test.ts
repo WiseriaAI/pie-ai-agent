@@ -1,6 +1,16 @@
 import { test, expect } from "bun:test";
 import { homedir } from "os";
-import { AGENT_CANDIDATES, detectAgents, parseShellPath } from "../src/agents";
+import {
+  AGENT_CANDIDATES,
+  WINDOWS_AGENT_CANDIDATES,
+  agentCandidatesFor,
+  detectAgents,
+  parseShellPath,
+  parseWherePath,
+  isWindowsAppsStub,
+  parseRegQueryPath,
+  mergeWindowsPath,
+} from "../src/agents";
 
 test("parseShellPath: takes the last line (rc 噪音在前面)", () => {
   const stdout = "Last login: whatever\n/usr/bin:/opt/homebrew/bin\n";
@@ -128,4 +138,95 @@ test("PATH 命中优先于 binPaths 回落（用户自装位置说了算）", ()
     exists: () => true,
   });
   expect(detected.find((a) => a.id === "opencode-terminal")?.path).toBe("/custom/bin/opencode");
+});
+
+// ---- Windows 检测适配（#364, spec §4.7）----
+
+test("isWindowsAppsStub: WindowsApps 别名 stub 认出（正/反斜杠、大小写不敏感）", () => {
+  expect(isWindowsAppsStub("C:\\Users\\x\\AppData\\Local\\Microsoft\\WindowsApps\\python.exe")).toBe(true);
+  expect(isWindowsAppsStub("C:/Users/x/AppData/Local/Microsoft/windowsapps/python.exe")).toBe(true);
+  expect(isWindowsAppsStub("C:\\Program Files\\nodejs\\claude.cmd")).toBe(false);
+});
+
+test("parseWherePath: 取第一个非 WindowsApps stub 的绝对路径", () => {
+  const stdout =
+    "C:\\Users\\x\\AppData\\Local\\Microsoft\\WindowsApps\\claude.exe\r\n" +
+    "C:\\Program Files\\nodejs\\claude.cmd\r\n";
+  expect(parseWherePath(stdout)).toBe("C:\\Program Files\\nodejs\\claude.cmd");
+});
+
+test("parseWherePath: 全是 stub → null（视为未装）", () => {
+  const stdout = "C:\\Users\\x\\AppData\\Local\\Microsoft\\WindowsApps\\python.exe\r\n";
+  expect(parseWherePath(stdout)).toBeNull();
+});
+
+test("parseWherePath: 空输出（where exit 1，未装）→ null", () => {
+  expect(parseWherePath("")).toBeNull();
+  expect(parseWherePath("\r\n  \r\n")).toBeNull();
+});
+
+test("parseRegQueryPath: 从 reg query 输出取 Path 值（REG_EXPAND_SZ / REG_SZ 都认）", () => {
+  const expand =
+    "\r\nHKEY_CURRENT_USER\\Environment\r\n" +
+    "    Path    REG_EXPAND_SZ    C:\\Users\\x\\bin;C:\\tools\r\n\r\n";
+  expect(parseRegQueryPath(expand)).toBe("C:\\Users\\x\\bin;C:\\tools");
+  const sz = "    Path    REG_SZ    C:\\Windows;C:\\Windows\\System32\r\n";
+  expect(parseRegQueryPath(sz)).toBe("C:\\Windows;C:\\Windows\\System32");
+});
+
+test("parseRegQueryPath: 无 Path 值 → 空串", () => {
+  expect(parseRegQueryPath("HKEY_CURRENT_USER\\Environment\r\n    TEMP    REG_SZ    C:\\Temp\r\n")).toBe("");
+  expect(parseRegQueryPath("")).toBe("");
+});
+
+test("mergeWindowsPath: env 打头 + 注册表补充，大小写不敏感去重", () => {
+  const merged = mergeWindowsPath("C:\\Windows;C:\\proc-only", [
+    "C:\\Users\\x\\bin;C:\\windows", // C:\windows 与 env 的 C:\Windows 大小写重复 → 去掉
+    "C:\\tools;;  ;C:\\Users\\x\\bin", // 空段忽略；C:\Users\x\bin 已见 → 去掉
+  ]);
+  expect(merged).toBe("C:\\Windows;C:\\proc-only;C:\\Users\\x\\bin;C:\\tools");
+});
+
+test("mergeWindowsPath: 全空来源 → 空串", () => {
+  expect(mergeWindowsPath("", ["", ""])).toBe("");
+});
+
+test("agentCandidatesFor: win32 → Windows 草案表；其余 → mac 8 条", () => {
+  expect(agentCandidatesFor("win32")).toBe(WINDOWS_AGENT_CANDIDATES);
+  expect(agentCandidatesFor("darwin")).toBe(AGENT_CANDIDATES);
+  expect(agentCandidatesFor("linux")).toBe(AGENT_CANDIDATES);
+});
+
+test("Windows 草案表全部 verified:false（铁律：未真机验证不得默认启用）", () => {
+  expect(WINDOWS_AGENT_CANDIDATES.length).toBeGreaterThan(0);
+  for (const c of WINDOWS_AGENT_CANDIDATES) expect(c.verified).toBe(false);
+});
+
+test("detectAgents(win32): 默认排除未验证草案（哪怕 where 命中也不启用）", () => {
+  const detected = detectAgents({
+    platform: "win32",
+    which: () => "C:\\Program Files\\nodejs\\claude.cmd",
+    exists: () => true,
+  });
+  expect(detected).toEqual([]);
+});
+
+test("detectAgents(win32, includeUnverified): 纳入草案 + where 解出的绝对路径", () => {
+  const detected = detectAgents({
+    platform: "win32",
+    includeUnverified: true,
+    which: (bin) => (bin === "claude" ? "C:\\Program Files\\nodejs\\claude.cmd" : null),
+    exists: () => false,
+  });
+  expect(detected.map((a) => a.id)).toEqual(["claude-terminal"]);
+  expect(detected[0].path).toBe("C:\\Program Files\\nodejs\\claude.cmd");
+});
+
+test("detectAgents(darwin): mac 表不受 verified 过滤影响（历史条目无字段 = 已验证）", () => {
+  const detected = detectAgents({
+    platform: "darwin",
+    which: (bin) => (bin === "claude" ? "/Users/x/.local/bin/claude" : null),
+    exists: () => false,
+  });
+  expect(detected.map((a) => a.id)).toContain("claude-terminal");
 });

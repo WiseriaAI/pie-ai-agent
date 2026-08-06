@@ -44,6 +44,13 @@ export interface AgentCandidate {
   appPaths?: string[];
   /** app：目录内的约定引导文件名（app 无 prompt 注入面，靠它引导）。 */
   convention?: "CLAUDE.md" | "AGENTS.md";
+  /**
+   * `false` = 该条命令/路径尚未在对应平台真机验证过——**detectAgents 默认排除**
+   * （「未验证条目不得默认启用」，见 #364）。字段缺省视为已验证（mac 8 条历史条目无需触碰）。
+   * Windows 表从零点亮：草案条目先落码（bin/flag 用跨平台已知语义），逐条真机验证
+   * （PR need-human-test）通过后才把该条 `verified` 翻真、进入默认可用集。
+   */
+  verified?: boolean;
 }
 
 export const AGENT_CANDIDATES: readonly AgentCandidate[] = [
@@ -101,6 +108,36 @@ export const AGENT_CANDIDATES: readonly AgentCandidate[] = [
 ];
 
 /**
+ * Windows 候选表（spec §4.7）。**从零点亮**：mac 8 条不平移，每条 Windows 命令必须
+ * 真机验证过才 `verified: true`——在此之前一律 `verified: false`，detectAgents 默认排除
+ * （不会 spawn、不进 handoff 可选集）。首期只落码 terminal 草案：bin 名与 CLI flag 是
+ * 跨平台已知语义（claude/codex/cursor-agent 都是 node CLI，`-p` / `--dangerously-*` /
+ * `exec` 子命令在 Windows 上同形），故可安全草案化并靠 `where` 解绝对路径；app 形态的
+ * Windows bundle 落点尚未真机确认，遵「命令必须真机验证过才进表」铁律暂不编造，留待
+ * need-human-test 逐条补入。launch 层（handoff.ts 的 osascript/open 仍 mac-only）的
+ * Windows 化是另一片，不在本检测片范围。
+ */
+export const WINDOWS_AGENT_CANDIDATES: readonly AgentCandidate[] = [
+  { id: "claude-terminal", label: "Claude Code (Terminal)", kind: "terminal", bin: "claude",
+    argv: ["{prompt}"],
+    headlessArgv: ["-p", "--dangerously-skip-permissions", "{prompt}"], verified: false },
+  { id: "codex-terminal", label: "Codex (Terminal)", kind: "terminal", bin: "codex",
+    argv: ["--dangerously-bypass-approvals-and-sandbox", "{prompt}"],
+    headlessArgv: ["exec", "--skip-git-repo-check", "--sandbox", "workspace-write", "{prompt}"],
+    verified: false },
+  { id: "cursor-terminal", label: "Cursor (Terminal)", kind: "terminal", bin: "cursor-agent",
+    argv: ["{prompt}"],
+    headlessArgv: ["-p", "--force", "{prompt}"], verified: false },
+];
+
+/** 平台分支的候选表（纯函数，可测）：win32 → Windows 草案表；其余 → mac 8 条。 */
+export function agentCandidatesFor(
+  platform: NodeJS.Platform = process.platform,
+): readonly AgentCandidate[] {
+  return platform === "win32" ? WINDOWS_AGENT_CANDIDATES : AGENT_CANDIDATES;
+}
+
+/**
  * shell 输出里取 PATH：只认最后一个非空行。rc 里的 banner / 提示会先打出来，
  * 真正的 `echo $PATH` 永远在最后。空输出（shell 挂了 / 超时）回落 fallback。
  */
@@ -114,9 +151,71 @@ export function parseShellPath(stdout: string, fallback: string): string {
 }
 
 /**
+ * `reg query "<key>" /v Path` 的 stdout 里取 Path 值：命中形如
+ * `    Path    REG_EXPAND_SZ    C:\...;C:\...` 的行，取第三列（值）。找不到 → 空串。
+ * `REG_SZ` 与 `REG_EXPAND_SZ` 都认（用户 Path 通常 EXPAND，system 视配置而定）。
+ */
+export function parseRegQueryPath(stdout: string): string {
+  for (const line of stdout.split(/\r?\n/)) {
+    const m = line.match(/^\s*Path\s+REG_(?:SZ|EXPAND_SZ)\s+(.*)$/i);
+    if (m) return m[1].trim();
+  }
+  return "";
+}
+
+/**
+ * Windows PATH 合并（纯函数，可测）：进程 env PATH 打头，再拼注册表 user/system Path，
+ * 按 `;` 切段、去空、大小写不敏感去重（Windows 路径大小写不敏感），`;` 重连。
+ * 进程 env 优先（当前会话已解析的 PATH 最贴近用户意图），注册表补上未继承进 env 的段。
+ */
+export function mergeWindowsPath(processPath: string, registryPaths: string[]): string {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const src of [processPath, ...registryPaths]) {
+    for (const seg of (src ?? "").split(";")) {
+      const t = seg.trim();
+      if (!t) continue;
+      const key = t.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(t);
+    }
+  }
+  return out.join(";");
+}
+
+/**
+ * Windows 无 login shell 概念，PATH 真相 = 进程继承的 env PATH ＋ 注册表两处 Path：
+ * HKCU\Environment（user）与 HKLM\...\Session Manager\Environment（system）。
+ * 注册表读走 `reg query`（Windows 自带）；任一失败/超时只丢那一段，不影响其余。
+ * stdin: "ignore" / timeout 3000：对齐 mac 分支的挂死防护。
+ */
+function getWindowsPath(): string {
+  const processPath = process.env.PATH ?? process.env.Path ?? "";
+  const regKeys: string[] = [
+    "HKCU\\Environment",
+    "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment",
+  ];
+  const registryPaths: string[] = [];
+  for (const key of regKeys) {
+    try {
+      const r = Bun.spawnSync(["reg", "query", key, "/v", "Path"], {
+        stdin: "ignore",
+        timeout: 3000,
+      });
+      registryPaths.push(parseRegQueryPath(r.stdout.toString()));
+    } catch {
+      /* 该注册表段读不到就跳过，靠其余来源兜底 */
+    }
+  }
+  return mergeWindowsPath(processPath, registryPaths);
+}
+
+/**
  * daemon 跑在 launchd 下，PATH 是裸的 /usr/bin:/bin:/usr/sbin:/sbin ——
  * 看不见 ~/.local/bin、/opt/homebrew/bin、~/.opencode/bin 里的任何 agent CLI
  * （"Dock 启动的 app 找不到 node/brew" 同款坑）。问用户自己的 login shell 要真相。
+ * Windows 无 login shell，改走 env + 注册表合并（getWindowsPath）。
  *
  * 不缓存：实测 0.10–0.16s，而 detect 只在「弹授权卡」「打开设置页」两个点被调用，
  * 无感。不缓存换来的是：用户装完新 agent 立刻可见，不需要重启 daemon，也不需要
@@ -126,7 +225,8 @@ export function parseShellPath(stdout: string, fallback: string): string {
  * 把探测挂死；与 handoff.ts 的 LAUNCH_PAD 是同一个坑的两面。
  * timeout 3000 —— rc 重度定制的用户可能要一两秒；超时宁可检测不到，也不能卡住授权卡。
  */
-export function getUserPath(): string {
+export function getUserPath(platform: NodeJS.Platform = process.platform): string {
+  if (platform === "win32") return getWindowsPath();
   const fallback = process.env.PATH ?? "";
   try {
     const r = Bun.spawnSync([process.env.SHELL ?? "/bin/zsh", "-lic", "echo $PATH"], {
@@ -142,18 +242,66 @@ export function getUserPath(): string {
 /** 检测结果 = 候选 + 解析出的绝对路径。spawn 只许用 path（裸命令名依赖运行时 PATH，真机上会 not found）。 */
 export type DetectedAgent = AgentCandidate & { path: string };
 
+/**
+ * Store 执行别名 stub：`%LOCALAPPDATA%\Microsoft\WindowsApps\<name>.exe` 下的 0 字节
+ * reparse 占位（App Installer 装的「别名」）。`where python` 会把它列在最前，但 spawn
+ * 它行为诡异（Gate 0 F4 实测：要么弹 Store 页要么 exit 9009），一律当没装。
+ */
+export function isWindowsAppsStub(p: string): boolean {
+  return /[\\/]WindowsApps[\\/]/i.test(p);
+}
+
+/**
+ * `where <bin>` 的 stdout 解析（纯函数，可测）：每行一个绝对路径命中，取**第一个非
+ * WindowsApps stub** 的路径。全是 stub / 空输出（未装，where exit 1）→ null。
+ */
+export function parseWherePath(stdout: string): string | null {
+  for (const line of stdout.split(/\r?\n/)) {
+    const t = line.trim();
+    if (!t || isWindowsAppsStub(t)) continue;
+    return t;
+  }
+  return null;
+}
+
 export interface DetectOpts {
   which?: (bin: string) => string | null;
   exists?: (path: string) => boolean;
+  platform?: NodeJS.Platform;
+  /** true = 连 `verified:false` 的草案条目也纳入（供 need-human-test 逐条点亮用）；默认排除。 */
+  includeUnverified?: boolean;
+}
+
+/** 平台对应的 which：win32 走 `where`（排 WindowsApps stub），其余走 Bun.which。 */
+function makeWhich(platform: NodeJS.Platform, userPath: string): (bin: string) => string | null {
+  if (platform === "win32") {
+    return (bin: string) => {
+      try {
+        const r = Bun.spawnSync(["where", bin], {
+          env: { ...process.env, PATH: userPath, Path: userPath },
+          stdin: "ignore",
+          timeout: 3000,
+        });
+        return parseWherePath(r.stdout.toString());
+      } catch {
+        return null;
+      }
+    };
+  }
+  return (b: string) => Bun.which(b, { PATH: userPath });
 }
 
 /** 每次调用现检测（which/exists 都便宜，PATH 探测 0.1s 级，无缓存必要）；保持表顺序。 */
 export function detectAgents(opts?: DetectOpts): DetectedAgent[] {
-  const userPath = opts?.which ? "" : getUserPath(); // 注入 which 时不必探 shell
-  const which = opts?.which ?? ((b: string) => Bun.which(b, { PATH: userPath }));
+  const platform = opts?.platform ?? process.platform;
+  const userPath = opts?.which ? "" : getUserPath(platform); // 注入 which 时不必探 PATH
+  const which = opts?.which ?? makeWhich(platform, userPath);
   const exists = opts?.exists ?? existsSync;
+  const candidates = agentCandidatesFor(platform).filter(
+    (c) => opts?.includeUnverified || c.verified !== false,
+  );
   const out: DetectedAgent[] = [];
-  for (const c of AGENT_CANDIDATES) {
+  for (const c of candidates) {
     const path =
       c.kind === "app"
         ? (c.appPaths!.find((p) => exists(p)) ?? null)
