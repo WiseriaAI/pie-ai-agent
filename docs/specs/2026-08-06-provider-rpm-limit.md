@@ -52,7 +52,7 @@
   - `peekWait(key: string, limit: number): number | null` — 窗口未满返回 `null`；已满返回预计恢复时刻 `resumeAt`（epoch ms）。纯读，不记账。
   - `acquire(key: string, limit: number, signal?: AbortSignal): Promise<void>` — 窗口内计数 < limit 则记入时间戳立即返回；已满则 sleep 到最早一条过期，醒来**重查**（while 循环；JS 单线程无 TOCTOU，多个 waiter 按事件循环顺序竞争，天然公平够用）；`signal` abort 立即以 `AbortError` 拒绝，不记时间戳。
 - SW 重启计数清零 → 最坏窗口内多发几条，可接受（`ponytail:` 注释标明：内存滑动窗口，SW 重启即清零；若未来要跨重启精确，升级为 IDB 持久化时间戳）。
-- 测试需要可注入时钟（`now()` 参数或依赖注入），不 mock 全局 Date。
+- 测试用 `vi.useFakeTimers()`（仓库既有模式，见 keep-alive.concurrent.test.ts）。
 
 ### 4.2 挂载点：`streamChat`
 
