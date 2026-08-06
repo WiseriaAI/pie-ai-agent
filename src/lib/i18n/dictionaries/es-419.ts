@@ -284,6 +284,7 @@ export const es419Dict = {
     agentWorking: "El agente está trabajando",
     working: "TRABAJANDO",
     thinking: "PENSANDO",
+    ratelimitWait: "Límite de tasa · {seconds} s",
     expandFull: "Mostrar más",
     collapse: "Mostrar menos",
     copyCode: "Copiar",

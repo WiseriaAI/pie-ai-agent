@@ -35,6 +35,9 @@ export type SessionRuntimeSlot = {
   /** Issue #34 — broadcast snapshot of SW pendingInstructions for this session.
    *  Keyed by chatMessageId for O(1) lookup in chat-bubble render. */
   pendingByChatMessageId: Map<string, { createdAt: number }>;
+  /** Provider RPM 限流：streamChat 正在排队等待时的预计恢复时刻（epoch ms）。
+   *  null = 未在限流等待。收到任一真实进展消息即清除。 */
+  ratelimitResumeAt: number | null;
 };
 
 export const EMPTY_SLOT: SessionRuntimeSlot = {
@@ -49,6 +52,7 @@ export const EMPTY_SLOT: SessionRuntimeSlot = {
   streamFinished: true,
   quotes: [],
   pendingByChatMessageId: new Map(),
+  ratelimitResumeAt: null,
 };
 
 /**

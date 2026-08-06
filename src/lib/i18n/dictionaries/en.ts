@@ -288,6 +288,7 @@ export const enDict = {
     agentWorking: "Agent is working",
     working: "WORKING",
     thinking: "THINKING",
+    ratelimitWait: "Rate limited · {seconds}s",
     expandFull: "Show more",
     collapse: "Show less",
     copyCode: "Copy",

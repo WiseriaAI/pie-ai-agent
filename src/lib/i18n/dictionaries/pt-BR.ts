@@ -284,6 +284,7 @@ export const ptBRDict = {
     agentWorking: "O agente está trabalhando",
     working: "TRABALHANDO",
     thinking: "PENSANDO",
+    ratelimitWait: "Limite de taxa · {seconds} s",
     expandFull: "Mostrar mais",
     collapse: "Mostrar menos",
     copyCode: "Copiar",

@@ -169,6 +169,7 @@ export default function Chat({
     streaming,
     streamingText,
     streamingThinking,
+    ratelimitResumeAt,
     error,
     errorKind,
     toast,
@@ -1187,7 +1188,10 @@ After the skill completes, briefly summarize what was created (the user will see
                 Sits at the tail so there's a single place to confirm "still
                 working" — also covers the gaps between tool calls. */}
             {streaming && !panelRequest && (
-              <WorkingIndicator thinking={!!streamingThinking && !streamingText} />
+              <WorkingIndicator
+                thinking={!!streamingThinking && !streamingText}
+                ratelimitResumeAt={ratelimitResumeAt}
+              />
             )}
             <HitlInlineCards
               request={panelRequest}
@@ -1809,8 +1813,34 @@ function MessageBubble({
   );
 }
 
-function WorkingIndicator({ thinking }: { thinking: boolean }) {
+function WorkingIndicator({
+  thinking,
+  ratelimitResumeAt,
+}: {
+  thinking: boolean;
+  ratelimitResumeAt?: number | null;
+}) {
   const t = useT();
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (ratelimitResumeAt == null) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [ratelimitResumeAt]);
+  if (ratelimitResumeAt != null) {
+    const seconds = Math.max(0, Math.ceil((ratelimitResumeAt - now) / 1000));
+    return (
+      <div
+        role="status"
+        aria-live="polite"
+        aria-label={t("chat.agentWorking")}
+        className="flex items-center gap-2 px-1 py-0.5"
+      >
+        <PieFace state="thinking" size={22} />
+        <span className="caps tabular text-pending">{t("chat.ratelimitWait", { seconds })}</span>
+      </div>
+    );
+  }
   return (
     <div
       role="status"

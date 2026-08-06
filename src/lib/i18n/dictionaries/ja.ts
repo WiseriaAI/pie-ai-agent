@@ -283,6 +283,7 @@ export const jaDict = {
     agentWorking: "エージェントが作業中です",
     working: "作業中",
     thinking: "思考中",
+    ratelimitWait: "レート制限待機 · {seconds} 秒",
     expandFull: "もっと表示",
     collapse: "折りたたむ",
     copyCode: "コピー",

@@ -280,6 +280,7 @@ export const zhTWDict = {
     agentWorking: "Agent 工作中",
     working: "工作中",
     thinking: "思考中",
+    ratelimitWait: "限流等待 · {seconds} 秒",
     expandFull: "展開全文",
     collapse: "收合",
     copyCode: "複製",
