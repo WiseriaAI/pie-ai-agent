@@ -5,11 +5,12 @@ import { formatDate } from "@/lib/managed-format";
 import { useI18n } from "@/lib/i18n";
 import QuotaBar from "./QuotaBar";
 import RedeemCodeForm from "./RedeemCodeForm";
+import ManagedSubscribePanel from "./ManagedSubscribePanel";
 import { ManagedStatusPill } from "./ManagedStatusPill";
 
 export interface ManagedAccountDeps {
   refresh?: (apiKey: string) => Promise<Entitlement>;
-  checkout?: (apiKey: string) => Promise<void>;
+  checkout?: (apiKey: string, interval?: "month" | "year") => Promise<void>;
   portal?: (apiKey: string) => Promise<void>;
   redeem?: (apiKey: string, code: string) => Promise<Entitlement>;
 }
@@ -17,7 +18,7 @@ export interface ManagedAccountDeps {
 export default function ManagedAccountPanel({ apiKey, deps }: { apiKey: string; deps?: ManagedAccountDeps }) {
   const { t, locale } = useI18n();
   const refresh = deps?.refresh ?? ((k: string) => getEntitlement(k));
-  const checkout = deps?.checkout ?? ((k: string) => openCheckout(k));
+  const checkout = deps?.checkout ?? ((k: string, interval?: "month" | "year") => openCheckout(k, {}, interval));
   const portal = deps?.portal ?? ((k: string) => openPortal(k));
   const redeem = deps?.redeem;
 
@@ -39,12 +40,6 @@ export default function ManagedAccountPanel({ apiKey, deps }: { apiKey: string; 
     try { await portal(apiKey); }
     catch (e) { setErr(e instanceof Error ? e.message : t("managed.account.portalFailed")); }
   }
-  async function handleCheckout() {
-    setErr(null);
-    try { await checkout(apiKey); }
-    catch (e) { setErr(e instanceof Error ? e.message : t("managed.account.checkoutFailed")); }
-  }
-
   // No card chrome: this panel renders inside InstanceForm's expanded area, which
   // already provides the bordered bg-surface container + padding (see InstanceForm
   // managed branch). A self-border here would double up with the list card.
@@ -52,6 +47,21 @@ export default function ManagedAccountPanel({ apiKey, deps }: { apiKey: string; 
 
   if (!ent) {
     return <div className={container}><div className="text-fg-3">{t("managed.account.loading")}</div></div>;
+  }
+
+  // 无生效订阅（首次订阅前、订阅/兑换到期回落）→ 复用首登时那套订阅引导：
+  // 月/年选择 + 首月优惠 + 兑换码 + 支付后自动轮询。到期不再是死状态。
+  if (ent.plan === "none") {
+    return (
+      <div className={container}>
+        <ManagedSubscribePanel
+          key={ent.pricing ? "priced" : "plain"}
+          initialSession={{ apiKey, entitlement: ent }}
+          onCreated={() => { void load(); }}
+          deps={{ refresh, checkout, ...(redeem ? { redeem } : {}) }}
+        />
+      </div>
+    );
   }
 
   const sub = ent.subscription;
@@ -65,17 +75,13 @@ export default function ManagedAccountPanel({ apiKey, deps }: { apiKey: string; 
 
   const pill = isActive
     ? <ManagedStatusPill tone="success" label={t("managed.account.active")} />
-    : isBlocked
-      ? <ManagedStatusPill tone="warning" label={t("managed.account.paymentFailed")} />
-      : <ManagedStatusPill tone="neutral" label={t("managed.account.inactive")} />;
+    : <ManagedStatusPill tone="warning" label={t("managed.account.paymentFailed")} />;
 
-  const headline = isActive || isBlocked ? (sub?.planName ?? "Pie") : t("managed.account.noSubscription");
+  const headline = sub?.planName ?? "Pie";
 
   const primary = isActive
     ? { label: t("managed.account.manage"), on: handlePortal }
-    : isBlocked
-      ? { label: t("managed.account.updatePayment"), on: handlePortal }
-      : { label: t("managed.account.subscribe"), on: handleCheckout };
+    : { label: t("managed.account.updatePayment"), on: handlePortal };
 
   return (
     <div className={container}>
@@ -112,12 +118,6 @@ export default function ManagedAccountPanel({ apiKey, deps }: { apiKey: string; 
           {t("managed.account.blockedBody")}
         </div>
       )}
-      {ent.plan === "none" && (
-        <div className="text-[12px] leading-[17px] text-fg-2">
-          {t("managed.account.noneBody")}
-        </div>
-      )}
-
       {isActive && ent.quota?.weekly && (
         <QuotaBar usedFraction={ent.quota.weekly.usedFraction} resetAt={ent.quota.weekly.resetAt} />
       )}
