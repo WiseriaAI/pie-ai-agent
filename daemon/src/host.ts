@@ -52,7 +52,7 @@ export async function connectHostSocket(
 
 export async function runHost(): Promise<void> {
   const conn = await connectHostSocket(
-    paths.socketPath,
+    paths.ipcPath,
     (frame) => Bun.write(Bun.stdout, frame),
     (reason) => {
       console.error(`host: ${reason}; exiting so the extension can reconnect`);
