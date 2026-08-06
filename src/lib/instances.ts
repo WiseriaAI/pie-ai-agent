@@ -21,6 +21,8 @@ export interface StoredInstance {
   maxTokens?: number;
   /** EndpointVariant.id（见 registry.endpointVariants）。缺省 = 默认端点。 */
   endpointVariant?: string;
+  /** 每分钟请求上限（RPM）。undefined = 不限。计数在 streamChat 层按 instanceId 滑动窗口。 */
+  rpmLimit?: number;
   createdAt: number;
 }
 
@@ -52,6 +54,7 @@ export async function createInstance(input: {
    *  (back-compat pool). Model selection itself lives in the Composer, not here. */
   customModels?: string[];
   endpointVariant?: string;
+  rpmLimit?: number;
 }): Promise<string> {
   if (!input.apiKey.trim()) throw new Error("API key cannot be empty");
   const idx = await readIndex();
@@ -70,6 +73,7 @@ export async function createInstance(input: {
     encryptedKey: await encrypt(input.apiKey, key),
     ...(input.customModels && input.customModels.length > 0 && { customModels: input.customModels }),
     ...(input.endpointVariant && { endpointVariant: input.endpointVariant }),
+    ...(input.rpmLimit != null && input.rpmLimit > 0 && { rpmLimit: input.rpmLimit }),
     createdAt: Date.now(),
   };
   idx.push(id);
@@ -231,6 +235,8 @@ export async function resolveModelConfig(instanceId: string, model: string): Pro
     ...(inst.maxTokens != null && { maxTokens: inst.maxTokens }),
     ...(maxOutputTokens != null && { maxOutputTokens }),
     ...(vision !== undefined && { vision }),
+    ...(inst.rpmLimit != null && { rpmLimit: inst.rpmLimit }),
+    rateKey: instanceId,
   };
 }
 
@@ -280,6 +286,7 @@ export async function updateInstance(id: string, patch: Partial<{
   fetchedAt: number;
   maxTokens: number;
   endpointVariant: string | null;
+  rpmLimit: number | null;
 }>): Promise<void> {
   const stored = await tx<StoredInstance | undefined>(STORES.instances, "readonly", (s) => s.get(id));
   if (!stored) throw new Error(`Instance ${id} not found`);
@@ -297,6 +304,11 @@ export async function updateInstance(id: string, patch: Partial<{
     // null / 空串 = 显式清除（切回默认端点）；非空 string = 设置。可选字段不留空值。
     if (!patch.endpointVariant) delete next.endpointVariant;
     else next.endpointVariant = patch.endpointVariant;
+  }
+  if (patch.rpmLimit !== undefined) {
+    // null / 0 / 负数 = 显式清除（不限流）；正整数 = 设置。可选字段不留空值。
+    if (!patch.rpmLimit || patch.rpmLimit <= 0) delete next.rpmLimit;
+    else next.rpmLimit = Math.floor(patch.rpmLimit);
   }
   await tx(STORES.instances, "readwrite", (s) => s.put(next));
   publishChange("instances", "put", id);
