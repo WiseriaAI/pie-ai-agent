@@ -73,7 +73,7 @@ export async function createInstance(input: {
     encryptedKey: await encrypt(input.apiKey, key),
     ...(input.customModels && input.customModels.length > 0 && { customModels: input.customModels }),
     ...(input.endpointVariant && { endpointVariant: input.endpointVariant }),
-    ...(input.rpmLimit != null && input.rpmLimit > 0 && { rpmLimit: input.rpmLimit }),
+    ...(input.rpmLimit != null && input.rpmLimit > 0 && { rpmLimit: Math.floor(input.rpmLimit) }),
     createdAt: Date.now(),
   };
   idx.push(id);

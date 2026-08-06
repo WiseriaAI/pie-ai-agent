@@ -580,6 +580,13 @@ describe("chat-ratelimit-wait（RPM 限流等待）", () => {
         args: {},
         status: "pending",
       } as PortMessageToPanel,
+      {
+        type: "agent-done-task",
+        sessionId: "s1",
+        success: true,
+        summary: "ok",
+        stepCount: 1,
+      } as PortMessageToPanel,
     ];
     for (const msg of clearers) {
       handleMessage({ type: "chat-ratelimit-wait", resumeAt: 999, sessionId: "s1" } as PortMessageToPanel);

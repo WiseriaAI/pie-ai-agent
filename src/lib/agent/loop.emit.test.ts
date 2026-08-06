@@ -9,7 +9,7 @@
  * The tests import AgentEmit and AgentLoopContext to exercise the public types
  * in addition to runtime behaviour.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { AgentEmit } from "./loop";
 
 // ---------------------------------------------------------------------------
@@ -363,6 +363,16 @@ describe("runAgentLoop — maxSteps hard cap (Task 5.3)", () => {
 // ---------------------------------------------------------------------------
 describe("ratelimit-wait 转发（RPM 限流）", () => {
   beforeEach(() => vi.clearAllMocks());
+  // 本 describe 内的用例用 mockImplementation 覆写了 streamChat 的默认实现；
+  // vi.clearAllMocks() 只清调用记录、不还原实现,覆写会漏到后续追加的用例里。
+  // 收尾把 streamChat 恢复成文件顶部 vi.mock 声明的默认 generator。
+  afterEach(async () => {
+    const { streamChat } = await import("../model-router");
+    vi.mocked(streamChat).mockImplementation(async function* () {
+      yield { type: "text-delta", text: "Hello world" };
+      yield { type: "done", stopReason: "end" };
+    });
+  });
 
   it("streamChat 产 ratelimit-wait → loop emit chat-ratelimit-wait（带 sessionId/resumeAt）", async () => {
     const { runAgentLoop } = await import("./loop");

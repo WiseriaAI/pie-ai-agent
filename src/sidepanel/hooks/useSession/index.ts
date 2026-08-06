@@ -531,6 +531,7 @@ export function useSession(): UseSession {
         streamingThinking: "",
         error: null,
         errorKind: null,
+        ratelimitResumeAt: null,
       });
 
       // Build the LLM-facing chat history (text-only, slash-expanded).
