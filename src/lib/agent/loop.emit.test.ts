@@ -357,3 +357,36 @@ describe("runAgentLoop — maxSteps hard cap (Task 5.3)", () => {
     expect(chatDone).toBeDefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Provider RPM 限流 Task 4 — ratelimit-wait 转发
+// ---------------------------------------------------------------------------
+describe("ratelimit-wait 转发（RPM 限流）", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("streamChat 产 ratelimit-wait → loop emit chat-ratelimit-wait（带 sessionId/resumeAt）", async () => {
+    const { runAgentLoop } = await import("./loop");
+    const { streamChat } = await import("../model-router");
+    vi.mocked(streamChat).mockImplementation(async function* () {
+      yield { type: "ratelimit-wait", resumeAt: 1234567 } as const;
+      yield { type: "text-delta", text: "Hello" } as const;
+      yield { type: "done", stopReason: "end" } as const;
+    });
+    const emitted: Array<{ type: string; resumeAt?: number; sessionId?: string }> = [];
+    const emit: AgentEmit = (msg) => { emitted.push(msg as (typeof emitted)[number]); };
+    const controller = new AbortController();
+    await runAgentLoop({
+      emit,
+      task: "t",
+      modelConfig: { provider: "openai", model: "gpt-4o", apiKey: "sk", vision: false },
+      signal: controller.signal,
+      sessionId: "s-rl",
+      pinnedTabs: [{ tabId: 1, origin: "https://example.com" }],
+      initialFocusTabId: 1,
+    });
+    const rl = emitted.find((m) => m.type === "chat-ratelimit-wait");
+    expect(rl).toBeDefined();
+    expect(rl!.resumeAt).toBe(1234567);
+    expect(rl!.sessionId).toBe("s-rl");
+  });
+});
