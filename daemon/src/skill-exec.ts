@@ -8,13 +8,15 @@ import type { SkillRoots } from "./skill-store";
 import { hasGrant, putGrant, grantKey, canonicalEnvelope, envelopeHash } from "./grants";
 import { appendAudit } from "./audit";
 import { beginSkillRun, endSkillRun } from "./status";
-import { realSkillSandbox } from "./skill-sandbox";
+import { realSkillSandbox, checkWindowsSandboxReady } from "./skill-sandbox";
 import type { SkillSandbox } from "./skill-sandbox";
 import type { GrantEnvelope, RunSkillScriptParams, RunSkillScriptResult, SkillAuthPayload } from "../../src/types/local-bridge";
 
 export interface SkillExecDeps {
   sandbox?: SkillSandbox;
   now?: () => number;
+  /** 沙箱设施就绪探针（F6）：非 win32 恒 ready；win32 走 WFP egress 行为探针。测试可注入。 */
+  readinessCheck?: () => Promise<{ ready: boolean; reason?: string }>;
   /** 单根别名（既有测试用）：等价 roots={primary: skillsRoot}，不带默认副根 */
   skillsRoot?: string;
   roots?: SkillRoots;
@@ -85,11 +87,56 @@ export function baselineDenyRead(): string[] {
   ];
 }
 
-/** 解释器 argv 前缀：.ts/.js/.mjs → pie-as-bun；.py → python3；.sh → bash。 */
-export function interpreterFor(entry: string): string[] {
+/** 全局安装 Python 缺失时的引导文案（F4：per-user / Store 别名沙箱账户不可见）。 */
+const PY_NOT_FOUND_MSG =
+  '未找到全局安装的 Python（已排除 Microsoft Store 执行别名）。请从 python.org 安装 Python 时勾选 "Install for all users"（全局安装），沙箱账户才能访问它。';
+/** Windows 不支持 .sh 的引导文案（建议作者提供跨平台 ts 版本）。 */
+const SH_UNSUPPORTED_MSG =
+  "Windows 上不支持执行 .sh 脚本；请让该 skill 的作者提供跨平台的 .ts 版本。";
+
+/** F4：`where python` 常同时命中 `\WindowsApps\` 的 Store 执行别名 stub（per-user
+ *  reparse point，沙箱账户必然拒访问）。排除这些后取第一个真实候选；无候选 = null
+ *  （按"无全局 python"处理）。纯函数，供单测覆盖排除规则。 */
+export function pickWindowsPython(candidates: string[]): string | null {
+  const real = candidates
+    .map((c) => c.trim())
+    .filter((c) => c.length > 0 && !/\\WindowsApps\\/i.test(c));
+  return real[0] ?? null;
+}
+
+/** 宿主侧探测全局 python（非沙箱内，spawnSync 无害——那条铁律只针对沙箱子进程）。
+ *  排除 WindowsApps stub 后返回绝对路径，探测不到返回 null。 */
+function findWindowsPython(): string | null {
+  try {
+    const r = Bun.spawnSync(["where.exe", "python"]);
+    if (r.exitCode !== 0) return null;
+    return pickWindowsPython(r.stdout.toString().split(/\r?\n/));
+  } catch {
+    return null;
+  }
+}
+
+/** 解释器 argv 前缀（spec §4.8）：
+ *  - `.ts/.js/.mjs/.cjs` → 内嵌 Bun（`[execPath, "run"]`，需 `BUN_BE_BUN=1`），三平台一致；
+ *  - `.py` → mac/linux 走 `python3`；Windows 探测全局 python（排除 Store 别名），无则 `no_python`；
+ *  - `.sh` → mac/linux 走 `bash`；Windows 明确报 `unsupported_script`（建议 ts 版本）。
+ *  opts 供测试注入 platform / findPython，产品调用走 process.platform + 真机探测。 */
+export function interpreterFor(
+  entry: string,
+  opts: { platform?: NodeJS.Platform; findPython?: () => string | null } = {},
+): string[] {
+  const platform = opts.platform ?? process.platform;
   if (/\.(ts|js|mjs|cjs)$/.test(entry)) return [process.execPath, "run"]; // 需 BUN_BE_BUN=1
-  if (/\.py$/.test(entry)) return ["python3"];
-  if (/\.sh$/.test(entry)) return ["bash"];
+  if (/\.py$/.test(entry)) {
+    if (platform !== "win32") return ["python3"];
+    const py = (opts.findPython ?? findWindowsPython)();
+    if (!py) throw Object.assign(new Error(PY_NOT_FOUND_MSG), { code: "no_python" });
+    return [py];
+  }
+  if (/\.sh$/.test(entry)) {
+    if (platform === "win32") throw Object.assign(new Error(SH_UNSUPPORTED_MSG), { code: "unsupported_script" });
+    return ["bash"];
+  }
   return [process.execPath, "run"]; // 默认按 JS 跑
 }
 
@@ -103,6 +150,7 @@ export async function runSkillScript(
   const auditPath = deps.auditPath ?? paths.auditPath;
   const sessionsDir = deps.sessionsDir ?? paths.sessionsDir;
   const sandbox = deps.sandbox ?? realSkillSandbox;
+  const readinessCheck = deps.readinessCheck ?? checkWindowsSandboxReady;
 
   const name = assertSkillName(params.name);
   const located = resolveSkillRoot(name, roots);
@@ -111,6 +159,20 @@ export async function runSkillScript(
   if (!summary) throw Object.assign(new Error(`unknown skill: ${name}`), { code: "unknown_skill" });
   if (!summary.runnableScripts.includes(params.entry)) {
     throw Object.assign(new Error(`entry not in scripts/: ${JSON.stringify(params.entry)}`), { code: "unknown_entry" });
+  }
+
+  // 解释器解析先行（spec §4.8）：.sh/win 或缺 python 的 skill 直接失败，不弹授权卡。
+  // interpreterFor 在 Windows 上可能 throw（unsupported_script / no_python），随 code 透传。
+  const interp = interpreterFor(params.entry);
+
+  // 沙箱设施就绪检查（F6，fail-closed）：设施未就绪 → 明确报错引导重装，且先于授权卡与执行。
+  // 非 win32 宿主上 checkWindowsSandboxReady 恒 ready，既有 mac 行为不变。
+  const readiness = await readinessCheck();
+  if (!readiness.ready) {
+    throw Object.assign(
+      new Error(`Windows 脚本沙箱未就绪${readiness.reason ? `：${readiness.reason}` : ""}。请重装 Pie Link 以修复沙箱设施。`),
+      { code: "sandbox_not_ready" },
+    );
   }
 
   const envelope: GrantEnvelope = canonicalEnvelope({
@@ -148,7 +210,7 @@ export async function runSkillScript(
     allowedDomains: summary.declaredCaps.network,
     denyRead: baselineDenyRead(),
   };
-  const argv = [...interpreterFor(params.entry), join(skillDir, "scripts", params.entry), ...(params.args ?? [])];
+  const argv = [...interp, join(skillDir, "scripts", params.entry), ...(params.args ?? [])];
   // cwd = workspace（可写区），skillDir 通过 PIE_SKILL_DIR 供脚本读自身资源。
   const env = { BUN_BE_BUN: "1", PIE_SKILL_DIR: skillDir, PIE_WORKSPACE: workspace };
 
