@@ -34,6 +34,23 @@ const FALLBACK_MAX_CONTEXT_TOKENS = 32_000;
 const CJK_REGEX = /[一-鿿぀-ヿ㐀-䶿가-힯]/g;
 
 /**
+ * 每 token 的字符数。这是**安全上界**,不是精确估计。
+ *
+ * 原值 4 / 1.5 来自「自然散文」的经验值,但 agent 的上下文根本不是散文:大头是
+ * HTML 属性、URL、JSON 标点、base64 片段这类 BPE 效率极低的内容。真机实测两轮
+ * 长任务(provider 实报 vs 本地估算):
+ *
+ *     est 37113  vs  prompt 61434    估算 = 真实的 60%
+ *     est 89795  vs  prompt 167845   估算 = 真实的 53%
+ *
+ * 系统性低估 40-47%,而 compactReactWindow 与 applyTokenBudget 的 80% 阈值判断
+ * 全靠它 —— 它以为在 40%,实际已到 75%。两个方向的代价不对称:低估会让压缩触发
+ * 得太晚(真实已经超窗、请求直接失败),高估只是多压一次。所以宁可偏保守。
+ */
+const CHARS_PER_TOKEN = 2.5;
+const CJK_CHARS_PER_TOKEN = 1.2;
+
+/**
  * Phase 5 HARD GATE — image blocks must NOT be JSON.stringified into the
  * extracted text (a 2 MB base64 image inflates by ~3 M chars). Image
  * surcharge is added separately via `estimateImageSurchargeForMessage`.
@@ -98,7 +115,7 @@ export function estimateTokens(messages: AgentMessage[], provider?: string): num
     const cjkMatches = combined.match(CJK_REGEX);
     const cjkChars = cjkMatches ? cjkMatches.length : 0;
     const cjkRatio = cjkChars / totalChars;
-    const divisor = cjkRatio > 0.5 ? 1.5 : 4;
+    const divisor = cjkRatio > 0.5 ? CJK_CHARS_PER_TOKEN : CHARS_PER_TOKEN;
     textTokens = Math.ceil(totalChars / divisor);
   }
   const imageTokens = provider
