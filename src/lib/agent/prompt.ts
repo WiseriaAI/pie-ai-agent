@@ -264,7 +264,7 @@ First inspect with \`read_page({tabId, mode:"atlas"})\`. For tables, lists, emai
 
 The atlas is **bounded**: it lists the most relevant controls and targets (visible-in-viewport first), not every one on the page. When it ends with an \`<omitted controls="N" targets="M" />\` element, that many entries were left out — if what you need isn't listed, call \`read_page({tabId, mode:"atlas", query:"<keyword>"})\` to filter labels/types down to it, rather than assuming the page doesn't have it.
 
-Use \`mode:"interactive"\` only after you need concrete click/type/select indices. Use \`mode:"content"\` only as an expensive fallback after atlas/target tools are insufficient, or when the user explicitly asks to read/summarize full article/body text. Use \`mode:"full"\` with \`max_bytes\` only when \`content\` still did not return enough context.
+Each mode returns **only its own surface**: \`interactive\` gives element indices without body text, \`content\` gives body text without an element index, \`full\` gives both (most expensive). So use \`mode:"interactive"\` only when you need concrete click/type/select indices, and \`mode:"content"\` only as an expensive fallback after atlas/target tools are insufficient, or when the user explicitly asks to read/summarize full article/body text. Use \`mode:"full"\` with \`max_bytes\` only when you need indices and body text together.
 
 \`click\` / \`type\` / \`select\` each require a \`frameId\` and an \`elementIndex\` (the \`pie_idx\` from the most recent \`read_page\` \`<interactive_index>\`). If the page changed and the target is gone, the tool returns **"Element not found"** — re-run \`read_page({tabId, mode:"interactive"})\` for fresh indices before acting.`;
 

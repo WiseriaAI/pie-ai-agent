@@ -16,6 +16,8 @@ import { estimateTokens } from "../window-token-budget";
 const MODE_BUDGETS = {
   auto: { maxBytes: 500_000 },
   atlas: { maxBytes: 500_000 },
+  // interactive 不再返回 HTML(只发元素索引),这个预算实际不消费——留着是因为
+  // resolveHtmlBudget 按 mode 查表,且 max_bytes 仍需被 clamp 成合法值。
   interactive: { maxBytes: 200_000 },
   content: { maxBytes: 300_000 },
   full: { maxBytes: 500_000 },
@@ -253,7 +255,7 @@ export const readPageTool: Tool = {
         type: "string",
         enum: ["auto", "atlas", "interactive", "content", "full"],
         description:
-          "Read mode. auto is default and behaves like atlas. Use interactive for element indices. content/full are expensive fallbacks, not first-pass inspection modes.",
+          "Read mode, each returning only its own surface. auto/atlas: page atlas. interactive: element indices only, no body text. content: body text only, no element index. full: both (most expensive). content/full are fallbacks, not first-pass inspection modes.",
       },
       max_bytes: {
         type: "integer",
@@ -430,6 +432,12 @@ export const readPageTool: Tool = {
     let topOrigin: string | null = null;
     try { topOrigin = new URL(topUrl).origin; } catch { topOrigin = null; }
 
+    // 各 mode 只返回自己声明的表示面。此前无论哪个 mode 都同时发 interactive
+    // index 和整页 HTML,mode 实际只改了 byte cap —— 与工具描述和 prompt 里的
+    // 说法不符,LLM 即使正确选了轻模式也拿到不需要的内容。
+    const wantIndex = mode === "interactive" || mode === "full";
+    const wantBlocks = mode === "content" || mode === "full";
+
     const sortedFrames = [...frames].sort((a, b) => a.frameId - b.frameId);
     const frameMapLines: string[] = [];
     const frameInteractive: Array<{
@@ -455,6 +463,8 @@ export const readPageTool: Tool = {
         frameMapLines.push(
           `  frame_id="${f.frameId}" url="${escapeWrapperAttribute(f.url)}" unreachable="true" reason="${reason}"`,
         );
+        // frame_map 那行已经说明了不可达 —— 不发 content 面时不必再来一个空块。
+        if (!wantBlocks) continue;
         const attrs = [
           `frame_id="${f.frameId}"`,
           `frame_url="${escapeWrapperAttribute(f.url)}"`,
@@ -482,6 +492,10 @@ export const readPageTool: Tool = {
           `  - ${hint.region}${hint.pieIdx !== null ? ` at data-pie-idx=${hint.pieIdx}` : ""}: ${hint.visibleCount} visible, estimated ${hint.estimatedTotal} total (frame_id=${f.frameId})`,
         );
       }
+
+      // mode=interactive 到此为止:index 与 frame_map 已备齐,整页 HTML 的
+      // iframe 占位重写 + escape 是纯浪费(大页面上是几百 KB 的字符串处理)。
+      if (!wantBlocks) continue;
 
       const blockAttrs: string[] = [
         `frame_id="${f.frameId}"`,
@@ -522,8 +536,9 @@ export const readPageTool: Tool = {
       `</frame_map>`,
     ];
 
-    const interactiveIndex = renderInteractiveIndex(mode, frameInteractive);
-    const observationParts = [headerLines.join("\n"), interactiveIndex];
+    const interactiveIndex = wantIndex ? renderInteractiveIndex(mode, frameInteractive) : "";
+    const observationParts = [headerLines.join("\n")];
+    if (interactiveIndex) observationParts.push(interactiveIndex);
     if (scrollableLines.length > 0) {
       observationParts.push(`<scrollable_regions>\n${scrollableLines.join("\n")}\n</scrollable_regions>`);
     }

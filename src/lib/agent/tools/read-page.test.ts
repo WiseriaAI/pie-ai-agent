@@ -486,7 +486,7 @@ describe("read_page tool", () => {
     expect(r.observation).not.toContain("data-pie-iframe-position");
   });
 
-  it("超 interactive 模式预算时按 frame 顺序截断后续 frame", async () => {
+  it("超预算时按 frame 顺序截断后续 frame", async () => {
     const big = "x".repeat(170_000);
     vi.stubGlobal("chrome", {
       tabs: { get: vi.fn().mockResolvedValue({ id: 7, url: "https://x.com/", discarded: false }) },
@@ -505,12 +505,13 @@ describe("read_page tool", () => {
     });
     // Force budget exhaustion with an explicit small max_bytes so this stays a
     // truncation-ORDER test, independent of the (now max-sized) default budget.
-    const r = await readPageTool.handler({ tabId: 7, mode: "interactive", max_bytes: 100_000 }, {} as any);
+    // 用 full:HTML 预算只对发 content 面的模式有意义(interactive 已不发 HTML)。
+    const r = await readPageTool.handler({ tabId: 7, mode: "full", max_bytes: 100_000 }, {} as any);
     expect(r.observation).toMatch(/frame_id="0".*truncated="true"/s);
     expect(r.observation).toMatch(/frame_id="3".*unread="budget"/s);
   });
 
-  it("mode=content renders interactive_index and does not truncate 80KB HTML", async () => {
+  it("mode=content 只发正文,不带 interactive_index,且不截断 80KB HTML", async () => {
     const big = "x".repeat(80_000);
     vi.stubGlobal("chrome", {
       tabs: { get: vi.fn().mockResolvedValue({ id: 7, url: "https://x.com/", discarded: false }) },
@@ -551,18 +552,16 @@ describe("read_page tool", () => {
     const r = await readPageTool.handler({ tabId: 7, mode: "content" }, {} as any);
 
     expect(r.success).toBe(true);
-    expect(r.observation).toContain('<interactive_index mode="content" total="1">');
-    expect(r.observation).toContain(
-      '<interactive_element frame_id="0" pie_idx="4" tag="div" role="textbox"',
-    );
-    expect(r.observation).toContain('contenteditable="true"');
-    expect(r.observation).toContain("Compose</interactive_element>");
+    // content 的声明表示面是正文。索引要用 mode:"interactive" 单独取 ——
+    // 此前两者一起发,mode 实际只改了 byte cap。
+    expect(r.observation).not.toContain("<interactive_index");
+    expect(r.observation).not.toContain("<interactive_element");
     expect(r.observation).not.toContain('truncated="true"');
     expect(r.observation).toContain(big);
   });
 
-  it("max_bytes clamps to interactive mode hard cap", async () => {
-    const big = "x".repeat(220_000);
+  it("max_bytes clamps to content mode hard cap", async () => {
+    const big = "x".repeat(320_000);
     vi.stubGlobal("chrome", {
       tabs: { get: vi.fn().mockResolvedValue({ id: 7, url: "https://x.com/", discarded: false }) },
       scripting: {
@@ -576,16 +575,16 @@ describe("read_page tool", () => {
     });
 
     const r = await readPageTool.handler(
-      { tabId: 7, mode: "interactive", max_bytes: 999_999 },
+      { tabId: 7, mode: "content", max_bytes: 999_999 },
       {} as any,
     );
 
     expect(r.success).toBe(true);
     expect(r.observation).toMatch(/frame_id="0".*truncated="true"/s);
-    expect(r.observation!.length).toBeLessThan(220_000);
+    expect(r.observation!.length).toBeLessThan(320_000);
   });
 
-  it("HTML budget exhaustion keeps interactive_index entries from all reachable frames", async () => {
+  it("mode=full 下 HTML 预算耗尽仍保留所有可达 frame 的 interactive_index 条目", async () => {
     const big = "x".repeat(170_000);
     vi.stubGlobal("chrome", {
       tabs: { get: vi.fn().mockResolvedValue({ id: 7, url: "https://x.com/", discarded: false }) },
@@ -647,7 +646,7 @@ describe("read_page tool", () => {
 
     // Explicit small max_bytes forces budget exhaustion regardless of the
     // (now max-sized) default, keeping this a frame-index-preservation test.
-    const r = await readPageTool.handler({ tabId: 7, mode: "interactive", max_bytes: 100_000 }, {} as any);
+    const r = await readPageTool.handler({ tabId: 7, mode: "full", max_bytes: 100_000 }, {} as any);
 
     expect(r.success).toBe(true);
     expect(r.observation).toMatch(/frame_id="0".*truncated="true"/s);
