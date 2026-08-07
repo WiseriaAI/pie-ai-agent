@@ -53,6 +53,26 @@ function attr(name: string, value: unknown): string {
   return `${name}="${xml(value)}"`;
 }
 
+/**
+ * 元素内容位置的文本转义 = `xml()` 减去引号那一项。
+ *
+ * 标签边界字符(`<` `>` `&`)照转,所以逃逸防护与 `xml()` 完全等价;但刻意 **不**
+ * 转义 `"`:record 的 fields 是 JSON,引号是里面最多的字符,`&quot;` 一个顶六个,
+ * 实测单字段投影因此从 1066 chars 膨胀到 2066(1.94x)。引号只在属性值位置才
+ * 必须转义,那里继续走 attr()/xml()。
+ */
+function contentText(value: string): string {
+  return escapeUntrustedWrappers(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+/** record 内容:紧凑 JSON,不做属性级转义。 */
+function jsonContent(value: unknown): string {
+  return contentText(JSON.stringify(value));
+}
+
 function ok(observation: string): ActionResult {
   return { success: true, observation };
 }
@@ -97,11 +117,29 @@ function parseRange(value: unknown, recordCount: number): ParsedRange {
   };
 }
 
-function selectedRecords(records: AtlasRecord[] | undefined, range: unknown): { ok: true; records: AtlasRecord[] } | { ok: false; error: string } {
+/**
+ * 不传 range 时的默认条数上限。长列表默认全量返回会让一次 read_struct 就把
+ * 上下文吃掉一大块;上限 + omitted 提示让 LLM 自己决定要不要翻页。显式传
+ * range 时不受这个上限约束——那是它明确要的量。
+ */
+const DEFAULT_RECORD_LIMIT = 50;
+
+function selectedRecords(
+  records: AtlasRecord[] | undefined,
+  range: unknown,
+): { ok: true; records: AtlasRecord[]; omitted: number } | { ok: false; error: string } {
   const all = records ?? [];
   const rangeResult = parseRange(range, all.length);
   if (!rangeResult.ok) return rangeResult;
-  return { ok: true, records: all.slice(rangeResult.start, rangeResult.end) };
+  const selected = all.slice(rangeResult.start, rangeResult.end);
+  if (range === undefined || range === null) {
+    return {
+      ok: true,
+      records: selected.slice(0, DEFAULT_RECORD_LIMIT),
+      omitted: Math.max(0, selected.length - DEFAULT_RECORD_LIMIT),
+    };
+  }
+  return { ok: true, records: selected, omitted: 0 };
 }
 
 function searchableText(target: AtlasTarget): string {
@@ -228,31 +266,75 @@ function wrapUntrustedPageContent(tool: string, atlasId: string, targetId: strin
   );
 }
 
-function renderRecords(tagName: string, atlasId: string, target: AtlasTarget, records: AtlasRecord[]): string {
-  const lines = [
-    `<${tagName} ${attr("atlas_id", atlasId)} ${attr("target_id", target.id)} ${attr("type", target.type)} ${attr("label", target.label)} ${attr("count", records.length)}>`,
+const normalizeSpace = (value: string) => value.replace(/\s+/g, " ").trim();
+
+/**
+ * 一条 record 的内容:fields JSON,必要时并入 `_text`。
+ *
+ * `text` 是否重复取决于 target 类型,不能一刀切:
+ *   - table —— probe 侧 `text` 就是各 cell 值的 join,fields 已完整覆盖,纯重复;
+ *   - collection / region —— fields 只有 title/link,`text` 是整张卡片或整段
+ *     正文(价格、状态、描述都在里面),丢了就是真实信息损失。
+ * 所以按「是否等于 fields 值的拼接」判断,而不是按「有没有 fields」。
+ */
+function recordPayload(record: AtlasRecord): string {
+  const payload: Record<string, string> = { ...record.fields };
+  const text = record.text ?? "";
+  if (text && normalizeSpace(text) !== normalizeSpace(Object.values(record.fields).join(" "))) {
+    payload._text = text;
+  }
+  return jsonContent(payload);
+}
+
+/**
+ * 一条 record 一行。此前是 4 行:`<record>` 包 `<fields>` + `<text>` +
+ * `<evidence>`,其中 `text` 在 table 上是 fields 的完整重复,`evidence` 只是个
+ * 标签名却占一整行。合成测量(25 行 x 8 字段)显示旧形态 13507 chars,新形态约
+ * 4815,缩小 2.81x。
+ */
+function renderRecords(
+  tagName: string,
+  atlasId: string,
+  target: AtlasTarget,
+  records: AtlasRecord[],
+  omitted = 0,
+): string {
+  const header = [
+    `<${tagName}`,
+    attr("atlas_id", atlasId),
+    attr("target_id", target.id),
+    attr("type", target.type),
+    attr("label", target.label),
+    attr("count", records.length),
   ];
+  if (omitted > 0) {
+    header.push(attr("omitted", omitted));
+    header.push(attr("hint", `Pass range=${records.length}..${records.length + omitted} to read the rest.`));
+  }
+  const lines = [`${header.join(" ")}>`];
   for (const record of records) {
-    lines.push(`  <record ${attr("id", record.id)}>`);
-    lines.push(`    <fields>${xml(JSON.stringify(record.fields))}</fields>`);
-    if (record.text) lines.push(`    <text>${xml(record.text)}</text>`);
-    lines.push(`    <evidence>${xml(record.evidence)}</evidence>`);
-    lines.push("  </record>");
+    lines.push(
+      `  <record ${attr("id", record.id)} ${attr("evidence", record.evidence)}>${recordPayload(record)}</record>`,
+    );
   }
   lines.push(`</${tagName}>`);
   return lines.join("\n");
 }
 
+/**
+ * 字段投影:JSON Lines,一行一条。此前是把整个数组 JSON.stringify 后再走
+ * `xml()`——双重编码,单字段投影从 1066 chars 膨胀到 2066。行式还有个好处:
+ * 截断不会产生半个数组。
+ */
 function renderExtractedRecords(records: AtlasRecord[], keys: string[]): string {
-  const extracted = records.map((record) => {
-    const row: Record<string, string> = {};
-    for (const key of keys) {
-      row[key] = escapeUntrustedWrappers(record.fields[key] ?? "");
-    }
-    row._evidence = escapeUntrustedWrappers(record.evidence);
-    return row;
-  });
-  return xml(JSON.stringify(extracted));
+  return records
+    .map((record) => {
+      const row: Record<string, string> = {};
+      for (const key of keys) row[key] = record.fields[key] ?? "";
+      row._evidence = record.evidence;
+      return jsonContent(row);
+    })
+    .join("\n");
 }
 
 export function createPageAtlasTargetTools(deps: PageAtlasTargetToolDeps = {}): Tool[] {
@@ -359,7 +441,7 @@ USE WHEN:
         "read_target",
         resolved.atlas.atlasId,
         resolved.target.id,
-        renderRecords("target_text", resolved.atlas.atlasId, resolved.target, selected.records),
+        renderRecords("target_text", resolved.atlas.atlasId, resolved.target, selected.records, selected.omitted),
       ));
     },
   };
@@ -367,7 +449,7 @@ USE WHEN:
   const readStructTool: Tool = {
     name: "read_struct",
     description:
-      `Read records from a collection, table, or detail_region target, rendered by the target's actual type — so you don't pre-classify collection vs table. By default returns full records (every field + text per item); pass "fields" to project down to just the named fields (cheaper for large lists). Requires atlas_id + target_id from read_page({mode:"atlas"}).
+      `Read records from a collection, table, or detail_region target, rendered by the target's actual type — so you don't pre-classify collection vs table. Each record is one line of compact JSON (a "_text" key carries the item's full text when it isn't just the fields joined). Without "range" it returns at most 50 records and reports how many were omitted — pass "range" to page through the rest, or "fields" to project down to named fields (cheaper for large lists). Requires atlas_id + target_id from read_page({mode:"atlas"}).
 
 USE WHEN:
 - The target's type is "collection", "table", or "detail_region" and you need its records.
@@ -408,7 +490,7 @@ USE WHEN:
       const body =
         fields.length > 0
           ? renderExtractedRecords(selected.records, fields)
-          : renderRecords("records", resolved.atlas.atlasId, resolved.target, selected.records);
+          : renderRecords("records", resolved.atlas.atlasId, resolved.target, selected.records, selected.omitted);
       return ok(wrapUntrustedPageContent("read_struct", resolved.atlas.atlasId, resolved.target.id, body));
     },
   };
