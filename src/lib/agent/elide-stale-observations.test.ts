@@ -359,7 +359,14 @@ describe("elideStaleObservations — read_page tool_result elision (pull mode)",
   });
 
   it("leaves non-snapshot tool results (read_struct / click / …) untouched", () => {
-    const structResult = "<untrusted_struct_records>[{\"price\": 42}]</untrusted_struct_records>";
+    // 注意:这里用的是 read_struct 的**真实** wrapper —— 它复用
+    // <untrusted_page_content>,靠 target_id 属性与页面快照区分。此前这个测试
+    // 用了实现中根本不存在的 <untrusted_struct_records>,因此从没覆盖真实路径,
+    // 而真实路径上 target evidence 是会被当成快照抹掉的。
+    const structResult =
+      '<untrusted_page_content atlas_id="atlas_1" target_id="collection_c1" tool="read_struct">' +
+      '<records count="2">\n  <record id="r1" evidence="tr">{"price":"42"}</record>\n</records>' +
+      "</untrusted_page_content>";
     const history: AgentMessage[] = [
       { role: "system", content: "sys" },
       userTask("t", obs("https://a", 5)),
@@ -371,6 +378,35 @@ describe("elideStaleObservations — read_page tool_result elision (pull mode)",
     const out = elideStaleObservations(history);
     // Nothing elidable in the middle turn → same message object returned.
     expect(out[3]).toBe(history[3]);
+  });
+
+  it("同一轮里既有 target evidence 又有页面快照时,只抹快照", () => {
+    const structResult =
+      '<untrusted_page_content atlas_id="atlas_1" target_id="table_t0" tool="read_struct">' +
+      '<records count="1"><record id="r1" evidence="tr">{"total":"1299"}</record></records>' +
+      "</untrusted_page_content>";
+    const history: AgentMessage[] = [
+      { role: "system", content: "sys" },
+      userTask("t", obs("https://a", 5)),
+      assistantToolUse("t1"),
+      {
+        role: "user",
+        content: [
+          { type: "tool_result", toolUseId: "t1", content: structResult },
+          { type: "tool_result", toolUseId: "t1b", content: readPageResult("https://b", 30) },
+        ] as ContentBlock[],
+      },
+      assistantToolUse("t2"),
+      userToolResult("t2", obs("https://c", 5)),
+    ];
+    const out = elideStaleObservations(history);
+    const blocks = out[3].content as ContentBlock[];
+    const evidence = blocks[0] as Extract<ContentBlock, { type: "tool_result" }>;
+    const snapshot = blocks[1] as Extract<ContentBlock, { type: "tool_result" }>;
+
+    expect(evidence.content).toContain('{"total":"1299"}'); // 抽出来的行是任务证据,页面上可能已经翻页没了
+    expect(snapshot.content).toContain(STALE_OBSERVATION_MARKER);
+    expect(snapshot.content).not.toContain("<interactive_index");
   });
 
   it("produces a bare marker when the payload starts directly with the frame block", () => {

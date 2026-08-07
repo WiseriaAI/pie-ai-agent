@@ -22,7 +22,9 @@ import type { AgentMessage, ContentBlock } from "../model-router/types";
  *     to exist with a matching id; its content is free-form).
  *
  * Non-snapshot tool results (read_struct / search_web / editor content …)
- * carry data the task may aggregate later and are never elided.
+ * carry data the task may aggregate later and are never elided — see
+ * isTargetEvidenceTag for how the target tools are told apart despite sharing
+ * read_page's wrapper tag.
  *
  * The transform is monotone: a block elided at step N stays elided
  * byte-identically at every later step (only the previous last user turn
@@ -49,10 +51,36 @@ export const STALE_OBSERVATION_MARKER =
  */
 const BULK_MARKERS = ["<interactive_index", "<untrusted_page_content"];
 
+/**
+ * Is this `<untrusted_page_content …>` opening tag carrying TARGET EVIDENCE
+ * rather than a page snapshot?
+ *
+ * `read_struct` / `read_target` / `find_target` reuse the same wrapper tag as
+ * read_page (target-tools.ts), but what they return is extracted task evidence
+ * — the rows the task is aggregating, the target_id it locked onto. That is
+ * worth MORE across turns than a page snapshot, not less: a snapshot can be
+ * re-read from the live page, an extracted record cannot (the page may have
+ * paginated away). Eliding them silently destroyed exactly the data the task
+ * was collecting.
+ *
+ * Detected by the `target_id` attribute rather than the tag name: the tag list
+ * is duplicated verbatim across five files under a parity test, and a new tag
+ * would have to be threaded through all of them for no semantic gain. Failure
+ * mode is safe either way — an unrecognised tag simply is not elided.
+ */
+function isTargetEvidenceTag(text: string, tagStart: number): boolean {
+  const tagEnd = text.indexOf(">", tagStart);
+  if (tagEnd === -1) return false;
+  return text.slice(tagStart, tagEnd).includes("target_id=");
+}
+
 function elideText(text: string): string | null {
   let cut = -1;
   for (const marker of BULK_MARKERS) {
-    const idx = text.indexOf(marker);
+    let idx = text.indexOf(marker);
+    while (idx !== -1 && isTargetEvidenceTag(text, idx)) {
+      idx = text.indexOf(marker, idx + 1);
+    }
     if (idx !== -1 && (cut === -1 || idx < cut)) cut = idx;
   }
   if (cut === -1) return null; // no snapshot bulk; leave as-is
