@@ -1568,6 +1568,10 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
     // M1-U5 — resume path starts the counter at the next step beyond
     // what was persisted.
     const startStepIndex = (ctx.resumedFromStep ?? 0) + 1;
+    // 上一轮 wire 的逐条指纹([0] 是 tools,其后是每条 message),供 [prefix]
+    // 诊断定位「前缀是从第几条开始变的」。纯诊断状态,不参与任何决策。
+    let prevWireFp: number[] = [];
+
     // Unbounded — only an LLM termination (done/fail/plain-text) or a user
     // abort exits this loop. The soft checkpoint (SOFT_STEP_BUDGET) is a
     // neutral periodic self-check, not a wrap-up signal; there is no absolute
@@ -2135,6 +2139,40 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // 没读页的轮次 hit 应该稳在 90%+,掉下来才说明前缀被什么打断了。
       // `est` 是本地估算(CJK 感知的字符数除法),与 `prompt`(provider 实报)对照
       // 可以看出估算偏差。cached/hit 只有 provider 报了缓存计数才有值。
+      // 前缀稳定性诊断。自动 prefix caching(deepseek / openai-compat / gemini)
+      // 没有 breakpoint 可打,唯一杠杆就是「前缀一个字节都别变」。命中率掉下去时,
+      // 光看总量看不出是**哪一条**变了 —— 这里逐条指纹与上一轮比对,直接报出
+      // 第一个不同的位置:
+      //   diffAt=0        → tools 定义变了(它排在 wire 最前,一变全废)
+      //   diffAt=1        → system prompt 变了
+      //   diffAt≈msgs     → 只有尾部在变,前缀健康
+      //   diffAt 居中     → 历史被改写了(砍窗 / compaction / elide 越界)
+      // grew 是相对上一轮的条数变化,砍窗会是负数。
+      {
+        const fp = (s: string): number => {
+          let h = 5381;
+          for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+          return h;
+        };
+        const wireFp = [
+          fp(JSON.stringify(toolDefinitions)),
+          ...windowedHistory.map((m) => fp(JSON.stringify(m))),
+        ];
+        let diffAt = -1;
+        const n = Math.max(wireFp.length, prevWireFp.length);
+        for (let i = 0; i < n; i++) {
+          if (wireFp[i] !== prevWireFp[i]) { diffAt = i; break; }
+        }
+        console.log("[prefix]", {
+          step: stepIndex,
+          diffAt,
+          of: wireFp.length,
+          grew: prevWireFp.length ? wireFp.length - prevWireFp.length : 0,
+          stableRatio: diffAt < 0 ? "100%" : `${Math.round((diffAt / wireFp.length) * 100)}%`,
+        });
+        prevWireFp = wireFp;
+      }
+
       {
         const toolsTok = estimateTokens([
           { role: "system", content: JSON.stringify(toolDefinitions) },
