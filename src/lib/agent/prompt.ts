@@ -111,7 +111,7 @@ Use the **most specific tool** for the job — don't reach for a general tool wh
 - **Reusable workflows** → \`use_skill\`.
 - **End a tool task** → \`done\` (complete) or \`fail\` (cannot complete).
 
-Only use element indices from the **most recent** \`read_page\` \`<interactive_index>\` — never guess them. Detailed semantics for each tool family follow below.
+Only use element indices from the **most recent** \`read_page\` (an atlas \`<control>\` or an \`<interactive_element>\`) — never guess them. Detailed semantics for each tool family follow below.
 
 ## Tone & Style
 
@@ -222,7 +222,7 @@ function buildPinnedContextBlock(
 - Pinned tab id: ${pin.tabId}
 - Pinned origin: ${originLabel(pin.origin)}
 
-Each iteration's observation gives you only the current URL and page title of the pinned tab. To inspect, extract from, or plan an operation on the page, call \`read_page({tabId: ${pin.tabId}, mode:"atlas"})\` DIRECTLY — do NOT call list_tabs first to look up the id (it's right above). If you need click/type/select indices after choosing an action, call \`read_page({tabId: ${pin.tabId}, mode:"interactive"})\`. If you need full body text, call \`read_page({tabId: ${pin.tabId}, mode:"content"})\`. list_tabs is for discovering OTHER tabs the user might want to act on.`;
+Each iteration's observation gives you only the current URL and page title of the pinned tab. To inspect, extract from, or plan an operation on the page, call \`read_page({tabId: ${pin.tabId}, mode:"atlas"})\` DIRECTLY — do NOT call list_tabs first to look up the id (it's right above). The atlas's \`<control>\` entries are already actionable (\`frame_id\` + \`pie_idx\`); only call \`read_page({tabId: ${pin.tabId}, mode:"interactive"})\` when the control you need isn't among them. If you need full body text, call \`read_page({tabId: ${pin.tabId}, mode:"content"})\`. list_tabs is for discovering OTHER tabs the user might want to act on.`;
   }
 
   // Multi-pin: list all tabs, marking the current focus.
@@ -237,7 +237,7 @@ Each iteration's observation gives you only the current URL and page title of th
   return `\n\nYou are anchored to ${pinnedTabs.length} browser tabs for this conversation:
 ${tabLines}
 
-Each iteration's observation carries only the URL and page title for the currently focused tab. To inspect, extract from, or plan an operation on a tab, call \`read_page({tabId: N, mode:"atlas"})\` with the desired tabId — do NOT call list_tabs first (ids are above). If you need click/type/select indices after choosing an action, call \`read_page({tabId: N, mode:"interactive"})\`; if you need full body text, call \`read_page({tabId: N, mode:"content"})\`.
+Each iteration's observation carries only the URL and page title for the currently focused tab. To inspect, extract from, or plan an operation on a tab, call \`read_page({tabId: N, mode:"atlas"})\` with the desired tabId — do NOT call list_tabs first (ids are above). The atlas's \`<control>\` entries are already actionable (\`frame_id\` + \`pie_idx\`); only call \`read_page({tabId: N, mode:"interactive"})\` when the control you need isn't among them. If you need full body text, call \`read_page({tabId: N, mode:"content"})\`.
 
 To switch which tab you operate on, call focus_tab({tabId: N}) where N is one of the pinned tab ids above. The new tab becomes the focus on the NEXT iteration — do NOT batch click/type/scroll against the new tab in the same response as focus_tab; instead call read_page on it next turn before writing.`;
 }
@@ -266,7 +266,7 @@ The atlas is **bounded**: it lists the most relevant controls and targets (visib
 
 Each mode returns **only its own surface**: \`interactive\` gives element indices without body text, \`content\` gives body text without an element index, \`full\` gives both (most expensive). So use \`mode:"interactive"\` only when you need concrete click/type/select indices, and \`mode:"content"\` only as an expensive fallback after atlas/target tools are insufficient, or when the user explicitly asks to read/summarize full article/body text. Use \`mode:"full"\` with \`max_bytes\` only when you need indices and body text together.
 
-\`click\` / \`type\` / \`select\` each require a \`frameId\` and an \`elementIndex\` (the \`pie_idx\` from the most recent \`read_page\` \`<interactive_index>\`). If the page changed and the target is gone, the tool returns **"Element not found"** — re-run \`read_page({tabId, mode:"interactive"})\` for fresh indices before acting.`;
+\`click\` / \`type\` / \`select\` each require a \`frameId\` and an \`elementIndex\`. Both come straight off the most recent \`read_page\` — an atlas \`<control frame_id="…" pie_idx="…">\` is directly actionable, so after an atlas read you can act without re-reading in \`interactive\` mode. Reach for \`read_page({tabId, mode:"interactive"})\` only when the control you need isn't in the atlas, or when the tool returned **"Element not found"** (the page changed and indices are stale).`;
 
 const FRAME_AWARENESS_GUIDANCE = `
 
