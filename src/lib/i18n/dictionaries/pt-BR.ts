@@ -324,6 +324,7 @@ export const ptBRDict = {
       output: "saída",
       total: "total",
       lastCall: "Contexto usado {used} / {max} ({pct}%)",
+      cacheHit: "Acerto de cache",
     },
   },
   modelDropdown: {

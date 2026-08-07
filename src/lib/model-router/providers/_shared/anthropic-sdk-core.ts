@@ -143,6 +143,11 @@ export async function* streamChatAnthropicSdk(
   }));
 
   let usage: { inputTokens: number; outputTokens: number } | undefined;
+  // Prompt-cache counters (cache_read_input_tokens / cache_creation_input_tokens).
+  // Anthropic-official reports them in message_start; keep the latest seen so a
+  // late message_delta can override (parity with the input_tokens quirk below).
+  let cacheReadTokens = 0;
+  let cacheCreationTokens = 0;
   let stopReason: "end" | "tool_calls" | "length" | undefined;
   const toolBlocks = new Set<number>();
   const thinkingSignatures = new Map<number, string>();
@@ -165,7 +170,10 @@ export async function* streamChatAnthropicSdk(
     for await (const event of stream) {
       if (signal?.aborted) return;
       if (event.type === "message_start") {
-        usage = { inputTokens: event.message.usage.input_tokens ?? 0, outputTokens: 0 };
+        const startUsage = event.message.usage;
+        usage = { inputTokens: startUsage.input_tokens ?? 0, outputTokens: 0 };
+        cacheReadTokens = startUsage.cache_read_input_tokens ?? 0;
+        cacheCreationTokens = startUsage.cache_creation_input_tokens ?? 0;
       } else if (event.type === "content_block_start") {
         if (event.content_block.type === "tool_use") {
           toolBlocks.add(event.index);
@@ -249,6 +257,12 @@ export async function* streamChatAnthropicSdk(
         // and leaves this null. Prefer a positive late value, else keep what
         // message_start already gave us. (#59)
         const deltaInput = event.usage.input_tokens;
+        if (event.usage.cache_read_input_tokens != null) {
+          cacheReadTokens = event.usage.cache_read_input_tokens;
+        }
+        if (event.usage.cache_creation_input_tokens != null) {
+          cacheCreationTokens = event.usage.cache_creation_input_tokens;
+        }
         usage = {
           inputTokens: deltaInput != null && deltaInput > 0 ? deltaInput : usage?.inputTokens ?? 0,
           outputTokens: event.usage.output_tokens ?? 0,
@@ -259,7 +273,20 @@ export async function* streamChatAnthropicSdk(
     if (convertedTextToolInvocation && stopReason !== "length") {
       stopReason = "tool_calls";
     }
-    yield { type: "done", stopReason, usage };
+    // Attach cache counters only when the provider actually reported cache
+    // activity (read or write) — absent otherwise so the UI can distinguish
+    // "no cache info" from a legitimate 0% hit. Anthropic's input_tokens
+    // excludes cached portions, so the ratio denominator is the full sum.
+    const finalUsage = usage
+      ? cacheReadTokens > 0 || cacheCreationTokens > 0
+        ? {
+            ...usage,
+            cachedTokens: cacheReadTokens,
+            promptTotalTokens: usage.inputTokens + cacheReadTokens + cacheCreationTokens,
+          }
+        : usage
+      : undefined;
+    yield { type: "done", stopReason, usage: finalUsage };
   } catch (e) {
     if (signal?.aborted || e instanceof Anthropic.APIUserAbortError) return;
     const name = config.provider;

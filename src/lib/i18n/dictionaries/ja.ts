@@ -323,6 +323,7 @@ export const jaDict = {
       output: "出力",
       total: "合計",
       lastCall: "使用済みコンテキスト {used} / {max} ({pct}%)",
+      cacheHit: "キャッシュヒット",
     },
   },
   modelDropdown: {

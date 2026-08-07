@@ -261,6 +261,14 @@ export interface SessionAgentState {
     lastInputTokens: number;
     /** Most recent step's real output usage. Shown in popover total row. */
     lastOutputTokens: number;
+    /** Most recent step's prompt tokens served from the provider's prompt/KV
+     *  cache. Absent when the provider reports no cache info — panel hides
+     *  the cache-hint UI rather than showing a misleading 0%. */
+    lastCachedTokens?: number;
+    /** Most recent step's total prompt tokens (cache-hit ratio denominator:
+     *  OpenAI prompt_tokens; Anthropic input + cache_read + cache_creation).
+     *  Present iff lastCachedTokens is. */
+    lastPromptTotalTokens?: number;
   };
 }
 

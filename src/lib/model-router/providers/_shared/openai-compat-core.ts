@@ -176,7 +176,7 @@ export async function* streamChatOpenAICompat(
     return;
   }
 
-  let usage: { inputTokens: number; outputTokens: number } | undefined;
+  let usage: Extract<StreamEvent, { type: "done" }>["usage"];
   const pendingToolCalls = new Map<number, PendingToolCall>();
   const splitter = createThinkTagSplitter();
   let thinkingOpen = false;
@@ -216,7 +216,27 @@ export async function* streamChatOpenAICompat(
       }
       try {
         const data = JSON.parse(sse.data);
-        if (data.usage) usage = { inputTokens: data.usage.prompt_tokens ?? 0, outputTokens: data.usage.completion_tokens ?? 0 };
+        if (data.usage) {
+          const u = data.usage;
+          // Prompt-cache counters, three known wire shapes: OpenAI-style
+          // prompt_tokens_details.cached_tokens (also Moonshot), a flat
+          // usage.cached_tokens, and DeepSeek's prompt_cache_hit_tokens.
+          const promptTotal: number = u.prompt_tokens ?? 0;
+          const cached: number =
+            u.prompt_tokens_details?.cached_tokens ??
+            u.cached_tokens ??
+            u.prompt_cache_hit_tokens ??
+            0;
+          usage = {
+            inputTokens: promptTotal,
+            outputTokens: u.completion_tokens ?? 0,
+            // Only attach when the provider reported real cache activity —
+            // absent lets the UI hide cache stats instead of showing 0%.
+            ...(cached > 0
+              ? { cachedTokens: cached, promptTotalTokens: promptTotal }
+              : {}),
+          };
+        }
         const choice = data.choices?.[0];
         if (!choice) continue;
         const delta = choice.delta;

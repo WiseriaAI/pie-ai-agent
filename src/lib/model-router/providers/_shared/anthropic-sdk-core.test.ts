@@ -128,6 +128,40 @@ describe("anthropic-sdk-core", () => {
     }
   });
 
+  it("captures prompt-cache counters from message_start usage", async () => {
+    const CACHE_USAGE = [
+      'event: message_start\ndata: {"type":"message_start","message":{"id":"m","type":"message","role":"assistant","model":"x","content":[],"stop_reason":null,"usage":{"input_tokens":100,"output_tokens":0,"cache_read_input_tokens":800,"cache_creation_input_tokens":50}}}\n\n',
+      'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}\n\n',
+      'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hi"}}\n\n',
+      'event: content_block_stop\ndata: {"type":"content_block_stop","index":0}\n\n',
+      'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":12}}\n\n',
+      'event: message_stop\ndata: {"type":"message_stop"}\n\n',
+    ];
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(sse(CACHE_USAGE));
+    const events = await collect(streamChatAnthropicSdk(config(), [{ role: "user", content: "hi" }]));
+    const done = events.find((e) => e.type === "done");
+    // Anthropic's input_tokens excludes cached portions → denominator is the
+    // full sum: 100 + 800 + 50 = 950.
+    expect(done).toMatchObject({
+      usage: {
+        inputTokens: 100,
+        outputTokens: 12,
+        cachedTokens: 800,
+        promptTotalTokens: 950,
+      },
+    });
+  });
+
+  it("omits cache fields when no cache activity is reported", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(sse(TEXT_THEN_TOOL));
+    const events = await collect(streamChatAnthropicSdk(config(), [{ role: "user", content: "hi" }]));
+    const done = events.find((e) => e.type === "done");
+    expect(done && done.type === "done" ? done.usage : undefined).toEqual({
+      inputTokens: 7,
+      outputTokens: 12,
+    });
+  });
+
   it("apiKey auth → x-api-key header, default base path", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(sse(TEXT_THEN_TOOL));
     await collect(streamChatAnthropicSdk(config(), [{ role: "user", content: "hi" }], undefined, undefined, { auth: "apiKey" }));

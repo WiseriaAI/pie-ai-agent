@@ -195,6 +195,61 @@ describe("ContextRing — popover interaction", () => {
   });
 });
 
+describe("ContextRing — cache hit display", () => {
+  const baseProps = {
+    lastInputTokens: 10_000,
+    lastOutputTokens: 500,
+    totalInputTokens: 20_000,
+    totalOutputTokens: 800,
+    maxContextTokens: 200_000,
+  };
+
+  it("shows the hit pct inside the ring and a popover row when cache stats exist", () => {
+    render(
+      <MotionProvider>
+        <ContextRing
+          {...baseProps}
+          lastCachedTokens={8_700}
+          lastPromptTotalTokens={10_000}
+        />
+      </MotionProvider>,
+    );
+    // Ring center shows the rounded pct (8700/10000 = 87).
+    expect(screen.getByTestId("context-ring-cache-pct").textContent).toBe("87");
+    // Tooltip carries the hit pct too.
+    expect(screen.getByTestId("context-ring").getAttribute("title")).toContain("87%");
+
+    fireEvent.click(screen.getByTestId("context-ring"));
+    const popover = screen.getByTestId("context-ring-popover");
+    expect(popover.textContent).toContain("87%");
+    expect(popover.textContent).toContain("8,700/10,000");
+  });
+
+  it("hides cache UI entirely when the provider reports no cache info", () => {
+    render(
+      <MotionProvider>
+        <ContextRing {...baseProps} />
+      </MotionProvider>,
+    );
+    expect(screen.queryByTestId("context-ring-cache-pct")).toBeNull();
+    expect(screen.getByTestId("context-ring").getAttribute("title")).not.toContain("87%");
+
+    fireEvent.click(screen.getByTestId("context-ring"));
+    const popover = screen.getByTestId("context-ring-popover");
+    // Only the three usage rows — no cache row, no stray pct values.
+    expect(popover.textContent).not.toContain("87%");
+  });
+
+  it("hides cache UI when the denominator is zero", () => {
+    render(
+      <MotionProvider>
+        <ContextRing {...baseProps} lastCachedTokens={0} lastPromptTotalTokens={0} />
+      </MotionProvider>,
+    );
+    expect(screen.queryByTestId("context-ring-cache-pct")).toBeNull();
+  });
+});
+
 describe("ContextRing — locale formatting", () => {
   it("formats tooltip and popover numbers with the effective locale", async () => {
     await setConfig(STORAGE_KEY_UI_LOCALE, "pt-BR");

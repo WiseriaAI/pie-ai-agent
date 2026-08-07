@@ -160,3 +160,60 @@ describe("openai-compat thinking", () => {
     expect(ev.filter((e) => e.type === "text-delta").map((e: any) => e.text).join("")).toBe("hello");
   });
 });
+
+describe("openai-compat-core — cache-aware usage", () => {
+  const usageCfg: ModelConfig = {
+    provider: "moonshot",
+    model: "kimi-x",
+    apiKey: "sk-test",
+    baseUrl: "https://api.moonshot.cn",
+  };
+
+  async function doneUsageOf(lines: string[]) {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(mockSseResponse(lines));
+    const events: StreamEvent[] = [];
+    for await (const ev of streamChatOpenAICompat(usageCfg, [{ role: "user", content: "hi" }])) {
+      events.push(ev);
+    }
+    const done = events.find((e) => e.type === "done");
+    return done && done.type === "done" ? done.usage : undefined;
+  }
+
+  it("parses OpenAI-style prompt_tokens_details.cached_tokens", async () => {
+    const usage = await doneUsageOf([
+      'data: {"choices":[{"delta":{"content":"hi"}}]}',
+      'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":1000,"completion_tokens":5,"prompt_tokens_details":{"cached_tokens":800}}}',
+      "data: [DONE]",
+    ]);
+    expect(usage).toEqual({
+      inputTokens: 1000,
+      outputTokens: 5,
+      cachedTokens: 800,
+      promptTotalTokens: 1000,
+    });
+  });
+
+  it("parses DeepSeek-style prompt_cache_hit_tokens", async () => {
+    const usage = await doneUsageOf([
+      'data: {"choices":[{"delta":{"content":"hi"}}]}',
+      'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":2000,"completion_tokens":5,"prompt_cache_hit_tokens":1500,"prompt_cache_miss_tokens":500}}',
+      "data: [DONE]",
+    ]);
+    expect(usage).toEqual({
+      inputTokens: 2000,
+      outputTokens: 5,
+      cachedTokens: 1500,
+      promptTotalTokens: 2000,
+    });
+  });
+
+  it("omits cache fields when the provider reports no cache activity", async () => {
+    const usage = await doneUsageOf([
+      'data: {"choices":[{"delta":{"content":"hi"}}]}',
+      'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":1000,"completion_tokens":5,"prompt_tokens_details":{"cached_tokens":0}}}',
+      "data: [DONE]",
+    ]);
+    expect(usage).toEqual({ inputTokens: 1000, outputTokens: 5 });
+    expect(usage).not.toHaveProperty("cachedTokens");
+  });
+});

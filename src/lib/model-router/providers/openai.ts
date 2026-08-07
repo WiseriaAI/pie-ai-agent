@@ -129,9 +129,29 @@ export async function* streamChat(
   // 递增 index 为键 —— 用 map 桥接两套 id。
   const indexByItemId = new Map<string, number>();
   let sawToolCall = false;
-  let usage: { inputTokens: number; outputTokens: number } | undefined;
-  const readUsage = (resp: { usage?: { input_tokens?: number; output_tokens?: number } } | undefined) => {
-    if (resp?.usage) usage = { inputTokens: resp.usage.input_tokens ?? 0, outputTokens: resp.usage.output_tokens ?? 0 };
+  let usage: Extract<StreamEvent, { type: "done" }>["usage"];
+  // Responses API usage: input_tokens INCLUDES the cached portion; the cached
+  // count itself lives in input_tokens_details.cached_tokens.
+  const readUsage = (
+    resp:
+      | {
+          usage?: {
+            input_tokens?: number;
+            output_tokens?: number;
+            input_tokens_details?: { cached_tokens?: number };
+          };
+        }
+      | undefined,
+  ) => {
+    if (!resp?.usage) return;
+    const cached = resp.usage.input_tokens_details?.cached_tokens ?? 0;
+    usage = {
+      inputTokens: resp.usage.input_tokens ?? 0,
+      outputTokens: resp.usage.output_tokens ?? 0,
+      ...(cached > 0
+        ? { cachedTokens: cached, promptTotalTokens: resp.usage.input_tokens ?? 0 }
+        : {}),
+    };
   };
 
   try {

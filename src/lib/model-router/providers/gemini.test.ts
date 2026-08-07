@@ -122,4 +122,37 @@ describe("Gemini streamChat", () => {
     expect(events.find((e) => e.type === "done")).toBeDefined();
     fetchMock.mockRestore();
   });
+
+  it("maps cachedContentTokenCount into done usage cache fields", async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        c.enqueue(new TextEncoder().encode(
+          'data: {"candidates":[{"content":{"parts":[{"text":"hi"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":1000,"candidatesTokenCount":5,"cachedContentTokenCount":800}}\n\n',
+        ));
+        c.close();
+      },
+    });
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } }),
+    );
+    const config: ModelConfig = {
+      provider: "gemini",
+      model: "gemini-2.0-flash",
+      apiKey: "AIza-key",
+      baseUrl: "https://generativelanguage.googleapis.com",
+    };
+    let done: unknown;
+    for await (const ev of streamChat(config, [{ role: "user", content: "hi" }])) {
+      if (ev.type === "done") done = ev;
+    }
+    expect(done).toMatchObject({
+      usage: {
+        inputTokens: 1000,
+        outputTokens: 5,
+        cachedTokens: 800,
+        promptTotalTokens: 1000,
+      },
+    });
+    fetchMock.mockRestore();
+  });
 });

@@ -194,6 +194,27 @@ describe("openai /v1/responses stream mapping", () => {
     });
   });
 
+  it("completed with cached tokens → done usage carries cachedTokens + promptTotalTokens", async () => {
+    const { out } = await run({ ...BASE, model: "gpt-5.6-sol" }, [
+      {
+        type: "response.completed",
+        response: {
+          status: "completed",
+          usage: {
+            input_tokens: 1000,
+            output_tokens: 3,
+            input_tokens_details: { cached_tokens: 800 },
+          },
+        },
+      },
+    ]);
+    expect(out[out.length - 1]).toEqual({
+      type: "done",
+      stopReason: "end",
+      usage: { inputTokens: 1000, outputTokens: 3, cachedTokens: 800, promptTotalTokens: 1000 },
+    });
+  });
+
   it("response.failed → error event", async () => {
     const { out } = await run({ ...BASE, model: "gpt-5.6-sol" }, [
       { type: "response.failed", response: { status: "failed", error: { code: "server_error", message: "boom" } } },

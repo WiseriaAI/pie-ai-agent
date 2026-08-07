@@ -838,13 +838,25 @@ export function mergeSessionAgentSnapshot(
  */
 export function mergeContextUsage(
   prev: SessionAgentState["contextUsage"] | undefined,
-  step: { inputTokens: number; outputTokens: number },
+  step: {
+    inputTokens: number;
+    outputTokens: number;
+    cachedTokens?: number;
+    promptTotalTokens?: number;
+  },
 ): NonNullable<SessionAgentState["contextUsage"]> {
   return {
     totalInputTokens: (prev?.totalInputTokens ?? 0) + step.inputTokens,
     totalOutputTokens: (prev?.totalOutputTokens ?? 0) + step.outputTokens,
     lastInputTokens: step.inputTokens,
     lastOutputTokens: step.outputTokens,
+    // Cache counters are last-call-only observability (never accumulated) and
+    // carried through only when the provider reported them — conditional
+    // spread keeps the shape identical to pre-cache versions otherwise.
+    ...(step.cachedTokens != null ? { lastCachedTokens: step.cachedTokens } : {}),
+    ...(step.promptTotalTokens != null
+      ? { lastPromptTotalTokens: step.promptTotalTokens }
+      : {}),
   };
 }
 
@@ -2030,7 +2042,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         toolCount: toolDefinitions.length,
       });
       let __sawAnyEvent = false;
-      let lastStepUsage: { inputTokens: number; outputTokens: number } | null = null;
+      let lastStepUsage: Extract<StreamEvent, { type: "done" }>["usage"] | null = null;
       let lastStopReason: Extract<StreamEvent, { type: "done" }>["stopReason"];
       for await (const event of streamChat(modelConfig, windowedHistory, signal, toolDefinitions)) {
         if (!__sawAnyEvent) {
@@ -2141,6 +2153,12 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
                   lastOutputTokens: nextUsage.lastOutputTokens,
                   totalInputTokens: nextUsage.totalInputTokens,
                   totalOutputTokens: nextUsage.totalOutputTokens,
+                  ...(nextUsage.lastCachedTokens != null
+                    ? { lastCachedTokens: nextUsage.lastCachedTokens }
+                    : {}),
+                  ...(nextUsage.lastPromptTotalTokens != null
+                    ? { lastPromptTotalTokens: nextUsage.lastPromptTotalTokens }
+                    : {}),
                 },
                 sessionId,
               ),

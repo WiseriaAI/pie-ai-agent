@@ -320,6 +320,7 @@ export const zhCNDict = {
       output: "输出",
       total: "合计",
       lastCall: "上下文用量 {used} / {max}（{pct}%）",
+      cacheHit: "缓存命中",
     },
   },
   modelDropdown: {

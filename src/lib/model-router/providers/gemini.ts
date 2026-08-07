@@ -112,7 +112,7 @@ export async function* streamChat(
     return;
   }
 
-  let usage: { inputTokens: number; outputTokens: number } | undefined;
+  let usage: Extract<StreamEvent, { type: "done" }>["usage"];
   let toolCallIndex = 0;
   let stopReason: "end" | "tool_calls" | "length" | undefined;
 
@@ -140,9 +140,16 @@ export async function* streamChat(
         if (candidate.finishReason === "STOP" && stopReason !== "tool_calls") stopReason = "end";
         else if (candidate.finishReason === "MAX_TOKENS") stopReason = "length";
         if (data.usageMetadata) {
+          const meta = data.usageMetadata;
+          const cached: number = meta.cachedContentTokenCount ?? 0;
           usage = {
-            inputTokens: data.usageMetadata.promptTokenCount ?? 0,
-            outputTokens: data.usageMetadata.candidatesTokenCount ?? 0,
+            inputTokens: meta.promptTokenCount ?? 0,
+            outputTokens: meta.candidatesTokenCount ?? 0,
+            // Same contract as the other cores: attach only on real cache
+            // activity so the UI can hide the stat when unsupported.
+            ...(cached > 0
+              ? { cachedTokens: cached, promptTotalTokens: meta.promptTokenCount ?? 0 }
+              : {}),
           };
         }
       } catch {
