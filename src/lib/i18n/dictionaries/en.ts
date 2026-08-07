@@ -294,6 +294,18 @@ export const enDict = {
     copyCode: "Copy",
     copyMessage: "Copy",
     copied: "Copied",
+    report: {
+      action: "Report a problem with this reply",
+      title: "Report a problem",
+      hint: "Tell us what went wrong. This conversation is attached so we can trace it.",
+      placeholder: "What went wrong? (optional)",
+      privacy:
+        "Sends this conversation — your messages, the agent's tool calls and their results, including content read from the pages it visited — to Pie's servers for debugging.",
+      send: "Send report",
+      sending: "Sending…",
+      sent: "Thanks! Report sent.",
+      error: "Couldn't send. Please try again.",
+    },
     composerPlaceholder: "Tell the agent what to do, or type / for skills…",
     cancelRunningTask: "Cancel running task",
     cancelConfirm: "Press Esc again to stop",

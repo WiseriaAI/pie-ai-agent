@@ -289,6 +289,18 @@ export const jaDict = {
     copyCode: "コピー",
     copyMessage: "コピー",
     copied: "コピー済み",
+    report: {
+      action: "この返信の問題を報告",
+      title: "問題を報告",
+      hint: "何が起きたか教えてください。原因を追跡できるよう、この会話も一緒に送信されます。",
+      placeholder: "どんな問題がありましたか？（任意）",
+      privacy:
+        "この会話——あなたのメッセージ、エージェントのツール呼び出しとその結果、閲覧したページの内容を含む——を調査のため Pie のサーバーへ送信します。",
+      send: "レポートを送信",
+      sending: "送信中…",
+      sent: "送信しました。ありがとうございます！",
+      error: "送信できませんでした。もう一度お試しください。",
+    },
     composerPlaceholder: "エージェントにしてほしいことを書くか、/ でスキルを入力…",
     cancelRunningTask: "実行中のタスクをキャンセル",
     cancelConfirm: "もう一度 Esc で停止",

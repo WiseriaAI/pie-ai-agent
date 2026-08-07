@@ -286,6 +286,18 @@ export const zhTWDict = {
     copyCode: "複製",
     copyMessage: "複製",
     copied: "已複製",
+    report: {
+      action: "回報這則回覆的問題",
+      title: "回報問題",
+      hint: "告訴我們哪裡出了問題。本次對話會一併附上，方便我們找出原因。",
+      placeholder: "遇到了什麼問題？（選填）",
+      privacy:
+        "將傳送本次對話——你的訊息、Agent 的工具呼叫及其結果，包含它讀取過的頁面內容——至 Pie 伺服器用於排查問題。",
+      send: "傳送回報",
+      sending: "傳送中…",
+      sent: "已收到，謝謝！",
+      error: "傳送失敗，請重試。",
+    },
     composerPlaceholder: "告訴 Agent 做什麼，或輸入 / 選擇技能…",
     cancelRunningTask: "取消執行中的任務",
     cancelConfirm: "再按一次 Esc 終止",

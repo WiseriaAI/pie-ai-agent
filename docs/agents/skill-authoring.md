@@ -75,3 +75,25 @@ deduped.csv (12 KB)
 - **Never write into the skill directory** — it is read-only to the process
   (especially the shared `~/.agents/skills` root, which belongs to other agents).
   Use the workspace.
+
+## Cross-platform scripts
+
+The interpreter is picked by file extension, and support differs by OS:
+
+| Extension | macOS / Linux | Windows |
+|-----------|---------------|---------|
+| `.ts` / `.js` / `.mjs` / `.cjs` | Pie's embedded Bun | Pie's embedded Bun |
+| `.py` | global `python3` | global `python` — see below |
+| `.sh` | `bash` | **not supported** (errors out) |
+
+- **Prefer `.ts`.** It is the only language guaranteed on every platform (Pie
+  ships its own Bun), needs nothing installed, and never hits the Windows caveats
+  below. Write cross-platform skill scripts in TypeScript.
+- **`.py` on Windows** requires Python installed **for all users** (the
+  python.org installer's "Install for all users" checkbox). Per-user installs and
+  the Microsoft Store `python` alias live under the user's profile / `WindowsApps`
+  and are invisible to the sandbox account, so Pie ignores them and reports "no
+  global Python found".
+- **`.sh` is macOS/Linux-only.** On Windows `run_skill_script` returns a clear
+  error asking for a `.ts` equivalent — do not ship a shell script as a skill's
+  only entrypoint if Windows matters.
