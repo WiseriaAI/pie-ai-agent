@@ -25,11 +25,63 @@ export interface AnthropicSdkHooks {
   /** Remove the SDK's default `anthropic-version` header (parity with providers
    *  whose anthropic-compatible endpoint doesn't expect it). */
   stripAnthropicVersion?: boolean;
-  /** Mark system + last tool with cache_control: ephemeral. */
+  /** Mark system + last tool + a rolling point in messages with cache_control. */
   promptCache?: boolean;
 }
 
 const CACHE_CONTROL_EPHEMERAL = { type: "ephemeral" } as const;
+
+/**
+ * 历史上的滚动 cache breakpoint 位置(返回 -1 表示不打)。
+ *
+ * 为什么必须打:Anthropic 只缓存**显式声明了 breakpoint 的前缀**。此前只打了
+ * system 与 tools 最后一项,于是 cache_read 恒等于「system+tools」那点量,而
+ * 真正的大头 —— 长任务里 70%+ 的历史 —— 每轮全价 prefill。实测某轮
+ * prompt 102244 中 hist 75953,而 cached 恒为 18048、命中率 15-18%。
+ *
+ * 为什么打在「倒数第二个 user turn 的前一条」:
+ * 历史本身是 append-only 的,但 elideStaleObservations 每轮会把**上一轮**那条
+ * 完整快照翻成 marker(它只保最新一条完整)。也就是说每轮有且仅有一个旧位置的
+ * 字节会变,就是倒数第二个 user turn。断点必须落在它**之前**,否则每轮都命中
+ * 不了、还要按 1.25x 重写整段 —— 比不缓存更贵。
+ *
+ * 落后一轮不浪费:这一轮被排除的那条,下一轮就已经是稳定 marker,自然被纳入。
+ *
+ * 少于 3 个 user turn 时不打:Anthropic 有最小可缓存长度(1024 tokens 起),
+ * 短历史打了也不会生效,徒增一个 breakpoint 配额。
+ */
+function messageCacheBreakpointIndex(messages: Anthropic.MessageParam[]): number {
+  const userIndices: number[] = [];
+  for (let i = 0; i < messages.length; i++) {
+    if (messages[i].role === "user") userIndices.push(i);
+  }
+  if (userIndices.length < 3) return -1;
+  return userIndices[userIndices.length - 2] - 1;
+}
+
+/** 在指定 message 的最后一个可承载块上挂 cache_control(thinking 块不能挂)。 */
+function withMessageCacheBreakpoint(
+  messages: Anthropic.MessageParam[],
+  index: number,
+): Anthropic.MessageParam[] {
+  if (index < 0 || index >= messages.length) return messages;
+  const target = messages[index];
+  const blocks: Anthropic.ContentBlockParam[] =
+    typeof target.content === "string"
+      ? [{ type: "text", text: target.content }]
+      : [...target.content];
+
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const block = blocks[i];
+    // thinking / redacted_thinking 不接受 cache_control(SDK 类型与 API 都拒绝)。
+    if (block.type === "thinking" || block.type === "redacted_thinking") continue;
+    blocks[i] = { ...block, cache_control: CACHE_CONTROL_EPHEMERAL };
+    const out = [...messages];
+    out[index] = { ...target, content: blocks };
+    return out;
+  }
+  return messages;
+}
 
 /**
  * anthropic-wire 的 max_tokens 是必填字段（官方 SDK 类型 + API 强制）。当模型
@@ -126,7 +178,10 @@ export async function* streamChatAnthropicSdk(
 
   const promptCache = hooks?.promptCache ?? false;
 
-  const { system: systemText, messages: sdkMessages } = toSdkParams(messages);
+  const { system: systemText, messages: rawSdkMessages } = toSdkParams(messages);
+  const sdkMessages = promptCache
+    ? withMessageCacheBreakpoint(rawSdkMessages, messageCacheBreakpointIndex(rawSdkMessages))
+    : rawSdkMessages;
   const system = !systemText
     ? undefined
     : promptCache

@@ -29,7 +29,6 @@ interface ReadPageArgs {
   tabId: number;
   mode?: ReadPageMode;
   max_bytes?: number;
-  query?: string;
 }
 
 function normalizeMode(mode: unknown): ReadPageMode {
@@ -262,11 +261,6 @@ export const readPageTool: Tool = {
         minimum: 1,
         description: "Optional HTML/content byte budget hint, clamped by mode-specific hard caps.",
       },
-      query: {
-        type: "string",
-        description:
-          "atlas mode only. Keyword filter over control/target labels and types. Use it to recall a specific element the default (bounded) atlas omitted — e.g. query:\"submit\".",
-      },
     },
     required: ["tabId"],
     additionalProperties: false,
@@ -359,8 +353,7 @@ export const readPageTool: Tool = {
       // by CSP / sandbox iframe / still navigating) so the LLM knows content is
       // missing instead of silently re-running read_page forever.
       const unreachableBlock = renderAtlasUnreachableFrames(frames, reachableFrameIds, timedOutFrameIds);
-      const query = typeof a.query === "string" ? a.query : undefined;
-      const rendered = renderPageAtlas(atlas, { query });
+      const rendered = renderPageAtlas(atlas);
       const atlasBody = unreachableBlock ? `${rendered}\n${unreachableBlock}` : rendered;
       const observation = wrapPageAtlasObservation(atlas, atlasBody);
 
@@ -369,7 +362,6 @@ export const readPageTool: Tool = {
       const controlChars = lineChars(atlasBody, "<control ");
       logReadPage({
         mode,
-        query,
         // controls 是已知的大头(实测 484 条占单份 atlas 69% token)。`n` 是页面
         // 上的总数,`shown` 是 top-K 后实际渲染的条数 —— 两者的差就是 omitted。
         controls: {

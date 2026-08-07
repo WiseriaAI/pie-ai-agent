@@ -8,16 +8,22 @@ import type { AtlasControl, AtlasTarget, PageAtlasState } from "./types";
  * 14483(69%)。全量枚举让 progressive disclosure 的「第一层」本身就是 1-3 万
  * token 的结果,后面所有分层都失去意义。
  *
- * 上限是有损的,兜底有两条,都写进 <omitted> 的 hint 让 LLM 看得见:
- *   - `read_page({mode:"atlas", query:"…"})` 按 label/type 定向召回;
- *   - `mode:"interactive"` 仍然给到 300 条完整索引。
+ * 上限是有损的,兜底写进 <omitted> 的 hint 让 LLM 看得见:`mode:"interactive"`
+ * 仍然给到 300 条完整索引。
+ *
+ * 这里**刻意没有** query 参数。曾经加过一个按 label 子串过滤的 query,真机上
+ * 立刻暴露问题:LLM 传 query:"摘要",而页面按钮叫「AI 总结」「生成概要」——
+ * 零匹配,于是 123 个控件、16 个 target 全被滤掉,返回一个 373 token 的空壳,
+ * 且因为 omitted 算的是「过滤后的池子」而显示为 0,LLM 只能理解成「这页什么都
+ * 没有」,转头去调更贵的 mode:"content"。子串匹配替代不了检索:那需要索引内容
+ * 而非 label、需要归一化与同义、尤其需要零结果时的回退。要做就做真的
+ * (见 docs/research/2026-08-07-read-page-token-efficiency.md 的 Page Store),
+ * 半吊子的过滤器比没有更糟——LLM 会信任它的空结果。
  */
 const MAX_CONTROLS = 40;
 const MAX_TARGETS = 20;
 
 export interface RenderAtlasOptions {
-  /** 按 label / type 子串过滤(大小写不敏感),用于定向召回被省略的条目。 */
-  query?: string;
   maxControls?: number;
   maxTargets?: number;
 }
@@ -36,11 +42,6 @@ function controlPriority(control: AtlasControl): number {
   return 4;
 }
 
-function matchesQuery(haystack: string[], query: string): boolean {
-  const q = query.toLowerCase();
-  return haystack.some((value) => value.toLowerCase().includes(q));
-}
-
 /**
  * 过滤 → 排序 → 截断。返回选中项与被省略的条数。
  * 排序稳定:视口内优先,再按类型优先级,最后保持原始 DOM 顺序 —— 同一页面重读
@@ -48,13 +49,9 @@ function matchesQuery(haystack: string[], query: string): boolean {
  */
 function selectControls(
   controls: AtlasControl[],
-  query: string | undefined,
   max: number,
 ): { selected: AtlasControl[]; omitted: number } {
-  const pool = query
-    ? controls.filter((c) => matchesQuery([c.label, c.type, c.value ?? ""], query))
-    : controls;
-  const ranked = pool
+  const ranked = controls
     .map((control, order) => ({ control, order }))
     .sort(
       (a, b) =>
@@ -99,27 +96,21 @@ export function renderAtlasError(message: string): string {
 }
 
 export function renderPageAtlas(atlas: PageAtlasState, options: RenderAtlasOptions = {}): string {
-  const query = options.query?.trim() || undefined;
   const rootAttrs = [
     attr("atlas_id", atlas.atlasId),
     attr("tab_id", atlas.tabId),
     attr("url", atlas.url),
     attr("title", atlas.title),
   ];
-  if (query) rootAttrs.push(attr("query", query));
 
   const { selected: controls, omitted: omittedControls } = selectControls(
     atlas.controls,
-    query,
     options.maxControls ?? MAX_CONTROLS,
   );
 
-  const allTargets = query
-    ? atlas.targets.filter((t) => matchesQuery([t.label, t.type, t.summary, ...(t.columns ?? [])], query))
-    : atlas.targets;
   const maxTargets = options.maxTargets ?? MAX_TARGETS;
-  const targets = allTargets.slice(0, maxTargets);
-  const omittedTargets = Math.max(0, allTargets.length - maxTargets);
+  const targets = atlas.targets.slice(0, maxTargets);
+  const omittedTargets = Math.max(0, atlas.targets.length - maxTargets);
 
   const actionLines: string[] = ["  <action_surfaces>"];
   for (const form of atlas.forms) {
@@ -187,9 +178,9 @@ export function renderPageAtlas(atlas: PageAtlasState, options: RenderAtlasOptio
   const omittedLines: string[] = [];
   if (omittedControls > 0 || omittedTargets > 0) {
     const attrs = [attr("controls", omittedControls), attr("targets", omittedTargets)];
-    const hint = query
-      ? `Filtered by query="${query}". Widen or change the query to see other entries.`
-      : `Showing the most relevant entries (visible in viewport first). To find a specific one, call read_page({mode:"atlas", query:"<keyword>"}); for a full element index use read_page({mode:"interactive"}).`;
+    const hint =
+      "Showing the most relevant entries (visible in viewport first). " +
+      "For the full element index use read_page({mode:\"interactive\"}).";
     omittedLines.push(`  <omitted ${attrs.join(" ")} ${attr("hint", hint)} />`);
   }
 

@@ -212,6 +212,85 @@ describe("anthropic-sdk-core", () => {
     expect(body.tools[1].cache_control).toEqual({ type: "ephemeral" });
   });
 
+  // --- messages 上的滚动 cache breakpoint ---------------------------------
+  //
+  // 这几条锁的是「历史也要被缓存」这件事。此前 cache_control 只打 system+tools，
+  // 于是长任务里 70%+ 的 token（历史）每轮全价 prefill —— 实测 prompt 102244 中
+  // hist 75953，而 cached 恒为 18048。
+
+  /** 造一段 ReAct 历史：head(user) + N 对 (assistant tool_use, user tool_result)。 */
+  const reactHistory = (pairs: number): AgentMessage[] => {
+    const h: AgentMessage[] = [
+      { role: "system", content: "sys" },
+      { role: "user", content: "task" },
+    ];
+    for (let i = 0; i < pairs; i++) {
+      h.push(
+        { role: "assistant", content: [{ type: "tool_use", id: `t${i}`, name: "read_page", input: {} }] },
+        { role: "user", content: [{ type: "tool_result", toolUseId: `t${i}`, content: `obs ${i}` }] },
+      );
+    }
+    return h;
+  };
+
+  const bodyOf = (fetchMock: ReturnType<typeof vi.spyOn>) =>
+    JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string);
+
+  const breakpointIndices = (body: { messages: Array<{ content: unknown }> }): number[] =>
+    body.messages
+      .map((m, i) =>
+        Array.isArray(m.content) && m.content.some((b: { cache_control?: unknown }) => b.cache_control)
+          ? i
+          : -1,
+      )
+      .filter((i) => i !== -1);
+
+  it("promptCache 在历史上打一个 breakpoint，落在倒数第二个 user turn 之前", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(sse(TEXT_THEN_TOOL));
+    await collect(
+      streamChatAnthropicSdk(config(), reactHistory(5), undefined, undefined, { promptCache: true }),
+    );
+    const body = bodyOf(fetchMock);
+    const marked = breakpointIndices(body);
+    expect(marked).toHaveLength(1);
+
+    // 断点必须严格早于倒数第二个 user turn —— 那条是每轮唯一会变字节的位置
+    // （elideStaleObservations 每轮把上一轮的完整快照翻成 marker）。打在它或
+    // 它之后，每轮都命中不了，还要按 1.25x 重写整段，比不缓存更贵。
+    const userIdx = body.messages
+      .map((m: { role: string }, i: number) => (m.role === "user" ? i : -1))
+      .filter((i: number) => i !== -1);
+    const secondLastUser = userIdx[userIdx.length - 2];
+    expect(marked[0]).toBeLessThan(secondLastUser);
+  });
+
+  it("断点随历史增长向后滚动（否则缓存窗口会被钉死在开头）", async () => {
+    const at = async (pairs: number) => {
+      const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(sse(TEXT_THEN_TOOL));
+      await collect(
+        streamChatAnthropicSdk(config(), reactHistory(pairs), undefined, undefined, { promptCache: true }),
+      );
+      const idx = breakpointIndices(bodyOf(fetchMock))[0];
+      vi.restoreAllMocks();
+      return idx;
+    };
+    expect(await at(8)).toBeGreaterThan(await at(5));
+  });
+
+  it("历史太短时不打（Anthropic 有最小可缓存长度，白占一个 breakpoint 配额）", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(sse(TEXT_THEN_TOOL));
+    await collect(
+      streamChatAnthropicSdk(config(), reactHistory(1), undefined, undefined, { promptCache: true }),
+    );
+    expect(breakpointIndices(bodyOf(fetchMock))).toHaveLength(0);
+  });
+
+  it("promptCache 关闭时历史上不打任何 breakpoint", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(sse(TEXT_THEN_TOOL));
+    await collect(streamChatAnthropicSdk(config(), reactHistory(5)));
+    expect(breakpointIndices(bodyOf(fetchMock))).toHaveLength(0);
+  });
+
   it("maps a 401 to an Invalid API key error event", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response('{"type":"error","error":{"type":"authentication_error","message":"bad key"}}', {

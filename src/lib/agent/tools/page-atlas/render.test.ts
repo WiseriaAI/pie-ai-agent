@@ -57,7 +57,7 @@ describe("renderPageAtlas — 结果预算", () => {
     expect(countControls(out)).toBe(40);
     expect(out).toContain('<omitted controls="460"');
     // 静默截断是明确要避免的:LLM 必须能看到还有多少、以及怎么捞回来。
-    expect(out).toContain('query:');
+    expect(out).toContain('mode:&quot;interactive&quot;');
   });
 
   it("没超上限时不渲染 omitted 元素", () => {
@@ -80,17 +80,15 @@ describe("renderPageAtlas — 结果预算", () => {
     expect(countControls(out)).toBe(40);
   });
 
-  it("query 过滤到匹配项,并把过滤事实写进结果", () => {
-    const controls = [
-      ...Array.from({ length: 100 }, (_, i) => control(i)),
-      control(777, { type: "button", label: "Export CSV" }),
-    ];
-    const out = renderPageAtlas(atlasOf(controls), { query: "export" });
-
-    expect(countControls(out)).toBe(1);
-    expect(out).toContain('pie_idx="777"');
-    expect(out).toContain('query="export"');
-    expect(out).not.toContain("<omitted"); // 匹配项没被截断,就没有省略
+  // 回归:曾经有过一个按 label 子串过滤的 query 参数。LLM 传 query:"摘要" 而页面
+  // 按钮叫「AI 总结」,零匹配 → 123 个控件全被滤掉 → 且 omitted 算的是「过滤后的
+  // 池子」所以显示 0 → LLM 理解成「这页什么都没有」,转头去调更贵的 content 模式。
+  // 这条锁住:omitted 永远相对**页面总量**,截断永远是可见的。
+  it("omitted 反映页面总量,不会出现「什么都没有」的空壳", () => {
+    const out = renderPageAtlas(atlasOf(Array.from({ length: 123 }, (_, i) => control(i))));
+    expect(countControls(out)).toBe(40);
+    expect(out).toContain('<omitted controls="83"');
+    expect(countControls(out) + 83).toBe(123);
   });
 
   it("targets 同样受上限约束", () => {
