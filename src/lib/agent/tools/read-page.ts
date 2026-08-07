@@ -80,6 +80,14 @@ function elementText(value: string): string {
 
 function wrapPageAtlasObservation(atlas: PageAtlasState, body: string): string {
   return [
+    // Header mirrors the snapshot path's `Current URL / Page title` prelude so
+    // elideStaleObservations has something cheap to keep before its cut point.
+    // Without it a stale atlas result elides down to a bare marker — every one
+    // of them byte-identical — and the LLM can no longer tell which step read
+    // which page, so it re-runs read_page instead of relying on history.
+    `Current URL: ${atlas.url}`,
+    `Page title: ${atlas.title}`,
+    ``,
     `<untrusted_page_content ${attr("tool", "read_page")} ${attr("mode", "atlas")} ${attr("atlas_id", atlas.atlasId)} ${attr("tab_id", atlas.tabId)}>`,
     body,
     "</untrusted_page_content>",

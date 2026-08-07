@@ -24,7 +24,7 @@ import {
 } from "./prompt";
 import { applySlidingWindow } from "./window";
 import { elideStaleObservations } from "./elide-stale-observations";
-import { applyTokenBudget } from "./window-token-budget";
+import { applyTokenBudget, estimateTokens } from "./window-token-budget";
 import { compactReactWindow, createDefaultSummarizer } from "./compact-react-window";
 import { resolveModelMeta } from "../model-router/providers/registry";
 import {
@@ -2128,6 +2128,36 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         accumulatedTextLen: accumulatedText.length,
         toolCallCount: completedToolCalls.length,
       });
+
+      // 每轮上下文成本诊断。回答两个问题:token 花在哪(tools / 历史 / 当轮新增),
+      // 以及前缀缓存有没有命中。`tail` 是本轮 user turn —— 大页面快照落在这里,
+      // 它天然不可缓存,所以 read_page 的那些轮 hit 掉到 50% 左右是正常的;
+      // 没读页的轮次 hit 应该稳在 90%+,掉下来才说明前缀被什么打断了。
+      // `est` 是本地估算(CJK 感知的字符数除法),与 `prompt`(provider 实报)对照
+      // 可以看出估算偏差。cached/hit 只有 provider 报了缓存计数才有值。
+      {
+        const toolsTok = estimateTokens([
+          { role: "system", content: JSON.stringify(toolDefinitions) },
+        ]);
+        const total = estimateTokens(windowedHistory, modelConfig.provider);
+        const tail = windowedHistory.length
+          ? estimateTokens([windowedHistory[windowedHistory.length - 1]], modelConfig.provider)
+          : 0;
+        const prompt = lastStepUsage?.promptTotalTokens ?? lastStepUsage?.inputTokens;
+        const cached = lastStepUsage?.cachedTokens;
+        console.log("[ctx]", {
+          step: stepIndex,
+          msgs: windowedHistory.length,
+          est: total + toolsTok,
+          tools: toolsTok,
+          hist: total - tail,
+          tail,
+          prompt,
+          cached,
+          hit: prompt && cached != null ? `${Math.round((cached / prompt) * 100)}%` : "n/a",
+          out: lastStepUsage?.outputTokens,
+        });
+      }
 
       // Issue #59 — persist & announce step usage. Done before the abort
       // check intentionally: if the provider emitted done with usage,

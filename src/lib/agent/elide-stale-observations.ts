@@ -60,13 +60,26 @@ function elideText(text: string): string | null {
   return header ? `${header}\n\n${STALE_OBSERVATION_MARKER}` : STALE_OBSERVATION_MARKER;
 }
 
-export function elideStaleObservations(messages: AgentMessage[]): AgentMessage[] {
+/**
+ * @param keepLatest  Keep the most-recent user turn's snapshot in full (the
+ *   wire-time default — that turn is the page the agent is acting on). Pass
+ *   false when the messages are headed for the compaction summarizer instead
+ *   of the wire: there every snapshot is about to be replaced by a summary,
+ *   and the summarizer is explicitly told to omit DOM listings, so shipping
+ *   the raw payload is pure waste.
+ */
+export function elideStaleObservations(
+  messages: AgentMessage[],
+  keepLatest: boolean = true,
+): AgentMessage[] {
   // The most-recent user turn carries the current observation — never elide it.
   let lastUserIdx = -1;
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i].role === "user") {
-      lastUserIdx = i;
-      break;
+  if (keepLatest) {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "user") {
+        lastUserIdx = i;
+        break;
+      }
     }
   }
 
