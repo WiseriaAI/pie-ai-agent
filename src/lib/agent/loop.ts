@@ -25,6 +25,7 @@ import {
 import { applySlidingWindow } from "./window";
 import { elideStaleObservations } from "./elide-stale-observations";
 import { applyTokenBudget, estimateTokens } from "./window-token-budget";
+import { diag, kv } from "./diag";
 import { compactReactWindow, createDefaultSummarizer } from "./compact-react-window";
 import { resolveModelMeta } from "../model-router/providers/registry";
 import {
@@ -128,6 +129,13 @@ const REACT_BIG_CAP = 60;
  *  react 段失效——长程页面操作任务里那是 token 大头。量化滑动把缓存失效从
  *  「每步一次」降为「每 ~20 步一次」,且是任务全程有效(不只是首次越界那一下)。 */
 const REACT_SLIDE_BATCH = 20;
+
+/** djb2 —— 仅供 [ctx] 的前缀稳定性诊断,不用于任何决策。 */
+function fp(s: string): number {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  return h;
+}
 /** #58 — provider 元数据缺失时的回退上下文窗口(与 window-token-budget 一致)。 */
 const COMPACTION_FALLBACK_MAX_TOKENS = 32_000;
 
@@ -2139,62 +2147,46 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // 没读页的轮次 hit 应该稳在 90%+,掉下来才说明前缀被什么打断了。
       // `est` 是本地估算(CJK 感知的字符数除法),与 `prompt`(provider 实报)对照
       // 可以看出估算偏差。cached/hit 只有 provider 报了缓存计数才有值。
-      // 前缀稳定性诊断。自动 prefix caching(deepseek / openai-compat / gemini)
-      // 没有 breakpoint 可打,唯一杠杆就是「前缀一个字节都别变」。命中率掉下去时,
-      // 光看总量看不出是**哪一条**变了 —— 这里逐条指纹与上一轮比对,直接报出
-      // 第一个不同的位置:
-      //   diffAt=0        → tools 定义变了(它排在 wire 最前,一变全废)
-      //   diffAt=1        → system prompt 变了
-      //   diffAt≈msgs     → 只有尾部在变,前缀健康
-      //   diffAt 居中     → 历史被改写了(砍窗 / compaction / elide 越界)
-      // grew 是相对上一轮的条数变化,砍窗会是负数。
       {
-        const fp = (s: string): number => {
-          let h = 5381;
-          for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
-          return h;
-        };
-        const wireFp = [
-          fp(JSON.stringify(toolDefinitions)),
-          ...windowedHistory.map((m) => fp(JSON.stringify(m))),
-        ];
+        const toolsJson = JSON.stringify(toolDefinitions);
+        const wireFp = [fp(toolsJson), ...windowedHistory.map((m) => fp(JSON.stringify(m)))];
         let diffAt = -1;
         const n = Math.max(wireFp.length, prevWireFp.length);
         for (let i = 0; i < n; i++) {
           if (wireFp[i] !== prevWireFp[i]) { diffAt = i; break; }
         }
-        console.log("[prefix]", {
-          step: stepIndex,
-          diffAt,
-          of: wireFp.length,
-          grew: prevWireFp.length ? wireFp.length - prevWireFp.length : 0,
-          stableRatio: diffAt < 0 ? "100%" : `${Math.round((diffAt / wireFp.length) * 100)}%`,
-        });
+        const grew = prevWireFp.length ? wireFp.length - prevWireFp.length : 0;
         prevWireFp = wireFp;
-      }
 
-      {
-        const toolsTok = estimateTokens([
-          { role: "system", content: JSON.stringify(toolDefinitions) },
-        ]);
+        const toolsTok = estimateTokens([{ role: "system", content: toolsJson }]);
         const total = estimateTokens(windowedHistory, modelConfig.provider);
         const tail = windowedHistory.length
           ? estimateTokens([windowedHistory[windowedHistory.length - 1]], modelConfig.provider)
           : 0;
         const prompt = lastStepUsage?.promptTotalTokens ?? lastStepUsage?.inputTokens;
         const cached = lastStepUsage?.cachedTokens;
-        console.log("[ctx]", {
-          step: stepIndex,
-          msgs: windowedHistory.length,
-          est: total + toolsTok,
-          tools: toolsTok,
-          hist: total - tail,
-          tail,
-          prompt,
-          cached,
-          hit: prompt && cached != null ? `${Math.round((cached / prompt) * 100)}%` : "n/a",
-          out: lastStepUsage?.outputTokens,
-        });
+
+        diag(
+          "ctx",
+          kv({
+            s: stepIndex,
+            msgs: windowedHistory.length,
+            prompt,
+            cached,
+            hit: prompt && cached != null ? `${Math.round((cached / prompt) * 100)}%` : "n/a",
+            out: lastStepUsage?.outputTokens,
+          }),
+          kv({ est: total + toolsTok, tools: toolsTok, hist: total - tail, tail }),
+          // 前缀稳定性:diffAt 是与上一轮相比第一条不同的位置。0=tools 变了
+          // (它排在 wire 最前,一变全废)、1=system prompt 变了、≈msgs=只有尾部
+          // 在变(健康)、居中=历史被改写(砍窗/compaction/elide)。grew 为负即砍窗。
+          kv({
+            diffAt: diffAt < 0 ? "none" : diffAt,
+            of: wireFp.length,
+            grew,
+            stable: diffAt < 0 ? "100%" : `${Math.round((diffAt / wireFp.length) * 100)}%`,
+          }),
+        );
       }
 
       // Issue #59 — persist & announce step usage. Done before the abort
