@@ -264,6 +264,28 @@ export function makeBackpressureWriter(rawWrite: (bytes: Uint8Array) => number):
   };
 }
 
+/**
+ * 抢 pipe 前先探一手：连得上说明已有 daemon 在服务这条 pipe，本进程让位。
+ *
+ * 为什么不能只靠 `Bun.listen` 抛 EADDRINUSE：Windows named pipe 名被占用时 Bun 1.3.11
+ * **不是抛异常而是 panic**——listen 失败走 errdefer deinit，撞上
+ * `Listener.zig:479` 的 `bun.assert(this.listener == .none)`，整个进程带着
+ * "Internal assertion failure" 崩掉，catch 不到（Windows 11 真机实测，已报上游）。
+ * 探测走「连接成功与否」而不是「异常长什么样」，与 Bun 的错误行为解耦。
+ *
+ * 残留竞态：两个 daemon 同时起、都探到没人时仍会撞 panic。这窗口只有毫秒级，且两边
+ * 都是刚启动无状态，实践上由 host 侧「只拉一次」的约束兜住，不再加锁。
+ */
+export async function pipeAlreadyServed(ipcPath: string): Promise<boolean> {
+  try {
+    const socket = await Bun.connect({ unix: ipcPath, socket: { data() {} } });
+    socket.end();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function startDaemon(): Promise<void> {
   if (!existsSync(paths.pieDir)) mkdirSync(paths.pieDir, { recursive: true });
   sweepGrants(); // 一次性幂等清扫 2b 旧格式死记录，保持授权账本干净
@@ -274,8 +296,13 @@ export async function startDaemon(): Promise<void> {
   } catch (e) {
     log("warn", "sessions.gc_failed", { error: String(e) });
   }
-  // socket 文件残留清理仅对 unix domain socket 有意义；Windows named pipe 无磁盘文件
-  // （占用即 listen 抛 EADDRINUSE → 进程退出 = 单实例「占用即退出」，对齐 mac socket 语义）。
+  // 单实例互斥（Windows）：named pipe 无磁盘文件，占用与否只能靠探测——且 Bun 在
+  // pipe 被占时会 panic 而非抛错，必须抢 listen 之前就让位。见 pipeAlreadyServed。
+  if (paths.isPipe && (await pipeAlreadyServed(paths.ipcPath))) {
+    log("info", "daemon.already_running", { ipc: paths.ipcPath });
+    return;
+  }
+  // socket 文件残留清理仅对 unix domain socket 有意义；Windows named pipe 无磁盘文件。
   if (!paths.isPipe && existsSync(paths.ipcPath)) unlinkSync(paths.ipcPath); // 清残留
   try {
     Bun.listen<{ carry: string; writer: BackpressureWriter }>({
@@ -305,8 +332,9 @@ export async function startDaemon(): Promise<void> {
       },
     });
   } catch (e) {
-    // 单实例互斥：pipe/socket 已被在跑的 daemon 占用（Windows named pipe 冲突 =
-    // EADDRINUSE）→ 干净退出，把地盘让给现有实例，别抛栈污染日志。
+    // 单实例互斥兜底：socket 已被在跑的 daemon 占用（mac unix socket = EADDRINUSE）
+    // → 干净退出，把地盘让给现有实例，别抛栈污染日志。Windows 侧的主判定在上面的
+    // pipeAlreadyServed（Bun 那条路径不抛异常、直接 panic，走不到这里）。
     if (isAddrInUseError(e)) {
       log("info", "daemon.already_running", { ipc: paths.ipcPath });
       return;

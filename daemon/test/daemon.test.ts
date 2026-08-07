@@ -1,5 +1,6 @@
 import { test, expect } from "bun:test";
-import { handleMessage, processSocketChunk } from "../src/daemon";
+import { unlinkSync } from "node:fs";
+import { handleMessage, pipeAlreadyServed, processSocketChunk } from "../src/daemon";
 import { PROTOCOL_VERSION } from "../../src/types/local-bridge";
 import { setLogEnabled } from "../src/log";
 
@@ -187,4 +188,21 @@ test("backpressure writer: small write with room passes straight through", () =>
   w.write("ok\n");
   expect(w.pendingBytes()).toBe(0);
   expect(sock.received()).toBe("ok\n");
+});
+
+test("pipeAlreadyServed：无人监听时为 false，有人监听时为 true", async () => {
+  const path = `/tmp/pie-probe-${process.pid}.sock`;
+  expect(await pipeAlreadyServed(path)).toBe(false); // 没有这个端点
+
+  const server = Bun.listen({ unix: path, socket: { data() {} } });
+  try {
+    expect(await pipeAlreadyServed(path)).toBe(true);
+  } finally {
+    server.stop(true);
+    try {
+      unlinkSync(path);
+    } catch {
+      /* 已被 stop 清掉 */
+    }
+  }
 });
