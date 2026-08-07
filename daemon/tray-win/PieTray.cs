@@ -1,4 +1,4 @@
-// Pie Link Windows 托盘 app：`\\.\pipe\ai.wiseria.pie` 的瘦客户端。
+﻿// Pie Link Windows 托盘 app：`\\.\pipe\ai.wiseria.pie` 的瘦客户端。
 // 对齐 mac 顶栏 app（daemon/menubar/main.swift）的收敛版：两态图标 + 三项菜单。
 // 与 daemon 通信复用 status RPC（一问一答，一行 JSON 请求 / 一行 JSON 响应）。
 // 编译：daemon/tray-win/build-tray.ps1（csc → net48 单 winexe，零运行时分发依赖）。

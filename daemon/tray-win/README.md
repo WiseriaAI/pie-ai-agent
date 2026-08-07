@@ -34,7 +34,17 @@ macOS 顶栏 app（`daemon/menubar/`）的 Windows 对应物，收敛版。权�
 
 `build-tray.ps1` 直接调 `csc`（对齐 mac `build-app.sh` 直调 `swiftc` 的路线，不引项目
 系统）。引用 GAC 内的 `System.Web.Extensions.dll`（`JavaScriptSerializer` 解析 status
-JSON）等 net48 自带程序集，无第三方 NuGet 依赖。
+JSON）等 net48 自带程序集，运行期无第三方依赖。
+
+**编译器**：需要 Roslyn 版 `csc`。系统内置的
+`%WINDIR%\Microsoft.NET\Framework64\v4.0.30319\csc.exe` 是 **C# 5** 编译器，编不了本文件里的
+字典索引初始化（C# 6）与 `out var`（C# 7），会报一屏 CS1525。`build-tray.ps1` 的解析顺序：
+`$env:PIE_CSC` → vswhere 找到的 VS 内 Roslyn（GitHub windows runner 走这条）→ 回落下载固定
+版本的 `Microsoft.Net.Compilers.Toolset` 并缓存到 `%LOCALAPPDATA%\pie-build\`（只下一次）。
+
+**编码**：`PieTray.cs` 与 `build-tray.ps1` 必须存成**带 BOM 的 UTF-8**。中文系统的
+Windows PowerShell 5.1 按 ANSI(GBK) 读无 BOM 的 `.ps1`，中文注释乱码后语法直接崩；`csc`
+同样会把无 BOM 源码按 ANSI 读，六语言菜单文案会乱码进 exe。
 
 ## 尚未接线
 
