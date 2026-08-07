@@ -22,7 +22,6 @@ import {
   buildCurrentTimeBlock,
   buildObservationMessage,
 } from "./prompt";
-import { applySlidingWindow } from "./window";
 import { elideStaleObservations } from "./elide-stale-observations";
 import { applyTokenBudget, estimateTokens } from "./window-token-budget";
 import { diag, kv } from "./diag";
@@ -119,16 +118,6 @@ const SOFT_STEP_BUDGET = 30;
 // per-step nagging.
 const BUDGET_NUDGE_INTERVAL = 20;
 
-/** #58 — react 段 sliding-window 放宽后的兜底上限。正常由 token 阈值先触发 compaction。 */
-const REACT_BIG_CAP = 60;
-/** 滞后滑动批量:react 对数超过 REACT_BIG_CAP + REACT_SLIDE_BATCH 后,砍头数量
- *  量化到 REACT_SLIDE_BATCH 的整数倍——切点(react 段第一条消息)在每个 batch
- *  窗口内保持不动,窗口在 REACT_BIG_CAP..REACT_BIG_CAP+REACT_SLIDE_BATCH 对之间
- *  浮动,只在跨过下一个 batch 边界时才前移一次。每步砍头会换掉 react 段第一条
- *  消息,让 provider 前缀缓存(OpenAI / Moonshot / DeepSeek 自动缓存)对整个
- *  react 段失效——长程页面操作任务里那是 token 大头。量化滑动把缓存失效从
- *  「每步一次」降为「每 ~20 步一次」,且是任务全程有效(不只是首次越界那一下)。 */
-const REACT_SLIDE_BATCH = 20;
 
 /** djb2 —— 仅供 [ctx] 的前缀稳定性诊断,不用于任何决策。 */
 function fp(s: string): number {
@@ -1776,7 +1765,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         observationText += `\n\n<system_notice>\n${sysNotices.join("\n\n")}\n</system_notice>`;
       }
       // Scratchpad overview — bounded, rides the trailing observation so the
-      // sliding-window/compaction/token-budget passes never trim it. Empty
+      // compaction/token-budget passes never trim it. Empty
       // string when the scratchpad is unused (no cost for non-extraction tasks).
       // Fail-soft: the overview is an enhancement, so an IDB read failure
       // (tx abort / blocked / corrupt record / quota) must NOT unwind the step
@@ -1844,11 +1833,6 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // 在 wire-time 整形之前:超 provider token 阈值时把最旧步骤摘成合成对,保住早期发现。
       await compactReactWindow(history, compactionMaxTokens, compactionSummarizer, signal);
 
-      // Apply sliding window（react cap 放宽为 BIG_CAP + 滞后批量滑动，
-      // react 段长度主要由 compaction 与 stale-snapshot elision 控制；
-      // 滞后避免每步砍头打穿 provider 前缀缓存）
-      const windowedHistorySlid = applySlidingWindow(history, REACT_BIG_CAP, REACT_SLIDE_BATCH);
-
       // #61(c) — stale-snapshot elision. Replace the bulky part of every stale
       // page snapshot EXCEPT the most recent with a short marker (semantic
       // header kept): the observation text block AND read_page tool_result
@@ -1859,7 +1843,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // Elision is unconditional and monotone, so order vs budget does not
       // change the final content sent to the LLM — only the budget's drop
       // decision becomes more accurate.
-      const windowedHistoryElided = elideStaleObservations(windowedHistorySlid);
+      const windowedHistoryElided = elideStaleObservations(history);
 
       // U5 — Token budget guard: drop oldest head pairs if estimated token
       // count exceeds 80% of the provider's context window. CJK-aware divisor

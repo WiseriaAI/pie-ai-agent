@@ -11,7 +11,6 @@ export {
   buildObservationMessage,
 } from "./prompt";
 
-export { applySlidingWindow } from "./window";
 
 export type { AgentLoopContext } from "./loop";
 export { runAgentLoop } from "./loop";

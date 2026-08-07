@@ -15,9 +15,10 @@ import type { AgentMessage, ContentBlock } from "../model-router/types";
  *   - tool_result blocks whose content is a read_page snapshot (pull mode:
  *     `Current URL / Page title / <frame_map>` header, then a potentially
  *     huge `<interactive_index>` + `<untrusted_page_content>` payload).
- *     Eliding these keeps the react segment slim so the sliding window /
- *     compaction almost never need to cut — which is what keeps the
- *     provider prefix cache hot on long page-operation tasks. The
+ *     Eliding these keeps the react segment slim so compaction almost never
+ *     needs to cut — which is what keeps the provider prefix cache hot on
+ *     long page-operation tasks (elision itself is monotone and append-safe,
+ *     so it never invalidates the prefix; a compaction splice does). The
  *     tool_use_id pairing is untouched (Anthropic only requires the block
  *     to exist with a matching id; its content is free-form).
  *

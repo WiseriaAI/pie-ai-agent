@@ -231,7 +231,7 @@ describe("U5 — applyTokenBudget", () => {
   // Scenario 9 — Integration: U1 applySlidingWindow + U5 applyTokenBudget
   // -------------------------------------------------------------------------
 
-  describe("Scenario 9: integration — sliding window + token budget", () => {
+  describe("Scenario 9: token budget scope — head only, never the react segment", () => {
     it("token budget only drops head pairs, not react segment", async () => {
       // Build a history: [system, chat prefix (many pairs), current user, react pairs]
       // The react segment has ContentBlock[] content.

@@ -12,7 +12,8 @@
  *     divisor 1.5 (≈ 1 token per 1.5 chars); otherwise use 4 (English BPE).
  *   - Drop order: oldest user-assistant pair in the head segment first.
  *   - Never drop: system message (messages[0]) or the trailing user turn.
- *   - Never drop: the react segment (sliding window already handles that).
+ *   - Never drop: the react segment — it is compactReactWindow's job
+ *     (it summarises the oldest steps in place at the same 80% threshold).
  *   - Oversize single user message: log warn but return as-is.
  */
 
@@ -139,7 +140,7 @@ export function estimateTokens(messages: AgentMessage[], provider?: string): num
  *  7. If still over threshold because a single user message alone is too
  *     big, emit a console.warn and return as-is (let provider truncate).
  *
- * @param messages  Full message history (output of applySlidingWindow).
+ * @param messages  Full message history (post-elision copy).
  * @param provider  Provider ID string, used together with `model` to look up
  *                  the per-model context window.
  * @param model     Provider-native model id. Required because `maxContextTokens`
