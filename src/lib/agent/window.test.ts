@@ -444,12 +444,14 @@ describe("applySlidingWindow — slideBatch hysteresis", () => {
     expect(result).toBe(input);
   });
 
-  it("one pair past the band: cut back to exactly maxSteps", () => {
+  it("one pair past the band: drop one whole batch, floating above maxSteps", () => {
     const input = [sys(), userStr("task"), ...makePairs(16)];
+    // maxSteps 12, batch 3 → band 15. 16 pairs: excess 4, dropCount
+    // floor(4/3)*3 = 3 → keep 13 pairs (the window floats between 12 and 15).
     const result = applySlidingWindow(input, 12, 3);
-    expect(result).toHaveLength(2 + 12 * 2);
-    // The kept pairs are the MOST RECENT 12 (last 24 messages of the input).
-    expect(result[2]).toBe(input[input.length - 24]);
+    expect(result).toHaveLength(2 + 13 * 2);
+    // The kept pairs are the MOST RECENT 13 (last 26 messages of the input).
+    expect(result[2]).toBe(input[input.length - 26]);
     assertNoAdjacentSameRole(result);
   });
 
@@ -466,9 +468,68 @@ describe("applySlidingWindow — slideBatch hysteresis", () => {
     const grown = [sys(), userStr("task"), ...makePairs(80)];
     const result = applySlidingWindow(grown, 60, 20);
     expect(result).toBe(grown);
-    // 81 pairs exceeds the band → cut to 60.
+    // 81 pairs exceeds the band → drop one whole batch (20), keeping 61.
     const over = [sys(), userStr("task"), ...makePairs(81)];
-    expect(applySlidingWindow(over, 60, 20)).toHaveLength(2 + 60 * 2);
+    expect(applySlidingWindow(over, 60, 20)).toHaveLength(2 + 61 * 2);
+  });
+
+  it("cut point stays FIXED across a whole batch of steps (the S3 regression)", () => {
+    // Build ONE long history with per-pair-distinguishable messages, then
+    // replay every intermediate pair count. The identity of the first kept
+    // react message (its tool_use id) must change at most once per slideBatch
+    // steps — NOT every step. This locks the fix for the prior-approval S3
+    // FAIL where crossing the band once re-sliced (and busted the prefix
+    // cache) on every subsequent step.
+    const maxSteps = 60;
+    const slideBatch = 20;
+    const N = 120; // 60 pairs past the band → 3 batch boundaries
+
+    // Distinguishable pairs: pair k uses tool_use id `tu-k`.
+    const uniquePairs = (n: number): AgentMessage[] => {
+      const out: AgentMessage[] = [];
+      for (let k = 0; k < n; k++) {
+        out.push(
+          {
+            role: "assistant",
+            content: [
+              { type: "tool_use", id: `tu-${k}`, name: "click", input: {} },
+            ] as ContentBlock[],
+          },
+          {
+            role: "user",
+            content: [
+              { type: "tool_result", toolUseId: `tu-${k}`, content: "ok" },
+            ] as ContentBlock[],
+          },
+        );
+      }
+      return out;
+    };
+
+    const firstKeptId = (pairs: number): string => {
+      const input = [sys(), userStr("task"), ...uniquePairs(pairs)];
+      const result = applySlidingWindow(input, maxSteps, slideBatch);
+      const react = result.slice(2); // drop [sys, user_task] head
+      const first = react[0];
+      const block = (first.content as ContentBlock[])[0];
+      return block.type === "tool_use" ? block.id : "?";
+    };
+
+    let changes = 0;
+    let prev = firstKeptId(maxSteps + slideBatch + 1);
+    for (let p = maxSteps + slideBatch + 2; p <= N; p++) {
+      const cur = firstKeptId(p);
+      if (cur !== prev) changes++;
+      prev = cur;
+    }
+    // Over (N - (maxSteps+slideBatch+1)) = 39 growth steps, the cut point may
+    // advance at most once per slideBatch (20) steps → at most ⌈39/20⌉ = 2.
+    const span = N - (maxSteps + slideBatch + 1);
+    const maxChanges = Math.ceil(span / slideBatch);
+    expect(changes).toBeLessThanOrEqual(maxChanges);
+    // And it MUST move at least once across two batch boundaries (proves the
+    // window still slides, it just does so in batches).
+    expect(changes).toBeGreaterThanOrEqual(1);
   });
 
   it("truncation with slideBatch keeps the splice-point alternating invariant", () => {

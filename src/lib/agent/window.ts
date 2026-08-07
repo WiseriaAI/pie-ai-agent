@@ -36,13 +36,19 @@ function isUserToolResultTurn(msg: AgentMessage): boolean {
  *
  * `slideBatch` adds hysteresis to the cut: the window is NOT re-cut every
  * time the backlog grows by one pair. While the pair count stays within
- * `maxSteps + slideBatch` everything is kept; only when it exceeds that band
- * is the window cut back to exactly `maxSteps` pairs. Rationale: every cut
- * changes the first react message on the wire, which breaks the provider
- * prefix cache (OpenAI / Moonshot / DeepSeek auto-caching) for the ENTIRE
- * react segment — the bulk of tokens on page-operation tasks. Sliding in
- * batches reduces the cache bust from "every step" to "every slideBatch
- * steps". Default 0 preserves the original slide-every-step behavior.
+ * `maxSteps + slideBatch` everything is kept. Once it exceeds that band the
+ * number of dropped (oldest) pairs is quantized to a multiple of
+ * `slideBatch`, so the cut point — and therefore the first react message on
+ * the wire — stays FIXED for `slideBatch` consecutive steps; the kept window
+ * floats between `maxSteps` and `maxSteps + slideBatch` pairs and only
+ * advances by a whole batch when the backlog crosses the next boundary.
+ * Rationale: every cut changes the first react message on the wire, which
+ * breaks the provider prefix cache (OpenAI / Moonshot / DeepSeek
+ * auto-caching) for the ENTIRE react segment — the bulk of tokens on
+ * page-operation tasks. Quantizing reduces the cache bust from "every step"
+ * to "every slideBatch steps" for the whole life of the task, not just the
+ * first crossing. Default 0 preserves the original slide-every-step behavior
+ * (drop exactly the excess, keeping exactly the most recent `maxSteps`).
  * The rule is a pure function of the pair count, so it is deterministic
  * across SW restarts / resumes.
  *
@@ -110,7 +116,22 @@ export function applySlidingWindow(
   // band, keep everything so the wire prefix stays byte-stable.
   if (pairStarts.length <= maxSteps + slideBatch) return messages;
 
-  const keptPairStarts = pairStarts.slice(-maxSteps);
+  // Quantize the number of dropped (oldest) pairs to a multiple of
+  // slideBatch. This keeps the cut point — and therefore the first react
+  // message on the wire — FIXED for slideBatch consecutive steps: as the
+  // backlog grows one pair at a time the drop count only advances when it
+  // crosses the next slideBatch boundary, so the window floats between
+  // maxSteps and maxSteps + slideBatch pairs instead of re-cutting to
+  // exactly maxSteps every step. Without this, crossing the band once made
+  // every subsequent step re-slice(-maxSteps) and bust the prefix cache
+  // anew. slideBatch=0 preserves the original slide-every-step behavior
+  // (drop exactly the excess, i.e. keep exactly the most recent maxSteps).
+  const excess = pairStarts.length - maxSteps;
+  const dropCount =
+    slideBatch > 0
+      ? Math.floor(excess / slideBatch) * slideBatch
+      : excess;
+  const keptPairStarts = pairStarts.slice(dropCount);
   const earliestIdx = keptPairStarts[0];
 
   // react.slice(earliestIdx) includes the kept pairs AND any trailing messages

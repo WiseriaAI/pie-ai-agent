@@ -120,10 +120,13 @@ const BUDGET_NUDGE_INTERVAL = 20;
 
 /** #58 — react 段 sliding-window 放宽后的兜底上限。正常由 token 阈值先触发 compaction。 */
 const REACT_BIG_CAP = 60;
-/** 滞后滑动批量:react 对数超过 REACT_BIG_CAP + REACT_SLIDE_BATCH 才一次性砍回
- *  REACT_BIG_CAP。每步砍头会换掉 react 段第一条消息,让 provider 前缀缓存
- *  (OpenAI / Moonshot / DeepSeek 自动缓存)对整个 react 段失效——长程页面操作
- *  任务里那是 token 大头。批量滑动把缓存失效从「每步一次」降为「每 ~20 步一次」。 */
+/** 滞后滑动批量:react 对数超过 REACT_BIG_CAP + REACT_SLIDE_BATCH 后,砍头数量
+ *  量化到 REACT_SLIDE_BATCH 的整数倍——切点(react 段第一条消息)在每个 batch
+ *  窗口内保持不动,窗口在 REACT_BIG_CAP..REACT_BIG_CAP+REACT_SLIDE_BATCH 对之间
+ *  浮动,只在跨过下一个 batch 边界时才前移一次。每步砍头会换掉 react 段第一条
+ *  消息,让 provider 前缀缓存(OpenAI / Moonshot / DeepSeek 自动缓存)对整个
+ *  react 段失效——长程页面操作任务里那是 token 大头。量化滑动把缓存失效从
+ *  「每步一次」降为「每 ~20 步一次」,且是任务全程有效(不只是首次越界那一下)。 */
 const REACT_SLIDE_BATCH = 20;
 /** #58 — provider 元数据缺失时的回退上下文窗口(与 window-token-budget 一致)。 */
 const COMPACTION_FALLBACK_MAX_TOKENS = 32_000;
