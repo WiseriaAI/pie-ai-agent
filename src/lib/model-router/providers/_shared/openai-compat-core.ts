@@ -38,6 +38,9 @@ export interface OpenAICompatHooks {
   customHeaders?: (config: ModelConfig) => Record<string, string>;
   /** Replaces the default `Authorization: Bearer ${apiKey}`. */
   authHeaders?: (config: ModelConfig) => Record<string, string>;
+  /** Extra top-level request-body fields (provider-specific opt-ins).
+   *  Merged before `tools`/`tool_choice`, so it cannot clobber them. */
+  extraBody?: (config: ModelConfig) => Record<string, unknown>;
 }
 
 interface OpenAIWireMessage {
@@ -131,6 +134,7 @@ export async function* streamChatOpenAICompat(
     stream: true,
     stream_options: { include_usage: true },
     ...(config.maxTokens != null && { max_tokens: config.maxTokens }),
+    ...(hooks?.extraBody?.(config) ?? {}),
   };
   if (tools && tools.length > 0) {
     requestBody.tools = tools.map((t) => ({
