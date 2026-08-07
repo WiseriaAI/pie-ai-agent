@@ -7,6 +7,7 @@ import { isPdfTabAsync } from "@/lib/pdf/detect";
 import { pageAtlasStore, parseOrigin, type PageAtlasState } from "./page-atlas";
 import { renderPageAtlas } from "./page-atlas/render";
 import { executeScriptAllFrames, type AllFramesInjectionOutcome } from "../inject-all-frames";
+import { estimateTokens } from "../window-token-budget";
 
 // read_page byte budgets per mode. Default is the hard cap — don't truncate
 // by default; the LLM can still pass a smaller max_bytes to save tokens when
@@ -26,6 +27,7 @@ interface ReadPageArgs {
   tabId: number;
   mode?: ReadPageMode;
   max_bytes?: number;
+  query?: string;
 }
 
 function normalizeMode(mode: unknown): ReadPageMode {
@@ -187,6 +189,41 @@ function utf8ByteLength(value: string): number {
   return textEncoder.encode(value).byteLength;
 }
 
+// ---------------------------------------------------------------------------
+// read_page 成本诊断。回答「这次返回的 token 花在哪一段」——loop.ts 的 [ctx]
+// 只能看到轮级总量,定位不到是 controls 还是正文在膨胀。
+//
+// 分段按渲染产物的字面块切,不改 render.ts:切片顺序要求先有基线,再动渲染。
+// est 复用 estimateTokens(与 [ctx] 同一把尺子,便于两条日志直接相加对照)——
+// 它已知系统性低估 40-47%,但基线和对照用同一把尺子,相对变化仍然可信。
+// ---------------------------------------------------------------------------
+
+/** 一段文本的估算 token 数,口径与 loop.ts 的 [ctx] 一致。 */
+function estOf(text: string): number {
+  return estimateTokens([{ role: "user", content: text }]);
+}
+
+/** `open` 到 `close`(含)之间的子串;任一缺失则空串。 */
+function blockOf(body: string, open: string, close: string): string {
+  const start = body.indexOf(open);
+  if (start === -1) return "";
+  const end = body.indexOf(close, start);
+  return end === -1 ? "" : body.slice(start, end + close.length);
+}
+
+/** 所有以 `prefix` 开头(忽略缩进)的行的字符数合计。 */
+function lineChars(body: string, prefix: string): number {
+  let total = 0;
+  for (const line of body.split("\n")) {
+    if (line.trimStart().startsWith(prefix)) total += line.length + 1;
+  }
+  return total;
+}
+
+function logReadPage(fields: Record<string, unknown>): void {
+  console.log("[read_page]", fields);
+}
+
 function sliceUtf8(value: string, maxBytes: number): string {
   if (maxBytes <= 0) return "";
   let used = 0;
@@ -222,6 +259,11 @@ export const readPageTool: Tool = {
         type: "integer",
         minimum: 1,
         description: "Optional HTML/content byte budget hint, clamped by mode-specific hard caps.",
+      },
+      query: {
+        type: "string",
+        description:
+          "atlas mode only. Keyword filter over control/target labels and types. Use it to recall a specific element the default (bounded) atlas omitted — e.g. query:\"submit\".",
       },
     },
     required: ["tabId"],
@@ -315,10 +357,34 @@ export const readPageTool: Tool = {
       // by CSP / sandbox iframe / still navigating) so the LLM knows content is
       // missing instead of silently re-running read_page forever.
       const unreachableBlock = renderAtlasUnreachableFrames(frames, reachableFrameIds, timedOutFrameIds);
-      const atlasBody = unreachableBlock
-        ? `${renderPageAtlas(atlas)}\n${unreachableBlock}`
-        : renderPageAtlas(atlas);
-      return { success: true, observation: wrapPageAtlasObservation(atlas, atlasBody) };
+      const query = typeof a.query === "string" ? a.query : undefined;
+      const rendered = renderPageAtlas(atlas, { query });
+      const atlasBody = unreachableBlock ? `${rendered}\n${unreachableBlock}` : rendered;
+      const observation = wrapPageAtlasObservation(atlas, atlasBody);
+
+      const actionBlock = blockOf(atlasBody, "<action_surfaces>", "</action_surfaces>");
+      const dataBlock = blockOf(atlasBody, "<data_surfaces>", "</data_surfaces>");
+      const controlChars = lineChars(atlasBody, "<control ");
+      logReadPage({
+        mode,
+        query,
+        // controls 是已知的大头(实测 484 条占单份 atlas 69% token)。`n` 是页面
+        // 上的总数,`shown` 是 top-K 后实际渲染的条数 —— 两者的差就是 omitted。
+        controls: {
+          n: atlas.controls.length,
+          shown: atlasBody.split("<control ").length - 1,
+          chars: controlChars,
+        },
+        forms: { n: atlas.forms.length, chars: lineChars(atlasBody, "<form ") },
+        action_surfaces: { chars: actionBlock.length, est: estOf(actionBlock) },
+        targets: { n: atlas.targets.length, chars: dataBlock.length, est: estOf(dataBlock) },
+        next_actions: { chars: lineChars(atlasBody, "<next_action ") },
+        frames: frames.length,
+        unreachable: frames.length - reachableFrameIds.size,
+        total_chars: observation.length,
+        total_est: estOf(observation),
+      });
+      return { success: true, observation };
     }
 
     // See atlas path: per-frame fan-out so a never-responding frame can't
@@ -456,16 +522,32 @@ export const readPageTool: Tool = {
       `</frame_map>`,
     ];
 
-    const observationParts = [
-      headerLines.join("\n"),
-      renderInteractiveIndex(mode, frameInteractive),
-    ];
+    const interactiveIndex = renderInteractiveIndex(mode, frameInteractive);
+    const observationParts = [headerLines.join("\n"), interactiveIndex];
     if (scrollableLines.length > 0) {
       observationParts.push(`<scrollable_regions>\n${scrollableLines.join("\n")}\n</scrollable_regions>`);
     }
     observationParts.push(...blocks);
 
     const observation = observationParts.join("\n\n");
+    const blocksChars = blocks.reduce((n, b) => n + b.length, 0);
+    logReadPage({
+      mode,
+      // 这两段是 snapshot 路径的返回面。切片 3 会按 mode 只发其中一段——
+      // 现状是无论哪个 mode 都两段全发,这里先量出各自占比。
+      interactive_index: {
+        n: frameInteractive.reduce((n, f) => n + f.elements.length, 0),
+        chars: interactiveIndex.length,
+        est: estOf(interactiveIndex),
+      },
+      page_blocks: { n: blocks.length, chars: blocksChars },
+      frame_map: { chars: headerLines.join("\n").length },
+      frames: frames.length,
+      budget_bytes: totalBudgetBytes,
+      budget_exhausted: budgetExhausted,
+      total_chars: observation.length,
+      total_est: estOf(observation),
+    });
     return { success: true, observation };
   },
 };

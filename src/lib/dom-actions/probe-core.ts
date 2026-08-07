@@ -28,6 +28,8 @@ export interface AtlasProbeControl {
   value?: string;
   disabled?: boolean;
   checked?: boolean;
+  /** 当前视口内可见。atlas 渲染的 top-K 排序用它做第一优先级。 */
+  inView?: boolean;
 }
 
 export interface AtlasProbeForm {
@@ -1143,6 +1145,17 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
       }
       const value = controlValue(target);
       if (value !== undefined) control.value = value;
+      // 视口可见性:atlas 渲染只发 top-K,可见控件优先。rect 本来就要算,
+      // 这里近乎零成本;跨 frame 时坐标是各自 frame 的视口,正是想要的语义。
+      const rect = target.getBoundingClientRect();
+      if (
+        rect.bottom > 0 &&
+        rect.top < window.innerHeight &&
+        rect.right > 0 &&
+        rect.left < window.innerWidth
+      ) {
+        control.inView = true;
+      }
       controls.push(control);
       controlByElement.set(el, control.id);
       if (target !== el) controlByElement.set(target, control.id);

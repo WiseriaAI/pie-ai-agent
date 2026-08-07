@@ -43,6 +43,8 @@ export interface AtlasControl {
   value?: string;
   disabled?: boolean;
   checked?: boolean;
+  /** 当前视口内可见(probe 侧测量)。渲染 top-K 时优先。 */
+  inView?: boolean;
 }
 
 export interface AtlasForm {

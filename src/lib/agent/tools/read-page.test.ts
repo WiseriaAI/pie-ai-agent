@@ -183,7 +183,10 @@ describe("read_page tool", () => {
     expect(result.observation).toContain('mode="atlas"');
     expect(result.observation).toContain("<page_atlas");
     expect(result.observation).toContain("collection_c1");
-    expect(result.observation).toContain("read_struct");
+    // 工具选择靠 target 的 type(collection/table → read_struct),不再逐 target
+    // 重复一份 <next_actions> —— 那是纯固定映射,规则住在 system prompt 里。
+    expect(result.observation).toContain('type="collection"');
+    expect(result.observation).not.toContain("<next_action");
     const atlasId = result.observation!.match(/atlas_id="([^"]+)"/)?.[1];
     expect(atlasId).toBeTruthy();
     const stored = pageAtlasStore.get(atlasId!);
@@ -233,7 +236,7 @@ describe("read_page tool", () => {
     const result = await readPageTool.handler({ tabId: 7, mode: "atlas" }, {} as any);
 
     expect(result.success).toBe(true);
-    expect(result.observation).toContain('target_id="f3_collection_c1"');
+    expect(result.observation).toContain('id="f3_collection_c1"');
     expect(result.observation).toContain('id="f3_ctrl_4"');
     expect(result.observation).toContain('id="f3_form_f0"');
     expect(result.observation).toContain('fields="f3_ctrl_4"');
