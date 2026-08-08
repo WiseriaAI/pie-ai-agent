@@ -24,6 +24,7 @@
 // broken notifications API never crashes the schedule run or the cascade delete.
 
 import { getRun, updateRun } from "./store";
+import { openFallbackPanelWindow, tryOpenSidePanel } from "@/background/panel-open";
 
 // ── Notification ID prefixes ────────────────────────────────────────────────
 
@@ -199,7 +200,7 @@ export async function handleScheduleNotificationClick(notificationId: string): P
 
     // Attempt to open the side panel. chrome.sidePanel.open requires a user
     // gesture — notifications.onClicked does NOT qualify as one in Chrome. So
-    // this will very likely throw. The catch block handles the fallback.
+    // this will very likely be rejected. The catch block handles the fallback.
     try {
       // sidePanel.open needs either a tabId or windowId. Without knowing which
       // tab/window is active we use the current focused window as a best-effort
@@ -212,7 +213,17 @@ export async function handleScheduleNotificationClick(notificationId: string): P
         // dropped (the user clicked something; it must leave a trace).
         throw new Error("no numeric window id");
       }
-      await chrome.sidePanel.open({ windowId: win.id });
+      const outcome = await tryOpenSidePanel({ windowId: win.id });
+      if (outcome === "rejected") {
+        // Chrome's user-gesture rule — the documented common case.
+        throw new Error("sidePanel.open rejected");
+      }
+      if (outcome === "unsupported") {
+        // Browser can't service side panels at all (Arc). A popup window needs
+        // no gesture, so this click can actually land — strictly better than
+        // the unread fallback. If even that fails, fall through to unread.
+        await openFallbackPanelWindow({ windowId: win.id });
+      }
     } catch {
       // user-gesture constraint, no-window-id, or other sidePanel.open error —
       // mark unread so Task 9 UI can highlight this run when the panel opens next.

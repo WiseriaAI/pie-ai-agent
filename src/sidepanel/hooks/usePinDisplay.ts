@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { queryActiveHostTab } from "@/lib/panel-host/host-window";
 
 /**
  * Pin-display subsystem, extracted verbatim from Chat.tsx so the pin sub-row in
@@ -85,10 +86,7 @@ export function usePinDisplay({
     }
     async function refreshLive() {
       try {
-        const [tab] = await chrome.tabs.query({
-          active: true,
-          currentWindow: true,
-        });
+        const tab = await queryActiveHostTab();
         setLivePinnedOrigin(tab?.url ? extractOrigin(tab.url) : null);
         setLivePinnedTitle(tab?.title ? tab.title : null);
       } catch {

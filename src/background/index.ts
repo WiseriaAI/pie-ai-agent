@@ -35,6 +35,12 @@ import { executeScriptAllFrames, type AllFramesInjectionOutcome } from "@/lib/ag
 // making `mountEvalBridge()` dead code → tree-shaken out along with this import
 // (verified by scripts/assert-no-eval-bridge.mjs).
 import { mountEvalBridge } from "./eval-bridge";
+import {
+  closeOrphanedFallbackPanels,
+  hydrateSidePanelVerdict,
+  openPanel,
+} from "./panel-open";
+import { queryActiveHostTab } from "@/lib/panel-host/host-window";
 import type { RoleViolation } from "@/lib/agent/history-validation";
 import { logHistoryRepaired } from "@/lib/agent/history-validation-telemetry";
 import {
@@ -339,15 +345,39 @@ function findRecordingSessionByTabId(tabId: number | undefined): RecordingSessio
 // which left restricted-page sessions with no persisted pin even though #231
 // taught the loop to run there — vanishing pin bar + no R7 lock coverage.
 
-// Open side panel when extension icon is clicked
-chrome.action.onClicked.addListener(async (tab) => {
-  if (tab.id) {
-    await chrome.sidePanel.open({ tabId: tab.id });
+// Open the panel when the extension icon is clicked.
+//
+// On Chrome this listener never fires — setPanelBehavior below tells the
+// browser to handle the click itself. It is the entry point on browsers that
+// can't service a side panel: `rememberVerdict("unsupported")` flips
+// openPanelOnActionClick back off there so clicks reach us and openPanel can
+// route them to the fallback window.
+chrome.action.onClicked.addListener((tab) => {
+  if (typeof tab.id === "number") {
+    openPanel({ tabId: tab.id }, "action-click");
+  } else if (typeof tab.windowId === "number") {
+    openPanel({ windowId: tab.windowId }, "action-click");
   }
 });
 
-// Set side panel behavior: open on action click
-chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+// Set side panel behavior: open on action click. Guarded + non-awaited because
+// on Arc this call never settles (see panel-open.ts) — awaiting it would wedge
+// SW startup.
+try {
+  void chrome.sidePanel?.setPanelBehavior({ openPanelOnActionClick: true })?.catch(() => {});
+} catch {
+  /* no sidePanel namespace at all — the fallback path covers it */
+}
+
+// Restore the memoized side-panel-support verdict so a returning user doesn't
+// re-pay the probe timeout on their first click after an SW restart.
+hydrateSidePanelVerdict();
+
+// A fallback panel window outlives the service worker that spawned it, so it
+// has to be reaped when the window it shadows goes away.
+chrome.windows?.onRemoved?.addListener((windowId) => {
+  void closeOrphanedFallbackPanels(windowId);
+});
 
 // M2-U1 — migration + recovery pipeline.
 //
@@ -588,10 +618,7 @@ function extractPageContent(): PageContent {
 
 async function handleExtractPage(): Promise<ExtractPageResponse> {
   try {
-    const [tab] = await chrome.tabs.query({
-      active: true,
-      currentWindow: true,
-    });
+    const tab = await queryActiveHostTab();
 
     if (!tab?.id) {
       return { type: "page-content", data: null, error: "No active tab" };
@@ -865,9 +892,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // to the managed-subscribe screen.
     const senderTabId = sender.tab?.id;
     if (typeof senderTabId === "number") {
-      chrome.sidePanel.open({ tabId: senderTabId }).catch((e) => {
-        console.warn("[sw] sidePanel.open for subscribe failed:", e);
-      });
+      openPanel({ tabId: senderTabId }, "subscribe-cta");
     }
     void chrome.storage.session.set({ [DEEPLINK_KEY]: DEEPLINK_MANAGED_SUBSCRIBE });
     return; // no async response
@@ -881,9 +906,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // sidePanel.open with "must be called in response to a user gesture".
     const senderTabId = sender.tab?.id;
     if (typeof senderTabId === "number") {
-      chrome.sidePanel.open({ tabId: senderTabId }).catch((e) => {
-        console.warn("[sw] sidePanel.open from quote bubble failed:", e);
-      });
+      openPanel({ tabId: senderTabId }, "quote-bubble");
     }
     void (async () => {
       let out;
@@ -923,18 +946,22 @@ function extractCurrentSelectionForQuote(): { text: string; sourceUrl: string } 
 chrome.commands.onCommand.addListener((command) => {
   if (command !== "quote-selection") return;
   void (async () => {
-    // Open side panel first so the user-gesture window is consumed before
-    // any tabs/scripting await drops it.
+    // Open the panel first so the user-gesture window is consumed before
+    // any tabs/scripting await drops it. Not awaited: on a browser without a
+    // working side panel the open never settles, and awaiting it would strand
+    // the whole quote-capture path below. The panel boots asynchronously
+    // regardless — dispatchQuoteAdded stashes the chip and wakes the panel
+    // once its port connects.
     try {
       const win = await chrome.windows.getCurrent();
       if (typeof win.id === "number") {
-        await chrome.sidePanel.open({ windowId: win.id });
+        openPanel({ windowId: win.id }, "quote-shortcut");
       }
     } catch (e) {
-      console.warn("[sw] sidePanel.open from shortcut failed:", e);
+      console.warn("[sw] resolving the current window for the quote shortcut failed:", e);
     }
 
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const tab = await queryActiveHostTab();
     if (typeof tab?.id !== "number") return;
 
     let payload: { text: string; sourceUrl: string } | null = null;

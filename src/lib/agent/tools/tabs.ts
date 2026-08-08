@@ -2,6 +2,9 @@ import type { ActionResult } from "../../dom-actions/types";
 import type { ConfirmedTabTarget, Tool, ToolHandlerContext } from "../types";
 import { escapeUntrustedWrappers, escapeWrapperAttribute } from "../untrusted-wrappers";
 import { waitForUrlSettle } from "../wait-for-url-settle";
+import { excludePanelTabs, queryHostWindowTabs } from "../../panel-host/host-window";
+import { TAB_GROUP_TIMEOUT_MS, withHangGuard } from "./hang-guard";
+import { isOwnPanelUrl } from "../../panel-host/panel-page";
 
 /**
  * Phase 3 — parse a chrome.tabs.Tab.url into an origin string. Returns ""
@@ -50,6 +53,11 @@ async function verifyConfirmedOrigin(
     } catch {
       return { ok: false, reason: "missing" };
     }
+    // Pie's own panel document is chrome, not content. list_tabs already hides
+    // it, but this is the single gate every mutating tab tool passes through —
+    // an id the LLM guessed or carried over from a stale observation must not
+    // let it close/group/move the UI it is talking to.
+    if (isOwnPanelUrl(tab.url)) return { ok: false, reason: "missing" };
     const currentOrigin = parseTabOrigin(tab.url);
     if (!currentOrigin) {
       return { ok: false, reason: "missing" };
@@ -66,6 +74,7 @@ async function verifyConfirmedOrigin(
   } catch {
     return { ok: false, reason: "missing" };
   }
+  if (isOwnPanelUrl(tab.url)) return { ok: false, reason: "missing" };
   const live = parseTabOrigin(tab.url);
   if (!live || live !== expected.origin) {
     return { ok: false, reason: "navigated" };
@@ -272,9 +281,14 @@ const listTabsTool: Tool = {
         ? Math.floor(a.limit)
         : Number.POSITIVE_INFINITY;
 
-    const queryInfo: chrome.tabs.QueryInfo =
-      scope === "currentWindow" ? { currentWindow: true } : {};
-    const allTabs = await chrome.tabs.query(queryInfo);
+    // currentWindow scope goes through queryHostWindowTabs: in the SW
+    // `currentWindow` means "last-focused window", which can be a fallback
+    // panel popup (Arc) once one is open — the agent would then be told its
+    // window contains nothing but Pie's own UI.
+    const allTabs =
+      scope === "currentWindow"
+        ? await queryHostWindowTabs()
+        : excludePanelTabs(await chrome.tabs.query({}));
 
     // Filter tabs without an addressable id or windowId. Chrome occasionally
     // surfaces partial tabs during navigation transitions, AND assigns
@@ -669,7 +683,13 @@ const groupTabsTool: Tool = {
     let newGroupId: number;
     try {
       // survivors is non-empty (checked above); cast to the required non-empty tuple type.
-      newGroupId = await chrome.tabs.group({ tabIds: survivors as [number, ...number[]] });
+      // Hang-guarded: Arc accepts tabs.group and never completes it, which
+      // would wedge the (deliberately unbounded) agent loop with no observation.
+      newGroupId = await withHangGuard(
+        chrome.tabs.group({ tabIds: survivors as [number, ...number[]] }),
+        "chrome.tabs.group",
+        TAB_GROUP_TIMEOUT_MS,
+      );
       result.ok.push(...survivors);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
@@ -686,10 +706,14 @@ const groupTabsTool: Tool = {
     // Apply name + color via chrome.tabGroups.update if either was supplied.
     if (safeName || a.color) {
       try {
-        await chrome.tabGroups.update(newGroupId, {
-          title: safeName || undefined,
-          color: (a.color as TabGroupColor | undefined) ?? undefined,
-        });
+        await withHangGuard(
+          chrome.tabGroups.update(newGroupId, {
+            title: safeName || undefined,
+            color: (a.color as TabGroupColor | undefined) ?? undefined,
+          }),
+          "chrome.tabGroups.update",
+          TAB_GROUP_TIMEOUT_MS,
+        );
       } catch (e) {
         // Group itself created OK — name/color failure is a warning, not a
         // fatal failure. Surface it in observation but keep success=true.
@@ -760,7 +784,11 @@ const ungroupTabsTool: Tool = {
 
     try {
       // survivors is non-empty (checked above); cast to the required non-empty tuple type.
-      await chrome.tabs.ungroup(survivors as [number, ...number[]]);
+      await withHangGuard(
+        chrome.tabs.ungroup(survivors as [number, ...number[]]),
+        "chrome.tabs.ungroup",
+        TAB_GROUP_TIMEOUT_MS,
+      );
       result.ok.push(...survivors);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
@@ -1225,7 +1253,7 @@ USE WHEN:
     }
     let all: chrome.tabs.Tab[];
     try {
-      all = await chrome.tabs.query({});
+      all = excludePanelTabs(await chrome.tabs.query({}));
     } catch (e) {
       return {
         success: false,

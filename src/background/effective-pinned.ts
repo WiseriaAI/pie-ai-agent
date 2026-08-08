@@ -15,6 +15,7 @@
 import { isRestrictedUrl } from "@/lib/agent/loop";
 import type { SessionMeta } from "@/lib/sessions/types";
 import { getPrimaryPin } from "@/lib/sessions/pin-state";
+import { queryActiveHostTab } from "@/lib/panel-host/host-window";
 
 export type PinnedCtx = { tabId: number; origin: string };
 
@@ -93,7 +94,10 @@ export function makeResolveEffectivePinned(
       closurePinned,
       sessionId,
       getSessionMetaFn,
-      () => chrome.tabs.query({ active: true, currentWindow: true }),
+      async () => {
+        const tab = await queryActiveHostTab();
+        return tab ? [tab] : [];
+      },
       isRestrictedUrl,
     );
 }

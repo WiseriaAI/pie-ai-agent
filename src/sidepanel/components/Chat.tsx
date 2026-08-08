@@ -101,6 +101,7 @@ import { useFileAccessPrompt } from "../hooks/useFileAccessPrompt";
 import { FileAccessCard } from "./FileAccessCard";
 import { FileOutputCard } from "./FileOutputCard";
 import { artifactExists } from "@/lib/files/output-store";
+import { queryActiveHostTab } from "@/lib/panel-host/host-window";
 
 interface ChatProps {
   providerLabel: string | null;
@@ -964,8 +965,7 @@ After the skill completes, briefly summarize what was created (the user will see
   }
 
   async function onPickElement() {
-    const tab = await chrome.tabs.query({ active: true, currentWindow: true });
-    const tabId = tab[0]?.id;
+    const tabId = (await queryActiveHostTab())?.id;
     if (typeof tabId !== "number" || !sessionId) return;
     if (!pickerActive) {
       swPort.send(sessionId, { type: "picker:start", tabId });
