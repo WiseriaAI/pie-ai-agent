@@ -140,6 +140,18 @@ describe("ContextRing — popover interaction", () => {
     expect(screen.queryByTestId("context-ring-popover")).toBeNull();
   });
 
+  it("the ? toggles an inline explanation (a native title alone reads as dead)", () => {
+    renderRing();
+    fireEvent.click(screen.getByTestId("context-ring"));
+    expect(screen.queryByTestId("context-ring-help-text")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("context-ring-help"));
+    expect(screen.getByTestId("context-ring-help-text").textContent).not.toBe("");
+
+    fireEvent.click(screen.getByTestId("context-ring-help"));
+    expect(screen.queryByTestId("context-ring-help-text")).toBeNull();
+  });
+
   it("click opens the popover: context vs window, then the session total", () => {
     renderRing();
     fireEvent.click(screen.getByTestId("context-ring"));

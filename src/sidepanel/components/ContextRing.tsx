@@ -65,6 +65,7 @@ export default function ContextRing(props: ContextRingProps) {
     [locale],
   );
   const [open, setOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // 环的分子必须是「本次调用真实处理的 prompt 总量」。Anthropic-wire 家族
@@ -92,6 +93,11 @@ export default function ContextRing(props: ContextRingProps) {
   const pct = shouldRender
     ? Math.min(100, Math.round((contextTokens! / maxContextTokens!) * 100))
     : 0;
+
+  // 收起说明,免得下次打开浮层它还展开着。
+  useEffect(() => {
+    if (!open) setHelpOpen(false);
+  }, [open]);
 
   // ESC closes popover.
   useEffect(() => {
@@ -258,23 +264,30 @@ export default function ContextRing(props: ContextRingProps) {
               }}
             >
               {t("chat.contextRing.contextTitle")}
-              {/* 上下文在任务结束时会缩水,用户看到数字掉下去会以为是 bug。原生
-                  title 就够:不抢焦点、不占布局、长按/hover 都能出。 */}
+              {/* 上下文在任务结束时会缩水,用户看到数字掉下去会以为是 bug。
+                  点开展开说明 —— 原生 title 要 hover 一两秒才出,在一个本来就
+                  要点开的浮层里读起来像「点不动」。title 保留做兜底。 */}
               <span
                 data-testid="context-ring-help"
+                role="button"
+                aria-expanded={helpOpen}
                 title={t("chat.contextRing.help")}
+                onClick={() => setHelpOpen((v) => !v)}
                 style={{
                   display: "inline-flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  width: 12,
-                  height: 12,
+                  width: 14,
+                  height: 14,
                   borderRadius: "50%",
                   border: "1px solid var(--c-line)",
-                  fontSize: 8,
+                  background: helpOpen ? "var(--c-line)" : "transparent",
+                  color: helpOpen ? "var(--c-fg-1)" : "inherit",
+                  fontSize: 9,
                   lineHeight: 1,
                   letterSpacing: 0,
-                  cursor: "help",
+                  cursor: "pointer",
+                  userSelect: "none",
                 }}
               >
                 ?
@@ -292,6 +305,21 @@ export default function ContextRing(props: ContextRingProps) {
               {fmtTokens(contextTokens!, numberFormat)} / {fmtTokens(maxContextTokens!, numberFormat)}
             </span>
           </div>
+          {helpOpen && (
+            <div
+              data-testid="context-ring-help-text"
+              style={{
+                padding: "10px 14px",
+                borderBottom: "1px solid var(--c-line)",
+                fontFamily: "Inter, sans-serif",
+                fontSize: 11,
+                lineHeight: 1.6,
+                color: "var(--c-fg-2)",
+              }}
+            >
+              {t("chat.contextRing.help")}
+            </div>
+          )}
           <div
             style={{
               display: "flex",
