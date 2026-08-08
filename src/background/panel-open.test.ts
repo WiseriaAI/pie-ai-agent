@@ -9,6 +9,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   __resetSidePanelVerdict,
+  initPanelOpening,
   openFallbackPanelWindow,
   tryOpenSidePanel,
   SIDE_PANEL_PROBE_TIMEOUT_MS,
@@ -31,6 +32,7 @@ const g = globalThis as unknown as {
 let saved: {
   query: unknown;
   get: unknown;
+  create: unknown;
   windows: unknown;
   sidePanel: unknown;
   session: unknown;
@@ -51,6 +53,7 @@ beforeEach(() => {
   saved = {
     query: g.chrome.tabs.query,
     get: g.chrome.tabs.get,
+    create: (g.chrome.tabs as unknown as { create?: unknown }).create,
     windows: g.chrome.windows,
     sidePanel: g.chrome.sidePanel,
     session: g.chrome.storage.session,
@@ -74,6 +77,7 @@ afterEach(() => {
   vi.useRealTimers();
   g.chrome.tabs.query = saved.query as ReturnType<typeof vi.fn>;
   g.chrome.tabs.get = saved.get as ReturnType<typeof vi.fn>;
+  (g.chrome.tabs as unknown as { create?: unknown }).create = saved.create;
   g.chrome.windows = saved.windows as Record<string, ReturnType<typeof vi.fn>>;
   g.chrome.sidePanel = saved.sidePanel as Record<string, ReturnType<typeof vi.fn>>;
   g.chrome.storage.session = saved.session as Record<string, ReturnType<typeof vi.fn>>;
@@ -135,10 +139,7 @@ describe("tryOpenSidePanel", () => {
     expect(open).toHaveBeenCalledTimes(1);
   });
 
-  it("hands icon clicks back to the extension once it gives up on the side panel", async () => {
-    // openPanelOnActionClick:true asks the browser to handle the click and
-    // suppress action.onClicked. On a browser that can't open a panel that
-    // swallows the click, leaving no way in — so it must be turned back off.
+  it("keeps icon clicks with the extension when it gives up on the side panel", async () => {
     vi.useFakeTimers();
     const setPanelBehavior = vi.fn(async () => {});
     g.chrome.sidePanel = { open: vi.fn(() => new Promise<void>(() => {})), setPanelBehavior };
@@ -148,6 +149,58 @@ describe("tryOpenSidePanel", () => {
     await pending;
 
     expect(setPanelBehavior).toHaveBeenCalledWith({ openPanelOnActionClick: false });
+    expect(setPanelBehavior).not.toHaveBeenCalledWith({ openPanelOnActionClick: true });
+  });
+
+  it("hands click handling to the browser ONLY after an open actually succeeds", async () => {
+    // The regression that shipped in the first cut: openPanelOnActionClick:true
+    // was set at startup. That flag suppresses action.onClicked, and Arc stores
+    // it happily while still being unable to show a panel — so the click was
+    // swallowed by a browser that did nothing, onClicked never fired, and the
+    // probe that would have cleared the flag sat behind the click the flag was
+    // eating. The flag has to be earned by a successful open, never assumed.
+    const setPanelBehavior = vi.fn(async () => {});
+    g.chrome.sidePanel = { open: vi.fn(async () => {}), setPanelBehavior };
+
+    await tryOpenSidePanel({ tabId: 1 });
+
+    expect(setPanelBehavior).toHaveBeenCalledWith({ openPanelOnActionClick: true });
+  });
+});
+
+describe("initPanelOpening", () => {
+  it("takes click handling BACK from the browser on startup", async () => {
+    // Also un-sticks installs that ran the earlier build and had `true`
+    // persisted into their extension prefs — on Arc that pref is the reason
+    // the toolbar icon did nothing at all.
+    const setPanelBehavior = vi.fn(async () => {});
+    g.chrome.sidePanel = { open: vi.fn(async () => {}), setPanelBehavior };
+
+    initPanelOpening();
+
+    expect(setPanelBehavior).toHaveBeenCalledWith({ openPanelOnActionClick: false });
+  });
+
+  it("restores browser click handling when a prior probe already proved support", async () => {
+    const setPanelBehavior = vi.fn(async () => {});
+    g.chrome.sidePanel = { open: vi.fn(async () => {}), setPanelBehavior };
+    g.chrome.storage.session!.get = vi.fn(async () => ({ sidepanel_support: "supported" }));
+
+    initPanelOpening();
+    await vi.waitFor(() =>
+      expect(setPanelBehavior).toHaveBeenCalledWith({ openPanelOnActionClick: true }),
+    );
+  });
+
+  it("leaves clicks with the extension when a prior probe found no side panel", async () => {
+    const setPanelBehavior = vi.fn(async () => {});
+    g.chrome.sidePanel = { open: vi.fn(async () => {}), setPanelBehavior };
+    g.chrome.storage.session!.get = vi.fn(async () => ({ sidepanel_support: "unsupported" }));
+
+    initPanelOpening();
+    await vi.waitFor(() => expect(g.chrome.storage.session!.get).toHaveBeenCalled());
+
+    expect(setPanelBehavior).not.toHaveBeenCalledWith({ openPanelOnActionClick: true });
   });
 
   it("stops racing once the browser has proven it works", async () => {
@@ -196,6 +249,21 @@ describe("openFallbackPanelWindow", () => {
     expect(opts.left).toBe(1040);
     expect(opts.top).toBe(25);
     expect(opts.height).toBe(900);
+  });
+
+  it("falls back to a normal tab when the popup window can't be created", async () => {
+    // Fallback-of-the-fallback: worse UX, but a reachable panel beats none and
+    // the port (and any running task) survives either way.
+    installTabs([{ id: 1, url: "https://a.test/", windowId: 200 }]);
+    g.chrome.windows!.create = vi.fn(async () => {
+      throw new Error("popup windows unavailable");
+    });
+    const tabsCreate = vi.fn(async () => ({ id: 7 }));
+    (g.chrome.tabs as unknown as { create: unknown }).create = tabsCreate;
+
+    await openFallbackPanelWindow({ windowId: 200 });
+
+    expect(tabsCreate).toHaveBeenCalledWith({ url: `${PANEL_URL}?hostWindowId=200` });
   });
 
   it("re-focuses an existing panel instead of spawning a second one", async () => {

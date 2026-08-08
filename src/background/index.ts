@@ -35,11 +35,7 @@ import { executeScriptAllFrames, type AllFramesInjectionOutcome } from "@/lib/ag
 // making `mountEvalBridge()` dead code → tree-shaken out along with this import
 // (verified by scripts/assert-no-eval-bridge.mjs).
 import { mountEvalBridge } from "./eval-bridge";
-import {
-  closeOrphanedFallbackPanels,
-  hydrateSidePanelVerdict,
-  openPanel,
-} from "./panel-open";
+import { closeOrphanedFallbackPanels, initPanelOpening, openPanel } from "./panel-open";
 import { queryActiveHostTab } from "@/lib/panel-host/host-window";
 import type { RoleViolation } from "@/lib/agent/history-validation";
 import { logHistoryRepaired } from "@/lib/agent/history-validation-telemetry";
@@ -347,11 +343,10 @@ function findRecordingSessionByTabId(tabId: number | undefined): RecordingSessio
 
 // Open the panel when the extension icon is clicked.
 //
-// On Chrome this listener never fires — setPanelBehavior below tells the
-// browser to handle the click itself. It is the entry point on browsers that
-// can't service a side panel: `rememberVerdict("unsupported")` flips
-// openPanelOnActionClick back off there so clicks reach us and openPanel can
-// route them to the fallback window.
+// This is the entry point on EVERY browser until one proves it can service a
+// side panel — see initPanelOpening() for why the browser is not handed click
+// handling up front. action.onClicked is a trusted user gesture for
+// sidePanel.open, so Chrome opens normally through here too.
 chrome.action.onClicked.addListener((tab) => {
   if (typeof tab.id === "number") {
     openPanel({ tabId: tab.id }, "action-click");
@@ -360,18 +355,8 @@ chrome.action.onClicked.addListener((tab) => {
   }
 });
 
-// Set side panel behavior: open on action click. Guarded + non-awaited because
-// on Arc this call never settles (see panel-open.ts) — awaiting it would wedge
-// SW startup.
-try {
-  void chrome.sidePanel?.setPanelBehavior({ openPanelOnActionClick: true })?.catch(() => {});
-} catch {
-  /* no sidePanel namespace at all — the fallback path covers it */
-}
-
-// Restore the memoized side-panel-support verdict so a returning user doesn't
-// re-pay the probe timeout on their first click after an SW restart.
-hydrateSidePanelVerdict();
+// Set the click behavior and restore any memoized capability verdict.
+initPanelOpening();
 
 // A fallback panel window outlives the service worker that spawned it, so it
 // has to be reaped when the window it shadows goes away.

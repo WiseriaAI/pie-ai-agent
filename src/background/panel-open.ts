@@ -60,18 +60,45 @@ type Verdict = "unknown" | "supported" | "unsupported";
 let verdict: Verdict = "unknown";
 
 /**
- * Rehydrate the memoized verdict after an SW restart so returning users don't
- * re-pay the probe timeout on their first click. Fire-and-forget: a miss just
- * means one more probe.
+ * Wire up panel opening at service-worker startup.
+ *
+ * The ordering here is the whole fix, so it is worth stating plainly:
+ *
+ *   `openPanelOnActionClick: true` asks the BROWSER to handle toolbar clicks
+ *   and, as a direct consequence, SUPPRESSES `chrome.action.onClicked`.
+ *
+ * Setting that flag unconditionally (as this file first did) deadlocks any
+ * browser that stores the flag but can't actually show a panel — which is what
+ * Arc does, because the flag is extension-pref plumbing that works fine while
+ * the panel UI it refers to does not exist. Clicks get swallowed by a browser
+ * that then does nothing, `onClicked` never fires, the capability probe never
+ * runs, and the only code that could clear the flag sits behind the very click
+ * that the flag is eating.
+ *
+ * So the flag is now EARNED, not assumed: it goes on only after a real
+ * `sidePanel.open()` has been observed to succeed. Until then clicks route
+ * through `action.onClicked` → `openPanel`, which works on every browser —
+ * `action.onClicked` is a trusted user gesture for `sidePanel.open`, so Chrome
+ * opens normally on that path too.
+ *
+ * The explicit `false` on startup also un-sticks installs that ran the earlier
+ * build and had `true` persisted into their extension prefs.
  */
-export function hydrateSidePanelVerdict(): void {
+export function initPanelOpening(): void {
+  applyActionClickBehavior(false);
   try {
     void chrome.storage.session
       ?.get(VERDICT_STORAGE_KEY)
       .then((rec) => {
         const stored = rec?.[VERDICT_STORAGE_KEY];
-        if (verdict === "unknown" && (stored === "supported" || stored === "unsupported")) {
-          verdict = stored;
+        if (verdict !== "unknown") return;
+        if (stored === "supported") {
+          verdict = "supported";
+          // Proven working earlier this browser session — restore the browser's
+          // native click handling (which also restores click-to-toggle).
+          applyActionClickBehavior(true);
+        } else if (stored === "unsupported") {
+          verdict = "unsupported";
         }
       })
       .catch(() => {
@@ -82,25 +109,35 @@ export function hydrateSidePanelVerdict(): void {
   }
 }
 
+/**
+ * Tell the browser whether to handle toolbar clicks itself.
+ *
+ * Fire-and-forget on purpose: on Arc this promise never settles, but the pref
+ * write behind it still lands — which is exactly the asymmetry that created the
+ * deadlock this function exists to avoid.
+ */
+function applyActionClickBehavior(browserHandlesClick: boolean): void {
+  try {
+    void chrome.sidePanel
+      ?.setPanelBehavior({ openPanelOnActionClick: browserHandlesClick })
+      ?.catch(() => {});
+  } catch {
+    /* no sidePanel namespace — clicks reach action.onClicked by default */
+  }
+}
+
 function rememberVerdict(next: Exclude<Verdict, "unknown">): void {
   if (verdict === next) return;
   verdict = next;
+  console.info(`[sw] side panel support: ${next}`);
   try {
     void chrome.storage.session?.set({ [VERDICT_STORAGE_KEY]: next }).catch(() => {});
   } catch {
     /* ignore */
   }
-  if (next === "unsupported") {
-    // `openPanelOnActionClick: true` tells the browser to handle icon clicks
-    // itself and suppress `action.onClicked`. On a browser that can't open a
-    // side panel that would swallow the click entirely, leaving no entry point
-    // for the fallback. Hand the click back to us.
-    try {
-      void chrome.sidePanel?.setPanelBehavior({ openPanelOnActionClick: false })?.catch(() => {});
-    } catch {
-      /* ignore */
-    }
-  }
+  // Hand click handling to the browser only now that it has proven it can
+  // service a panel; keep it ours otherwise.
+  applyActionClickBehavior(next === "supported");
 }
 
 /** Test seam — resets the memoized verdict. */
@@ -187,6 +224,7 @@ export function openPanel(target: chrome.sidePanel.OpenOptions, context: string)
         console.warn(`[sw] sidePanel.open (${context}) was rejected by the browser`);
         return;
       }
+      console.info(`[sw] no usable side panel (${context}) — using the fallback window`);
       await openFallbackPanelWindow(target);
     })
     .catch((e) => {
@@ -217,13 +255,19 @@ export async function openFallbackPanelWindow(
     }
   }
 
+  const url = buildFallbackPanelUrl(hostWindowId);
   const bounds = await hostWindowBounds(hostWindowId);
-  await chrome.windows.create({
-    url: buildFallbackPanelUrl(hostWindowId),
-    type: "popup",
-    focused: true,
-    ...bounds,
-  });
+  try {
+    await chrome.windows.create({ url, type: "popup", focused: true, ...bounds });
+    console.info(`[sw] opened fallback panel window for host window ${hostWindowId}`);
+    return;
+  } catch (e) {
+    console.warn("[sw] fallback panel window failed, opening the panel in a tab:", e);
+  }
+  // Last resort. Worse UX — the panel can't sit next to the page it is driving
+  // — but a reachable panel beats none, and it keeps the port (and therefore
+  // any running task) alive just the same.
+  await chrome.tabs.create({ url });
 }
 
 /**
