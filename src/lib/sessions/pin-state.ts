@@ -75,10 +75,13 @@ export function clearTaskPinIfActive(meta: SessionMeta): SessionMeta {
  *   - From `user` containing pin: removes pin. If pinnedTabs becomes empty,
  *     flips back to `auto` (clears the array).
  *   - From `user` not containing pin: appends pin (multi-select).
- *   - From `task`: refuses (returns identity) — loop owns task-mode pins.
+ *   - From `task`: same as `user` — a task-mode pin left behind by a task
+ *     that is no longer running is editable. "任务在跑时不许改 pin" is
+ *     enforced by the caller's `streaming` check (the only authority on
+ *     whether a loop is actually live); a `pinMode === 'task'` guard here
+ *     couldn't tell a live task from a stale lock and wedged the dropdown.
  */
 export function togglePinTabUserMode(meta: SessionMeta, pin: Pin): SessionMeta {
-  if (meta.pinMode === "task") return meta;
   const current = meta.pinnedTabs ?? [];
   const has = current.some((p) => p.tabId === pin.tabId);
   if (has) {
@@ -94,11 +97,18 @@ export function togglePinTabUserMode(meta: SessionMeta, pin: Pin): SessionMeta {
 }
 
 /**
- * UI dropdown "Auto" row handler — flip user → auto, clear all pins.
- * No-op for non-user modes (loop owns task-mode pins; auto is already cleared).
+ * UI dropdown "Auto" row handler — flip user/task → auto, clear all pins.
+ * No-op when already auto. Accepts `task` for the same reason
+ * togglePinTabUserMode does: it's the user's escape hatch out of a pin left
+ * locked by a task that already ended. Caller gates on `streaming`.
+ *
+ * `delete next.pinnedTabs` is LOAD-BEARING: storage's syncLegacyFromArray
+ * dual-write shim re-synthesizes legacy pinnedTabId/pinnedOrigin from
+ * `pinnedTabs[0]` on every persist, so leaving the array behind would
+ * resurrect the pin despite pinMode='auto'.
  */
 export function clearUserPin(meta: SessionMeta): SessionMeta {
-  if (meta.pinMode !== "user") return meta;
+  if (meta.pinMode !== "user" && meta.pinMode !== "task") return meta;
   const next: SessionMeta = { ...meta, pinMode: "auto" };
   delete next.pinnedTabs;
   return next;

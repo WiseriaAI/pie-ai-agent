@@ -166,7 +166,12 @@ export default function PinnedTabDropdown({
   }, [onClose, anchorRef]);
 
   const isUserMode = pinMode === "user";
-  const isTaskMode = pinMode === "task";
+  // Rows are disabled only while a task is actually in flight — `streaming` is
+  // the single authority. pinMode==='task' alone is NOT a lock: a task that
+  // aborted / threw / died with the SW can leave the mode behind, and gating on
+  // it wedged the entire dropdown (including the "Auto" escape row) with no way
+  // out. Editing a stale task pin is exactly the escape hatch we want.
+  const taskRunning = pinMode === "task" && streaming;
 
   return (
     <div
@@ -179,7 +184,7 @@ export default function PinnedTabDropdown({
         <div className="text-[11px] uppercase tracking-[0.08em] text-fg-3">
           {t("pinnedTab.header")}
         </div>
-        {isTaskMode && (
+        {taskRunning && (
           <div className="mt-1 text-[11px] text-fg-3">
             {t("pinnedTab.taskLockedHint")}
           </div>
@@ -201,17 +206,15 @@ export default function PinnedTabDropdown({
         <li
           role="option"
           aria-selected={pinMode === "auto"}
-          aria-disabled={isTaskMode || streaming}
+          aria-disabled={streaming}
           onMouseDown={(e) => {
             e.preventDefault();
-            if (isTaskMode || streaming) return;
+            if (streaming) return;
             onClearPin();
             onClose();
           }}
           className={`flex cursor-pointer items-center gap-2 px-3.5 py-2.5 ${
-            isTaskMode || streaming
-              ? "cursor-not-allowed opacity-50"
-              : "hover:bg-field"
+            streaming ? "cursor-not-allowed opacity-50" : "hover:bg-field"
           } ${pinMode === "auto" ? "bg-accent-tint" : ""}`}
         >
           <div className="w-4 text-center text-[12px] text-accent">
@@ -234,10 +237,11 @@ export default function PinnedTabDropdown({
           </li>
         ) : (
           tabs.map((t) => {
-            // v1.5 — selected = in pinnedSet AND user mode (task mode pins are
-            // shown read-only checkmarks; auto mode shows none).
-            const selected = pinnedSet.has(t.id) && isUserMode;
-            const disabled = isTaskMode || streaming;
+            // Any persisted pin gets a checkmark — including a stale task-mode
+            // one, which the user can now click to remove. `auto` never has
+            // pins (storage invariant), so no mode check is needed.
+            const selected = pinnedSet.has(t.id);
+            const disabled = streaming;
             return (
               <li
                 key={t.id}

@@ -140,17 +140,34 @@ describe("v1.5 pin-state helpers (multi-pin Path A)", () => {
       expect(next.pinnedTabs).toBeUndefined();
     });
 
-    it("from task mode: refuses (no-op identity) — loop owns task pins", () => {
+    // Stale-task-pin escape hatch: a task-mode pin whose task already ended
+    // (abort / throw / SW death) must stay editable, otherwise the dropdown is
+    // wedged forever. "Task actually running" is the caller's streaming check.
+    it("from task mode: editable — appends and flips to user", () => {
       const meta = FRESH({
         pinMode: "task",
         pinnedTabs: [{ tabId: 12, origin: "https://a.com" }],
       });
       const next = togglePinTabUserMode(meta, { tabId: 13, origin: "https://b.com" });
-      expect(next).toBe(meta);
+      expect(next.pinMode).toBe("user");
+      expect(next.pinnedTabs).toEqual([
+        { tabId: 12, origin: "https://a.com" },
+        { tabId: 13, origin: "https://b.com" },
+      ]);
+    });
+
+    it("from task mode: toggling off the only pin unlocks back to auto", () => {
+      const meta = FRESH({
+        pinMode: "task",
+        pinnedTabs: [{ tabId: 12, origin: "https://a.com" }],
+      });
+      const next = togglePinTabUserMode(meta, { tabId: 12, origin: "https://a.com" });
+      expect(next.pinMode).toBe("auto");
+      expect(next.pinnedTabs).toBeUndefined();
     });
   });
 
-  it("clearUserPin clears all pinnedTabs and flips to auto; no-op for task mode", () => {
+  it("clearUserPin clears all pinnedTabs and flips to auto; also unlocks a stale task pin", () => {
     const userMeta = FRESH({
       pinMode: "user",
       pinnedTabs: [
@@ -166,7 +183,13 @@ describe("v1.5 pin-state helpers (multi-pin Path A)", () => {
       pinMode: "task",
       pinnedTabs: [{ tabId: 12, origin: "https://a.com" }],
     });
-    expect(clearUserPin(taskMeta)).toBe(taskMeta);
+    const unlocked = clearUserPin(taskMeta);
+    expect(unlocked.pinMode).toBe("auto");
+    expect(unlocked.pinnedTabs).toBeUndefined();
+
+    // auto is already clear — identity, so updateSessionMeta skips the write.
+    const autoMeta = FRESH({ pinMode: "auto" });
+    expect(clearUserPin(autoMeta)).toBe(autoMeta);
   });
 
   it("getEffectivePinMode infers 'task' from non-empty pinnedTabs + in-flight agent", () => {

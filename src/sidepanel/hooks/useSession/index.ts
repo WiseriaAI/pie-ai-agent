@@ -24,7 +24,10 @@ import { buildRewindAgentTombstone } from "./rewind";
 import { hardDeleteSession } from "@/lib/sessions/lifecycle";
 import { useStoreChange } from "@/sidepanel/hooks/useStoreChange";
 import type { SessionAgentState, SessionMeta, SessionStatus } from "@/lib/sessions/types";
-import { togglePinTabUserMode } from "@/lib/sessions/pin-state";
+import {
+  togglePinTabUserMode,
+  clearUserPin as clearUserPinMeta,
+} from "@/lib/sessions/pin-state";
 import {
   EMPTY_SLOT,
   deriveActiveView,
@@ -962,8 +965,13 @@ export function useSession(): UseSession {
     async (tabId: number, origin: string): Promise<void> => {
       const id = sessionIdRef.current;
       if (!id) return;
-      // togglePinTabUserMode returns the same reference on no-op (e.g. task
-      // mode) → updateSessionMeta skips the write and returns false.
+      // "任务在跑时不许改 pin" lives here, not in pin-state: `streaming` is the
+      // only signal that distinguishes a live loop from a task-mode pin left
+      // behind by an aborted / crashed one. (UI disables the rows too; this is
+      // the authoritative half.)
+      if (slotsRef.current.get(id)?.streaming) return;
+      // togglePinTabUserMode returns the same reference on no-op (duplicate
+      // toggle) → updateSessionMeta skips the write and returns false.
       const wrote = await updateSessionMeta(id, (meta) =>
         togglePinTabUserMode(meta, { tabId, origin }),
       );
@@ -982,18 +990,11 @@ export function useSession(): UseSession {
   const clearUserPin = useCallback(async (): Promise<void> => {
     const id = sessionIdRef.current;
     if (!id) return;
-    const wrote = await updateSessionMeta(id, (meta) => {
-      if (meta.pinMode !== "user") return null; // only user mode is user-clearable
-      // v1.5 — `delete next.pinnedTabs` is LOAD-BEARING here (not cosmetic):
-      // storage's syncLegacyFromArray dual-write shim re-synthesizes legacy
-      // pinnedTabId/pinnedOrigin from `pinnedTabs[0]` on every persist. If we
-      // left `pinnedTabs` on the meta and only flipped pinMode to 'auto', the
-      // shim would resurrect the legacy fields from the leftover array, leaving
-      // the session pinned despite the user's clear-pin action.
-      const next = { ...meta, pinMode: "auto" as const };
-      delete (next as { pinnedTabs?: SessionMeta["pinnedTabs"] }).pinnedTabs;
-      return next;
-    });
+    if (slotsRef.current.get(id)?.streaming) return; // twin of togglePinTab's guard
+    // clearUserPinMeta accepts 'user' AND a stale 'task' pin (the escape hatch
+    // out of a lock left by an aborted/crashed task); returns the same
+    // reference for 'auto' → updateSessionMeta skips the write.
+    const wrote = await updateSessionMeta(id, clearUserPinMeta);
     if (!wrote) return;
     setPinModeState("auto");
     setPinnedTabsState(null);
