@@ -8,6 +8,10 @@ export interface ContextRingProps {
   totalInputTokens: number;
   totalOutputTokens: number;
   maxContextTokens: number | undefined;
+  /** Last call's cached prompt tokens (provider prompt/KV cache read). */
+  lastCachedTokens?: number;
+  /** Last call's total prompt tokens — cache-hit ratio denominator. */
+  lastPromptTotalTokens?: number;
 }
 
 // Ring geometry — 16x16 outer, 2px stroke. Matches neighboring composer icons
@@ -38,6 +42,8 @@ export default function ContextRing(props: ContextRingProps) {
     totalInputTokens,
     totalOutputTokens,
     maxContextTokens,
+    lastCachedTokens,
+    lastPromptTotalTokens,
   } = props;
   void _lastOutputTokens;
 
@@ -51,6 +57,13 @@ export default function ContextRing(props: ContextRingProps) {
     lastInputTokens > 0 &&
     maxContextTokens != null &&
     maxContextTokens > 0;
+
+  // Cache hit ratio of the LAST LLM call. Rendered only when the provider
+  // actually reported cache counters — never a fabricated 0%.
+  const cacheHitPct =
+    lastCachedTokens != null && lastPromptTotalTokens != null && lastPromptTotalTokens > 0
+      ? Math.min(100, Math.round((lastCachedTokens / lastPromptTotalTokens) * 100))
+      : null;
 
   // Compute pct unconditionally so hook order is stable across renders.
   const pct = shouldRender
@@ -97,11 +110,15 @@ export default function ContextRing(props: ContextRingProps) {
   const stroke = colorForPercent(pct);
   const dashLen = (RING_CIRCUMFERENCE * pct) / 100;
   const totalSum = totalInputTokens + totalOutputTokens;
-  const tooltipText = t("chat.contextRing.lastCall", {
-    used: numberFormat.format(lastInputTokens!),
-    max: numberFormat.format(maxContextTokens!),
-    pct: numberFormat.format(pct),
-  });
+  const tooltipText =
+    t("chat.contextRing.lastCall", {
+      used: numberFormat.format(lastInputTokens!),
+      max: numberFormat.format(maxContextTokens!),
+      pct: numberFormat.format(pct),
+    }) +
+    (cacheHitPct != null
+      ? ` · ${t("chat.contextRing.cacheHit")} ${numberFormat.format(cacheHitPct)}%`
+      : "");
 
   return (
     <div
@@ -147,6 +164,26 @@ export default function ContextRing(props: ContextRingProps) {
           strokeDasharray={`${dashLen} ${RING_CIRCUMFERENCE}`}
           transform={`rotate(-90 ${RING_CENTER} ${RING_CENTER})`}
         />
+        {/* Cache hit ratio of the last call, inside the ring. Tiny by design —
+            the number is a glanceable health signal; details live in the
+            tooltip + popover. Hidden when the provider reports no cache info. */}
+        {cacheHitPct != null && (
+          <text
+            data-testid="context-ring-cache-pct"
+            x={RING_CENTER}
+            y={RING_CENTER}
+            textAnchor="middle"
+            dominantBaseline="central"
+            fill="var(--c-fg-3)"
+            style={{
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: 6,
+              letterSpacing: "-0.02em",
+            }}
+          >
+            {cacheHitPct}
+          </text>
+        )}
       </svg>
       {/* Slide+fade enter/exit via DropdownPanel (trigger-hugging, non-portal).
           Positioning lives on the animated panel; the inner box keeps the
@@ -198,6 +235,13 @@ export default function ContextRing(props: ContextRingProps) {
             value={totalOutputTokens}
             numberFormat={numberFormat}
           />
+          {cacheHitPct != null && (
+            <PopoverRow
+              label={t("chat.contextRing.cacheHit")}
+              value={`${numberFormat.format(cacheHitPct)}% · ${numberFormat.format(lastCachedTokens!)}/${numberFormat.format(lastPromptTotalTokens!)}`}
+              numberFormat={numberFormat}
+            />
+          )}
           <div
             style={{
               display: "flex",
@@ -242,7 +286,7 @@ function PopoverRow({
   numberFormat,
 }: {
   label: string;
-  value: number;
+  value: number | string;
   numberFormat: Intl.NumberFormat;
 }) {
   return (
@@ -251,6 +295,7 @@ function PopoverRow({
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
+        gap: 16,
         padding: "8px 14px",
       }}
     >
@@ -272,7 +317,7 @@ function PopoverRow({
           fontVariantNumeric: "tabular-nums",
         }}
       >
-        {numberFormat.format(value)}
+        {typeof value === "number" ? numberFormat.format(value) : value}
       </span>
     </div>
   );

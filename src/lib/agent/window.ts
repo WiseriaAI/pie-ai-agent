@@ -1,101 +1,40 @@
-import type { AgentMessage, ContentBlock } from "../model-router/types";
+import type { AgentMessage } from "../model-router/types";
 
-/**
- * Returns true if a message is an assistant message that contains at least
- * one tool_use block (indicating a ReAct tool-calling turn).
- */
-function isAssistantToolUseTurn(msg: AgentMessage): boolean {
-  if (msg.role !== "assistant") return false;
-  if (typeof msg.content === "string") return false;
-  return (msg.content as ContentBlock[]).some((b) => b.type === "tool_use");
-}
-
-/**
- * Returns true if a message is a user message that contains at least one
- * tool_result block (the corresponding reply to a tool_use turn).
- */
-function isUserToolResultTurn(msg: AgentMessage): boolean {
-  if (msg.role !== "user") return false;
-  if (typeof msg.content === "string") return false;
-  return (msg.content as ContentBlock[]).some((b) => b.type === "tool_result");
-}
-
-/**
- * Applies a sliding window to the agent message history.
- *
- * The history is split into two segments:
- *
- *   head  — everything before the first assistant message with ContentBlock[]
- *           content (i.e. the ReAct loop start). In multi-turn conversations
- *           this includes the system prompt, prior chat turns, and the current
- *           user task. The head is always preserved in full.
- *
- *   react — from the first assistant tool_use turn onward. Only the most
- *           recent `maxSteps` (assistant tool_use + user tool_result) pairs
- *           are kept, plus any trailing messages after the last complete pair.
- *
- * When no assistant ContentBlock[] turn exists (e.g. pure-chat history with
- * no in-flight ReAct pairs) the entire messages array is the head and is
- * returned unchanged.
- *
- * Invariants:
- *   - head末尾永远是 user role (panel sendMessage puts user last on wire;
- *     ReAct start must be assistant tool_use so the join is always alternating)
- *   - output messages have no adjacent user-user or assistant-assistant
- *     (system runs are allowed)
- */
 /**
  * Returns the index of the first assistant message whose content is a
  * ContentBlock[] array — i.e. the ReAct loop start. Returns -1 if none.
  *
- * Extracted so window-token-budget.ts and applySlidingWindow share a
- * single predicate; future IR shape changes only require one edit site.
+ * Shared by window-token-budget.ts and compact-react-window.ts so a future IR
+ * shape change only needs one edit site.
+ *
+ * ── 这个文件曾经还有一个 applySlidingWindow ─────────────────────────────────
+ *
+ * 它是 2026-04 Phase 2 引入的「12-step sliding window」。当时它是唯一的上下文
+ * 控制手段——没有 compaction、没有 stale-snapshot elision、没有 token budget
+ * guard，任务也跑不过 MAX_STEPS=30。它按**对数**砍 react 段，因为那时还没有
+ * 按 token 判断的能力。
+ *
+ * 那些前提后来全变了。今天上下文由三样东西按**真实 token** 控制：
+ *   - compactReactWindow —— 超窗口 80% 时把最旧步骤摘要成合成对；
+ *   - applyTokenBudget —— 超窗口 80% 时丢弃 head 里最旧的对；
+ *   - elideStaleObservations —— 每轮把 stale 页面快照压成 marker（实测 99.3%）。
+ *
+ * 而按对数砍在大窗口模型上纯粹是自伤：60 对可能才 50k token，离 1M 窗口差 20
+ * 倍，照砍不误；砍的又是最开头，正是自动 prefix caching（deepseek /
+ * openai-compat / gemini）唯一依赖的稳定前缀。实测真机 s82：msgs 162→122，
+ * 命中率从 98% 掉到 29%。
+ *
+ * 它还有过一个更隐蔽的缺陷：这是个无状态纯函数，而 history 仍在增长，于是一旦
+ * 对数越过 band，`slice(-maxSteps)` 每轮都重取「最后 60 对」，砍点每轮后移一对
+ * ——命中率再没回来（cached 冻在 15872 连续十轮不动）。那个缺陷被独立修过一次
+ * （e10763c0，把丢弃量量化到 slideBatch 整数倍，使砍点在一个 batch 内固定），
+ * 但那只是把伤害从「每步一次」降到「每 20 步一次」。删掉整个机制则是零，而且
+ * 上面三道按 token 的防线本来就该承担这件事。
+ *
+ * 删掉之后 react 段是纯 append-only，前缀天然稳定。
  */
 export function findReactStartIdx(messages: AgentMessage[]): number {
   return messages.findIndex(
     (m) => m.role === "assistant" && Array.isArray(m.content),
   );
-}
-
-export function applySlidingWindow(
-  messages: AgentMessage[],
-  maxSteps: number = 12,
-): AgentMessage[] {
-  // Find the first assistant message whose content is a ContentBlock[] array —
-  // this is the ReAct loop start index.
-  const reactStartIdx = findReactStartIdx(messages);
-
-  // No ReAct segment — the whole history is chat prefix; return as-is.
-  if (reactStartIdx === -1) return messages;
-
-  const head = messages.slice(0, reactStartIdx);
-  const react = messages.slice(reactStartIdx);
-
-  // Not enough react messages to need windowing
-  if (react.length === 0) return messages;
-
-  // Identify (assistant tool_use + user tool_result) pair start indices in `react`
-  const pairStarts: number[] = [];
-
-  let i = 0;
-  while (i < react.length - 1) {
-    if (isAssistantToolUseTurn(react[i]) && isUserToolResultTurn(react[i + 1])) {
-      pairStarts.push(i);
-      i += 2;
-    } else {
-      i++;
-    }
-  }
-
-  if (pairStarts.length === 0) {
-    // No complete pairs yet — return everything
-    return messages;
-  }
-
-  // Keep only the most recent maxSteps pairs
-  const keptPairStarts = pairStarts.slice(-maxSteps);
-  const earliestIdx = keptPairStarts[0];
-
-  // react.slice(earliestIdx) includes the kept pairs AND any trailing messages
-  return [...head, ...react.slice(earliestIdx)];
 }

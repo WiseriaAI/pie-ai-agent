@@ -207,6 +207,12 @@ export interface AgentUsageMessage {
   totalInputTokens: number;
   /** SW-cumulative running total of output tokens for this session. */
   totalOutputTokens: number;
+  /** Most recent step's cached prompt tokens (provider prompt/KV cache read).
+   *  Absent when the provider reports no cache info — panel hides cache UI. */
+  lastCachedTokens?: number;
+  /** Most recent step's total prompt tokens — cache-hit ratio denominator.
+   *  Present iff lastCachedTokens is. */
+  lastPromptTotalTokens?: number;
 }
 
 // --- Side Panel → Service Worker (via sendMessage) ---

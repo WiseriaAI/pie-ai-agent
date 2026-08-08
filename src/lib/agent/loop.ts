@@ -22,9 +22,9 @@ import {
   buildCurrentTimeBlock,
   buildObservationMessage,
 } from "./prompt";
-import { applySlidingWindow } from "./window";
 import { elideStaleObservations } from "./elide-stale-observations";
-import { applyTokenBudget } from "./window-token-budget";
+import { applyTokenBudget, estimateTokens } from "./window-token-budget";
+import { diag, kv } from "./diag";
 import { compactReactWindow, createDefaultSummarizer } from "./compact-react-window";
 import { resolveModelMeta } from "../model-router/providers/registry";
 import {
@@ -118,8 +118,13 @@ const SOFT_STEP_BUDGET = 30;
 // per-step nagging.
 const BUDGET_NUDGE_INTERVAL = 20;
 
-/** #58 — react 段 sliding-window 放宽后的兜底上限。正常由 token 阈值先触发 compaction。 */
-const REACT_BIG_CAP = 60;
+
+/** djb2 —— 仅供 [ctx] 的前缀稳定性诊断,不用于任何决策。 */
+function fp(s: string): number {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  return h;
+}
 /** #58 — provider 元数据缺失时的回退上下文窗口(与 window-token-budget 一致)。 */
 const COMPACTION_FALLBACK_MAX_TOKENS = 32_000;
 
@@ -833,13 +838,25 @@ export function mergeSessionAgentSnapshot(
  */
 export function mergeContextUsage(
   prev: SessionAgentState["contextUsage"] | undefined,
-  step: { inputTokens: number; outputTokens: number },
+  step: {
+    inputTokens: number;
+    outputTokens: number;
+    cachedTokens?: number;
+    promptTotalTokens?: number;
+  },
 ): NonNullable<SessionAgentState["contextUsage"]> {
   return {
     totalInputTokens: (prev?.totalInputTokens ?? 0) + step.inputTokens,
     totalOutputTokens: (prev?.totalOutputTokens ?? 0) + step.outputTokens,
     lastInputTokens: step.inputTokens,
     lastOutputTokens: step.outputTokens,
+    // Cache counters are last-call-only observability (never accumulated) and
+    // carried through only when the provider reported them — conditional
+    // spread keeps the shape identical to pre-cache versions otherwise.
+    ...(step.cachedTokens != null ? { lastCachedTokens: step.cachedTokens } : {}),
+    ...(step.promptTotalTokens != null
+      ? { lastPromptTotalTokens: step.promptTotalTokens }
+      : {}),
   };
 }
 
@@ -1548,6 +1565,10 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
     // M1-U5 — resume path starts the counter at the next step beyond
     // what was persisted.
     const startStepIndex = (ctx.resumedFromStep ?? 0) + 1;
+    // 上一轮 wire 的逐条指纹([0] 是 tools,其后是每条 message),供 [prefix]
+    // 诊断定位「前缀是从第几条开始变的」。纯诊断状态,不参与任何决策。
+    let prevWireFp: number[] = [];
+
     // Unbounded — only an LLM termination (done/fail/plain-text) or a user
     // abort exits this loop. The soft checkpoint (SOFT_STEP_BUDGET) is a
     // neutral periodic self-check, not a wrap-up signal; there is no absolute
@@ -1744,7 +1765,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         observationText += `\n\n<system_notice>\n${sysNotices.join("\n\n")}\n</system_notice>`;
       }
       // Scratchpad overview — bounded, rides the trailing observation so the
-      // sliding-window/compaction/token-budget passes never trim it. Empty
+      // compaction/token-budget passes never trim it. Empty
       // string when the scratchpad is unused (no cost for non-extraction tasks).
       // Fail-soft: the overview is an enhancement, so an IDB read failure
       // (tx abort / blocked / corrupt record / quota) must NOT unwind the step
@@ -1812,18 +1833,17 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // 在 wire-time 整形之前:超 provider token 阈值时把最旧步骤摘成合成对,保住早期发现。
       await compactReactWindow(history, compactionMaxTokens, compactionSummarizer, signal);
 
-      // Apply sliding window（react cap 放宽为 BIG_CAP，react 段长度主要由 compaction 控制）
-      const windowedHistorySlid = applySlidingWindow(history, REACT_BIG_CAP);
-
-      // #61(c) — stale-snapshot elision. Replace the bulky interactive-element
-      // list of every observation EXCEPT the most recent with a short marker
-      // (semantic header kept). Runs on the windowed COPY only — at-rest
-      // history.agentMessages stay RAW (R28 v2). Placed BEFORE applyTokenBudget
-      // so the budget sees the post-elision (true) size and rarely needs to
-      // drop head pairs (#61 注意/联动). Elision is unconditional, so order vs
-      // budget does not change the final content sent to the LLM — only the
-      // budget's drop decision becomes more accurate.
-      const windowedHistoryElided = elideStaleObservations(windowedHistorySlid);
+      // #61(c) — stale-snapshot elision. Replace the bulky part of every stale
+      // page snapshot EXCEPT the most recent with a short marker (semantic
+      // header kept): the observation text block AND read_page tool_result
+      // payloads (interactive_index / untrusted_page_content). Runs on the
+      // windowed COPY only — at-rest history.agentMessages stay RAW (R28 v2).
+      // Placed BEFORE applyTokenBudget so the budget sees the post-elision
+      // (true) size and rarely needs to drop head pairs (#61 注意/联动).
+      // Elision is unconditional and monotone, so order vs budget does not
+      // change the final content sent to the LLM — only the budget's drop
+      // decision becomes more accurate.
+      const windowedHistoryElided = elideStaleObservations(history);
 
       // U5 — Token budget guard: drop oldest head pairs if estimated token
       // count exceeds 80% of the provider's context window. CJK-aware divisor
@@ -2021,7 +2041,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         toolCount: toolDefinitions.length,
       });
       let __sawAnyEvent = false;
-      let lastStepUsage: { inputTokens: number; outputTokens: number } | null = null;
+      let lastStepUsage: Extract<StreamEvent, { type: "done" }>["usage"] | null = null;
       let lastStopReason: Extract<StreamEvent, { type: "done" }>["stopReason"];
       for await (const event of streamChat(modelConfig, windowedHistory, signal, toolDefinitions)) {
         if (!__sawAnyEvent) {
@@ -2105,6 +2125,54 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         toolCallCount: completedToolCalls.length,
       });
 
+      // 每轮上下文成本诊断。回答两个问题:token 花在哪(tools / 历史 / 当轮新增),
+      // 以及前缀缓存有没有命中。`tail` 是本轮 user turn —— 大页面快照落在这里,
+      // 它天然不可缓存,所以 read_page 的那些轮 hit 掉到 50% 左右是正常的;
+      // 没读页的轮次 hit 应该稳在 90%+,掉下来才说明前缀被什么打断了。
+      // `est` 是本地估算(CJK 感知的字符数除法),与 `prompt`(provider 实报)对照
+      // 可以看出估算偏差。cached/hit 只有 provider 报了缓存计数才有值。
+      {
+        const toolsJson = JSON.stringify(toolDefinitions);
+        const wireFp = [fp(toolsJson), ...windowedHistory.map((m) => fp(JSON.stringify(m)))];
+        let diffAt = -1;
+        const n = Math.max(wireFp.length, prevWireFp.length);
+        for (let i = 0; i < n; i++) {
+          if (wireFp[i] !== prevWireFp[i]) { diffAt = i; break; }
+        }
+        const grew = prevWireFp.length ? wireFp.length - prevWireFp.length : 0;
+        prevWireFp = wireFp;
+
+        const toolsTok = estimateTokens([{ role: "system", content: toolsJson }]);
+        const total = estimateTokens(windowedHistory, modelConfig.provider);
+        const tail = windowedHistory.length
+          ? estimateTokens([windowedHistory[windowedHistory.length - 1]], modelConfig.provider)
+          : 0;
+        const prompt = lastStepUsage?.promptTotalTokens ?? lastStepUsage?.inputTokens;
+        const cached = lastStepUsage?.cachedTokens;
+
+        diag(
+          "ctx",
+          kv({
+            s: stepIndex,
+            msgs: windowedHistory.length,
+            prompt,
+            cached,
+            hit: prompt && cached != null ? `${Math.round((cached / prompt) * 100)}%` : "n/a",
+            out: lastStepUsage?.outputTokens,
+          }),
+          kv({ est: total + toolsTok, tools: toolsTok, hist: total - tail, tail }),
+          // 前缀稳定性:diffAt 是与上一轮相比第一条不同的位置。0=tools 变了
+          // (它排在 wire 最前,一变全废)、1=system prompt 变了、≈msgs=只有尾部
+          // 在变(健康)、居中=历史被改写(砍窗/compaction/elide)。grew 为负即砍窗。
+          kv({
+            diffAt: diffAt < 0 ? "none" : diffAt,
+            of: wireFp.length,
+            grew,
+            stable: diffAt < 0 ? "100%" : `${Math.round((diffAt / wireFp.length) * 100)}%`,
+          }),
+        );
+      }
+
       // Issue #59 — persist & announce step usage. Done before the abort
       // check intentionally: if the provider emitted done with usage,
       // the LLM round-trip really happened and the tokens were really
@@ -2132,6 +2200,12 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
                   lastOutputTokens: nextUsage.lastOutputTokens,
                   totalInputTokens: nextUsage.totalInputTokens,
                   totalOutputTokens: nextUsage.totalOutputTokens,
+                  ...(nextUsage.lastCachedTokens != null
+                    ? { lastCachedTokens: nextUsage.lastCachedTokens }
+                    : {}),
+                  ...(nextUsage.lastPromptTotalTokens != null
+                    ? { lastPromptTotalTokens: nextUsage.lastPromptTotalTokens }
+                    : {}),
                 },
                 sessionId,
               ),

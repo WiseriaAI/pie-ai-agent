@@ -111,7 +111,7 @@ function sentinelFor(role: "user" | "assistant"): AgentMessage {
  * Validate and, if necessary, repair an AgentMessage array so that no two
  * adjacent non-system messages share the same role.
  *
- * @param messages - The history to validate (e.g. result of applySlidingWindow).
+ * @param messages - The history to validate (the wire-time copy).
  * @returns `{ repaired, violations }` — `repaired` is a NEW array (input
  *   not mutated); `violations` lists each detected pair (by input index).
  * @throws {MultiTurnHistoryError} if `messages` is empty or contains an

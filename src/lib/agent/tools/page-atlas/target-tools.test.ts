@@ -213,7 +213,7 @@ describe("page atlas target tools", () => {
     expect(result.observation).toContain("<records");
     expect(result.observation).toContain("record_r1");
     expect(result.observation).toContain("record_r2");
-    expect(result.observation).toContain("&quot;Pie&quot;");
+    expect(result.observation).toContain('"name":"Pie"'); // 元素内容位置不再把引号转成 &quot;
   });
 
   it("read_struct reads a table without pre-classifying the type", async () => {
@@ -249,7 +249,7 @@ describe("page atlas target tools", () => {
     expect(result.success).toBe(true);
     expect(result.observation).not.toContain("record_r1");
     expect(result.observation).toContain("record_r2");
-    expect(result.observation).toContain("&quot;Cake&quot;");
+    expect(result.observation).toContain('"name":"Cake"');
   });
 
   it("read_struct projects to named fields when fields given", async () => {
@@ -260,10 +260,85 @@ describe("page atlas target tools", () => {
     );
     expect(result.success).toBe(true);
     expect(result.observation).toContain('tool="read_struct"');
+    // JSON Lines,一行一条:去掉数组包装与双重编码,截断也不会剩半个数组。
     expect(untrustedPageContentBody(result.observation ?? "")).toBe(
-      '[{&quot;name&quot;:&quot;Pie&quot;,&quot;_evidence&quot;:&quot;first product card&quot;}]',
+      '{"name":"Pie","_evidence":"first product card"}',
     );
     expect(result.observation).not.toContain("price");
+  });
+
+  it("text 等于 fields 拼接时不重复输出,不等于时保留为 _text", async () => {
+    store.clear();
+    store.save(atlas({
+      targets: [
+        {
+          id: "collection_c1",
+          type: "collection",
+          label: "Cards",
+          frameId: 0,
+          confidence: "high",
+          summary: "",
+          records: [
+            // table 形态:text 就是各 cell 值的 join —— 纯重复,丢掉。
+            { id: "r_dup", fields: { a: "Pie", b: "$3" }, text: "Pie $3", evidence: "tr" },
+            // collection 形态:fields 只有 title/link,text 是整张卡片正文 —— 必须留。
+            {
+              id: "r_rich",
+              fields: { title: "Pie" },
+              text: "Pie $3 In stock, ships today",
+              evidence: "a[href]",
+            },
+          ],
+        },
+      ],
+    }));
+    const tools = toolsFor(store);
+    const result = await tools.read_struct.handler(
+      { atlas_id: "atlas_1", target_id: "collection_c1" },
+      ctx,
+    );
+
+    expect(result.observation).toContain('<record id="r_dup" evidence="tr">{"a":"Pie","b":"$3"}</record>');
+    expect(result.observation).toContain('"_text":"Pie $3 In stock, ships today"');
+  });
+
+  it("不传 range 时按默认上限截断,并给出续读提示", async () => {
+    store.clear();
+    store.save(atlas({
+      targets: [
+        {
+          id: "collection_c1",
+          type: "collection",
+          label: "Long list",
+          frameId: 0,
+          confidence: "high",
+          summary: "",
+          records: Array.from({ length: 80 }, (_, i) => ({
+            id: `r${i}`,
+            fields: { name: `Item ${i}` },
+            text: `Item ${i}`,
+            evidence: "li",
+          })),
+        },
+      ],
+    }));
+    const tools = toolsFor(store);
+
+    const capped = await tools.read_struct.handler(
+      { atlas_id: "atlas_1", target_id: "collection_c1" },
+      ctx,
+    );
+    expect(capped.observation!.split("<record ").length - 1).toBe(50);
+    expect(capped.observation).toContain('omitted="30"');
+    expect(capped.observation).toContain("range=50..80");
+
+    // 显式 range 是 LLM 明确要的量,不受默认上限约束。
+    const explicit = await tools.read_struct.handler(
+      { atlas_id: "atlas_1", target_id: "collection_c1", range: "0..80" },
+      ctx,
+    );
+    expect(explicit.observation!.split("<record ").length - 1).toBe(80);
+    expect(explicit.observation).not.toContain("omitted=");
   });
 
   it("read_struct treats an empty fields array as full records", async () => {

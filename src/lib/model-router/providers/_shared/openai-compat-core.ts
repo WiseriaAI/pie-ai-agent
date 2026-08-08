@@ -38,6 +38,9 @@ export interface OpenAICompatHooks {
   customHeaders?: (config: ModelConfig) => Record<string, string>;
   /** Replaces the default `Authorization: Bearer ${apiKey}`. */
   authHeaders?: (config: ModelConfig) => Record<string, string>;
+  /** Extra top-level request-body fields (provider-specific opt-ins).
+   *  Merged before `tools`/`tool_choice`, so it cannot clobber them. */
+  extraBody?: (config: ModelConfig) => Record<string, unknown>;
 }
 
 interface OpenAIWireMessage {
@@ -131,6 +134,7 @@ export async function* streamChatOpenAICompat(
     stream: true,
     stream_options: { include_usage: true },
     ...(config.maxTokens != null && { max_tokens: config.maxTokens }),
+    ...(hooks?.extraBody?.(config) ?? {}),
   };
   if (tools && tools.length > 0) {
     requestBody.tools = tools.map((t) => ({
@@ -176,7 +180,7 @@ export async function* streamChatOpenAICompat(
     return;
   }
 
-  let usage: { inputTokens: number; outputTokens: number } | undefined;
+  let usage: Extract<StreamEvent, { type: "done" }>["usage"];
   const pendingToolCalls = new Map<number, PendingToolCall>();
   const splitter = createThinkTagSplitter();
   let thinkingOpen = false;
@@ -216,7 +220,27 @@ export async function* streamChatOpenAICompat(
       }
       try {
         const data = JSON.parse(sse.data);
-        if (data.usage) usage = { inputTokens: data.usage.prompt_tokens ?? 0, outputTokens: data.usage.completion_tokens ?? 0 };
+        if (data.usage) {
+          const u = data.usage;
+          // Prompt-cache counters, three known wire shapes: OpenAI-style
+          // prompt_tokens_details.cached_tokens (also Moonshot), a flat
+          // usage.cached_tokens, and DeepSeek's prompt_cache_hit_tokens.
+          const promptTotal: number = u.prompt_tokens ?? 0;
+          const cached: number =
+            u.prompt_tokens_details?.cached_tokens ??
+            u.cached_tokens ??
+            u.prompt_cache_hit_tokens ??
+            0;
+          usage = {
+            inputTokens: promptTotal,
+            outputTokens: u.completion_tokens ?? 0,
+            // Only attach when the provider reported real cache activity —
+            // absent lets the UI hide cache stats instead of showing 0%.
+            ...(cached > 0
+              ? { cachedTokens: cached, promptTotalTokens: promptTotal }
+              : {}),
+          };
+        }
         const choice = data.choices?.[0];
         if (!choice) continue;
         const delta = choice.delta;

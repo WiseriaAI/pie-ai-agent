@@ -7,6 +7,8 @@ import { isPdfTabAsync } from "@/lib/pdf/detect";
 import { pageAtlasStore, parseOrigin, type PageAtlasState } from "./page-atlas";
 import { renderPageAtlas } from "./page-atlas/render";
 import { executeScriptAllFrames, type AllFramesInjectionOutcome } from "../inject-all-frames";
+import { estimateTokens } from "../window-token-budget";
+import { diag, kv } from "../diag";
 
 // read_page byte budgets per mode. Default is the hard cap — don't truncate
 // by default; the LLM can still pass a smaller max_bytes to save tokens when
@@ -15,6 +17,8 @@ import { executeScriptAllFrames, type AllFramesInjectionOutcome } from "../injec
 const MODE_BUDGETS = {
   auto: { maxBytes: 500_000 },
   atlas: { maxBytes: 500_000 },
+  // interactive 不再返回 HTML(只发元素索引),这个预算实际不消费——留着是因为
+  // resolveHtmlBudget 按 mode 查表,且 max_bytes 仍需被 clamp 成合法值。
   interactive: { maxBytes: 200_000 },
   content: { maxBytes: 300_000 },
   full: { maxBytes: 500_000 },
@@ -80,6 +84,14 @@ function elementText(value: string): string {
 
 function wrapPageAtlasObservation(atlas: PageAtlasState, body: string): string {
   return [
+    // Header mirrors the snapshot path's `Current URL / Page title` prelude so
+    // elideStaleObservations has something cheap to keep before its cut point.
+    // Without it a stale atlas result elides down to a bare marker — every one
+    // of them byte-identical — and the LLM can no longer tell which step read
+    // which page, so it re-runs read_page instead of relying on history.
+    `Current URL: ${atlas.url}`,
+    `Page title: ${atlas.title}`,
+    ``,
     `<untrusted_page_content ${attr("tool", "read_page")} ${attr("mode", "atlas")} ${attr("atlas_id", atlas.atlasId)} ${attr("tab_id", atlas.tabId)}>`,
     body,
     "</untrusted_page_content>",
@@ -179,6 +191,39 @@ function utf8ByteLength(value: string): number {
   return textEncoder.encode(value).byteLength;
 }
 
+// ---------------------------------------------------------------------------
+// read_page 成本诊断。回答「这次返回的 token 花在哪一段」——loop.ts 的 [ctx]
+// 只能看到轮级总量,定位不到是 controls 还是正文在膨胀。
+//
+// 分段按渲染产物的字面块切,不改 render.ts:切片顺序要求先有基线,再动渲染。
+// est 复用 estimateTokens(与 [ctx] 同一把尺子,便于两条日志直接相加对照)——
+// 它已知系统性低估 40-47%,但基线和对照用同一把尺子,相对变化仍然可信。
+// ---------------------------------------------------------------------------
+
+/** 一段文本的估算 token 数,口径与 loop.ts 的 [ctx] 一致。 */
+function estOf(text: string): number {
+  return estimateTokens([{ role: "user", content: text }]);
+}
+
+/** `open` 到 `close`(含)之间的子串;任一缺失则空串。 */
+function blockOf(body: string, open: string, close: string): string {
+  const start = body.indexOf(open);
+  if (start === -1) return "";
+  const end = body.indexOf(close, start);
+  return end === -1 ? "" : body.slice(start, end + close.length);
+}
+
+/** 所有以 `prefix` 开头(忽略缩进)的行的字符数合计。 */
+function lineChars(body: string, prefix: string): number {
+  let total = 0;
+  for (const line of body.split("\n")) {
+    if (line.trimStart().startsWith(prefix)) total += line.length + 1;
+  }
+  return total;
+}
+
+
+
 function sliceUtf8(value: string, maxBytes: number): string {
   if (maxBytes <= 0) return "";
   let used = 0;
@@ -208,7 +253,7 @@ export const readPageTool: Tool = {
         type: "string",
         enum: ["auto", "atlas", "interactive", "content", "full"],
         description:
-          "Read mode. auto is default and behaves like atlas. Use interactive for element indices. content/full are expensive fallbacks, not first-pass inspection modes.",
+          "Read mode, each returning only its own surface. auto/atlas: page atlas. interactive: element indices only, no body text. content: body text only, no element index. full: both (most expensive). content/full are fallbacks, not first-pass inspection modes.",
       },
       max_bytes: {
         type: "integer",
@@ -307,10 +352,35 @@ export const readPageTool: Tool = {
       // by CSP / sandbox iframe / still navigating) so the LLM knows content is
       // missing instead of silently re-running read_page forever.
       const unreachableBlock = renderAtlasUnreachableFrames(frames, reachableFrameIds, timedOutFrameIds);
-      const atlasBody = unreachableBlock
-        ? `${renderPageAtlas(atlas)}\n${unreachableBlock}`
-        : renderPageAtlas(atlas);
-      return { success: true, observation: wrapPageAtlasObservation(atlas, atlasBody) };
+      const rendered = renderPageAtlas(atlas);
+      const atlasBody = unreachableBlock ? `${rendered}\n${unreachableBlock}` : rendered;
+      const observation = wrapPageAtlasObservation(atlas, atlasBody);
+
+      const actionBlock = blockOf(atlasBody, "<action_surfaces>", "</action_surfaces>");
+      const dataBlock = blockOf(atlasBody, "<data_surfaces>", "</data_surfaces>");
+      const controlChars = lineChars(atlasBody, "<control ");
+      diag(
+        "read_page",
+        kv({
+          mode,
+          est: estOf(observation),
+          chars: observation.length,
+          frames: frames.length,
+          unreachable: frames.length - reachableFrameIds.size,
+        }),
+        // controls 是已知的大头(实测 484 条占单份 atlas 69% token)。
+        // `shown/n` = top-K 后渲染的条数 / 页面上的总数,差值即 omitted。
+        kv({
+          controls: `${atlasBody.split("<control ").length - 1}/${atlas.controls.length}`,
+          ctrlChars: controlChars,
+          forms: atlas.forms.length,
+          targets: atlas.targets.length,
+          actionEst: estOf(actionBlock),
+          dataEst: estOf(dataBlock),
+          nextActionChars: lineChars(atlasBody, "<next_action "),
+        }),
+      );
+      return { success: true, observation };
     }
 
     // See atlas path: per-frame fan-out so a never-responding frame can't
@@ -356,6 +426,12 @@ export const readPageTool: Tool = {
     let topOrigin: string | null = null;
     try { topOrigin = new URL(topUrl).origin; } catch { topOrigin = null; }
 
+    // 各 mode 只返回自己声明的表示面。此前无论哪个 mode 都同时发 interactive
+    // index 和整页 HTML,mode 实际只改了 byte cap —— 与工具描述和 prompt 里的
+    // 说法不符,LLM 即使正确选了轻模式也拿到不需要的内容。
+    const wantIndex = mode === "interactive" || mode === "full";
+    const wantBlocks = mode === "content" || mode === "full";
+
     const sortedFrames = [...frames].sort((a, b) => a.frameId - b.frameId);
     const frameMapLines: string[] = [];
     const frameInteractive: Array<{
@@ -381,6 +457,8 @@ export const readPageTool: Tool = {
         frameMapLines.push(
           `  frame_id="${f.frameId}" url="${escapeWrapperAttribute(f.url)}" unreachable="true" reason="${reason}"`,
         );
+        // frame_map 那行已经说明了不可达 —— 不发 content 面时不必再来一个空块。
+        if (!wantBlocks) continue;
         const attrs = [
           `frame_id="${f.frameId}"`,
           `frame_url="${escapeWrapperAttribute(f.url)}"`,
@@ -408,6 +486,10 @@ export const readPageTool: Tool = {
           `  - ${hint.region}${hint.pieIdx !== null ? ` at data-pie-idx=${hint.pieIdx}` : ""}: ${hint.visibleCount} visible, estimated ${hint.estimatedTotal} total (frame_id=${f.frameId})`,
         );
       }
+
+      // mode=interactive 到此为止:index 与 frame_map 已备齐,整页 HTML 的
+      // iframe 占位重写 + escape 是纯浪费(大页面上是几百 KB 的字符串处理)。
+      if (!wantBlocks) continue;
 
       const blockAttrs: string[] = [
         `frame_id="${f.frameId}"`,
@@ -448,16 +530,35 @@ export const readPageTool: Tool = {
       `</frame_map>`,
     ];
 
-    const observationParts = [
-      headerLines.join("\n"),
-      renderInteractiveIndex(mode, frameInteractive),
-    ];
+    const interactiveIndex = wantIndex ? renderInteractiveIndex(mode, frameInteractive) : "";
+    const observationParts = [headerLines.join("\n")];
+    if (interactiveIndex) observationParts.push(interactiveIndex);
     if (scrollableLines.length > 0) {
       observationParts.push(`<scrollable_regions>\n${scrollableLines.join("\n")}\n</scrollable_regions>`);
     }
     observationParts.push(...blocks);
 
     const observation = observationParts.join("\n\n");
+    const blocksChars = blocks.reduce((n, b) => n + b.length, 0);
+    diag(
+      "read_page",
+      kv({
+        mode,
+        est: estOf(observation),
+        chars: observation.length,
+        frames: frames.length,
+      }),
+      // 这两段是 snapshot 路径的两个返回面,各 mode 只发自己那一面(切片 3)。
+      kv({
+        idxEls: frameInteractive.reduce((n, f) => n + f.elements.length, 0),
+        idxChars: interactiveIndex.length,
+        blocks: blocks.length,
+        blockChars: blocksChars,
+        frameMapChars: headerLines.join("\n").length,
+        budget: totalBudgetBytes,
+        exhausted: budgetExhausted,
+      }),
+    );
     return { success: true, observation };
   },
 };

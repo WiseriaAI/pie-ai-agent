@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AgentMessage, ContentBlock } from "@/lib/model-router";
 import { compactReactWindow, isCompactedUserMsg as isCompactedUserMsgExported, buildCompactionMessages, type ReactSummarizer } from "./compact-react-window";
+import { elideStaleObservations } from "./elide-stale-observations";
+import { estimateTokens } from "./window-token-budget";
 
 function toolUsePair(name: string, big: string): AgentMessage[] {
   return [
@@ -84,6 +86,54 @@ function noAdjacentSameRole(h: AgentMessage[]): boolean {
   }
   return true;
 }
+
+describe("compactReactWindow — 压缩水位", () => {
+  // 旧行为是「压到刚跨回 threshold 就停」,压完贴着 0.8 线,下一轮 read_page
+  // 立刻再越线再压一次 → 每轮 splice 一次 → 每轮打穿 provider 前缀缓存。
+  // 现在压到 TARGET_RATIO(0.1) 水位,一次失效换几十上百轮稳定前缀。
+  it("压到目标水位(~10%)而非贴着触发阈值(80%)", async () => {
+    // 参数需同时满足:总量越过 0.8M 触发线,且 0.1M 目标水位高于保鲜区
+    // (KEEP_RECENT 对 + head + 合成对)撑出的 floor —— 否则测的是
+    // 「压不到目标、victim 耗尽」的边界而非水位本身。
+    const M = 2400;
+    const h = baseHistory(300, 20);
+    expect(estimateTokens(elideStaleObservations(h))).toBeGreaterThan(M * 0.8);
+
+    await compactReactWindow(h, M, okSummarizer, abortSignal());
+
+    // wire 等效大小(与 loop 实际发送的一致)必须明显脱离 0.8 触发线,而不是
+    // 贴着它停。断言取 0.2M 而非 0.1M:保鲜区 + head + 合成对撑出的 floor
+    // 可能高于 0.1M(合成摘要是 CJK,estimateTokens 的 divisor 更贵),那种
+    // 情况下压到 floor 就是正确行为。
+    expect(estimateTokens(elideStaleObservations(h))).toBeLessThan(M * 0.2);
+  });
+
+  it("喂给 summarizer 的 victim 已 elide,不含页面正文", async () => {
+    const bulk = "z".repeat(4000);
+    const snapshot =
+      `Current URL: https://e.com\nPage title: E\n\n` +
+      `<untrusted_page_content frame_id="0">${bulk}</untrusted_page_content>`;
+    const h: AgentMessage[] = [
+      { role: "system", content: "sys" },
+      { role: "user", content: "task" },
+    ];
+    for (let i = 0; i < 8; i++) {
+      h.push(
+        { role: "assistant", content: [{ type: "tool_use", id: `t${i}`, name: "read_page", input: {} } as ContentBlock] },
+        { role: "user", content: [{ type: "tool_result", toolUseId: `t${i}`, content: snapshot } as ContentBlock] },
+      );
+    }
+    const summarizer = vi.fn<ReactSummarizer>(async () => "动作: 读页\n发现: E");
+    // 触发判定看的是 elide 后的等效大小(7 条 stale 已瘦身 + 1 条完整),
+    // 所以阈值要压在那个量之下才会进压缩路径。
+    await compactReactWindow(h, 1200, summarizer, abortSignal());
+
+    expect(summarizer).toHaveBeenCalledTimes(1);
+    const victimText = JSON.stringify(summarizer.mock.calls[0][0]);
+    expect(victimText).not.toContain(bulk); // 正文没被白烧进摘要调用
+    expect(victimText).toContain("Current URL: https://e.com"); // 廉价语义头保留
+  });
+});
 
 describe("compactReactWindow — 边界", () => {
   it("summarizer 返回 null → history 不变", async () => {

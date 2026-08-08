@@ -521,11 +521,14 @@ describe("Page tools locator guidance (#113)", () => {
     expect(prompt).not.toMatch(/Use `mode:"content"` when reading\/summarizing body text, tables, emails, or status messages/);
   });
 
-  it("allows element indices only from the most recent read_page interactive_index", () => {
+  it("allows element indices only from the most recent read_page", () => {
     const prompt = buildAgentSystemPrompt();
-    expect(prompt).toContain(
-      "most recent** `read_page` `<interactive_index>`",
-    );
+    // #113 的不变量是「只用最近一次 read_page 的索引」;来源现在有两种 ——
+    // atlas 的 <control> 与 interactive 模式的 <interactive_element> ——
+    // 但都必须来自 read_page,不能是 search_page 结果或猜的。
+    expect(prompt).toContain("most recent** `read_page`");
+    expect(prompt).toContain("`<control>`");
+    expect(prompt).toContain("never guess them");
     expect(prompt).not.toContain("or `search_page` result");
     expect(prompt).not.toContain("search_page({");
   });

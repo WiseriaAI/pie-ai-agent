@@ -77,6 +77,7 @@ vi.mock("./elide-stale-observations", () => ({
 }));
 vi.mock("./window-token-budget", () => ({
   applyTokenBudget: vi.fn(async (hist: unknown) => hist),
+  estimateTokens: vi.fn(() => 0), // 只服务 [ctx] 诊断日志
 }));
 vi.mock("./compact-react-window", () => ({
   compactReactWindow: vi.fn(async (hist: unknown) => hist),

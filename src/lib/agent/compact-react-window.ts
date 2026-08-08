@@ -27,6 +27,15 @@ export type ReactSummarizer = (
 const KEEP_RECENT = 4;
 /** 触发阈值比例,复用 applyTokenBudget 的 80%。 */
 const THRESHOLD_RATIO = 0.8;
+/**
+ * 压缩目标水位。压缩是 in-place splice,必然换掉 react 段第一条消息,
+ * 让 provider 前缀缓存对整个 react 段失效——长程页面操作任务里那是 token 大头。
+ * 所以压一次就要压够本:压到阈值就停(旧行为)会贴着线,下一轮 read_page 就再次
+ * 越线再压一次,变成「每轮一次全失效」。压到 10% 则是「一次失效换几十上百轮
+ * 稳定前缀」。KEEP_RECENT 保鲜区 + head 撑着一个 floor(页面大时通常落在
+ * 15-20%),够不到 10% 时 victim 循环自然耗尽停下,不是错误。
+ */
+const TARGET_RATIO = 0.1;
 /** 合成对 user 那条携带的标记 tag,用于识别已压缩区。 */
 const COMPACTED_TAG = "untrusted_compacted_steps";
 
@@ -71,7 +80,10 @@ export async function compactReactWindow(
 
   const victimStart = reactStartIdx + compactedCount * 2;
 
-  // 逐对累积 victim,直到「移除后」elide 估算达标,或可压对耗尽。
+  // 逐对累积 victim,直到「移除后」elide 估算压到 TARGET 水位,或可压对耗尽。
+  // 注意终止条件是 target 而非 threshold:贴着 threshold 停会导致下一轮立刻
+  // 再次越线,每轮都 splice 一次、每轮都打穿前缀缓存(见 TARGET_RATIO 注释)。
+  const target = maxContextTokens * TARGET_RATIO;
   let victimPairs = 0;
   while (victimPairs < maxCompactable) {
     victimPairs++;
@@ -79,12 +91,15 @@ export async function compactReactWindow(
       ...history.slice(0, victimStart),
       ...history.slice(victimStart + victimPairs * 2),
     ];
-    if (estimateTokens(elideStaleObservations(candidate)) <= threshold) break;
+    if (estimateTokens(elideStaleObservations(candidate)) <= target) break;
   }
 
   const victimMsgs = history.slice(victimStart, victimStart + victimPairs * 2);
   if (signal.aborted) return;
-  const summary = await summarizer(victimMsgs, signal);
+  // 摘要器只要「动作 + 发现」,COMPACTION_SYSTEM 明确要求省略 DOM 元素列表。
+  // 喂 raw victim 等于把整份页面快照当输入白烧一遍——先 elide(连最近一条也压,
+  // 这批消息本来就要被摘要替换掉)再喂,输入小一个数量级。
+  const summary = await summarizer(elideStaleObservations(victimMsgs, false), signal);
   if (signal.aborted || summary === null) return; // 本步跳过,history 不变
 
   const synthetic = buildSyntheticPair(summary, victimPairs);

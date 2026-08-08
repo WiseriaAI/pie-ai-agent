@@ -265,6 +265,12 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
           lastOutputTokens: msg.lastOutputTokens,
           totalInputTokens: msg.totalInputTokens,
           totalOutputTokens: msg.totalOutputTokens,
+          ...(msg.lastCachedTokens != null
+            ? { lastCachedTokens: msg.lastCachedTokens }
+            : {}),
+          ...(msg.lastPromptTotalTokens != null
+            ? { lastPromptTotalTokens: msg.lastPromptTotalTokens }
+            : {}),
         },
       });
       return;

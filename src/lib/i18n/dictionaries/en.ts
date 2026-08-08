@@ -328,6 +328,7 @@ export const enDict = {
       output: "output",
       total: "total",
       lastCall: "Context used {used} / {max} ({pct}%)",
+      cacheHit: "Cache hit",
     },
   },
   modelDropdown: {

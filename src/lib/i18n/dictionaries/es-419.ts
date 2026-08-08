@@ -324,6 +324,7 @@ export const es419Dict = {
       output: "salida",
       total: "total",
       lastCall: "Contexto usado {used} / {max} ({pct}%)",
+      cacheHit: "Acierto de caché",
     },
   },
   modelDropdown: {

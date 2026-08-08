@@ -514,6 +514,41 @@ describe("agent-usage", () => {
     expect(deps.slotsRef.current.get("s1")?.usage?.totalInputTokens).toBe(10199);
     expect(deps.slotsRef.current.get("s1")?.usage?.lastInputTokens).toBe(200);
   });
+
+  it("passes through last-call cache counters when present, omits them otherwise", () => {
+    const deps = makeDeps();
+    const { handleMessage } = createPortHandlers(deps);
+    handleMessage({
+      type: "agent-usage",
+      sessionId: "s1",
+      lastInputTokens: 200,
+      lastOutputTokens: 10,
+      totalInputTokens: 10200,
+      totalOutputTokens: 1010,
+      lastCachedTokens: 800,
+      lastPromptTotalTokens: 1000,
+    } as PortMessageToPanel);
+    expect(deps.slotsRef.current.get("s1")?.usage).toEqual({
+      lastInputTokens: 200,
+      lastOutputTokens: 10,
+      totalInputTokens: 10200,
+      totalOutputTokens: 1010,
+      lastCachedTokens: 800,
+      lastPromptTotalTokens: 1000,
+    });
+
+    handleMessage({
+      type: "agent-usage",
+      sessionId: "s1",
+      lastInputTokens: 300,
+      lastOutputTokens: 12,
+      totalInputTokens: 10500,
+      totalOutputTokens: 1022,
+    } as PortMessageToPanel);
+    const usage = deps.slotsRef.current.get("s1")?.usage;
+    expect(usage).not.toHaveProperty("lastCachedTokens");
+    expect(usage).not.toHaveProperty("lastPromptTotalTokens");
+  });
 });
 
 describe("file-output", () => {

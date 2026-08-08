@@ -195,18 +195,18 @@ describe("U5 — applyTokenBudget", () => {
   // -------------------------------------------------------------------------
 
   describe("Scenario 7: CJK ratio exactly 50% — divisor 4 (not 1.5)", () => {
-    it("uses divisor 4 when CJK ratio is exactly 0.5", () => {
+    it("ratio 恰好 0.5 时走非 CJK 除数(不是 CJK 那条)", () => {
       // 100 chars: 50 CJK + 50 ASCII → ratio = 0.5 (not > 0.5)
       const content = "一".repeat(50) + "A".repeat(50);
       const msgs: AgentMessage[] = [
         makeMsg("system", ""),
         makeMsg("user", content),
       ];
-      // ceil(100 / 4) = 25; ceil(100 / 1.5) = 67
-      // Verify by using estimateTokens on the content message alone
       const estimate = estimateTokens([makeMsg("user", content)]);
-      // divisor 4 → ceil(100 / 4) = 25
-      expect(estimate).toBe(25);
+      // 这里锁的是「> 0.5 才切 CJK 除数」这个边界,不是除数的具体取值 ——
+      // 除数是可校准的安全上界(见 CHARS_PER_TOKEN 注释),会随实测调整。
+      expect(estimate).toBe(Math.ceil(100 / 2.5));
+      expect(estimate).toBeLessThan(Math.ceil(100 / 1.2));
     });
   });
 
@@ -231,7 +231,7 @@ describe("U5 — applyTokenBudget", () => {
   // Scenario 9 — Integration: U1 applySlidingWindow + U5 applyTokenBudget
   // -------------------------------------------------------------------------
 
-  describe("Scenario 9: integration — sliding window + token budget", () => {
+  describe("Scenario 9: token budget scope — head only, never the react segment", () => {
     it("token budget only drops head pairs, not react segment", async () => {
       // Build a history: [system, chat prefix (many pairs), current user, react pairs]
       // The react segment has ContentBlock[] content.
@@ -432,10 +432,9 @@ describe("estimateTokens — thinking block counts toward budget", () => {
 
     // thinking text (400 chars) must increase the estimate
     expect(tokensWith).toBeGreaterThan(tokensWithout);
-    // ceil((400 + 5) / 4) = ceil(405 / 4) = 102 for with-thinking
-    // ceil(5 / 4) = 2 for without-thinking
-    expect(tokensWithout).toBe(2);
-    expect(tokensWith).toBe(102);
+    // thinking 的 400 字符必须整份计入(此前它被漏掉过)。
+    expect(tokensWithout).toBe(Math.ceil(5 / 2.5));
+    expect(tokensWith).toBe(Math.ceil(405 / 2.5));
   });
 });
 

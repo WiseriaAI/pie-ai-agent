@@ -662,6 +662,52 @@ describe("op=search finds label-rescued hidden controls", () => {
   });
 });
 
+describe("pie_idx parity: atlas ↔ snapshot", () => {
+  // 切片 5 的前置条件。prompt 让 LLM 直接拿 atlas <control> 的 pie_idx 去
+  // click/type/select,省掉一次 mode:"interactive" 重读 —— 前提是两条路径给同一
+  // 个元素的编号一致。它们确实共用 stampLiveDom + 同一份 walkDeep 结果,但此前
+  // 没有测试锁住;一旦漂移就是静默点错元素,比多花 token 严重得多。
+  it("同一 DOM 上,atlas 的 control.pieIdx 与 snapshot 的 interactiveElement.pieIdx 逐个相等", () => {
+    document.body.innerHTML = `
+      <header><a href="/home">Home</a><a href="/docs">Docs</a></header>
+      <form>
+        <input type="text" name="q" placeholder="Search" />
+        <select name="sort"><option>New</option></select>
+        <input type="checkbox" id="agree" />
+        <button type="submit">Go</button>
+      </form>
+      <main><a href="/p/1">Product one</a><button>Buy</button></main>
+    `;
+
+    const atlas = probePageInjected({ op: "atlas" });
+    if (atlas.op !== "atlas") throw new Error("narrow");
+    const atlasIdx = new Map(atlas.controls.map((c) => [c.label, c.pieIdx]));
+
+    const snap = probePageInjected({ op: "snapshot" });
+    if (snap.op !== "snapshot") throw new Error("narrow");
+
+    // 两条路径都编到了同一批元素,数量必须一致 —— 否则「省掉重读」就会漏元素。
+    expect(atlas.controls.length).toBe(snap.interactiveElements.length);
+
+    // 逐个元素比对:用实时 DOM 上的 data-pie-idx 作为第三方基准,
+    // 避免两边各自的 label 规则差异干扰判断。
+    const live = [...document.querySelectorAll("[data-pie-idx]")];
+    expect(live.length).toBe(snap.interactiveElements.length);
+    const snapIdxSet = new Set(snap.interactiveElements.map((e) => e.pieIdx));
+    for (const pieIdx of atlasIdx.values()) {
+      expect(snapIdxSet.has(pieIdx)).toBe(true);
+    }
+  });
+
+  it("重复调用 atlas 得到稳定编号(前缀缓存与跨轮引用的前提)", () => {
+    document.body.innerHTML = `<button>A</button><a href="/x">B</a><input name="c" />`;
+    const first = probePageInjected({ op: "atlas" });
+    const second = probePageInjected({ op: "atlas" });
+    if (first.op !== "atlas" || second.op !== "atlas") throw new Error("narrow");
+    expect(second.controls.map((c) => c.pieIdx)).toEqual(first.controls.map((c) => c.pieIdx));
+  });
+});
+
 describe("probePageInjected op=atlas", () => {
   it("detects controls, forms, repeated collections, native tables, and fingerprint buckets", () => {
     document.body.innerHTML = `

@@ -1793,6 +1793,29 @@ describe("issue #59 — mergeContextUsage", () => {
     expect(next).toHaveProperty("totalOutputTokens", 0);
     expect(next).toHaveProperty("lastOutputTokens", 0);
   });
+
+  it("carries last-call cache counters when the step reports them", () => {
+    const next = mergeContextUsage(undefined, {
+      inputTokens: 200,
+      outputTokens: 10,
+      cachedTokens: 800,
+      promptTotalTokens: 1000,
+    });
+    expect(next).toEqual({
+      totalInputTokens: 200,
+      totalOutputTokens: 10,
+      lastInputTokens: 200,
+      lastOutputTokens: 10,
+      lastCachedTokens: 800,
+      lastPromptTotalTokens: 1000,
+    });
+  });
+
+  it("omits cache keys entirely when the step has no cache info", () => {
+    const next = mergeContextUsage(undefined, { inputTokens: 200, outputTokens: 10 });
+    expect(next).not.toHaveProperty("lastCachedTokens");
+    expect(next).not.toHaveProperty("lastPromptTotalTokens");
+  });
 });
 
 describe("issue #59 — mergeSessionAgentSnapshot preserves contextUsage", () => {

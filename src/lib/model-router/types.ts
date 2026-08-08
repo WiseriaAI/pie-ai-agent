@@ -62,7 +62,21 @@ export type StreamEvent =
   | {
       type: "done";
       stopReason?: "end" | "tool_calls" | "length";
-      usage?: { inputTokens: number; outputTokens: number };
+      usage?: {
+        inputTokens: number;
+        outputTokens: number;
+        /** Prompt tokens served from the provider's prompt/KV cache on THIS
+         *  call (Anthropic cache_read_input_tokens; OpenAI-compat
+         *  prompt_tokens_details.cached_tokens / prompt_cache_hit_tokens).
+         *  Absent when the provider reports no cache information at all —
+         *  the UI hides cache stats rather than showing a misleading 0%. */
+        cachedTokens?: number;
+        /** Total prompt tokens processed on this call — the denominator for
+         *  the cache hit ratio. OpenAI-compat: prompt_tokens (cached included).
+         *  Anthropic: input_tokens + cache_read + cache_creation (their
+         *  input_tokens EXCLUDES cached portions). Present iff cachedTokens is. */
+        promptTotalTokens?: number;
+      };
     }
   | { type: "ratelimit-wait"; resumeAt: number }
   | { type: "error"; error: string; kind?: ErrorKind };

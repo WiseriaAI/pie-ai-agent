@@ -320,6 +320,7 @@ export const zhTWDict = {
       output: "輸出",
       total: "合計",
       lastCall: "上下文用量 {used} / {max}（{pct}%）",
+      cacheHit: "快取命中",
     },
   },
   modelDropdown: {
