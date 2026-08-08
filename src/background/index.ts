@@ -1216,8 +1216,12 @@ async function handleResumeRequest(
   // M3-U2 — same pin injection as chat-start path. checkPinnedDrift
   // already validated the pin against current tab state above; the loop
   // itself will re-check on every iteration.
-  // v1.5 — use getPrimaryPin to read from pinnedTabs[] (falls back to legacy fields via storage shim).
-  const pinned = getPrimaryPin(meta);
+  //
+  // Re-read rather than reuse `meta`: it was loaded several awaits ago (drift
+  // check, instance resolution, the status patch above). That window matters
+  // now that a task-mode pin left behind by an interrupted task stays editable
+  // (see PinnedTabDropdown) — the panel can write pinnedTabs concurrently.
+  const resumeMeta = (await getSessionMeta(sessionId)) ?? meta;
 
   // task string for prompt header — pull from the snapshot's first
   // user message. resume path doesn't really use this except as a
@@ -1248,10 +1252,10 @@ async function handleResumeRequest(
     // legacy snapshots written before this field existed → loop falls back to
     // the env seed.
     resumedActiveToolGroups: agent.activeToolGroups,
-    // v1.5 multi-pin: replace single `pinned` with the full array.
+    // v1.5 multi-pin: the full pin array.
     // Resume path restores currentFocusTabId from persisted agent state.
-    pinnedTabs: meta.pinnedTabs ?? [],
-    initialFocusTabId: agent.currentFocusTabId ?? meta.pinnedTabs?.[0]?.tabId,
+    pinnedTabs: resumeMeta.pinnedTabs ?? [],
+    initialFocusTabId: agent.currentFocusTabId ?? resumeMeta.pinnedTabs?.[0]?.tabId,
     // Phase 5 — per-task screenshot budget key.
     taskId: resumeTaskId,
     // M3-U4 (TOCTOU fix) — refresh per dispatch; see chat-start twin.
@@ -1259,7 +1263,7 @@ async function handleResumeRequest(
       getCrossSessionPinnedTabIds(sessionId, runningSessionIds),
     // M5 — pin mode frozen at chat-start (here: resume start). close_tabs K-9
     // reads this through ToolHandlerContext to refuse user-locked pin closes.
-    pinMode: getEffectivePinMode(meta, agent),
+    pinMode: getEffectivePinMode(resumeMeta, agent),
     // M5 — auto-unpin task-mode pin at task end (resume path).
     // clearTaskPinAtSessionEnd returns Promise<boolean>; onTaskDone expects Promise<void>.
     onTaskDone: async () => { await clearTaskPinAtSessionEnd(sessionId); },

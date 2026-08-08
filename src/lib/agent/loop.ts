@@ -1291,6 +1291,10 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
     // the already-cleared meta.
     // B — abort 保留 task-mode pin，使续接落在原任务 tab。其它终止照常降级。
     // Skip applies to every abort flavor (in-flight cancel AND pre-pin early-exit); neither should downgrade a pin.
+    //
+    // 保留 pin ≠ 锁住 pin：中断后残留的 pinMode='task' 曾经让整个
+    // PinnedTabDropdown 置灰、用户无法增减 pin。锁的判定已改为 `streaming`
+    // （见 PinnedTabDropdown / useSession），所以这里保留 pin 不再有副作用。
     if (ctx.onTaskDone && terminationReason !== "abort") {
       try {
         await ctx.onTaskDone();

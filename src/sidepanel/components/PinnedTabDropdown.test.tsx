@@ -270,7 +270,7 @@ describe("PinnedTabDropdown — actions", () => {
 });
 
 describe("PinnedTabDropdown — task-mode disable", () => {
-  it("task mode: tabs are aria-disabled and clicks are no-ops", async () => {
+  it("task mode WHILE streaming: tabs are aria-disabled and clicks are no-ops", async () => {
     seedTabs([{ id: 42, url: "https://example.com/", title: "Example" }]);
     const onToggle = vi.fn();
     const onClearPin = vi.fn();
@@ -280,7 +280,7 @@ describe("PinnedTabDropdown — task-mode disable", () => {
         <PinnedTabDropdown
           pinMode="task"
           pinnedTabs={[{ tabId: 42, origin: "https://example.com" }]}
-          streaming={false}
+          streaming={true}
           onToggle={onToggle}
           onClearPin={onClearPin}
           onClose={vi.fn()}
@@ -298,6 +298,48 @@ describe("PinnedTabDropdown — task-mode disable", () => {
       fireEvent.mouseDown(item);
     });
     expect(onToggle).not.toHaveBeenCalled();
+  });
+
+  // Regression: a task that aborted / threw / died with the SW leaves
+  // pinMode='task' behind. Gating the rows on the mode alone wedged the whole
+  // dropdown — including the "Auto" escape row — with no way to unlock.
+  it("stale task pin (not streaming): rows stay clickable so the user can unlock", async () => {
+    seedTabs([{ id: 42, url: "https://example.com/", title: "Example" }]);
+    const onToggle = vi.fn();
+    const onClearPin = vi.fn();
+
+    await act(async () => {
+      render(
+        <PinnedTabDropdown
+          pinMode="task"
+          pinnedTabs={[{ tabId: 42, origin: "https://example.com" }]}
+          streaming={false}
+          onToggle={onToggle}
+          onClearPin={onClearPin}
+          onClose={vi.fn()}
+        />,
+      );
+    });
+
+    // No "task is currently running" banner — nothing is running.
+    expect(screen.queryByText(/task is currently running/i)).toBeNull();
+
+    const item = screen.getByText("Example").closest("li")!;
+    expect(item.getAttribute("aria-disabled")).toBe("false");
+    // The stale pin still shows its checkmark so un-toggling it is discoverable.
+    expect(item.getAttribute("aria-selected")).toBe("true");
+
+    await act(async () => {
+      fireEvent.mouseDown(item);
+    });
+    expect(onToggle).toHaveBeenCalledWith(42, "https://example.com");
+
+    // The "Auto" escape row works too.
+    const autoRow = screen.getByText(/Auto \(follow active tab\)/i).closest("li")!;
+    await act(async () => {
+      fireEvent.mouseDown(autoRow);
+    });
+    expect(onClearPin).toHaveBeenCalled();
   });
 
   it("streaming: items are disabled regardless of pinMode", async () => {
