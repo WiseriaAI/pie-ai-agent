@@ -64,6 +64,9 @@
   "commands": {
     "quote-selection": {
       "description": "Add current text selection as a Pie quote (set hotkey at chrome://extensions/shortcuts)"
+    },
+    "open-panel-window": {
+      "description": "Open Pie in a separate window — for browsers without working side-panel support (set hotkey at chrome://extensions/shortcuts)"
     }
   }
 }

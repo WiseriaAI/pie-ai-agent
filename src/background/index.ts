@@ -35,7 +35,12 @@ import { executeScriptAllFrames, type AllFramesInjectionOutcome } from "@/lib/ag
 // making `mountEvalBridge()` dead code → tree-shaken out along with this import
 // (verified by scripts/assert-no-eval-bridge.mjs).
 import { mountEvalBridge } from "./eval-bridge";
-import { closeOrphanedFallbackPanels, initPanelOpening, openPanel } from "./panel-open";
+import {
+  closeOrphanedFallbackPanels,
+  forceFallbackPanel,
+  initPanelOpening,
+  openPanel,
+} from "./panel-open";
 import { queryActiveHostTab } from "@/lib/panel-host/host-window";
 import type { RoleViolation } from "@/lib/agent/history-validation";
 import { logHistoryRepaired } from "@/lib/agent/history-validation-telemetry";
@@ -929,6 +934,21 @@ function extractCurrentSelectionForQuote(): { text: string; sourceUrl: string } 
 }
 
 chrome.commands.onCommand.addListener((command) => {
+  // Manual escape hatch for browsers whose side-panel API reports success while
+  // rendering nothing. Also pins the capability verdict, so one use is enough —
+  // ordinary toolbar clicks route to the fallback window from then on.
+  if (command === "open-panel-window") {
+    void (async () => {
+      try {
+        const win = await chrome.windows.getCurrent();
+        await forceFallbackPanel(typeof win.id === "number" ? { windowId: win.id } : {});
+      } catch (e) {
+        console.warn("[sw] open-panel-window command failed:", e);
+      }
+    })();
+    return;
+  }
+
   if (command !== "quote-selection") return;
   void (async () => {
     // Open the panel first so the user-gesture window is consumed before

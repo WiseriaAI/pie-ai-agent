@@ -9,9 +9,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   __resetSidePanelVerdict,
+  forceFallbackPanel,
   initPanelOpening,
   openFallbackPanelWindow,
   tryOpenSidePanel,
+  SIDE_PANEL_DOCUMENT_TIMEOUT_MS,
   SIDE_PANEL_PROBE_TIMEOUT_MS,
 } from "./panel-open";
 import { PANEL_PAGE_PATH } from "@/lib/panel-host/panel-page";
@@ -23,16 +25,23 @@ type FakeTab = { id: number; url: string; windowId: number };
 const g = globalThis as unknown as {
   chrome: {
     tabs: { query: ReturnType<typeof vi.fn>; get: ReturnType<typeof vi.fn> };
+    runtime: { getContexts?: ReturnType<typeof vi.fn> };
     windows?: Record<string, ReturnType<typeof vi.fn>>;
     sidePanel?: Record<string, ReturnType<typeof vi.fn>>;
     storage: { session?: Record<string, ReturnType<typeof vi.fn>> };
   };
 };
 
+/** Stub the ground-truth check: does a SIDE_PANEL document exist? */
+function installSidePanelContexts(present: boolean) {
+  g.chrome.runtime.getContexts = vi.fn(async () => (present ? [{ contextId: "sp" }] : []));
+}
+
 let saved: {
   query: unknown;
   get: unknown;
   create: unknown;
+  getContexts: unknown;
   windows: unknown;
   sidePanel: unknown;
   session: unknown;
@@ -54,6 +63,7 @@ beforeEach(() => {
     query: g.chrome.tabs.query,
     get: g.chrome.tabs.get,
     create: (g.chrome.tabs as unknown as { create?: unknown }).create,
+    getContexts: g.chrome.runtime.getContexts,
     windows: g.chrome.windows,
     sidePanel: g.chrome.sidePanel,
     session: g.chrome.storage.session,
@@ -78,6 +88,7 @@ afterEach(() => {
   g.chrome.tabs.query = saved.query as ReturnType<typeof vi.fn>;
   g.chrome.tabs.get = saved.get as ReturnType<typeof vi.fn>;
   (g.chrome.tabs as unknown as { create?: unknown }).create = saved.create;
+  g.chrome.runtime.getContexts = saved.getContexts as ReturnType<typeof vi.fn>;
   g.chrome.windows = saved.windows as Record<string, ReturnType<typeof vi.fn>>;
   g.chrome.sidePanel = saved.sidePanel as Record<string, ReturnType<typeof vi.fn>>;
   g.chrome.storage.session = saved.session as Record<string, ReturnType<typeof vi.fn>>;
@@ -90,6 +101,38 @@ describe("tryOpenSidePanel", () => {
       open: vi.fn(async () => {}),
       setPanelBehavior: vi.fn(async () => {}),
     };
+    await expect(tryOpenSidePanel({ tabId: 1 })).resolves.toBe("opened");
+  });
+
+  it("reports 'unsupported' when open() resolves but NO panel document appears", async () => {
+    // The case that shipped broken twice. Arc resolves sidePanel.open() and
+    // renders nothing, so the promise settling is worthless as evidence — the
+    // only trustworthy signal is whether a SIDE_PANEL context actually exists.
+    vi.useFakeTimers();
+    g.chrome.sidePanel = { open: vi.fn(async () => {}), setPanelBehavior: vi.fn(async () => {}) };
+    installSidePanelContexts(false);
+
+    const pending = tryOpenSidePanel({ tabId: 1 });
+    await vi.advanceTimersByTimeAsync(SIDE_PANEL_DOCUMENT_TIMEOUT_MS + 200);
+    await expect(pending).resolves.toBe("unsupported");
+  });
+
+  it("reports 'opened' when a panel document does appear", async () => {
+    g.chrome.sidePanel = { open: vi.fn(async () => {}), setPanelBehavior: vi.fn(async () => {}) };
+    installSidePanelContexts(true);
+
+    await expect(tryOpenSidePanel({ tabId: 1 })).resolves.toBe("opened");
+  });
+
+  it("treats an unmeasurable browser as working rather than condemning it", async () => {
+    // No getContexts (or it throws) means we cannot observe the outcome.
+    // Unverifiable is not the same as broken — guessing "broken" would saddle a
+    // perfectly good browser with a stray popup window.
+    g.chrome.sidePanel = { open: vi.fn(async () => {}), setPanelBehavior: vi.fn(async () => {}) };
+    g.chrome.runtime.getContexts = vi.fn(async () => {
+      throw new Error("not implemented");
+    });
+
     await expect(tryOpenSidePanel({ tabId: 1 })).resolves.toBe("opened");
   });
 
@@ -165,6 +208,25 @@ describe("tryOpenSidePanel", () => {
     await tryOpenSidePanel({ tabId: 1 });
 
     expect(setPanelBehavior).toHaveBeenCalledWith({ openPanelOnActionClick: true });
+  });
+});
+
+describe("forceFallbackPanel", () => {
+  it("opens the window AND pins the verdict so later clicks follow suit", async () => {
+    // The last line of defence: a browser that reports a live SIDE_PANEL
+    // context while still rendering nothing would beat auto-detection, and
+    // there is no further signal to check. One use must be enough — the user
+    // shouldn't have to hit the shortcut every single time.
+    installTabs([{ id: 1, url: "https://a.test/", windowId: 200 }]);
+    const setPanelBehavior = vi.fn(async () => {});
+    g.chrome.sidePanel = { open: vi.fn(async () => {}), setPanelBehavior };
+    installSidePanelContexts(true); // auto-detection would say "supported"
+
+    await forceFallbackPanel({ windowId: 200 });
+
+    expect(g.chrome.windows!.create).toHaveBeenCalledTimes(1);
+    expect(setPanelBehavior).toHaveBeenCalledWith({ openPanelOnActionClick: false });
+    await expect(tryOpenSidePanel({ tabId: 1 })).resolves.toBe("unsupported");
   });
 });
 

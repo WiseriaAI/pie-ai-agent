@@ -1,18 +1,28 @@
 // Opening Pie's panel, on browsers that service `chrome.sidePanel` and on
 // browsers that only pretend to.
 //
-// Arc ships the `chrome.sidePanel` API surface but never services the calls:
-// `open()` returns a promise that neither resolves nor rejects. Every existing
-// call site guarded itself with `.catch()`, which a promise that never settles
-// walks straight past — so clicking Pie's toolbar icon did nothing at all, with
-// no error anywhere. Vivaldi is a softer version of the same story (the API
-// works but ignores `tabId`).
+// Arc ships the `chrome.sidePanel` API surface and does not service it. The
+// failure mode is worse than an error: measured on Arc, `open()` RESOLVES
+// SUCCESSFULLY and no panel is ever shown. Vivaldi is a softer version of the
+// same story (the API works but ignores `tabId`).
 //
-// So support cannot be feature-detected by presence, and failure cannot be
-// detected by rejection. It has to be detected by TIMEOUT, which is what
-// `tryOpenSidePanel` does. When the probe says the browser can't service a side
-// panel, the same panel document is opened in a detached popup window instead
-// (`host-window.ts` teaches the panel which window it is shadowing).
+// That rules out all three of the obvious detection strategies:
+//
+//   - presence — the namespace and every method are there;
+//   - rejection — nothing rejects, so `.catch()` guards never fire;
+//   - timeout  — nothing hangs either, so a race also reports success.
+//
+// The API's own report is simply not evidence. So `tryOpenSidePanel` measures
+// the OUTCOME instead: after `open()` resolves it asks
+// `chrome.runtime.getContexts` whether a SIDE_PANEL document is actually
+// running. A context is a real live document; it cannot be faked by a browser
+// resolving a promise. The timeout race is kept as well, since a browser that
+// hangs is still a browser that can't open a panel.
+//
+// When the probe comes back negative the same panel document is opened in a
+// detached popup window instead (`host-window.ts` teaches the panel which
+// window it is shadowing). `forceFallbackPanel` is the manual override for a
+// browser that manages to beat even the context check.
 //
 // Why a detached popup window and not an action popup: the panel's port is the
 // agent loop's lifeline — `port.onDisconnect` aborts the running task by design
@@ -33,13 +43,25 @@ import {
 } from "@/lib/panel-host/panel-page";
 
 /**
- * How long to wait for `chrome.sidePanel.open()` before declaring the browser
- * incapable. Generous enough that a busy-but-working browser is never
- * misdiagnosed, short enough that a user on Arc doesn't sit staring at a dead
- * toolbar icon. Paid once per service-worker lifetime — the verdict is
- * memoized (and mirrored into session storage) after the first probe.
+ * How long to wait for `chrome.sidePanel.open()` itself to settle. Covers the
+ * hang case; it is NOT sufficient on its own — see `sidePanelDocumentAppeared`.
  */
 export const SIDE_PANEL_PROBE_TIMEOUT_MS = 1500;
+
+/**
+ * How long to wait for a side panel DOCUMENT to actually show up after a
+ * successful `open()`.
+ *
+ * Needed because `open()` resolving proves nothing: on Arc it resolves happily
+ * and no panel ever appears. The only trustworthy signal is whether a
+ * SIDE_PANEL extension context exists afterwards — that is the panel document
+ * itself, not a promise the browser chose to settle.
+ *
+ * Generous on purpose: a false "no panel" here costs a Chrome user a spurious
+ * popup window, so the deadline is set well past any realistic panel boot.
+ */
+export const SIDE_PANEL_DOCUMENT_TIMEOUT_MS = 2500;
+const SIDE_PANEL_DOCUMENT_POLL_MS = 100;
 
 /** Default geometry for the fallback panel window, in CSS px. */
 const FALLBACK_PANEL_WIDTH = 460;
@@ -56,6 +78,16 @@ export type SidePanelOutcome =
   | "unsupported";
 
 type Verdict = "unknown" | "supported" | "unsupported";
+
+/**
+ * Where to open the panel, as a hint rather than a requirement.
+ *
+ * Deliberately looser than `chrome.sidePanel.OpenOptions`, which demands at
+ * least one of tabId/windowId: the fallback path can always resolve a host
+ * window on its own (last-focused normal window), so the manual escape hatch
+ * must be callable with nothing at all.
+ */
+type PanelTarget = { tabId?: number; windowId?: number };
 
 let verdict: Verdict = "unknown";
 
@@ -195,6 +227,13 @@ export async function tryOpenSidePanel(
       rememberVerdict("unsupported");
       return "unsupported";
     }
+    // `open()` resolved — which, on its own, proves nothing. Arc resolves it
+    // and shows no panel. Confirm against the one thing that can't be faked:
+    // whether a side panel document is actually running.
+    if (!(await sidePanelDocumentAppeared())) {
+      rememberVerdict("unsupported");
+      return "unsupported";
+    }
     rememberVerdict("supported");
     return "opened";
   } catch {
@@ -204,6 +243,35 @@ export async function tryOpenSidePanel(
     return "rejected";
   } finally {
     if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+/**
+ * Did a side panel document actually come up?
+ *
+ * `chrome.runtime.getContexts` enumerates live extension contexts, so a
+ * SIDE_PANEL entry is the panel document itself — ground truth, as opposed to
+ * `open()`'s return value which a browser can resolve without rendering
+ * anything (Arc does exactly that).
+ *
+ * Returns true when the capability can't be measured at all (no getContexts,
+ * or it throws): unverifiable is not the same as broken, and guessing "broken"
+ * would punish a working browser with a stray popup window.
+ */
+async function sidePanelDocumentAppeared(): Promise<boolean> {
+  if (typeof chrome.runtime?.getContexts !== "function") return true;
+
+  const deadline = SIDE_PANEL_DOCUMENT_TIMEOUT_MS;
+  for (let waited = 0; ; waited += SIDE_PANEL_DOCUMENT_POLL_MS) {
+    try {
+      const contexts = await chrome.runtime.getContexts({ contextTypes: ["SIDE_PANEL"] });
+      if (contexts.length > 0) return true;
+    } catch {
+      // Not implemented on this browser — unmeasurable, so don't condemn it.
+      return true;
+    }
+    if (waited >= deadline) return false;
+    await new Promise((r) => setTimeout(r, SIDE_PANEL_DOCUMENT_POLL_MS));
   }
 }
 
@@ -233,15 +301,28 @@ export function openPanel(target: chrome.sidePanel.OpenOptions, context: string)
 }
 
 /**
+ * Manual escape hatch: open the fallback window unconditionally and record
+ * that this browser has no usable side panel.
+ *
+ * Auto-detection measures the outcome rather than trusting the API, but a
+ * browser that reports a live SIDE_PANEL context while rendering nothing would
+ * still slip through — and there is no further signal left to check. So the
+ * user gets a switch. Because it also pins the verdict to "unsupported", one
+ * use is enough: ordinary toolbar clicks route to the fallback from then on.
+ */
+export async function forceFallbackPanel(target: PanelTarget): Promise<void> {
+  rememberVerdict("unsupported");
+  await openFallbackPanelWindow(target);
+}
+
+/**
  * Open (or re-focus) the fallback panel window shadowing `target`'s window.
  *
  * One panel window per browser window, mirroring the side panel it stands in
  * for. Re-focusing an existing one is what makes a second toolbar click feel
  * like a toggle instead of spawning a second panel.
  */
-export async function openFallbackPanelWindow(
-  target: chrome.sidePanel.OpenOptions,
-): Promise<void> {
+export async function openFallbackPanelWindow(target: PanelTarget): Promise<void> {
   const hostWindowId = await resolveHostWindowId(target);
   if (hostWindowId === null) return;
 
@@ -274,9 +355,7 @@ export async function openFallbackPanelWindow(
  * Which browser window is this open FOR? `sidePanel.open` accepts either a tab
  * or a window; the fallback always needs a window id.
  */
-async function resolveHostWindowId(
-  target: chrome.sidePanel.OpenOptions,
-): Promise<number | null> {
+async function resolveHostWindowId(target: PanelTarget): Promise<number | null> {
   const candidate = await resolveTargetWindowId(target);
   // A panel window must never shadow another panel window. That happens when
   // the trigger resolved its window from SW context (`windows.getCurrent`
@@ -292,9 +371,7 @@ async function resolveHostWindowId(
   }
 }
 
-async function resolveTargetWindowId(
-  target: chrome.sidePanel.OpenOptions,
-): Promise<number | null> {
+async function resolveTargetWindowId(target: PanelTarget): Promise<number | null> {
   if (typeof target.windowId === "number") return target.windowId;
   if (typeof target.tabId === "number") {
     try {
