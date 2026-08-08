@@ -51,12 +51,14 @@ import {
 } from "@/lib/panel-host/panel-page";
 import { panelDocumentResponds } from "@/lib/panel-host/panel-ping";
 import {
+  DEFAULT_PANEL_MODE,
   getPanelMode,
   getPanelModeSync,
   PANEL_MODE_KEY,
   setPanelMode,
 } from "@/lib/panel-host/panel-mode";
 import { onStoreChange } from "@/lib/store-bus";
+import { getConfig, setConfig } from "@/lib/idb/config-store";
 
 /**
  * How long to wait for `chrome.sidePanel.open()` itself to settle. Covers the
@@ -178,36 +180,48 @@ export function handlePanelContextMenuClick(menuItemId: string, tab?: chrome.tab
 }
 
 export function initPanelOpening(): void {
-  applyActionClickBehavior(false);
   installPanelContextMenu();
-  // Prime the panel-mode cache so the click path can read it synchronously.
-  void getPanelMode().catch(() => {
-    /* keep the auto default */
-  });
   onStoreChange("config", (c) => {
     if (c.id === PANEL_MODE_KEY) void getPanelMode().catch(() => {});
   });
+
+  // Read the stored state BEFORE touching the click behaviour.
+  //
+  // An earlier cut applied `false` synchronously here and only restored `true`
+  // once the read came back. Because a service worker restarts constantly, that
+  // opened a window on every wake where Chrome briefly stopped handling toolbar
+  // clicks natively — costing click-to-toggle for any click that landed in it.
+  // Reading first means a healthy browser's flag is never disturbed; the cost
+  // moves to the browser that actually has the problem, where at most the first
+  // click after an upgrade is swallowed before the flag is cleared.
+  void (async () => {
+    const [mode, stored] = await Promise.all([
+      getPanelMode().catch(() => DEFAULT_PANEL_MODE),
+      readStoredVerdict(),
+    ]);
+    if (verdict === "unknown" && stored !== "unknown") verdict = stored;
+    // Hand clicks to the browser only when it has previously proven it can
+    // service a panel AND the user hasn't overridden the display mode.
+    applyActionClickBehavior(mode === "auto" && verdict === "supported");
+  })();
+}
+
+/**
+ * Capability verdict as last measured, persisted across browser restarts.
+ *
+ * Kept in the config store rather than session storage: a browser's ability to
+ * show a side panel is a property of the browser, not of one run of it. Storing
+ * it per-session meant Chrome re-earned the flag after every restart, and
+ * re-earning it costs the user click-to-toggle on that first click.
+ */
+async function readStoredVerdict(): Promise<Verdict> {
   try {
-    void chrome.storage.session
-      ?.get(VERDICT_STORAGE_KEY)
-      .then((rec) => {
-        const stored = rec?.[VERDICT_STORAGE_KEY];
-        if (verdict !== "unknown") return;
-        if (stored === "supported") {
-          verdict = "supported";
-          // Proven working earlier this browser session — restore the browser's
-          // native click handling (which also restores click-to-toggle).
-          applyActionClickBehavior(true);
-        } else if (stored === "unsupported") {
-          verdict = "unsupported";
-        }
-      })
-      .catch(() => {
-        /* session storage unavailable — probe on demand instead */
-      });
+    const stored = await getConfig<string>(VERDICT_STORAGE_KEY);
+    if (stored === "supported" || stored === "unsupported") return stored;
   } catch {
-    /* ignore */
+    /* unreadable — probe on demand instead */
   }
+  return "unknown";
 }
 
 /**
@@ -231,11 +245,9 @@ function rememberVerdict(next: Exclude<Verdict, "unknown">): void {
   if (verdict === next) return;
   verdict = next;
   console.info(`[sw] side panel support: ${next}`);
-  try {
-    void chrome.storage.session?.set({ [VERDICT_STORAGE_KEY]: next }).catch(() => {});
-  } catch {
-    /* ignore */
-  }
+  void setConfig(VERDICT_STORAGE_KEY, next).catch(() => {
+    /* unwritable — re-probed next session, which is merely slower */
+  });
   // Hand click handling to the browser only now that it has proven it can
   // service a panel; keep it ours otherwise.
   applyActionClickBehavior(next === "supported");

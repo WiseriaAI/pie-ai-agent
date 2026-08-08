@@ -16,7 +16,6 @@
 // browser's inability to show a side panel does not expire when it restarts.
 
 import { getConfig, setConfig } from "@/lib/idb/config-store";
-import { publishChange } from "@/lib/store-bus";
 
 export const PANEL_MODE_KEY = "panel_display_mode";
 
@@ -55,14 +54,9 @@ export async function getPanelMode(): Promise<PanelMode> {
 
 export async function setPanelMode(mode: PanelMode): Promise<void> {
   cached = mode;
+  // setConfig publishes the store-bus change itself, which is what lets an open
+  // panel's settings UI and the service worker converge without a reload.
   await setConfig(PANEL_MODE_KEY, mode);
-  // Cross-context notify so an open panel's settings UI and the service worker
-  // converge without a reload.
-  try {
-    publishChange("config", "put", PANEL_MODE_KEY);
-  } catch {
-    /* bus unavailable (tests) — the local cache is already correct */
-  }
 }
 
 /** Test seam. */

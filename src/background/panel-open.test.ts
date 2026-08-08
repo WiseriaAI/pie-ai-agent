@@ -25,8 +25,9 @@ import {
   DEFAULT_PANEL_MODE,
   PANEL_MODE_KEY,
   __setCachedPanelMode,
+  setPanelMode,
 } from "@/lib/panel-host/panel-mode";
-import { getConfig } from "@/lib/idb/config-store";
+import { getConfig, setConfig, removeConfig } from "@/lib/idb/config-store";
 
 const PANEL_URL = `chrome-extension://test/${PANEL_PAGE_PATH}`;
 
@@ -83,7 +84,7 @@ function installTabs(tabs: FakeTab[]) {
   });
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   saved = {
     query: g.chrome.tabs.query,
     get: g.chrome.tabs.get,
@@ -96,6 +97,8 @@ beforeEach(() => {
   };
   __resetSidePanelVerdict();
   __setCachedPanelMode(DEFAULT_PANEL_MODE);
+  await removeConfig("sidepanel_support").catch(() => {});
+  await removeConfig(PANEL_MODE_KEY).catch(() => {});
   installTabs([]);
   let nextWindowId = 900;
   g.chrome.windows = {
@@ -310,38 +313,62 @@ describe("forceFallbackPanel", () => {
 });
 
 describe("initPanelOpening", () => {
-  it("takes click handling BACK from the browser on startup", async () => {
-    // Also un-sticks installs that ran the earlier build and had `true`
-    // persisted into their extension prefs — on Arc that pref is the reason
-    // the toolbar icon did nothing at all.
+  it("keeps clicks with the extension when support has never been proven", async () => {
+    // Guarantees an entry point on a browser that stored openPanelOnActionClick
+    // from an earlier build and cannot actually show a panel.
     const setPanelBehavior = vi.fn(async () => {});
     g.chrome.sidePanel = { open: vi.fn(async () => {}), setPanelBehavior };
 
     initPanelOpening();
 
-    expect(setPanelBehavior).toHaveBeenCalledWith({ openPanelOnActionClick: false });
+    await vi.waitFor(() =>
+      expect(setPanelBehavior).toHaveBeenCalledWith({ openPanelOnActionClick: false }),
+    );
   });
 
-  it("restores browser click handling when a prior probe already proved support", async () => {
+  it("never disturbs a healthy browser's click handling on startup", async () => {
+    // A service worker restarts constantly. An earlier cut applied `false`
+    // synchronously and only restored `true` after an async read, so every wake
+    // opened a window where Chrome stopped handling toolbar clicks natively and
+    // any click landing in it lost click-to-toggle. Reading first fixes that:
+    // `false` must never be written on a browser known to work.
     const setPanelBehavior = vi.fn(async () => {});
     g.chrome.sidePanel = { open: vi.fn(async () => {}), setPanelBehavior };
-    g.chrome.storage.session!.get = vi.fn(async () => ({ sidepanel_support: "supported" }));
+    await setConfig("sidepanel_support", "supported");
 
     initPanelOpening();
     await vi.waitFor(() =>
       expect(setPanelBehavior).toHaveBeenCalledWith({ openPanelOnActionClick: true }),
     );
+    expect(setPanelBehavior).not.toHaveBeenCalledWith({ openPanelOnActionClick: false });
   });
 
-  it("leaves clicks with the extension when a prior probe found no side panel", async () => {
+  it("survives a browser restart — the verdict is persisted, not session-scoped", async () => {
+    // Session-scoped storage meant Chrome re-earned the flag after every
+    // restart, and re-earning it costs the user click-to-toggle on that click.
+    g.chrome.sidePanel = {
+      open: vi.fn(async () => {}),
+      setPanelBehavior: vi.fn(async () => {}),
+    };
+    installSidePanelContexts(true);
+
+    await tryOpenSidePanel({ tabId: 1 });
+
+    expect(await getConfig("sidepanel_support")).toBe("supported");
+  });
+
+  it("keeps clicks with the extension when the user has forced window mode", async () => {
+    // Otherwise the browser would swallow the click and open a side panel the
+    // user has explicitly said they don't want.
     const setPanelBehavior = vi.fn(async () => {});
     g.chrome.sidePanel = { open: vi.fn(async () => {}), setPanelBehavior };
-    g.chrome.storage.session!.get = vi.fn(async () => ({ sidepanel_support: "unsupported" }));
+    await setConfig("sidepanel_support", "supported");
+    await setPanelMode("window");
 
     initPanelOpening();
-    await vi.waitFor(() => expect(g.chrome.storage.session!.get).toHaveBeenCalled());
-
-    expect(setPanelBehavior).not.toHaveBeenCalledWith({ openPanelOnActionClick: true });
+    await vi.waitFor(() =>
+      expect(setPanelBehavior).toHaveBeenCalledWith({ openPanelOnActionClick: false }),
+    );
   });
 
   it("stops racing once the browser has proven it works", async () => {
