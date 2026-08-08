@@ -105,7 +105,7 @@ Full policy: [PRIVACY.md](PRIVACY.md).
 ## Install
 
 Works in any Chromium browser with side-panel support — Chrome 114+, Edge,
-Brave, Arc, and others.
+Brave, and others.
 
 ### Option 1 — Chrome Web Store (recommended)
 

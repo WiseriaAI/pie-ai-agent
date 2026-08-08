@@ -89,7 +89,7 @@ Moonshot（Kimi —— 国际区与中国区）· StepFun**。通过 Ollama 接�
 
 ## 安装
 
-支持任何带侧边栏的 Chromium 浏览器 —— Chrome 114+、Edge、Brave、Arc 等均可。
+支持任何带侧边栏的 Chromium 浏览器 —— Chrome 114+、Edge、Brave 等均可。
 
 ### 方式一 —— Chrome Web Store（推荐）
 

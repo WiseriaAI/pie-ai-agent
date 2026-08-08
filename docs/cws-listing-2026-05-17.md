@@ -97,7 +97,7 @@ defeat prompt-injection attempts from page DOM. Apache 2.0 licensed
 3. Switch to Chat and tell Pie what to do
 
 Requires Chrome 114+ or any Chromium browser with side-panel
-support (Edge, Brave, Arc).
+support (Edge, Brave).
 
 Pie is open-source software. Found a bug? Want a feature? Issues
 and PRs welcome at github.com/WiseriaAI/pie-ai-agent.
@@ -155,7 +155,7 @@ github.com/WiseriaAI/pie-ai-agent
 3. 切到 Chat，告诉 Pie 你想做什么
 
 需要 Chrome 114+ 或任何支持 side panel 的 Chromium 浏览器
-（Edge、Brave、Arc）。
+（Edge、Brave）。
 
 Pie 是开源软件。发现 bug 或想要新功能？欢迎到 GitHub 提 issue / PR：
 github.com/WiseriaAI/pie-ai-agent

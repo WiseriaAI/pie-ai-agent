@@ -105,7 +105,7 @@ Política completa: [PRIVACY.md](../../PRIVACY.md).
 ## Instalación
 
 Funciona en cualquier navegador basado en Chromium con panel lateral — Chrome
-114+, Edge, Brave, Arc y otros.
+114+, Edge, Brave y otros.
 
 ### Opción 1 — Chrome Web Store (recomendada)
 

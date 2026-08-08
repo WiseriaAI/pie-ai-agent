@@ -101,7 +101,7 @@ Moonshot（Kimi —— 国際版および中国版）· StepFun**。Ollama に�
 ## インストール
 
 サイドパネルに対応した Chromium 系ブラウザで動作します —— Chrome 114+、Edge、
-Brave、Arc など。
+Brave など。
 
 ### 方法 1 —— Chrome ウェブストア（推奨）
 
