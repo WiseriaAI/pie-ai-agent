@@ -112,6 +112,10 @@ export const enDict = {
     },
     active: "ACTIVE",
     noActiveConfig: "No active config — pick one below.",
+    panelWindow: {
+      title: "Open Pie in a separate window",
+      description: "Some Chromium browsers accept the side-panel API but never show the panel. Turn this on to open Pie in its own window instead. Pie sets it automatically when it detects the problem.",
+    },
     cdpInput: {
       title: "Browser input simulation (CDP)",
       description: "Required for hover, click, and keyboard tools. Enabling triggers Chrome's yellow debugger bar while a task runs.",

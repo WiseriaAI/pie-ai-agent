@@ -1,10 +1,13 @@
 // Side-panel capability probe + fallback window.
 //
-// The bug this exists for: Arc ships `chrome.sidePanel` and its `open()`
-// returns a promise that NEVER SETTLES. Presence-checks say "supported" and
-// `.catch()` never fires, so the old code sat there forever and the toolbar
-// icon did nothing with no error anywhere. Only a timeout can detect it — that
-// is what these tests pin down.
+// Measured on a real Arc install, in this order: `open()` resolves; the
+// `openPanelOnActionClick` pref is stored (suppressing action.onClicked);
+// `getContexts` and the liveness ping both come back positive — and the user
+// still sees no panel. Each of those cost a round to discover.
+//
+// These tests pin down every detection layer built along the way, and the
+// conclusion they arrive at: detection is a default, and the user's explicit
+// choice overrides all of it.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
@@ -12,11 +15,18 @@ import {
   forceFallbackPanel,
   initPanelOpening,
   openFallbackPanelWindow,
+  openPanel,
   tryOpenSidePanel,
   SIDE_PANEL_DOCUMENT_TIMEOUT_MS,
   SIDE_PANEL_PROBE_TIMEOUT_MS,
 } from "./panel-open";
 import { PANEL_PAGE_PATH } from "@/lib/panel-host/panel-page";
+import {
+  DEFAULT_PANEL_MODE,
+  PANEL_MODE_KEY,
+  __setCachedPanelMode,
+} from "@/lib/panel-host/panel-mode";
+import { getConfig } from "@/lib/idb/config-store";
 
 const PANEL_URL = `chrome-extension://test/${PANEL_PAGE_PATH}`;
 
@@ -85,6 +95,7 @@ beforeEach(() => {
     session: g.chrome.storage.session,
   };
   __resetSidePanelVerdict();
+  __setCachedPanelMode(DEFAULT_PANEL_MODE);
   installTabs([]);
   let nextWindowId = 900;
   g.chrome.windows = {
@@ -250,7 +261,36 @@ describe("tryOpenSidePanel", () => {
   });
 });
 
+describe("panel mode override", () => {
+  it("skips detection entirely when the user has chosen a window", async () => {
+    // Three rounds of probing were defeated by the same browser. When the
+    // person looking at the screen has already answered the question, asking
+    // the API again is both pointless and slow.
+    installTabs([{ id: 1, url: "https://a.test/", windowId: 200 }]);
+    const open = vi.fn(async () => {});
+    g.chrome.sidePanel = { open, setPanelBehavior: vi.fn(async () => {}) };
+    __setCachedPanelMode("window");
+
+    openPanel({ tabId: 1 }, "test");
+    await vi.waitFor(() => expect(g.chrome.windows!.create).toHaveBeenCalledTimes(1));
+
+    expect(open).not.toHaveBeenCalled();
+  });
+});
+
 describe("forceFallbackPanel", () => {
+  it("persists the choice so it survives a browser restart", async () => {
+    // The session-scoped verdict dies with the browser session. Without a
+    // persisted preference the user would have to rediscover the right-click
+    // workaround after every restart.
+    installTabs([{ id: 1, url: "https://a.test/", windowId: 200 }]);
+    g.chrome.sidePanel = { open: vi.fn(async () => {}), setPanelBehavior: vi.fn(async () => {}) };
+
+    await forceFallbackPanel({ windowId: 200 });
+
+    expect(await getConfig(PANEL_MODE_KEY)).toBe("window");
+  });
+
   it("opens the window AND pins the verdict so later clicks follow suit", async () => {
     // The last line of defence: a browser that reports a live SIDE_PANEL
     // context while still rendering nothing would beat auto-detection, and

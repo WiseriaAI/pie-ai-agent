@@ -3,14 +3,18 @@
 export function Switch({
   checked,
   onChange,
+  testId,
 }: {
   checked: boolean;
   onChange: (next: boolean) => void;
+  /** Distinguishes switches when a settings group holds more than one. */
+  testId?: string;
 }) {
   return (
     <button
       type="button"
       role="switch"
+      data-testid={testId}
       aria-checked={checked}
       onClick={() => onChange(!checked)}
       className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full border transition-colors ${

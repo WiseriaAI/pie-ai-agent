@@ -8,6 +8,7 @@ import {
   MessageSquare,
   ScrollText,
   MousePointerClick,
+  AppWindow,
   MessageCircle,
   Info,
   HelpCircle,
@@ -17,6 +18,8 @@ import { useT } from "@/lib/i18n";
 import { listInstances } from "@/lib/instances";
 import { getSearchProviderStatus, ACTIVE_SEARCH_PROVIDER } from "@/lib/search-provider";
 import { isCdpInputEnabled, setCdpInputEnabled } from "@/lib/cdp-input-enabled";
+import { getPanelMode, setPanelMode, PANEL_MODE_KEY } from "@/lib/panel-host/panel-mode";
+import { onStoreChange } from "@/lib/store-bus";
 import { Switch } from "@/sidepanel/components/ui/Switch";
 import { Popover } from "@/sidepanel/components/ui/Popover";
 import { useAnchorRect } from "@/sidepanel/components/ui/useAnchorRect";
@@ -163,10 +166,51 @@ function CdpRow() {
       }
       control={
         <Switch
+          testId="cdp-switch"
           checked={enabled}
           onChange={(next) => {
             setEnabled(next);
             void setCdpInputEnabled(next);
+          }}
+        />
+      }
+    />
+  );
+}
+
+/**
+ * Panel display mode.
+ *
+ * Exists because auto-detection cannot be trusted on every Chromium fork: some
+ * accept the side-panel API, report success through every observable signal,
+ * and still show nothing. The user can see what the probes cannot, so they get
+ * the final say. Pie flips this on by itself when detection does catch the
+ * problem — leaving this row as the way to review or undo that.
+ */
+function PanelWindowRow() {
+  const t = useT();
+  const [enabled, setEnabled] = useState(false);
+
+  useEffect(() => {
+    void getPanelMode().then((m) => setEnabled(m === "window"));
+    // Reflect the automatic switch-over (or a change made from another panel)
+    // without needing a reopen.
+    return onStoreChange("config", (c) => {
+      if (c.id === PANEL_MODE_KEY) void getPanelMode().then((m) => setEnabled(m === "window"));
+    });
+  }, []);
+
+  return (
+    <ControlRow
+      icon={<AppWindow {...ROW_ICON} />}
+      label={t("settings.panelWindow.title")}
+      control={
+        <Switch
+          testId="panel-window-switch"
+          checked={enabled}
+          onChange={(next) => {
+            setEnabled(next);
+            void setPanelMode(next ? "window" : "auto");
           }}
         />
       }
@@ -296,6 +340,7 @@ export default function SettingsRoot({
             label={t("settings.theme.label")}
             control={<ThemeSegmented themeMode={themeMode} onThemeModeChange={onThemeModeChange} />}
           />
+          <PanelWindowRow />
           <NavRow
             id="uiLanguage"
             icon={<Globe {...ROW_ICON} />}

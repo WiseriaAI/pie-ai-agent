@@ -68,9 +68,21 @@ describe("SettingsRoot", () => {
   it("CDP row is an inline switch, not a drill-down", async () => {
     render(<SettingsRoot {...make()} />);
     expect(screen.queryByTestId("settings-row-cdp")).toBeNull();
-    const sw = screen.getByRole("switch");
+    const sw = screen.getByTestId("cdp-switch");
     fireEvent.click(sw);
     await waitFor(() => expect(setCdpInputEnabled).toHaveBeenCalledWith(true));
+  });
+
+  it("panel-window row is an inline switch that persists the choice", async () => {
+    // The escape hatch for browsers that fool every capability probe. It has to
+    // be reversible from the UI — a preference the user can only turn ON would
+    // strand anyone who hit it by mistake.
+    render(<SettingsRoot {...make()} />);
+    fireEvent.click(screen.getByTestId("panel-window-switch"));
+    await waitFor(async () => {
+      const { getPanelMode } = await import("@/lib/panel-host/panel-mode");
+      expect(await getPanelMode()).toBe("window");
+    });
   });
 
   it("CDP '?' reveals the explainer on hover and hides it on leave", async () => {

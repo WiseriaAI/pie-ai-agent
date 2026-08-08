@@ -15,14 +15,22 @@
 // The API's own report is simply not evidence. So `tryOpenSidePanel` measures
 // the OUTCOME instead: after `open()` resolves it asks
 // `chrome.runtime.getContexts` whether a SIDE_PANEL document is actually
-// running. A context is a real live document; it cannot be faked by a browser
-// resolving a promise. The timeout race is kept as well, since a browser that
-// hangs is still a browser that can't open a panel.
+// running, and falls back to a liveness ping the panel answers on browsers
+// without that API. The timeout race is kept too, since a browser that hangs
+// is still a browser that can't open a panel.
 //
-// When the probe comes back negative the same panel document is opened in a
-// detached popup window instead (`host-window.ts` teaches the panel which
-// window it is shadowing). `forceFallbackPanel` is the manual override for a
-// browser that manages to beat even the context check.
+// Even that was not enough. Measured on Arc, both outcome checks come back
+// positive and the user still sees nothing — so a document is created and
+// never shown, which no service-worker-side signal can distinguish from a
+// working panel. Detection is therefore a DEFAULT, not an authority:
+// `lib/panel-host/panel-mode.ts` holds a persisted user preference that
+// overrides it outright, reachable from Settings and from the right-click
+// entry point, and `forceFallbackPanel` writes it.
+//
+// When the fallback is used, the same panel document is opened in a detached
+// popup window (`host-window.ts` teaches the panel which window it is
+// shadowing), escalating to a normal window and then a tab if that produces
+// nothing.
 //
 // Why a detached popup window and not an action popup: the panel's port is the
 // agent loop's lifeline — `port.onDisconnect` aborts the running task by design
@@ -42,6 +50,13 @@ import {
   isOwnPanelUrl,
 } from "@/lib/panel-host/panel-page";
 import { panelDocumentResponds } from "@/lib/panel-host/panel-ping";
+import {
+  getPanelMode,
+  getPanelModeSync,
+  PANEL_MODE_KEY,
+  setPanelMode,
+} from "@/lib/panel-host/panel-mode";
+import { onStoreChange } from "@/lib/store-bus";
 
 /**
  * How long to wait for `chrome.sidePanel.open()` itself to settle. Covers the
@@ -165,6 +180,13 @@ export function handlePanelContextMenuClick(menuItemId: string, tab?: chrome.tab
 export function initPanelOpening(): void {
   applyActionClickBehavior(false);
   installPanelContextMenu();
+  // Prime the panel-mode cache so the click path can read it synchronously.
+  void getPanelMode().catch(() => {
+    /* keep the auto default */
+  });
+  onStoreChange("config", (c) => {
+    if (c.id === PANEL_MODE_KEY) void getPanelMode().catch(() => {});
+  });
   try {
     void chrome.storage.session
       ?.get(VERDICT_STORAGE_KEY)
@@ -347,6 +369,16 @@ async function sidePanelDocumentAppeared(): Promise<boolean> {
  * behaviour (warn, do nothing) is still correct.
  */
 export function openPanel(target: chrome.sidePanel.OpenOptions, context: string): void {
+  // The user's explicit choice outranks every probe. Checked first and read
+  // synchronously so no detection latency is spent on a browser already known
+  // — by the only observer that can actually tell — to have no usable panel.
+  if (getPanelModeSync() === "window") {
+    void openFallbackPanelWindow(target).catch((e) => {
+      console.warn(`[sw] openPanel (${context}) fallback failed:`, e);
+    });
+    return;
+  }
+
   void tryOpenSidePanel(target)
     .then(async (outcome) => {
       if (outcome === "opened") return;
@@ -374,6 +406,13 @@ export function openPanel(target: chrome.sidePanel.OpenOptions, context: string)
  */
 export async function forceFallbackPanel(target: PanelTarget): Promise<void> {
   rememberVerdict("unsupported");
+  // Persist the choice. The session-scoped verdict above dies with the browser
+  // session, and a browser that can't show a side panel today can't show one
+  // tomorrow either — making the user re-discover the workaround after every
+  // restart would be the actual bug.
+  await setPanelMode("window").catch((e) => {
+    console.warn("[sw] could not persist the panel display mode:", e);
+  });
   await openFallbackPanelWindow(target);
 }
 

@@ -112,6 +112,10 @@ export const zhTWDict = {
     },
     active: "目前使用中",
     noActiveConfig: "暫無使用中的設定檔 — 請從下方選擇一個。",
+    panelWindow: {
+      title: "在獨立視窗中開啟 Pie",
+      description: "部分 Chromium 瀏覽器接受側邊欄 API，卻從不顯示面板。開啟後改用獨立視窗開啟 Pie。Pie 偵測到該問題時會自動開啟。",
+    },
     cdpInput: {
       title: "瀏覽器輸入模擬（CDP）",
       description: "hover、click 與鍵盤工具所需。啟用後任務期間分頁會出現 Chrome 黃色提示列。",
