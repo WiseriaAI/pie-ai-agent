@@ -846,7 +846,16 @@ export function mergeContextUsage(
   },
 ): NonNullable<SessionAgentState["contextUsage"]> {
   return {
-    totalInputTokens: (prev?.totalInputTokens ?? 0) + step.inputTokens,
+    // Gross prompt tokens, cached portion included — the same scale the ring
+    // shows, so "session total" is always ≥ the current context. Summing raw
+    // inputTokens instead would mix two scales: Anthropic-wire providers
+    // (anthropic / deepseek / minimax / mimo / stepfun) EXCLUDE cache_read from
+    // input_tokens, so a fresh session whose system+tools hit a warm cache
+    // reported a 2K "session total" next to a 15.6K context — the panel looked
+    // broken. Fallback for providers that report no cache counters at all,
+    // where inputTokens is already gross.
+    totalInputTokens:
+      (prev?.totalInputTokens ?? 0) + (step.promptTotalTokens ?? step.inputTokens),
     totalOutputTokens: (prev?.totalOutputTokens ?? 0) + step.outputTokens,
     lastInputTokens: step.inputTokens,
     lastOutputTokens: step.outputTokens,

@@ -1802,7 +1802,8 @@ describe("issue #59 — mergeContextUsage", () => {
       promptTotalTokens: 1000,
     });
     expect(next).toEqual({
-      totalInputTokens: 200,
+      // Gross (1000), not the cache-excluded 200 — same scale as the ring.
+      totalInputTokens: 1000,
       totalOutputTokens: 10,
       lastInputTokens: 200,
       lastOutputTokens: 10,
@@ -1811,6 +1812,16 @@ describe("issue #59 — mergeContextUsage", () => {
       totalCachedTokens: 800,
       totalPromptTokens: 1000,
     });
+  });
+
+  // 侧栏把「会话累计」和「上下文」并排显示。累计若按 cache-excluded 的
+  // inputTokens 算,一个命中了热缓存的新会话会显示 2K 累计 / 15.6K 上下文,
+  // 看着就是坏的。累计必须 ≥ 任何单次调用的上下文。
+  it("session total stays on the same scale as the ring (≥ the last context)", () => {
+    const s1 = mergeContextUsage(undefined, {
+      inputTokens: 2_000, outputTokens: 100, cachedTokens: 13_600, promptTotalTokens: 15_600,
+    });
+    expect(s1.totalInputTokens).toBeGreaterThanOrEqual(s1.lastPromptTotalTokens!);
   });
 
   // 会话级命中率的分子/分母必须跨步累加 —— 只看最后一步的比值会在读页那轮
