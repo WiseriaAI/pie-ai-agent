@@ -316,7 +316,6 @@ export const zhCNDict = {
     contextRing: {
       ariaLabel: "上下文窗口用量",
       contextTitle: "上下文",
-      system: "系统提示",
       sessionTotal: "会话累计",
       lastCall: "上下文用量 {used} / {max}（{pct}%）",
       cacheHit: "缓存命中",

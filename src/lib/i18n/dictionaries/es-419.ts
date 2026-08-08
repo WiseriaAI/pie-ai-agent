@@ -320,7 +320,6 @@ export const es419Dict = {
     contextRing: {
       ariaLabel: "Uso de la ventana de contexto",
       contextTitle: "Contexto",
-      system: "Prompt del sistema",
       sessionTotal: "Total de la sesión",
       lastCall: "Contexto usado {used} / {max} ({pct}%)",
       cacheHit: "Aciertos de caché",

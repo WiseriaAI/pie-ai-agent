@@ -10,9 +10,6 @@ export interface ContextRingProps {
   maxContextTokens: number | undefined;
   /** Last call's total prompt tokens — the ring's numerator (current context size). */
   lastPromptTotalTokens?: number;
-  /** Last call's context composition, already scaled to sum to
-   *  `lastPromptTotalTokens`. Absent on old sessions / providers with no usage. */
-  lastBreakdown?: { system: number; tools: number; messages: number };
   /** Session-cumulative cached / total prompt tokens. The hit ratio is
    *  session-wide on purpose: a single step swings from ~50% (page read) to
    *  100% (pure reasoning), which reads as breakage rather than signal. */
@@ -57,7 +54,6 @@ export default function ContextRing(props: ContextRingProps) {
     totalOutputTokens,
     maxContextTokens,
     lastPromptTotalTokens,
-    lastBreakdown,
     totalCachedTokens,
     totalPromptTokens,
   } = props;
@@ -296,15 +292,6 @@ export default function ContextRing(props: ContextRingProps) {
               {fmtTokens(contextTokens!, numberFormat)} / {fmtTokens(maxContextTokens!, numberFormat)}
             </span>
           </div>
-          {/* Only the system-prompt slice is broken out. tools / messages / free
-              were dropped as noise — they are local estimates, and the number
-              that actually matters is the total against the window. */}
-          {lastBreakdown && (
-            <PopoverRow
-              label={t("chat.contextRing.system")}
-              value={fmtTokens(lastBreakdown.system, numberFormat)}
-            />
-          )}
           <div
             style={{
               display: "flex",

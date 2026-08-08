@@ -319,7 +319,6 @@ export const jaDict = {
     contextRing: {
       ariaLabel: "コンテキストウィンドウ使用量",
       contextTitle: "コンテキスト",
-      system: "システムプロンプト",
       sessionTotal: "セッション累計",
       lastCall: "コンテキスト使用量 {used} / {max}（{pct}%）",
       cacheHit: "キャッシュヒット",

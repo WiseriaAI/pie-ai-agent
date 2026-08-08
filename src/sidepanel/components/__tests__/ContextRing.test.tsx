@@ -130,7 +130,6 @@ describe("ContextRing — popover interaction", () => {
           totalInputTokens={8_243}
           totalOutputTokens={1_402}
           maxContextTokens={200_000}
-          lastBreakdown={{ system: 2_000, tools: 22_000, messages: 100_000 }}
         />
       </MotionProvider>,
     );
@@ -141,35 +140,14 @@ describe("ContextRing — popover interaction", () => {
     expect(screen.queryByTestId("context-ring-popover")).toBeNull();
   });
 
-  it("click opens the popover showing the context composition", () => {
+  it("click opens the popover: context vs window, then the session total", () => {
     renderRing();
     fireEvent.click(screen.getByTestId("context-ring"));
     const popover = screen.getByTestId("context-ring-popover");
     // Header: current context / window, abbreviated.
     expect(popover.textContent).toContain("124K / 200K");
-    // Only the system-prompt slice is broken out.
-    expect(popover.textContent).toContain("2K");
-    expect(popover.textContent).not.toContain("22K");
-    // Cumulative cost stays as a single footer row (8,243 + 1,402 = 9,645).
+    // Cumulative cost as a single footer row (8,243 + 1,402 = 9,645).
     expect(popover.textContent).toContain("9.6K");
-  });
-
-  it("omits the composition rows when the SW reported no breakdown", () => {
-    render(
-      <MotionProvider>
-        <ContextRing
-          lastInputTokens={124_000}
-          lastOutputTokens={1400}
-          totalInputTokens={8_243}
-          totalOutputTokens={1_402}
-          maxContextTokens={200_000}
-        />
-      </MotionProvider>,
-    );
-    fireEvent.click(screen.getByTestId("context-ring"));
-    const popover = screen.getByTestId("context-ring-popover");
-    expect(popover.textContent).toContain("124K / 200K");
-    expect(popover.textContent).not.toContain("2K /");
   });
 
   it("ESC closes the popover", async () => {

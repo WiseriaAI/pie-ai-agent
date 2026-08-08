@@ -2123,7 +2123,6 @@ function Composer({
               totalOutputTokens={usage?.totalOutputTokens ?? 0}
               maxContextTokens={maxContextTokens}
               lastPromptTotalTokens={usage?.lastPromptTotalTokens}
-              lastBreakdown={usage?.lastBreakdown}
               totalCachedTokens={usage?.totalCachedTokens}
               totalPromptTokens={usage?.totalPromptTokens}
             />

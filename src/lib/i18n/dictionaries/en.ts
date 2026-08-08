@@ -324,7 +324,6 @@ export const enDict = {
     contextRing: {
       ariaLabel: "Context window usage",
       contextTitle: "Context",
-      system: "System prompt",
       sessionTotal: "Session total",
       lastCall: "Context used {used} / {max} ({pct}%)",
       cacheHit: "Cache hit",

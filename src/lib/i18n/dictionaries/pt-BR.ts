@@ -320,7 +320,6 @@ export const ptBRDict = {
     contextRing: {
       ariaLabel: "Uso da janela de contexto",
       contextTitle: "Contexto",
-      system: "Prompt do sistema",
       sessionTotal: "Total da sessão",
       lastCall: "Contexto usado {used} / {max} ({pct}%)",
       cacheHit: "Acertos de cache",

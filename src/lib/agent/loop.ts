@@ -827,27 +827,6 @@ export function mergeSessionAgentSnapshot(
 }
 
 /**
- * 把本地估算的上下文分项按比例缩放到 provider 实报的 prompt 总量。
- *
- * 侧栏把分项和总数并排显示(Claude Code `/context` 视角),所以「三项之和 ===
- * 总数」是硬约束 —— messages 用减法吃掉舍入残差来保证它。分项本身只能是估算:
- * provider 只报一个总数,不告诉你它花在哪。
- *
- * 估算或实报任一为 0 时返回 undefined —— 侧栏据此只显示总量,不编造构成。
- */
-export function scaleContextBreakdown(
-  est: { system: number; tools: number; messages: number },
-  realTotal: number,
-): NonNullable<SessionAgentState["contextUsage"]>["lastBreakdown"] {
-  const estTotal = est.system + est.tools + est.messages;
-  if (estTotal <= 0 || realTotal <= 0) return undefined;
-  const scale = realTotal / estTotal;
-  const system = Math.round(est.system * scale);
-  const tools = Math.round(est.tools * scale);
-  return { system, tools, messages: realTotal - system - tools };
-}
-
-/**
  * Issue #59 — fold one step's real LLM usage into a session's running totals.
  * Pure function — no I/O. Caller persists the result via setSessionAgent.
  *
@@ -864,7 +843,6 @@ export function mergeContextUsage(
     outputTokens: number;
     cachedTokens?: number;
     promptTotalTokens?: number;
-    breakdown?: NonNullable<SessionAgentState["contextUsage"]>["lastBreakdown"];
   },
 ): NonNullable<SessionAgentState["contextUsage"]> {
   return {
@@ -892,7 +870,6 @@ export function mergeContextUsage(
             totalPromptTokens: prev.totalPromptTokens,
           }
         : {}),
-    ...(step.breakdown ? { lastBreakdown: step.breakdown } : {}),
   };
 }
 
@@ -2167,7 +2144,6 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // 没读页的轮次 hit 应该稳在 90%+,掉下来才说明前缀被什么打断了。
       // `est` 是本地估算(CJK 感知的字符数除法),与 `prompt`(provider 实报)对照
       // 可以看出估算偏差。cached/hit 只有 provider 报了缓存计数才有值。
-      let lastBreakdown: NonNullable<SessionAgentState["contextUsage"]>["lastBreakdown"];
       {
         const toolsJson = JSON.stringify(toolDefinitions);
         const wireFp = [fp(toolsJson), ...windowedHistory.map((m) => fp(JSON.stringify(m)))];
@@ -2186,17 +2162,6 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           : 0;
         const prompt = lastStepUsage?.promptTotalTokens ?? lastStepUsage?.inputTokens;
         const cached = lastStepUsage?.cachedTokens;
-
-        // 上下文构成,给侧栏的 context ring 用(Claude Code `/context` 那种视角:
-        // 当前上下文占了多少、花在哪,而不是累计成本)。
-        const systemTok =
-          windowedHistory[0]?.role === "system"
-            ? estimateTokens([windowedHistory[0]], modelConfig.provider)
-            : 0;
-        lastBreakdown = scaleContextBreakdown(
-          { system: systemTok, tools: toolsTok, messages: total - systemTok },
-          prompt ?? 0,
-        );
 
         diag(
           "ctx",
@@ -2231,10 +2196,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       if (lastStepUsage) {
         try {
           const cur = await getSessionAgent(sessionId);
-          const nextUsage = mergeContextUsage(cur?.contextUsage, {
-            ...lastStepUsage,
-            breakdown: lastBreakdown,
-          });
+          const nextUsage = mergeContextUsage(cur?.contextUsage, lastStepUsage);
           const base: SessionAgentState = cur ?? {
             agentMessages: [],
             pendingInstructions: [],
@@ -2256,9 +2218,6 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
                     : {}),
                   ...(nextUsage.lastPromptTotalTokens != null
                     ? { lastPromptTotalTokens: nextUsage.lastPromptTotalTokens }
-                    : {}),
-                  ...(nextUsage.lastBreakdown
-                    ? { lastBreakdown: nextUsage.lastBreakdown }
                     : {}),
                   ...(nextUsage.totalCachedTokens != null &&
                   nextUsage.totalPromptTokens != null
