@@ -1,25 +1,28 @@
-// Side-panel capability probe + fallback window.
+// Panel opening, end to end: the probe, the fallback window, and the decision
+// between them.
 //
-// Measured on a real Arc install, in this order: `open()` resolves; the
-// `openPanelOnActionClick` pref is stored (suppressing action.onClicked);
-// `getContexts` and the liveness ping both come back positive — and the user
-// still sees no panel. Each of those cost a round to discover.
+// Kept as one suite across the three modules on purpose — what needs pinning is
+// how they compose (a probe verdict reaching the fallback, a preference
+// outranking a probe), and the browser fixture that makes any of it meaningful
+// is shared.
 //
-// These tests pin down every detection layer built along the way, and the
-// conclusion they arrive at: detection is a default, and the user's explicit
-// choice overrides all of it.
+// Measured on a real Arc install, in the order each was discovered: `open()`
+// resolves; the `openPanelOnActionClick` pref is stored (suppressing
+// action.onClicked); `getContexts` and the liveness ping both come back
+// positive — and the user still sees no panel. Each cost a round.
+//
+// Hence the conclusion these tests encode: detection is a default, and the
+// user's explicit choice overrides all of it.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { forceFallbackPanel, initPanelOpening, openPanel } from "./panel-open";
 import {
   __resetSidePanelVerdict,
-  forceFallbackPanel,
-  initPanelOpening,
-  openFallbackPanelWindow,
-  openPanel,
   tryOpenSidePanel,
   SIDE_PANEL_DOCUMENT_TIMEOUT_MS,
   SIDE_PANEL_PROBE_TIMEOUT_MS,
-} from "./panel-open";
+} from "./panel/sidepanel-probe";
+import { openFallbackPanelWindow } from "./panel/fallback-window";
 import { PANEL_PAGE_PATH } from "@/lib/panel-host/panel-page";
 import {
   DEFAULT_PANEL_MODE,

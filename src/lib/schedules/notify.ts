@@ -24,7 +24,8 @@
 // broken notifications API never crashes the schedule run or the cascade delete.
 
 import { getRun, updateRun } from "./store";
-import { openFallbackPanelWindow, tryOpenSidePanel } from "@/background/panel-open";
+import { tryOpenSidePanel } from "@/background/panel/sidepanel-probe";
+import { openFallbackPanelWindow } from "@/background/panel/fallback-window";
 
 // ── Notification ID prefixes ────────────────────────────────────────────────
 

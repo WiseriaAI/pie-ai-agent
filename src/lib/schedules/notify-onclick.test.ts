@@ -28,7 +28,7 @@ beforeEach(async () => {
   await _resetForTests();
   // The side-panel capability verdict is memoized per service-worker lifetime,
   // so without this reset the first case here decides the outcome of the rest.
-  const { __resetSidePanelVerdict } = await import("@/background/panel-open");
+  const { __resetSidePanelVerdict } = await import("@/background/panel/sidepanel-probe");
   __resetSidePanelVerdict();
   // "Success" now means a panel document actually appeared, not merely that
   // open() resolved — so the healthy-browser fixture has to answer the

@@ -36,12 +36,12 @@ import { executeScriptAllFrames, type AllFramesInjectionOutcome } from "@/lib/ag
 // (verified by scripts/assert-no-eval-bridge.mjs).
 import { mountEvalBridge } from "./eval-bridge";
 import {
-  closeOrphanedFallbackPanels,
   forceFallbackPanel,
   handlePanelContextMenuClick,
   initPanelOpening,
   openPanel,
 } from "./panel-open";
+import { closeOrphanedFallbackPanels } from "./panel/fallback-window";
 import { queryActiveHostTab } from "@/lib/panel-host/host-window";
 import type { RoleViolation } from "@/lib/agent/history-validation";
 import { logHistoryRepaired } from "@/lib/agent/history-validation-telemetry";
