@@ -50,7 +50,7 @@ Windows PowerShell 5.1 按 ANSI(GBK) 读无 BOM 的 `.ps1`，中文注释乱码�
 
 - **CI / 安装器接入**（#363，已接）：`.github/workflows/release.yml` 的 `build-daemon-win`
   job 调 `build-tray.ps1 -OutDir daemon\dist` 产出 `PieTray.exe`，Inno 安装器
-  （`daemon/install-win/pie-link.iss`）把它装进 `%ProgramFiles%\Pie Link\`、写 HKCU `Run`
+  （`daemon/install-win/pie-link.iss`）把它装进 `%ProgramFiles%\Pie Link\`、写 HKLM `Run`
   key 登录自启托盘、装完立即以调用者身份启动。daemon 由 host 兜底拉起（spec §4.4）。
 - **代码签名**：首期不签（接受 SmartScreen 摩擦），CI 留签名步骤占位（spec §5 / 决策 9）。
 - **品牌图标**：托盘图标目前代码画（琥珀色派），真 `.ico` 资产走 #379。
