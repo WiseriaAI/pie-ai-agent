@@ -8,13 +8,16 @@ export interface ContextRingProps {
   totalInputTokens: number;
   totalOutputTokens: number;
   maxContextTokens: number | undefined;
-  /** Last call's cached prompt tokens (provider prompt/KV cache read). */
-  lastCachedTokens?: number;
-  /** Last call's total prompt tokens — cache-hit ratio denominator. */
+  /** Last call's total prompt tokens — the ring's numerator (current context size). */
   lastPromptTotalTokens?: number;
   /** Last call's context composition, already scaled to sum to
    *  `lastPromptTotalTokens`. Absent on old sessions / providers with no usage. */
   lastBreakdown?: { system: number; tools: number; messages: number };
+  /** Session-cumulative cached / total prompt tokens. The hit ratio is
+   *  session-wide on purpose: a single step swings from ~50% (page read) to
+   *  100% (pure reasoning), which reads as breakage rather than signal. */
+  totalCachedTokens?: number;
+  totalPromptTokens?: number;
 }
 
 // Ring geometry — 16x16 outer, 2px stroke. Matches neighboring composer icons
@@ -38,6 +41,14 @@ function colorForPercent(pct: number): string {
   return COLOR_LOW;
 }
 
+/** 24_800 → "24.8K",1_204_880 → "1.2M"。四位数以下原样 —— 缩写只为省宽度,
+ *  "0.9K" 比 "900" 更难读。小数点分隔符走 locale(pt-BR 得到 "1,2M")。 */
+function fmtTokens(n: number, nf: Intl.NumberFormat): string {
+  if (n >= 1_000_000) return `${nf.format(Math.round(n / 100_000) / 10)}M`;
+  if (n >= 1_000) return `${nf.format(Math.round(n / 100) / 10)}K`;
+  return nf.format(n);
+}
+
 export default function ContextRing(props: ContextRingProps) {
   const {
     lastInputTokens,
@@ -45,14 +56,18 @@ export default function ContextRing(props: ContextRingProps) {
     totalInputTokens,
     totalOutputTokens,
     maxContextTokens,
-    lastCachedTokens,
     lastPromptTotalTokens,
     lastBreakdown,
+    totalCachedTokens,
+    totalPromptTokens,
   } = props;
   void _lastOutputTokens;
 
   const { locale, t } = useI18n();
-  const numberFormat = useMemo(() => new Intl.NumberFormat(locale), [locale]);
+  const numberFormat = useMemo(
+    () => new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }),
+    [locale],
+  );
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -70,11 +85,11 @@ export default function ContextRing(props: ContextRingProps) {
     maxContextTokens != null &&
     maxContextTokens > 0;
 
-  // Cache hit ratio of the LAST LLM call. Rendered only when the provider
-  // actually reported cache counters — never a fabricated 0%.
+  // Session-wide cache hit ratio. Rendered only when the provider actually
+  // reported cache counters — never a fabricated 0%.
   const cacheHitPct =
-    lastCachedTokens != null && lastPromptTotalTokens != null && lastPromptTotalTokens > 0
-      ? Math.min(100, Math.round((lastCachedTokens / lastPromptTotalTokens) * 100))
+    totalCachedTokens != null && totalPromptTokens != null && totalPromptTokens > 0
+      ? Math.min(100, Math.round((totalCachedTokens / totalPromptTokens) * 100))
       : null;
 
   // Compute pct unconditionally so hook order is stable across renders.
@@ -124,8 +139,8 @@ export default function ContextRing(props: ContextRingProps) {
   const totalSum = totalInputTokens + totalOutputTokens;
   const tooltipText =
     t("chat.contextRing.lastCall", {
-      used: numberFormat.format(contextTokens!),
-      max: numberFormat.format(maxContextTokens!),
+      used: fmtTokens(contextTokens!, numberFormat),
+      max: fmtTokens(maxContextTokens!, numberFormat),
       pct: numberFormat.format(pct),
     }) +
     (cacheHitPct != null
@@ -235,6 +250,9 @@ export default function ContextRing(props: ContextRingProps) {
           >
             <span
               style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
                 fontFamily: "'JetBrains Mono', monospace",
                 fontWeight: 500,
                 fontSize: 10,
@@ -244,6 +262,27 @@ export default function ContextRing(props: ContextRingProps) {
               }}
             >
               {t("chat.contextRing.contextTitle")}
+              {/* 上下文在任务结束时会缩水,用户看到数字掉下去会以为是 bug。原生
+                  title 就够:不抢焦点、不占布局、长按/hover 都能出。 */}
+              <span
+                data-testid="context-ring-help"
+                title={t("chat.contextRing.help")}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: 12,
+                  height: 12,
+                  borderRadius: "50%",
+                  border: "1px solid var(--c-line)",
+                  fontSize: 8,
+                  lineHeight: 1,
+                  letterSpacing: 0,
+                  cursor: "help",
+                }}
+              >
+                ?
+              </span>
             </span>
             <span
               style={{
@@ -254,41 +293,16 @@ export default function ContextRing(props: ContextRingProps) {
                 fontVariantNumeric: "tabular-nums",
               }}
             >
-              {numberFormat.format(contextTokens!)} / {numberFormat.format(maxContextTokens!)}
+              {fmtTokens(contextTokens!, numberFormat)} / {fmtTokens(maxContextTokens!, numberFormat)}
             </span>
           </div>
-          {/* Composition is only shown when the SW computed one — old sessions
-              and providers that report no usable prompt total just get the
-              total + free rows. */}
+          {/* Only the system-prompt slice is broken out. tools / messages / free
+              were dropped as noise — they are local estimates, and the number
+              that actually matters is the total against the window. */}
           {lastBreakdown && (
-            <>
-              <PopoverRow
-                label={t("chat.contextRing.system")}
-                value={lastBreakdown.system}
-                numberFormat={numberFormat}
-              />
-              <PopoverRow
-                label={t("chat.contextRing.tools")}
-                value={lastBreakdown.tools}
-                numberFormat={numberFormat}
-              />
-              <PopoverRow
-                label={t("chat.contextRing.messages")}
-                value={lastBreakdown.messages}
-                numberFormat={numberFormat}
-              />
-            </>
-          )}
-          <PopoverRow
-            label={t("chat.contextRing.free")}
-            value={Math.max(0, maxContextTokens! - contextTokens!)}
-            numberFormat={numberFormat}
-          />
-          {cacheHitPct != null && (
             <PopoverRow
-              label={t("chat.contextRing.cacheHit")}
-              value={`${numberFormat.format(cacheHitPct)}% · ${numberFormat.format(lastCachedTokens!)}/${numberFormat.format(lastPromptTotalTokens!)}`}
-              numberFormat={numberFormat}
+              label={t("chat.contextRing.system")}
+              value={fmtTokens(lastBreakdown.system, numberFormat)}
             />
           )}
           <div
@@ -320,24 +334,22 @@ export default function ContextRing(props: ContextRingProps) {
                 fontVariantNumeric: "tabular-nums",
               }}
             >
-              {numberFormat.format(totalSum)}
+              {fmtTokens(totalSum, numberFormat)}
             </span>
           </div>
+          {cacheHitPct != null && (
+            <PopoverRow
+              label={t("chat.contextRing.cacheHit")}
+              value={`${numberFormat.format(cacheHitPct)}%`}
+            />
+          )}
         </div>
       </DropdownPanel>
     </div>
   );
 }
 
-function PopoverRow({
-  label,
-  value,
-  numberFormat,
-}: {
-  label: string;
-  value: number | string;
-  numberFormat: Intl.NumberFormat;
-}) {
+function PopoverRow({ label, value }: { label: string; value: string }) {
   return (
     <div
       style={{
@@ -366,7 +378,7 @@ function PopoverRow({
           fontVariantNumeric: "tabular-nums",
         }}
       >
-        {typeof value === "number" ? numberFormat.format(value) : value}
+        {value}
       </span>
     </div>
   );

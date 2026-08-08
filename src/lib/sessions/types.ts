@@ -265,6 +265,15 @@ export interface SessionAgentState {
      *  cache. Absent when the provider reports no cache info — panel hides
      *  the cache-hint UI rather than showing a misleading 0%. */
     lastCachedTokens?: number;
+    /** Session-cumulative cached prompt tokens. Together with
+     *  `totalPromptTokens` this gives the session-wide hit ratio the panel
+     *  shows — a single step's ratio swings wildly (a page read drops it to
+     *  ~50% by design), so per-step is noise, not signal. */
+    totalCachedTokens?: number;
+    /** Session-cumulative prompt tokens — hit-ratio denominator. Only sums
+     *  steps where the provider reported cache counters, so the ratio stays
+     *  apples-to-apples. Present iff totalCachedTokens is. */
+    totalPromptTokens?: number;
     /** Most recent step's total prompt tokens (cache-hit ratio denominator:
      *  OpenAI prompt_tokens; Anthropic input + cache_read + cache_creation).
      *  Present iff lastCachedTokens is. */

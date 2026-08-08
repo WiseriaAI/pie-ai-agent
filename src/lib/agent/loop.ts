@@ -872,13 +872,26 @@ export function mergeContextUsage(
     totalOutputTokens: (prev?.totalOutputTokens ?? 0) + step.outputTokens,
     lastInputTokens: step.inputTokens,
     lastOutputTokens: step.outputTokens,
-    // Cache counters are last-call-only observability (never accumulated) and
-    // carried through only when the provider reported them — conditional
-    // spread keeps the shape identical to pre-cache versions otherwise.
+    // Cache counters carry through only when the provider reported them —
+    // conditional spread keeps the shape identical to pre-cache versions
+    // otherwise. Both a last-step value (lastPromptTotalTokens is the ring's
+    // numerator) and a running sum (the panel shows the session-wide hit
+    // ratio; one step's ratio is noise).
     ...(step.cachedTokens != null ? { lastCachedTokens: step.cachedTokens } : {}),
     ...(step.promptTotalTokens != null
       ? { lastPromptTotalTokens: step.promptTotalTokens }
       : {}),
+    ...(step.cachedTokens != null && step.promptTotalTokens != null
+      ? {
+          totalCachedTokens: (prev?.totalCachedTokens ?? 0) + step.cachedTokens,
+          totalPromptTokens: (prev?.totalPromptTokens ?? 0) + step.promptTotalTokens,
+        }
+      : prev?.totalCachedTokens != null && prev?.totalPromptTokens != null
+        ? {
+            totalCachedTokens: prev.totalCachedTokens,
+            totalPromptTokens: prev.totalPromptTokens,
+          }
+        : {}),
     ...(step.breakdown ? { lastBreakdown: step.breakdown } : {}),
   };
 }
@@ -2246,6 +2259,13 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
                     : {}),
                   ...(nextUsage.lastBreakdown
                     ? { lastBreakdown: nextUsage.lastBreakdown }
+                    : {}),
+                  ...(nextUsage.totalCachedTokens != null &&
+                  nextUsage.totalPromptTokens != null
+                    ? {
+                        totalCachedTokens: nextUsage.totalCachedTokens,
+                        totalPromptTokens: nextUsage.totalPromptTokens,
+                      }
                     : {}),
                 },
                 sessionId,

@@ -272,6 +272,12 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
             ? { lastPromptTotalTokens: msg.lastPromptTotalTokens }
             : {}),
           ...(msg.lastBreakdown ? { lastBreakdown: msg.lastBreakdown } : {}),
+          ...(msg.totalCachedTokens != null && msg.totalPromptTokens != null
+            ? {
+                totalCachedTokens: msg.totalCachedTokens,
+                totalPromptTokens: msg.totalPromptTokens,
+              }
+            : {}),
         },
       });
       return;

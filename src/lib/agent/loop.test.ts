@@ -1827,13 +1827,40 @@ describe("issue #59 — mergeContextUsage", () => {
       lastOutputTokens: 10,
       lastCachedTokens: 800,
       lastPromptTotalTokens: 1000,
+      totalCachedTokens: 800,
+      totalPromptTokens: 1000,
     });
+  });
+
+  // 会话级命中率的分子/分母必须跨步累加 —— 只看最后一步的比值会在读页那轮
+  // 掉到 50%,读成「缓存坏了」。
+  it("accumulates the session-wide cache ratio across steps", () => {
+    const s1 = mergeContextUsage(undefined, {
+      inputTokens: 200, outputTokens: 10, cachedTokens: 800, promptTotalTokens: 1000,
+    });
+    const s2 = mergeContextUsage(s1, {
+      inputTokens: 400, outputTokens: 10, cachedTokens: 1200, promptTotalTokens: 3000,
+    });
+    expect(s2.totalCachedTokens).toBe(2000);
+    expect(s2.totalPromptTokens).toBe(4000);
+  });
+
+  // provider 中途停报缓存计数(或换了 provider)时,已累计的比值不能凭空消失。
+  it("preserves accumulated cache totals across a step with no cache info", () => {
+    const s1 = mergeContextUsage(undefined, {
+      inputTokens: 200, outputTokens: 10, cachedTokens: 800, promptTotalTokens: 1000,
+    });
+    const s2 = mergeContextUsage(s1, { inputTokens: 400, outputTokens: 10 });
+    expect(s2.totalCachedTokens).toBe(800);
+    expect(s2.totalPromptTokens).toBe(1000);
+    expect(s2).not.toHaveProperty("lastCachedTokens");
   });
 
   it("omits cache keys entirely when the step has no cache info", () => {
     const next = mergeContextUsage(undefined, { inputTokens: 200, outputTokens: 10 });
     expect(next).not.toHaveProperty("lastCachedTokens");
     expect(next).not.toHaveProperty("lastPromptTotalTokens");
+    expect(next).not.toHaveProperty("totalCachedTokens");
   });
 });
 

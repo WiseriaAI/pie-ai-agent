@@ -321,12 +321,10 @@ export const es419Dict = {
       ariaLabel: "Uso de la ventana de contexto",
       contextTitle: "Contexto",
       system: "Prompt del sistema",
-      tools: "Herramientas",
-      messages: "Mensajes",
-      free: "Libre",
       sessionTotal: "Total de la sesión",
       lastCall: "Contexto usado {used} / {max} ({pct}%)",
       cacheHit: "Aciertos de caché",
+      help: "Este es el contexto de la llamada actual al modelo, no un acumulado. Cuando una tarea termina, sus pasos intermedios (contenido de la página, resultados de herramientas) se descartan y se reemplazan por un resumen breve, así que el contexto se reduce. Una tarea interrumpida es la excepción: se conserva todo su historial para poder retomarla con el siguiente mensaje.",
     },
   },
   modelDropdown: {
