@@ -318,12 +318,11 @@ export const jaDict = {
     },
     contextRing: {
       ariaLabel: "コンテキストウィンドウ使用量",
-      sessionUsage: "セッション使用量",
-      input: "入力",
-      output: "出力",
-      total: "合計",
-      lastCall: "使用済みコンテキスト {used} / {max} ({pct}%)",
+      contextTitle: "コンテキスト",
+      sessionTotal: "セッション累計",
+      lastCall: "コンテキスト使用量 {used} / {max}（{pct}%）",
       cacheHit: "キャッシュヒット",
+      help: "これは現在のモデル呼び出し 1 回分のコンテキストであり、累計ではありません。タスクが完了すると途中経過（ページ内容やツールの結果）は破棄され短い要約に置き換わるため、コンテキストは小さくなります。中断されたタスクは例外で、完全な履歴が保持され次のメッセージで再開できます。",
     },
   },
   modelDropdown: {

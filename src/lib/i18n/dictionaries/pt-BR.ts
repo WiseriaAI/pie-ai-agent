@@ -319,12 +319,11 @@ export const ptBRDict = {
     },
     contextRing: {
       ariaLabel: "Uso da janela de contexto",
-      sessionUsage: "Uso da sessão",
-      input: "entrada",
-      output: "saída",
-      total: "total",
+      contextTitle: "Contexto",
+      sessionTotal: "Total da sessão",
       lastCall: "Contexto usado {used} / {max} ({pct}%)",
-      cacheHit: "Acerto de cache",
+      cacheHit: "Acertos de cache",
+      help: "Este é o contexto da chamada atual ao modelo, não um acumulado. Quando uma tarefa termina, suas etapas intermediárias (conteúdo da página, resultados de ferramentas) são descartadas e substituídas por um resumo curto — por isso o contexto encolhe. Uma tarefa interrompida é a exceção: todo o histórico é mantido para que a próxima mensagem possa retomá-la.",
     },
   },
   modelDropdown: {

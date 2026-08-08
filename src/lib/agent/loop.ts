@@ -846,17 +846,39 @@ export function mergeContextUsage(
   },
 ): NonNullable<SessionAgentState["contextUsage"]> {
   return {
-    totalInputTokens: (prev?.totalInputTokens ?? 0) + step.inputTokens,
+    // Gross prompt tokens, cached portion included — the same scale the ring
+    // shows, so "session total" is always ≥ the current context. Summing raw
+    // inputTokens instead would mix two scales: Anthropic-wire providers
+    // (anthropic / deepseek / minimax / mimo / stepfun) EXCLUDE cache_read from
+    // input_tokens, so a fresh session whose system+tools hit a warm cache
+    // reported a 2K "session total" next to a 15.6K context — the panel looked
+    // broken. Fallback for providers that report no cache counters at all,
+    // where inputTokens is already gross.
+    totalInputTokens:
+      (prev?.totalInputTokens ?? 0) + (step.promptTotalTokens ?? step.inputTokens),
     totalOutputTokens: (prev?.totalOutputTokens ?? 0) + step.outputTokens,
     lastInputTokens: step.inputTokens,
     lastOutputTokens: step.outputTokens,
-    // Cache counters are last-call-only observability (never accumulated) and
-    // carried through only when the provider reported them — conditional
-    // spread keeps the shape identical to pre-cache versions otherwise.
+    // Cache counters carry through only when the provider reported them —
+    // conditional spread keeps the shape identical to pre-cache versions
+    // otherwise. Both a last-step value (lastPromptTotalTokens is the ring's
+    // numerator) and a running sum (the panel shows the session-wide hit
+    // ratio; one step's ratio is noise).
     ...(step.cachedTokens != null ? { lastCachedTokens: step.cachedTokens } : {}),
     ...(step.promptTotalTokens != null
       ? { lastPromptTotalTokens: step.promptTotalTokens }
       : {}),
+    ...(step.cachedTokens != null && step.promptTotalTokens != null
+      ? {
+          totalCachedTokens: (prev?.totalCachedTokens ?? 0) + step.cachedTokens,
+          totalPromptTokens: (prev?.totalPromptTokens ?? 0) + step.promptTotalTokens,
+        }
+      : prev?.totalCachedTokens != null && prev?.totalPromptTokens != null
+        ? {
+            totalCachedTokens: prev.totalCachedTokens,
+            totalPromptTokens: prev.totalPromptTokens,
+          }
+        : {}),
   };
 }
 
@@ -2205,6 +2227,13 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
                     : {}),
                   ...(nextUsage.lastPromptTotalTokens != null
                     ? { lastPromptTotalTokens: nextUsage.lastPromptTotalTokens }
+                    : {}),
+                  ...(nextUsage.totalCachedTokens != null &&
+                  nextUsage.totalPromptTokens != null
+                    ? {
+                        totalCachedTokens: nextUsage.totalCachedTokens,
+                        totalPromptTokens: nextUsage.totalPromptTokens,
+                      }
                     : {}),
                 },
                 sessionId,

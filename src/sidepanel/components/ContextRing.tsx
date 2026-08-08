@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useI18n } from "@/lib/i18n";
 import { DropdownPanel } from "./ui/DropdownPanel";
 
@@ -8,10 +8,13 @@ export interface ContextRingProps {
   totalInputTokens: number;
   totalOutputTokens: number;
   maxContextTokens: number | undefined;
-  /** Last call's cached prompt tokens (provider prompt/KV cache read). */
-  lastCachedTokens?: number;
-  /** Last call's total prompt tokens — cache-hit ratio denominator. */
+  /** Last call's total prompt tokens — the ring's numerator (current context size). */
   lastPromptTotalTokens?: number;
+  /** Session-cumulative cached / total prompt tokens. The hit ratio is
+   *  session-wide on purpose: a single step swings from ~50% (page read) to
+   *  100% (pure reasoning), which reads as breakage rather than signal. */
+  totalCachedTokens?: number;
+  totalPromptTokens?: number;
 }
 
 // Ring geometry — 16x16 outer, 2px stroke. Matches neighboring composer icons
@@ -35,6 +38,14 @@ function colorForPercent(pct: number): string {
   return COLOR_LOW;
 }
 
+/** 24_800 → "24.8K",1_204_880 → "1.2M"。四位数以下原样 —— 缩写只为省宽度,
+ *  "0.9K" 比 "900" 更难读。小数点分隔符走 locale(pt-BR 得到 "1,2M")。 */
+function fmtTokens(n: number, nf: Intl.NumberFormat): string {
+  if (n >= 1_000_000) return `${nf.format(Math.round(n / 100_000) / 10)}M`;
+  if (n >= 1_000) return `${nf.format(Math.round(n / 100) / 10)}K`;
+  return nf.format(n);
+}
+
 export default function ContextRing(props: ContextRingProps) {
   const {
     lastInputTokens,
@@ -42,33 +53,51 @@ export default function ContextRing(props: ContextRingProps) {
     totalInputTokens,
     totalOutputTokens,
     maxContextTokens,
-    lastCachedTokens,
     lastPromptTotalTokens,
+    totalCachedTokens,
+    totalPromptTokens,
   } = props;
   void _lastOutputTokens;
 
   const { locale, t } = useI18n();
-  const numberFormat = useMemo(() => new Intl.NumberFormat(locale), [locale]);
+  const numberFormat = useMemo(
+    () => new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }),
+    [locale],
+  );
   const [open, setOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // 环的分子必须是「本次调用真实处理的 prompt 总量」。Anthropic-wire 家族
+  // (anthropic / deepseek / minimax / mimo / stepfun) 的 input_tokens **排除**
+  // cache_read 与 cache_creation —— 命中 90% 时它只剩真实上下文的 10%,直接拿它
+  // 算占比会严重低估。promptTotalTokens 是 provider 报了缓存计数时才有的全量值;
+  // 没报时回落 inputTokens(openai-compat / openai / gemini 的 input 本就含缓存,
+  // 两者相等)。
+  const contextTokens = lastPromptTotalTokens ?? lastInputTokens;
+
   const shouldRender =
-    lastInputTokens != null &&
-    lastInputTokens > 0 &&
+    contextTokens != null &&
+    contextTokens > 0 &&
     maxContextTokens != null &&
     maxContextTokens > 0;
 
-  // Cache hit ratio of the LAST LLM call. Rendered only when the provider
-  // actually reported cache counters — never a fabricated 0%.
+  // Session-wide cache hit ratio. Rendered only when the provider actually
+  // reported cache counters — never a fabricated 0%.
   const cacheHitPct =
-    lastCachedTokens != null && lastPromptTotalTokens != null && lastPromptTotalTokens > 0
-      ? Math.min(100, Math.round((lastCachedTokens / lastPromptTotalTokens) * 100))
+    totalCachedTokens != null && totalPromptTokens != null && totalPromptTokens > 0
+      ? Math.min(100, Math.round((totalCachedTokens / totalPromptTokens) * 100))
       : null;
 
   // Compute pct unconditionally so hook order is stable across renders.
   const pct = shouldRender
-    ? Math.min(100, Math.round((lastInputTokens! / maxContextTokens!) * 100))
+    ? Math.min(100, Math.round((contextTokens! / maxContextTokens!) * 100))
     : 0;
+
+  // 收起说明,免得下次打开浮层它还展开着。
+  useEffect(() => {
+    if (!open) setHelpOpen(false);
+  }, [open]);
 
   // ESC closes popover.
   useEffect(() => {
@@ -112,8 +141,8 @@ export default function ContextRing(props: ContextRingProps) {
   const totalSum = totalInputTokens + totalOutputTokens;
   const tooltipText =
     t("chat.contextRing.lastCall", {
-      used: numberFormat.format(lastInputTokens!),
-      max: numberFormat.format(maxContextTokens!),
+      used: fmtTokens(contextTokens!, numberFormat),
+      max: fmtTokens(maxContextTokens!, numberFormat),
       pct: numberFormat.format(pct),
     }) +
     (cacheHitPct != null
@@ -204,6 +233,7 @@ export default function ContextRing(props: ContextRingProps) {
           onClick={(e) => e.stopPropagation()}
           style={{
             minWidth: 200,
+            padding: "5px 0",
             background: "var(--c-canvas)",
             border: "1px solid var(--c-line)",
             borderRadius: 8,
@@ -211,84 +241,74 @@ export default function ContextRing(props: ContextRingProps) {
             cursor: "default",
           }}
         >
-          <div
-            style={{
-              padding: "10px 14px 8px",
-              borderBottom: "1px solid var(--c-line)",
-              fontFamily: "'JetBrains Mono', monospace",
-              fontWeight: 500,
-              fontSize: 10,
-              letterSpacing: "0.14em",
-              color: "var(--c-fg-3)",
-              textTransform: "uppercase",
-            }}
-          >
-            {t("chat.contextRing.sessionUsage")}
-          </div>
           <PopoverRow
-            label={t("chat.contextRing.input")}
-            value={totalInputTokens}
-            numberFormat={numberFormat}
+            label={
+              <>
+                {t("chat.contextRing.contextTitle")}
+                {/* 上下文在任务结束时会缩水,用户看到数字掉下去会以为是 bug。
+                    点开展开说明 —— 原生 title 要 hover 一两秒才出,在一个本来就
+                    要点开的浮层里读起来像「点不动」。title 保留做兜底。 */}
+                <span
+                  data-testid="context-ring-help"
+                  role="button"
+                  aria-expanded={helpOpen}
+                  title={t("chat.contextRing.help")}
+                  onClick={() => setHelpOpen((v) => !v)}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    width: 14,
+                    height: 14,
+                    marginLeft: 5,
+                    borderRadius: "50%",
+                    border: "1px solid var(--c-line)",
+                    background: helpOpen ? "var(--c-line)" : "transparent",
+                    color: helpOpen ? "var(--c-fg-1)" : "inherit",
+                    fontSize: 9,
+                    lineHeight: 1,
+                    letterSpacing: 0,
+                    cursor: "pointer",
+                    userSelect: "none",
+                  }}
+                >
+                  ?
+                </span>
+              </>
+            }
+            value={`${fmtTokens(contextTokens!, numberFormat)} / ${fmtTokens(maxContextTokens!, numberFormat)}`}
           />
+          {helpOpen && (
+            <div
+              data-testid="context-ring-help-text"
+              style={{
+                padding: "2px 14px 8px",
+                fontFamily: "Inter, sans-serif",
+                fontSize: 11,
+                lineHeight: 1.6,
+                color: "var(--c-fg-2)",
+              }}
+            >
+              {t("chat.contextRing.help")}
+            </div>
+          )}
           <PopoverRow
-            label={t("chat.contextRing.output")}
-            value={totalOutputTokens}
-            numberFormat={numberFormat}
+            label={t("chat.contextRing.sessionTotal")}
+            value={fmtTokens(totalSum, numberFormat)}
           />
           {cacheHitPct != null && (
             <PopoverRow
               label={t("chat.contextRing.cacheHit")}
-              value={`${numberFormat.format(cacheHitPct)}% · ${numberFormat.format(lastCachedTokens!)}/${numberFormat.format(lastPromptTotalTokens!)}`}
-              numberFormat={numberFormat}
+              value={`${numberFormat.format(cacheHitPct)}%`}
             />
           )}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              padding: "8px 14px 10px",
-              borderTop: "1px solid var(--c-line)",
-            }}
-          >
-            <span
-              style={{
-                fontFamily: "'JetBrains Mono', monospace",
-                fontSize: 10,
-                letterSpacing: "0.1em",
-                color: "var(--c-fg-3)",
-                textTransform: "uppercase",
-              }}
-            >
-              {t("chat.contextRing.total")}
-            </span>
-            <span
-              style={{
-                fontFamily: "Inter, sans-serif",
-                fontWeight: 600,
-                fontSize: 13,
-                color: "var(--c-fg-1)",
-                fontVariantNumeric: "tabular-nums",
-              }}
-            >
-              {numberFormat.format(totalSum)}
-            </span>
-          </div>
         </div>
       </DropdownPanel>
     </div>
   );
 }
 
-function PopoverRow({
-  label,
-  value,
-  numberFormat,
-}: {
-  label: string;
-  value: number | string;
-  numberFormat: Intl.NumberFormat;
-}) {
+function PopoverRow({ label, value }: { label: ReactNode; value: string }) {
   return (
     <div
       style={{
@@ -296,14 +316,19 @@ function PopoverRow({
         alignItems: "center",
         justifyContent: "space-between",
         gap: 16,
-        padding: "8px 14px",
+        padding: "7px 14px",
       }}
     >
       <span
         style={{
-          fontFamily: "Inter, sans-serif",
-          fontSize: 12,
-          color: "var(--c-fg-2)",
+          display: "inline-flex",
+          alignItems: "center",
+          fontFamily: "'JetBrains Mono', monospace",
+          fontWeight: 500,
+          fontSize: 10,
+          letterSpacing: "0.14em",
+          color: "var(--c-fg-3)",
+          textTransform: "uppercase",
         }}
       >
         {label}
@@ -311,13 +336,13 @@ function PopoverRow({
       <span
         style={{
           fontFamily: "Inter, sans-serif",
-          fontWeight: 500,
-          fontSize: 12,
+          fontWeight: 600,
+          fontSize: 13,
           color: "var(--c-fg-1)",
           fontVariantNumeric: "tabular-nums",
         }}
       >
-        {typeof value === "number" ? numberFormat.format(value) : value}
+        {value}
       </span>
     </div>
   );

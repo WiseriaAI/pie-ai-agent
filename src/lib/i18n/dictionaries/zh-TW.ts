@@ -315,12 +315,11 @@ export const zhTWDict = {
     },
     contextRing: {
       ariaLabel: "上下文視窗用量",
-      sessionUsage: "本次工作階段用量",
-      input: "輸入",
-      output: "輸出",
-      total: "合計",
+      contextTitle: "上下文",
+      sessionTotal: "工作階段累計",
       lastCall: "上下文用量 {used} / {max}（{pct}%）",
       cacheHit: "快取命中",
+      help: "這是目前一次模型呼叫的上下文，不是累計值。任務完成後，中間過程（頁面內容、工具結果）會被丟棄並換成一段摘要，所以上下文會變短。被中斷的任務例外：完整歷史會保留，下一則訊息可以直接接續。",
     },
   },
   modelDropdown: {

@@ -323,12 +323,11 @@ export const enDict = {
     },
     contextRing: {
       ariaLabel: "Context window usage",
-      sessionUsage: "Session usage",
-      input: "input",
-      output: "output",
-      total: "total",
+      contextTitle: "Context",
+      sessionTotal: "Session total",
       lastCall: "Context used {used} / {max} ({pct}%)",
       cacheHit: "Cache hit",
+      help: "This is the context of the current LLM call, not a running total. When a task finishes, its intermediate steps (page content, tool results) are discarded and replaced with a short summary — so the context shrinks. An interrupted task is the exception: its full history is kept so the next message can resume it.",
     },
   },
   modelDropdown: {

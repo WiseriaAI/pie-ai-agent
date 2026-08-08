@@ -315,12 +315,11 @@ export const zhCNDict = {
     },
     contextRing: {
       ariaLabel: "上下文窗口用量",
-      sessionUsage: "本轮会话用量",
-      input: "输入",
-      output: "输出",
-      total: "合计",
+      contextTitle: "上下文",
+      sessionTotal: "会话累计",
       lastCall: "上下文用量 {used} / {max}（{pct}%）",
       cacheHit: "缓存命中",
+      help: "这是当前一次模型调用的上下文，不是累计值。任务完成后，中间过程（页面内容、工具结果）会被丢弃并换成一段摘要，所以上下文会变短。被中断的任务例外：完整历史会保留，下一条消息可以直接续接。",
     },
   },
   modelDropdown: {

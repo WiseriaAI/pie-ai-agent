@@ -140,13 +140,26 @@ describe("ContextRing — popover interaction", () => {
     expect(screen.queryByTestId("context-ring-popover")).toBeNull();
   });
 
-  it("click opens the popover with the three rows", () => {
+  it("the ? toggles an inline explanation (a native title alone reads as dead)", () => {
+    renderRing();
+    fireEvent.click(screen.getByTestId("context-ring"));
+    expect(screen.queryByTestId("context-ring-help-text")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("context-ring-help"));
+    expect(screen.getByTestId("context-ring-help-text").textContent).not.toBe("");
+
+    fireEvent.click(screen.getByTestId("context-ring-help"));
+    expect(screen.queryByTestId("context-ring-help-text")).toBeNull();
+  });
+
+  it("click opens the popover: context vs window, then the session total", () => {
     renderRing();
     fireEvent.click(screen.getByTestId("context-ring"));
     const popover = screen.getByTestId("context-ring-popover");
-    expect(popover.textContent).toContain("8,243");
-    expect(popover.textContent).toContain("1,402");
-    expect(popover.textContent).toContain("9,645");
+    // Header: current context / window, abbreviated.
+    expect(popover.textContent).toContain("124K / 200K");
+    // Cumulative cost as a single footer row (8,243 + 1,402 = 9,645).
+    expect(popover.textContent).toContain("9.6K");
   });
 
   it("ESC closes the popover", async () => {
@@ -204,25 +217,26 @@ describe("ContextRing — cache hit display", () => {
     maxContextTokens: 200_000,
   };
 
-  it("shows the hit pct inside the ring and a popover row when cache stats exist", () => {
+  it("shows the SESSION-wide hit pct in the ring and in a popover row", () => {
     render(
       <MotionProvider>
         <ContextRing
           {...baseProps}
-          lastCachedTokens={8_700}
           lastPromptTotalTokens={10_000}
+          totalCachedTokens={87_000}
+          totalPromptTokens={100_000}
         />
       </MotionProvider>,
     );
-    // Ring center shows the rounded pct (8700/10000 = 87).
+    // 87_000 / 100_000 — the session ratio, not this one step's.
     expect(screen.getByTestId("context-ring-cache-pct").textContent).toBe("87");
-    // Tooltip carries the hit pct too.
     expect(screen.getByTestId("context-ring").getAttribute("title")).toContain("87%");
 
     fireEvent.click(screen.getByTestId("context-ring"));
     const popover = screen.getByTestId("context-ring-popover");
     expect(popover.textContent).toContain("87%");
-    expect(popover.textContent).toContain("8,700/10,000");
+    // Percentage only — no numerator/denominator.
+    expect(popover.textContent).not.toContain("87,000");
   });
 
   it("hides cache UI entirely when the provider reports no cache info", () => {
@@ -235,15 +249,31 @@ describe("ContextRing — cache hit display", () => {
     expect(screen.getByTestId("context-ring").getAttribute("title")).not.toContain("87%");
 
     fireEvent.click(screen.getByTestId("context-ring"));
-    const popover = screen.getByTestId("context-ring-popover");
-    // Only the three usage rows — no cache row, no stray pct values.
-    expect(popover.textContent).not.toContain("87%");
+    expect(screen.getByTestId("context-ring-popover").textContent).not.toContain("87%");
+  });
+
+  // Anthropic-wire providers report input_tokens EXCLUDING the cached portion,
+  // so the ring must use promptTotalTokens as its numerator — otherwise a 90%
+  // cache hit renders as 10% context usage.
+  it("sizes the arc by promptTotalTokens, not the cache-excluded inputTokens", () => {
+    render(
+      <MotionProvider>
+        <ContextRing
+          {...baseProps}
+          lastInputTokens={10_000}
+          lastPromptTotalTokens={100_000}
+        />
+      </MotionProvider>,
+    );
+    // 100_000 / 200_000 = 50%, not 10_000 / 200_000 = 5%.
+    expect(screen.getByTestId("context-ring").getAttribute("title")).toContain("100K");
+    expect(screen.getByTestId("context-ring").getAttribute("title")).toContain("50");
   });
 
   it("hides cache UI when the denominator is zero", () => {
     render(
       <MotionProvider>
-        <ContextRing {...baseProps} lastCachedTokens={0} lastPromptTotalTokens={0} />
+        <ContextRing {...baseProps} totalCachedTokens={0} totalPromptTokens={0} />
       </MotionProvider>,
     );
     expect(screen.queryByTestId("context-ring-cache-pct")).toBeNull();
@@ -268,13 +298,13 @@ describe("ContextRing — locale formatting", () => {
     );
 
     const ring = await screen.findByTestId("context-ring");
-    await waitFor(() => expect(ring.getAttribute("title")).toContain("124.000"));
-    expect(ring.getAttribute("title")).toContain("200.000");
+    await waitFor(() => expect(ring.getAttribute("title")).toContain("124K"));
+    expect(ring.getAttribute("title")).toContain("200K");
 
     fireEvent.click(ring);
     const popover = screen.getByTestId("context-ring-popover");
-    expect(popover.textContent).toContain("8.243");
-    expect(popover.textContent).toContain("1.402");
-    expect(popover.textContent).toContain("9.645");
+    expect(popover.textContent).toContain("124K / 200K");
+    // Decimal separator follows the locale — pt-BR uses a comma.
+    expect(popover.textContent).toContain("9,6K");
   });
 });

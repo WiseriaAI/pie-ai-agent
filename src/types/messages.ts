@@ -213,6 +213,10 @@ export interface AgentUsageMessage {
   /** Most recent step's total prompt tokens — cache-hit ratio denominator.
    *  Present iff lastCachedTokens is. */
   lastPromptTotalTokens?: number;
+  /** Session-cumulative cached / total prompt tokens — the panel's hit ratio is
+   *  session-wide, not per-step. Present together or not at all. */
+  totalCachedTokens?: number;
+  totalPromptTokens?: number;
 }
 
 // --- Side Panel → Service Worker (via sendMessage) ---
