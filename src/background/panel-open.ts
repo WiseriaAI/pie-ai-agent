@@ -338,17 +338,55 @@ export async function openFallbackPanelWindow(target: PanelTarget): Promise<void
 
   const url = buildFallbackPanelUrl(hostWindowId);
   const bounds = await hostWindowBounds(hostWindowId);
-  try {
-    await chrome.windows.create({ url, type: "popup", focused: true, ...bounds });
-    console.info(`[sw] opened fallback panel window for host window ${hostWindowId}`);
-    return;
-  } catch (e) {
-    console.warn("[sw] fallback panel window failed, opening the panel in a tab:", e);
+
+  // Escalating strategies, each verified by looking for the panel tab
+  // afterwards rather than by trusting the call that created it — the same
+  // lesson the side-panel probe had to learn. A browser that resolves
+  // windows.create without surfacing a window is not hypothetical: Arc has no
+  // Chrome-style popup windows in its UI model, so `type: "popup"` is a prime
+  // suspect for being accepted and quietly dropped.
+  //
+  // Ordered best-UX-first. A popup window sits beside the page it drives; a
+  // normal window at least floats free; a tab works everywhere but can't be
+  // seen next to the page. All three keep the port — and any running task —
+  // alive, which is the property that rules out an action popup entirely.
+  const strategies: Array<{ name: string; run: () => Promise<unknown> }> = [
+    { name: "popup window", run: () => chrome.windows.create({ url, type: "popup", focused: true, ...bounds }) },
+    { name: "normal window", run: () => chrome.windows.create({ url, type: "normal", focused: true, ...bounds }) },
+    { name: "tab", run: () => chrome.tabs.create({ url }) },
+  ];
+
+  for (const { name, run } of strategies) {
+    try {
+      await run();
+    } catch (e) {
+      console.warn(`[sw] fallback panel via ${name} threw:`, e);
+      continue;
+    }
+    if (await panelTabExists(url)) {
+      console.info(`[sw] opened fallback panel via ${name} for host window ${hostWindowId}`);
+      return;
+    }
+    console.warn(`[sw] fallback panel via ${name} reported success but no panel tab appeared`);
   }
-  // Last resort. Worse UX — the panel can't sit next to the page it is driving
-  // — but a reachable panel beats none, and it keeps the port (and therefore
-  // any running task) alive just the same.
-  await chrome.tabs.create({ url });
+  console.error("[sw] every fallback panel strategy failed — the panel could not be opened");
+}
+
+/**
+ * Did the panel document actually land somewhere reachable?
+ *
+ * Looks for a real tab carrying the panel URL. A tab is browser-side state the
+ * create call can't fabricate, so this catches the "resolved but nothing
+ * appeared" failure that plain error handling walks straight past.
+ */
+async function panelTabExists(url: string): Promise<boolean> {
+  try {
+    const tabs = await chrome.tabs.query({});
+    return tabs.some((t) => t.url === url || t.pendingUrl === url);
+  } catch {
+    // Can't tell — assume it worked rather than spawning duplicates.
+    return true;
+  }
 }
 
 /**

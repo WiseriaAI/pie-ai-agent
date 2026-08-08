@@ -47,12 +47,23 @@ let saved: {
   session: unknown;
 };
 
+/**
+ * Mutable tab world. Fallback strategies are verified by looking for the panel
+ * tab afterwards, so a fixture that "creates" a window without producing a tab
+ * models a BROKEN browser — which is a thing tests must opt into deliberately,
+ * not the default.
+ */
+let worldTabs: FakeTab[] = [];
+
 function installTabs(tabs: FakeTab[]) {
+  worldTabs = [...tabs];
   g.chrome.tabs.query = vi.fn(async (info: chrome.tabs.QueryInfo) =>
-    typeof info.windowId === "number" ? tabs.filter((t) => t.windowId === info.windowId) : tabs,
+    typeof info.windowId === "number"
+      ? worldTabs.filter((t) => t.windowId === info.windowId)
+      : worldTabs,
   );
   g.chrome.tabs.get = vi.fn(async (id: number) => {
-    const t = tabs.find((x) => x.id === id);
+    const t = worldTabs.find((x) => x.id === id);
     if (!t) throw new Error("no tab");
     return t;
   });
@@ -70,8 +81,14 @@ beforeEach(() => {
   };
   __resetSidePanelVerdict();
   installTabs([]);
+  let nextWindowId = 900;
   g.chrome.windows = {
-    create: vi.fn(async () => ({ id: 999 })),
+    // A working browser: creating a window actually produces a tab in it.
+    create: vi.fn(async (opts: { url: string }) => {
+      const id = nextWindowId++;
+      worldTabs.push({ id: id * 10, url: opts.url, windowId: id });
+      return { id };
+    }),
     update: vi.fn(async () => ({ id: 999 })),
     get: vi.fn(async () => ({ id: 200, left: 0, top: 0, width: 1200, height: 800 })),
     getLastFocused: vi.fn(async () => ({ id: 200 })),
@@ -326,6 +343,44 @@ describe("openFallbackPanelWindow", () => {
     await openFallbackPanelWindow({ windowId: 200 });
 
     expect(tabsCreate).toHaveBeenCalledWith({ url: `${PANEL_URL}?hostWindowId=200` });
+  });
+
+  it("escalates when a strategy reports success but no panel actually appears", async () => {
+    // The failure that keeps recurring in this browser: the call resolves and
+    // nothing shows up. Error handling alone walks straight past it, so each
+    // strategy is verified by looking for the panel tab afterwards.
+    const FALLBACK_URL = `${PANEL_URL}?hostWindowId=200`;
+    installTabs([{ id: 1, url: "https://a.test/", windowId: 200 }]);
+
+    // windows.create resolves happily but never produces a tab — the suspected
+    // Arc behaviour for popup-type windows, and the exact shape of failure that
+    // plain error handling cannot see.
+    g.chrome.windows!.create = vi.fn(async () => ({ id: 999 }));
+    const tabsCreate = vi.fn(async () => {
+      worldTabs.push({ id: 7, url: FALLBACK_URL, windowId: 200 });
+      return { id: 7 };
+    });
+    (g.chrome.tabs as unknown as { create: unknown }).create = tabsCreate;
+
+    await openFallbackPanelWindow({ windowId: 200 });
+
+    // Both window strategies attempted, then the tab strategy that actually worked.
+    expect(g.chrome.windows!.create).toHaveBeenCalledTimes(2);
+    expect(g.chrome.windows!.create.mock.calls[0][0].type).toBe("popup");
+    expect(g.chrome.windows!.create.mock.calls[1][0].type).toBe("normal");
+    expect(tabsCreate).toHaveBeenCalledWith({ url: FALLBACK_URL });
+  });
+
+  it("stops at the first strategy that really works", async () => {
+    installTabs([{ id: 1, url: "https://a.test/", windowId: 200 }]);
+    const tabsCreate = vi.fn(async () => ({ id: 9 }));
+    (g.chrome.tabs as unknown as { create: unknown }).create = tabsCreate;
+
+    // The default windows.create fixture models a working browser.
+    await openFallbackPanelWindow({ windowId: 200 });
+
+    expect(g.chrome.windows!.create).toHaveBeenCalledTimes(1);
+    expect(tabsCreate).not.toHaveBeenCalled();
   });
 
   it("re-focuses an existing panel instead of spawning a second one", async () => {
