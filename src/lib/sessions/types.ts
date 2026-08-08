@@ -269,6 +269,18 @@ export interface SessionAgentState {
      *  OpenAI prompt_tokens; Anthropic input + cache_read + cache_creation).
      *  Present iff lastCachedTokens is. */
     lastPromptTotalTokens?: number;
+    /** Most recent call's context composition — what the window is filled with,
+     *  Claude Code `/context` style. Parts are local estimates scaled to the
+     *  provider-reported prompt total, so they sum exactly to it. Absent when
+     *  the provider reported no usable prompt total. */
+    lastBreakdown?: {
+      /** System prompt (history[0]). */
+      system: number;
+      /** Tool definitions — the wire's first block, invalidates everything downstream when it changes. */
+      tools: number;
+      /** Everything else: the conversation + observations. Carries the rounding residue. */
+      messages: number;
+    };
   };
 }
 

@@ -271,6 +271,7 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
           ...(msg.lastPromptTotalTokens != null
             ? { lastPromptTotalTokens: msg.lastPromptTotalTokens }
             : {}),
+          ...(msg.lastBreakdown ? { lastBreakdown: msg.lastBreakdown } : {}),
         },
       });
       return;

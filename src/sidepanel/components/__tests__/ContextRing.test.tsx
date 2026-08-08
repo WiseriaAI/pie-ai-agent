@@ -130,6 +130,7 @@ describe("ContextRing — popover interaction", () => {
           totalInputTokens={8_243}
           totalOutputTokens={1_402}
           maxContextTokens={200_000}
+          lastBreakdown={{ system: 2_000, tools: 22_000, messages: 100_000 }}
         />
       </MotionProvider>,
     );
@@ -140,13 +141,38 @@ describe("ContextRing — popover interaction", () => {
     expect(screen.queryByTestId("context-ring-popover")).toBeNull();
   });
 
-  it("click opens the popover with the three rows", () => {
+  it("click opens the popover showing the context composition", () => {
     renderRing();
     fireEvent.click(screen.getByTestId("context-ring"));
     const popover = screen.getByTestId("context-ring-popover");
-    expect(popover.textContent).toContain("8,243");
-    expect(popover.textContent).toContain("1,402");
+    // Header: current context / window.
+    expect(popover.textContent).toContain("124,000 / 200,000");
+    // Composition rows sum to the header total; free is the remainder.
+    expect(popover.textContent).toContain("2,000");
+    expect(popover.textContent).toContain("22,000");
+    expect(popover.textContent).toContain("100,000");
+    expect(popover.textContent).toContain("76,000");
+    // Cumulative cost stays as a single footer row (8,243 + 1,402).
     expect(popover.textContent).toContain("9,645");
+  });
+
+  it("omits the composition rows when the SW reported no breakdown", () => {
+    render(
+      <MotionProvider>
+        <ContextRing
+          lastInputTokens={124_000}
+          lastOutputTokens={1400}
+          totalInputTokens={8_243}
+          totalOutputTokens={1_402}
+          maxContextTokens={200_000}
+        />
+      </MotionProvider>,
+    );
+    fireEvent.click(screen.getByTestId("context-ring"));
+    const popover = screen.getByTestId("context-ring-popover");
+    expect(popover.textContent).toContain("124,000 / 200,000");
+    expect(popover.textContent).toContain("76,000");
+    expect(popover.textContent).not.toContain("22,000");
   });
 
   it("ESC closes the popover", async () => {
@@ -240,6 +266,25 @@ describe("ContextRing — cache hit display", () => {
     expect(popover.textContent).not.toContain("87%");
   });
 
+  // Anthropic-wire providers report input_tokens EXCLUDING the cached portion,
+  // so the ring must use promptTotalTokens as its numerator — otherwise a 90%
+  // cache hit renders as 10% context usage.
+  it("sizes the arc by promptTotalTokens, not the cache-excluded inputTokens", () => {
+    render(
+      <MotionProvider>
+        <ContextRing
+          {...baseProps}
+          lastInputTokens={10_000}
+          lastCachedTokens={90_000}
+          lastPromptTotalTokens={100_000}
+        />
+      </MotionProvider>,
+    );
+    // 100_000 / 200_000 = 50%, not 10_000 / 200_000 = 5%.
+    expect(screen.getByTestId("context-ring").getAttribute("title")).toContain("100,000");
+    expect(screen.getByTestId("context-ring").getAttribute("title")).toContain("50");
+  });
+
   it("hides cache UI when the denominator is zero", () => {
     render(
       <MotionProvider>
@@ -273,8 +318,8 @@ describe("ContextRing — locale formatting", () => {
 
     fireEvent.click(ring);
     const popover = screen.getByTestId("context-ring-popover");
-    expect(popover.textContent).toContain("8.243");
-    expect(popover.textContent).toContain("1.402");
+    expect(popover.textContent).toContain("124.000 / 200.000");
+    expect(popover.textContent).toContain("76.000");
     expect(popover.textContent).toContain("9.645");
   });
 });

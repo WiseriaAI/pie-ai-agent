@@ -2124,6 +2124,7 @@ function Composer({
               maxContextTokens={maxContextTokens}
               lastCachedTokens={usage?.lastCachedTokens}
               lastPromptTotalTokens={usage?.lastPromptTotalTokens}
+              lastBreakdown={usage?.lastBreakdown}
             />
             {streaming ? (
               <>

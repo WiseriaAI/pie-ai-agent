@@ -14,6 +14,7 @@ import {
   createStepPinView,
   mergeSessionAgentSnapshot,
   mergeContextUsage,
+  scaleContextBreakdown,
   buildFirstTurnReadPageHint,
   buildSeededTaskContent,
   prependTimeToLastUserMessage,
@@ -1758,6 +1759,24 @@ describe("issue #59 — buildSessionAgentTombstone with carryUsage", () => {
   it("treats null carryUsage same as undefined (omit field)", () => {
     const tomb = buildSessionAgentTombstone(undefined, undefined);
     expect("contextUsage" in tomb).toBe(false);
+  });
+});
+
+describe("scaleContextBreakdown", () => {
+  // 侧栏把分项和总数并排显示 —— 加起来对不上就是 bug,不是四舍五入的小事。
+  it("always sums to the provider-reported total, rounding included", () => {
+    const b = scaleContextBreakdown({ system: 1_000, tools: 3_000, messages: 6_003 }, 47_777)!;
+    expect(b.system + b.tools + b.messages).toBe(47_777);
+  });
+
+  it("scales proportionally", () => {
+    const b = scaleContextBreakdown({ system: 100, tools: 300, messages: 600 }, 10_000)!;
+    expect(b).toEqual({ system: 1_000, tools: 3_000, messages: 6_000 });
+  });
+
+  it("returns undefined when either side is empty — never fabricates a composition", () => {
+    expect(scaleContextBreakdown({ system: 0, tools: 0, messages: 0 }, 5_000)).toBeUndefined();
+    expect(scaleContextBreakdown({ system: 1, tools: 2, messages: 3 }, 0)).toBeUndefined();
   });
 });
 

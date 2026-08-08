@@ -213,6 +213,9 @@ export interface AgentUsageMessage {
   /** Most recent step's total prompt tokens — cache-hit ratio denominator.
    *  Present iff lastCachedTokens is. */
   lastPromptTotalTokens?: number;
+  /** Most recent call's context composition (system / tools / messages), scaled
+   *  to sum exactly to the provider-reported prompt total. See SessionAgentState. */
+  lastBreakdown?: { system: number; tools: number; messages: number };
 }
 
 // --- Side Panel → Service Worker (via sendMessage) ---

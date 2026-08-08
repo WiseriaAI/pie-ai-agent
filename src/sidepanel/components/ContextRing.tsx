@@ -12,6 +12,9 @@ export interface ContextRingProps {
   lastCachedTokens?: number;
   /** Last call's total prompt tokens — cache-hit ratio denominator. */
   lastPromptTotalTokens?: number;
+  /** Last call's context composition, already scaled to sum to
+   *  `lastPromptTotalTokens`. Absent on old sessions / providers with no usage. */
+  lastBreakdown?: { system: number; tools: number; messages: number };
 }
 
 // Ring geometry — 16x16 outer, 2px stroke. Matches neighboring composer icons
@@ -44,6 +47,7 @@ export default function ContextRing(props: ContextRingProps) {
     maxContextTokens,
     lastCachedTokens,
     lastPromptTotalTokens,
+    lastBreakdown,
   } = props;
   void _lastOutputTokens;
 
@@ -52,9 +56,17 @@ export default function ContextRing(props: ContextRingProps) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // 环的分子必须是「本次调用真实处理的 prompt 总量」。Anthropic-wire 家族
+  // (anthropic / deepseek / minimax / mimo / stepfun) 的 input_tokens **排除**
+  // cache_read 与 cache_creation —— 命中 90% 时它只剩真实上下文的 10%,直接拿它
+  // 算占比会严重低估。promptTotalTokens 是 provider 报了缓存计数时才有的全量值;
+  // 没报时回落 inputTokens(openai-compat / openai / gemini 的 input 本就含缓存,
+  // 两者相等)。
+  const contextTokens = lastPromptTotalTokens ?? lastInputTokens;
+
   const shouldRender =
-    lastInputTokens != null &&
-    lastInputTokens > 0 &&
+    contextTokens != null &&
+    contextTokens > 0 &&
     maxContextTokens != null &&
     maxContextTokens > 0;
 
@@ -67,7 +79,7 @@ export default function ContextRing(props: ContextRingProps) {
 
   // Compute pct unconditionally so hook order is stable across renders.
   const pct = shouldRender
-    ? Math.min(100, Math.round((lastInputTokens! / maxContextTokens!) * 100))
+    ? Math.min(100, Math.round((contextTokens! / maxContextTokens!) * 100))
     : 0;
 
   // ESC closes popover.
@@ -112,7 +124,7 @@ export default function ContextRing(props: ContextRingProps) {
   const totalSum = totalInputTokens + totalOutputTokens;
   const tooltipText =
     t("chat.contextRing.lastCall", {
-      used: numberFormat.format(lastInputTokens!),
+      used: numberFormat.format(contextTokens!),
       max: numberFormat.format(maxContextTokens!),
       pct: numberFormat.format(pct),
     }) +
@@ -213,26 +225,63 @@ export default function ContextRing(props: ContextRingProps) {
         >
           <div
             style={{
+              display: "flex",
+              alignItems: "baseline",
+              justifyContent: "space-between",
+              gap: 12,
               padding: "10px 14px 8px",
               borderBottom: "1px solid var(--c-line)",
-              fontFamily: "'JetBrains Mono', monospace",
-              fontWeight: 500,
-              fontSize: 10,
-              letterSpacing: "0.14em",
-              color: "var(--c-fg-3)",
-              textTransform: "uppercase",
             }}
           >
-            {t("chat.contextRing.sessionUsage")}
+            <span
+              style={{
+                fontFamily: "'JetBrains Mono', monospace",
+                fontWeight: 500,
+                fontSize: 10,
+                letterSpacing: "0.14em",
+                color: "var(--c-fg-3)",
+                textTransform: "uppercase",
+              }}
+            >
+              {t("chat.contextRing.contextTitle")}
+            </span>
+            <span
+              style={{
+                fontFamily: "Inter, sans-serif",
+                fontWeight: 600,
+                fontSize: 13,
+                color: "var(--c-fg-1)",
+                fontVariantNumeric: "tabular-nums",
+              }}
+            >
+              {numberFormat.format(contextTokens!)} / {numberFormat.format(maxContextTokens!)}
+            </span>
           </div>
+          {/* Composition is only shown when the SW computed one — old sessions
+              and providers that report no usable prompt total just get the
+              total + free rows. */}
+          {lastBreakdown && (
+            <>
+              <PopoverRow
+                label={t("chat.contextRing.system")}
+                value={lastBreakdown.system}
+                numberFormat={numberFormat}
+              />
+              <PopoverRow
+                label={t("chat.contextRing.tools")}
+                value={lastBreakdown.tools}
+                numberFormat={numberFormat}
+              />
+              <PopoverRow
+                label={t("chat.contextRing.messages")}
+                value={lastBreakdown.messages}
+                numberFormat={numberFormat}
+              />
+            </>
+          )}
           <PopoverRow
-            label={t("chat.contextRing.input")}
-            value={totalInputTokens}
-            numberFormat={numberFormat}
-          />
-          <PopoverRow
-            label={t("chat.contextRing.output")}
-            value={totalOutputTokens}
+            label={t("chat.contextRing.free")}
+            value={Math.max(0, maxContextTokens! - contextTokens!)}
             numberFormat={numberFormat}
           />
           {cacheHitPct != null && (
@@ -260,7 +309,7 @@ export default function ContextRing(props: ContextRingProps) {
                 textTransform: "uppercase",
               }}
             >
-              {t("chat.contextRing.total")}
+              {t("chat.contextRing.sessionTotal")}
             </span>
             <span
               style={{
