@@ -25,15 +25,20 @@ macOS `.pkg`（`daemon/install/`）的 Windows 对应物。权威设计：
 
 ## 安装器做什么
 
-- **`[Registry]`**：写 Chrome + Edge 的 `NativeMessagingHosts\ai.wiseria.pie` 键（默认值 =
-  manifest json 绝对路径，json 落 `%LOCALAPPDATA%\PieLink\`）+ HKCU `Run` key（登录自启
-  **托盘**；daemon 由 host 兜底拉起，spec §4.4）。`allowed_origins` 固定
+- **`[Registry]`**（全机器级 **HKLM**）：写 Chrome + Edge 的
+  `NativeMessagingHosts\ai.wiseria.pie` 键（默认值 = manifest json 绝对路径，json 落
+  **`{app}`（Program Files，全用户可读）**）+ **HKLM** `Run` key（登录自启**托盘**；daemon
+  由 host 兜底拉起，spec §4.4）。`allowed_origins` 固定
   `chrome-extension://gpccjhdgjkmalnepmeclooflliiocfed/`。
+  **为什么 HKLM 而非 HKCU**：这是提权的机器级安装（WFP 围栏 + `srt-sandbox` 账户都是机器
+  作用域）。若标准用户凭**另一个**管理员账户提权，HKCU / `%LOCALAPPDATA%` 会落到那个管理员的
+  hive/profile，而 Chrome 以标准用户身份跑 → 永远读不到 per-user 的 NM manifest。HKLM 的 NM
+  host 键对每个用户都生效，manifest json 放 `{app}` 世界可读，从根上消掉这个身份错配。
 - **`[Code]` ssPostInstall**（顺序，容错）：写 native manifest → `vc_redist /install /quiet
   /norestart`（**F1**，先于沙箱）→ `pie.exe windows-install`（装沙箱设施，一次 UAC 内完成；
   **失败/取消不阻断安装**，只降级脚本执行，spec §3.2 fail-closed）→ 以调用者身份启动托盘。
 - **卸载**：停托盘 → `pie.exe windows-uninstall`（清 `srt-sandbox` 账户 / WFP / ACE）→ 杀
-  残留 daemon → 删注册表键 / `Run` 值 / `%LOCALAPPDATA%\PieLink`。
+  残留 daemon → 删注册表键 / `Run` 值 / `{app}\ai.wiseria.pie.json`。
 
 ## 构建
 

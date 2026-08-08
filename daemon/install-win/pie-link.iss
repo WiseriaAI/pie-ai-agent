@@ -12,11 +12,16 @@
 ;   vc_redist.x64.exe  extracted to {tmp}, silent-installed first (F1: srt-win dynamically links
 ;                  VCRUNTIME140.dll and dies silently at loader stage without it)
 ;
-; [Registry] writes the Chrome + Edge native-messaging host keys and the HKCU Run key (tray
-; autostart at login). [Code] on ssPostInstall: vc_redist (silent) -> `pie.exe windows-install`
-; (installs the sandbox facility; failure/cancel does NOT block the install, only degrades script
-; execution -- spec 3.2 fail-closed) -> start the tray. Uninstall reverses everything and calls
-; `pie.exe windows-uninstall`.
+; [Registry] writes the Chrome + Edge native-messaging host keys and the Run key (tray autostart
+; at login). These are HKLM (machine-wide), NOT HKCU: this is an admin/machine-wide install (WFP +
+; local account are machine-scoped), and when a standard user elevates with a *different* admin's
+; credentials, HKCU + {localappdata} resolve to the admin's hive/profile -- Chrome runs as the
+; standard user and would never find a per-user NM manifest. HKLM NM host keys are read by Chrome
+; and Edge for every user, so the manifest json is written to {app} (Program Files, world-readable)
+; and both keys + the Run value live under HKLM. [Code] on ssPostInstall: vc_redist (silent) ->
+; `pie.exe windows-install` (installs the sandbox facility; failure/cancel does NOT block the
+; install, only degrades script execution -- spec 3.2 fail-closed) -> start the tray. Uninstall
+; reverses everything and calls `pie.exe windows-uninstall`.
 ;
 ; Build (CI or local): iscc /DMyAppVersion=<x.y.z> [ /DDistDir=<staging> ] pie-link.iss
 ;   DistDir defaults to ..\dist (daemon/dist) and must contain pie.exe, PieTray.exe, srt-win.exe,
@@ -75,26 +80,27 @@ Source: "{#SourcePath}\pie-host.bat";    DestDir: "{app}"; Flags: ignoreversion
 Source: "{#DistDir}\vc_redist.x64.exe";  DestDir: "{tmp}"; Flags: deleteafterinstall
 
 [Registry]
-; Native-messaging host manifest path -> Chrome + Edge (HKCU; no admin needed but we are elevated).
-Root: HKCU; Subkey: "Software\Google\Chrome\NativeMessagingHosts\{#NmHostName}"; ValueType: string; ValueData: "{code:GetManifestPath}"; Flags: uninsdeletekey
-Root: HKCU; Subkey: "Software\Microsoft\Edge\NativeMessagingHosts\{#NmHostName}"; ValueType: string; ValueData: "{code:GetManifestPath}"; Flags: uninsdeletekey
-; Login autostart: Run key launches the tray (icon appears = ready). The daemon is started
-; lazily by the host fallback launch when the extension connects (spec 4.4).
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "PieLink"; ValueData: """{app}\PieTray.exe"""; Flags: uninsdeletevalue
+; Native-messaging host manifest path -> Chrome + Edge, machine-wide (HKLM, read for every user;
+; we are elevated). Points at the world-readable manifest json under {app} (see WriteNativeManifest).
+Root: HKLM; Subkey: "Software\Google\Chrome\NativeMessagingHosts\{#NmHostName}"; ValueType: string; ValueData: "{code:GetManifestPath}"; Flags: uninsdeletekey
+Root: HKLM; Subkey: "Software\Microsoft\Edge\NativeMessagingHosts\{#NmHostName}"; ValueType: string; ValueData: "{code:GetManifestPath}"; Flags: uninsdeletekey
+; Login autostart: Run key launches the tray (icon appears = ready). HKLM so it fires for whichever
+; user logs in, independent of the elevating account. The daemon is started lazily by the host
+; fallback launch when the extension connects (spec 4.4).
+Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "PieLink"; ValueData: """{app}\PieTray.exe"""; Flags: uninsdeletevalue
 
 [UninstallDelete]
-; Native-messaging manifest json lives here (written in [Code]); remove the whole PieLink dir.
-Type: filesandordirs; Name: "{localappdata}\PieLink"
+; Native-messaging manifest json lives under {app} (written in [Code]); remove it explicitly (the
+; [Files] payload is auto-removed, but the json is created at runtime so Inno doesn't track it).
+Type: files; Name: "{app}\{#NmHostName}.json"
 
 [Code]
-function ManifestDir(): String;
-begin
-  Result := ExpandConstant('{localappdata}\PieLink');
-end;
-
+// The NM manifest json lives beside the payload in {app} (Program Files) so it is machine-wide
+// and world-readable -- reachable by Chrome/Edge regardless of which user runs the browser or
+// which admin account performed the elevated install (see the [Registry] rationale above).
 function GetManifestPath(Param: String): String;
 begin
-  Result := ManifestDir() + '\' + '{#NmHostName}' + '.json';
+  Result := ExpandConstant('{app}') + '\' + '{#NmHostName}' + '.json';
 end;
 
 // JSON-escape a Windows path (backslashes must be doubled inside a JSON string literal).
@@ -105,12 +111,11 @@ begin
 end;
 
 // Write the native-messaging host manifest pointing at the installed pie-host.bat wrapper.
+// {app} already exists (the [Files] payload landed there), so no ForceDirectories needed.
 procedure WriteNativeManifest();
 var
-  Dir, HostBat, Json: String;
+  HostBat, Json: String;
 begin
-  Dir := ManifestDir();
-  ForceDirectories(Dir);
   HostBat := ExpandConstant('{app}\pie-host.bat');
   Json :=
     '{' + #13#10 +

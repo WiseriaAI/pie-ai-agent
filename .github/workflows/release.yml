@@ -231,3 +231,10 @@ jobs:
           gh release upload "${{ steps.tag.outputs.ref }}" \
             "daemon/dist/pie-link-setup-${{ steps.dv.outputs.version }}.exe" \
             --clobber
+
+      - name: Verify installer asset reachable
+        shell: bash
+        run: |
+          sleep 5
+          curl -fsSIL -o /dev/null --retry 3 --retry-delay 5 --retry-all-errors \
+            "https://github.com/${{ github.repository }}/releases/download/${{ steps.tag.outputs.ref }}/pie-link-setup-${{ steps.dv.outputs.version }}.exe"

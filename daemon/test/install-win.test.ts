@@ -41,17 +41,19 @@ test("iss is x64-only (spec decision 2)", () => {
   expect(iss).toMatch(/ArchitecturesInstallIn64BitMode\s*=\s*x64compatible/);
 });
 
-// ── [Registry]: native messaging (Chrome + Edge) + Run key ──────────────────
-test("iss registers the Chrome native-messaging host key", () => {
-  expect(iss).toContain("Software\\Google\\Chrome\\NativeMessagingHosts\\");
+// ── [Registry]: native messaging (Chrome + Edge) + Run key, machine-wide (HKLM) ──
+// HKLM (not HKCU): an admin/machine-wide install whose per-user resources must survive a
+// standard-user + admin-credential elevation (HKCU/{localappdata} would land in the admin's hive).
+test("iss registers the Chrome native-messaging host key under HKLM", () => {
+  expect(iss).toMatch(/Root:\s*HKLM;\s*Subkey:\s*"Software\\Google\\Chrome\\NativeMessagingHosts\\/);
 });
 
-test("iss registers the Edge native-messaging host key", () => {
-  expect(iss).toContain("Software\\Microsoft\\Edge\\NativeMessagingHosts\\");
+test("iss registers the Edge native-messaging host key under HKLM", () => {
+  expect(iss).toMatch(/Root:\s*HKLM;\s*Subkey:\s*"Software\\Microsoft\\Edge\\NativeMessagingHosts\\/);
 });
 
-test("iss writes an HKCU Run key that launches the tray (login autostart)", () => {
-  expect(iss).toContain("Software\\Microsoft\\Windows\\CurrentVersion\\Run");
+test("iss writes an HKLM Run key that launches the tray (machine-wide login autostart)", () => {
+  expect(iss).toMatch(/Root:\s*HKLM;\s*Subkey:\s*"Software\\Microsoft\\Windows\\CurrentVersion\\Run"/);
   expect(iss).toContain('{app}\\PieTray.exe');
 });
 
@@ -61,8 +63,10 @@ test("iss pins the fixed extension id in allowed_origins", () => {
   expect(iss).toContain("chrome-extension://{#ExtId}/");
 });
 
-test("iss lands the native-messaging manifest under %LOCALAPPDATA%\\PieLink", () => {
-  expect(iss).toContain("{localappdata}\\PieLink");
+test("iss lands the native-messaging manifest under {app} (world-readable Program Files)", () => {
+  // GetManifestPath resolves to {app}\<host>.json, and the manifest points there via {code:GetManifestPath}.
+  expect(iss).toMatch(/GetManifestPath[\s\S]*ExpandConstant\('\{app\}'\)/);
+  expect(iss).not.toContain("{localappdata}\\PieLink");
 });
 
 // ── [Run]/[Code]: vc_redist BEFORE windows-install (F1), then windows-uninstall on removal ──
@@ -85,8 +89,9 @@ test("iss calls pie.exe windows-uninstall on uninstall (facility teardown)", () 
   expect(iss).toContain("CurUninstallStepChanged");
 });
 
-test("iss removes the PieLink manifest dir on uninstall", () => {
-  expect(iss).toMatch(/\[UninstallDelete\][\s\S]*\{localappdata\}\\PieLink/);
+test("iss removes the runtime-written NM manifest json on uninstall", () => {
+  // Raw .iss string (pre-iscc): {app}\{#NmHostName}.json templated on the fixed host name.
+  expect(iss).toMatch(/\[UninstallDelete\][\s\S]*\{app\}\\\{#NmHostName\}\.json/);
 });
 
 // ── Output name mirrors the release asset the CI job uploads ─────────────────
