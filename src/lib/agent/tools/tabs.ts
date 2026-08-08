@@ -1030,6 +1030,26 @@ export { unpinTabTool };
 const OPEN_URL_MAX_LEN = 4096;
 
 /**
+ * Origin of `url`, but ONLY when it is http(s) — the same allowlist open_url
+ * enforces on its input. Used to decide whether a redirect destination is
+ * something we may pin: `new URL().origin` is also non-null for ws:/ftp:, and
+ * a redirect that leaves the http(s) allowlist must not silently become a
+ * pinned tab. Returns null for anything else (opaque origin, other schemes).
+ */
+function httpOrigin(url: string | undefined): string | null {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+    const o = u.origin;
+    if (!o || o === "null") return null;
+    return o;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * open_url — creates a new browser tab loading the given http/https URL.
  *
  * Security invariants:
@@ -1041,7 +1061,9 @@ const OPEN_URL_MAX_LEN = 4096;
  *
  * Pin integration:
  *   - On success, calls ctx.appendPinnedTab to push the new tab into the
- *     session's pinnedTabs array. The agent must then call
+ *     session's pinnedTabs array, using the origin the tab ACTUALLY
+ *     committed to (which differs from the requested one when the server
+ *     redirects across origins). The agent must then call
  *     focus_tab(newTabId) on the NEXT iteration to operate on the tab.
  *   - If appendPinnedTab is absent (test/legacy harness), the tab is still
  *     created; the observation mentions the gap so the harness caller is aware.
@@ -1054,7 +1076,7 @@ const OPEN_URL_MAX_LEN = 4096;
 const openUrlTool: Tool = {
   name: "open_url",
   description:
-    `Open a new browser tab at the given URL (http/https only; other schemes rejected). The new tab auto-joins this session's pinned tab list — call focus_tab(newTabId) on the next iteration to operate on it.
+    `Open a new browser tab at the given URL (http/https only; other schemes rejected). The new tab auto-joins this session's pinned tab list — call focus_tab(newTabId) on the next iteration to operate on it. If the site redirects to another origin (e.g. apex → www), the tab is pinned at the origin it actually landed on and the observation names both.
 
 USE WHEN:
 - You need to visit a URL that isn't open in any current tab.
@@ -1115,33 +1137,60 @@ USE WHEN:
       return { success: false, error: "open_url: chrome returned no tab id" };
     }
 
-    // Issue #50 — wait for the new tab to actually commit to the
-    // requested origin before declaring success and writing the pin.
-    // chrome.tabs.create resolves immediately with url="about:blank";
-    // returning success at that point would race the loop's next-
-    // iteration origin check. On commit failure we leave the tab open
-    // (the LLM can close_tabs([id]) explicitly) and skip appendPinnedTab
+    // Issue #50 — wait for the new tab to actually commit before declaring
+    // success and writing the pin. chrome.tabs.create resolves immediately
+    // with url="about:blank"; returning success at that point would race the
+    // loop's next-iteration origin check. On commit failure we leave the tab
+    // open (the LLM can close_tabs([id]) explicitly) and skip appendPinnedTab
     // so pinnedTabs[] never holds an entry that won't pass origin check.
+    //
+    // A cross-origin SERVER redirect is not a failure. Chrome follows 30x
+    // hops before committing, so `https://pie.chat` (apex → 308 →
+    // `https://www.pie.chat`) commits exactly once, at the destination —
+    // strict origin equality then reported a perfectly good navigation as
+    // "did not commit", left the tab unpinned (so focus_tab couldn't reach
+    // it), and told the LLM to "retry with a different URL" without ever
+    // naming the URL it landed on. Any commit that reached a usable http(s)
+    // origin now counts as success and is pinned at the origin the tab
+    // ACTUALLY has; the observation names both ends of the hop so the LLM can
+    // judge it. This mirrors loop.ts's advisory treatment of the same
+    // UrlSettleResult (origin drift → <system_notice>, never a hard stop).
     const newTabId = newTab.id;
     const settle = await waitForUrlSettle(newTabId, parsed.origin, 5000);
+    let landedOrigin = parsed.origin;
+    let redirected = false;
     if (!settle.committed) {
-      return {
-        success: false,
-        error:
-          `open_url: tab ${newTabId} created but navigation did not commit to ${parsed.origin} ` +
-          `within 5s (${settle.reason}). The tab is left open — use close_tabs([${newTabId}]) to clean up ` +
-          `or retry with a different URL.`,
-      };
+      const landed =
+        settle.reason === "origin-mismatch"
+          ? httpOrigin(settle.observedUrl)
+          : null;
+      if (!landed) {
+        const seen = settle.observedUrl
+          ? ` Last observed URL: ${settle.observedUrl}.`
+          : "";
+        return {
+          success: false,
+          error:
+            `open_url: tab ${newTabId} created but navigation did not commit to ${parsed.origin} ` +
+            `within 5s (${settle.reason}).${seen} The tab is left open — use close_tabs([${newTabId}]) to clean up ` +
+            `or retry with a different URL.`,
+        };
+      }
+      landedOrigin = landed;
+      redirected = true;
     }
+    const where = redirected
+      ? `${landedOrigin} (redirected from ${parsed.origin})`
+      : landedOrigin;
 
     if (ctx.appendPinnedTab) {
       try {
-        await ctx.appendPinnedTab({ tabId: newTabId, origin: parsed.origin });
+        await ctx.appendPinnedTab({ tabId: newTabId, origin: landedOrigin });
       } catch (e) {
         return {
           success: true,
           observation:
-            `Opened tab ${newTabId} at ${parsed.origin}, but failed to add it ` +
+            `Opened tab ${newTabId} at ${where}, but failed to add it ` +
             `to the session's pinnedTabs (${e instanceof Error ? e.message : String(e)}). ` +
             `Use focus_tab(${newTabId}) anyway; if it fails, retry open_url next iteration.`,
         };
@@ -1150,7 +1199,7 @@ USE WHEN:
     return {
       success: true,
       observation:
-        `Opened tab ${newTabId} at ${parsed.origin}` +
+        `Opened tab ${newTabId} at ${where}` +
         (active ? " (focused: stole user's view)" : " (background)") +
         `. Added to pinnedTabs[]; call focus_tab(${newTabId}) on the next iteration to operate on it.`,
     };

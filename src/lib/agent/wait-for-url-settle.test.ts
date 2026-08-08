@@ -60,6 +60,46 @@ describe("waitForUrlSettle", () => {
     });
   });
 
+  it("ignores an origin-less commit and keeps waiting for the real one", async () => {
+    // tabs.get can still report about:blank at the moment the first commit
+    // lands. That is not "the tab diverged" — resolving origin-mismatch there
+    // reported a still-navigating tab as a hard failure.
+    chromeMock.tabs.__tabsById.set(42, { id: 42, url: "about:blank" });
+    const p = waitForUrlSettle(42, "https://example.com", 5000);
+    await Promise.resolve();
+    fireOnCommitted(42, 0);
+    await vi.advanceTimersByTimeAsync(100);
+
+    // Still pending — now the real navigation commits.
+    chromeMock.tabs.__tabsById.set(42, {
+      id: 42,
+      url: "https://example.com/page",
+    });
+    fireOnCommitted(42, 0);
+    await vi.advanceTimersByTimeAsync(0);
+    const r = await p;
+    expect(r).toEqual({ committed: true, url: "https://example.com/page" });
+  });
+
+  it("reports the last origin-less URL on the timeout result", async () => {
+    // A tab stuck on a chrome-error:// interstitial never produces a usable
+    // origin; the timeout result carries what we saw so callers can say so.
+    chromeMock.tabs.__tabsById.set(42, {
+      id: 42,
+      url: "chrome-error://chromewebdata/",
+    });
+    const p = waitForUrlSettle(42, "https://example.com", 5000);
+    await Promise.resolve();
+    fireOnCommitted(42, 0);
+    await vi.advanceTimersByTimeAsync(5000);
+    const r = await p;
+    expect(r).toEqual({
+      committed: false,
+      reason: "timeout",
+      observedUrl: "chrome-error://chromewebdata/",
+    });
+  });
+
   it("resolves committed=false reason=timeout after timeoutMs without onCommitted", async () => {
     const p = waitForUrlSettle(42, "https://example.com", 5000);
     await Promise.resolve();

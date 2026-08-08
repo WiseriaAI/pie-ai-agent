@@ -688,12 +688,18 @@ describe("open_url tool", () => {
     }
   });
 
-  it("Issue #50 — handler fails with origin-mismatch reason when chrome navigates elsewhere", async () => {
-    // chrome.tabs.create returned tab id 888, but the page that committed
-    // ended up at a different origin (server-side redirect / typo'd URL).
+  // ── Cross-origin server redirect is a SUCCESS, not a failure ─────────────
+  //
+  // Chrome follows 30x hops BEFORE committing, so an apex → www redirect
+  // (https://pie.chat → 308 → https://www.pie.chat) commits exactly once, at
+  // the destination. Strict origin equality used to report that as
+  // "navigation did not commit", leave the tab open but unpinned, and tell
+  // the LLM to retry "with a different URL" without naming the landing URL.
+
+  it("treats a cross-origin server redirect as success and pins the landed origin", async () => {
     chromeMock.tabs.__tabsById.set(888, {
       id: 888,
-      url: "https://other.example/redirected",
+      url: "https://www.pie.chat/",
     });
     (chromeMock.tabs as unknown as { create: unknown }).create = vi
       .fn()
@@ -701,7 +707,7 @@ describe("open_url tool", () => {
 
     const append = vi.fn().mockResolvedValue(undefined);
     const handlerPromise = openUrlTool.handler(
-      { url: "https://example.com/page" },
+      { url: "https://pie.chat" },
       {
         tabId: 12,
         appendPinnedTab: append,
@@ -710,8 +716,42 @@ describe("open_url tool", () => {
     await fireOnCommittedNext(888, 0);
 
     const r = await handlerPromise;
+    expect(r.success).toBe(true);
+    // Pinned at where the tab REALLY is — pinning the requested origin would
+    // fail the loop's next-iteration origin check on every redirecting site.
+    expect(append).toHaveBeenCalledWith({
+      tabId: 888,
+      origin: "https://www.pie.chat",
+    });
+    // Both ends of the hop are named so the LLM can judge the redirect.
+    expect(r.observation).toMatch(/https:\/\/www\.pie\.chat/);
+    expect(r.observation).toMatch(/redirected from https:\/\/pie\.chat/);
+    expect(r.observation).toMatch(/focus_tab\(888\)/);
+  });
+
+  it("refuses to pin a redirect that leaves the http(s) allowlist", async () => {
+    // `new URL().origin` is non-null for ws:/ftp: too — a redirect off the
+    // http(s) allowlist must not become a pinned tab through the back door.
+    chromeMock.tabs.__tabsById.set(888, {
+      id: 888,
+      url: "ftp://files.example/pub",
+    });
+    (chromeMock.tabs as unknown as { create: unknown }).create = vi
+      .fn()
+      .mockResolvedValue({ id: 888, url: "about:blank" });
+
+    const append = vi.fn().mockResolvedValue(undefined);
+    const handlerPromise = openUrlTool.handler(
+      { url: "https://example.com/page" },
+      { tabId: 12, appendPinnedTab: append },
+    );
+    await fireOnCommittedNext(888, 0);
+
+    const r = await handlerPromise;
     expect(r.success).toBe(false);
     expect(r.error).toMatch(/origin-mismatch/);
+    // The observed URL is surfaced so the failure is diagnosable at all.
+    expect(r.error).toMatch(/ftp:\/\/files\.example\/pub/);
     expect(append).not.toHaveBeenCalled();
   });
 
