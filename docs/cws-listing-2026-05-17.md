@@ -97,7 +97,9 @@ defeat prompt-injection attempts from page DOM. Apache 2.0 licensed
 3. Switch to Chat and tell Pie what to do
 
 Requires Chrome 114+ or any Chromium browser with side-panel
-support (Edge, Brave).
+support (Edge, Brave). On browsers that accept the side-panel API
+but never render it (Arc), right-click any page and choose "Open
+Pie in a separate window" — Pie remembers the choice.
 
 Pie is open-source software. Found a bug? Want a feature? Issues
 and PRs welcome at github.com/WiseriaAI/pie-ai-agent.
@@ -155,7 +157,8 @@ github.com/WiseriaAI/pie-ai-agent
 3. 切到 Chat，告诉 Pie 你想做什么
 
 需要 Chrome 114+ 或任何支持 side panel 的 Chromium 浏览器
-（Edge、Brave）。
+（Edge、Brave）。若浏览器接受侧边栏 API 却从不渲染面板（如 Arc），
+在任意页面右键选择「在独立窗口中打开 Pie」，Pie 会记住该选择。
 
 Pie 是开源软件。发现 bug 或想要新功能？欢迎到 GitHub 提 issue / PR：
 github.com/WiseriaAI/pie-ai-agent

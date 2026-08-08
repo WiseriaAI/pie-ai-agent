@@ -46,7 +46,15 @@ function substitute(template: string, params?: TParams): string {
   );
 }
 
-function makeT(locale: Locale) {
+/**
+ * Standalone translator for contexts without React.
+ *
+ * The service worker renders user-visible strings too — the context-menu entry
+ * is one — and those must not be the only hardcoded English in a product that
+ * ships six locales. Pair with `resolveLocale()`, which reads the same stored
+ * setting the provider does.
+ */
+export function makeT(locale: Locale) {
   return function t<K extends DictKey>(key: K, params?: TParams): string {
     const dict = LOCALE_REGISTRY[locale].dictionary;
     const hit = lookup(dict, key);

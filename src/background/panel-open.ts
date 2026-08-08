@@ -59,6 +59,7 @@ import {
 } from "@/lib/panel-host/panel-mode";
 import { onStoreChange } from "@/lib/store-bus";
 import { getConfig, setConfig } from "@/lib/idb/config-store";
+import { makeT, resolveLocale } from "@/lib/i18n";
 
 /**
  * How long to wait for `chrome.sidePanel.open()` itself to settle. Covers the
@@ -152,22 +153,28 @@ const FALLBACK_MENU_ID = "pie-open-panel-window";
  * browser it is simply a way to pop the panel out into its own window.
  */
 export function installPanelContextMenu(): void {
-  try {
-    chrome.contextMenus?.removeAll(() => {
-      // Swallow "duplicate id" if two startup paths race.
-      void chrome.runtime.lastError;
-      chrome.contextMenus.create(
-        {
-          id: FALLBACK_MENU_ID,
-          title: "Open Pie in a separate window",
-          contexts: ["all"],
-        },
-        () => void chrome.runtime.lastError,
-      );
-    });
-  } catch {
-    /* contextMenus unavailable — the toolbar and command paths remain */
-  }
+  void (async () => {
+    // Localized: this is user-visible browser chrome, and it is the same string
+    // the Settings toggle uses, so the README instructions for either route
+    // read identically in every locale.
+    let title = "Open Pie in a separate window";
+    try {
+      title = makeT(await resolveLocale())("settings.panelWindow.title");
+    } catch {
+      /* locale unresolvable — the English default above still works */
+    }
+    try {
+      chrome.contextMenus?.removeAll(() => {
+        // Swallow "duplicate id" if two startup paths race.
+        void chrome.runtime.lastError;
+        chrome.contextMenus.create({ id: FALLBACK_MENU_ID, title, contexts: ["all"] }, () => {
+          void chrome.runtime.lastError;
+        });
+      });
+    } catch {
+      /* contextMenus unavailable — the toolbar and Settings paths remain */
+    }
+  })();
 }
 
 /** Handle a click on the context-menu entry. Returns false if it wasn't ours. */

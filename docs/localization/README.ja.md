@@ -103,6 +103,12 @@ Moonshot（Kimi —— 国際版および中国版）· StepFun**。Ollama に�
 サイドパネルに対応した Chromium 系ブラウザで動作します —— Chrome 114+、Edge、
 Brave など。
 
+一部の Chromium ブラウザはサイドパネル API を受け付けながら、パネルを描画しません
+（実機で確認できているのは Arc です）。その場合 Pie は独立したウィンドウで開きます。
+任意のページを右クリックし、**Pie を別ウィンドウで開く** を選択してください。選択は
+記憶され、以降はツールバーアイコンからもそのウィンドウが開きます。**設定 → 環境設定**
+でいつでも変更できます。
+
 ### 方法 1 —— Chrome ウェブストア（推奨）
 
 **[Chrome ウェブストア](https://chromewebstore.google.com/detail/pie-%C2%B7-open-source-ai-agen/gpccjhdgjkmalnepmeclooflliiocfed)** からインストールし、**Add to Chrome** をクリックして Pie をツールバーに固定します。Chrome が自動で最新に保ちます。

@@ -107,6 +107,13 @@ Política completa: [PRIVACY.md](../../PRIVACY.md).
 Funciona en cualquier navegador basado en Chromium con panel lateral — Chrome
 114+, Edge, Brave y otros.
 
+Algunos navegadores Chromium aceptan la API del panel lateral pero nunca lo
+muestran (el que probamos es Arc). Ahí Pie se abre en su propia ventana: haz
+clic derecho en cualquier página y elige **Abrir Pie en una ventana aparte**.
+La elección se recuerda, así que el ícono de la barra de herramientas abrirá
+esa ventana desde entonces; puedes cambiarlo cuando quieras en
+**Configuración → Preferencias**.
+
 ### Opción 1 — Chrome Web Store (recomendada)
 
 Instala desde **[Chrome Web Store](https://chromewebstore.google.com/detail/pie-%C2%B7-open-source-ai-agen/gpccjhdgjkmalnepmeclooflliiocfed)**, haz clic en **Add to Chrome** y fija Pie en la barra de herramientas. Chrome lo mantiene actualizado automáticamente.
