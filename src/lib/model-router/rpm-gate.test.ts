@@ -52,6 +52,22 @@ describe("streamChat RPM gate", () => {
     expect(events.map((e) => e.type)).toEqual(["ratelimit-wait", "text-delta", "done"]);
   });
 
+  it("两个 waiter 抢同一空位 → 落败方到点后重新播报新的 resumeAt", async () => {
+    const cfg = config({ rpmLimit: 1, rateKey: "inst-3" });
+    await collect(streamChat(cfg, [{ role: "user", content: "a" }])); // t=0 占满窗口
+    const ev1: StreamEvent[] = [];
+    const ev2: StreamEvent[] = [];
+    const p1 = (async () => { for await (const e of streamChat(cfg, [{ role: "user", content: "b" }])) ev1.push(e); })();
+    const p2 = (async () => { for await (const e of streamChat(cfg, [{ role: "user", content: "c" }])) ev2.push(e); })();
+    await vi.advanceTimersByTimeAsync(60_100); // 窗口滚动 → 只够放行一个
+    const pending = ev1.some((e) => e.type === "done") ? ev2 : ev1;
+    // 落败方还要再等一个窗口 —— 不补播 resumeAt 的话面板倒计时停在 0 秒不动。
+    expect(pending.filter((e) => e.type === "ratelimit-wait")).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(60_100);
+    await Promise.all([p1, p2]);
+    expect(pending.map((e) => e.type)).toEqual(["ratelimit-wait", "ratelimit-wait", "text-delta", "done"]);
+  });
+
   it("等待中 abort → generator 静默终止（不 throw、不发请求）", async () => {
     const cfg = config({ rpmLimit: 1, rateKey: "inst-2" });
     await collect(streamChat(cfg, [{ role: "user", content: "a" }]));

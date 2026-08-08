@@ -1893,8 +1893,10 @@ function WorkingIndicator({
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, [ratelimitResumeAt]);
-  if (ratelimitResumeAt != null) {
-    const seconds = Math.max(0, Math.ceil((ratelimitResumeAt - now) / 1000));
+  // 归零即回落到普通「工作中」——SW 侧要么已放行、要么马上补播新的 resumeAt，
+  // 停在「限流等待 0 秒」会被读成卡死。
+  const seconds = ratelimitResumeAt == null ? 0 : Math.ceil((ratelimitResumeAt - now) / 1000);
+  if (seconds > 0) {
     return (
       <div
         role="status"
