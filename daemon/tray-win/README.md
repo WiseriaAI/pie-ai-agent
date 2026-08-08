@@ -46,9 +46,12 @@ JSON）等 net48 自带程序集，运行期无第三方依赖。
 Windows PowerShell 5.1 按 ANSI(GBK) 读无 BOM 的 `.ps1`，中文注释乱码后语法直接崩；`csc`
 同样会把无 BOM 源码按 ANSI 读，六语言菜单文案会乱码进 exe。
 
-## 尚未接线
+## 接线状态
 
-- **CI / 安装器接入**：Windows 打包 job 与 Inno Setup 安装器接入归 issue #363
-  （安装器约定 exe 输出路径、Run key 起托盘、托盘保 daemon）。本片只产出源码 + 构建脚本。
+- **CI / 安装器接入**（#363，已接）：`.github/workflows/release.yml` 的 `build-daemon-win`
+  job 调 `build-tray.ps1 -OutDir daemon\dist` 产出 `PieTray.exe`，Inno 安装器
+  （`daemon/install-win/pie-link.iss`）把它装进 `%ProgramFiles%\Pie Link\`、写 HKLM `Run`
+  key 登录自启托盘、装完立即以调用者身份启动。daemon 由 host 兜底拉起（spec §4.4）。
 - **代码签名**：首期不签（接受 SmartScreen 摩擦），CI 留签名步骤占位（spec §5 / 决策 9）。
+- **品牌图标**：托盘图标目前代码画（琥珀色派），真 `.ico` 资产走 #379。
 - **真机验收**：托盘两态切换 / 三菜单项行为走 PR 的 `need-human-test`。

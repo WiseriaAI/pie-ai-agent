@@ -158,3 +158,83 @@ jobs:
           sleep 5
           curl -fsSIL -o /dev/null --retry 3 --retry-delay 5 --retry-all-errors \
             "https://github.com/${{ github.repository }}/releases/download/${{ steps.tag.outputs.ref }}/pie-link.pkg"
+
+  build-daemon-win:
+    runs-on: windows-latest
+    steps:
+      - name: Resolve tag
+        id: tag
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          echo "ref=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.tag.outputs.ref }}
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Read daemon version
+        id: dv
+        shell: bash
+        run: echo "version=$(node -p "require('./daemon/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Compile pie.exe + stage sandbox / redist payload
+        shell: bash
+        working-directory: daemon
+        env:
+          VER: ${{ steps.dv.outputs.version }}
+        run: |
+          bun install --frozen-lockfile
+          mkdir -p dist
+          # bun-windows-x64 single binary; version defined in at compile time (spec 6).
+          bun build ./src/cli.ts --compile --target=bun-windows-x64 \
+            --define "process.env.PIE_DAEMON_VERSION=\"$VER\"" \
+            --outfile dist/pie.exe
+          # srt-win.exe is a companion file (no vendored fallback in a bun single binary; F1/6.1).
+          cp node_modules/@anthropic-ai/sandbox-runtime/vendor/srt-win/x64/srt-win.exe dist/
+          # vc_redist prerequisite (F1: srt-win links VCRUNTIME140.dll).
+          curl -fSL -o dist/vc_redist.x64.exe https://aka.ms/vs/17/release/vc_redist.x64.exe
+          ls -la dist
+
+      - name: Build tray (PieTray.exe)
+        shell: pwsh
+        run: daemon\tray-win\build-tray.ps1 -OutDir daemon\dist -Version ${{ steps.dv.outputs.version }}
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+
+      - name: Package installer (iscc)
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          & $iscc "/DMyAppVersion=${{ steps.dv.outputs.version }}" daemon\install-win\pie-link.iss
+          if ($LASTEXITCODE -ne 0) { throw "iscc failed with exit $LASTEXITCODE" }
+          Get-ChildItem daemon\dist\pie-link-setup-*.exe
+
+      # --- Code signing placeholder (spec decision 9): first release ships unsigned; wire signtool
+      #     here once a cert is in secrets (sign pie.exe / PieTray.exe pre-package + the setup exe).
+
+      - name: Upload installer to release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ steps.tag.outputs.ref }}" \
+            "daemon/dist/pie-link-setup-${{ steps.dv.outputs.version }}.exe" \
+            --clobber
+
+      - name: Verify installer asset reachable
+        shell: bash
+        run: |
+          sleep 5
+          curl -fsSIL -o /dev/null --retry 3 --retry-delay 5 --retry-all-errors \
+            "https://github.com/${{ github.repository }}/releases/download/${{ steps.tag.outputs.ref }}/pie-link-setup-${{ steps.dv.outputs.version }}.exe"
