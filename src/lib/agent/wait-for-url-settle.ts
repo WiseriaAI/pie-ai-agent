@@ -18,6 +18,15 @@
  * `chrome.tabs.get(tabId)` inside the listener rather than trusting
  * `details.url` so we observe the same surface the loop's origin check
  * will use on the next iteration.
+ *
+ * A committed top frame whose observed URL has NO usable origin
+ * (`about:blank` while `tabs.get` still lags the commit, a
+ * `chrome-error://` interstitial, any opaque-origin surface) is not an
+ * answer to "where did this tab land" — it used to resolve as
+ * `origin-mismatch`, which reported a still-navigating tab as a hard
+ * divergence. Such commits are now skipped and the wait continues until a
+ * usable commit arrives or `timeoutMs` elapses; the last unusable URL is
+ * carried out on the timeout result so callers can say what they saw.
  */
 
 export type UrlSettleResult =
@@ -53,6 +62,9 @@ export function waitForUrlSettle(
     let settled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let onAbort: (() => void) | undefined;
+    // Best-effort record of the last origin-less surface we committed to,
+    // reported on the timeout result purely for diagnostics.
+    let lastUnusableUrl: string | undefined;
 
     const onCommitted = (details: {
       tabId: number;
@@ -68,7 +80,13 @@ export function waitForUrlSettle(
           if (settled) return;
           const url = tab.url ?? "";
           const observedOrigin = safeOrigin(url);
-          if (observedOrigin && observedOrigin === expectedOrigin) {
+          if (!observedOrigin) {
+            // Origin-less surface (about:blank, chrome-error://, opaque):
+            // the tab has not landed anywhere we can compare. Keep waiting.
+            if (url) lastUnusableUrl = url;
+            return;
+          }
+          if (observedOrigin === expectedOrigin) {
             finish({ committed: true, url });
           } else {
             finish({
@@ -112,7 +130,11 @@ export function waitForUrlSettle(
 
     chrome.webNavigation.onCommitted.addListener(onCommitted);
     timer = setTimeout(() => {
-      finish({ committed: false, reason: "timeout" });
+      finish({
+        committed: false,
+        reason: "timeout",
+        observedUrl: lastUnusableUrl,
+      });
     }, timeoutMs);
     if (signal) {
       onAbort = abortNow;
