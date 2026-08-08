@@ -253,6 +253,13 @@ export interface StatusResult {
   /** 有活跃的扩展 host 连接（发过 hello 的 socket） */
   extensionConnected: boolean;
   runningSkills: { name: string; startedAt: number }[];
+  /**
+   * daemon 进程 pid。顶栏 / 托盘 app 的「退出 daemon」据此定位并结束进程
+   * （Windows 无 launchctl 等价物，托盘走 pid kill）。
+   * 加法演进（PROTOCOL_VERSION 不动）：旧 daemon 不给此字段 → 消费方回落
+   * 为无此能力（mac 顶栏 app 走 launchctl，本就不读 pid）。
+   */
+  pid?: number;
 }
 
 // ── 通用信封 ──────────────────────────────────────────────────────────
