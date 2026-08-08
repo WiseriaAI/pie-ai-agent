@@ -25,7 +25,10 @@ type FakeTab = { id: number; url: string; windowId: number };
 const g = globalThis as unknown as {
   chrome: {
     tabs: { query: ReturnType<typeof vi.fn>; get: ReturnType<typeof vi.fn> };
-    runtime: { getContexts?: ReturnType<typeof vi.fn> };
+    runtime: {
+      getContexts?: ReturnType<typeof vi.fn>;
+      sendMessage?: ReturnType<typeof vi.fn>;
+    };
     windows?: Record<string, ReturnType<typeof vi.fn>>;
     sidePanel?: Record<string, ReturnType<typeof vi.fn>>;
     storage: { session?: Record<string, ReturnType<typeof vi.fn>> };
@@ -42,6 +45,7 @@ let saved: {
   get: unknown;
   create: unknown;
   getContexts: unknown;
+  sendMessage: unknown;
   windows: unknown;
   sidePanel: unknown;
   session: unknown;
@@ -75,6 +79,7 @@ beforeEach(() => {
     get: g.chrome.tabs.get,
     create: (g.chrome.tabs as unknown as { create?: unknown }).create,
     getContexts: g.chrome.runtime.getContexts,
+    sendMessage: g.chrome.runtime.sendMessage,
     windows: g.chrome.windows,
     sidePanel: g.chrome.sidePanel,
     session: g.chrome.storage.session,
@@ -98,6 +103,9 @@ beforeEach(() => {
     get: vi.fn(async () => ({})),
     set: vi.fn(async () => {}),
   };
+  // Default = healthy browser: a panel document is alive and answers the
+  // liveness ping. Tests that model a browser which opens nothing override this.
+  g.chrome.runtime.sendMessage = vi.fn(async () => ({ pong: true }));
 });
 
 afterEach(() => {
@@ -106,6 +114,7 @@ afterEach(() => {
   g.chrome.tabs.get = saved.get as ReturnType<typeof vi.fn>;
   (g.chrome.tabs as unknown as { create?: unknown }).create = saved.create;
   g.chrome.runtime.getContexts = saved.getContexts as ReturnType<typeof vi.fn>;
+  g.chrome.runtime.sendMessage = saved.sendMessage as ReturnType<typeof vi.fn>;
   g.chrome.windows = saved.windows as Record<string, ReturnType<typeof vi.fn>>;
   g.chrome.sidePanel = saved.sidePanel as Record<string, ReturnType<typeof vi.fn>>;
   g.chrome.storage.session = saved.session as Record<string, ReturnType<typeof vi.fn>>;
@@ -141,16 +150,29 @@ describe("tryOpenSidePanel", () => {
     await expect(tryOpenSidePanel({ tabId: 1 })).resolves.toBe("opened");
   });
 
-  it("treats an unmeasurable browser as working rather than condemning it", async () => {
-    // No getContexts (or it throws) means we cannot observe the outcome.
-    // Unverifiable is not the same as broken — guessing "broken" would saddle a
-    // perfectly good browser with a stray popup window.
+  it("falls back to the liveness ping when getContexts is unavailable", async () => {
+    // getContexts is Chrome 116+; a fork may simply not have it. Treating
+    // "can't measure" as "works fine" is right for a healthy browser and
+    // exactly wrong for the broken one this module exists for — so a second,
+    // universally available signal has to carry the check.
+    delete g.chrome.runtime.getContexts;
     g.chrome.sidePanel = { open: vi.fn(async () => {}), setPanelBehavior: vi.fn(async () => {}) };
-    g.chrome.runtime.getContexts = vi.fn(async () => {
-      throw new Error("not implemented");
-    });
+    g.chrome.runtime.sendMessage = vi.fn(async () => ({ pong: true }));
 
     await expect(tryOpenSidePanel({ tabId: 1 })).resolves.toBe("opened");
+  });
+
+  it("reports 'unsupported' when neither getContexts nor the ping finds a panel", async () => {
+    vi.useFakeTimers();
+    delete g.chrome.runtime.getContexts;
+    g.chrome.sidePanel = { open: vi.fn(async () => {}), setPanelBehavior: vi.fn(async () => {}) };
+    g.chrome.runtime.sendMessage = vi.fn(async () => {
+      throw new Error("Receiving end does not exist.");
+    });
+
+    const pending = tryOpenSidePanel({ tabId: 1 });
+    await vi.advanceTimersByTimeAsync(SIDE_PANEL_DOCUMENT_TIMEOUT_MS + 200);
+    await expect(pending).resolves.toBe("unsupported");
   });
 
   it("reports 'unsupported' when the namespace is missing", async () => {

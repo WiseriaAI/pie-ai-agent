@@ -38,6 +38,7 @@ import { mountEvalBridge } from "./eval-bridge";
 import {
   closeOrphanedFallbackPanels,
   forceFallbackPanel,
+  handlePanelContextMenuClick,
   initPanelOpening,
   openPanel,
 } from "./panel-open";
@@ -360,8 +361,13 @@ chrome.action.onClicked.addListener((tab) => {
   }
 });
 
-// Set the click behavior and restore any memoized capability verdict.
+// Set the click behavior, register the right-click entry point, and restore any
+// memoized capability verdict.
 initPanelOpening();
+
+chrome.contextMenus?.onClicked.addListener((info, tab) => {
+  handlePanelContextMenuClick(String(info.menuItemId), tab);
+});
 
 // A fallback panel window outlives the service worker that spawned it, so it
 // has to be reaped when the window it shadows goes away.

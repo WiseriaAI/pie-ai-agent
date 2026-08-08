@@ -41,6 +41,7 @@ import {
   hostWindowIdFromPanelUrl,
   isOwnPanelUrl,
 } from "@/lib/panel-host/panel-page";
+import { panelDocumentResponds } from "@/lib/panel-host/panel-ping";
 
 /**
  * How long to wait for `chrome.sidePanel.open()` itself to settle. Covers the
@@ -116,8 +117,54 @@ let verdict: Verdict = "unknown";
  * The explicit `false` on startup also un-sticks installs that ran the earlier
  * build and had `true` persisted into their extension prefs.
  */
+/** Context-menu id for the manual "pop Pie out" entry. */
+const FALLBACK_MENU_ID = "pie-open-panel-window";
+
+/**
+ * Register the right-click entry point.
+ *
+ * The keyboard command that does the same thing needs a hotkey bound at
+ * chrome://extensions/shortcuts — a page a browser with its own custom UI may
+ * not even expose, which makes it useless as a rescue path on exactly the
+ * browsers that need rescuing. A context-menu item needs no setup and no
+ * toolbar, so it works even if the panel can't be opened to reach a setting.
+ *
+ * Offered everywhere rather than only when the side panel is known broken:
+ * gating it on the capability verdict would hide it in precisely the case
+ * where detection is wrong, which is the case it exists for. On a healthy
+ * browser it is simply a way to pop the panel out into its own window.
+ */
+export function installPanelContextMenu(): void {
+  try {
+    chrome.contextMenus?.removeAll(() => {
+      // Swallow "duplicate id" if two startup paths race.
+      void chrome.runtime.lastError;
+      chrome.contextMenus.create(
+        {
+          id: FALLBACK_MENU_ID,
+          title: "Open Pie in a separate window",
+          contexts: ["all"],
+        },
+        () => void chrome.runtime.lastError,
+      );
+    });
+  } catch {
+    /* contextMenus unavailable — the toolbar and command paths remain */
+  }
+}
+
+/** Handle a click on the context-menu entry. Returns false if it wasn't ours. */
+export function handlePanelContextMenuClick(menuItemId: string, tab?: chrome.tabs.Tab): boolean {
+  if (menuItemId !== FALLBACK_MENU_ID) return false;
+  void forceFallbackPanel(
+    typeof tab?.windowId === "number" ? { windowId: tab.windowId } : {},
+  ).catch((e) => console.warn("[sw] context-menu panel open failed:", e));
+  return true;
+}
+
 export function initPanelOpening(): void {
   applyActionClickBehavior(false);
+  installPanelContextMenu();
   try {
     void chrome.storage.session
       ?.get(VERDICT_STORAGE_KEY)
@@ -259,18 +306,33 @@ export async function tryOpenSidePanel(
  * would punish a working browser with a stray popup window.
  */
 async function sidePanelDocumentAppeared(): Promise<boolean> {
-  if (typeof chrome.runtime?.getContexts !== "function") return true;
+  let useContexts = typeof chrome.runtime?.getContexts === "function";
+  const canPing = typeof chrome.runtime?.sendMessage === "function";
 
-  const deadline = SIDE_PANEL_DOCUMENT_TIMEOUT_MS;
   for (let waited = 0; ; waited += SIDE_PANEL_DOCUMENT_POLL_MS) {
-    try {
-      const contexts = await chrome.runtime.getContexts({ contextTypes: ["SIDE_PANEL"] });
-      if (contexts.length > 0) return true;
-    } catch {
-      // Not implemented on this browser — unmeasurable, so don't condemn it.
-      return true;
+    if (useContexts) {
+      try {
+        const contexts = await chrome.runtime.getContexts({ contextTypes: ["SIDE_PANEL"] });
+        if (contexts.length > 0) return true;
+      } catch {
+        // Declared but not implemented — drop to the ping for the rest of the
+        // poll rather than giving up on measuring altogether.
+        useContexts = false;
+      }
     }
-    if (waited >= deadline) return false;
+    if (!useContexts) {
+      // Nothing left to measure with. Unverifiable is not the same as broken,
+      // and guessing "broken" would saddle a perfectly good browser with a
+      // stray popup window on every click.
+      if (!canPing) return true;
+      // Second signal, for browsers without getContexts at all. Coarser (it
+      // can't tell a side panel from an already-open fallback window) but it
+      // works everywhere, and "some panel is on screen" is the question that
+      // actually matters here.
+      if (await panelDocumentResponds()) return true;
+    }
+
+    if (waited >= SIDE_PANEL_DOCUMENT_TIMEOUT_MS) return false;
     await new Promise((r) => setTimeout(r, SIDE_PANEL_DOCUMENT_POLL_MS));
   }
 }
