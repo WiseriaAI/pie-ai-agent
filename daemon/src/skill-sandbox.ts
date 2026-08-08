@@ -22,7 +22,7 @@ const IS_WIN = process.platform === "win32";
  * v0.0.67 起无隐式 vendored 回落——省略 `windows.srtWin.path` 即 throw；且 bun compile
  * 单二进制里 `__dirname` 相对解析失效，必须运行时显式解出并传给 SandboxManager。
  */
-function srtWinPath(): string {
+export function srtWinPath(): string {
   return join(dirname(process.execPath), "srt-win.exe");
 }
 
