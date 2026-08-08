@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useI18n } from "@/lib/i18n";
 import { DropdownPanel } from "./ui/DropdownPanel";
 
@@ -233,6 +233,7 @@ export default function ContextRing(props: ContextRingProps) {
           onClick={(e) => e.stopPropagation()}
           style={{
             minWidth: 200,
+            padding: "5px 0",
             background: "var(--c-canvas)",
             border: "1px solid var(--c-line)",
             borderRadius: 8,
@@ -240,77 +241,48 @@ export default function ContextRing(props: ContextRingProps) {
             cursor: "default",
           }}
         >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "baseline",
-              justifyContent: "space-between",
-              gap: 12,
-              padding: "10px 14px 8px",
-              borderBottom: "1px solid var(--c-line)",
-            }}
-          >
-            <span
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 5,
-                fontFamily: "'JetBrains Mono', monospace",
-                fontWeight: 500,
-                fontSize: 10,
-                letterSpacing: "0.14em",
-                color: "var(--c-fg-3)",
-                textTransform: "uppercase",
-              }}
-            >
-              {t("chat.contextRing.contextTitle")}
-              {/* 上下文在任务结束时会缩水,用户看到数字掉下去会以为是 bug。
-                  点开展开说明 —— 原生 title 要 hover 一两秒才出,在一个本来就
-                  要点开的浮层里读起来像「点不动」。title 保留做兜底。 */}
-              <span
-                data-testid="context-ring-help"
-                role="button"
-                aria-expanded={helpOpen}
-                title={t("chat.contextRing.help")}
-                onClick={() => setHelpOpen((v) => !v)}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  width: 14,
-                  height: 14,
-                  borderRadius: "50%",
-                  border: "1px solid var(--c-line)",
-                  background: helpOpen ? "var(--c-line)" : "transparent",
-                  color: helpOpen ? "var(--c-fg-1)" : "inherit",
-                  fontSize: 9,
-                  lineHeight: 1,
-                  letterSpacing: 0,
-                  cursor: "pointer",
-                  userSelect: "none",
-                }}
-              >
-                ?
-              </span>
-            </span>
-            <span
-              style={{
-                fontFamily: "Inter, sans-serif",
-                fontWeight: 600,
-                fontSize: 13,
-                color: "var(--c-fg-1)",
-                fontVariantNumeric: "tabular-nums",
-              }}
-            >
-              {fmtTokens(contextTokens!, numberFormat)} / {fmtTokens(maxContextTokens!, numberFormat)}
-            </span>
-          </div>
+          <PopoverRow
+            label={
+              <>
+                {t("chat.contextRing.contextTitle")}
+                {/* 上下文在任务结束时会缩水,用户看到数字掉下去会以为是 bug。
+                    点开展开说明 —— 原生 title 要 hover 一两秒才出,在一个本来就
+                    要点开的浮层里读起来像「点不动」。title 保留做兜底。 */}
+                <span
+                  data-testid="context-ring-help"
+                  role="button"
+                  aria-expanded={helpOpen}
+                  title={t("chat.contextRing.help")}
+                  onClick={() => setHelpOpen((v) => !v)}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    width: 14,
+                    height: 14,
+                    marginLeft: 5,
+                    borderRadius: "50%",
+                    border: "1px solid var(--c-line)",
+                    background: helpOpen ? "var(--c-line)" : "transparent",
+                    color: helpOpen ? "var(--c-fg-1)" : "inherit",
+                    fontSize: 9,
+                    lineHeight: 1,
+                    letterSpacing: 0,
+                    cursor: "pointer",
+                    userSelect: "none",
+                  }}
+                >
+                  ?
+                </span>
+              </>
+            }
+            value={`${fmtTokens(contextTokens!, numberFormat)} / ${fmtTokens(maxContextTokens!, numberFormat)}`}
+          />
           {helpOpen && (
             <div
               data-testid="context-ring-help-text"
               style={{
-                padding: "10px 14px",
-                borderBottom: "1px solid var(--c-line)",
+                padding: "2px 14px 8px",
                 fontFamily: "Inter, sans-serif",
                 fontSize: 11,
                 lineHeight: 1.6,
@@ -320,38 +292,10 @@ export default function ContextRing(props: ContextRingProps) {
               {t("chat.contextRing.help")}
             </div>
           )}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              padding: "8px 14px 10px",
-              borderTop: "1px solid var(--c-line)",
-            }}
-          >
-            <span
-              style={{
-                fontFamily: "'JetBrains Mono', monospace",
-                fontSize: 10,
-                letterSpacing: "0.1em",
-                color: "var(--c-fg-3)",
-                textTransform: "uppercase",
-              }}
-            >
-              {t("chat.contextRing.sessionTotal")}
-            </span>
-            <span
-              style={{
-                fontFamily: "Inter, sans-serif",
-                fontWeight: 600,
-                fontSize: 13,
-                color: "var(--c-fg-1)",
-                fontVariantNumeric: "tabular-nums",
-              }}
-            >
-              {fmtTokens(totalSum, numberFormat)}
-            </span>
-          </div>
+          <PopoverRow
+            label={t("chat.contextRing.sessionTotal")}
+            value={fmtTokens(totalSum, numberFormat)}
+          />
           {cacheHitPct != null && (
             <PopoverRow
               label={t("chat.contextRing.cacheHit")}
@@ -364,7 +308,7 @@ export default function ContextRing(props: ContextRingProps) {
   );
 }
 
-function PopoverRow({ label, value }: { label: string; value: string }) {
+function PopoverRow({ label, value }: { label: ReactNode; value: string }) {
   return (
     <div
       style={{
@@ -372,14 +316,19 @@ function PopoverRow({ label, value }: { label: string; value: string }) {
         alignItems: "center",
         justifyContent: "space-between",
         gap: 16,
-        padding: "8px 14px",
+        padding: "7px 14px",
       }}
     >
       <span
         style={{
-          fontFamily: "Inter, sans-serif",
-          fontSize: 12,
-          color: "var(--c-fg-2)",
+          display: "inline-flex",
+          alignItems: "center",
+          fontFamily: "'JetBrains Mono', monospace",
+          fontWeight: 500,
+          fontSize: 10,
+          letterSpacing: "0.14em",
+          color: "var(--c-fg-3)",
+          textTransform: "uppercase",
         }}
       >
         {label}
@@ -387,8 +336,8 @@ function PopoverRow({ label, value }: { label: string; value: string }) {
       <span
         style={{
           fontFamily: "Inter, sans-serif",
-          fontWeight: 500,
-          fontSize: 12,
+          fontWeight: 600,
+          fontSize: 13,
           color: "var(--c-fg-1)",
           fontVariantNumeric: "tabular-nums",
         }}
