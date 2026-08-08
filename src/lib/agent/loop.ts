@@ -25,6 +25,7 @@ import {
 import { elideStaleObservations } from "./elide-stale-observations";
 import { applyTokenBudget, estimateTokens } from "./window-token-budget";
 import { diag, kv } from "./diag";
+import { queryActiveHostTab } from "../panel-host/host-window";
 import { compactReactWindow, createDefaultSummarizer } from "./compact-react-window";
 import { resolveModelMeta } from "../model-router/providers/registry";
 import {
@@ -1375,7 +1376,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
     // becomes the page-less NO_PAGE_SENTINEL. The agent starts regardless and
     // recovers through the existing advisory channel.
     try {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      const tab = await queryActiveHostTab();
       ({ pinnedTabId, pinnedOrigin } = resolveStartupPin(tab));
     } catch {
       pinnedTabId = NO_PAGE_SENTINEL;

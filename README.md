@@ -105,7 +105,13 @@ Full policy: [PRIVACY.md](PRIVACY.md).
 ## Install
 
 Works in any Chromium browser with side-panel support — Chrome 114+, Edge,
-Brave, Arc, and others.
+Brave, and others.
+
+Some Chromium browsers accept the side-panel API but never render the panel
+(Arc is the one we've tested). There Pie opens in its own window instead:
+right-click any page and choose **Open Pie in a separate window**. The choice
+is remembered, so the toolbar icon uses that window from then on — and you can
+change it any time under **Settings → Preferences**.
 
 ### Option 1 — Chrome Web Store (recommended)
 

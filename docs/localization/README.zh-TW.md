@@ -89,7 +89,12 @@ Moonshot（Kimi —— 國際區與中國區）· StepFun**。透過 Ollama 接�
 
 ## 安裝
 
-支援任何帶側邊欄的 Chromium 瀏覽器 —— Chrome 114+、Edge、Brave、Arc 等皆可。
+支援任何帶側邊欄的 Chromium 瀏覽器 —— Chrome 114+、Edge、Brave 等皆可。
+
+部分 Chromium 瀏覽器會接受側邊欄 API，卻從不繪製面板（我們實測過的是 Arc）。
+在這些瀏覽器上，Pie 改用獨立視窗開啟：在任意頁面按右鍵，選擇 **在獨立視窗中開啟
+Pie**。這個選擇會被記住，之後點擊工具列圖示也會直接開啟該視窗；隨時可在
+**設定 → 偏好** 中修改。
 
 ### 方式一 —— Chrome Web Store（推薦）
 

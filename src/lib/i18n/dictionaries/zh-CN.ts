@@ -112,6 +112,10 @@ export const zhCNDict = {
     },
     active: "当前使用",
     noActiveConfig: "暂无活跃配置 — 从下方选择一个。",
+    panelWindow: {
+      title: "在独立窗口中打开 Pie",
+      description: "部分 Chromium 浏览器接受侧边栏 API，却从不显示面板。开启后改用独立窗口打开 Pie。Pie 检测到该问题时会自动开启。",
+    },
     cdpInput: {
       title: "浏览器输入模拟（CDP）",
       description: "hover、click 和键盘工具所需。启用后任务期间标签页会出现 Chrome 黄条提示。",

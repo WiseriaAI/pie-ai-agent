@@ -26,11 +26,26 @@ function makeNotificationsMock() {
 
 beforeEach(async () => {
   await _resetForTests();
+  // The side-panel capability verdict is memoized per service-worker lifetime,
+  // so without this reset the first case here decides the outcome of the rest.
+  const { __resetSidePanelVerdict } = await import("@/background/panel/sidepanel-probe");
+  __resetSidePanelVerdict();
+  // "Success" now means a panel document actually appeared, not merely that
+  // open() resolved — so the healthy-browser fixture has to answer the
+  // liveness ping too.
+  (globalThis as unknown as { chrome: { runtime: { sendMessage: ReturnType<typeof vi.fn> } } })
+    .chrome.runtime.sendMessage = vi.fn().mockResolvedValue({ pong: true });
   (globalThis as unknown as { chrome: { notifications: ReturnType<typeof makeNotificationsMock>; sidePanel: { open: ReturnType<typeof vi.fn> }; windows: { getCurrent: ReturnType<typeof vi.fn> }; alarms: { clear: ReturnType<typeof vi.fn> } } })
     .chrome.notifications = makeNotificationsMock();
   // Default: sidePanel.open resolves (success)
-  (globalThis as unknown as { chrome: { sidePanel: { open: ReturnType<typeof vi.fn> } } })
-    .chrome.sidePanel = { open: vi.fn().mockResolvedValue(undefined) };
+  (globalThis as unknown as {
+    chrome: {
+      sidePanel: { open: ReturnType<typeof vi.fn>; setPanelBehavior: ReturnType<typeof vi.fn> };
+    };
+  }).chrome.sidePanel = {
+    open: vi.fn().mockResolvedValue(undefined),
+    setPanelBehavior: vi.fn().mockResolvedValue(undefined),
+  };
   // chrome.windows.getCurrent mock — returns a window with id=1
   (globalThis as unknown as { chrome: { windows: { getCurrent: ReturnType<typeof vi.fn> } } })
     .chrome.windows = { getCurrent: vi.fn().mockResolvedValue({ id: 1 }) };

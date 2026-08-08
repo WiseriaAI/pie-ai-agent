@@ -114,6 +114,10 @@ export const es419Dict = {
     },
     active: "ACTIVA",
     noActiveConfig: "No hay configuración activa; elige una abajo.",
+    panelWindow: {
+      title: "Abrir Pie en una ventana aparte",
+      description: "Algunos navegadores Chromium aceptan la API del panel lateral pero nunca muestran el panel. Actívalo para abrir Pie en su propia ventana. Pie lo activa solo cuando detecta el problema.",
+    },
     cdpInput: {
       title: "Simulación de entrada del navegador (CDP)",
       description: "Necesario para herramientas de hover, clic y teclado. Al activarlo, Chrome muestra la barra amarilla de depuración mientras se ejecuta una tarea.",

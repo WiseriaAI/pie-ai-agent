@@ -113,6 +113,10 @@ export const jaDict = {
     },
     active: "有効",
     noActiveConfig: "有効な設定がありません。下から選択してください。",
+    panelWindow: {
+      title: "Pie を別ウィンドウで開く",
+      description: "一部の Chromium ブラウザはサイドパネル API を受け付けながら、パネルを表示しません。オンにすると Pie を独立したウィンドウで開きます。問題を検出すると Pie が自動で有効化します。",
+    },
     cdpInput: {
       title: "ブラウザー入力シミュレーション (CDP)",
       description: "hover、クリック、キーボードツールに必要です。有効にすると、タスク実行中に Chrome の黄色いデバッグバーが表示されます。",

@@ -24,13 +24,17 @@
 
 import { isRestrictedUrl } from "@/lib/url/restricted";
 import { isFilePdfUrl } from "@/lib/pdf/detect";
+import { queryActiveHostTab } from "@/lib/panel-host/host-window";
 
 export async function captureActivePinnedTab(): Promise<{
   tabId: number;
   origin: string;
 } | null> {
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    // queryActiveHostTab, not a bare currentWindow query: this module runs in
+    // BOTH the panel and the SW, and on a fallback panel (Arc) `currentWindow`
+    // is the panel's own popup — capturing it would pin Pie to itself.
+    const tab = await queryActiveHostTab();
     if (!tab?.id || !tab.url) return null;
     // Chrome can return tab.id === -1 for session-restore / detached tabs;
     // chrome.tabs.get(-1) throws synchronously downstream. Only pin real,

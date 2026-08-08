@@ -107,7 +107,14 @@ Política completa: [PRIVACY.md](../../PRIVACY.md).
 ## Instalação
 
 Funciona em qualquer navegador baseado em Chromium com suporte a painel lateral —
-Chrome 114+, Edge, Brave, Arc e outros.
+Chrome 114+, Edge, Brave e outros.
+
+Alguns navegadores Chromium aceitam a API do painel lateral mas nunca o exibem
+(o que testamos é o Arc). Nesses casos o Pie abre na própria janela: clique com
+o botão direito em qualquer página e escolha **Abrir o Pie em uma janela
+separada**. A escolha fica salva, então o ícone da barra de ferramentas passa a
+abrir essa janela; você pode mudar a qualquer momento em
+**Configurações → Preferências**.
 
 ### Opção 1 — Chrome Web Store (recomendada)
 

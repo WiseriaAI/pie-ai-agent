@@ -17,6 +17,7 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { useT } from "@/lib/i18n";
 import type { PinMode } from "@/lib/sessions/pin-state";
+import { queryHostWindowTabs } from "@/lib/panel-host/host-window";
 
 interface TabRow {
   id: number;
@@ -103,7 +104,7 @@ export default function PinnedTabDropdown({
     let cancelled = false;
     (async () => {
       try {
-        const all = await chrome.tabs.query({ currentWindow: true });
+        const all = await queryHostWindowTabs();
         if (cancelled) return;
         const rows: TabRow[] = [];
         for (const t of all) {

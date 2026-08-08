@@ -1,5 +1,6 @@
 export {
   I18nProvider,
+  makeT,
   useI18n,
   useT,
   setLocale,

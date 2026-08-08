@@ -14,6 +14,13 @@ try {
   // localStorage unavailable — fall through to the system fallback.
 }
 
+// Answer the SW's panel-liveness ping. Registered at module scope, before React
+// mounts: the side-panel capability probe runs seconds after the panel is asked
+// to open, and a responder that waited for first render would lose that race on
+// a slow machine and report a working panel as missing.
+import { installPanelPingResponder } from "@/lib/panel-host/panel-ping";
+installPanelPingResponder();
+
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";

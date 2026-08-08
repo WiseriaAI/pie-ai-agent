@@ -114,6 +114,10 @@ export const ptBRDict = {
     },
     active: "ATIVA",
     noActiveConfig: "Nenhuma configuração ativa; escolha uma abaixo.",
+    panelWindow: {
+      title: "Abrir o Pie em uma janela separada",
+      description: "Alguns navegadores Chromium aceitam a API do painel lateral mas nunca mostram o painel. Ative para abrir o Pie na própria janela. O Pie ativa sozinho quando detecta o problema.",
+    },
     cdpInput: {
       title: "Simulação de entrada do navegador (CDP)",
       description: "Necessário para ferramentas de hover, clique e teclado. Ao ativar, o Chrome mostra a barra amarela de depuração enquanto uma tarefa é executada.",
