@@ -2,7 +2,7 @@
 
 import { dispatchStreamChat } from "./providers";
 import { resolveProviderMeta } from "./providers/registry";
-import { peekWait, acquire } from "./rate-limiter";
+import { tryAcquire, waitUntil } from "./rate-limiter";
 import type { Attachment } from "@/lib/images";
 
 export type { StreamEvent, ErrorKind, AgentMessage, ContentBlock, TextBlock, ToolUseBlock, ToolResultBlock, ImageBlock, ToolDefinition } from "./types";
@@ -127,15 +127,20 @@ export async function* streamChat(
     baseUrl: config.baseUrl || meta.defaultBaseUrl,
   };
 
-  // RPM rate limit gate
+  // RPM rate limit gate。每轮重试都重播 resumeAt：多个 waiter（title 生成 /
+  // 并行 session）抢同一个空位时，落败方要再等一个窗口，不补播面板就停在
+  // 「限流等待 0 秒」不动，看起来像 loop 卡死。
   if (config.rpmLimit && config.rpmLimit > 0) {
     const key = config.rateKey ?? config.apiKey;
-    const resumeAt = peekWait(key, config.rpmLimit);
-    if (resumeAt !== null) yield { type: "ratelimit-wait", resumeAt };
-    try {
-      await acquire(key, config.rpmLimit, signal);
-    } catch {
-      return; // 等待中被 abort —— 静默终止，loop 走既有 abort 收尾
+    for (;;) {
+      const resumeAt = tryAcquire(key, config.rpmLimit);
+      if (resumeAt === null) break;
+      yield { type: "ratelimit-wait", resumeAt };
+      try {
+        await waitUntil(resumeAt, signal);
+      } catch {
+        return; // 等待中被 abort —— 静默终止，loop 走既有 abort 收尾
+      }
     }
   }
 
